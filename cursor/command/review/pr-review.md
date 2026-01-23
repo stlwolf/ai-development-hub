@@ -49,18 +49,26 @@ gh repo view --json nameWithOwner -q '.nameWithOwner' || {
 
 ```bash
 PR_NUM="<入力から抽出>"
+# 他リポジトリの場合は REPO="owner/repo" を設定
 
+# 現在のリポジトリのPR
 gh pr view $PR_NUM --json number,title,body,files,additions,deletions,author,baseRefName,headRefName
 gh pr view $PR_NUM
+
+# 他リポジトリのPR（--repo オプションを付与）
+gh pr view $PR_NUM --repo $REPO --json number,title,body,files,additions,deletions,author,baseRefName,headRefName
+gh pr view $PR_NUM --repo $REPO
 ```
 
 ### PR番号が指定されていない場合（レビュー依頼一覧）
 
 ```bash
-gh pr list --search "review-requested:@me" --json number,title,author,url
+# 全リポジトリ横断でレビュー依頼を検索
+gh search prs --review-requested=@me --state=open --json repository,number,title,author,url
 ```
 
-一覧から対象PRを選択してもらい、`$PR_NUM` を設定。
+一覧から対象PRを選択してもらい、`$PR_NUM` と `$REPO`（owner/repo形式）を設定。
+以降のコマンドでは `--repo $REPO` オプションを付与する。
 
 ## Step 2: 関連Issue取得
 
@@ -139,11 +147,17 @@ gh pr review $PR_NUM --comment --body "コメント内容"
 ## よく使うコマンド
 
 ```bash
-# レビュー依頼一覧
+# レビュー依頼一覧（全リポジトリ横断）
+gh search prs --review-requested=@me --state=open --json repository,number,title,author,url
+
+# レビュー依頼一覧（現在のリポジトリのみ）
 gh pr list --search "review-requested:@me" --json number,title,author,url
 
-# 自分が作成したPR一覧
+# 自分が作成したPR一覧（現在のリポジトリのみ）
 gh pr list --author "@me" --json number,title,state,url
+
+# 自分が作成したPR一覧（全リポジトリ横断）
+gh search prs --author=@me --state=open --json repository,number,title,url
 
 # PR詳細
 gh pr view $PR_NUM
