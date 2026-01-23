@@ -14,7 +14,8 @@ ai-development-hub/
 ├── docs/                   # ドキュメント
 │   ├── draft/              # ドラフト・作成中のドキュメント
 │   └── project-rules/      # プロジェクトルール（ドキュメント版）
-└── ideas/                  # アイデア・ブレストメモ
+├── ideas/                  # アイデア・ブレストメモ
+└── scripts/                # ユーティリティスクリプト
 ```
 
 ## 🎯 各ディレクトリの役割
@@ -47,12 +48,29 @@ Cursor AIエディタで使用するルールとコマンド集
 
 ## 🚀 使い方
 
+### Cursor コマンドの同期（推奨）
+
+`cursor/command/` 配下のコマンドを `~/.cursor/commands/` にシンボリックリンクとして配置できます。
+
+```bash
+# 初回セットアップ
+./scripts/sync-cursor-commands.sh
+
+# リポジトリにコマンドを追加した後も同じコマンドを実行
+./scripts/sync-cursor-commands.sh
+```
+
+**メリット**:
+- シンボリックリンクなので、どちら側から編集しても同じファイルが変更される
+- リポジトリ側でバージョン管理が可能
+- プロジェクト固有のコマンドは `~/.cursor/commands/` に直接配置可能（スクリプトはスキップ）
+
 ### Cursor AI ルールの適用
 
 1. **プロジェクトルール**: `cursor/project-rules/*.mdc` をプロジェクトの `.cursor/rules/` にコピー
 2. **ユーザールール**: `cursor/user-rules/*.md` を参照し、Cursor の User Rules に設定
 
-### コマンドの実行
+### コマンドの実行（手動の場合）
 
 `cursor/command/` 配下のマークダウンファイルを参照し、記載されたフローに従って実行
 
