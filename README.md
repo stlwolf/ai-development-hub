@@ -42,9 +42,8 @@ Cursor AIエディタで使用するルールとコマンド集
   - `AI_DRIVEN_DEVELOPMENT.md`: AI駆動開発フローの実践ガイド
 
 ### `ideas/`
-アイデア、ブレスト、素案の保管場所
-
-- `ai-agent-orchestration.md`: AIエージェント・オーケストレーションに関するアイデアメモ
+アイデア、ブレスト、素案の保管場所。日付ディレクトリ（YYYYMMDD）ごとに整理。
+詳細は [ideas/README.md](ideas/README.md) を参照。
 
 ## 🚀 使い方
 
