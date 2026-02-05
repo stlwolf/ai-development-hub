@@ -1,0 +1,227 @@
+#!/bin/bash
+# PR検証スクリプト（サンプル）
+# プロジェクト固有のPR検証ロジックを実装するためのテンプレート
+#
+# 使用方法:
+#   このファイルをコピーして、プロジェクト固有の検証ロジックを実装
+#   cp examples/verify_pr.sh.example verify_my_project.sh
+#
+#   ./verify_my_project.sh              # 全検証
+#   ./verify_my_project.sh 123          # 特定PR検証
+#   ./verify_my_project.sh --sentry     # Sentryエラー確認のみ
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+API_CALL="${SCRIPT_DIR}/scripts/api_call.sh"
+SESSION_API="${SCRIPT_DIR}/scripts/session_api.sh"
+
+# 色付き出力
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_test() { echo -e "${CYAN}[TEST]${NC} $1"; }
+
+# テスト結果カウンター
+PASS_COUNT=0
+FAIL_COUNT=0
+SKIP_COUNT=0
+
+# テスト実行関数
+run_test() {
+    local name="$1"
+    local method="$2"
+    local path="$3"
+    local expected_status="${4:-200}"
+    local use_session="${5:-false}"
+
+    log_test "$name"
+    echo "  → $method $path"
+
+    local status
+    local script="$API_CALL"
+    [[ "$use_session" == "true" ]] && script="$SESSION_API"
+
+    status=$("$script" "$method" "$path" --status-only 2>/dev/null) || status="error"
+
+    if [[ "$status" == "$expected_status" ]]; then
+        echo -e "  ${GREEN}✓ PASS${NC} (HTTP $status)"
+        ((PASS_COUNT++))
+        return 0
+    elif [[ "$status" == "404" ]]; then
+        echo -e "  ${YELLOW}○ SKIP${NC} (HTTP 404 - エンドポイント未存在)"
+        ((SKIP_COUNT++))
+        return 0
+    else
+        echo -e "  ${RED}✗ FAIL${NC} (HTTP $status, expected $expected_status)"
+        ((FAIL_COUNT++))
+        return 1
+    fi
+}
+
+# ========================================
+# プロジェクト固有の検証ロジック
+# 以下を編集して、検証したいAPIやテストケースを定義
+# ========================================
+
+# PR #XXX: [修正内容の説明]
+verify_pr_xxx() {
+    log_info "=== PR #XXX: [PRタイトル] ==="
+    echo "影響箇所: [影響を受けるコンポーネント]"
+    echo ""
+
+    # JWT認証のAPI（api_call.sh使用）
+    run_test "API - /users" GET "/api/users" || true
+    run_test "API - /items" GET "/api/items" || true
+
+    # Session認証のAPI（session_api.sh使用）
+    # run_test "Session API - /auth/me" GET "/api/auth/me" 200 true || true
+
+    echo ""
+}
+
+# PR #YYY: [修正内容の説明]
+verify_pr_yyy() {
+    log_info "=== PR #YYY: [PRタイトル] ==="
+    echo "影響箇所: [影響を受けるコンポーネント]"
+    echo ""
+
+    run_test "API - /orders" GET "/api/orders" || true
+
+    echo ""
+}
+
+# Sentryエラー確認
+check_sentry() {
+    log_info "=== Sentry エラー確認 ==="
+
+    if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+        log_warn "SENTRY_AUTH_TOKEN が未設定です"
+        log_info "設定方法: export SENTRY_AUTH_TOKEN=your_token"
+        return 1
+    fi
+
+    # プロジェクト固有の設定
+    local org="${SENTRY_ORG:-your-org}"
+    local project="${SENTRY_PROJECT:-your-project}"
+
+    echo "組織: $org"
+    echo "プロジェクト: $project"
+    echo ""
+
+    # 最新のIssue一覧取得
+    log_test "最新のSentry Issue確認..."
+    local issues
+    issues=$(curl -fSs "https://sentry.io/api/0/projects/${org}/${project}/issues/?query=is:unresolved&limit=5" \
+        -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" 2>/dev/null) || {
+        log_error "Sentry API呼び出しに失敗しました"
+        return 1
+    }
+
+    local count
+    count=$(echo "$issues" | jq 'length')
+
+    if [[ "$count" == "0" ]]; then
+        echo -e "${GREEN}✓ 未解決のIssueはありません${NC}"
+    else
+        echo -e "${YELLOW}! 未解決のIssue: ${count}件${NC}"
+        echo "$issues" | jq -r '.[] | "  - [\(.shortId)] \(.title)"'
+    fi
+
+    echo ""
+
+    # 特定のSentry Issue確認（PR関連のIssue IDを指定）
+    # local issue_ids=("1234567890" "1234567891")
+    # for issue_id in "${issue_ids[@]}"; do
+    #     log_test "Issue $issue_id 確認..."
+    #     local status
+    #     status=$(curl -fSs "https://sentry.io/api/0/organizations/${org}/issues/${issue_id}/" \
+    #         -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" 2>/dev/null | jq -r '.status') || status="unknown"
+    #     
+    #     case "$status" in
+    #         resolved) echo -e "  ${GREEN}✓ resolved${NC}" ;;
+    #         unresolved) echo -e "  ${YELLOW}! unresolved${NC}" ;;
+    #         *) echo -e "  ${CYAN}? $status${NC}" ;;
+    #     esac
+    # done
+}
+
+# 結果サマリー
+print_summary() {
+    echo ""
+    log_info "========== 検証結果サマリー =========="
+    echo -e "  ${GREEN}PASS: ${PASS_COUNT}${NC}"
+    echo -e "  ${RED}FAIL: ${FAIL_COUNT}${NC}"
+    echo -e "  ${YELLOW}SKIP: ${SKIP_COUNT}${NC}"
+    echo ""
+
+    if [[ $FAIL_COUNT -eq 0 ]]; then
+        echo -e "${GREEN}✓ 全テストPASS${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ 一部テストFAIL${NC}"
+        return 1
+    fi
+}
+
+# 使用方法
+usage() {
+    cat <<EOF
+使用方法: $(basename "$0") [OPTIONS] [PR_NUMBER]
+
+オプション:
+  --sentry      Sentryエラー確認のみ
+  --all         全PR検証（デフォルト）
+  -h, --help    このヘルプを表示
+
+PR番号:
+  xxx           PR #xxx のみ検証
+  yyy           PR #yyy のみ検証
+
+例:
+  $(basename "$0")              # 全PR検証
+  $(basename "$0") xxx          # PR #xxx のみ
+  $(basename "$0") --sentry     # Sentryのみ
+EOF
+    exit 0
+}
+
+# メイン処理
+main() {
+    local target="${1:-all}"
+
+    case "$target" in
+        -h|--help)
+            usage
+            ;;
+        --sentry)
+            check_sentry
+            ;;
+        xxx)
+            verify_pr_xxx
+            print_summary
+            ;;
+        yyy)
+            verify_pr_yyy
+            print_summary
+            ;;
+        all|--all)
+            verify_pr_xxx
+            verify_pr_yyy
+            check_sentry || true
+            print_summary
+            ;;
+        *)
+            log_error "不明な引数: $target"
+            usage
+            ;;
+    esac
+}
+
+main "$@"
