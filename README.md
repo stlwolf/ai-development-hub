@@ -15,6 +15,7 @@ ai-development-hub/
 │   ├── draft/              # ドラフト・作成中のドキュメント
 │   └── project-rules/      # プロジェクトルール（ドキュメント版）
 ├── ideas/                  # アイデア・ブレストメモ
+├── projects/               # 独立したプロジェクト・ツールキット
 └── scripts/                # ユーティリティスクリプト
 ```
 
@@ -44,6 +45,10 @@ Cursor AIエディタで使用するルールとコマンド集
 ### `ideas/`
 アイデア、ブレスト、素案の保管場所。日付ディレクトリ（YYYYMMDD）ごとに整理。
 詳細は [ideas/README.md](ideas/README.md) を参照。
+
+### `projects/`
+独立した研究開発成果物・ツールキット。
+詳細は [projects/README.md](projects/README.md) を参照。
 
 ## 🚀 使い方
 

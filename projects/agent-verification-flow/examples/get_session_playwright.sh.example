@@ -1,0 +1,92 @@
+#!/bin/bash
+# Playwrightを使ったSession情報の半自動取得
+#
+# 前提:
+#   - Node.js がインストールされていること
+#   - npx playwright が使用可能なこと
+#
+# 使用方法:
+#   1. このスクリプトを実行（ブラウザが開く）
+#   2. 手動でログイン操作を行う
+#   3. ログイン完了後、ブラウザを閉じる
+#   4. .session ファイルが生成される
+#
+# 注意:
+#   - ログインURLはプロジェクトに合わせて変更してください
+#   - CSRFトークンの取得方法はアプリケーションにより異なります
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGIN_URL="${LOGIN_URL:-https://your-app.example.com/login}"
+SESSION_JSON="${SCRIPT_DIR}/../.session.json"
+SESSION_FILE="${SCRIPT_DIR}/../.session"
+
+# 色付き出力
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+# Playwrightでブラウザを開き、手動ログイン後にセッション情報を保存
+log_info "ブラウザを開きます。ログイン操作を行ってください。"
+log_info "ログイン完了後、ブラウザを閉じてください。"
+log_warn "LOGIN_URL: $LOGIN_URL"
+
+# Playwright codegen でセッション保存
+npx playwright codegen "$LOGIN_URL" \
+  --save-storage="$SESSION_JSON" \
+  2>/dev/null || {
+    log_warn "Playwrightが見つかりません。インストールしてください:"
+    echo "  npm install -D @playwright/test"
+    echo "  npx playwright install"
+    exit 1
+}
+
+# session.json が生成されたか確認
+if [[ ! -f "$SESSION_JSON" ]]; then
+    log_warn "セッションファイルが生成されませんでした"
+    exit 1
+fi
+
+log_info "セッション情報を抽出中..."
+
+# Cookie を抽出
+COOKIES=$(jq -r '.cookies | map("\(.name)=\(.value)") | join("; ")' "$SESSION_JSON")
+
+# Bearer Token を抽出（localStorage に保存されている場合）
+# アプリケーションによって異なるため、適宜調整が必要
+BEARER_TOKEN=$(jq -r '.origins[0].localStorage[] | select(.name == "access_token" or .name == "token") | .value // empty' "$SESSION_JSON" 2>/dev/null || echo "")
+
+if [[ -z "$BEARER_TOKEN" ]]; then
+    log_warn "Bearer Token が自動取得できませんでした。手動で設定してください。"
+    BEARER_TOKEN="YOUR_BEARER_TOKEN"
+fi
+
+# CSRF Token を抽出（Cookie から）
+CSRF_TOKEN=$(echo "$COOKIES" | grep -oP 'csrfToken=\K[^;]+' || echo "")
+
+if [[ -z "$CSRF_TOKEN" ]]; then
+    log_warn "CSRF Token が自動取得できませんでした。手動で設定してください。"
+    CSRF_TOKEN="YOUR_CSRF_TOKEN"
+fi
+
+# .session ファイルを生成
+cat > "$SESSION_FILE" << EOF
+# Session情報（Playwright で自動生成）
+# 生成日時: $(date '+%Y-%m-%d %H:%M:%S')
+
+BEARER_TOKEN="$BEARER_TOKEN"
+COOKIES="$COOKIES"
+CSRF_TOKEN="$CSRF_TOKEN"
+EOF
+
+chmod 600 "$SESSION_FILE"
+
+log_info "セッションファイルを生成しました: $SESSION_FILE"
+log_warn "BEARER_TOKEN, CSRF_TOKEN が正しいか確認してください。"
+
+# クリーンアップ
+rm -f "$SESSION_JSON"

@@ -1,0 +1,14 @@
+# 認証情報を含む設定ファイル
+config.yaml
+
+# トークンファイル
+.token
+.session
+*.token
+
+# 一時ファイル
+*.tmp
+*.log
+
+# 検証レポート（機密情報を含む可能性）
+docs/reports/
