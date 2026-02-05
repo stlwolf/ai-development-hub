@@ -1,0 +1,49 @@
+#!/bin/bash
+# claude-safe - Cursor/VS Code統合ターミナルから安全にClaude CLIを実行
+# プロセス分離して出力を担保する
+
+set -euo pipefail
+
+# デバッグモード
+DEBUG=${DEBUG:-0}
+
+debug_log() {
+    if [ "$DEBUG" = "1" ]; then
+        echo "[DEBUG] $*" >&2
+    fi
+}
+
+# 出力ファイル
+OUTPUT_DIR="${HOME}/.claude_wrapper"
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_FILE="${OUTPUT_DIR}/output_$$.txt"
+ERROR_FILE="${OUTPUT_DIR}/error_$$.txt"
+
+# クリーンアップ
+cleanup() {
+    debug_log "Cleaning up..."
+    rm -f "$OUTPUT_FILE" "$ERROR_FILE"
+}
+trap cleanup EXIT
+
+debug_log "Running: claude $*"
+debug_log "Output file: $OUTPUT_FILE"
+
+# Claudeを実行（プロセス分離 - macOS対応）
+# nohupとバックグラウンド実行でプロセス分離
+nohup claude "$@" > "$OUTPUT_FILE" 2> "$ERROR_FILE" &
+CLAUDE_PID=$!
+
+# プロセス完了を待機
+wait $CLAUDE_PID
+EXIT_CODE=$?
+
+debug_log "Exit code: $EXIT_CODE"
+
+# 出力
+cat "$OUTPUT_FILE"
+if [ -s "$ERROR_FILE" ]; then
+    cat "$ERROR_FILE" >&2
+fi
+
+exit $EXIT_CODE

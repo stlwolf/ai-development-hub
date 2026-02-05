@@ -8,6 +8,12 @@
 
 ## インデックス
 
+### 2026-02-04
+
+- `ai-agent-orchestration.md`: CLI経由のマルチエージェント連携 - 検証結果とフレームワーク比較
+- `claude-safe.md`: Cursor統合ターミナル用Claude CLIラッパーの詳細ドキュメント
+- `claude-safe`: ラッパースクリプト本体
+
 ### 2026-01-30
 
 - `ai-middleware-cli-concept.md`: AI CLI（Cursor、Claude Code等）と人間の間に挟まるミドルウェア層の構想
