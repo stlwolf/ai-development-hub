@@ -34,9 +34,8 @@ debug_log "Output file: $OUTPUT_FILE"
 nohup claude "$@" > "$OUTPUT_FILE" 2> "$ERROR_FILE" &
 CLAUDE_PID=$!
 
-# プロセス完了を待機
-wait $CLAUDE_PID
-EXIT_CODE=$?
+# プロセス完了を待機（set -e でも非ゼロ終了コードを正しく取得）
+wait $CLAUDE_PID && EXIT_CODE=0 || EXIT_CODE=$?
 
 debug_log "Exit code: $EXIT_CODE"
 
