@@ -13,3 +13,13 @@ AIエージェントとの協調でAPI動作検証を行うツールキット。
 - マルチエージェントオーケストレーション研究
 
 詳細は [agent-verification-flow/README.md](agent-verification-flow/README.md) を参照。
+
+### claude-safe
+
+Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行するためのラッパースクリプト。
+
+- `nohup` + 出力リダイレクトで TTY 競合を回避
+- 疑似マルチエージェントオーケストレーションの基盤
+- [Zenn記事](https://zenn.dev/stlwolf/articles/cursor-agent-claude-cli-nohup-wrapper)
+
+詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
