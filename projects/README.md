@@ -20,6 +20,6 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 - `nohup` + 出力リダイレクトで TTY 競合を回避
 - 疑似マルチエージェントオーケストレーションの基盤
-- [Zenn記事](https://zenn.dev/stlwolf/articles/cursor-agent-claude-cli-nohup-wrapper)
+- [Zenn記事](https://zenn.dev/stlwolf/articles/1a269f1e865e94)
 
 詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
