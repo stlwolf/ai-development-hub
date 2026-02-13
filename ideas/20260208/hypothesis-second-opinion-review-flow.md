@@ -8,7 +8,7 @@
   - [議論ログ (Claude) §4-A](./discussion-logs/ai-orchestration-discussion-log-claude.md)
   - [棚卸し §2-2, §4 Tier1](./ai-orchestration-synthesis-next-steps.md)
 - evidence_for:
-  - [claude-safe 疑似オーケストレーション検証レポート (2026-02-10)](../../projects/second-opinion-verification/docs/episodes/verification-report-2026-02-10.md) — 実タスクでセカンドオピニオンフローを実施し、スコープ補完・Copilotトリアージの有効性を確認
+  - [claude-safe 疑似オーケストレーション検証レポート (2026-02-10)](../../projects/second-opinion-verification/docs/episodes/2026-02-10-verification-report.md) — 実タスクでセカンドオピニオンフローを実施し、スコープ補完・Copilotトリアージの有効性を確認
 
 ---
 
