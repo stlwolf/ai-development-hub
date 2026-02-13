@@ -121,7 +121,7 @@ v2の33分は異常に長い。API側のレイテンシまたはレート制限�
   ```
 - **タイムアウト設定**: ハング検知と自動kill。デフォルト300秒、設定可能に
   ```bash
-  TIMEOUT=300 claude-safe -p "..."
+  CLAUDE_TIMEOUT=300 claude-safe -p "..."
   ```
 
 **P2（中優先度）:**
@@ -220,5 +220,5 @@ v2の33分は異常に長い。API側のレイテンシまたはレート制限�
 
 ## 関連ドキュメント
 
-- [claude-safe README](../README.md)
-- [疑似オーケストレーション構想](./orchestration.md)
+- [claude-safe README](../../../claude-safe/README.md)
+- [疑似オーケストレーション構想](../../../claude-safe/docs/orchestration.md)

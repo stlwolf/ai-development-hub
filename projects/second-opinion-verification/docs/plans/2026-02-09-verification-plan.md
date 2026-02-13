@@ -35,7 +35,7 @@
 - 作業用ブランチ `feat/claude-safe-timeout-verification` を作成し、メインラインへの影響を防ぐ。
 
 ### Phase 1: 構造準備
-- 検証用のディレクトリ `projects/claude-safe/docs/process-verification/{episodes,decisions}` を作成する。
+- 検証用のディレクトリ `projects/second-opinion-verification/docs/{episodes,decisions}` を作成する。
 
 ### Phase 2: 設計とセカンドオピニオン
 - **Primary設計 (Cascade)**:

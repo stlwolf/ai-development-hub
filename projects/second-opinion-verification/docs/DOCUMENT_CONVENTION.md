@@ -15,7 +15,7 @@
 
 ## 2. ヘッダメタデータ（YAML Frontmatter）
 
-すべてのドキュメントは冒頭に以下の YAML Frontmatter を持つ。
+原則として、ドキュメントは冒頭に以下の YAML Frontmatter を持つ。既存ファイルへの適用は段階的に行う（セクション5参照）。
 
 ```yaml
 ---

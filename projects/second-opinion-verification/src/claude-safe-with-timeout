@@ -38,6 +38,7 @@ KILL_GRACE=$(validate_number "$KILL_GRACE" "CLAUDE_KILL_GRACE" 5)
 # 出力ファイル
 OUTPUT_DIR="${HOME}/.claude_wrapper"
 mkdir -p "$OUTPUT_DIR"
+chmod 700 "$OUTPUT_DIR"
 OUTPUT_FILE="${OUTPUT_DIR}/output_$$.txt"
 ERROR_FILE="${OUTPUT_DIR}/error_$$.txt"
 TIMEOUT_FLAG="${OUTPUT_DIR}/timeout_$$.flag"
