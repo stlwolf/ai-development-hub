@@ -79,8 +79,10 @@ if [ "$TIMEOUT" -gt 0 ]; then
         # タイムアウト時にメインプロセスがまだ生きていれば
         if kill -0 "$CLAUDE_PID" 2>/dev/null; then
             debug_log "Timeout reached. Sending SIGTERM to PID $CLAUDE_PID"
-            touch "$TIMEOUT_FLAG"
-            kill "$CLAUDE_PID" 2>/dev/null || true
+            # 実際に SIGTERM を送信できた場合のみタイムアウトフラグを立てる
+            if kill "$CLAUDE_PID" 2>/dev/null; then
+                touch "$TIMEOUT_FLAG" || true
+            fi
             
             # Grace period 待機
             sleep "$KILL_GRACE"
