@@ -58,7 +58,10 @@ cleanup() {
     fi
     rm -f "$OUTPUT_FILE" "$ERROR_FILE" "$TIMEOUT_FLAG"
 }
-trap cleanup EXIT INT TERM
+# EXIT とシグナルで挙動を分ける: SIGINT/SIGTERM では cleanup 後に即終了
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 debug_log "Running: claude $*"
 debug_log "Output file: $OUTPUT_FILE"
