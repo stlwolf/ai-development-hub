@@ -1,0 +1,130 @@
+#!/bin/bash
+# claude-safe-with-timeout - second-opinion-verification 用のタイムアウト付き Claude CLI ラッパー
+# プロセス分離とタイムアウト監視により出力を担保する
+
+set -euo pipefail
+
+# デバッグモード
+DEBUG=${DEBUG:-0}
+# タイムアウト設定 (秒) - デフォルト0 (無効)
+TIMEOUT=${CLAUDE_TIMEOUT:-0}
+# 強制終了までの猶予 (秒)
+KILL_GRACE=${CLAUDE_KILL_GRACE:-5}
+
+debug_log() {
+    if [ "$DEBUG" = "1" ]; then
+        echo "[DEBUG] $*" >&2
+    fi
+}
+
+# 数値バリデーション
+validate_number() {
+    local val="$1"
+    local name="$2"
+    local default="$3"
+    if ! [[ "$val" =~ ^[0-9]+$ ]]; then
+        if [ -n "$val" ]; then
+            echo "Warning: $name='$val' is not a valid number, ignoring" >&2
+        fi
+        echo "$default"
+    else
+        echo "$val"
+    fi
+}
+
+TIMEOUT=$(validate_number "$TIMEOUT" "CLAUDE_TIMEOUT" 0)
+KILL_GRACE=$(validate_number "$KILL_GRACE" "CLAUDE_KILL_GRACE" 5)
+
+# 出力ファイル
+OUTPUT_DIR="${HOME}/.claude_wrapper"
+mkdir -p "$OUTPUT_DIR"
+chmod 700 "$OUTPUT_DIR"
+OUTPUT_FILE="${OUTPUT_DIR}/output_$$.txt"
+ERROR_FILE="${OUTPUT_DIR}/error_$$.txt"
+TIMEOUT_FLAG="${OUTPUT_DIR}/timeout_$$.flag"
+
+# クリーンアップ
+cleanup() {
+    debug_log "Cleaning up..."
+    # claude プロセスも確実に殺す (Ctrl+C対応)
+    if [ -n "${CLAUDE_PID:-}" ]; then
+        kill "$CLAUDE_PID" 2>/dev/null || true
+    fi
+    # watchdog プロセスがあれば殺す
+    if [ -n "${WATCHDOG_PID:-}" ]; then
+        # watchdog (サブシェル) の子プロセス (sleep) も殺すために pkill -P を使用
+        pkill -P "$WATCHDOG_PID" 2>/dev/null || true
+        kill "$WATCHDOG_PID" 2>/dev/null || true
+    fi
+    rm -f "$OUTPUT_FILE" "$ERROR_FILE" "$TIMEOUT_FLAG"
+}
+# EXIT とシグナルで挙動を分ける: SIGINT/SIGTERM では cleanup 後に即終了
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+
+debug_log "Running: claude $*"
+debug_log "Output file: $OUTPUT_FILE"
+if [ "$TIMEOUT" -gt 0 ]; then
+    debug_log "Timeout set to: ${TIMEOUT}s (Grace: ${KILL_GRACE}s)"
+fi
+
+# Claudeを実行（プロセス分離 - macOS対応）
+# nohupとバックグラウンド実行でプロセス分離
+nohup claude "$@" > "$OUTPUT_FILE" 2> "$ERROR_FILE" &
+CLAUDE_PID=$!
+
+# Watchdog (タイムアウト監視) のセットアップ
+WATCHDOG_PID=""
+if [ "$TIMEOUT" -gt 0 ]; then
+    (
+        sleep "$TIMEOUT"
+        # タイムアウト時にメインプロセスがまだ生きていれば
+        if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+            debug_log "Timeout reached. Sending SIGTERM to PID $CLAUDE_PID"
+            # 実際に SIGTERM を送信できた場合のみタイムアウトフラグを立てる
+            if kill "$CLAUDE_PID" 2>/dev/null; then
+                touch "$TIMEOUT_FLAG" || true
+            fi
+            
+            # Grace period 待機
+            sleep "$KILL_GRACE"
+            
+            # まだ生きていれば SIGKILL
+            if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+                debug_log "Force killing PID $CLAUDE_PID"
+                kill -9 "$CLAUDE_PID" 2>/dev/null || true
+            fi
+        fi
+    ) &
+    WATCHDOG_PID=$!
+fi
+
+# プロセス完了を待機（set -e でも非ゼロ終了コードを正しく取得）
+# wait はシグナル受信で中断される可能性があるが、今回はバックグラウンド実行なので単純wait
+wait $CLAUDE_PID && EXIT_CODE=0 || EXIT_CODE=$?
+
+# 即座に watchdog を止める (PID再利用リスク低減)
+if [ -n "${WATCHDOG_PID:-}" ]; then
+    pkill -P "$WATCHDOG_PID" 2>/dev/null || true
+    kill "$WATCHDOG_PID" 2>/dev/null || true
+    WATCHDOG_PID=""
+fi
+# CLAUDE_PID もクリア (cleanupで再度殺さないように)
+CLAUDE_PID=""
+
+debug_log "Process finished with code: $EXIT_CODE"
+
+# タイムアウト判定
+if [ -f "$TIMEOUT_FLAG" ]; then
+    debug_log "Timeout detected. Overriding exit code to 124."
+    EXIT_CODE=124
+fi
+
+# 出力
+cat "$OUTPUT_FILE"
+if [ -s "$ERROR_FILE" ]; then
+    cat "$ERROR_FILE" >&2
+fi
+
+exit $EXIT_CODE

@@ -23,3 +23,13 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 - [Zenn記事](https://zenn.dev/stlwolf/articles/1a269f1e865e94)
 
 詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
+
+### second-opinion-verification
+
+claude-safe を使ったセカンドオピニオン（反証レビュー）と意図的圧縮（昇格フロー）の検証プロジェクト。
+
+- タイムアウト付き Claude CLI ラッパー（watchdog パターン）
+- episodes / decisions / plans の三層ドキュメント構造で検証プロセスを記録
+- [ドキュメント規約 v0](second-opinion-verification/docs/DOCUMENT_CONVENTION.md)（YAML Frontmatter + use_when）
+
+詳細は [second-opinion-verification/README.md](second-opinion-verification/README.md) を参照。
