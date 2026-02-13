@@ -9,10 +9,10 @@
 ## 検証場所（ディレクトリ）
 ルートディレクトリや既存の `docs` を汚染しないよう、対象プロジェクト内の検証用サブディレクトリで完結させます。
 
-- **場所**: `projects/claude-safe/docs/process-verification/`
+- **場所**: `projects/second-opinion-verification/docs/`
 - **構成**:
   ```
-  projects/claude-safe/docs/process-verification/
+  projects/second-opinion-verification/docs/
   ├── episodes/   # 日々の議論ログ・結論（意図的圧縮の実験場）
   └── decisions/  # 昇格された判断（ADR形式）
   ```

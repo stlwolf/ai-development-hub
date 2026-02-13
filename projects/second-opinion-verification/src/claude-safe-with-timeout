@@ -1,6 +1,6 @@
 #!/bin/bash
-# claude-safe - Cursor/VS Code統合ターミナルから安全にClaude CLIを実行
-# プロセス分離して出力を担保する
+# claude-safe-with-timeout - second-opinion-verification 用のタイムアウト付き Claude CLI ラッパー
+# プロセス分離とタイムアウト監視により出力を担保する
 
 set -euo pipefail
 
@@ -100,8 +100,8 @@ wait $CLAUDE_PID && EXIT_CODE=0 || EXIT_CODE=$?
 
 # 即座に watchdog を止める (PID再利用リスク低減)
 if [ -n "${WATCHDOG_PID:-}" ]; then
-    kill "$WATCHDOG_PID" 2>/dev/null || true
     pkill -P "$WATCHDOG_PID" 2>/dev/null || true
+    kill "$WATCHDOG_PID" 2>/dev/null || true
     WATCHDOG_PID=""
 fi
 # CLAUDE_PID もクリア (cleanupで再度殺さないように)
