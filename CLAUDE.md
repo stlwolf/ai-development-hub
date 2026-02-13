@@ -66,6 +66,15 @@ ai-development-hub/
 5. **Incremental Steps**: 大きな変更は分割し、各ステップで動作確認可能に
 6. **Follow Existing Patterns**: 既存コードの規約・構造を踏襲
 
+## コミット規約
+
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`（スコープ付き可: `feat(verification): ...`）
+- 1コミット1論理変更
+
+## コード品質
+
+- シェルスクリプト変更時は `shellcheck <script>` を実行して確認
+
 ## Markdown記法
 
 - 箇条書きは `-`（ハイフン）のみ使用（`•` `*` 禁止）
