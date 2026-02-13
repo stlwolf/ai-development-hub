@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## リポジトリ概要
 
-AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コマンド、AIエージェント連携ツール、アイデアメモを集約管理。
+AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コマンド、AIエージェント連携ツール、アイデアメモを集約管理。純粋なBashスクリプトとMarkdownドキュメントで構成（ビルドシステム・パッケージマネージャなし）。
 
 ## コマンド
 
@@ -17,6 +17,13 @@ cd projects/agent-verification-flow
 ./scripts/cognito_auth.sh              # JWT取得（Cognito）
 ./scripts/api_call.sh GET /api/users   # Bearer Token API呼び出し
 ./scripts/session_api.sh GET /api/me   # Session Cookie + CSRF API呼び出し
+
+# claude-safe: Cursor統合ターミナルからClaude CLIを安全に実行
+./projects/claude-safe/claude-safe -p "prompt" --output-format text
+DEBUG=1 ./projects/claude-safe/claude-safe -p "test"  # デバッグモード
+
+# second-opinion-verification: タイムアウト付きclaude-safe
+CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-timeout -p "prompt"
 ```
 
 ## アーキテクチャ
@@ -24,15 +31,31 @@ cd projects/agent-verification-flow
 ```
 ai-development-hub/
 ├── cursor/                 # Cursor AI エディタ関連
-│   ├── command/            # 実行可能なコマンド（~/.cursor/commands/にsymlink可）
-│   ├── project-rules/      # プロジェクト固有ルール (.mdc)
-│   └── user-rules/         # ユーザー共通ルール
-├── projects/               # 独立したツールキット
-│   └── agent-verification-flow/  # AI駆動API検証ツール群
-├── ideas/                  # アイデア（YYYYMMDD形式のディレクトリ）
+│   ├── command/review/     # PRレビュー・Copilotレビュー対応コマンド
+│   ├── project-rules/      # プロジェクト固有ルール (.mdc, alwaysApply)
+│   └── user-rules/         # ユーザー共通ルール（行動規範・入力・Markdown）
+├── projects/               # 独立したツールキット（ideas/から昇格）
+│   ├── agent-verification-flow/  # AI駆動API検証（JWT/Session対応、curl+jq）
+│   ├── claude-safe/              # Claude CLIラッパー（nohupでTTY競合回避）
+│   └── second-opinion-verification/  # セカンドオピニオン検証（タイムアウト付き）
+├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
 ├── docs/draft/             # ドラフトドキュメント
 └── scripts/                # ユーティリティ
 ```
+
+### projects/ の設計
+
+- 各プロジェクトは独立して動作するBashツールキット
+- `agent-verification-flow`: `config.yaml`（`config.yaml.example`からコピー）で設定。`.token`/`.session`は`.gitignore`対象
+- `claude-safe`: `nohup`でプロセス分離し、Cursor Agentのハング問題を解決
+- `second-opinion-verification`: `claude-safe`にwatchdogパターンのタイムアウトを追加。ADR・エピソード形式のドキュメント規約あり（`docs/DOCUMENT_CONVENTION.md`）
+
+### ideas/ の規約
+
+- `YYYYMMDD/` ディレクトリで日付管理
+- 追加後は凍結（frozen snapshot）、上書き禁止
+- 成功したアイデアは `projects/` に昇格
+- `discussion-logs/` にマルチAIブレスト記録を保存可
 
 ## 行動規範（cursor/user-rules/より）
 
