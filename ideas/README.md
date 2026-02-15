@@ -8,6 +8,25 @@
 
 ## インデックス
 
+### 2026-02-15
+
+- `ai-readable-code-discussion-log-chatgpt.md`: Kindleで偶然Readable Codeを開いたことから始まったChatGPT 5.2との議論ログ。可読性の対象が人間→AIに移行する過程を8段階で追跡
+- `ai-readable-code-evaluation-claude.md`: 同議論の問いかけに対するClaudeの独自評価。「AI-Readableは現時点では良い設計の別名」「書くためのアンカーと読むためのアンカーは同一ではない」等の指摘
+- `ai-readable-code-organic-understanding-synthesis.md`: 上記2文書の統合版。AI-Readable Code・アンカー群・有機的理解の概念整理と検証アクション
+
+### 2026-02-12
+
+- `hypothesis-canonical-agent-definition-format.md`: ツール非依存の正準エージェント定義フォーマットの仮説。ツール間移植性と一貫性の担保
+
+### 2026-02-08
+
+- `ai-orchestration-synthesis-next-steps.md`: 当日のブレスト4文書を横断分析した棚卸し。固まっている部分・曖昧な部分・次の検証を整理
+- `ai-orchestration-verification-log.md`: 非ロックインと再現性の両立、文脈欠落防止の運用設計を積み上げた検証ログ
+- `ai-orchestration-memo-idea-integration.md`: ChatGPT + Claude議論の統合版。最小契約の固定と昇格フローの実験駆動育成
+- `hypothesis-intentional-compression-and-promotion-flow.md`: 意図的圧縮と昇格フローの仮説。Context→Decision→Episodeの三層構造
+- `hypothesis-second-opinion-review-flow.md`: セカンドオピニオン・レビューフローの仮説。反証担当を固定し見落としを減らす
+- `discussion-logs/`: マルチAIブレスト記録（ChatGPT統合メモ・検証ログ、Claude統合メモ・議論ログ）
+
 ### 2026-02-04
 
 - `ai-agent-orchestration.md`: CLI経由のマルチエージェント連携 - 検証結果とフレームワーク比較
@@ -25,3 +44,9 @@
 - `ai-agent-orchestration.md`: AIエージェント・オーケストレーションに関するアイデアメモ
 - `episodic_memory_data.md`: プロダクトの経緯を理解するためのエピソード記憶的データ分類
 - `orchestration_ideas_feedback.md`: オーケストレーション・アイデアに対するフィードバック・所見
+
+---
+
+## 関連マップ
+
+アイデア間の有機的な接続を整理したマップ: [connections.md](connections.md)
