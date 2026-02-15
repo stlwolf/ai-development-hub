@@ -1,25 +1,41 @@
 # Second Opinion Verification Project
 
-このプロジェクトは、**「AIによるセカンドオピニオン（反証）」** と **「意図的圧縮（Intentional Compression）」** のプロセスを検証するための実験場です。
-`claude-safe` へのタイムアウト機能追加を題材に、複数のAI（Primary/Second）が協調して品質を高めるフローを実証しました。
+AIによるセカンドオピニオン（反証）と、マルチエージェント協調による検証フローの実験場。
+
+## 検証の歩み
+
+| 日付 | テーマ | 成果 |
+|------|--------|------|
+| 2026-02-09 | claude-safe タイムアウト実装 | セカンドオピニオンでゾンビプロセス・Ctrl+C問題を事前検出 |
+| 2026-02-10 | claude-safe 疑似オーケストレーション | 実プロダクトのdeprecation修正で Cursor + Claude Code の協調を検証 |
+| 2026-02-14 | Codex CLI 基本検証 | Cursor統合ターミナルからの安定動作・AGENTS.md認識・セッション管理を確認 |
+| 2026-02-14 | Codex × Claude セカンドオピニオン比較 | Sentry修正で並行実行。Codex が Claude の誤判定を検出 |
+| 2026-02-15 | 3エージェント深掘り検証 | ロール分担（案B: 逐次専門化）で再現経路を自律特定。Playwright MCP でステージング発火確認 |
 
 ## ディレクトリ構成
 
 ```
 projects/second-opinion-verification/
 ├── src/
-│   └── claude-safe-with-timeout  # 実証実験で作られた成果物（タイムアウト付きスクリプト）
+│   └── claude-safe-with-timeout     # タイムアウト付きスクリプト
 ├── docs/
-│   ├── plans/                    # 計画時のプランログ
-│   ├── episodes/                 # 実装プロセスにおける議論ログ
-│   └── decisions/                # 昇格された重要な決定事項 (ADR)
+│   ├── DOCUMENT_CONVENTION.md       # ドキュメント規約 (v0)
+│   ├── plans/                       # 検証計画・キックオフ計画
+│   ├── episodes/                    # 作業記録・検証レポート・セッション統合記録
+│   └── decisions/                   # 確定した判断 (ADR)
 ```
 
-## 検証の成果
+## 確立されたツール・テンプレート
 
-1.  **バグの事前検出**: 単独実装では見落とした「ゾンビプロセス」「Ctrl+C時の挙動」を、セカンドオピニオンAIが指摘し修正できた。
-2.  **プロセスの記録**: 計画から実装、修正までの過程を `docs/` 配下に記録することで、意思決定の経緯を透明化した。
+| 成果物 | 配置先 | 内容 |
+|--------|--------|------|
+| `/second-opinion` コマンド | `cursor/command/verification/` | セカンドオピニオン取得の Cursor コマンド |
+| `so-compare.sh` | `scripts/` | Claude / Codex 並行比較スクリプト |
+| facts.md テンプレート | `agent-verification-flow/docs/templates/` | 事実/解釈分離の構造化テンプレート |
+| ロール設計パターン（案B） | `agent-verification-flow/docs/DESIGN_PRINCIPLES.md` | 逐次専門化の設計ガイド |
 
 ## 関連
-- 元プロジェクト: `projects/claude-safe/`
-- アイデア: `ideas/20260208/hypothesis-second-opinion-review-flow.md`
+
+- `projects/claude-safe/` — Claude CLI ラッパー
+- `projects/agent-verification-flow/` — API検証ツールキット・テンプレート
+- `ideas/20260208/hypothesis-second-opinion-review-flow.md` — 元アイデア
