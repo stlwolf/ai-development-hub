@@ -223,9 +223,90 @@ Output: 再現手順リスト
 
 ---
 
+## マルチエージェント ロール設計パターン
+
+### 案B: 逐次専門化（事実収集 → 仮説生成 → 仮説検証）
+
+2026-02-15 の深掘り検証で有効性が実証されたパターン。
+
+#### 概要
+
+3エージェントに**異なる役割**を割り当て、逐次的に実行する。同一プロンプト並行（案A）では「同じ盲点を3回繰り返す」リスクがあるのに対し、逐次専門化では各エージェントの特性を活かした分業が可能。
+
+#### ロール定義
+
+```
+Agent 1: 事実収集者（Facts Collector）+ オーケストレーター
+  - 外部API（Sentry等）からイベントデータ取得
+  - MCP Browser でステージング操作
+  - 確定事実を facts.md として構造化
+  - 他エージェントの出力を統合
+
+Agent 2: 仮説生成 + 一次検証者（Hypothesis Generator）
+  - facts.md から再現経路仮説を生成（最低3仮説）
+  - 各仮説に棄却条件を付与
+  - 自ら一次検証し、明らかな矛盾を除去してから提出
+
+Agent 3: 二次検証 + 対立仮説探索者（Validator + Devil's Advocate）
+  - 仮説を受け取る前に独立ミニ探索（アンカリング防止）
+  - Agent 2 の仮説をコードレベルで二次検証
+  - 各仮説に verdict: CONFIRMED / WEAKENED / REFUTED を付与
+  - 見落とされた代替経路を独立に探索・提示
+```
+
+#### エージェント適性マッピング
+
+| ロール | 推奨エージェント | 理由 |
+|--------|------------------|------|
+| 事実収集+統括 | Cursor Agent | Sentry API + MCP Browser + 対話が使える |
+| 仮説生成 | Claude Code (Opus) | アーキテクチャレベルの構造的推論が強い |
+| 仮説検証 | Codex CLI (GPT-5.3) | コード解析・実装レベルの裏取りが強い |
+
+#### 実行フロー
+
+```
+Phase 1: Agent 1 → facts.md 作成（品質ゲート通過）
+Phase 2: Agent 2 → 仮説生成（facts.md + コードスニペット入力）
+         Agent 3 → 仮説検証（独立探索 + Agent 2 出力入力）
+         Agent 1 → 統合（全出力 + Sentry実データ + ステージング照合）
+Phase 3: Agent 1 → ステージング検証（MCP Browser）
+```
+
+#### プロンプト設計原則
+
+**Agent 2（仮説生成）向け:**
+- コードスニペットを直接プロンプトに埋め込む
+- 思考順序を明示的に指定する
+- ネガティブ制約（スコープ外事項）を明記する
+- 最低3仮説 + 棄却条件を必須化する
+
+**Agent 3（仮説検証）向け:**
+- 出力スキーマを固定する（verdict + evidence + confidence）
+- 「推測は inferred 明示、証拠なき断定禁止」を明記する
+- 冒頭に独立ミニ探索を含める（アンカリング防止）
+- 代替経路の独立探索を許可する
+
+#### 実績
+
+- 2026-02-15: PHP float→int deprecation の再現経路特定に成功（L4到達）
+- Claude Code が4仮説を生成、Codex CLI が検証・代替経路発見、Cursor Agent が統合+ステージング確認
+- 詳細: `projects/second-opinion-verification/docs/episodes/2026-02-15-deep-dive-error-reproduction.md`
+
+#### 案A（同一プロンプト並行）との比較
+
+| 項目 | 案A: 並行 | 案B: 逐次専門化 |
+|------|-----------|-----------------|
+| 盲点のリスク | 同じ盲点を繰り返す | 異なる視点を強制 |
+| 実行時間 | 短い（並行） | 長い（逐次） |
+| 情報の流れ | 独立 | 前段の出力が次段の入力 |
+| 適合ケース | レビュー・比較 | 深掘り・根本原因分析 |
+
+---
+
 ## 関連ドキュメント
 
 - [README.md](../README.md) - 使用方法
 - [USAGE.md](./USAGE.md) - 詳細な使用方法
 - [LESSONS_LEARNED.md](./LESSONS_LEARNED.md) - 実践から学んだ教訓
 - [MULTI_AGENT_ORCHESTRATION.md](./MULTI_AGENT_ORCHESTRATION.md) - マルチエージェント構成
+- [templates/FACTS_TEMPLATE.md](./templates/FACTS_TEMPLATE.md) - 事実収集テンプレート
