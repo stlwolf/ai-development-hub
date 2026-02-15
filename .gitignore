@@ -30,3 +30,7 @@ Temporary Items
 
 # Intellij
 .idea/*
+node_modules/
+
+# Local working files (untracked)
+tmp/
