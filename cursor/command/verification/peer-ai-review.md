@@ -1,6 +1,6 @@
-# Second Opinion
+# Peer AI Review
 
-修正タスクや設計判断に対して、Codex CLI と Claude Code からセカンドオピニオンを取得し、自分の判断と比較する。
+修正タスクや設計判断に対して、Codex CLI と Claude Code にピアレビューを依頼し、自分の判断と比較する。
 
 ## 入力形式
 
