@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
 # so-compare.sh - セカンドオピニオン比較実行スクリプト（使い捨て可）
 # 同一プロンプトを Codex CLI / Claude Code に投げて結果をファイルに保存する
-#
-# Usage:
-#   so-compare.sh "プロンプトテキスト"
-#   so-compare.sh -f prompt.txt
-#   echo "プロンプト" | so-compare.sh -
-#
-# Options:
-#   -f FILE     プロンプトをファイルから読み込み
-#   -c FILE...  コンテキストファイルを添付（プロンプトに内容を追記）
-#   -o DIR      出力ディレクトリを指定（デフォルト: tmp/so-YYYYMMDD-HHMMSS）
-#   -s MODE     Codex sandbox モード（デフォルト: read-only）
-#   --codex-only   Codex のみ実行
-#   --claude-only  Claude のみ実行
 
 set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  so-compare.sh "プロンプトテキスト"
+  so-compare.sh -f prompt.txt
+  echo "プロンプト" | so-compare.sh -
+
+Options:
+  -f FILE        プロンプトをファイルから読み込み
+  -c FILE...     コンテキストファイルを添付（プロンプトに内容を追記）
+  -o DIR         出力ディレクトリを指定（デフォルト: tmp/so-YYYYMMDD-HHMMSS）
+  -s MODE        Codex sandbox モード（デフォルト: read-only）
+  --codex-only   Codex のみ実行
+  --claude-only  Claude のみ実行
+  --prev DIR     前回の so-compare 出力ディレクトリ
+                 回答をプロンプトに追記（上限: PREV_MAX_BYTES, デフォルト4000）
+  -h, --help     このヘルプを表示
+
+Environment:
+  PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
+USAGE
+}
 
 # --- 設定 ---
 CODEX_CMD="codex"
@@ -24,6 +34,7 @@ SANDBOX_MODE="read-only"
 OUT_DIR=""
 PROMPT=""
 CONTEXT_FILES=()
+PREV_DIR=""
 RUN_CODEX=true
 RUN_CLAUDE=true
 
@@ -57,12 +68,21 @@ while [[ $# -gt 0 ]]; do
             RUN_CODEX=false
             shift
             ;;
+        --prev)
+            PREV_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
         -)
             PROMPT=$(cat)
             shift
             ;;
         -*)
             echo "Unknown option: $1" >&2
+            usage >&2
             exit 1
             ;;
         *)
@@ -74,7 +94,8 @@ done
 
 if [[ -z "$PROMPT" ]]; then
     echo "Error: プロンプトが指定されていません" >&2
-    echo "Usage: so-compare.sh \"プロンプトテキスト\"" >&2
+    echo "" >&2
+    usage >&2
     exit 1
 fi
 
@@ -88,6 +109,28 @@ if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
             echo "Warning: ファイルが見つかりません: $f" >&2
         fi
     done
+fi
+
+# --- 前回の回答をプロンプトに追記 ---
+PREV_MAX_BYTES="${PREV_MAX_BYTES:-4000}"
+
+if [[ -n "$PREV_DIR" ]]; then
+    if [[ ! -d "$PREV_DIR" ]]; then
+        echo "Warning: 前回の出力ディレクトリが見つかりません: $PREV_DIR" >&2
+    else
+        PROMPT="${PROMPT}"$'\n\n--- 前回のレビュー回答（参考） ---'
+        for tool in codex claude; do
+            prev_file="$PREV_DIR/${tool}-stdout.txt"
+            if [[ -f "$prev_file" && -s "$prev_file" ]]; then
+                prev_content=$(head -c "$PREV_MAX_BYTES" "$prev_file")
+                orig_size=$(wc -c < "$prev_file" | tr -d ' ')
+                if (( orig_size > PREV_MAX_BYTES )); then
+                    prev_content="${prev_content}"$'\n\n[... truncated: '"${orig_size}"' bytes -> '"${PREV_MAX_BYTES}"' bytes ...]'
+                fi
+                PROMPT="${PROMPT}"$'\n\n'"### 前回の ${tool} の回答"$'\n```\n'"${prev_content}"$'\n```'
+            fi
+        done
+    fi
 fi
 
 # --- 出力ディレクトリ ---
