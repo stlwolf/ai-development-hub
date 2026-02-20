@@ -14,6 +14,11 @@
 - `so-prompt-formatting.md`: SO向けプロンプトのフォーマット化。タスクタイプ別テンプレートとコンテキスト添付基準の提案
 - `human-input-formatting.md`: 人間→AI間の入力品質標準化。AI側が質問フォーマットを提示し人間が回答する形
 
+### 2026-02-18
+
+- `discussion-log-inference-ratio-domain-boundaries.md`: 風呂場思考から始まった推測比率・データ境界・ルーラーエージェントの議論ログ。Claude + ChatGPTのブレスト統合
+- `hypothesis-inference-ratio-certainty-model.md`: 推測比率と確実性の構造モデルの仮説。確実性の4変数式、Truth-in-Context（SSOTの再定義）、レビュー負荷の非線形性
+
 ### 2026-02-15
 
 - `ai-readable-code-discussion-log-chatgpt.md`: Kindleで偶然Readable Codeを開いたことから始まったChatGPT 5.2との議論ログ。可読性の対象が人間→AIに移行する過程を8段階で追跡

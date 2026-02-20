@@ -73,6 +73,40 @@
 - [20260208/hypothesis-intentional-compression-and-promotion-flow.md](20260208/hypothesis-intentional-compression-and-promotion-flow.md) — 三層構造 + 昇格フロー（理論側）
 - [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層 + TTL + 昇格基準 + メタデータスキーマ（運用側）
 
+### 推測比率と確実性の構造モデル
+
+1月の課題リスト → 2月の有機的理解 → 確実性を操作可能にするフレームワークへ。「何が問題か」→「何を目指すか」→「どの変数を操作すれば効くか」の発展。
+
+- [20260130/generative-ai-development-challenges.md](20260130/generative-ai-development-challenges.md) — 本質的課題のリスト（問題列挙）
+- [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 有機的理解と5つのアンカー群（目標定義）。アンカー群が推測比率の段階的低下に対応
+- [20260218/hypothesis-inference-ratio-certainty-model.md](20260218/hypothesis-inference-ratio-certainty-model.md) — 確実性の4変数モデル、推測比率の設計変数化（操作フレームワーク）
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層モデル。「情報の量」と「切り落としの精度」の永続化実装
+
+### データ境界と意味の変質（Truth-in-Context）
+
+SSOTの限界からDDDのBounded Contextを経由して、AIの推測比率の問題に接続。
+
+- [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 「単一のSSOTでは不十分、複数のアンカーの組み合わせが必要」（起点）
+- [20260218/discussion-log-inference-ratio-domain-boundaries.md](20260218/discussion-log-inference-ratio-domain-boundaries.md) — DDDのBounded Contextとの接続。信頼の単位は境界であってシステム全体ではない
+- [20260218/hypothesis-inference-ratio-certainty-model.md](20260218/hypothesis-inference-ratio-certainty-model.md) — Truth-in-Context（境界ごとの真実の束）として再定義。境界の明示で推測比率が構造的に下がる
+
+### ルーラーエージェント構想（ガイドAgentの具体化）
+
+ガイドAgent → コンテキスト・エンベロープ → ルーラーエージェントへ。「文脈と履歴を理解するモデレーター」が「過去の判断に基づいて正確にガイドするナビゲーター」として具体化。
+
+- [20260121/ai-agent-orchestration.md](20260121/ai-agent-orchestration.md) — ガイドAgent：文脈と履歴を理解するモデレーター（原型）
+- [20260204/ai-agent-orchestration.md](20260204/ai-agent-orchestration.md) — コンテキスト・エンベロープ（搬送形態）
+- [20260218/discussion-log-inference-ratio-domain-boundaries.md](20260218/discussion-log-inference-ratio-domain-boundaries.md) — ルーラーエージェント：新規判断はせず過去の判断に基づくガイド。既存の「コードベースナビゲーター」との差異は「判断履歴のナビゲーター」である点
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — ルーラーが読むデータの永続化層
+
+### レビュー負荷の非線形性とセカンドオピニオン
+
+セカンドオピニオンの精度向上効果が、レビューモードの不連続な切替を引き起こす。
+
+- [20260208/hypothesis-second-opinion-review-flow.md](20260208/hypothesis-second-opinion-review-flow.md) — セカンドオピニオンフローの仮説（反証担当の固定）
+- [20260218/hypothesis-inference-ratio-certainty-model.md](20260218/hypothesis-inference-ratio-certainty-model.md) — 精度90%→98%でレビューモードが不連続に変わる。精度向上の目的は「正答率の向上」以上に「人間の監督モードの切替」
+- [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — SOプロンプトの構造化がこのモード切替の閾値到達に寄与
+
 ### 入力品質の双方向標準化
 
 AI→AI（SOプロンプト）と人間→AI（ドメイン入力）の両方向で入力フォーマット化の必要性が同時に浮上。共通する洞察は「出力品質は入力品質に支配される」。
