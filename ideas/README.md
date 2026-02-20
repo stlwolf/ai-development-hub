@@ -8,6 +8,12 @@
 
 ## インデックス
 
+### 2026-02-20
+
+- `context-persistence-4layer-model.md`: コンテキスト永続化の4層モデル（即時参照/構造化ナレッジ/生ログ/コード）。FWアップグレード実践から導出
+- `so-prompt-formatting.md`: SO向けプロンプトのフォーマット化。タスクタイプ別テンプレートとコンテキスト添付基準の提案
+- `human-input-formatting.md`: 人間→AI間の入力品質標準化。AI側が質問フォーマットを提示し人間が回答する形
+
 ### 2026-02-15
 
 - `ai-readable-code-discussion-log-chatgpt.md`: Kindleで偶然Readable Codeを開いたことから始まったChatGPT 5.2との議論ログ。可読性の対象が人間→AIに移行する過程を8段階で追跡
