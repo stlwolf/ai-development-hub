@@ -1,0 +1,5 @@
+# 生ログ（層3）: SpecStory出力やExport Transcriptの原本
+# 抽出・昇格後は破棄可能。git管理しない。
+*
+!.gitignore
+!README.md
