@@ -9,7 +9,8 @@ docs/
 ├── INDEX.md                    # このファイル（関連マップ）
 ├── VERIFICATION_MATRIX.md      # 検証マトリクス（A: ツール / B: プロセス）
 ├── plans/                      # 計画・キックオフ（type: plan）
-│   └── 2026-02-20-kickoff-cursor-thread-tools.md
+│   ├── 2026-02-20-kickoff-cursor-thread-tools.md
+│   └── 2026-02-20-kickoff-phase1-db-foundation.md
 ├── episodes/                   # 作業記録・議論経緯（type: episode）
 ├── decisions/                  # 確定した判断 ADR形式（type: decision）
 └── raw-logs/                   # 生ログ 層3（gitignore対象、一時保管）
@@ -58,8 +59,13 @@ DOCUMENT_CONVENTION v0 準拠。`second-opinion-verification` で確立した規
       │       検証マトリクス（A: ツール実装 / B: 開発プロセス）
       │       各項目の状態・根拠を追跡し、フィードバックループを形成
       │
-      └── [raw-log] SpecStory出力（ブレスト全文）
-              → raw-logs/ に保管、エピソード・ADR抽出の一次資料
+      ├── [raw-log] SpecStory出力（ブレスト全文）
+      │       → raw-logs/ に保管、エピソード・ADR抽出の一次資料
+      │
+      └── [plan/kickoff] 2026-02-20-kickoff-phase1-db-foundation
+              Phase 1 キックオフ（peer-ai-review 3者合意済み）
+              DB読み取り基盤検証: SQLiteライブラリ選定、agentKv:blob解明
+              → Phase 1 子スレッドの開始プロンプトとして使用
 ```
 
 ## 他プロジェクトの関連成果物
