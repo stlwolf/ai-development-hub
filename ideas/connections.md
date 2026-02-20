@@ -22,6 +22,7 @@
 - [20260121/episodic_memory_data.md](20260121/episodic_memory_data.md) — 意味記憶(What) vs エピソード記憶(Why/When/How) の分類（起点）
 - [20260215/ai-readable-code-evaluation-claude.md](20260215/ai-readable-code-evaluation-claude.md) — 書くためのアンカー ≈ 意味記憶、読むためのアンカー ≈ 意味記憶 + エピソード記憶
 - [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 5つのアンカー群（Schema/Contract/Invariant/Flow/Decision）への展開
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 層4(コード=What)と層3(生ログ=Why/How)の分離が同じ構造を再現。層2は抽出済みエピソード記憶に対応
 
 ### AI-Readableの4性質 ↔ 意図的圧縮の三層構造
 
@@ -32,30 +33,50 @@
 
 ### コンテキスト限界の複雑性
 
-1月に列挙した課題が、2月にBrooksの複雑性分類の拡張として理論的な枠組みを得た。
+1月に列挙した課題が、2月にBrooksの複雑性分類の拡張として理論的な枠組みを得た。さらにFWアップグレード実践を通じて永続化層のモデルとして具体化。
 
 - [20260130/generative-ai-development-challenges.md](20260130/generative-ai-development-challenges.md) — コンテキスト消失・ドメイン理解の欠如・成果物の劣化（問題列挙）
 - [20260130/ai-middleware-cli-concept.md](20260130/ai-middleware-cli-concept.md) — コンテキスト「純度」の問題（対策構想）
 - [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 「AIのコンテキスト限界に起因する新しい複雑性」として再分類
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層モデルによる具体的な対処アーキテクチャ。層3の抽出パイプライン未実装が現時点のボトルネック
 
 ### 有機的理解の搬送
 
-抽象的な目標（有機的理解）に対して、具体的な搬送形態（エンベロープ）と蓄積基盤（ガイドAgent）が対応する。
+抽象的な目標（有機的理解）に対して、具体的な搬送形態（エンベロープ）と蓄積基盤（ガイドAgent）が対応する。4層モデルが「どこに蓄積するか」を定義。
 
 - [20260121/ai-agent-orchestration.md](20260121/ai-agent-orchestration.md) — ガイドAgent：文脈と履歴を理解するモデレーター（蓄積側）
 - [20260204/ai-agent-orchestration.md](20260204/ai-agent-orchestration.md) — コンテキスト・エンベロープ：Immutable/Mutableの分離（搬送側）
 - [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 有機的理解の定義：静的+動的+意味的+時間的+因果的の統合（目標側）
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 有機的理解が4層のどこに住むかを定義。Issue(層1)=契約、構造化ナレッジ(層2)=抽出済み理解、生ログ(層3)=未抽出の因果情報（永続化側）
 
 ### セカンドオピニオンと複数AIの理解収束
 
-反証担当の役割固定と、複数AIに同じコードを説明させて収束度を見る発想が接続。
+反証担当の役割固定と、複数AIに同じコードを説明させて収束度を見る発想が接続。さらにSOに渡すプロンプトの構造化が収束速度に影響することが実践で判明。
 
 - [20260208/hypothesis-second-opinion-review-flow.md](20260208/hypothesis-second-opinion-review-flow.md) — 反証担当を固定したレビューフロー
 - [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 検証Action 1：複数AIの説明精度と収束度を比較
+- [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — SOプロンプトの構造化度合いが収束速度に影響。タスクタイプ別テンプレートの提案
 
-### 契約による一貫性 → 正準フォーマット
+### 契約による一貫性 → 正準フォーマット → 入力品質の標準化
 
-「ツール名ではなく契約で固定する」原則の具体化として正準フォーマットが生まれた。
+「ツール名ではなく契約で固定する」原則の具体化として正準フォーマットが生まれ、さらにAI間・人間-AI間の入力フォーマット標準化へ展開。
 
 - [20260208/ai-orchestration-memo-idea-integration.md](20260208/ai-orchestration-memo-idea-integration.md) — 母艦は「ツール名」ではなく「契約」（原則）
 - [20260212/hypothesis-canonical-agent-definition-format.md](20260212/hypothesis-canonical-agent-definition-format.md) — 正準エージェント定義フォーマット（具体化）
+- [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — SOプロンプトのテンプレート化（AI→AI契約の実装）
+- [20260220/human-input-formatting.md](20260220/human-input-formatting.md) — 人間→AIの入力も契約化。「個人スキルではなくプロセスとして入力品質を標準化」
+
+### 意図的圧縮の三層 → コンテキスト永続化の4層
+
+仮説段階の三層構造が、FWアップグレード実践を経て運用指向の4層モデルへ発展。昇格ルールとTTLが加わり、抽象的な圧縮理論が具体的な情報ライフサイクル管理になった。
+
+- [20260208/hypothesis-intentional-compression-and-promotion-flow.md](20260208/hypothesis-intentional-compression-and-promotion-flow.md) — 三層構造 + 昇格フロー（理論側）
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層 + TTL + 昇格基準 + メタデータスキーマ（運用側）
+
+### 入力品質の双方向標準化
+
+AI→AI（SOプロンプト）と人間→AI（ドメイン入力）の両方向で入力フォーマット化の必要性が同時に浮上。共通する洞察は「出力品質は入力品質に支配される」。
+
+- [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — AI→AI方向。プロンプトの構造化度合いが収束速度を左右
+- [20260220/human-input-formatting.md](20260220/human-input-formatting.md) — 人間→AI方向。AI側が質問フォーマットを提示し人間が回答する形が持続可能
+- [20260130/ai-middleware-cli-concept.md](20260130/ai-middleware-cli-concept.md) — コンテキスト「純度」の問題意識が、入力品質の標準化として具体化
