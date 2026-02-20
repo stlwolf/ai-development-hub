@@ -238,3 +238,16 @@ Step 2-3: 実タスクでのセカンドオピニオン比較
 4. 具体的な検証機会（Laravel FWアップデート等）で実践フィードバックを得る
 
 関連する成果物はすべて ai-development-hub リポジトリにコミット済み（ドメイン情報を含むもの除く）。
+
+---
+
+## 8. 後続の進展（2026-02-20 追記）
+
+FWアップグレード（2リポジトリ）で peer-ai-review コマンドを実践し、計画/実行分離パターンの有効性を確認。知見は `agent-verification-flow` 側に統合済み:
+
+- SO 効果分析・誤指摘リスク → [LESSONS_LEARNED.md](../../agent-verification-flow/docs/LESSONS_LEARNED.md)
+- 計画/実行分離パターン → [DESIGN_PRINCIPLES.md](../../agent-verification-flow/docs/DESIGN_PRINCIPLES.md)
+- レトロスペクティブ → [2026-02-20-fw-upgrade-multi-agent-retrospective.md](../../agent-verification-flow/docs/episodes/2026-02-20-fw-upgrade-multi-agent-retrospective.md)
+- アイデア（4層モデル、SOプロンプト、人間入力） → [ideas/20260220/](../../../ideas/20260220/)
+
+**以降の引き継ぎは `agent-verification-flow` を参照。このドキュメントは 2/15 時点のスナップショットとして凍結。**
