@@ -1,89 +1,88 @@
 # AI Development Hub
 
-AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コマンド、マルチエージェント検証フレームワーク、アイデアメモを集約管理。
+AI駆動開発のための統合リポジトリ。再利用可能なプロンプト、ルール、ドキュメント、アイデアを集約管理します。
 
 ## リポジトリ構成
 
 ```
 ai-development-hub/
 ├── cursor/                 # Cursor AI エディタ関連
-│   ├── command/
-│   │   ├── review/         # PRレビュー・Copilotレビュー対応
+│   ├── command/            # 実行可能なコマンド集
+│   │   ├── review/         # PRレビュー関連コマンド
 │   │   └── verification/   # マルチエージェント検証コマンド
-│   ├── project-rules/      # プロジェクト固有ルール (.mdc)
-│   └── user-rules/         # ユーザー共通ルール
-├── docs/
-│   ├── draft/              # ドラフトドキュメント
-│   └── BACKLOG.md          # 軽量バックログ
-├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
-├── projects/
-│   ├── agent-verification-flow/   # マルチエージェント検証フレームワーク（メイン）
-│   ├── claude-safe/               # Claude CLI ラッパー
-│   └── second-opinion-verification/  # セカンドオピニオン検証（完了・アーカイブ）
+│   ├── project-rules/      # プロジェクト固有のルール (.mdc)
+│   └── user-rules/         # ユーザー共通ルール (.md)
+├── docs/                   # ドキュメント
+│   ├── draft/              # ドラフト・作成中のドキュメント
+│   └── BACKLOG.md          # 軽量バックログ（Issue化前の検討事項）
+├── ideas/                  # アイデア・ブレストメモ
+├── projects/               # 独立したプロジェクト・ツールキット
 └── scripts/                # ユーティリティスクリプト
 ```
 
-## 主要コンポーネント
+## 各ディレクトリの役割
 
-### Cursor コマンド（`cursor/command/`）
+### `cursor/`
+Cursor AIエディタで使用するルールとコマンド集。
+詳細は [cursor/README.md](cursor/README.md) を参照。
 
-| コマンド | 責務 |
-|---|---|
-| `/peer-ai-review` | Codex/Claude にピアレビュー依頼。3者合意ループ + レビューログ |
-| `/pr-review` | GitHub PR のレビュー（gh CLI） |
-| `/copilot-review-response` | Copilot レビューへの対応 |
-| `/sentry-cli` | Sentry エラーの取得・分析・修正（※ `~/.cursor/commands/` に直接配置） |
+### `docs/`
+開発フローやベストプラクティスのドキュメント。
 
-### マルチエージェント検証（`projects/agent-verification-flow/`）
+- **`draft/`**: 作成中・検証中のドキュメント
+- **`BACKLOG.md`**: Issue化するまでもない検討・調査タスクの管理
 
-AI駆動のAPI検証・マルチエージェント協調のフレームワーク。
+### `ideas/`
+アイデア、ブレスト、素案の保管場所。日付ディレクトリ（`YYYYMMDD/`）ごとに整理。追加後は凍結（frozen snapshot）。
+詳細は [ideas/README.md](ideas/README.md) を参照。
 
-- **スクリプト**: JWT/Session認証、API呼び出し、Sentry連携
-- **テンプレート**: 検証レポート、検証ケース、facts.md（事実/解釈分離）
-- **設計パターン**: ロール設計（案A: 並行比較、案B: 逐次専門化）、計画/実行分離
-- **エピソード**: 実践から得た知見の記録
+### `projects/`
+独立した研究開発成果物・ツールキット。
+詳細は [projects/README.md](projects/README.md) を参照。
 
-確立済みの知見:
-- SO（セカンドオピニオン）の効果分析と限界（ハルシネーションリスク含む）
-- GitHub Issue を「契約書」とした計画/実行分離パターン
-- 3者合意ループによるレビュー品質の標準化
+### `scripts/`
+リポジトリ運用のユーティリティスクリプト。
 
-### ツール（`scripts/`）
+## 使い方
 
-| スクリプト | 内容 |
-|---|---|
-| `so-compare.sh` | Claude Code / Codex CLI を並行実行し結果をファイルに保存 |
-| `sync-cursor-commands.sh` | `cursor/command/` を `~/.cursor/commands/` にシンボリックリンク配置 |
+### Cursor コマンドの同期（推奨）
 
-### アイデア（`ideas/`）
-
-日付ディレクトリ（`YYYYMMDD/`）で管理。追加後は凍結（frozen snapshot）。成功したアイデアは `projects/` に昇格。
-
-### タスク管理
-
-| 粒度 | 置き場 |
-|---|---|
-| 明確なスコープのタスク | GitHub Issue |
-| 忘れたくない検討事項 | [`docs/BACKLOG.md`](docs/BACKLOG.md) |
-| 概念・構想の凍結スナップショット | `ideas/YYYYMMDD/` |
-
-## セットアップ
-
-### Cursor コマンドの同期
+`cursor/command/` 配下のコマンドを `~/.cursor/commands/` にシンボリックリンクとして配置できます。
 
 ```bash
 ./scripts/sync-cursor-commands.sh
 ```
 
-`cursor/command/` 配下のコマンドを `~/.cursor/commands/` にシンボリックリンクとして配置。
+- シンボリックリンクなので、どちら側から編集しても同じファイルが変更される
+- リポジトリ側でバージョン管理が可能
+- プロジェクト固有のコマンドは `~/.cursor/commands/` に直接配置可能（スクリプトはスキップ）
 
 ### Cursor AI ルールの適用
 
 1. **プロジェクトルール**: `cursor/project-rules/*.mdc` をプロジェクトの `.cursor/rules/` にコピー
 2. **ユーザールール**: `cursor/user-rules/*.md` を参照し、Cursor の User Rules に設定
 
+## タスク管理
+
+| 粒度 | 置き場 |
+|---|---|
+| 明確なスコープのタスク | [GitHub Issues](https://github.com/stlwolf/ai-development-hub/issues) |
+| 忘れたくない検討事項 | [`docs/BACKLOG.md`](docs/BACKLOG.md) |
+| 概念・構想の凍結スナップショット | `ideas/YYYYMMDD/` |
+
+## コンテンツ追加ガイドライン
+
+- **新しいルール**: 用途に応じて `cursor/project-rules/` または `cursor/user-rules/` に追加
+- **コマンド**: `cursor/command/` 配下に機能別ディレクトリを作成
+- **ドキュメント**: `docs/draft/` で作成し、成熟したら適切な場所に移動
+- **アイデア**: `ideas/YYYYMMDD/` に凍結スナップショットとして追加
+
 ## 関連リソース
 
 - [Cursor Documentation](https://docs.cursor.com/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [GitHub CLI](https://cli.github.com/)
+
+## ライセンス
+
+このリポジトリは個人・チーム内での利用を想定しています。

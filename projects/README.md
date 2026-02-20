@@ -6,11 +6,14 @@
 
 ### agent-verification-flow
 
-AIエージェントとの協調でAPI動作検証を行うツールキット。
+マルチエージェント検証フレームワーク。API動作検証、ロール設計パターン、検証テンプレートを提供。
 
 - 認証自動化（JWT/Session）
-- 検証レポートテンプレート
-- マルチエージェントオーケストレーション研究
+- 検証レポート・検証ケーステンプレート
+- facts.md テンプレート（事実/解釈分離）
+- ロール設計パターン（案A: 並行比較、案B: 逐次専門化）
+- 計画/実行分離パターン
+- SO 効果分析・限界の知見
 
 詳細は [agent-verification-flow/README.md](agent-verification-flow/README.md) を参照。
 
@@ -24,12 +27,13 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
 
-### second-opinion-verification
+### second-opinion-verification（アーカイブ）
 
-claude-safe を使ったセカンドオピニオン（反証レビュー）と意図的圧縮（昇格フロー）の検証プロジェクト。
+セカンドオピニオン（反証レビュー）の検証プロジェクト。**検証フェーズ完了、以降の知見は `agent-verification-flow` に統合。**
 
 - タイムアウト付き Claude CLI ラッパー（watchdog パターン）
-- episodes / decisions / plans の三層ドキュメント構造で検証プロセスを記録
-- [ドキュメント規約 v0](second-opinion-verification/docs/DOCUMENT_CONVENTION.md)（YAML Frontmatter + use_when）
+- episodes / decisions / plans の三層ドキュメント構造
+- [ドキュメント規約 v0](second-opinion-verification/docs/DOCUMENT_CONVENTION.md)
+- [ドキュメント関連マップ](second-opinion-verification/docs/INDEX.md)
 
 詳細は [second-opinion-verification/README.md](second-opinion-verification/README.md) を参照。
