@@ -1,0 +1,38 @@
+{
+  "name": "cursor-thread-tools",
+  "displayName": "Cursor Thread Tools",
+  "description": "Export Cursor Composer threads to Markdown and manage thread lifecycle",
+  "version": "0.1.0",
+  "publisher": "stlwolf",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:threadTools.list"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "threadTools.list",
+        "title": "Thread Tools: List Threads"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@types/better-sqlite3": "^7.0.0"
+  }
+}

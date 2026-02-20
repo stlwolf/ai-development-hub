@@ -34,12 +34,12 @@ VS Code拡張としての技術的な実現可能性と実用性。
 
 | ID | 検証項目 | 状態 | 結果 | 根拠 |
 |----|---------|------|------|------|
-| A-1-1 | `better-sqlite3` で `state.vscdb` をread-only読み取り | 未検証 | - | - |
-| A-1-2 | Cursor起動中の同時アクセスでエラーが出ないか | 未検証 | - | ask時に `sqlite3` CLI で確認済み（正常動作）→ 拡張内でも同等か |
-| A-1-3 | `composerData` からスレッドメタデータ取得 | 部分検証 | 有効 | ask時SQLite CLIで193件取得確認 |
-| A-1-4 | `bubbleId` からユーザー発言テキスト取得 | 部分検証 | 有効 | ask時に `text` フィールド確認済み |
-| A-1-5 | `agentKv:blob` からアシスタント応答テキスト取得 | 未検証 | - | bubbleId→agentKv:blobのマッピングが未解明 |
-| A-1-6 | `sql.js`（WASM）へのフォールバック | 未検証 | - | better-sqlite3のネイティブモジュール問題時の代替 |
+| A-1-1 | `better-sqlite3` で `state.vscdb` をread-only読み取り | 有効 | 動作確認 | Phase 1 で Node.js テスト実施。N-API prebuild で ABI 互換性あり。206 スレッド読み取り成功 |
+| A-1-2 | Cursor起動中の同時アクセスでエラーが出ないか | 条件付き有効 | 動作確認 | Cursor 起動中に `readonly + busy_timeout=3000` で読み取り成功。WAL 3ファイルコピーフォールバックも実装済み |
+| A-1-3 | `composerData` からスレッドメタデータ取得 | 有効 | 動作確認 | `json_extract` で `name`, `createdAt`, `isAgentic`, `fullConversationHeadersOnly`（bubble数）を取得。206件確認 |
+| A-1-4 | `bubbleId` からユーザー発言テキスト取得 | 部分検証 | 有効 | `bubbleId:<composerId>:<bubbleId>` に JSON メタデータ格納。`type` 1=HUMAN, 2=ASSISTANT。テキストはメタデータ内または `agentKv:blob` 経由 |
+| A-1-5 | `agentKv:blob` からアシスタント応答テキスト取得 | 検証中 | マッピング解明済み | rg 局所抽出で解明: キー = `agentKv:blob:${hex(SHA-256(content))}`。BLOB型、JSON/protobuf 混在。`ComposerBlobStore.keyFor()` + `cursorDiskKVGetBinary()` で取得。暗号化レイヤー（AES-GCM）が有効な場合は復号が必要（Phase 2 課題） |
+| A-1-6 | ~~`sql.js`（WASM）へのフォールバック~~ | 撤回 | - | peer-ai-review で3者合意: sql.js は本番経路に置かない（全量メモリロードでクラッシュリスク） |
 
 ### A-2. Markdownエクスポート
 
