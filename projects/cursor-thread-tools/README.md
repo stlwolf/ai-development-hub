@@ -4,7 +4,7 @@ Cursorのスレッド（Composer）会話をMarkdownエクスポートし、ス�
 
 ## ステータス
 
-**Phase 1: 基盤検証中**
+**Phase 1: 完了** — DB読み取り基盤検証済み（better-sqlite3、agentKv:blob マッピング解明）
 
 ## 動機
 
@@ -32,8 +32,9 @@ cursor-thread-tools/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
+├── CONVENTIONS.md     # ドキュメント規約（命名規則・フォルダ構成・フロー）
 ├── docs/
-│   ├── INDEX.md        # ドキュメント関連マップ
+│   ├── VERIFICATION_MATRIX.md  # 検証マトリクス
 │   ├── plans/          # 計画・キックオフ（スレッド分化のたびに蓄積）
 │   ├── episodes/       # 作業記録・議論経緯
 │   ├── decisions/      # 確定した判断（ADR形式）
@@ -45,5 +46,5 @@ cursor-thread-tools/
 ## 関連
 
 - [4層モデル](../../ideas/20260220/context-persistence-4layer-model.md) — 本ツールは「層3: 生ログの抽出パイプライン」に位置づけられる
-- [DOCUMENT_CONVENTION](../second-opinion-verification/docs/DOCUMENT_CONVENTION.md) — エピソード記録の規約
+- [CONVENTIONS.md](CONVENTIONS.md) — ドキュメント規約（命名規則・フォルダ構成・フロー）
 - [BACKLOG #2](https://github.com/stlwolf/ai-development-hub/issues/2) — 「会話ログ保存の仕組み構築」
