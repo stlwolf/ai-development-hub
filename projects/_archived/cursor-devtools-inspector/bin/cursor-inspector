@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR/.."
+
+if [ -z "$1" ]; then
+  echo "Usage: cursor-inspector <url>"
+  exit 1
+fi
+
+node "$PROJECT_ROOT/src/inspect.js" "$@"
