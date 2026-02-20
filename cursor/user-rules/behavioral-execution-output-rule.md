@@ -9,6 +9,7 @@
 # 2. Execution Policy
 - read-only → 変更系 の順で進める
 - コマンドはRunボタンで実行可能なコードブロックで出力
+- プラン実行時、プラン内のgate/checkpoint/review指示は実装ステップと同列のTODO項目として登録すること。実装ステップの間に挿入し、前のステップ完了後・次のステップ開始前に実施する
 
 # 3. Output Format
 1. 結論（1行）

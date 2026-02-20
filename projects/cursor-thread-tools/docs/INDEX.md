@@ -62,10 +62,22 @@ DOCUMENT_CONVENTION v0 準拠。`second-opinion-verification` で確立した規
       ├── [raw-log] SpecStory出力（ブレスト全文）
       │       → raw-logs/ に保管、エピソード・ADR抽出の一次資料
       │
-      └── [plan/kickoff] 2026-02-20-kickoff-phase1-db-foundation
-              Phase 1 キックオフ（peer-ai-review 3者合意済み）
-              DB読み取り基盤検証: SQLiteライブラリ選定、agentKv:blob解明
-              → Phase 1 子スレッドの開始プロンプトとして使用
+      ├── [plan/kickoff] 2026-02-20-kickoff-phase1-db-foundation
+      │       Phase 1 キックオフ（peer-ai-review 3者合意済み）
+      │       DB読み取り基盤検証: SQLiteライブラリ選定、agentKv:blob解明
+      │       → Phase 1 子スレッドの開始プロンプトとして使用
+      │
+      └── Phase 1 子スレッド（DB読み取り基盤実装）
+              │
+              ├── [decision] ADR-001-sqlite-library.md
+              │       better-sqlite3 採用（sql.js 棄却、3者合意）
+              │
+              ├── [episode] 2026-02-20-phase1-db-foundation.md
+              │       agentKv:blob マッピング解明、拡張スキャフォールド
+              │       検証マトリクス A-1-1〜A-1-5 更新
+              │
+              └── VERIFICATION_MATRIX.md 更新
+                      A-1-1〜A-1-5 状態更新済み
 ```
 
 ## 他プロジェクトの関連成果物
