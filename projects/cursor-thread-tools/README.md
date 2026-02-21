@@ -1,6 +1,6 @@
 # cursor-thread-tools
 
-Cursorのスレッド（Composer）会話をMarkdownエクスポートし、スレッドのライフサイクル管理を行うVS Code拡張。
+Cursorのスレッド（Composer）会話データを抽出・Markdownエクスポートする VS Code 拡張 + CLI ツール。
 
 ## ステータス
 
@@ -10,13 +10,17 @@ Cursorのスレッド（Composer）会話をMarkdownエクスポートし、ス�
 
 Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ）が必須で、コマンドパレットにも出ない（`f1: false`）。会話ログの保存をワークフローに組み込むには、GUIトリガーなしで動作するツールが必要。
 
-## 機能（計画）
+## 機能
 
-| コマンド | 説明 | Phase |
-|---------|------|-------|
+| 機能 | 説明 | 状態 |
+|------|------|------|
 | `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | **Phase 1 完了** |
 | `threadTools.export` | 選択スレッドをMarkdownエクスポート | **Phase 2 完了** |
-| `threadTools.done` | 完了報告を生成し、GitHub Issueにコメント投稿 | Phase 3 |
+| 自動保存 | バックグラウンドで定期的にスレッドを Markdown 保存 | Phase 3 |
+| CLI | ターミナルからスレッド一覧・エクスポートを実行 | Phase 3 |
+| エクスポートカスタマイズ | thinking/tool_call 出力制御、出力先・ファイル名設定 | Phase 3 |
+
+詳細は [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) を参照。
 
 ## 技術的根拠
 
@@ -40,6 +44,7 @@ cursor-thread-tools/
 │       └── db/reader.ts        # SQLite read + blob lookup
 ├── CONVENTIONS.md     # ドキュメント規約（命名規則・フォルダ構成・フロー）
 ├── docs/
+│   ├── REQUIREMENTS.md         # 機能要件・非機能要件
 │   ├── VERIFICATION_MATRIX.md  # 検証マトリクス
 │   ├── plans/          # 計画・キックオフ（スレッド分化のたびに蓄積）
 │   ├── episodes/       # 作業記録・議論経緯
