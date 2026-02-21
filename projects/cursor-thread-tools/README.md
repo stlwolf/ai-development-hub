@@ -4,7 +4,7 @@ Cursorのスレッド（Composer）会話をMarkdownエクスポートし、ス�
 
 ## ステータス
 
-**Phase 1: 完了** — DB読み取り基盤検証済み（better-sqlite3、agentKv:blob マッピング解明）
+**Phase 2: 完了** — Markdownエクスポート実装済み（protobuf デシリアライズ、conversationState デコード）
 
 ## 動機
 
@@ -15,12 +15,12 @@ Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ
 | コマンド | 説明 | Phase |
 |---------|------|-------|
 | `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | **Phase 1 完了** |
-| `threadTools.export` | 現在のスレッドをMarkdownエクスポート | Phase 2 |
+| `threadTools.export` | 選択スレッドをMarkdownエクスポート | **Phase 2 完了** |
 | `threadTools.done` | 完了報告を生成し、GitHub Issueにコメント投稿 | Phase 3 |
 
 ## 技術的根拠
 
-Cursorは `state.vscdb`（SQLite）に会話データを格納。`cursorDiskKV` テーブルから `composerData` → `bubbleId` → メッセージテキストを読み取ることで、Cursorの内部API非依存でトランスクリプトを再構成できる。
+Cursorは `state.vscdb`（SQLite）に会話データを格納。`cursorDiskKV` テーブルから `composerData` → `conversationState`（base64/hex エンコード protobuf）→ `agentKv:blob` → turn/message protobuf を辿り、Cursorの内部API非依存でトランスクリプトを再構成できる。
 
 詳細は [docs/plans/2026-02-20-kickoff-cursor-thread-tools.md](docs/plans/2026-02-20-kickoff-cursor-thread-tools.md) を参照。
 
@@ -32,6 +32,12 @@ cursor-thread-tools/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
+│       ├── extension.ts        # activate/deactivate
+│       ├── commands/list.ts    # threadTools.list
+│       ├── commands/export.ts  # threadTools.export
+│       ├── proto/decoder.ts    # raw protobuf wire-format パーサー
+│       ├── export/markdown.ts  # Markdown 生成
+│       └── db/reader.ts        # SQLite read + blob lookup
 ├── CONVENTIONS.md     # ドキュメント規約（命名規則・フォルダ構成・フロー）
 ├── docs/
 │   ├── VERIFICATION_MATRIX.md  # 検証マトリクス

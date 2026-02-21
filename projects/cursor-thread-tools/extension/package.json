@@ -11,7 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:threadTools.list"
+    "onCommand:threadTools.list",
+    "onCommand:threadTools.export"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -19,6 +20,10 @@
       {
         "command": "threadTools.list",
         "title": "Thread Tools: List Threads"
+      },
+      {
+        "command": "threadTools.export",
+        "title": "Thread Tools: Export Thread to Markdown"
       }
     ]
   },
@@ -27,12 +32,12 @@
     "watch": "tsc -watch -p ./"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/better-sqlite3": "^7.0.0",
     "@types/node": "^20.0.0",
-    "@types/better-sqlite3": "^7.0.0"
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
   }
 }
