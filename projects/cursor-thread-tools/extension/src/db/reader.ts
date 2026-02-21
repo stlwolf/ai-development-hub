@@ -80,3 +80,89 @@ export function getComposerDataEntries(db: Database.Database): ComposerDataRow[]
   );
   return stmt.all() as ComposerDataRow[];
 }
+
+export function getBlobByHex(db: Database.Database, hexId: string): Buffer | null {
+  const key = `agentKv:blob:${hexId}`;
+  const row = db.prepare(
+    'SELECT value FROM cursorDiskKV WHERE key = ?'
+  ).get(key) as { value: Buffer } | undefined;
+  return row ? Buffer.from(row.value) : null;
+}
+
+export function getBlobByBytes(db: Database.Database, blobId: Buffer): Buffer | null {
+  return getBlobByHex(db, blobId.toString('hex'));
+}
+
+export interface BubbleIdRow {
+  key: string;
+  value: string;
+}
+
+export function getBubbleIdEntry(
+  db: Database.Database,
+  composerId: string,
+  bubbleId: string,
+): BubbleIdRow | null {
+  const key = `bubbleId:${composerId}:${bubbleId}`;
+  const row = db.prepare(
+    'SELECT key, value FROM cursorDiskKV WHERE key = ?'
+  ).get(key) as BubbleIdRow | undefined;
+  return row ?? null;
+}
+
+function extractCsString(raw: unknown): string | null {
+  if (!raw) return null;
+
+  // Some older threads store as object { "0": "a", "1": "b", ... }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, string>;
+    const keys = Object.keys(obj);
+    if (keys.length < 10) return null;
+    const joined = keys
+      .sort((a, b) => Number(a) - Number(b))
+      .map((k: string) => obj[k])
+      .join('');
+    return joined.length > 10 ? joined : null;
+  }
+
+  if (typeof raw === 'string' && raw.length > 10) {
+    return raw;
+  }
+
+  return null;
+}
+
+/**
+ * Find the most recent conversationState string for a thread.
+ * Checks composerData first (most complete), then falls back to
+ * walking bubbleId entries from newest to oldest.
+ */
+export function findConversationState(
+  db: Database.Database,
+  composerId: string,
+  headers: Array<{ bubbleId: string; type: number }>,
+  composerDataJson?: string,
+): string | null {
+  // 1. Try composerData-level conversationState (most up-to-date)
+  if (composerDataJson) {
+    try {
+      const cd = JSON.parse(composerDataJson);
+      const cs = extractCsString(cd.conversationState);
+      if (cs) return cs;
+    } catch { /* fall through */ }
+  }
+
+  // 2. Walk bubbleId entries from newest to oldest
+  for (let i = headers.length - 1; i >= 0; i--) {
+    const row = getBubbleIdEntry(db, composerId, headers[i].bubbleId);
+    if (!row) continue;
+    try {
+      const parsed = JSON.parse(row.value);
+      const cs = extractCsString(parsed.conversationState);
+      if (cs) return cs;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
