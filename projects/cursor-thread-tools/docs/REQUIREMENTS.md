@@ -146,20 +146,26 @@ Cursor 内部データ（`state.vscdb`）への read-only アクセスを核と�
 | スキーマ変更検知 | protobuf デコード失敗時に安全にスキップ（unknown field） |
 | Electron バージョン変更 | `@electron/rebuild` で再ビルド。better-sqlite3 のメジャーバージョン対応が必要な場合あり |
 
-### NFR-6: 配布
+### NFR-6: 配布（Phase 4 完了）
 
-| 項目 | 現状 | 目標 |
+| 項目 | 現状 | 備考 |
 |------|------|------|
-| 方式 | ローカルインストール（`npm install` + `@electron/rebuild`） | `.vsix` ビルド → ローカルインストール → マーケットプレイス（将来） |
-| リポジトリ | ai-development-hub 内 | 独立リポジトリに分離（分離条件: 安定動作 + 汎用 README + ドメイン固有情報なし） |
+| Extension 配布 | `.vsix` ビルド済み（8.08 MB）。Cursor で「Install from VSIX」でインストール可能 | macOS 向け `.node` バイナリを含む。他 OS ユーザーはソースからビルド必要 |
+| CLI 配布 | `npm link` + `bin` フィールドで `cursor-thread-tools` コマンド登録 | CLI 使用時は `npm rebuild better-sqlite3` が必要（Electron 向けビルドと非互換） |
+| バンドリング | esbuild でデュアルエントリ（extension.js 22kb / cli.js 19kb）。better-sqlite3 は external | ADR-008 |
+| ネイティブモジュール | `scripts/install.sh` で npm install + esbuild + @electron/rebuild を一括実行 | ADR-009。Electron バージョンは環境変数 > 引数 > デフォルト 39.4.0 |
+| リポジトリ | ai-development-hub 内。分離条件（安定動作 + 汎用 README + ドメイン固有情報なし）は達成済み | 独立リポジトリへの移行は判断待ち |
 
 ---
 
 ## 既知の制約・技術的負債
 
-| 項目 | 詳細 | 対応予定 |
-|------|------|---------|
-| 新フォーマットスレッド | `conversationState: "~"` のスレッドはテキスト抽出不可 | Phase 3 で調査・対応 |
+| 項目 | 詳細 | 状態 |
+|------|------|------|
+| 新フォーマットスレッド | `conversationState: "~"` のスレッドはテキスト抽出不可 | ADR-007 で「現状スキップ」を決定。安全にワーニング表示 |
 | `readVarint` 32bit 制限 | JavaScript bitwise OR は 32bit。大きな varint でオーバーフローの可能性 | 実用範囲では問題なし |
-| macOS 専用パス | `getStateDbPath()` が `~/Library/...` にハードコード | Phase 4 でクロスプラットフォーム対応 |
-| `@electron/rebuild` 手動実行 | `npm install` 後に手動リビルド必要 | `postinstall` スクリプト化を検討 |
+| ~~macOS 専用パス~~ | ~~`getStateDbPath()` が `~/Library/...` にハードコード~~ | **Phase 4 で解決**。`platform()` switch 文に変更済み |
+| ~~`@electron/rebuild` 手動実行~~ | ~~`npm install` 後に手動リビルド必要~~ | **Phase 4 で解決**。`scripts/install.sh` + `scripts/setup-cli.sh` で自動化 |
+| Extension/CLI ビルドターゲット衝突 | Electron 向けと Node.js 向けで同一 `node_modules` を共有不可 | ADR-010 で記録。`install.sh`（Extension）/ `setup-cli.sh`（CLI）で切り替え |
+| `.vsix` がプラットフォーム固有 | macOS 向け `.node` バイナリを含む。Windows/Linux ユーザーはソースからビルド必要 | ADR-009 で記録。platform-specific VSIX は将来検討 |
+| Electron バージョン検出 | Cursor の Electron バージョンを外部から自動検出する信頼できる方法がない。`Info.plist` による手動確認が必要 | デフォルト 39.4.0 + 環境変数でオーバーライド可能 |
