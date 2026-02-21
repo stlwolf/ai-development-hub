@@ -37,6 +37,16 @@ Cursorスレッド会話のMarkdownエクスポートとライフサイクル管
 
 詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
 
+### ruler-agent-verification
+
+ルーラーエージェント（判断履歴のナビゲーター）構想の検証プロジェクト。
+
+- SOの前段に「過去の判断履歴から関連コンテキストを自動選定する」エージェントを配置する構想
+- Gemini CLI での初期検証完了（技術的適性は高い、アクセスモデルが課題）
+- 個別タスクでルーラーを実行し、実績を蓄積して精度・有用性を評価
+
+詳細は [ruler-agent-verification/README.md](ruler-agent-verification/README.md) を参照。
+
 ### second-opinion-verification（アーカイブ）
 
 セカンドオピニオン（反証レビュー）の検証プロジェクト。**検証フェーズ完了、以降の知見は `agent-verification-flow` に統合。**
