@@ -16,6 +16,9 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "bin": {
+    "cursor-thread-tools": "./out/cli.js"
+  },
   "contributes": {
     "commands": [
       {
@@ -54,8 +57,11 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "compile": "tsc -p ./ --noEmit",
+    "package": "vsce package --allow-missing-repository --skip-license"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"
@@ -64,6 +70,8 @@
     "@types/better-sqlite3": "^7.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.3",
     "typescript": "^5.0.0"
   }
 }

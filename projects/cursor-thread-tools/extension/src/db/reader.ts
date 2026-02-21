@@ -1,8 +1,7 @@
 import Database from 'better-sqlite3';
 import { existsSync, copyFileSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
+import { tmpdir, homedir, platform } from 'os';
 import { join } from 'path';
-import { homedir } from 'os';
 
 const tmpDbPaths: string[] = [];
 
@@ -12,7 +11,16 @@ export interface DbPathOptions {
 
 export function getStateDbPath(options?: DbPathOptions): string {
   const appName = options?.appName ?? 'Cursor';
-  return join(homedir(), 'Library', 'Application Support', appName, 'User', 'globalStorage', 'state.vscdb');
+  switch (platform()) {
+    case 'darwin':
+      return join(homedir(), 'Library', 'Application Support', appName, 'User', 'globalStorage', 'state.vscdb');
+    case 'win32':
+      return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), appName, 'User', 'globalStorage', 'state.vscdb');
+    case 'linux':
+      return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), appName, 'User', 'globalStorage', 'state.vscdb');
+    default:
+      throw new Error(`Unsupported platform: ${platform()}`);
+  }
 }
 
 function isBusyOrLocked(err: unknown): boolean {

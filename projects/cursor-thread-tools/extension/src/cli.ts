@@ -1,7 +1,4 @@
-#!/usr/bin/env node
-
 import { parseArgs } from 'node:util';
-import { platform } from 'os';
 import { join, resolve } from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
 import { openDatabase, cleanupTmpDb } from './db/reader';
@@ -23,9 +20,9 @@ process.on('SIGTERM', () => { cleanupTmpDb(); process.exit(143); });
 function usage(exitCode = 1): never {
   const out = exitCode === 0 ? console.log : console.error;
   out(`Usage:
-  node cli.js list [--json] [--app-name <name>]
-  node cli.js export <composerId> [options]
-  node cli.js export --all [options]
+  cursor-thread-tools list [--json] [--app-name <name>]
+  cursor-thread-tools export <composerId> [options]
+  cursor-thread-tools export --all [options]
 
 Options:
   --app-name <name>    App name: 'Cursor' | 'Code' (default: 'Cursor')
@@ -54,11 +51,6 @@ function parseSinceDuration(since: string): number {
 }
 
 function main(): void {
-  if (platform() !== 'darwin') {
-    console.error('Error: cursor-thread-tools CLI currently supports macOS only.');
-    process.exit(1);
-  }
-
   const { values, positionals } = parseArgs({
     args: process.argv.slice(2),
     options: {
