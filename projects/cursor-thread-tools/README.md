@@ -14,9 +14,9 @@ Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ
 
 | コマンド | 説明 | Phase |
 |---------|------|-------|
+| `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | **Phase 1 完了** |
 | `threadTools.export` | 現在のスレッドをMarkdownエクスポート | Phase 2 |
 | `threadTools.done` | 完了報告を生成し、GitHub Issueにコメント投稿 | Phase 3 |
-| `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | Phase 2 |
 
 ## 技術的根拠
 
