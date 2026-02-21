@@ -2,10 +2,13 @@ export interface ExportedTurn {
   type: 'human' | 'assistant';
   text: string;
   thinkingText?: string;
+  toolName?: string;
 }
 
 export interface MarkdownOptions {
   includeThinking?: boolean;
+  includeToolCalls?: boolean;
+  fileNameFormat?: string;
 }
 
 export function generateMarkdown(
@@ -38,6 +41,10 @@ export function generateMarkdown(
           '</details>',
           '',
         );
+      }
+
+      if (options.includeToolCalls && turn.toolName) {
+        lines.push(`> Tool: ${turn.toolName}`, '');
       }
 
       lines.push(turn.text, '', '---', '');

@@ -54,10 +54,10 @@ VS Code拡張としての技術的な実現可能性と実用性。
 
 | ID | 検証項目 | 状態 | 結果 | 根拠 |
 |----|---------|------|------|------|
-| A-3-1 | 自動保存のバックグラウンド動作 | 未検証 | - | 設定可能なインターバルで差分検知付き自動保存 |
-| A-3-2 | CLI からのスレッド一覧・エクスポート | 未検証 | - | VS Code 非依存。コア層共有 |
-| A-3-3 | エクスポートオプションの設定 | 未検証 | - | thinking/tool_call 出力制御、出力先、ファイル名フォーマット |
-| A-3-4 | 新フォーマットスレッド対応 | 未検証 | - | `conversationState: "~"` のスレッド。データ構造の調査が必要 |
+| A-3-1 | 自動保存のバックグラウンド動作 | 有効 | 動作確認 | `setInterval` + `bubbleCount` 差分検知 + `onStartupFinished` でバックグラウンド動作。handle 管理 + dispose 登録 + mutex で重複実行防止。デフォルト無効（オプトイン）。peer-ai-review で `activationEvents` 不足・`createdAt` 不十分を修正 |
+| A-3-2 | CLI からのスレッド一覧・エクスポート | 有効 | 動作確認 | `node out/cli.js list` / `export --all --since 24h` でターミナルから実行確認。12スレッド中11件エクスポート成功。`util.parseArgs()` でゼロ外部依存。JSON 出力対応。tmpDb クリーンアップ（SIGINT/SIGTERM）実装済み |
+| A-3-3 | エクスポートオプションの設定 | 有効 | 動作確認 | `--no-thinking` / `--output-dir` / `--format` CLI 引数 + VS Code `contributes.configuration` で設定可能。`ExportConfig` 共通型で CLI/拡張の仕様一致を保証 |
+| A-3-4 | 新フォーマットスレッド対応 | 条件付き有効 | 調査完了 | `conversationState: "~"` は空の base64 状態（長さ1で `extractCsString` が null 返却）。空スレッドまたは別データパスのスレッド。現在のコードは安全にスキップ（ワーニングメッセージ表示）。対応不能ケースは明示エラーで処理 |
 
 ---
 

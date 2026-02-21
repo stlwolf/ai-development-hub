@@ -2,7 +2,7 @@
   "name": "cursor-thread-tools",
   "displayName": "Cursor Thread Tools",
   "description": "Export Cursor Composer threads to Markdown and manage thread lifecycle",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "stlwolf",
   "engines": {
     "vscode": "^1.85.0"
@@ -12,7 +12,8 @@
   ],
   "activationEvents": [
     "onCommand:threadTools.list",
-    "onCommand:threadTools.export"
+    "onCommand:threadTools.export",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -25,7 +26,32 @@
         "command": "threadTools.export",
         "title": "Thread Tools: Export Thread to Markdown"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Cursor Thread Tools",
+      "properties": {
+        "cursorThreadTools.export.includeThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include thinking blocks in exported Markdown"
+        },
+        "cursorThreadTools.export.outputDir": {
+          "type": "string",
+          "default": ".thread-exports",
+          "description": "Output directory for exported files (relative to workspace root)"
+        },
+        "cursorThreadTools.export.fileNameFormat": {
+          "type": "string",
+          "default": "{name}_{date}",
+          "description": "File name format. Placeholders: {name}, {date}, {id}"
+        },
+        "cursorThreadTools.autoSave.intervalMinutes": {
+          "type": "number",
+          "default": 0,
+          "description": "Auto-save interval in minutes. 0 = disabled (opt-in)"
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

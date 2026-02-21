@@ -3,14 +3,16 @@ import { existsSync, copyFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { homedir } from 'os';
-import * as vscode from 'vscode';
 
 const tmpDbPaths: string[] = [];
 
-function getStateDbPath(): string {
-  const home = homedir();
-  const appName = vscode.env.appName?.includes('Cursor') ? 'Cursor' : 'Code';
-  return join(home, 'Library', 'Application Support', appName, 'User', 'globalStorage', 'state.vscdb');
+export interface DbPathOptions {
+  appName?: string;
+}
+
+export function getStateDbPath(options?: DbPathOptions): string {
+  const appName = options?.appName ?? 'Cursor';
+  return join(homedir(), 'Library', 'Application Support', appName, 'User', 'globalStorage', 'state.vscdb');
 }
 
 function isBusyOrLocked(err: unknown): boolean {
@@ -34,8 +36,8 @@ function openWithCopyFallback(dbPath: string): Database.Database {
   return new Database(tmpPath, { readonly: true, fileMustExist: true });
 }
 
-export function openDatabase(): Database.Database {
-  const dbPath = getStateDbPath();
+export function openDatabase(options?: DbPathOptions): Database.Database {
+  const dbPath = getStateDbPath(options);
 
   if (!existsSync(dbPath)) {
     throw new Error(`state.vscdb not found at ${dbPath}`);
@@ -45,7 +47,7 @@ export function openDatabase(): Database.Database {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     db.pragma('busy_timeout = 3000');
     const journalMode = db.pragma('journal_mode', { simple: true });
-    console.log(`[cursor-thread-tools] journal_mode: ${journalMode}`);
+    console.error(`[cursor-thread-tools] journal_mode: ${journalMode}`);
     db.prepare('SELECT 1 FROM cursorDiskKV LIMIT 1').get();
     return db;
   } catch (err: unknown) {

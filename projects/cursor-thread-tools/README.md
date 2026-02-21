@@ -4,7 +4,7 @@ Cursorのスレッド（Composer）会話データを抽出・Markdownエクス�
 
 ## ステータス
 
-**Phase 2: 完了** — Markdownエクスポート実装済み（protobuf デシリアライズ、conversationState デコード）
+**Phase 3: 完了** — 自動保存 + CLI + エクスポートカスタマイズ実装済み
 
 ## 動機
 
@@ -16,9 +16,9 @@ Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ
 |------|------|------|
 | `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | **Phase 1 完了** |
 | `threadTools.export` | 選択スレッドをMarkdownエクスポート | **Phase 2 完了** |
-| 自動保存 | バックグラウンドで定期的にスレッドを Markdown 保存 | Phase 3 |
-| CLI | ターミナルからスレッド一覧・エクスポートを実行 | Phase 3 |
-| エクスポートカスタマイズ | thinking/tool_call 出力制御、出力先・ファイル名設定 | Phase 3 |
+| 自動保存 | バックグラウンドで定期的にスレッドを Markdown 保存 | **Phase 3 完了** |
+| CLI | ターミナルからスレッド一覧・エクスポートを実行 | **Phase 3 完了** |
+| エクスポートカスタマイズ | thinking/tool_call 出力制御、出力先・ファイル名設定 | **Phase 3 完了** |
 
 詳細は [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) を参照。
 
@@ -39,6 +39,8 @@ cursor-thread-tools/
 │       ├── extension.ts        # activate/deactivate
 │       ├── commands/list.ts    # threadTools.list
 │       ├── commands/export.ts  # threadTools.export
+│       ├── core/threads.ts     # 共有ロジック（VS Code非依存）
+│       ├── cli.ts              # CLI エントリポイント
 │       ├── proto/decoder.ts    # raw protobuf wire-format パーサー
 │       ├── export/markdown.ts  # Markdown 生成
 │       └── db/reader.ts        # SQLite read + blob lookup

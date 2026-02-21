@@ -1,74 +1,25 @@
 import * as vscode from 'vscode';
+import { openDatabase } from '../db/reader';
 import {
-  openDatabase,
-  getComposerDataEntries,
-  getBlobByBytes,
-  findConversationState,
-} from '../db/reader';
-import {
-  decodeConversationStateString,
-  decodeTurnStructure,
-  decodeUserMessage,
-  decodeStep,
-  type DecodedStep,
-} from '../proto/decoder';
-import { generateMarkdown, type ExportedTurn } from '../export/markdown';
+  listAllThreads,
+  extractThreadContent,
+  resolveFileName,
+  formatDate,
+  DEFAULT_EXPORT_CONFIG,
+  type ComposerMeta,
+  type ExportConfig,
+} from '../core/threads';
+import { generateMarkdown } from '../export/markdown';
 import { join } from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 
-interface ComposerMeta {
-  composerId: string;
-  name?: string;
-  createdAt?: number;
-  isAgentic?: boolean;
-  bubbleCount: number;
-  headers: Array<{ bubbleId: string; type: number }>;
-  rawJson: string;
-}
-
-function parseComposerData(key: string, value: unknown): ComposerMeta | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const data = JSON.parse(value as string);
-    const headers: Array<{ bubbleId: string; type: number }> =
-      data.fullConversationHeadersOnly ?? [];
-    return {
-      composerId: data.composerId ?? key.replace('composerData:', ''),
-      name: data.name || undefined,
-      createdAt: data.createdAt,
-      isAgentic: data.isAgentic,
-      bubbleCount: headers.length,
-      headers,
-      rawJson: value as string,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function formatDate(ms: number | undefined): string {
-  if (!ms) return 'unknown';
-  return new Date(ms).toLocaleString();
-}
-
-function collectAssistantText(steps: DecodedStep[]): {
-  text: string;
-  thinkingText: string;
-} {
-  const textParts: string[] = [];
-  const thinkingParts: string[] = [];
-
-  for (const step of steps) {
-    if (step.type === 'assistant' && step.text) {
-      textParts.push(step.text);
-    } else if (step.type === 'thinking' && step.text) {
-      thinkingParts.push(step.text);
-    }
-  }
-
+function readExportConfig(): ExportConfig {
+  const cfg = vscode.workspace.getConfiguration('cursorThreadTools');
   return {
-    text: textParts.join(''),
-    thinkingText: thinkingParts.join('\n\n'),
+    includeThinking: cfg.get<boolean>('export.includeThinking', DEFAULT_EXPORT_CONFIG.includeThinking),
+    outputDir: cfg.get<string>('export.outputDir', DEFAULT_EXPORT_CONFIG.outputDir),
+    fileNameFormat: cfg.get<string>('export.fileNameFormat', DEFAULT_EXPORT_CONFIG.fileNameFormat),
   };
 }
 
@@ -76,17 +27,7 @@ export async function exportThread(): Promise<void> {
   let db;
   try {
     db = openDatabase();
-    const rows = getComposerDataEntries(db);
-
-    const threads: ComposerMeta[] = [];
-    for (const row of rows) {
-      const meta = parseComposerData(row.key, row.value);
-      if (meta && meta.bubbleCount > 0) {
-        threads.push(meta);
-      }
-    }
-
-    threads.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const threads = listAllThreads(db);
 
     if (threads.length === 0) {
       vscode.window.showInformationMessage('No threads found.');
@@ -98,7 +39,7 @@ export async function exportThread(): Promise<void> {
       meta: ComposerMeta;
     }
 
-    const items: ThreadQuickPickItem[] = threads.map(t => ({
+    const items: ThreadQuickPickItem[] = threads.map((t: ComposerMeta) => ({
       label: t.name || t.composerId.slice(0, 12) + '...',
       description: t.isAgentic ? 'Agent' : 'Chat',
       detail: `${t.bubbleCount} messages | ${formatDate(t.createdAt)}`,
@@ -113,6 +54,8 @@ export async function exportThread(): Promise<void> {
 
     if (!selected) return;
 
+    const config = readExportConfig();
+
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -120,16 +63,11 @@ export async function exportThread(): Promise<void> {
         cancellable: false,
       },
       async progress => {
-        progress.report({ message: 'Finding conversation state...' });
+        progress.report({ message: 'Extracting thread content...' });
 
-        const csString = findConversationState(
-          db!,
-          selected.composerId,
-          selected.meta.headers,
-          selected.meta.rawJson,
-        );
+        const result = extractThreadContent(db!, selected.meta);
 
-        if (!csString) {
+        if (!result) {
           vscode.window.showWarningMessage(
             'Could not find conversation state for this thread. ' +
               'The thread may use a newer data format not yet supported.',
@@ -137,80 +75,9 @@ export async function exportThread(): Promise<void> {
           return;
         }
 
-        const cs = decodeConversationStateString(csString);
-        if (cs.turnBlobIds.length === 0) {
+        if (result.turns.length === 0) {
           vscode.window.showWarningMessage(
-            'No turn data found in conversation state.',
-          );
-          return;
-        }
-
-        progress.report({
-          message: `Decoding ${cs.turnBlobIds.length} turns...`,
-        });
-
-        const exportedTurns: ExportedTurn[] = [];
-        let decoded = 0;
-        let skipped = 0;
-
-        for (const turnBlobId of cs.turnBlobIds) {
-          const turnBlob = getBlobByBytes(db!, turnBlobId);
-          if (!turnBlob) {
-            skipped++;
-            continue;
-          }
-
-          const turn = decodeTurnStructure(turnBlob);
-          if (!turn) {
-            skipped++;
-            continue;
-          }
-
-          const turnWithIds = turn as typeof turn & {
-            _userMsgBlobId: Buffer | null;
-            _stepBlobIds: Buffer[];
-          };
-
-          // Decode user message
-          if (turnWithIds._userMsgBlobId) {
-            const umBlob = getBlobByBytes(db!, turnWithIds._userMsgBlobId);
-            if (umBlob) {
-              const userMsg = decodeUserMessage(umBlob);
-              if (userMsg && userMsg.text) {
-                exportedTurns.push({
-                  type: 'human',
-                  text: userMsg.text,
-                });
-              }
-            }
-          }
-
-          // Decode steps (assistant responses)
-          const steps: DecodedStep[] = [];
-          for (const stepBlobId of turnWithIds._stepBlobIds) {
-            const stepBlob = getBlobByBytes(db!, stepBlobId);
-            if (stepBlob) {
-              steps.push(decodeStep(stepBlob));
-            }
-          }
-
-          if (steps.length > 0) {
-            const { text, thinkingText } = collectAssistantText(steps);
-            if (text) {
-              exportedTurns.push({
-                type: 'assistant',
-                text,
-                thinkingText: thinkingText || undefined,
-              });
-            }
-          }
-
-          decoded++;
-        }
-
-        if (exportedTurns.length === 0) {
-          vscode.window.showWarningMessage(
-            `Could not extract any text from ${cs.turnBlobIds.length} turns (${skipped} skipped).`,
+            `Could not extract any text from ${result.totalTurnBlobIds} turns (${result.skipped} skipped).`,
           );
           return;
         }
@@ -219,30 +86,22 @@ export async function exportThread(): Promise<void> {
 
         const markdown = generateMarkdown(
           selected.label,
-          exportedTurns,
-          { includeThinking: true },
+          result.turns,
+          { includeThinking: config.includeThinking },
         );
 
-        // Save to workspace or temp directory
         const workspaceFolders = vscode.workspace.workspaceFolders;
         let outputDir: string;
 
         if (workspaceFolders && workspaceFolders.length > 0) {
-          outputDir = join(
-            workspaceFolders[0].uri.fsPath,
-            '.thread-exports',
-          );
+          outputDir = join(workspaceFolders[0].uri.fsPath, config.outputDir);
         } else {
-          const { tmpdir } = await import('os');
           outputDir = join(tmpdir(), 'thread-exports');
         }
 
         mkdirSync(outputDir, { recursive: true });
 
-        const safeName = (selected.label || selected.composerId)
-          .replace(/[^a-zA-Z0-9\u3000-\u9fff\u4e00-\u9fff_-]/g, '_')
-          .slice(0, 60);
-        const fileName = `${safeName}_${Date.now().toString(36)}.md`;
+        const fileName = resolveFileName(config.fileNameFormat, selected.meta);
         const filePath = join(outputDir, fileName);
 
         writeFileSync(filePath, markdown, 'utf8');
@@ -251,7 +110,7 @@ export async function exportThread(): Promise<void> {
         await vscode.window.showTextDocument(doc, { preview: false });
 
         vscode.window.showInformationMessage(
-          `Exported ${exportedTurns.length} turns (${decoded} decoded, ${skipped} skipped) → ${fileName}`,
+          `Exported ${result.turns.length} turns (${result.decoded} decoded, ${result.skipped} skipped) → ${fileName}`,
         );
       },
     );
