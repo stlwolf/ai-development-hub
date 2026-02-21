@@ -59,6 +59,17 @@ VS Code拡張としての技術的な実現可能性と実用性。
 | A-3-3 | エクスポートオプションの設定 | 有効 | 動作確認 | `--no-thinking` / `--output-dir` / `--format` CLI 引数 + VS Code `contributes.configuration` で設定可能。`ExportConfig` 共通型で CLI/拡張の仕様一致を保証 |
 | A-3-4 | 新フォーマットスレッド対応 | 条件付き有効 | 調査完了 | `conversationState: "~"` は空の base64 状態（長さ1で `extractCsString` が null 返却）。空スレッドまたは別データパスのスレッド。現在のコードは安全にスキップ（ワーニングメッセージ表示）。対応不能ケースは明示エラーで処理 |
 
+### A-4. パッケージング・配布
+
+| ID | 検証項目 | 状態 | 結果 | 根拠 |
+|----|---------|------|------|------|
+| A-4-1 | esbuild バンドリングで Extension + CLI が動作するか | 有効 | 動作確認 | `external: ['vscode', 'better-sqlite3']` で 22kb/19kb にバンドル。F5 デバッグ + `node out/cli.js list` で動作確認。shebang は `banner` で付与（ソース側を削除して重複解消） |
+| A-4-2 | `.vsix` ファイルが生成でき、必要なファイルが含まれるか | 有効 | 動作確認 | `vsce package` で 8.08MB / 98 files。`.vscodeignore` ホワイトリスト型で `out/` + `better-sqlite3` + `bindings` + `file-uri-to-path` のみ含む。`--no-dependencies` は node_modules を除外するため使用不可（実検証で確認） |
+| A-4-3 | CLI が `npm link` + `bin` フィールドで実行できるか | 有効 | 動作確認 | `cursor-thread-tools list`（104 threads）、`cursor-thread-tools export --all --since 24h`（13 threads、0 failed）で動作確認。npm link/unlink 正常 |
+| A-4-4 | クロスプラットフォームパス（macOS / Windows / Linux） | 条件付き有効 | macOS で動作確認 | `getStateDbPath()` を `platform()` switch 文に変更。macOS で既存動作の回帰確認済み。Windows / Linux はコードレベル対応のみ（実環境テストなし） |
+| A-4-5 | `@electron/rebuild` の自動化 | 有効 | スクリプト作成 | `scripts/install.sh` で npm install → esbuild → @electron/rebuild を一括実行。Electron バージョンは環境変数 > 引数 > デフォルト 39.4.0 の優先順 |
+| A-4-6 | ドメイン固有情報の排除 | 有効 | 確認済み | `grep -r` で extension/src/ をスキャンし、ドメイン固有ハードコード値がないことを確認 |
+
 ---
 
 ## B. 開発プロセスの検証
