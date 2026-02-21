@@ -30,15 +30,24 @@ use_when:
 
 ## 実行フロー
 
-CONVENTIONS.md の「フェーズ実行フロー」に従う:
+CONVENTIONS.md の「フェーズ実行フロー」に従う（3段階構成）:
+
+### Stage 1: プラン策定（Agent mode）
 
 1. **コンテキスト読み込み**: 本キックオフ + `CONVENTIONS.md` + `docs/REQUIREMENTS.md` + 既存コード
-2. **プラン作成**: plan mode で具体的な実装プランを作成（Step 0 必須、概算時間、ADR TODO 独立配置、gate TODO 独立配置）
+2. **プラン作成**: Agent mode で `docs/plans/YYYY-MM-DD-plan-phase4-packaging.md` に直接作成（Step 0 必須、概算時間、ADR TODO 独立配置、gate TODO 独立配置）
 3. **peer-ai-review**: `/peer-ai-review` でプランの3者合意を取得
-4. **CP 配置**: `docs/plans/YYYY-MM-DD-plan-phase4-packaging.md` に保存
-5. **ユーザー確認**: CP 配置を報告し、ビルド実行指示を待つ
-6. **実装**: プランに従って実装。gate は TODO 項目として実行
+4. **CP 確定**: 合意内容をプラン MD に反映し、ユーザーに報告
+
+### Stage 2: 実装（Plan mode）
+
+5. **プラン変換**: 確定済みプラン MD を Plan mode のプランに変換
+6. **ビルド実行**: Plan mode の TODO に従って実装。gate は TODO 項目として実行
+
+### Stage 3: 成果物記録（Agent mode）
+
 7. **成果物記録**: エピソード + ADR + VERIFICATION_MATRIX 更新
+8. **キックオフ突合**: 本キックオフの成功基準・完了条件と結果を突合
 
 ## 1. 目的
 

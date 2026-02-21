@@ -98,20 +98,31 @@ tags: [3-8個のカテゴリタグ]
 
 ## フェーズ実行フロー
 
-各フェーズ（子スレッド）は以下の順序で進める。キックオフに「実行フロー」セクションとしてこの内容を含めること。
+各フェーズ（子スレッド）は以下の3段階で進める。キックオフに「実行フロー」セクションとしてこの内容を含めること。
+
+### Stage 1: プラン策定（Agent mode）
 
 1. **コンテキスト読み込み**: 本キックオフ + `CONVENTIONS.md` + 既存コード/ドキュメントを読み込む
-2. **プラン作成**: plan mode で具体的な実装プランを作成する
+2. **プラン作成**: Agent mode で `docs/plans/YYYY-MM-DD-plan-{topic}.md` に直接 MD ファイルとして作成する
    - 「プラン構成のガイドライン」に従う（Step 0 必須、概算時間、E2E/ドキュメント分離）
    - ADR チェックリストの各項目を対応 Step の直後に独立 TODO として配置
    - peer-ai-review gate を独立 TODO として配置
-3. **peer-ai-review**: `/peer-ai-review` でプランの3者合意を取得する
-4. **CP 配置**: 合意済みプランを `docs/plans/YYYY-MM-DD-plan-{topic}.md` に保存する
-5. **ユーザー確認**: CP 配置を報告し、ユーザーのビルド実行指示を待つ
-6. **実装**: プランに従って実装する。gate/checkpoint は TODO 項目として実行する
+3. **peer-ai-review**: `/peer-ai-review` でプランの3者合意を取得する（Agent mode なので `so-compare.sh` が実行可能）
+4. **CP 確定**: 合意内容をプラン MD に反映し、ユーザーに報告する
+
+### Stage 2: 実装（Plan mode）
+
+5. **プラン変換**: 確定済みプラン MD の内容を Plan mode のプランに変換する
+6. **ビルド実行**: Plan mode の TODO 実行確実性を活用して実装する。gate/checkpoint は TODO 項目として実行する
+
+### Stage 3: 成果物記録（Agent mode）
+
 7. **成果物記録**: エピソード + ADR + VERIFICATION_MATRIX 更新
+8. **キックオフ突合**: キックオフの成功基準・完了条件と実装結果を突合し、未達成項目を明示する
 
 このフローがキックオフに記載されていれば、スレッド開始時のプロンプトは**キックオフの参照のみ**で済む。
+
+**Stage 分離の理由**: Plan mode は read-only 制約があり、`so-compare.sh` 等の外部コマンド実行やファイル書き込みができない。プラン策定と peer-ai-review を Agent mode で完了してから、確定プランを Plan mode に変換することで、フロー中の阻害を回避する。
 
 ## plan と episode の分離ルール
 
