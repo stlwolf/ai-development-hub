@@ -48,35 +48,37 @@ Cursor 内部データ（`state.vscdb`）への read-only アクセスを核と�
 | 出力内容 | ユーザー発言 + アシスタント応答テキスト。thinking は `<details>` 折りたたみ（デフォルト ON）。tool_call はテキスト抽出なし |
 | データソース | `composerData` → `conversationState`（base64/hex protobuf）→ `agentKv:blob` → turn/message protobuf |
 
-### FR-3: 自動保存（Phase 3 予定）
+### FR-3: 自動保存（Phase 3 完了）
 
 | 項目 | 内容 |
 |------|------|
-| トリガー | バックグラウンド定期実行（設定可能なインターバル） |
-| 入力 | なし（全スレッドまたは設定で指定） |
-| 出力 | 指定ディレクトリに Markdown ファイルを自動保存 |
-| 差分検知 | 前回エクスポート以降に更新されたスレッドのみ対象 |
-| 備考 | SpecStory の代替・補完として位置づけ |
+| トリガー | バックグラウンド `setInterval`（`onStartupFinished` でアクティベート） |
+| 入力 | なし（全スレッド対象、差分検知で絞り込み） |
+| 出力 | 設定ディレクトリ（デフォルト `.thread-exports/`）に Markdown 保存 |
+| 差分検知 | `bubbleCount` ベース（`globalState` に前回値を保持、削除済みスレッド蓄積防止） |
+| デフォルト | 無効（`intervalMinutes = 0`、オプトイン。ADR-006） |
+| 備考 | `autoSaveRunning` mutex で重複実行防止。`onDidChangeConfiguration` で設定変更時にタイマー再セットアップ |
 
-### FR-4: CLI エントリポイント（Phase 3 予定）
-
-| 項目 | 内容 |
-|------|------|
-| 実行方法 | `node cli.js list` / `node cli.js export <composerId>` |
-| 入力 | コマンドライン引数 |
-| 出力 | stdout（list）/ ファイル（export） |
-| コア共有 | VS Code 拡張と同じ db/reader, proto/decoder, export/markdown を使用 |
-| 備考 | VS Code 非依存で動作。CI/スクリプトからの利用を想定 |
-
-### FR-5: エクスポートカスタマイズ（Phase 3 予定）
+### FR-4: CLI エントリポイント（Phase 3 完了）
 
 | 項目 | 内容 |
 |------|------|
-| thinking の出力制御 | 含む / 含まない / `<details>` 折りたたみ |
-| tool_call の出力制御 | 含まない（現状）/ ツール名のみ / 詳細 |
-| 出力先の指定 | ワークスペース内 / 任意パス |
-| ファイル名フォーマット | カスタマイズ可能（日付、スレッド名等のテンプレート） |
-| 設定方法 | VS Code settings（拡張）/ コマンドライン引数（CLI） |
+| 実行方法 | `node out/cli.js list` / `node out/cli.js export <id>` / `node out/cli.js export --all` |
+| 引数パース | `util.parseArgs()`（Node.js 標準、外部依存ゼロ。ADR-005） |
+| 出力 | stdout（list）/ ファイル（export）。`--json` でJSON出力対応 |
+| コア共有 | `core/threads.ts` を VS Code 拡張と共有。`ExportConfig` 共通型 |
+| オプション | `--no-thinking`, `--output-dir`, `--format`, `--since`, `--app-name`, `--json`, `--all` |
+| 備考 | macOS のみ対応。CLI 使用時は `npm rebuild better-sqlite3` が必要（Electron 向けビルドと非互換） |
+
+### FR-5: エクスポートカスタマイズ（Phase 3 完了）
+
+| 項目 | 内容 |
+|------|------|
+| thinking の出力制御 | `<details>` 折りたたみ（デフォルト ON）/ `--no-thinking` で除外 |
+| tool_call の出力制御 | `includeToolCalls` オプション（ツール名のみ出力） |
+| 出力先の指定 | `cursorThreadTools.export.outputDir`（拡張）/ `--output-dir`（CLI） |
+| ファイル名フォーマット | `{name}_{date}` テンプレート。`resolveFileName()` で解決 |
+| 設定方法 | VS Code `contributes.configuration`（拡張）/ CLI 引数。`ExportConfig` 共通型で一致保証 |
 
 ---
 
