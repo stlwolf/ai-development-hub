@@ -25,8 +25,20 @@ use_when:
 # Phase 4 キックオフ: パッケージング・配布
 
 **作業開始前に必ず以下を読むこと:**
-- **`CONVENTIONS.md`**（プロジェクトルート）: ファイル命名規則、ADR 昇格基準、ADR フロー組み込み、plan/episode 分離ルール、gate 運用、事実検証粒度、プラン構成ガイドライン
+- **`CONVENTIONS.md`**（プロジェクトルート）: ファイル命名規則、ADR 昇格基準、ADR フロー組み込み、plan/episode 分離ルール、gate 運用、事実検証粒度、プラン構成ガイドライン、**フェーズ実行フロー**
 - **`docs/REQUIREMENTS.md`**: NFR-6（配布）
+
+## 実行フロー
+
+CONVENTIONS.md の「フェーズ実行フロー」に従う:
+
+1. **コンテキスト読み込み**: 本キックオフ + `CONVENTIONS.md` + `docs/REQUIREMENTS.md` + 既存コード
+2. **プラン作成**: plan mode で具体的な実装プランを作成（Step 0 必須、概算時間、ADR TODO 独立配置、gate TODO 独立配置）
+3. **peer-ai-review**: `/peer-ai-review` でプランの3者合意を取得
+4. **CP 配置**: `docs/plans/YYYY-MM-DD-plan-phase4-packaging.md` に保存
+5. **ユーザー確認**: CP 配置を報告し、ビルド実行指示を待つ
+6. **実装**: プランに従って実装。gate は TODO 項目として実行
+7. **成果物記録**: エピソード + ADR + VERIFICATION_MATRIX 更新
 
 ## 1. 目的
 
