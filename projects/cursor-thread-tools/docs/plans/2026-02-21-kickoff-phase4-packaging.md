@@ -39,6 +39,8 @@ CONVENTIONS.md の「フェーズ実行フロー」に従う（3段階構成）:
 3. **peer-ai-review**: `/peer-ai-review` でプランの3者合意を取得
 4. **CP 確定**: 合意内容をプラン MD に反映し、ユーザーに報告
 
+**← Stage 1 完了後、ここで停止してユーザーに報告する。** ユーザーが Plan mode に切り替えてから Stage 2 に進む。
+
 ### Stage 2: 実装（Plan mode）
 
 5. **プラン変換**: 確定済みプラン MD を Plan mode のプランに変換
