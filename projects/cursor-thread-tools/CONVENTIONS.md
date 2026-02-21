@@ -129,6 +129,14 @@ ADR は短くてよい（10行でも可）。エピソードに埋もれるよ�
 | [peer-ai-review.md](../../cursor/command/verification/peer-ai-review.md) | cursor/command | 設計判断のピアレビュー用コマンド |
 | [BACKLOG #2](https://github.com/stlwolf/ai-development-hub/issues/2) | GitHub | 「会話ログ保存の仕組み構築」Issue |
 
+## peer-ai-review gate の運用
+
+プランに peer-ai-review 実施ポイント（gate）を記載する場合のルール:
+
+- gate は実装 Step と**同列の独立 TODO 項目**として登録する（Phase 1, 2 でルールのみでは gate が飛ばされた実績あり）
+- gate の TODO は「Step N 完了」ではなく「Step N の合格基準を満たしたら」のように**条件ベース**で記述する
+- gate をスキップする場合は、エピソードにスキップ理由を明記する（事後の peer-ai-review で代替可）
+
 ## ガードレール（将来検討）
 
 現状はこのファイルがエージェント・人間共通の参照先。将来的に以下を検討:
@@ -136,3 +144,4 @@ ADR は短くてよい（10行でも可）。エピソードに埋もれるよ�
 - バリデーションスクリプト（ファイル名 + frontmatter 整合性チェック）
 - 正準ドキュメント → ツール固有ルールへの自動変換（CONVENTIONS.md → .cursor/rules/ 等）
 - 別プロジェクトへのポータブルテンプレート化
+- peer-ai-review gate の自動実行（gate 到達時に `so-compare.sh` を自動起動するスクリプト化）
