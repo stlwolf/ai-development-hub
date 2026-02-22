@@ -29,6 +29,7 @@ cursor/
 | エージェント | 用途 |
 |---|---|
 | `oss-researcher` | OSS・ライブラリの深層調査。設計思想、機能発見、エコシステム調査、横断比較 |
+| `vendor-inspector` | 依存コードの深掘り。vendor/node_modules内の関数読解、アップデート影響分析、デバッグ |
 
 ## デプロイ
 
