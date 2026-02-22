@@ -9,6 +9,8 @@
 ```
 docs/
 ├── VERIFICATION_MATRIX.md    # 検証マトリクス（A: ツール / B: プロセス）
+├── discussions/              # フェーズ前のディスカッション（type: discussion）
+│   └── feature-requests/     # 機能追加・拡張の要望・検討
 ├── plans/                    # 計画・キックオフ（type: plan）
 ├── episodes/                 # 作業記録・議論経緯（type: episode）
 ├── decisions/                # 確定した判断 ADR形式（type: decision）
@@ -19,6 +21,7 @@ docs/
 
 | type | 配置先 | 命名パターン | 例 |
 |------|--------|------------|-----|
+| `discussion` | `discussions/{category}/` | `YYYY-MM-DD-topic.md` | `discussions/feature-requests/2026-02-22-export-enhancements.md` |
 | `plan` | `plans/` | `YYYY-MM-DD-{kickoff\|plan}-topic.md` | `2026-02-20-kickoff-phase1-db-foundation.md` |
 | `episode` | `episodes/` | `YYYY-MM-DD-topic.md` | `2026-02-20-phase1-db-foundation.md` |
 | `decision` | `decisions/` | `ADR-NNN-topic.md` | `ADR-001-sqlite-library.md` |
@@ -41,7 +44,7 @@ docs/
 ---
 title: "ドキュメントのタイトル"
 date: YYYY-MM-DD
-type: episode | decision | plan
+type: discussion | episode | decision | plan
 related:
   - type: derived_from | depends_on | supersedes | evidence_for | implements
     ref: 相対パス
@@ -83,6 +86,10 @@ tags: [3-8個のカテゴリタグ]
 スレッド N（議論・ブレスト）
   │
   ├── [raw-log] SpecStory出力 → raw-logs/ に一時保管
+  │
+  ├── [discussion] フェーズ化前の検討・要望
+  │     → discussions/{category}/YYYY-MM-DD-topic.md
+  │     （フェーズ確定時に plan/kickoff へ昇格）
   │
   └── [plan/kickoff] 次スレッドの開始プロンプト
         → plans/YYYY-MM-DD-kickoff-{topic}.md
