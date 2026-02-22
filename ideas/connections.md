@@ -114,3 +114,20 @@ AI→AI（SOプロンプト）と人間→AI（ドメイン入力）の両方向
 - [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — AI→AI方向。プロンプトの構造化度合いが収束速度を左右
 - [20260220/human-input-formatting.md](20260220/human-input-formatting.md) — 人間→AI方向。AI側が質問フォーマットを提示し人間が回答する形が持続可能
 - [20260130/ai-middleware-cli-concept.md](20260130/ai-middleware-cli-concept.md) — コンテキスト「純度」の問題意識が、入力品質の標準化として具体化
+
+### ドキュメントフォーマットの設計原則 → ルール分割
+
+cursor-thread-tools 4フェーズの実践から「いつフォーマットが必要で、いつ不要か」の判断基準が導出。さらに「集権的ルールをマルチエージェントにどう分割するか」の問題へ発展。
+
+- [20260215/ai-readable-code-evaluation-claude.md](20260215/ai-readable-code-evaluation-claude.md) — 書くためのアンカー ≠ 読むためのアンカー（起点）
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — フリーフォーム本文 ≈ 層3圧縮、構造化FB ≈ 層2候補
+- [20260221/document-format-design-principles.md](20260221/document-format-design-principles.md) — write:read 比率、目的指示 vs 手段指示、ハイブリッド構成（原則定義）
+- [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — 集権的ルールのマルチエージェント分割（検証プロジェクト）
+
+### 正準フォーマット → ルール配布アーキテクチャ
+
+エージェント「の」定義フォーマットと、エージェント「への」ルール配布は別の問題。正準フォーマットの `domain_context` フィールドが「何を参照するか」を定義するのに対し、ルール分割は「どの粒度で・どの優先順位で渡すか」を扱う。
+
+- [20260212/hypothesis-canonical-agent-definition-format.md](20260212/hypothesis-canonical-agent-definition-format.md) — エージェント定義の正準フォーマット（`domain_context` フィールド）
+- [20260208/ai-orchestration-memo-idea-integration.md](20260208/ai-orchestration-memo-idea-integration.md) — 「契約で固定、ツール名では固定しない」原則
+- [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — ルールの分割粒度・配布メカニズム・衝突解決の検証

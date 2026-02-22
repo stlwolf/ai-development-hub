@@ -8,6 +8,10 @@
 
 ## インデックス
 
+### 2026-02-21
+
+- `document-format-design-principles.md`: ドキュメントフォーマット設計原則。write:read 比率によるフォーマット必要性判断、目的指示 vs 手段指示（LLM 生成特性）、フリーフォーム + 構造化のハイブリッド構成。cursor-thread-tools 4フェーズの実践から導出
+
 ### 2026-02-20
 
 - `context-persistence-4layer-model.md`: コンテキスト永続化の4層モデル（即時参照/構造化ナレッジ/生ログ/コード）。FWアップグレード実践から導出

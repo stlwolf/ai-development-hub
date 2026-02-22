@@ -37,6 +37,17 @@ Cursorスレッド会話のMarkdownエクスポートとライフサイクル管
 
 詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
 
+### agent-rule-decomposition
+
+マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。
+
+- 集権的ルール（CONVENTIONS.md）のサブエージェント向け分割粒度の検証
+- エージェント役割とルールのマッピング（実装/レビュー/ドキュメント）
+- スキル/ルール/.mdc の配布メカニズムと優先順位の調査
+- ルール衝突時の解決パターン
+
+詳細は [agent-rule-decomposition/README.md](agent-rule-decomposition/README.md) を参照。
+
 ### ruler-agent-verification
 
 ルーラーエージェント（判断履歴のナビゲーター）構想の検証プロジェクト。
