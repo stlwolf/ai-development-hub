@@ -1,0 +1,1 @@
+../projects/arena-compare/arena-compare.sh
