@@ -4,6 +4,17 @@
 
 ## インデックス
 
+### arena-compare
+
+Cursor CLI（`agent` コマンド）によるマルチモデル並列比較スクリプト。
+
+- 同一プロンプトを複数モデルに並列投入して結果を比較
+- Cursor サブスク内の全モデル（38+）を利用（外部 API 不要）
+- `--resume` によるセッション維持でイテレーション可能
+- `so-compare.sh` の Cursor ネイティブ版
+
+詳細は [arena-compare/README.md](arena-compare/README.md) を参照。
+
 ### agent-verification-flow
 
 マルチエージェント検証フレームワーク。API動作検証、ロール設計パターン、検証テンプレートを提供。
