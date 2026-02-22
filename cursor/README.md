@@ -6,6 +6,7 @@ Cursor AI エディタ向けのコマンド、ルール集。
 
 ```
 cursor/
+├── agents/               # サブエージェント定義 (.md, YAML frontmatter)
 ├── command/              # 実行可能なコマンドテンプレート
 │   ├── review/           # PRレビュー関連
 │   └── verification/     # マルチエージェント検証
@@ -23,11 +24,20 @@ cursor/
 
 `~/.cursor/commands/` に直接配置されたコマンド（`/sentry-cli`, `/gh-cli` 等）はこのリポジトリには含まれない。
 
+## サブエージェント
+
+| エージェント | 用途 |
+|---|---|
+| `oss-researcher` | OSS・ライブラリの深層調査。設計思想、機能発見、エコシステム調査、横断比較 |
+
 ## デプロイ
 
 ```bash
 # cursor/command/ 配下を ~/.cursor/commands/ にシンボリックリンク
 ./scripts/sync-cursor-commands.sh
+
+# cursor/agents/ 配下を ~/.cursor/agents/ にシンボリックリンク
+./scripts/sync-cursor-agents.sh
 ```
 
 ## ルール
