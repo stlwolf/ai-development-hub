@@ -34,3 +34,7 @@ node_modules/
 
 # Local working files (untracked)
 tmp/
+
+# vscode plugin
+.specstory/*
+
