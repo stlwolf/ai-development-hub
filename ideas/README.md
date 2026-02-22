@@ -8,6 +8,11 @@
 
 ## インデックス
 
+### 2026-02-22
+
+- `orchestration-tool-building-approach.md`: OSSリサーチ→要素抽出→自前オーケストレーションツール構築のアプローチ。インフラ層（OSS）とセマンティック層（自分の検証知見）の非対称性を活かす戦略。付属GUIビューワー構想（CLI SSOT + 融和的GUI）を含む
+- `oss-orchestrator-analysis-agent-orchestrator.md`: ComposioHQ/agent-orchestrator の初期分析。CLAUDE.md vs CLAUDE.orchestrator.md のルール分離パターン、8スロットプラグイン設計、Reactionsパターン
+
 ### 2026-02-21
 
 - `document-format-design-principles.md`: ドキュメントフォーマット設計原則。write:read 比率によるフォーマット必要性判断、目的指示 vs 手段指示（LLM 生成特性）、フリーフォーム + 構造化のハイブリッド構成。cursor-thread-tools 4フェーズの実践から導出

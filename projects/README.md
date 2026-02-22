@@ -48,6 +48,16 @@ Cursorスレッド会話のMarkdownエクスポートとライフサイクル管
 
 詳細は [agent-rule-decomposition/README.md](agent-rule-decomposition/README.md) を参照。
 
+### orchestration-research
+
+エージェントオーケストレーション・並列エージェントツール群のランドスケープ調査プロジェクト。
+
+- 既存OSSの設計パターン・概念・実装方式を体系的に調査・抽出
+- 抽出した要素と自分の検証知見（認知協調・知識永続化）を合成
+- 自前オーケストレーションツール構築の設計基盤
+
+詳細は [orchestration-research/README.md](orchestration-research/README.md) を参照。
+
 ### ruler-agent-verification
 
 ルーラーエージェント（判断履歴のナビゲーター）構想の検証プロジェクト。

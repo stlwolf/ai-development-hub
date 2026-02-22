@@ -131,3 +131,21 @@ cursor-thread-tools 4フェーズの実践から「いつフォーマットが�
 - [20260212/hypothesis-canonical-agent-definition-format.md](20260212/hypothesis-canonical-agent-definition-format.md) — エージェント定義の正準フォーマット（`domain_context` フィールド）
 - [20260208/ai-orchestration-memo-idea-integration.md](20260208/ai-orchestration-memo-idea-integration.md) — 「契約で固定、ツール名では固定しない」原則
 - [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — ルールの分割粒度・配布メカニズム・衝突解決の検証
+
+### OSSオーケストレーション調査 → 自前ツール構築
+
+既存OSSのインフラ層（ワークスペース隔離、プロセス管理、イベント駆動フィードバック）と、自分の検証知見のセマンティック層（認知協調、知識永続化）の非対称性を活かした統合アプローチ。
+
+- [20260204/ai-agent-orchestration.md](20260204/ai-agent-orchestration.md) — CLI連携の初期検証。マルチエージェントの本質分析、コンテキスト・エンベロープの提案（起点）
+- [20260208/ai-orchestration-synthesis-next-steps.md](20260208/ai-orchestration-synthesis-next-steps.md) — 「契約で固定、ツール名で固定しない」原則、検証優先度の整理
+- [20260222/orchestration-tool-building-approach.md](20260222/orchestration-tool-building-approach.md) — OSSリサーチ→要素抽出→自前構築のアプローチ。インフラ層×セマンティック層の合成戦略。付属GUIビューワー構想
+- [20260222/oss-orchestrator-analysis-agent-orchestrator.md](20260222/oss-orchestrator-analysis-agent-orchestrator.md) — agent-orchestrator分析。CLAUDE.md/CLAUDE.orchestrator.md のルール分離パターンがagent-rule-decompositionの実例として接続
+- [projects/orchestration-research/](../projects/orchestration-research/) — 体系的調査プロジェクト
+
+### agent-orchestrator のルール分離 → ルール分割検証
+
+ComposioHQ/agent-orchestrator の CLAUDE.md（実装向け）vs CLAUDE.orchestrator.md（オーケストレーター向け）の分離は、agent-rule-decomposition で検討している「関心ベースの分割」の運用実例。知見: 分割軸は「重要度」ではなく「関心」、オーケストレーターにはランブック型（手続き的手順書）が効く、重複ゼロを実現。
+
+- [20260222/oss-orchestrator-analysis-agent-orchestrator.md](20260222/oss-orchestrator-analysis-agent-orchestrator.md) — ルール分離パターンの分析
+- [20260221/document-format-design-principles.md](20260221/document-format-design-principles.md) — ルール分割時に「何を渡すか」の判断基準（write:read比率）
+- [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — 検証プロジェクト。分科会知見セクションに既に記録済み
