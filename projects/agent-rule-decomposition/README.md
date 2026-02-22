@@ -45,6 +45,29 @@ cursor-thread-tools の Phase 1〜4 開発で確立した CONVENTIONS.md（集�
 | [projects/cursor-thread-tools/CONVENTIONS.md](../cursor-thread-tools/CONVENTIONS.md) | 分割対象の集権的ルール。4フェーズの運用実績あり |
 | [ideas/20260208/ai-orchestration-synthesis-next-steps.md](../../ideas/20260208/ai-orchestration-synthesis-next-steps.md) | 「契約で固定、ツール名では固定しない」原則 |
 
+## 分科会知見
+
+### ComposioHQ/agent-orchestrator の CLAUDE.md / CLAUDE.orchestrator.md 分離パターン
+
+- ソース: https://github.com/ComposioHQ/agent-orchestrator
+- 調査日: 2026-02-21
+
+並列 AI コーディングエージェントのオーケストレーター。Claude Code / Codex / Aider をエージェントとして tmux セッション上で並列実行し、PR/CI/レビューを自動処理する。
+
+**ルール分離の実例**:
+
+| ファイル | 対象読者 | 内容 | 性質 |
+|---|---|---|---|
+| `CLAUDE.md` | 実装エージェント | コーディング規約、プラグインパターン、セキュリティルール | 手段指示型（「こう書け」） |
+| `CLAUDE.orchestrator.md` | オーケストレーターエージェント | セッション管理コマンド、スポーン手順、クリーンアップ | ランブック型（「これを実行しろ」） |
+
+**抽出された知見**:
+
+1. **分割軸は「関心」であって「重要度」ではない**: セキュリティルール（`execFile` 必須）は重要だがオーケストレーターには渡していない。「この役割に関係あるか」で分割
+2. **重複ゼロ**: 2ファイル間に内容の重複がほぼない。各ファイルは自己完結している
+3. **オーケストレーターにはランブック型が効く**: 宣言的な原則ではなく手続き的な手順書。「判断しろ」ではなく「このコマンドを実行しろ」
+4. **知識管理レイヤーは不在**: ドキュメントガバナンス、ADR、フィードバックループは対象外。コード生産の並列化に特化。自分たちの独自部分はここ
+
 ## 検証アプローチ（案）
 
 1. **現状把握**: Cursor のスキル/ルール/Project Rules の優先順位を実機で確認
