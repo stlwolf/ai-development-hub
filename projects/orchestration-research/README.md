@@ -25,6 +25,9 @@ orchestration-research/
 ### landscape/
 
 各OSSツールの調査結果を統一フォーマットで記録。横断比較を可能にする。
+`oss-researcher` サブエージェント（`cursor/agents/oss-researcher.md`）による4並列調査で21ツールを調査済み。
+
+- [INDEX.md](./landscape/INDEX.md) — カテゴリ別一覧・注目発見・独自レイヤー対応マップ
 
 統一フォーマット:
 
@@ -36,17 +39,35 @@ last_reviewed: <YYYY-MM-DD>
 category: <orchestrator | framework | agent-runtime>
 ---
 
-## 概要
-（1-2行の要約）
+## [ツール名] 調査結果
 
-## アーキテクチャ
-（主要コンポーネントと接続関係）
+### 基本情報
+（リポジトリURL、言語、Stars、最終更新、一言要約）
 
-## 主要概念
-（このツール固有の設計判断・パターン）
+### これは何か・何を解決するのか
+（目的、解決する問題、ターゲットユーザー）
 
-## 自分の構想との対応
-（どの要素が使えるか、何が足りないか）
+### 設計思想・アーキテクチャ
+（核となる設計判断、主要な抽象概念、ディレクトリ構造）
+
+### 機能一覧
+（Core / Differentiator / Utility の3分類で網羅的にリスト）
+
+### 特徴的な点・注目ポイント
+（他にない独自設計をピックアップ）
+
+### 使い方・典型的なワークフロー
+（Getting Started レベルの流れ + 設定例）
+
+### エコシステム・実利用状況
+（採用事例、盛り上がりの文脈、コミュニティ、周辺ツール、評判）
+
+### 他ツールとの比較・ポジショニング
+
+### 制約・注意点
+
+### 深掘り候補（コードリーディング対象）
+（vendor-inspector 等で実装を読む価値がある箇所をパス付きでリスト）
 ```
 
 ### concepts/
@@ -57,36 +78,61 @@ category: <orchestrator | framework | agent-runtime>
 
 OSSから抽出した要素と、自分の独自レイヤー（認知協調・知識永続化）を統合する設計ノート。ここが最終的に自前ツール構築の設計文書になる。
 
-## 調査対象（候補）
+## 調査対象（21ツール調査済み）
 
-### タスクディスパッチ型
+> 調査方法: `oss-researcher` サブエージェントによる並列調査（4並列 × 5バッチ）
+> 調査日: 2026-02-22
+> 詳細: [landscape/INDEX.md](./landscape/INDEX.md)
 
-| ツール | repo | 特徴 |
-|--------|------|------|
-| agent-orchestrator | ComposioHQ/agent-orchestrator | プラグインアーキテクチャ、worktree隔離、reactionsパターン |
-| Claude Code /task | （組み込み） | Cursor/Claude Codeのサブエージェント機能 |
+### ワークフロー定義・タスクオーケストレーション型
 
-### ワークフロー/状態管理型
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| TAKT | nrslib/takt | [✅](./landscape/takt.md) | Faceted Prompting、「強制力」の設計哲学 |
+| agent-orchestrator | ComposioHQ/agent-orchestrator | [✅](./landscape/agent-orchestrator-composio.md) | 8スロットプラグイン、Reactionsパターン |
+| CAO | awslabs/cli-agent-orchestrator | [✅](./landscape/cao-aws.md) | tmux + MCP + ANSIパース、Flowスケジュール実行 |
+| Agent Squad | awslabs/agent-squad | [✅](./landscape/agent-squad-aws.md) | LLMインテント分類ルーティング |
 
-| ツール | repo | 特徴 |
-|--------|------|------|
-| LangGraph | langchain-ai/langgraph | グラフベース状態遷移、チェックポイント/リジューム |
-| Mastra | mastra-ai/mastra | MCP統合、TypeScript native |
+### グラフ/状態管理型フレームワーク
 
-### 役割ベース型
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| LangGraph | langchain-ai/langgraph | [✅](./landscape/langgraph.md) | Pregelランタイム、チェックポイント、Time Travel |
+| Mastra | mastra-ai/mastra | [✅](./landscape/mastra.md) | TS世界のLangChain。Agent+Workflow+RAG+Memory統合 |
+| ControlFlow | PrefectHQ/ControlFlow | [✅](./landscape/controlflow.md) | ⚠️ アーカイブ済み → Marvin 3.0 |
 
-| ツール | repo | 特徴 |
-|--------|------|------|
-| CrewAI | crewAIInc/crewAI | role/goal/backstory モデル、タスク依存関係 |
-| AutoGen | microsoft/autogen | 会話ベース協調、メッセージパッシング |
+### マルチエージェント協調フレームワーク
 
-### 自律コーディング型
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| AutoGen | microsoft/autogen | [✅](./landscape/autogen.md) | ⚠️ メンテナンスモード → Agent Framework |
+| CrewAI | crewAIInc/crewAI | [✅](./landscape/crewai.md) | Role/Goal/Backstory + Flows |
+| OpenAI Agents SDK | openai/openai-agents-python | [✅](./landscape/openai-agents-sdk.md) | Handoff vs Agent-as-Tool、Guardrails並列実行 |
+| Google ADK | google/adk-python | [✅](./landscape/google-adk.md) | A2Aプロトコル、LLM動的ルーティング |
+| MetaGPT | geekan/MetaGPT | [✅](./landscape/metagpt.md) | 仮想ソフトウェア会社SOP、cause_byルーティング |
+| BeeAI | i-am-bee/beeai-framework | [✅](./landscape/beeai.md) | RequirementAgent（宣言的ルール制御） |
+| PydanticAI | pydantic/pydantic-ai | [✅](./landscape/pydanticai.md) | 型安全エージェント定義、4出力モード |
 
-| ツール | repo | 特徴 |
-|--------|------|------|
-| SWE-agent | princeton-nlp/SWE-agent | 観察→仮説→実行→検証ループ |
-| OpenHands | All-Hands-AI/OpenHands | ブラウザ統合、サンドボックス実行 |
-| Aider | Aider-AI/aider | git統合、差分ベースの編集 |
+### 自律コーディング・サンドボックス環境型
+
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| OpenHands | OpenHands/OpenHands | [✅](./landscape/openhands.md) | Docker隔離、EventStream、StuckDetector |
+| SWE-agent | SWE-agent/SWE-agent | [✅](./landscape/swe-agent.md) | ACI（Agent-Computer Interface）、NeurIPS 2024 |
+| Aider | Aider-AI/aider | [✅](./landscape/aider.md) | Repository Map（PageRank）、git統合 |
+
+### Claude Code / IDE特化型
+
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| Claude Flow | ruvnet/claude-flow | [✅](./landscape/claude-flow.md) | ⚠️ 85%がモック実装と判明 |
+| oh-my-claude-code / o-m-cc | zephyrpersonal / kok1eee | [✅](./landscape/oh-my-claude-code-and-o-m-cc.md) | 中央型 vs 分散P2P型の比較 |
+
+### ドメイン特化・低レベル基盤
+
+| ツール | repo | 調査 | 特徴 |
+|--------|------|------|------|
+| PentAGI / Orca | vxcontrol / scrippt-tech | [✅](./landscape/pentagi-and-orca.md) | ペンテスト特化 / Rust LLMパイプライン（停止） |
 
 ## 自分の独自レイヤー（OSSにないもの）
 
@@ -113,4 +159,8 @@ OSSから抽出した要素と、自分の独自レイヤー（認知協調・�
 
 ## 状態
 
-ひな形作成段階。landscape/ への調査ドキュメント追加から開始予定。
+landscape/ の調査完了（21ツール）。次のステップ:
+
+- [ ] `concepts/` に横断的パターン抽出（Handoff、ループ検出、メモリ永続化等）
+- [ ] `synthesis/` に独自レイヤーとの統合設計ノート作成
+- [ ] 必要に応じて `vendor-inspector` サブエージェントで個別の深掘り実施
