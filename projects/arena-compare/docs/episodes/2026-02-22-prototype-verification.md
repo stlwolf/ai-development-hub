@@ -139,9 +139,9 @@ agent -p -f --resume="$CHAT_ID" "先ほどの2つの使い分け基準を"
 
 ## 次のステップ
 
-- [ ] `scripts/` に昇格して `so-compare.sh` と並列管理
-- [ ] Cursor コマンド（`arena-compare.md`）を作成してメインスレッドから呼べるようにする
+- [x] `scripts/` に昇格して `so-compare.sh` と並列管理 → `scripts/arena-compare.sh` がシンボリックリンクとして配置済み
+- [x] Cursor コマンドを作成してメインスレッドから呼べるようにする → `cursor/command/verification/arena-perspectives.md` として作成・sync済み
 - [x] `--resume` によるセッション維持の検証 → 動作確認済み
-- [ ] arena-compare.sh に resume サポートを組み込む（`--resume-from DIR` で前回のチャットIDを再利用）
+- [x] arena-compare.sh に resume サポートを組み込む → `--resume-from DIR` 実装済み（2026-02-23）
 - [ ] 回答品質を比較する自動サマリ機能（diff / テーブル出力）
 - [ ] `--mode agent` + worktree 隔離でのコード変更比較

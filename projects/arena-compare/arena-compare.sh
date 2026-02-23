@@ -41,7 +41,7 @@ OUT_DIR=""
 WORKSPACE="$(pwd)"
 AGENT_MODE="ask"
 DRY_RUN=false
-TIMEOUT="${ARENA_TIMEOUT:-300}"
+TIMEOUT="${ARENA_TIMEOUT:-180}"
 RESUME_FROM=""
 
 # --- 引数解析 ---
