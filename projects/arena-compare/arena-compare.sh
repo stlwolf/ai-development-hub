@@ -14,7 +14,9 @@ Usage:
 Options:
   -f FILE          プロンプトをファイルから読み込み
   -m MODELS        比較モデル（カンマ区切り）
-                   デフォルト: opus-4.6,gpt-5.2,gemini-3-flash
+                   デフォルトはモード別:
+                     ask/plan: gpt-5.2,gemini-3.1-pro,composer-1.5
+                     agent:    gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5
   -c FILE...       コンテキストファイルを添付（プロンプトに内容を追記）
   -o DIR           出力ディレクトリを指定（デフォルト: tmp/arena-YYYYMMDD-HHMMSS）
   -w PATH          ワークスペースパス（デフォルト: カレントディレクトリ）
@@ -32,7 +34,6 @@ USAGE
 
 # --- デフォルト設定 ---
 AGENT_CMD="agent"
-DEFAULT_MODELS="${ARENA_MODELS:-opus-4.6,gpt-5.2,gemini-3-flash}"
 MODELS_STR=""
 PROMPT=""
 CONTEXT_FILES=()
@@ -107,9 +108,16 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
-# モデルリスト確定
+# モデルリスト確定（モード別デフォルト）
 if [[ -z "$MODELS_STR" ]]; then
-    MODELS_STR="$DEFAULT_MODELS"
+    if [[ -n "${ARENA_MODELS:-}" ]]; then
+        MODELS_STR="$ARENA_MODELS"
+    else
+        case "$AGENT_MODE" in
+            agent) MODELS_STR="gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5" ;;
+            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro,composer-1.5" ;;
+        esac
+    fi
 fi
 IFS=',' read -ra MODELS <<< "$MODELS_STR"
 

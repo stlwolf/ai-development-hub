@@ -40,23 +40,26 @@ ARENA_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/projects/ar
 ```bash
 ARENA_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/projects/arena-compare/arena-compare.sh"
 
-# 基本形: 3モデルに並列投入
+# 基本形: デフォルト3モデルに並列投入（モード別デフォルト）
 $ARENA_SCRIPT \
-  -m "opus-4.6,sonnet-4.6,gpt-5.2" \
   -w "$(pwd)" \
   "プロンプト"
 
 # コンテキストファイル付き
 $ARENA_SCRIPT \
-  -m "opus-4.6,sonnet-4.6,gpt-5.2" \
   -c path/to/file.ts \
+  -w "$(pwd)" \
+  "プロンプト"
+
+# モデル明示指定（Claude系を含めたい場合など）
+$ARENA_SCRIPT \
+  -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" \
   -w "$(pwd)" \
   "プロンプト"
 
 # セッション継続（前回の回答を踏まえて追加質問）
 $ARENA_SCRIPT \
   --resume-from tmp/arena-XXXXXXXX-XXXXXX \
-  -m "opus-4.6,sonnet-4.6,gpt-5.2" \
   -w "$(pwd)" \
   "追加の質問"
 ```
@@ -91,7 +94,7 @@ cat "$OUT_DIR/gpt-5.2-stdout.txt"
 - **判断はコマンドの仕事ではない**: 回答を並べるだけ。合成・採用判断は人間が行う
 - **メインスレッドの補助として使う**: メインスレッドで得た回答に「他のモデルならどう答えるか」を確認する用途
 - **resume で深掘り可能**: 気になった回答があれば、同じセッションで追加質問できる。各モデルが前回の文脈を保持している
-- **モデル選択の目安**: デフォルト3モデルは Claude / GPT / Gemini の異なるファミリーから1つずつ。偏りを避ける意図
+- **モデル選択の目安**: デフォルトは GPT / Gemini / Composer の異なるファミリー3つ。メインスレッドが Claude 系のため、デフォルトから Claude を外して多様性を確保。`-m` で任意のモデルを指定可能
 
 ## モデル変更例
 
