@@ -105,12 +105,12 @@ Step 3 の結果表示で、個別 `cat` の代わりに `summary.md` を読む�
 
 ## 完了条件
 
-- [ ] `arena-compare.sh` 実行後に `summary.md` が自動生成される
-- [ ] summary.md にメタデータテーブル + 各モデルの回答全文が含まれる
-- [ ] タイムアウトしたモデルは「(タイムアウト)」等で表示される
-- [ ] `arena-perspectives.md` の Step 3 が更新されている
-- [ ] shellcheck パス
-- [ ] 検証エピソードが記録されている
+- [x] `arena-compare.sh` 実行後に `summary.md` が自動生成される
+- [x] summary.md にメタデータテーブル + 各モデルの回答全文が含まれる
+- [x] タイムアウトしたモデルは「(タイムアウト)」等で表示される
+- [x] `arena-perspectives.md` の Step 3 が更新されている
+- [x] shellcheck パス
+- [x] 検証エピソードが記録されている
 
 ## 実行フロー
 

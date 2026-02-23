@@ -97,10 +97,10 @@ tmp/arena-YYYYMMDD-HHMMSS/
 
 ## 完了条件
 
-- [ ] `arena-compare.sh` が初回実行時にチャットIDを保存する
-- [ ] `--resume-from` で2回目以降のイテレーションが動作する
-- [ ] 検証エピソードが記録されている
-- [ ] README.md の resume セクションが更新されている
+- [x] `arena-compare.sh` が初回実行時にチャットIDを保存する
+- [x] `--resume-from` で2回目以降のイテレーションが動作する
+- [x] 検証エピソードが記録されている
+- [x] README.md の resume セクションが更新されている
 
 ## 実行フロー
 
