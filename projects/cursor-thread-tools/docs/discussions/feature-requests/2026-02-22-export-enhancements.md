@@ -2,11 +2,12 @@
 title: "エクスポート体験の拡張: 出力先選択 + ポストアクション"
 date: 2026-02-22
 type: discussion
+status: confirmed
 related:
   - type: depends_on
     ref: ../../REQUIREMENTS.md
     reason: "FR-2, FR-5 のエクスポート機能への拡張"
-tags: [export, ux, clipboard, feature-request]
+tags: [export, ux, clipboard, feature-request, composer-api]
 use_when:
   - "次のフェーズで何を実装するか検討するとき"
   - "エクスポート体験の改善を議論するとき"
@@ -26,55 +27,102 @@ Phase 1-4 でエクスポートの基本機能（FR-2）とカスタマイズ（
 実用上の不満点:
 - 出力先を変えるには `settings.json` を開いて編集する必要がある
 - エクスポート後、Cursor チャットで `@` 参照したいがパスの手入力が面倒
-- エクスポート結果を別の場所にペーストしたいとき、ファイルを開いて全選択コピーが必要
 
-## 提案1: エクスポート時の出力先インタラクティブ選択
+---
 
-### パターン
+## 確定: 提案1 — 出力先変更コマンド
 
-| パターン | 実装イメージ | 工数感 |
-|---------|------------|-------|
-| A. エクスポート時にフォルダピッカー | export 実行後に `showOpenDialog({ canSelectFolders: true })` で出力先選択 | 小 |
-| B. 専用コマンド `threadTools.setOutputDir` | パレットからフォルダピッカーで設定変更。`workspaceConfiguration.update()` で永続化 | 小 |
-| C. QuickPick で最近の出力先から選択 | エクスポート時に「前回の出力先 / デフォルト / カスタム...」の QuickPick | 中（`workspaceState` に履歴保存） |
+### 方針
 
-### 推奨
+パレットに `Thread Tools: Set Output Directory` コマンドを追加。OS のフォルダピッカー（`showOpenDialog`）で出力先を選択し、`settings.json` に書き込む。
 
-パターン A が最もシンプル。ただし毎回ダイアログが出るのは煩わしいため、「設定の outputDir をデフォルト採用 + QuickPick の末尾に "別のフォルダに保存..." 選択肢を追加」が現実的。
+### 実装案
 
-## 提案2: エクスポート後のポストアクション
-
-エクスポート完了後に「次のアクション」を QuickPick で提示する。
-
-```
-エクスポート完了 → QuickPick「次のアクション」
-  - エディタで開く（現行動作）
-  - Markdown をクリップボードにコピー
-  - ファイルパスをコピー（@ 参照用）
+```typescript
+const result = await vscode.window.showOpenDialog({
+  canSelectFolders: true,
+  canSelectFiles: false,
+  canSelectMany: false,
+  openLabel: 'Select Output Directory',
+});
+if (result && result[0]) {
+  const relativePath = vscode.workspace.asRelativePath(result[0]);
+  await vscode.workspace.getConfiguration('cursorThreadTools')
+    .update('export.outputDir', relativePath, vscode.ConfigurationTarget.Workspace);
+}
 ```
 
-### 各アクションの技術的実現性
+### 補足
 
-| アクション | API | 備考 |
-|-----------|-----|------|
-| エディタで開く | `vscode.window.showTextDocument()` | 現行実装済み |
-| Markdown クリップボードコピー | `vscode.env.clipboard.writeText(markdown)` | 全文コピー。ペースト先で即利用可能 |
-| ファイルパスコピー（`@` 参照用） | `vscode.env.clipboard.writeText(relativePath)` | ワークスペース相対パス。Cursor チャットで `@` + ペーストで参照可能 |
+- macOS のフォルダ選択ダイアログには「New Folder」ボタンがあるため、存在しないフォルダの新規作成 → 選択が可能
+- VS Code の `contributes.configuration` は設定項目にフォルダピッカーウィジェットを付けることができないため、独立コマンドとして提供
+- Settings UI の `outputDir` 欄の description に「`Thread Tools: Set Output Directory` コマンドでフォルダ選択も可能」と記載
+- 将来的に設定項目が増えたら Webview ベースの設定画面を検討
 
-### Cursor チャットへの直接挿入について
+---
 
-VS Code Extension API には Cursor 固有のチャット入力にテキストを挿入する公開 API がない。クリップボード経由でのユーザー手動ペーストが現実的な代替手段。
+## 確定: 提案2 — エクスポート後に Composer へファイル参照を自動追加
 
-## 実装優先度案
+### 調査結果（2026-02-23）
 
-| 優先度 | 機能 | 理由 |
-|-------|------|------|
-| 高 | ポストアクション QuickPick（開く / MD コピー / パスコピー） | 1コマンドの体験が大幅に改善。実装も小さい |
-| 中 | エクスポート時の出力先選択（QuickPick 末尾に "別のフォルダ..." 追加） | 設定画面を開かずに変えられる UX 改善 |
-| 低 | 最近の出力先履歴 | `workspaceState` に履歴保存が必要でやや複雑 |
+Cursor 内部コマンドの調査（`vscode.commands.getCommands(true)` で 2908 コマンドを取得・フィルタ）により、以下を発見:
 
-## 未検討事項
+| コマンド | 機能 |
+|---------|------|
+| `composer.addfilestocomposer` | ファイルを現在の Composer に `@` 参照として追加 |
+| `composer.addfilestonnewcomposer` | ファイルを新規 Composer に追加 |
+| `composer.exportChatAsMd` | Cursor 組み込みの Markdown エクスポート（内部コマンド） |
 
-- ポストアクション QuickPick を毎回出すか、設定で「デフォルトアクション」を選べるようにするか
-- 自動保存（FR-3）時にもポストアクションを適用するか（通知なしで動く設計との兼ね合い）
+**検証結果**: `composer.addfilestocomposer` に `vscode.Uri.file(path)` を渡すと、ファイルペインの右クリック「Add File to Cursor Chat」と同等の動作でチャットにファイル参照が追加された。
+
+**前提条件**: 対象ファイルがエディタペインで開いている状態であること。エディタに開いていないファイルの Uri を渡しても追加されない。
+
+### 方針
+
+エクスポート後のデフォルト動作を拡張:
+
+```
+現行: ファイル保存 → エディタで開く → 完了通知
+拡張: ファイル保存 → エディタで開く → Composer にファイル参照追加 → 完了通知
+```
+
+エクスポート直後は何らかの処理（チャットで参照する等）をしたい場面が多いため、デフォルトで Composer に追加する。使い勝手が合わなければ、後から設定で挙動を変えられるようにする。
+
+### 実装案
+
+```typescript
+// 既存のエクスポートフロー末尾に追加
+const doc = await vscode.workspace.openTextDocument(filePath);
+await vscode.window.showTextDocument(doc, { preview: false });
+
+// Composer にファイル参照を追加
+try {
+  await vscode.commands.executeCommand(
+    'composer.addfilestocomposer',
+    vscode.Uri.file(filePath),
+  );
+} catch {
+  // 非公開 API のため、失敗しても致命的ではない。サイレントに無視
+}
+```
+
+### リスク
+
+- `composer.addfilestocomposer` は Cursor の**非公開内部 API**。Cursor アップデートでコマンド名や引数形式が変わる可能性がある
+- 失敗時はサイレントに無視し、エクスポート自体は正常に完了する設計にする
+- NFR-5（Cursor アップデート耐性）の「薄く作って壊れたら直す」方針に合致
+
+---
+
+## 実装スコープまとめ
+
+| 機能 | コマンド | 工数感 |
+|------|---------|-------|
+| 出力先変更 | `threadTools.setOutputDir` — フォルダピッカーで outputDir を変更 | 小 |
+| Composer 自動追加 | エクスポート後に `composer.addfilestocomposer` を呼ぶ | 小 |
+
+### スコープ外（将来）
+
+- ポストアクション QuickPick（開く / コピー / パスコピー の選択肢）→ デフォルト挙動で不便が出たら
+- Webview 設定画面 → 設定項目が増えたら
 - CLI 側への反映（`--copy` オプション等）
