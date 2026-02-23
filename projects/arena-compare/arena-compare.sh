@@ -28,7 +28,7 @@ Options:
 
 Environment:
   ARENA_MODELS     デフォルトモデル（カンマ区切り）
-  ARENA_TIMEOUT    タイムアウト秒数（デフォルト: 300）
+  ARENA_TIMEOUT    タイムアウト秒数（デフォルト: 180）
 USAGE
 }
 
@@ -175,9 +175,13 @@ get_chat_id() {
     local resume_dir="$2"
 
     if [[ -n "$resume_dir" && -f "$resume_dir/${model}-chat-id.txt" ]]; then
-        cat "$resume_dir/${model}-chat-id.txt"
+        echo "resumed:$(cat "$resume_dir/${model}-chat-id.txt")"
     else
-        $AGENT_CMD create-chat 2>/dev/null | grep -oE '[0-9a-f-]{36}'
+        local id
+        id=$($AGENT_CMD create-chat 2>/dev/null | grep -oE '[0-9a-f-]{36}') || true
+        if [[ -n "$id" ]]; then
+            echo "new:$id"
+        fi
     fi
 }
 
@@ -199,16 +203,22 @@ run_model() {
         mode_args=(--mode "$mode")
     fi
 
-    # チャットID 取得
-    chat_id=$(get_chat_id "$model" "$resume_from")
-    if [[ -z "$chat_id" ]]; then
+    # チャットID 取得（"new:UUID" or "resumed:UUID"）
+    local chat_id_raw is_new_chat
+    chat_id_raw=$(get_chat_id "$model" "$resume_from")
+    if [[ -z "$chat_id_raw" ]]; then
         echo "[$model] Error: チャットID取得に失敗" >&2
         return 1
     fi
+    is_new_chat=false
+    if [[ "$chat_id_raw" == new:* ]]; then
+        is_new_chat=true
+    fi
+    chat_id="${chat_id_raw#*:}"
     echo "$chat_id" > "$out_dir/${model}-chat-id.txt"
 
     if $DRY_RUN; then
-        echo "  CHAT_ID: $chat_id"
+        echo "  CHAT_ID: $chat_id ($(if $is_new_chat; then echo "new"; else echo "resumed"; fi))"
         echo "  CMD: nohup $AGENT_CMD -p -f --resume=$chat_id --model $model --workspace $workspace --output-format text <prompt>"
         {
             echo "model=$model"
@@ -223,11 +233,11 @@ run_model() {
         return 0
     fi
 
-    # --resume 使用時は --mode を付けない（ハング回避: agent CLI の制約）
-    # 初回実行時のみ --mode を付与する
+    # 既存チャットの resume 時は --mode を付けない（ハング回避: agent CLI の制約）
+    # 新規チャット（部分 resume 含む）では --mode を付与する
     local -a resume_args=(--resume="$chat_id")
     local -a effective_mode_args=()
-    if [[ -z "$resume_from" ]]; then
+    if $is_new_chat; then
         effective_mode_args=("${mode_args[@]}")
     fi
 
@@ -260,6 +270,78 @@ run_model() {
     } > "$out_dir/${model}-meta.txt"
 }
 
+# --- サマリ生成関数 ---
+generate_summary() {
+    local out_dir="$1"
+    shift
+    local models=("$@")
+    local summary="$out_dir/summary.md"
+
+    local prompt_preview prompt_full
+    prompt_full="$(<"$out_dir/prompt.txt")"
+    prompt_preview="${prompt_full:0:100}..."
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    {
+        echo "# Arena Compare Summary"
+        echo ""
+        echo "- **プロンプト**: ${prompt_preview}"
+        echo "- **日時**: ${timestamp}"
+        echo "- **モデル**: $(IFS=', '; echo "${models[*]}")"
+        echo ""
+        echo "## メタデータ"
+        echo ""
+        echo "| モデル | 時間 | 行数 | バイト数 | exit |"
+        echo "|--------|------|------|----------|------|"
+
+        for m in "${models[@]}"; do
+            local meta="$out_dir/${m}-meta.txt"
+            if [[ -f "$meta" ]]; then
+                local model="" exit_code="" elapsed_seconds="" stdout_lines="" stdout_bytes=""
+                # shellcheck disable=SC1090
+                source "$meta"
+                local time_display="${elapsed_seconds}秒"
+                local status_suffix=""
+                if [[ "$exit_code" == "124" ]]; then
+                    status_suffix=" (タイムアウト)"
+                elif [[ "$exit_code" != "0" ]]; then
+                    status_suffix=" (異常終了)"
+                fi
+                echo "| ${model}${status_suffix} | ${time_display} | ${stdout_lines}行 | ${stdout_bytes}B | ${exit_code} |"
+            else
+                echo "| ${m} | - | - | - | - |"
+            fi
+        done
+
+        for m in "${models[@]}"; do
+            echo ""
+            echo "## ${m}"
+            echo ""
+            local stdout_file="$out_dir/${m}-stdout.txt"
+            if [[ -f "$stdout_file" && -s "$stdout_file" ]]; then
+                cat "$stdout_file"
+            else
+                local meta="$out_dir/${m}-meta.txt"
+                if [[ -f "$meta" ]]; then
+                    local exit_code=""
+                    # shellcheck disable=SC1090
+                    source "$meta"
+                    if [[ "$exit_code" == "124" ]]; then
+                        echo "(タイムアウトにより出力なし)"
+                    else
+                        echo "(出力なし)"
+                    fi
+                else
+                    echo "(実行結果なし)"
+                fi
+            fi
+        done
+    } > "$summary"
+
+    echo "$summary"
+}
+
 # --- 全モデル並列実行（スタガー付き） ---
 # agent CLI は起動時に cli-config.json を書き換えるため、
 # 同時起動するとレースコンディションが発生する。2秒ずつずらして起動する。
@@ -285,6 +367,11 @@ for model in "${MODELS[@]}"; do
     fi
 done
 
+# --- サマリ生成 ---
+if ! $DRY_RUN; then
+    SUMMARY_FILE=$(generate_summary "$OUT_DIR" "${MODELS[@]}" 2>/dev/null) || true
+fi
+
 echo ""
 echo "=== 結果サマリ ==="
 
@@ -307,9 +394,13 @@ ls -la "$OUT_DIR"/
 
 echo ""
 echo "=== 結果確認コマンド ==="
-for model in "${MODELS[@]}"; do
-    echo "  cat $OUT_DIR/${model}-stdout.txt"
-done
+if [[ -n "${SUMMARY_FILE:-}" && -f "${SUMMARY_FILE:-}" ]]; then
+    echo "  cat $OUT_DIR/summary.md"
+else
+    for model in "${MODELS[@]}"; do
+        echo "  cat $OUT_DIR/${model}-stdout.txt"
+    done
+fi
 
 # resume ヒント
 if ! $IS_RESUME; then

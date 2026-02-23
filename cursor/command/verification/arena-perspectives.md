@@ -67,27 +67,13 @@ $ARENA_SCRIPT \
 
 ## Step 3: 結果表示
 
-各モデルの回答を読み込み、以下の形式で表示する。
+実行完了後に自動生成される `summary.md` を読み込んで表示する。
+summary.md にはメタデータテーブル（モデル名・実行時間・出力サイズ・exit code）と各モデルの回答全文が含まれる。
 
 ```bash
 OUT_DIR="tmp/arena-XXXXXXXX-XXXXXX"  # Step 2 の出力先
 
-cat "$OUT_DIR/opus-4.6-stdout.txt"
-cat "$OUT_DIR/sonnet-4.6-stdout.txt"
-cat "$OUT_DIR/gpt-5.2-stdout.txt"
-```
-
-表示形式:
-
-```
-### opus-4.6
-[回答内容]
-
-### sonnet-4.6
-[回答内容]
-
-### gpt-5.2
-[回答内容]
+cat "$OUT_DIR/summary.md"
 ```
 
 ## 運用ガイド

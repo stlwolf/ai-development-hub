@@ -78,6 +78,7 @@ agent status
 ```
 tmp/arena-YYYYMMDD-HHMMSS/
 ├── prompt.txt              # 投入プロンプト
+├── summary.md              # 回答サマリ（メタデータ + 各モデル回答全文）
 ├── {model}-chat-id.txt     # チャットID（resume 用）
 ├── {model}-stdout.txt      # 各モデルの応答
 ├── {model}-stderr.txt      # エラー出力
