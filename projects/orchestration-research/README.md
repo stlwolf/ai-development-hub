@@ -19,6 +19,9 @@ orchestration-research/
 ├── README.md              # このファイル
 ├── landscape/             # OSSリサーチの集約（ツール単位）
 ├── concepts/              # 抽出した共通パターン・概念
+│   ├── domain/            #   ドメイン概念10領域
+│   ├── implementation/    #   実装特性（言語、IF型、デプロイ等）
+│   └── cross-cutting/     #   横断的テーマ
 └── synthesis/             # 自分の構想との統合設計ノート
 ```
 
@@ -159,8 +162,11 @@ OSSから抽出した要素と、自分の独自レイヤー（認知協調・�
 
 ## 状態
 
-landscape/ の調査完了（21ツール）。次のステップ:
+landscape/ の調査完了（21ツール）。concepts/ のドメイン概念マップ作成中。
 
-- [ ] `concepts/` に横断的パターン抽出（Handoff、ループ検出、メモリ永続化等）
+- [x] `landscape/` OSSリサーチ（21ツール調査済み、2026-02-22完了）
+- [x] `concepts/domain/` ドメイン概念10領域の定義・パターン抽出
+- [x] `concepts/implementation/` 実装特性マトリクス（言語、IF型、ラッパー分類、設定スタイル）
+- [x] `concepts/cross-cutting/` 横断的テーマ（LLM抽象化、プロンプト設計、コスト最適化、協調トポロジー）
 - [ ] `synthesis/` に独自レイヤーとの統合設計ノート作成
 - [ ] 必要に応じて `vendor-inspector` サブエージェントで個別の深掘り実施
