@@ -4,7 +4,7 @@ Cursorのスレッド（Composer）会話データを抽出・Markdownエクス�
 
 ## ステータス
 
-**Phase 3: 完了** — 自動保存 + CLI + エクスポートカスタマイズ実装済み
+**Phase 5: 完了** — 出力先変更コマンド + Composer 自動追加 実装済み
 
 ## 動機
 
@@ -19,6 +19,8 @@ Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ
 | 自動保存 | バックグラウンドで定期的にスレッドを Markdown 保存 | **Phase 3 完了** |
 | CLI | ターミナルからスレッド一覧・エクスポートを実行 | **Phase 3 完了** |
 | エクスポートカスタマイズ | thinking/tool_call 出力制御、出力先・ファイル名設定 | **Phase 3 完了** |
+| 出力先変更コマンド | フォルダピッカーで outputDir を変更 | **Phase 5 完了** |
+| Composer 自動追加 | エクスポート後にファイルを Composer の `@` 参照に追加 | **Phase 5 完了** |
 
 詳細は [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) を参照。
 
@@ -37,8 +39,9 @@ cursor-thread-tools/
 │   ├── tsconfig.json
 │   └── src/
 │       ├── extension.ts        # activate/deactivate
-│       ├── commands/list.ts    # threadTools.list
-│       ├── commands/export.ts  # threadTools.export
+│       ├── commands/list.ts         # threadTools.list
+│       ├── commands/export.ts       # threadTools.export
+│       ├── commands/setOutputDir.ts # threadTools.setOutputDir
 │       ├── core/threads.ts     # 共有ロジック（VS Code非依存）
 │       ├── cli.ts              # CLI エントリポイント
 │       ├── proto/decoder.ts    # raw protobuf wire-format パーサー
