@@ -23,6 +23,19 @@ Cursor サブスク内の全モデル（38+）を使えるため、外部 API �
 ./arena-compare.sh --list-models
 ```
 
+### セッション継続（resume）
+
+```bash
+# 初回実行（チャットIDが自動保存される）
+./arena-compare.sh -m "opus-4.6,sonnet-4.6" -o tmp/session1 "最初の質問"
+
+# 2回目（前回のコンテキストを保持して追加質問）
+./arena-compare.sh --resume-from tmp/session1 -m "opus-4.6,sonnet-4.6" -o tmp/session1-r2 "前の回答を踏まえて深掘り"
+
+# 3回目（さらに連鎖）
+./arena-compare.sh --resume-from tmp/session1-r2 -m "opus-4.6,sonnet-4.6" -o tmp/session1-r3 "さらに追加の質問"
+```
+
 ## 前提条件
 
 ```bash
@@ -40,6 +53,7 @@ agent status
 | `-o DIR` | 出力ディレクトリ指定 | `tmp/arena-YYYYMMDD-HHMMSS` |
 | `-w PATH` | ワークスペースパス | カレントディレクトリ |
 | `--mode MODE` | agent モード（agent/plan/ask） | `ask` |
+| `--resume-from DIR` | 前回の出力ディレクトリからセッション再開 | - |
 | `--list-models` | モデル一覧表示 | - |
 | `--dry-run` | 実行せずコマンド表示 | - |
 
@@ -55,9 +69,10 @@ agent status
 ```
 tmp/arena-YYYYMMDD-HHMMSS/
 ├── prompt.txt              # 投入プロンプト
+├── {model}-chat-id.txt     # チャットID（resume 用）
 ├── {model}-stdout.txt      # 各モデルの応答
 ├── {model}-stderr.txt      # エラー出力
-└── {model}-meta.txt        # メタデータ（実行時間、行数、バイト数）
+└── {model}-meta.txt        # メタデータ（実行時間、行数、バイト数、チャットID）
 ```
 
 ## 既知の制約
@@ -65,19 +80,7 @@ tmp/arena-YYYYMMDD-HHMMSS/
 - **並列起動にスタガー（2秒間隔）が必要**: `agent` CLI が `~/.cursor/cli-config.json` を書き換えるため、同時起動するとレースコンディションが発生する
 - **`nohup` + `-f` が必須**: Cursor 統合ターミナルから実行する場合、TTY 分離と Workspace Trust スキップが必要
 - **`agent ls` は非インタラクティブでは使えない**: チャット一覧は `~/.cursor/chats/` の SQLite を直接走査する必要がある
-
-## セッション維持（resume）
-
-```bash
-# チャット作成
-CHAT_ID=$(agent create-chat)
-
-# 1発目
-agent -p -f --resume="$CHAT_ID" --model "opus-4.6" "最初の質問"
-
-# 2発目（コンテキスト保持）
-agent -p -f --resume="$CHAT_ID" "前の回答を踏まえて深掘り"
-```
+- **`--resume` と `--mode` の併用不可**: `--resume` 使用時に `--mode ask` を指定するとハングする。初回のみ `--mode` が適用され、resume 時は自動的に省略される
 
 ## 関連
 
