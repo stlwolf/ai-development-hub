@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { listThreads } from './commands/list';
 import { exportThread } from './commands/export';
+import { setOutputDir } from './commands/setOutputDir';
 import { openDatabase, cleanupTmpDb } from './db/reader';
 import {
   listAllThreads,
@@ -101,6 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('threadTools.list', () => listThreads()),
     vscode.commands.registerCommand('threadTools.export', () => exportThread()),
+    vscode.commands.registerCommand('threadTools.setOutputDir', () => setOutputDir()),
   );
 
   context.subscriptions.push({

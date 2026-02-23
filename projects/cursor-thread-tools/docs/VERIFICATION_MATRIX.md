@@ -70,6 +70,14 @@ VS Code拡張としての技術的な実現可能性と実用性。
 | A-4-5 | `@electron/rebuild` の自動化 | 有効 | スクリプト作成 | `scripts/install.sh` で npm install → esbuild → @electron/rebuild を一括実行。Electron バージョンは環境変数 > 引数 > デフォルト 39.4.0 の優先順 |
 | A-4-6 | ドメイン固有情報の排除 | 有効 | 確認済み | `grep -r` で extension/src/ をスキャンし、ドメイン固有ハードコード値がないことを確認 |
 
+### A-5. エクスポート体験の拡張
+
+| ID | 検証項目 | 状態 | 結果 | 根拠 |
+|----|---------|------|------|------|
+| A-5-1 | `Set Output Directory` コマンドで outputDir 変更 | 有効 | 動作確認 | `showOpenDialog` + `asRelativePath` + `ConfigurationTarget.Workspace`。peer-ai-review で3つの防御ガード追加。F5 テストでフォルダ選択→Workspace 設定に反映→指定先にエクスポート出力を確認。Settings UI は Workspace タブで値確認可能（VS Code 標準挙動） |
+| A-5-2 | エクスポート後の Composer 自動追加 | 有効 | 動作確認 | `composer.addfilestocomposer` に `vscode.Uri.file(filePath)` を渡す。F5 テストで AI ペインのプロンプト入力欄に `@` 参照として追加されることを確認。ファイルペインの右クリック「Add File to Cursor Chat」と同等の動作 |
+| A-5-3 | Composer API 失敗時のサイレントフォールバック | 有効 | 動作確認 | try/catch でサイレント失敗。自動保存には追加しない（バックグラウンドで Composer を汚さない設計）。CLI には適用不可（VS Code API 非依存）。peer-ai-review で3者合意 |
+
 ---
 
 ## B. 開発プロセスの検証

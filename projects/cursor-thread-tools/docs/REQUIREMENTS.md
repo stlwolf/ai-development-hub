@@ -80,6 +80,28 @@ Cursor 内部データ（`state.vscdb`）への read-only アクセスを核と�
 | ファイル名フォーマット | `{name}_{date}` テンプレート。`resolveFileName()` で解決 |
 | 設定方法 | VS Code `contributes.configuration`（拡張）/ CLI 引数。`ExportConfig` 共通型で一致保証 |
 
+### FR-6: 出力先変更コマンド（Phase 5 完了）
+
+| 項目 | 内容 |
+|------|------|
+| コマンド | `threadTools.setOutputDir` |
+| トリガー | コマンドパレット |
+| 入力 | OS フォルダピッカー（`showOpenDialog`） |
+| 出力 | 選択フォルダを `cursorThreadTools.export.outputDir` に `ConfigurationTarget.Workspace` で書き込み |
+| 防御ガード | ワークスペース未オープン時 early return、`defaultUri` 存在確認、ワークスペース外パス拒否（`isAbsolute`） |
+| 備考 | Settings UI では Workspace タブで値確認可能。マルチルートワークスペースでは `workspaceFolders[0]` 基準の既知制限あり |
+
+### FR-7: エクスポート後 Composer 自動追加（Phase 5 完了）
+
+| 項目 | 内容 |
+|------|------|
+| トリガー | `threadTools.export` 実行後に自動 |
+| 入力 | エクスポートしたファイルの `vscode.Uri` |
+| 出力 | Cursor Composer の `@` 参照としてファイルを追加 |
+| API | `composer.addfilestocomposer`（Cursor 非公開内部 API） |
+| フォールバック | try/catch でサイレント失敗。エクスポート自体は正常完了 |
+| 適用範囲 | 手動エクスポートのみ。自動保存には適用しない。CLI には適用不可 |
+
 ---
 
 ## 明示的にスコープ外

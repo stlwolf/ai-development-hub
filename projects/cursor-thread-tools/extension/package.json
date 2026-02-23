@@ -13,6 +13,7 @@
   "activationEvents": [
     "onCommand:threadTools.list",
     "onCommand:threadTools.export",
+    "onCommand:threadTools.setOutputDir",
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
@@ -28,6 +29,10 @@
       {
         "command": "threadTools.export",
         "title": "Thread Tools: Export Thread to Markdown"
+      },
+      {
+        "command": "threadTools.setOutputDir",
+        "title": "Thread Tools: Set Output Directory"
       }
     ],
     "configuration": {
@@ -41,7 +46,7 @@
         "cursorThreadTools.export.outputDir": {
           "type": "string",
           "default": ".thread-exports",
-          "description": "Output directory for exported files (relative to workspace root)"
+          "description": "Output directory for exported files (relative to workspace root). Use 'Thread Tools: Set Output Directory' command for folder picker."
         },
         "cursorThreadTools.export.fileNameFormat": {
           "type": "string",

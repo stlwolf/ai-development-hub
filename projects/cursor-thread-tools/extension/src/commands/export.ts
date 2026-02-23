@@ -109,6 +109,15 @@ export async function exportThread(): Promise<void> {
         const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.window.showTextDocument(doc, { preview: false });
 
+        try {
+          await vscode.commands.executeCommand(
+            'composer.addfilestocomposer',
+            vscode.Uri.file(filePath),
+          );
+        } catch {
+          // Cursor 非公開 API — 失敗してもエクスポート自体は正常完了
+        }
+
         vscode.window.showInformationMessage(
           `Exported ${result.turns.length} turns (${result.decoded} decoded, ${result.skipped} skipped) → ${fileName}`,
         );
