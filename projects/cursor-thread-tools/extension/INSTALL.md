@@ -9,6 +9,8 @@ Cursor 内のコマンドパレットから使う**拡張機能**と、ターミ
 
 - **スレッド一覧**: 全 Composer スレッドをメタデータ付き（名前、メッセージ数、Agent/Chat モード、作成日時）で表示
 - **Markdown エクスポート**: ユーザー発言 + アシスタント応答 + thinking ブロックを Markdown ファイルに出力
+- **エクスポート先変更**: コマンドパレットからフォルダピッカーで出力先ディレクトリを変更
+- **Composer 自動追加**: エクスポート後、ファイルを Composer に `@` 参照として自動追加
 - **自動保存**: 更新されたスレッドを定期的にバックグラウンド保存（オプトイン）
 - **CLI**: エディタを開かずにターミナルからスレッド一覧・エクスポートを実行
 
@@ -57,8 +59,11 @@ npm run package
 
 - `Cmd+Shift+P` → `Thread Tools: List Threads` — スレッド一覧を表示
 - `Cmd+Shift+P` → `Thread Tools: Export Thread to Markdown` — 選択したスレッドをエクスポート
+- `Cmd+Shift+P` → `Thread Tools: Set Output Directory` — エクスポート先ディレクトリを変更
 
-エクスポート先はワークスペースルートの `.thread-exports/` ディレクトリです（設定で変更可能）。
+エクスポート先はデフォルトでワークスペースルートの `.thread-exports/` です。`Set Output Directory` コマンドでフォルダピッカーから変更でき、ワークスペース設定に保存されます。
+
+エクスポート後、ファイルは自動的に Composer に `@` 参照として追加されます。Composer が開いていない場合はサイレントにスキップされます。
 
 ---
 

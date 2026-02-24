@@ -9,6 +9,8 @@ Two ways to use: as a **Cursor extension** (via Command Palette) or as a **CLI**
 
 - **Thread listing**: Browse all Composer threads with metadata (name, message count, Agent/Chat mode, creation date)
 - **Markdown export**: Export thread conversations to Markdown files with user/assistant messages and thinking blocks
+- **Output directory picker**: Change the export destination via the Command Palette folder picker
+- **Composer auto-add**: Automatically add exported files to Composer as `@` references
 - **Auto-save**: Automatically export updated threads at a configurable interval (opt-in)
 - **CLI**: Export threads from the terminal without opening the editor
 
@@ -57,8 +59,11 @@ This generates `cursor-thread-tools-0.2.0.vsix` in the `extension/` directory.
 
 - `Cmd+Shift+P` → `Thread Tools: List Threads` — browse all threads
 - `Cmd+Shift+P` → `Thread Tools: Export Thread to Markdown` — export a selected thread
+- `Cmd+Shift+P` → `Thread Tools: Set Output Directory` — change the export destination
 
-Exported files are saved to `.thread-exports/` in the workspace root (configurable in settings).
+Exported files are saved to `.thread-exports/` in the workspace root by default. Use the `Set Output Directory` command to pick a different folder via the folder picker; the choice is saved to workspace settings.
+
+After export, the file is automatically added to Composer as an `@` reference. If Composer is not open, this step is silently skipped.
 
 ---
 
