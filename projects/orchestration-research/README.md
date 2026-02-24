@@ -139,13 +139,15 @@ OSSから抽出した要素と、自分の独自レイヤー（認知協調・�
 
 ## 自分の独自レイヤー（OSSにないもの）
 
-調査時の比較軸として。OSSがこれらをどの程度カバーしているかを各 landscape/ で評価する。
+OSSがカバーしていない独自概念。landscape/ 調査の比較軸として使用し、concepts/ で10領域への位置づけを整理済み。
 
-- **認知協調**: セカンドオピニオン、ルーラーエージェント（判断履歴ナビゲーション）
-- **知識永続化**: 4層コンテキストモデル、昇格フロー（episodes → decisions → context）
-- **ドキュメント設計**: write:read比率による構造化判断、目的指示 vs 手段指示
-- **エージェント定義**: 正準フォーマット（ツール非依存）、ルール分割粒度
-- **コンテキスト・エンベロープ**: original_intent + trajectory + payload のJSON構造
+| 独自概念 | 概要 | concepts/での位置づけ | synthesis/ |
+|---|---|---|---|
+| **認知協調** | セカンドオピニオン、ルーラーエージェント（判断履歴ナビゲーション） | [06 Feedback](./concepts/domain/06-feedback-validation.md) + [07 Human](./concepts/domain/07-human-interaction.md) + [協調トポロジー](./concepts/cross-cutting/coordination-topologies.md) | 未着手 |
+| **知識永続化** | 4層コンテキストモデル、昇格フロー（episodes → decisions → context） | [05 State & Memory](./concepts/domain/05-state-memory.md) + [コスト最適化](./concepts/cross-cutting/cost-optimization.md) | [context-foundation.md](./synthesis/context-foundation.md) ✅ |
+| **ドキュメント設計** | write:read比率による構造化判断、目的指示 vs 手段指示 | [01 Agent Definition](./concepts/domain/01-agent-definition.md) + [Prompt as Architecture](./concepts/cross-cutting/prompt-as-architecture.md) | 未着手 |
+| **エージェント定義** | 正準フォーマット（ツール非依存）、ルール分割粒度 | [01 Agent Definition](./concepts/domain/01-agent-definition.md) + [09 Tooling](./concepts/domain/09-tooling-integration.md) | 未着手 |
+| **コンテキスト・エンベロープ** | original_intent + trajectory + payload のJSON構造 | [05 State & Memory](./concepts/domain/05-state-memory.md) + [08 Event](./concepts/domain/08-event-reaction.md) | [context-foundation.md](./synthesis/context-foundation.md) で部分カバー |
 
 ## 関連資料
 
@@ -162,11 +164,13 @@ OSSから抽出した要素と、自分の独自レイヤー（認知協調・�
 
 ## 状態
 
-landscape/ の調査完了（21ツール）。concepts/ のドメイン概念マップ作成中。
+concepts/ 完了。synthesis/ のコンテキスト基盤設計ノート初版完了。
 
 - [x] `landscape/` OSSリサーチ（21ツール調査済み、2026-02-22完了）
 - [x] `concepts/domain/` ドメイン概念10領域の定義・パターン抽出
 - [x] `concepts/implementation/` 実装特性マトリクス（言語、IF型、ラッパー分類、設定スタイル）
 - [x] `concepts/cross-cutting/` 横断的テーマ（LLM抽象化、プロンプト設計、コスト最適化、協調トポロジー）
-- [ ] `synthesis/` に独自レイヤーとの統合設計ノート作成
+- [x] `synthesis/context-foundation.md` コンテキスト基盤の統合設計ノート初版
+- [ ] `synthesis/` 残りの独自概念（認知協調、正準エージェント定義等）
+- [ ] `synthesis/` 全体アーキテクチャ素描
 - [ ] 必要に応じて `vendor-inspector` サブエージェントで個別の深掘り実施
