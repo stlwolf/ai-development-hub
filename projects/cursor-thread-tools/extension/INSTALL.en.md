@@ -25,7 +25,36 @@ Two ways to use: as a **Cursor extension** (via Command Palette) or as a **CLI**
 
 ---
 
-## Quick Start: Extension
+## Install from Release (Recommended)
+
+No build environment needed. Just download a `.vsix` and install it in Cursor.
+
+### 1. Download .vsix
+
+Go to [GitHub Releases](https://github.com/stlwolf/ai-development-hub/releases?q=cursor-thread-tools) and download the `.vsix` file for your platform:
+
+- macOS (Apple Silicon): `cursor-thread-tools-X.Y.Z-darwin-arm64.vsix`
+- macOS (Intel): `cursor-thread-tools-X.Y.Z-darwin-x64.vsix`
+
+With `gh` CLI:
+
+```bash
+gh release download cursor-thread-tools-v0.2.0 \
+  --repo stlwolf/ai-development-hub --pattern '*.vsix'
+```
+
+### 2. Install in Cursor
+
+1. In Cursor: `Cmd+Shift+P` → `Extensions: Install from VSIX...`
+2. Select the downloaded `.vsix` file
+3. Reload the window (`Cmd+Shift+P` → `Developer: Reload Window`)
+
+> The `.vsix` contains native modules (better-sqlite3) and only works on the same OS/architecture it was built on.
+> If no matching file is available, follow the "Build from Source" steps below.
+
+---
+
+## Build from Source: Extension
 
 Use the Command Palette (`Cmd+Shift+P`) to list and export threads.
 
