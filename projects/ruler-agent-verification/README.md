@@ -28,43 +28,49 @@ ruler-agent-verification/
 └── tmp/              # 生出力（gitignore対象）
 ```
 
-## 使い方
+## 使い方（推奨: ruler.sh）
 
 ```bash
 cd /path/to/ai-development-hub
 
-# タスク説明を差し替えてルーラーを実行
-TASK="ここにタスク説明"
-sed "s|{{TASK_DESCRIPTION}}|$TASK|" projects/ruler-agent-verification/prompts/ruler-v1.txt | \
-  gemini -p "$(cat)" -m gemini-2.5-pro \
-  --include-directories ideas,projects/second-opinion-verification/docs
+# 基本実行（ローカルターミナルから）
+./projects/ruler-agent-verification/ruler.sh "タスクの説明"
 
-# 出力を保存する場合
-sed "s|{{TASK_DESCRIPTION}}|$TASK|" projects/ruler-agent-verification/prompts/ruler-v1.txt | \
-  gemini -p "$(cat)" -m gemini-2.5-pro \
-  --include-directories ideas,projects/second-opinion-verification/docs \
-  2>&1 | tee projects/ruler-agent-verification/tmp/ruler-output-$(date +%Y%m%d-%H%M%S).txt
+# モデル指定
+./projects/ruler-agent-verification/ruler.sh -m gpt-5.2 "タスクの説明"
+
+# ファイルからタスク読み込み
+./projects/ruler-agent-verification/ruler.sh -f task.txt
+
+# dry-run（コマンド確認のみ）
+./projects/ruler-agent-verification/ruler.sh --dry-run "タスクの説明"
 ```
+
+出力は `tmp/ruler-YYYYMMDD-HHMMSS/` に自動保存される。
+
+### 実行環境の注意
+
+- **ローカルターミナルから実行すること**（Cursor統合ターミナルからは `cli-config.json` 競合でハングする）
+- `cursor-agent`（Homebrew版）を使用。`agent`（自動更新版）は Gemini で `resource_exhausted` が発生する場合がある
 
 ### モデル選択
 
 | モデル | 用途 | 備考 |
 |---|---|---|
-| `gemini-2.5-pro` | 推奨（安定） | API Key認証で動作確認済み |
-| `gemini-3-flash-preview` | より深い分析 | OAuth認証では429頻発。API Key推奨 |
-| `gemini-2.5-flash` | 高速・最安定 | 品質はやや劣る |
+| `gemini-3.1-pro` | **推奨**（デフォルト） | Cursorサブスク内、追加コストなし |
+| `gpt-5.2` | 代替 | Cursorサブスク内 |
+| `composer-1.5` | 代替 | Cursorサブスク内 |
 
-### 認証
+### Gemini CLI 直接実行（代替手段）
 
-`GEMINI_API_KEY` 環境変数の設定を推奨（OAuth personalはキャパ枯渇しやすい）:
+Cursor agent CLI が使えない場合のフォールバック。API Key（有料枠）が必要。
 
 ```bash
-export GEMINI_API_KEY="your-api-key"
-# または永続化
-echo 'GEMINI_API_KEY="your-api-key"' >> ~/.gemini/.env
+TASK="タスク説明"
+sed "s|{{TASK_DESCRIPTION}}|$TASK|" projects/ruler-agent-verification/prompts/ruler-v1.txt | \
+  GEMINI_API_KEY="your-key" gemini -p "$(cat)" -m gemini-2.5-pro \
+  --include-directories ideas,projects/second-opinion-verification/docs
 ```
-
-API Keyは [Google AI Studio](https://aistudio.google.com/app/apikey) で取得。
 
 ## 関連
 
