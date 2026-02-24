@@ -25,7 +25,36 @@ Cursor 内のコマンドパレットから使う**拡張機能**と、ターミ
 
 ---
 
-## クイックスタート: 拡張機能として使う
+## リリースからインストール（推奨）
+
+ビルド環境不要。`.vsix` をダウンロードして Cursor にインストールするだけです。
+
+### 1. .vsix をダウンロード
+
+[GitHub Releases](https://github.com/stlwolf/ai-development-hub/releases?q=cursor-thread-tools) から、自分の環境に合った `.vsix` ファイルをダウンロードします。
+
+- macOS (Apple Silicon): `cursor-thread-tools-X.Y.Z-darwin-arm64.vsix`
+- macOS (Intel): `cursor-thread-tools-X.Y.Z-darwin-x64.vsix`
+
+`gh` CLI がある場合:
+
+```bash
+gh release download cursor-thread-tools-v0.2.0 \
+  --repo stlwolf/ai-development-hub --pattern '*.vsix'
+```
+
+### 2. Cursor にインストール
+
+1. Cursor で `Cmd+Shift+P` → `Extensions: Install from VSIX...`
+2. ダウンロードした `.vsix` ファイルを選択
+3. ウィンドウをリロード（`Cmd+Shift+P` → `Developer: Reload Window`）
+
+> ネイティブモジュール（better-sqlite3）を含むため、ビルド元と同じ OS / アーキテクチャでのみ動作します。
+> 該当するファイルがない場合は、以下の「ソースからビルド」手順でビルドしてください。
+
+---
+
+## ソースからビルド: 拡張機能として使う
 
 Cursor のコマンドパレット（`Cmd+Shift+P`）からスレッドの一覧表示やエクスポートができます。
 
