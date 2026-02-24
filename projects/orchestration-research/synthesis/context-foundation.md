@@ -236,6 +236,32 @@ MVPの先では蒸留の自動化度を段階的に上げる。Mastra Observatio
 
 オーケストレーションツールはこの手動パターンの「フォーマット固定 + 蒸留自動化 + ガードレール強制」を実現するもの。
 
+### 実践事例: steipete の並列蒸留パターン
+
+> 出典: [steipete tweet](https://x.com/steipete/status/2025591780595429385) (2026-02)
+
+steipete（Peter Steinberger）が 3k PRs を処理するために実践した蒸留パターン:
+
+```
+50 Codex並列 → PR分析 → JSONレポート生成（vision, intent, risk等のシグナル）
+  → 全レポートを1セッションに集約 → AI queries / de-dupe / auto-close / merge
+```
+
+**示唆**:
+
+- **構造化JSONスキーマが蒸留の鍵**: 各エージェントが同じスキーマで出力することで、集約・クエリが可能になる
+- **「intent > text」**: PRのdiff/descriptionよりも「なぜこのPRを出したか（intent）」の方がシグナルとして高い。蒸留時に何を残すかの判断基準
+- **「vector db不要」**: 構造化されたJSONレポートがあればセマンティック検索は不要。"Was thinking way too complex for a while." — MVPの「frontmatter索引 + rg」方針を裏付ける
+- **MVP→次段階のパス**: テンプレート抽出（MVP）→ 並列エージェント×JSONスキーマによる自動蒸留（次段階）
+
+### ガードレールの時間的変化
+
+> 出典: [landscape/steipete-ecosystem/](../landscape/steipete-ecosystem/) 調査
+
+steipeteのagent-scriptsでは、`runner.ts`（コマンドガードレール）、`bin/git`（破壊的操作ブロック）、`ralph.ts`（オーケストレーター制御ループ）がすべて **削除済み**。モデルの能力向上により不要になったとのこと。残っているのはAGENTS.MDポインター、`docs-list`（read_when）、`committer` — よりセマンティックな部品のみ。
+
+**設計への示唆**: ガードレールは **取り外し可能に設計すべき**。今必要なガードレールが将来不要になり得る。インフラ層のガードレール（プロセス制御、破壊的操作ブロック）はモデル進化で代替されるが、セマンティック層のガードレール（コンテキスト選択、ドキュメント構造化）は残り続ける。
+
 ## 8. 次のアクション
 
 - [ ] MVPの具体的なファイル構造・スキーマ定義
