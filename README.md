@@ -7,10 +7,14 @@ AI駆動開発のための統合リポジトリ。再利用可能なプロンプ
 ```
 ai-development-hub/
 ├── cursor/                 # Cursor AI エディタ関連
+│   ├── agents/             # サブエージェント定義
 │   ├── command/            # 実行可能なコマンド集
 │   │   ├── review/         # PRレビュー関連コマンド
 │   │   └── verification/   # マルチエージェント検証コマンド
+│   ├── knowledge/          # ナレッジドキュメント
+│   ├── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
 │   ├── project-rules/      # プロジェクト固有のルール (.mdc)
+│   ├── skill/              # スキル定義（~/.cursor/skills/ にリンク）
 │   └── user-rules/         # ユーザー共通ルール (.md)
 ├── docs/                   # ドキュメント
 │   ├── draft/              # ドラフト・作成中のドキュメント
