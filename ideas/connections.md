@@ -56,6 +56,7 @@
 - [20260208/hypothesis-second-opinion-review-flow.md](20260208/hypothesis-second-opinion-review-flow.md) — 反証担当を固定したレビューフロー
 - [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 検証Action 1：複数AIの説明精度と収束度を比較
 - [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — SOプロンプトの構造化度合いが収束速度に影響。タスクタイプ別テンプレートの提案
+- [20260224/hypothesis-design-ci-parallel-agents.md](20260224/hypothesis-design-ci-parallel-agents.md) — レビューゲートの自動化をデザイン領域に拡張。観点特化エージェント群によるCI化で「Failだけ人間が見る」構造
 
 ### 契約による一貫性 → 正準フォーマット → 入力品質の標準化
 
@@ -72,6 +73,7 @@
 
 - [20260208/hypothesis-intentional-compression-and-promotion-flow.md](20260208/hypothesis-intentional-compression-and-promotion-flow.md) — 三層構造 + 昇格フロー（理論側）
 - [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層 + TTL + 昇格基準 + メタデータスキーマ（運用側）
+- [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 昇格フローのJSON実装形態。promotionフィールドが「子スレッドから親スレッドへの情報昇格」を構造化
 
 ### 推測比率と確実性の構造モデル
 
@@ -141,6 +143,8 @@ cursor-thread-tools 4フェーズの実践から「いつフォーマットが�
 - [20260222/orchestration-tool-building-approach.md](20260222/orchestration-tool-building-approach.md) — OSSリサーチ→要素抽出→自前構築のアプローチ。インフラ層×セマンティック層の合成戦略。付属GUIビューワー構想
 - [20260222/oss-orchestrator-analysis-agent-orchestrator.md](20260222/oss-orchestrator-analysis-agent-orchestrator.md) — agent-orchestrator分析。CLAUDE.md/CLAUDE.orchestrator.md のルール分離パターンがagent-rule-decompositionの実例として接続
 - [projects/orchestration-research/](../projects/orchestration-research/) — 体系的調査プロジェクト
+- [20260224/orchestration-design-principles-bath-brainstorm.md](20260224/orchestration-design-principles-bath-brainstorm.md) — 3設計原則（ベンダー非依存・直列プリミティブ合成・拡張可能）。OSSリサーチアプローチの上に乗る設計指針
+- [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 親子スレッドの橋渡しをJSONスキーマで構造化。steipeteの並列ETLパターンの転用
 
 ### agent-orchestrator のルール分離 → ルール分割検証
 

@@ -8,6 +8,12 @@
 
 ## インデックス
 
+### 2026-02-24
+
+- `orchestration-design-principles-bath-brainstorm.md`: 入浴ブレストから収束したオーケストレーションツールの3設計原則（ベンダー非依存・直列プリミティブ合成によるスケーラビリティ・プラグイン的拡張性）。Claude/ChatGPT双方の議論裏付けを含む
+- `hypothesis-design-ci-parallel-agents.md`: デザイン領域のCI化を観点特化エージェント群（a11y/トークン準拠/ビジュアルリグレッション等）の並列パイプラインで実現する仮説。steipeteモデルのデザイン領域への転写
+- `hypothesis-json-schema-aggregation-orchestration.md`: 子スレッド出力をJSONスキーマで統一し、親スレッドが集約クエリで判断する仮説。steipeteの「50並列Codex→JSONレポート」ツイート分析（並列ETL/intent>text/RAGの前にETL）を着想元に、レポートスキーマ案・制御トークン拡張・フロー全体像を含む
+
 ### 2026-02-22
 
 - `orchestration-tool-building-approach.md`: OSSリサーチ→要素抽出→自前オーケストレーションツール構築のアプローチ。インフラ層（OSS）とセマンティック層（自分の検証知見）の非対称性を活かす戦略。付属GUIビューワー構想（CLI SSOT + 融和的GUI）を含む
