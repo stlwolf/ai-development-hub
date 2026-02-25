@@ -13,7 +13,10 @@
 ## Build, Test, and Development Commands
 This repository has no global build system; contributions are mostly Bash scripts and Markdown.
 
-- `./scripts/sync-cursor-commands.sh`: symlink `cursor/command/*` into `~/.cursor/commands`.
+- `./scripts/sync/sync-cursor-commands.sh`: symlink `cursor/command/*` into `~/.cursor/commands/`.
+- `./scripts/sync/sync-cursor-agents.sh`: symlink `cursor/agents/*` into `~/.cursor/agents/`.
+- `./scripts/sync/sync-cursor-skills.sh`: symlink `cursor/skill/*` into `~/.cursor/skills/`.
+- `./scripts/sync/sync-cursor-mcp.sh`: symlink `cursor/mcp.json` to `~/.cursor/mcp.json`.
 - `cd projects/agent-verification-flow && ./scripts/cognito_auth.sh`: fetch JWT for API verification.
 - `cd projects/agent-verification-flow && ./scripts/api_call.sh GET /api/users`: run authenticated API calls.
 - `./projects/claude-safe/claude-safe -p "prompt" --output-format text`: run Claude CLI safely via wrapper.

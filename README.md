@@ -18,6 +18,7 @@ ai-development-hub/
 ├── ideas/                  # アイデア・ブレストメモ
 ├── projects/               # 独立したプロジェクト・ツールキット
 └── scripts/                # ユーティリティスクリプト
+    └── sync/               # Cursor設定の同期スクリプト
 ```
 
 ## 各ディレクトリの役割
@@ -42,20 +43,23 @@ Cursor AIエディタで使用するルールとコマンド集。
 
 ### `scripts/`
 リポジトリ運用のユーティリティスクリプト。
+詳細は [scripts/README.md](scripts/README.md) を参照。
 
 ## 使い方
 
-### Cursor コマンドの同期（推奨）
+### Cursor 設定の同期（推奨）
 
-`cursor/command/` 配下のコマンドを `~/.cursor/commands/` にシンボリックリンクとして配置できます。
+`cursor/` 配下の設定を `~/.cursor/` にシンボリックリンクとして配置できます。
 
 ```bash
-./scripts/sync-cursor-commands.sh
+./scripts/sync/sync-cursor-commands.sh  # コマンド → ~/.cursor/commands/
+./scripts/sync/sync-cursor-agents.sh    # エージェント → ~/.cursor/agents/
+./scripts/sync/sync-cursor-skills.sh    # スキル → ~/.cursor/skills/
+./scripts/sync/sync-cursor-mcp.sh       # MCP設定 → ~/.cursor/mcp.json
 ```
 
 - シンボリックリンクなので、どちら側から編集しても同じファイルが変更される
 - リポジトリ側でバージョン管理が可能
-- プロジェクト固有のコマンドは `~/.cursor/commands/` に直接配置可能（スクリプトはスキップ）
 
 ### Cursor AI ルールの適用
 
