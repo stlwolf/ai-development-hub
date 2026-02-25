@@ -155,6 +155,7 @@ window.__captured → [{ url, status, body }, ...]
 
 ## 注意事項
 
+- **APIレスポンスを取得する場合、`browser_evaluate` で直接 `fetch()` しないこと。** 認証セッション（httpOnly Cookie等）の問題で失敗する。代わりに「APIレスポンスボディの取得」パターンのインターセプト方式を使う
 - `browser_type` はテキストを追記する。クリア&入力したい場合は `browser_fill_form` を使う
 - `browser_handle_dialog` はダイアログが表示される**前**に呼ぶ（先行登録方式）
 - 操作のたびにrefが無効化されるため、連続操作の間に `browser_snapshot` を挟む
