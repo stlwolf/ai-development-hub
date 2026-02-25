@@ -127,6 +127,23 @@ snapshot が返す `ref` は操作のたびに変わる。**操作前に必ず�
 3. browser_evaluate → DOM状態を直接調査
 ```
 
+レスポンスボディの詳細が必要なら「APIレスポンスボディの取得」パターンを参照。
+
+### APIレスポンスボディの取得
+
+`browser_network_requests` はURL/ステータスのみ。レスポンスボディが必要な場合は、fetch/XHRをインターセプトする。APIを直接fetchするのではなく、ブラウザが通常行うリクエストをキャプチャする方式。認証の問題を回避できる。
+
+1. [scripts/intercept-api.js](scripts/intercept-api.js) の内容を読み取る
+2. `browser_evaluate` の `function` に読み取った内容を渡して実行（**操作やページ遷移の前に設置すること**）
+3. SPA内でページ遷移（クリック等）を行う — この間のAPIリクエストが自動キャプチャされる
+4. `browser_evaluate` で `return window.__captured` を実行し結果を取得
+
+```
+window.__captured → [{ url, status, body }, ...]
+```
+
+スクリプトのデフォルトURLパターン（`/api/`, `/v{N}/`, `/graphql/`）に合わない場合は、対象サイトのAPIパスに合わせてスクリプトの `isApiRequest()` を調整する。
+
 ### レスポンシブ確認
 
 ```
