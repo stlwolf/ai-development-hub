@@ -35,6 +35,5 @@ node_modules/
 # Local working files (untracked)
 tmp/
 .vendor-inspect/
-
-# vscode plugin
 .specstory/
+.playwright-mcp/
