@@ -9,8 +9,11 @@ AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コ
 ## コマンド
 
 ```bash
-# Cursorコマンドを~/.cursor/commands/にシンボリックリンク配置
-./scripts/sync-cursor-commands.sh
+# Cursor設定をシンボリックリンク配置
+./scripts/sync/sync-cursor-commands.sh  # コマンド → ~/.cursor/commands/
+./scripts/sync/sync-cursor-skills.sh    # スキル → ~/.cursor/skills/
+./scripts/sync/sync-cursor-agents.sh    # エージェント → ~/.cursor/agents/
+./scripts/sync/sync-cursor-mcp.sh       # MCP設定 → ~/.cursor/mcp.json
 
 # agent-verification-flow: API検証ツール
 cd projects/agent-verification-flow
@@ -32,6 +35,8 @@ CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-ti
 ai-development-hub/
 ├── cursor/                 # Cursor AI エディタ関連
 │   ├── command/review/     # PRレビュー・Copilotレビュー対応コマンド
+│   ├── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
+│   ├── skill/              # スキル定義（~/.cursor/skills/ にリンク）
 │   ├── project-rules/      # プロジェクト固有ルール (.mdc, alwaysApply)
 │   └── user-rules/         # ユーザー共通ルール（行動規範・入力・Markdown）
 ├── projects/               # 独立したツールキット（ideas/から昇格）
@@ -41,6 +46,7 @@ ai-development-hub/
 ├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
 ├── docs/draft/             # ドラフトドキュメント
 └── scripts/                # ユーティリティ
+    └── sync/               # Cursor設定の同期スクリプト
 ```
 
 ### projects/ の設計

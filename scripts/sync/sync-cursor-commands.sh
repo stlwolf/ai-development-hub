@@ -32,7 +32,7 @@ set -euo pipefail
 
 # 設定
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 SOURCE_DIR="${REPO_ROOT}/cursor/command"
 TARGET_DIR="${HOME}/.cursor/commands"
 

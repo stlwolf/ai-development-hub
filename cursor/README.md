@@ -10,7 +10,10 @@ cursor/
 ├── command/              # 実行可能なコマンドテンプレート
 │   ├── review/           # PRレビュー関連
 │   └── verification/     # マルチエージェント検証
+├── knowledge/            # 知識ベース（セットアップガイド等）
+├── mcp.json              # MCP サーバー設定
 ├── project-rules/        # プロジェクト固有ルール (.mdc, alwaysApply)
+├── skill/                # スキル定義（命名規則、コミット規約等）
 └── user-rules/           # ユーザー共通ルール (.md)
 ```
 
@@ -19,6 +22,7 @@ cursor/
 | コマンド | 配置先 | 責務 |
 |---|---|---|
 | `/peer-ai-review` | `verification/` | Codex/Claude にピアレビュー依頼（3者合意ループ） |
+| `/arena-perspectives` | `verification/` | 複数モデルへの並列投入と回答比較 |
 | `/pr-review` | `review/` | GitHub PR のレビュー（gh CLI） |
 | `/copilot-review-response` | `review/` | Copilot レビューへの対応 |
 
@@ -35,10 +39,16 @@ cursor/
 
 ```bash
 # cursor/command/ 配下を ~/.cursor/commands/ にシンボリックリンク
-./scripts/sync-cursor-commands.sh
+./scripts/sync/sync-cursor-commands.sh
 
 # cursor/agents/ 配下を ~/.cursor/agents/ にシンボリックリンク
-./scripts/sync-cursor-agents.sh
+./scripts/sync/sync-cursor-agents.sh
+
+# cursor/skill/ 配下を ~/.cursor/skills/ にシンボリックリンク
+./scripts/sync/sync-cursor-skills.sh
+
+# cursor/mcp.json を ~/.cursor/mcp.json にシンボリックリンク
+./scripts/sync/sync-cursor-mcp.sh
 ```
 
 ## ルール
