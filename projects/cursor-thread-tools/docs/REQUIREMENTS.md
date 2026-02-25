@@ -102,6 +102,17 @@ Cursor 内部データ（`state.vscdb`）への read-only アクセスを核と�
 | フォールバック | try/catch でサイレント失敗。エクスポート自体は正常完了 |
 | 適用範囲 | 手動エクスポートのみ。自動保存には適用しない。CLI には適用不可 |
 
+### FR-8: スレッド一覧の最終活動時刻ソート
+
+| 項目 | 内容 |
+|------|------|
+| 対象 | `listAllThreads()` のソート順（list / export QuickPick / CLI list 共通） |
+| ソートキー | 第1: `lastUpdatedAt`（存在する場合）、第2: `createdAt`（フォールバック） |
+| データソース | `composerData:*` JSON の `lastUpdatedAt` フィールド（epoch ms） |
+| カバレッジ | Cursor が途中バージョンから記録開始。古いスレッドには未設定で `createdAt` フォールバック |
+| CLI 出力 | `list` / `list --json` に `lastUpdatedAt` を追加 |
+| `--since` | `lastUpdatedAt` 優先でフィルタ（フォールバック: `createdAt`） |
+
 ---
 
 ## 明示的にスコープ外
