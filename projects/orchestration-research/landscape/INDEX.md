@@ -58,6 +58,7 @@
 
 | ツール                                                             | Stars  | 言語         | 一言                                        | 調査    |
 | --------------------------------------------------------------- | ------ | ---------- | ----------------------------------------- | ----- |
+| [Claude Code Agent Teams](./claude-code-agent-teams.md)         | —      | TypeScript | Claude Code内蔵。ファイルベースmailbox、Team lead/Teammates、Delegate mode | 新規 |
 | [Claude Flow](./claude-flow.md)                                 | 14,337 | TypeScript | ⚠️ **85%がモック実装。** 実態はClaude CLIのプロンプトラッパー | 2.9KB |
 | [oh-my-claude-code / o-m-cc](./oh-my-claude-code-and-o-m-cc.md) | 0 / 4  | JS / Bash  | 中央オーケストレーター型 vs 分散P2P型。o-m-ccの方が活発で設計が成熟  | 2.8KB |
 
@@ -69,6 +70,89 @@
 | --------------------------------------- | ----------- | --------- | --------------------------------------- | ----- |
 | [PentAGI / Orca](./pentagi-and-orca.md) | 6,592 / 284 | Go / Rust | ペンテスト特化マルチエージェント / Rust LLMパイプライン（開発停止） | 2.6KB |
 
+
+### 7. 個人開発者ツールキット（番外）
+
+> steipete（Peter Steinberger）の実践的CLI群。フレームワークではなく、小さな単機能CLIの組み合わせによるオーケストレーション。
+
+| ツール | Stars | 言語 | 一言 | 調査 |
+|---|---|---|---|---|
+| [agent-scripts](./steipete-ecosystem/agent-scripts.md) | 349 | TS/Bash | AGENTS.MDポインター、docs-list read_when、committer。Ralph（削除済み） | ✅ |
+| [Oracle](./steipete-ecosystem/oracle.md) | 1,500 | TypeScript | マルチモデル並列SO。API+ブラウザデュアルエンジン、セッション管理 | ✅ |
+| [mcporter](./steipete-ecosystem/mcporter.md) | 2,100 | TypeScript | MCP統合ブリッジ。generate-cliでMCP→CLI変換 | ✅ |
+| [Peekaboo](./steipete-ecosystem/peekaboo.md) | 2,300 | Swift | macOSスクリーンキャプチャ+AI画像認識+GUI自動操作 | ✅ |
+| [OpenClaw](./steipete-ecosystem/openclaw.md) | 224,000+ | TypeScript | パーソナルAIアシスタント基盤。20+チャネル統合 | ✅ |
+
+詳細: [steipete-ecosystem/INDEX.md](./steipete-ecosystem/INDEX.md)
+
+
+---
+
+## ツール間の関係性マップ
+
+### Claude Code エコシステムの階層
+
+Claude Codeを中心とした4層のオーケストレーション手段が存在する。上に行くほど自動化度が高く、下に行くほど透明性・制御性が高い。
+
+```
+Layer 4: フレームワーク型（Claude Code非依存）
+  Agent Orchestrator ──── CAO ──── TAKT
+  │ 複数CLI統合              │ tmux+MCP     │ YAML定義
+  │ 8スロットPlugin          │ 3モード       │ Faceted Prompting
+  └──────────────────────────┴──────────────┘
+
+Layer 3: Claude Code Plugin型
+  oh-my-claude-code ──── o-m-cc
+  │ 中央オーケストレーター    │ P2P (TeammateTool利用)
+  │ Hooks駆動               │ Progressive Disclosure
+  └──────────────────────────┘
+
+Layer 2: Claude Code 内蔵機能
+  Agent Teams ──── Subagents
+  │ ファイルベースmailbox    │ 単一セッション内
+  │ Delegate mode            │ 結果のみ返却
+  │ コスト2x                 │ 低コスト
+  └──────────────────────────┘
+
+Layer 1: 手動CLIオーケストレーション
+  steipete agent-scripts ──── Oracle ──── Peekaboo
+  │ AGENTS.MDポインター       │ マルチモデルSO   │ 画面認識+GUI
+  │ docs-list (read_when)    │ デュアルエンジン  │ v3エージェントフロー
+  └──────────────────────────┴────────────────┘
+```
+
+### 関係性の詳細
+
+| 関係 | 内容 |
+|---|---|
+| **steipete → Agent Teams** | steipeteの手動tmuxオーケストレーションが、Agent Teams公式化に影響を与えたと推測。同じファイルベース通信の思想 |
+| **Agent Teams → o-m-cc** | o-m-ccはAgent TeamsのTeammateToolを活用してP2P協調を実現。Agent Teamsの上に構築 |
+| **Agent Orchestrator ↔ CAO** | 共にtmux + 複数CLI統合だが、Agent Orchestratorは8スロットPlugin、CAOは3モード + ANSIパース。競合関係 |
+| **Oracle ↔ arena-compare** | 同じ「マルチモデル並列比較」の発想。OracleはAPI+ブラウザデュアルエンジン+セッション管理付きのフルスペック版 |
+| **TAKT ↔ CrewAI** | 共にYAML定義+ロール設計だが、TAKTは音楽メタファ+Faceted Prompting、CrewAIはRole/Goal/Backstory+Flows |
+| **Agent Teams ↔ CAO** | 共にmailbox/inbox方式の非同期通信。Agent TeamsはJSON、CAOはInbox+Watchdog |
+| **LangGraph ↔ Agent Teams** | LangGraphのCheckpoint+Time TravelはAgent Teamsにない。Agent TeamsはLangGraphよりシンプルだが状態管理が弱い |
+| **mcporter ↔ MCP対応ツール全般** | mcporterのgenerate-cli（MCP→CLI変換）はMCPのコンテキストコスト問題への解答。steipete: "CLIs beat MCPs" |
+| **Peekaboo ↔ Playwright/SWE-agent ACI** | Peekabooは視覚的認識（スクリーンショット+AI）、PlaywrightはDOM操作、ACIはLM専用IF。補完関係 |
+
+### 設計思想の2軸
+
+```
+重量（フレームワーク）───────────────── 軽量（CLI組み合わせ）
+  │                                          │
+  LangGraph                                steipete agent-scripts
+  Mastra                                   o-m-cc
+  CrewAI                                   TAKT
+  Agent Orchestrator                       CAO
+                                           Oracle
+
+内蔵（特定ツール依存）──────────────── 独立（ツール非依存）
+  │                                          │
+  Agent Teams (Claude Code)                LangGraph
+  o-m-cc (Claude Code)                     CrewAI
+  oh-my-claude-code (Claude Code)          PydanticAI
+  Claude Flow (Claude Code)                Agent Orchestrator (複数CLI)
+```
 
 ---
 
@@ -107,7 +191,9 @@
 
 ## 次のステップ
 
-- `../synthesis/` に独自レイヤーとの統合設計ノートを作成
-- 薄いファイル（BeeAI, ControlFlow等）をサブエージェントの元結果から補完するか判断
-- `../concepts/` に横断的パターン（Handoffパターン、ループ検出パターン、メモリ永続化パターン等）を抽出
+- [x] `../concepts/` 完了（domain/ 10領域 + implementation/ 4ファイル + cross-cutting/ 4テーマ）
+- [x] `../synthesis/context-foundation.md` コンテキスト基盤の統合設計ノート初版
+- [ ] `../synthesis/` 残りの独自概念（認知協調、正準エージェント定義等）
+- [ ] 必要に応じて `vendor-inspector` で個別ツールの深掘り（ralph.ts, docs-list.ts等）
+- [ ] 薄いファイル（BeeAI, ControlFlow等）をサブエージェントの元結果から補完するか判断
 
