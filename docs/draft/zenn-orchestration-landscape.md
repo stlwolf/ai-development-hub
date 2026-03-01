@@ -39,7 +39,7 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 | ControlFlow | [PrefectHQ/ControlFlow](https://github.com/PrefectHQ/ControlFlow) | 1,388 | Python | ⚠️ アーカイブ済み → Marvin 3.0 |
 | PentAGI | [vxcontrol/pentagi](https://github.com/vxcontrol/pentagi) | 6,592 | Go/TS | ペンテスト特化。Graphiti知識グラフ |
 | Orca | [scrippt-tech/orca](https://github.com/scrippt-tech/orca) | 284 | Rust | ⚠️ 開発停止 |
-| oh-my-claude-code | [zephyrpersonal/oh-my-claude-code](https://github.com/zephyrpersonal/oh-my-claude-code) | 0 | JavaScript | Claude Code Hooks。中央オーケストレーター型 |
+| oh-my-claudecode | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) | 7,800+ | TypeScript | Claude Code最大のオーケストレーションPlugin。Team Mode |
 | o-m-cc | [kok1eee/o-m-cc](https://github.com/kok1eee/o-m-cc) | 4 | Shell | Claude Code Hooks。分散P2P型 |
 
 ⚠️マークのツールは調査時点でメンテナンスモード・アーカイブ済み・開発停止のいずれか。調査対象に含めたのは、設計パターンの抽出には依然として価値があるため。
@@ -66,10 +66,10 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 | TAKT | YAML宣言型の開発ワークフロー。Claude Code/Codex/OpenCodeの3 SDKを直接統合 |
 | Agent Orchestrator | 複数コーディングCLI（Claude Code, Codex, Aider等）をtmux + 8スロットPluginで統合管理 |
 | CAO | 複数エージェントCLI（Amazon Q, Claude Code等）のtmux管理。ANSI出力パースで状態検知 |
-| oh-my-claude-code | Claude CodeのHooksプラグイン。中央オーケストレーター型で専門エージェントチームを管理 |
+| oh-my-claudecode | Claude Code最大のオーケストレーションPlugin。32エージェント、Team Mode、Haiku/Opus自動モデルルーティング |
 | o-m-cc | Claude CodeのHooksプラグイン。分散P2P型。HANDOVER.mdでVCSベースの知識管理 |
 
-なお、Anthropicが2026年2月にClaude Codeの実験的機能として**Agent Teams**（`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`）をリリースしている。ファイルベースのmailbox通信で複数Claude Codeセッションを協調させる内蔵機能で、o-m-ccはこのAgent TeamsのTeammateToolの上にP2P協調を構築している。
+なお、Claude Codeには実験的機能として**Agent Teams**が内蔵されている（2026年2月時点）。ファイルベースのmailbox通信で複数セッションを協調させる機能で、oh-my-claudecodeはTeam Modeとして、o-m-ccはTeammateToolによるP2P協調として、それぞれAgent Teamsの上にオーケストレーションを構築している。
 
 ### 汎用フレームワーク型
 
@@ -106,8 +106,8 @@ AI駆動開発の観点では、**開発特化型のワークフロー**を組�
 | TAKT | なし (SDK経由) | git clone --shared | なし | 並列Movement |
 | Agent Orchestrator | tmux | worktree / clone (Plugin) | SCM Plugin | 30並列 |
 | CAO | tmux | git worktree | なし | 複数セッション |
-| oh-my-claude-code | なし (Hooks) | なし | なし | エージェントチーム |
-| o-m-cc | なし (Hooks) | worktree | git / jj | Agent Teams (P2P) |
+| oh-my-claudecode | なし (Plugin) | なし | なし | Team Mode (32エージェント) |
+| o-m-cc | なし (Plugin) | worktree | git / jj | Agent Teams (P2P) |
 
 | ツール | コードベース理解 | ループ/スタック検出 | LLM接続 |
 |---|---|---|---|
@@ -117,14 +117,14 @@ AI駆動開発の観点では、**開発特化型のワークフロー**を組�
 | TAKT | なし | Loop Monitor / Cycle Detection | SDK直接統合 (3 SDK) |
 | Agent Orchestrator | なし | なし | CLIラッパー |
 | CAO | なし | Terminal Status Detection | CLIラッパー |
-| oh-my-claude-code | なし | なし | CLIラッパー |
+| oh-my-claudecode | なし | なし | CLIラッパー (自動モデルルーティング) |
 | o-m-cc | Progressive Disclosure (-33%) | stop-guard / focus-guard | CLIラッパー |
 
 ### 読み取れる傾向
 
-**隔離の方式で大きく3グループに分かれる。** Docker隔離（OpenHands, SWE-agent）は最も安全だが重い。tmux管理（Agent Orchestrator, CAO）は軽量で並列に強いが、ファイルシステムレベルの隔離は不完全。Hooks型（oh-my-claude-code, o-m-cc）は最軽量だがホストツールに完全依存する。
+**隔離の方式で大きく3グループに分かれる。** Docker隔離（OpenHands, SWE-agent）は最も安全だが重い。tmux管理（Agent Orchestrator, CAO）は軽量で並列に強いが、ファイルシステムレベルの隔離は不完全。Plugin型（oh-my-claudecode, o-m-cc）は最軽量だがホストツールに完全依存する。
 
-**CLIラッパー型はLLM接続を自前で持たない。** Agent Orchestrator, CAO, oh-my-claude-code, o-m-ccはホストのコーディングエージェントCLI（Claude Code, Codex等）をそのまま使い、LLMとの通信はホスト側に委ねている。自前でLLM接続を持つツールでは、Pythonエコシステムのlitellmの採用が多い。
+**CLIラッパー / Plugin型はLLM接続を自前で持たない。** Agent Orchestrator, CAO, oh-my-claudecode, o-m-ccはホストのコーディングエージェントCLI（Claude Code, Codex等）をそのまま使い、LLMとの通信はホスト側に委ねている。oh-my-claudecodeは自動モデルルーティング（Haiku/Sonnet/Opus）を持つが、これはホスト側のモデル選択を制御する形。自前でLLM接続を持つツールでは、Pythonエコシステムのlitellmの採用が多い。
 
 **CI/PR連携まで踏み込んでいるツールは少ない。** Agent Orchestratorの Reactions（33種のイベント × 4段階優先度でCI失敗→自動修正等）が最も体系的。CAOのFlow（cronスケジュール実行）も該当する。多くのツールはコード生成までが守備範囲で、その先のCI/レビュー対応は手動か外部連携に頼っている。
 
@@ -136,7 +136,7 @@ AI駆動開発の観点では、**開発特化型のワークフロー**を組�
 |---|---|---|---|---|
 | LangGraph | Python / TS | Library | Code-first | langchain-core |
 | OpenAI Agents SDK | Python / TS | Library | Code-first | 独自 + litellm |
-| Google ADK | Py / Go / Java / TS | Library + Web UI | Code-first | 独自 |
+| Google ADK | Python / Go / Java / TS | Library + Web UI | Code-first | 独自 |
 | PydanticAI | Python | Library | Code-first | 独自 (20+ providers) |
 | CrewAI | Python | Library + CLI | Code + YAML | 独自 |
 | AutoGen | Python | Library + GUI | Code-first | 独自 |
