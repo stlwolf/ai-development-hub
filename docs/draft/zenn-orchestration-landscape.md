@@ -88,7 +88,7 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 | MetaGPT | SOP（標準作業手順）ベース。`cause_by`による暗黙的ルーティング |
 | Agent Squad | 意図分類（TF-IDF + コサイン類似度）ベースのルーティング |
 
-PentAGI（ペンテスト特化）、ControlFlow（⚠️ アーカイブ済み）、Orca（⚠️ 開発停止）はドメイン特化または停止中のため上記からは分けている。設計パターンの抽出には参考になった。
+PentAGI（ペンテスト特化）、ControlFlow（⚠️ アーカイブ済み）、Orca（⚠️ 開発停止）はドメイン特化または停止中のため上記からは分けている。設計パターンの抽出には参考になった。なお、OpenCode（OSSのAIコーディングCLI）向けの[oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)（35,000+ stars）も存在するが、Claude Code / Cursor / Codex文脈の本記事のスコープ外として除外している。
 
 ### この2分類で見えること
 
@@ -199,7 +199,7 @@ AI駆動開発の文脈では、**04（Execution & Runtime）が特に重要な�
 
 複数エージェントの協調構造は、大きく4つのトポロジーに分類できた。
 
-**中央集権型（Hub-and-Spoke）** — 1つのオーケストレーターが全エージェントを管理。CrewAI（Hierarchical Process）、Agent Orchestrator等。制御しやすいがオーケストレーターがボトルネック。
+**中央集権型（Hub-and-Spoke）** — 1つのオーケストレーターが全エージェントを管理。oh-my-claudecode（Team Mode）、CrewAI（Hierarchical Process）、Agent Orchestrator等。制御しやすいがオーケストレーターがボトルネック。
 
 **分散P2P型** — 中央管理なし、エージェント同士が直接やり取り。MetaGPT（`cause_by`によるPub/Sub）、o-m-cc（TeammateTool）等。スケーラブルだが一貫性の担保が難しい。
 
