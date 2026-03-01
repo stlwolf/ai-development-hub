@@ -12,7 +12,7 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 
 **注意**: 本記事は自分自身がオーケストレーションツールの設計を検討するために行った調査の整理であり、網羅的なベンチマークや推薦記事ではありません。調査対象にはオーケストレーションツールだけでなく、関連するコーディングエージェント（Aider, SWE-agent等）や汎用エージェントフレームワークも含めています。21ツールを横断して見たときに浮かび上がる**設計パターンの全体像**を共有するものとして読んでいただければと思います。
 
-調査はAIサブエージェントを活用して**2026年2月下旬時点**の情報を収集・整理しており、各ツールの最新状況とは異なる場合があります。Stars数やステータスも調査時点のものです。
+調査はAIサブエージェントを活用して**2026年2月下旬時点**の情報を収集・整理しており、各ツールの最新状況とは異なる場合があります。Star数やステータスも調査時点のものです。
 
 ## 調査した21ツール
 
@@ -20,7 +20,7 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 
 | ツール | リポジトリ | Stars | 言語 | 一言 |
 |---|---|---|---|---|
-| OpenHands | [All-Hands-AI/OpenHands](https://github.com/All-Hands-AI/OpenHands) | 68,060 | Python | Docker隔離 + EventStream + StuckDetector |
+| OpenHands | [OpenHands/OpenHands](https://github.com/OpenHands/OpenHands) | 68,060 | Python | Docker隔離 + EventStream + StuckDetector |
 | SWE-agent | [SWE-agent/SWE-agent](https://github.com/SWE-agent/SWE-agent) | 18,528 | Python | Agent-Computer Interface。NeurIPS 2024 |
 | Aider | [Aider-AI/aider](https://github.com/Aider-AI/aider) | 40,835 | Python | Repository Map（PageRank + tree-sitter） |
 | TAKT | [nrslib/takt](https://github.com/nrslib/takt) | 424 | TypeScript | YAML定義ワークフロー + Faceted Prompting |
@@ -46,7 +46,7 @@ AI駆動開発が当たり前になりつつある中で、「コーディング
 
 ### 調査過程で判明した注意点
 
-- **Claude Flow**（14.3k stars）も調査対象に含めていましたが、コミュニティの検証でMCPツールの大部分がモック実装であることが指摘されたため、上記一覧からは除外しました。Stars数と実装の実態は必ずしも一致しません
+- **Claude Flow**（14.3k stars）も調査対象に含めていましたが、コミュニティの検証でMCPツールの大部分がモック実装であることが指摘されたため、上記一覧からは除外しました。Star数と実装の実態は必ずしも一致しません
 - **AutoGen**（54.7k stars）は2025年10月にメンテナンスモードに移行しています。Microsoft Agent Frameworkへ統合される方向です
 - **ControlFlow**はPrefect社CEOが開発しましたが、2025年8月にアーカイブされ、Marvin 3.0に吸収されています
 
@@ -124,7 +124,7 @@ AI駆動開発の観点では、**開発特化型のワークフロー**を組�
 
 **隔離の方式で大きく3グループに分かれます。** Docker隔離（OpenHands, SWE-agent）は最も安全ですが重い。tmux管理（Agent Orchestrator, CAO）は軽量で並列に強いものの、ファイルシステムレベルの隔離は不完全です。Plugin型（oh-my-claudecode, o-m-cc）は最軽量ですが、ホストツールに完全依存します。
 
-**CLIラッパー / Plugin型はLLM接続を自前で持ちません。** Agent Orchestrator, CAO, oh-my-claudecode, o-m-ccはホストのコーディングエージェントCLI（Claude Code, Codex等）をそのまま使い、LLMとの通信はホスト側に委ねています。oh-my-claudecodeは自動モデルルーティング（Haiku/Opus）を持ちますが、これはホスト側のモデル選択を制御する形です。自前でLLM接続を持つツールでは、Pythonエコシステムのlitellmの採用が多く見られます。
+**CLIラッパー / Plugin型はLLM接続を自前で持ちません。** Agent Orchestrator, CAO, oh-my-claudecode, o-m-ccはホストのコーディングエージェントCLI（Claude Code, Codex等）をそのまま使い、LLMとの通信はホスト側に委ねています。oh-my-claudecodeは自動モデルルーティング（Haiku/Opus）を持ちますが、これはホスト側のモデル選択を制御する形です。自前でLLM接続を持つツールでは、PythonエコシステムのLiteLLMの採用が多く見られます。
 
 **CI/PR連携まで踏み込んでいるツールは少ないです。** Agent Orchestratorの Reactions（33種のイベント × 4段階優先度でCI失敗→自動修正等）が最も体系的です。CAOのFlow（cronスケジュール実行）も該当します。多くのツールはコード生成までが守備範囲で、その先のCI/レビュー対応は手動か外部連携に頼っています。
 
