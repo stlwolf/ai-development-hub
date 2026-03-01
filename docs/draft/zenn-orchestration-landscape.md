@@ -1,5 +1,5 @@
 ---
-title: "AIエージェント・オーケストレーション21ツールを調べて見えた設計パターンの地図"
+title: "21ツール横断で見るAIエージェント・オーケストレーション設計パターン"
 emoji: "🗺️"
 type: "tech"
 topics: ["AI", "agent", "LLM", "orchestration"]
