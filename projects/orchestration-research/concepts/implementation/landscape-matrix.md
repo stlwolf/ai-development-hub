@@ -24,7 +24,7 @@
 | **SWE-agent** | Python | CLI | pip / Docker | スタンドアロン | YAML駆動 | Docker (opt), LLM API |
 | **Aider** | Python | CLI | pip / standalone binary | スタンドアロン | YAML (.aider.conf.yml) | git, LLM API |
 | **Claude Flow** | TypeScript | CLI | npm | CLIラッパー（Claude Code） | Code-first | Claude Code CLI |
-| **oh-my-claude-code** | JavaScript | Plugin | npm / local | CLIラッパー（Claude Code） | YAML frontmatter | Claude Code, Node.js 18+ |
+| **oh-my-claudecode** | TypeScript | Plugin | npm | CLIラッパー（Claude Code） | Skills Composition | Claude Code |
 | **o-m-cc** | Shell (Bash) | Plugin | local (ビルドなし) | CLIラッパー（Claude Code） | Markdown frontmatter | Claude Code, git/jj |
 | **PentAGI** | Go / TypeScript | CLI + API + Web UI | Go binary / Docker | スタンドアロン | Template (.tmpl) | Docker, Neo4j, LLM API |
 | **Orca** | Rust | Library | Library (未公開) | スタンドアロン | Handlebars + Code | LLM API, Qdrant (opt) |

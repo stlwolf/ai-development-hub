@@ -76,7 +76,7 @@ LLM呼び出しのトークン消費・コストを追跡する。
 
 | ツール | 用語 | 特徴 |
 |---|---|---|
-| oh-my-claude-code | コスト意識型ルーティング | FREE → CHEAP → EXPENSIVE の段階的エスカレーション。`COST_LEVELS` |
+| oh-my-claudecode | コスト意識型ルーティング | FREE → CHEAP → EXPENSIVE の段階的エスカレーション。`COST_LEVELS` |
 | AutoGen | `TokenUsage` 終了条件 | トークン使用量での終了制御 |
 
 ## パターン・バリエーション

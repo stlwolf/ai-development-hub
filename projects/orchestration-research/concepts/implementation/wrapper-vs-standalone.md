@@ -33,7 +33,7 @@ LLMとの通信からフロー制御まで、コア機能を独自実装して�
 | ツール | ラップ対象 | ラップ方式 | 付加価値 |
 |---|---|---|---|
 | Claude Flow | Claude Code CLI | `child_process.spawn('claude')` | オーケストレーション（主張）。ただし85%モック |
-| oh-my-claude-code | Claude Code | Plugin (Hooks) | 中央オーケストレーター、専門エージェントチーム |
+| oh-my-claudecode | Claude Code | Plugin (Hooks) | 中央オーケストレーター、専門エージェントチーム |
 | o-m-cc | Claude Code | Plugin (Hooks + Agent Teams) | P2P協調、HANDOVER.md、Progressive Disclosure |
 
 ### CLIラッパー（複数対象）
@@ -67,7 +67,7 @@ LLMとの通信からフロー制御まで、コア機能を独自実装して�
     │                                        │
     o-m-cc                                 CAO (ANSI出力パース)
     (Hooks + frontmatter)                  Agent Orchestrator (tmux + Plugin)
-    oh-my-claude-code                      Claude Flow (spawn)
+    oh-my-claudecode                      Claude Flow (spawn)
     (Hooks + Intent Gate)
 ```
 

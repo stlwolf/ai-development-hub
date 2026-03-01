@@ -60,7 +60,7 @@ CLIをメインにしつつWebダッシュボードも提供する。
 
 | ツール | ホスト | 特徴 |
 |---|---|---|
-| oh-my-claude-code | Claude Code | Hooks駆動。中央オーケストレーター型 |
+| oh-my-claudecode | Claude Code | Hooks駆動。中央オーケストレーター型 |
 | o-m-cc | Claude Code | Hooks + Agent Teams。分散P2P型。ビルドシステムなし |
 
 **利点**: 既存エコシステムの活用、軽量
@@ -86,7 +86,7 @@ CLIをメインにしつつWebダッシュボードも提供する。
 2. **Library + CLI**: ライブラリの上に薄いCLIを被せる（CrewAI, MetaGPT, SWE-agent）
 3. **Library + CLI + Web UI**: フルスタック。開発体験は良いがメンテナンスコスト大（Mastra, Google ADK）
 4. **CLI-first**: ワークフローオーケストレーターに多い（TAKT, Aider）
-5. **Plugin**: 既存ツールの拡張。最も軽量だが依存リスク（oh-my-claude-code, o-m-cc）
+5. **Plugin**: 既存ツールの拡張。最も軽量だが依存リスク（oh-my-claudecode, o-m-cc）
 
 ### 言語とIF型の相関
 

@@ -83,13 +83,13 @@ Stage 3: 参照ファイル （外部ドキュメント）
 
 ### Prompt-based Routing（プロンプトベースルーティング）
 
-**代表**: oh-my-claude-code, MetaGPT
+**代表**: oh-my-claudecode, MetaGPT
 
 プロンプトやメッセージの構造自体がルーティングのキーとなる。
 
 | ツール | 方式 | 特徴 |
 |---|---|---|
-| oh-my-claude-code | Intent Gate | ユーザー入力を分類して適切なエージェントに振り分け |
+| oh-my-claudecode | Intent Gate | ユーザー入力を分類して適切なエージェントに振り分け |
 | MetaGPT | `cause_by` | メッセージの生成元Action型がルーティングキー。`_watch()` で関心のあるAction型を登録 |
 
 **洞察**: MetaGPTの `cause_by` はルーティングをプロンプト/メッセージの構造に埋め込む。明示的なルーティングテーブルが不要。分散型オーケストレーションに適する。

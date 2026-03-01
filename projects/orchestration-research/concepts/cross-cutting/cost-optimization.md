@@ -16,11 +16,11 @@
 
 | ツール | 方式 | 特徴 |
 |---|---|---|
-| oh-my-claude-code | `COST_LEVELS` | FREE → CHEAP → EXPENSIVE の段階的エスカレーション（haiku → sonnet → opus） |
+| oh-my-claudecode | `COST_LEVELS` | FREE → CHEAP → EXPENSIVE の段階的エスカレーション（haiku → sonnet → opus） |
 | TAKT | `Persona Providers` | ペルソナ単位でプロバイダー/モデルを切り替え（coder=Codex, reviewer=Claude） |
 | TAKT | `Provider Profiles` | プロバイダー別の5段階優先度解決 |
 
-**oh-my-claude-codeの段階的エスカレーション**:
+**oh-my-claudecodeの段階的エスカレーション**:
 ```
 1. FREE (haiku): 単純なフォーマット変換、分類
 2. CHEAP (sonnet): 標準的なコード生成、レビュー

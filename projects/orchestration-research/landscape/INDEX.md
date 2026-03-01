@@ -58,9 +58,11 @@
 
 | ツール                                                             | Stars  | 言語         | 一言                                        | 調査    |
 | --------------------------------------------------------------- | ------ | ---------- | ----------------------------------------- | ----- |
-| [Claude Code Agent Teams](./claude-code-agent-teams.md)         | —      | TypeScript | Claude Code内蔵。ファイルベースmailbox、Team lead/Teammates、Delegate mode | 新規 |
+| [Claude Code Agent Teams](./claude-code-agent-teams.md)         | —      | TypeScript | Claude Code内蔵。ファイルベースmailbox、Team lead/Teammates、Delegate mode | ✅ |
+| [oh-my-claudecode](./oh-my-claudecode.md)                       | 7,800+ | TypeScript | Claude Code最大のオーケストレーションPlugin。32エージェント、Team Mode、自動モデルルーティング | ✅ |
+| [oh-my-opencode](./oh-my-opencode.md)                           | 35,600+ | TypeScript | OpenCode用オーケストレーションPlugin。11エージェント（ギリシャ神話名）、Claude Code互換層 | ✅ |
+| [o-m-cc](./oh-my-claude-code-and-o-m-cc.md)                     | 4      | Bash       | Claude Code分散P2P型Plugin。HANDOVER.md、Progressive Disclosure | ✅ |
 | [Claude Flow](./claude-flow.md)                                 | 14,337 | TypeScript | ⚠️ **85%がモック実装。** 実態はClaude CLIのプロンプトラッパー | 2.9KB |
-| [oh-my-claude-code / o-m-cc](./oh-my-claude-code-and-o-m-cc.md) | 0 / 4  | JS / Bash  | 中央オーケストレーター型 vs 分散P2P型。o-m-ccの方が活発で設計が成熟  | 2.8KB |
 
 
 ### 6. ドメイン特化・低レベル基盤
@@ -101,11 +103,11 @@ Layer 4: フレームワーク型（Claude Code非依存）
   │ 8スロットPlugin          │ 3モード       │ Faceted Prompting
   └──────────────────────────┴──────────────┘
 
-Layer 3: Claude Code Plugin型
-  oh-my-claude-code ──── o-m-cc
-  │ 中央オーケストレーター    │ P2P (TeammateTool利用)
-  │ Hooks駆動               │ Progressive Disclosure
-  └──────────────────────────┘
+Layer 3: Claude Code / OpenCode Plugin型
+  oh-my-claudecode ──── o-m-cc ──── oh-my-opencode
+  │ 32エージェント Team Mode  │ P2P (TeammateTool)  │ OpenCode用。11エージェント
+  │ 自動モデルルーティング     │ Progressive Disclosure│ Claude Code互換層
+  └──────────────────────────┴─────────────────────┘
 
 Layer 2: Claude Code 内蔵機能
   Agent Teams ──── Subagents
@@ -126,7 +128,8 @@ Layer 1: 手動CLIオーケストレーション
 | 関係 | 内容 |
 |---|---|
 | **steipete → Agent Teams** | steipeteの手動tmuxオーケストレーションが、Agent Teams公式化に影響を与えたと推測。同じファイルベース通信の思想 |
-| **Agent Teams → o-m-cc** | o-m-ccはAgent TeamsのTeammateToolを活用してP2P協調を実現。Agent Teamsの上に構築 |
+| **Agent Teams → o-m-cc / oh-my-claudecode** | o-m-ccはTeammateToolでP2P協調、oh-my-claudecodeはTeam Modeでパイプライン型オーケストレーション。共にAgent Teamsの上に構築 |
+| **oh-my-claudecode ↔ oh-my-opencode** | 同じ設計思想（Sisyphusモード、マルチエージェント）だが、前者はClaude Code専用、後者はOpenCode専用。oh-my-opencodeはClaude Code互換層を持つ |
 | **Agent Orchestrator ↔ CAO** | 共にtmux + 複数CLI統合だが、Agent Orchestratorは8スロットPlugin、CAOは3モード + ANSIパース。競合関係 |
 | **Oracle ↔ arena-compare** | 同じ「マルチモデル並列比較」の発想。OracleはAPI+ブラウザデュアルエンジン+セッション管理付きのフルスペック版 |
 | **TAKT ↔ CrewAI** | 共にYAML定義+ロール設計だが、TAKTは音楽メタファ+Faceted Prompting、CrewAIはRole/Goal/Backstory+Flows |
