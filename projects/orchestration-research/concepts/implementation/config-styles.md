@@ -52,7 +52,7 @@ Markdown frontmatterやテンプレートエンジンで設定する。ドキュ
 | ツール | フォーマット | 特徴 |
 |---|---|---|
 | o-m-cc | Markdown frontmatter | エージェント定義がそのままドキュメント。Progressive Disclosureで段階的に読み込み |
-| oh-my-claude-code | YAML frontmatter | エージェント定義のメタデータ |
+| oh-my-claudecode | YAML frontmatter | エージェント定義のメタデータ |
 | PentAGI | `.tmpl` (Go template) | 35種のプロンプトテンプレート。Handlebarsライクな変数埋め込み |
 | Orca | Handlebars templates | パイプライン内のプロンプトテンプレーティング |
 
@@ -78,7 +78,7 @@ Markdown frontmatterやテンプレートエンジンで設定する。ドキュ
 - **ワークフロー定義型**: YAML宣言型が主流（TAKT, Agent Orchestrator, CAO）
 - **フレームワーク型**: Code-firstが主流（LangGraph, OpenAI SDK, PydanticAI）
 - **コーディングエージェント型**: YAML設定（SWE-agent, Aider）
-- **CLIラッパー型**: Markdown/Template（o-m-cc, oh-my-claude-code, PentAGI）
+- **CLIラッパー型**: Markdown/Template（o-m-cc, oh-my-claudecode, PentAGI）
 
 ### バリデーション手法
 

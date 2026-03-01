@@ -43,7 +43,7 @@
 
 | ツール | 用語 | 特徴 |
 |---|---|---|
-| oh-my-claude-code | Hooks | `UserPromptSubmit`, `Stop`, `PostToolUse` 等のライフサイクルイベント |
+| oh-my-claudecode | Hooks | `UserPromptSubmit`, `Stop`, `PostToolUse` 等のライフサイクルイベント |
 | o-m-cc | Hooks (11イベント) | `Stop`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionStart`, `TeammateIdle`, `TaskCompleted` 等 |
 | Aider | `Watch Mode` | ファイル監視。`AI!` / `AI?` コメントで任意IDEから指示 |
 

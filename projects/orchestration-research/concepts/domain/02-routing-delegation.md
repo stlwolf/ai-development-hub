@@ -50,7 +50,7 @@ LLMによるユーザー入力の意図分析に基づくエージェント選�
 | ツール | 用語 | 特徴 |
 |---|---|---|
 | MetaGPT | `cause_by` | 生成元Action型がルーティングキー。`_watch()` で関心のあるAction型を登録 |
-| oh-my-claude-code | `Intent Gate` | タスクを分類して適切なエージェントに振り分け |
+| oh-my-claudecode | `Intent Gate` | タスクを分類して適切なエージェントに振り分け |
 | o-m-cc | タスク規模ディスパッチ | S/M/Lの規模別に処理フローを分岐 |
 | CrewAI | `@router` | デコレータで条件分岐を定義 |
 
@@ -97,7 +97,7 @@ LLMが判断（動的）──────────────────�
 
 ### 中央集権 vs 分散
 
-- **中央オーケストレーター型**: oh-my-claude-code（Hub-and-Spoke）、CrewAI（Hierarchical）
+- **中央オーケストレーター型**: oh-my-claudecode（Hub-and-Spoke）、CrewAI（Hierarchical）
 - **分散P2P型**: o-m-cc（TeammateTool経由のpeer-to-peer）、MetaGPT（cause_byベースの暗黙的ルーティング）
 
 ## 独自レイヤーとの接点

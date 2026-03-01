@@ -1,11 +1,17 @@
 ---
-name: oh-my-claude-code / o-m-cc
-repo: zephyrpersonal/oh-my-claude-code, kok1eee/o-m-cc
+name: o-m-cc（+ 旧: zephyrpersonal/oh-my-claude-code）
+repo: kok1eee/o-m-cc
 last_reviewed: 2026-02-22
 category: orchestrator
+note: このファイルは元々 zephyrpersonal/oh-my-claude-code と kok1eee/o-m-cc の2つを調査したもの。zephyrpersonal版は破棄扱い（下記参照）。
 ---
 
-## oh-my-claude-code (zephyrpersonal) 調査結果
+> **⚠️ zephyrpersonal/oh-my-claude-code について**
+> このファイルの前半で調査した `zephyrpersonal/oh-my-claude-code`（Stars 0）は、メジャープロジェクト [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)（7,800+ stars）とは**完全に別物**の個人プロジェクト。リサーチ対象としての価値は低いため、前半の分析は**参考程度**に留め、oh-my-claudecodeのメジャー版は [oh-my-claudecode.md](./oh-my-claudecode.md) を参照のこと。
+>
+> 同様に、[code-yeongyu/oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)（35,600+ stars）はOpenCode用の別プロジェクトで、o-m-ccとは無関係。詳細は [oh-my-opencode.md](./oh-my-opencode.md) を参照。
+
+## oh-my-claude-code (zephyrpersonal) 調査結果 — ⚠️ 破棄扱い
 
 ### 基本情報
 - **リポジトリ:** https://github.com/zephyrpersonal/oh-my-claude-code
@@ -13,8 +19,7 @@ category: orchestrator
 - **最終更新:** 2025-01頃（v1.2.0）
 - **規模:** 0 stars, 0 forks, コントリビューター1名
 - **一言で:** コスト意識型モデルルーティングを持つClaude Code用マルチエージェントプラグイン
-
-**重要:** 同名の別プロジェクト [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)（5,886+ stars）とは完全に別物。
+- **⚠️ ステータス:** 開発停滞。メジャー版（Yeachan-Heo）とは別物。リサーチ対象として破棄扱い
 
 ### これは何か・何を解決するのか
 

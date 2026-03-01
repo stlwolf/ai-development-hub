@@ -28,7 +28,7 @@
 
 | ツール | 実装 | 特徴 |
 |---|---|---|
-| oh-my-claude-code | Orchestrator Agent | Hub-and-Spoke。中央が全タスクを分配 |
+| oh-my-claudecode | Orchestrator Agent | Hub-and-Spoke。中央が全タスクを分配 |
 | CrewAI | Hierarchical Process | マネージャーエージェントを自動生成 |
 | CAO | Supervisor / Worker | supervisorが必要最小限のコンテキストのみ渡す |
 | Agent Orchestrator | Orchestrator Agent | 全セッションを統合管理 |
