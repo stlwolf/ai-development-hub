@@ -4,3 +4,4 @@
 3. 手順（最小粒度、1コマンド/1PR/1変更単位）
 4. 未確認事項/リスク
 5. 関連リンク
+6. URLを含む出力はMarkdownリンク形式にする（例: [PR #5143](https://github.com/...), [Pipeline #16261](https://app.circleci.com/...)）
