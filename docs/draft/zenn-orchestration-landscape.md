@@ -118,7 +118,7 @@ AI駆動開発の観点では、**開発特化型のワークフロー**を組�
 | Agent Orchestrator | なし | なし | CLIラッパー |
 | CAO | なし | Terminal Status Detection | CLIラッパー |
 | oh-my-claudecode | なし | なし | CLIラッパー (自動モデルルーティング) |
-| o-m-cc | Progressive Disclosure (-33%) | stop-guard / focus-guard | CLIラッパー |
+| o-m-cc | Progressive Disclosure | stop-guard / focus-guard | CLIラッパー |
 
 ### 読み取れる傾向
 
@@ -241,10 +241,10 @@ LLMのコンテキストウィンドウ制約に対処するための圧縮戦�
 |---|---|---|---|
 | ウィンドウ制限 | 直近N件のみ保持し古い情報を切り捨て | BeeAI (Sliding Window) | シンプルだが古い文脈を喪失 |
 | 構造的選択 | コードの構造的重要度で取捨選択 | Aider (Repository Map / PageRank) | 精度が高いがドメイン依存 |
-| 段階的開示 | 全情報を保持しつつ必要に応じて展開 | o-m-cc (Progressive Disclosure, -33%) | 情報は失われないがコスト問題は残る |
+| 段階的開示 | 全情報を保持しつつ必要に応じて展開 | Claude Code Skills、o-m-cc等 | 情報は失われないがコスト問題は残る |
 | LLM要約 | 過去のコンテキストをLLMに要約させて圧縮 | OpenHands (Condenser) | 意味を保持するがLLMコストがかかる |
 
-開発特化型では、Aiderの「Repository Map」（tree-sitter + PageRankでコードベースの重要部分だけをトークン予算内で選択する）が最も洗練されたアプローチです。汎用FWではBeeAIが4種のメモリ戦略を設定で切り替え可能にしています。段階的開示はドキュメント配布のパターンとしてオーケストレーション設計に直接応用できます。
+開発特化型では、Aiderの「Repository Map」（tree-sitter + PageRankでコードベースの重要部分だけをトークン予算内で選択する）が最も洗練されたアプローチです。汎用FWではBeeAIが4種のメモリ戦略を設定で切り替え可能にしています。段階的開示はClaude Code Skillsでも採用されている設計で、descriptionだけ先にロードし必要時に本文を展開する仕組みです。ドキュメント配布のパターンとしてオーケストレーション設計に直接応用できます。
 
 ## まとめ
 
