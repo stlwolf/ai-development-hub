@@ -37,3 +37,4 @@ tmp/
 .vendor-inspect/
 .specstory/
 .playwright-mcp/
+.thread-exports/
