@@ -41,17 +41,26 @@ OUT_DIR=""
 WORKSPACE="$(pwd)"
 AGENT_MODE="ask"
 DRY_RUN=false
-TIMEOUT="${ARENA_TIMEOUT:-180}"
+TIMEOUT="${ARENA_TIMEOUT:-240}"
 RESUME_FROM=""
 
 # --- 引数解析 ---
+require_arg() {
+    if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+        echo "Error: $1 にはアーギュメントが必要です" >&2
+        exit 1
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -f)
+            require_arg "$1" "${2:-}"
             PROMPT=$(cat "$2")
             shift 2
             ;;
         -m)
+            require_arg "$1" "${2:-}"
             MODELS_STR="$2"
             shift 2
             ;;
@@ -63,23 +72,27 @@ while [[ $# -gt 0 ]]; do
             done
             ;;
         -o)
+            require_arg "$1" "${2:-}"
             OUT_DIR="$2"
             shift 2
             ;;
         -w)
+            require_arg "$1" "${2:-}"
             WORKSPACE="$2"
             shift 2
             ;;
         --mode)
+            require_arg "$1" "${2:-}"
             AGENT_MODE="$2"
             shift 2
             ;;
         --resume-from)
+            require_arg "$1" "${2:-}"
             RESUME_FROM="$2"
             shift 2
             ;;
         --list-models)
-            exec $AGENT_CMD models
+            exec "$AGENT_CMD" models
             ;;
         --dry-run)
             DRY_RUN=true
@@ -121,6 +134,14 @@ if [[ -z "$MODELS_STR" ]]; then
 fi
 IFS=',' read -ra MODELS <<< "$MODELS_STR"
 
+# --- モデル名バリデーション ---
+for model in "${MODELS[@]}"; do
+    if [[ ! "$model" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        echo "Error: 不正なモデル名です: $model（英数字・ドット・ハイフン・アンダースコアのみ許可）" >&2
+        exit 1
+    fi
+done
+
 # --- resume-from の検証 ---
 if [[ -n "$RESUME_FROM" ]]; then
     if [[ ! -d "$RESUME_FROM" ]]; then
@@ -131,6 +152,7 @@ fi
 
 # --- コンテキストファイルの内容をプロンプトに追記 ---
 if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    echo "Warning: -c はプロンプト肥大化の原因になります。-w でワークスペースパスを渡す方式を推奨します。" >&2
     PROMPT="${PROMPT}"$'\n\n--- 添付コンテキスト ---'
     for f in "${CONTEXT_FILES[@]}"; do
         if [[ -f "$f" ]]; then
@@ -156,6 +178,12 @@ if [[ -n "$RESUME_FROM" ]]; then
     IS_RESUME=true
 fi
 
+# --- プロンプトサイズ警告 ---
+PROMPT_BYTES=$(echo "$PROMPT" | wc -c | tr -d ' ')
+if (( PROMPT_BYTES > 50000 )); then
+    echo "Warning: プロンプトサイズが ${PROMPT_BYTES} bytes（>50KB）です。タイムアウトの原因になります。-w の使用を検討してください。" >&2
+fi
+
 echo "=== Arena Compare ==="
 echo "出力先: $OUT_DIR"
 echo "モデル: ${MODELS[*]}"
@@ -178,7 +206,7 @@ get_chat_id() {
         echo "resumed:$(cat "$resume_dir/${model}-chat-id.txt")"
     else
         local id
-        id=$($AGENT_CMD create-chat 2>/dev/null | grep -oE '[0-9a-f-]{36}') || true
+        id=$("$AGENT_CMD" create-chat 2>/dev/null | grep -oE '[0-9a-f-]{36}') || true
         if [[ -n "$id" ]]; then
             echo "new:$id"
         fi
@@ -241,7 +269,7 @@ run_model() {
         effective_mode_args=("${mode_args[@]}")
     fi
 
-    if timeout "$TIMEOUT" nohup $AGENT_CMD -p -f \
+    if timeout "$TIMEOUT" nohup "$AGENT_CMD" -p -f \
         "${resume_args[@]}" \
         --model "$model" \
         "${effective_mode_args[@]}" \
@@ -298,17 +326,20 @@ generate_summary() {
         for m in "${models[@]}"; do
             local meta="$out_dir/${m}-meta.txt"
             if [[ -f "$meta" ]]; then
-                local model="" exit_code="" elapsed_seconds="" stdout_lines="" stdout_bytes=""
-                # shellcheck disable=SC1090
-                source "$meta"
-                local time_display="${elapsed_seconds}秒"
+                local m_model m_exit m_elapsed m_lines m_bytes
+                m_model=$(grep '^model=' "$meta" | cut -d= -f2)
+                m_exit=$(grep '^exit_code=' "$meta" | cut -d= -f2)
+                m_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2)
+                m_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2)
+                m_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2)
+                local time_display="${m_elapsed}秒"
                 local status_suffix=""
-                if [[ "$exit_code" == "124" ]]; then
+                if [[ "$m_exit" == "124" ]]; then
                     status_suffix=" (タイムアウト)"
-                elif [[ "$exit_code" != "0" ]]; then
+                elif [[ "$m_exit" != "0" ]]; then
                     status_suffix=" (異常終了)"
                 fi
-                echo "| ${model}${status_suffix} | ${time_display} | ${stdout_lines}行 | ${stdout_bytes}B | ${exit_code} |"
+                echo "| ${m_model}${status_suffix} | ${time_display} | ${m_lines}行 | ${m_bytes}B | ${m_exit} |"
             else
                 echo "| ${m} | - | - | - | - |"
             fi
@@ -324,10 +355,9 @@ generate_summary() {
             else
                 local meta="$out_dir/${m}-meta.txt"
                 if [[ -f "$meta" ]]; then
-                    local exit_code=""
-                    # shellcheck disable=SC1090
-                    source "$meta"
-                    if [[ "$exit_code" == "124" ]]; then
+                    local m_exit_code
+                    m_exit_code=$(grep '^exit_code=' "$meta" | cut -d= -f2)
+                    if [[ "$m_exit_code" == "124" ]]; then
                         echo "(タイムアウトにより出力なし)"
                     else
                         echo "(出力なし)"
@@ -378,11 +408,12 @@ echo "=== 結果サマリ ==="
 for model in "${MODELS[@]}"; do
     meta="$OUT_DIR/${model}-meta.txt"
     if [[ -f "$meta" ]]; then
-        # shellcheck disable=SC1090
-        source "$meta"
-        # shellcheck disable=SC2154
+        m_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2)
+        m_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2)
+        m_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2)
+        m_exit=$(grep '^exit_code=' "$meta" | cut -d= -f2)
         printf "[%-20s] %3s秒 / %4s行 / %6sbytes / exit=%s\n" \
-            "$model" "$elapsed_seconds" "$stdout_lines" "$stdout_bytes" "$exit_code"
+            "$model" "$m_elapsed" "$m_lines" "$m_bytes" "$m_exit"
     else
         printf "[%-20s] (メタデータなし)\n" "$model"
     fi
@@ -412,5 +443,11 @@ fi
 if [[ $FAILED -gt 0 ]]; then
     echo ""
     echo "Warning: ${FAILED}/${#MODELS[@]} モデルで問題が発生しました"
+    if [[ $FAILED -eq ${#MODELS[@]} ]]; then
+        echo "全モデルが失敗しました。以下を確認してください:" >&2
+        echo "  - ARENA_TIMEOUT を増やす（現在: ${TIMEOUT}秒）: ARENA_TIMEOUT=300 $0 ..." >&2
+        echo "  - -c でファイルを渡している場合、-w に切り替えてプロンプトを短縮する" >&2
+        echo "  - agent CLI の認証状態: agent models で確認" >&2
+    fi
     exit 1
 fi

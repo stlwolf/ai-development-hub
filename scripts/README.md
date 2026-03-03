@@ -40,10 +40,33 @@ Cursor 設定ファイルをホームディレクトリにシンボリックリ�
 セカンドオピニオン比較実行スクリプト。同一プロンプトを Codex CLI / Claude Code に投げて結果をファイルに保存する。
 
 ```bash
-so-compare.sh "プロンプトテキスト"
-so-compare.sh -f prompt.txt
-echo "プロンプト" | so-compare.sh -
+# 推奨: -w でワークスペースパスを渡す
+so-compare.sh -w "$(pwd)" "プロンプトテキスト"
+
+# プロンプトファイルから
+so-compare.sh -f prompt.txt -w "$(pwd)"
+
+# イテレーション（前回の回答を踏まえて再質問）
+so-compare.sh --prev tmp/so-YYYYMMDD-HHMMSS -w "$(pwd)" "再評価してください"
+
+# Codex のみ / Claude のみ
+so-compare.sh -w "$(pwd)" "プロンプト" --codex-only
+so-compare.sh -w "$(pwd)" "プロンプト" --claude-only
 ```
+
+主要オプション:
+
+| オプション | 説明 |
+|-----------|------|
+| `-w PATH` | ワークスペースパス（推奨。codex に `-C`、claude に `--add-dir` として渡される） |
+| `-c FILE...` | コンテキストファイル添付（非推奨。プロンプト肥大化の原因） |
+| `-f FILE` | プロンプトをファイルから読み込み |
+| `-o DIR` | 出力ディレクトリ指定 |
+| `--prev DIR` | 前回出力を追記（イテレーション用） |
+
+環境変数: `SO_TIMEOUT`（デフォルト: 240秒）、`PREV_MAX_BYTES`（デフォルト: 4000）
+
+関連スキル: `cursor/skill/so-compare/SKILL.md`
 
 ### `arena-compare.sh`
 

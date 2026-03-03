@@ -36,44 +36,50 @@ ARENA_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/projects/ar
 - 入力中の `@ファイル名` や相対パスは、ワークスペース内のフルパスに置き換える（エージェントが動的に読みに行ける形にする）
 - `-c` によるファイル内容のベタ貼りは原則使わない（プロンプトが肥大化しタイムアウトの原因になるため。`--workspace` 経由でエージェントがファイルを読める）
 
-## Step 2: arena-compare 実行
+## Step 2: arena-compare 実行（サブエージェント委譲）
 
-```bash
-ARENA_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/projects/arena-compare/arena-compare.sh"
+Arena の実行・summary 読み込み・要約をサブエージェントに委譲し、メインコンテキストを節約する。
 
-# 基本形: デフォルト3モデルに並列投入（モード別デフォルト）
-$ARENA_SCRIPT \
-  -w "$(pwd)" \
-  "プロンプト"
+**サブエージェントに以下を指示する**（Task tool の shell subagent を使用）:
 
-# コンテキストファイル付き
-$ARENA_SCRIPT \
-  -c path/to/file.ts \
-  -w "$(pwd)" \
-  "プロンプト"
+```
+以下のタスクを実行してください:
 
-# モデル明示指定（Claude系を含めたい場合など）
-$ARENA_SCRIPT \
-  -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" \
-  -w "$(pwd)" \
-  "プロンプト"
+1. まず Arena スキルを読み込む:
+   Read ~/.cursor/skills/arena-compare/SKILL.md
 
-# セッション継続（前回の回答を踏まえて追加質問）
-$ARENA_SCRIPT \
-  --resume-from tmp/arena-XXXXXXXX-XXXXXX \
-  -w "$(pwd)" \
-  "追加の質問"
+2. スキルに従い、arena-compare.sh を実行:
+   ./projects/arena-compare/arena-compare.sh -w "$(pwd)" "[プロンプト]"
+   [モデル指定がある場合は -m オプションを追加]
+   [セッション継続の場合は --resume-from を追加]
+
+3. 実行完了後、summary.md を読み込む
+
+4. 以下の形式で差分ポイントのみ返す:
+   - 出力ディレクトリパス
+   - メタデータテーブル（モデル名・実行時間・exit code）
+   - 各モデルの回答の要約（一致点と相違点のみ。全文は含めない）
+   - resume 用コマンド
+
+注意: summary.md の全文は返さないこと。差分ポイントの要約のみ。
 ```
 
-## Step 3: 結果表示
-
-実行完了後に自動生成される `summary.md` を読み込んで表示する。
-summary.md にはメタデータテーブル（モデル名・実行時間・出力サイズ・exit code）と各モデルの回答全文が含まれる。
+**フォールバック**: サブエージェントが利用できない場合は、従来通り直接実行する:
 
 ```bash
-OUT_DIR="tmp/arena-XXXXXXXX-XXXXXX"  # Step 2 の出力先
+./projects/arena-compare/arena-compare.sh -w "$(pwd)" "[プロンプト]"
+```
 
+## Step 3: 結果確認
+
+サブエージェントが返した差分ポイントの要約を確認する。
+
+詳細を確認したい場合は、個別モデルの回答を直接読む:
+
+```bash
+OUT_DIR="tmp/arena-XXXXXXXX-XXXXXX"
 cat "$OUT_DIR/summary.md"
+cat "$OUT_DIR/{model}-stdout.txt"
 ```
 
 ## 運用ガイド

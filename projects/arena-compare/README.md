@@ -62,7 +62,7 @@ agent status
 | 変数 | 説明 | デフォルト |
 |------|------|----------|
 | `ARENA_MODELS` | デフォルトモデル（全モード共通で上書き） | モード別デフォルト |
-| `ARENA_TIMEOUT` | タイムアウト秒数 | `180` |
+| `ARENA_TIMEOUT` | タイムアウト秒数 | `240` |
 
 ## モード別デフォルトモデル
 
@@ -94,6 +94,8 @@ tmp/arena-YYYYMMDD-HHMMSS/
 
 ## 関連
 
+- `cursor/skill/arena-compare/SKILL.md` — Arena スキル（呼び出し方法、モデル選択基準、resume 手順のリファレンス）
+- `cursor/command/verification/arena-perspectives.md` — Arena を使うコマンド（サブエージェント委譲対応済み）
 - `scripts/so-compare.sh` — Codex CLI / Claude CLI バックエンドの比較スクリプト（本スクリプトの原型）
 - `cursor/command/verification/peer-ai-review.md` — SO比較を組み込んだピアレビューコマンド
 - `ideas/20260222/orchestration-tool-building-approach.md` — オーケストレーションツール構築の構想
