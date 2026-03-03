@@ -5,6 +5,14 @@ description: Playwright MCPでブラウザ操作・DOM調査・UI検証を行う
 
 # Playwright MCP ブラウザ操作
 
+## スキルメタデータ
+
+- このスキルファイルの配置先: `~/.cursor/skills/playwright-browser/`
+- 同ディレクトリ構成:
+  - `SKILL.md`（本ファイル）
+  - `scripts/intercept-api.js`（APIインターセプトスクリプト）
+- 付随ファイルを参照する場合は上記パスを基準に解決すること
+
 ## Why Playwright MCP
 
 Cursorにはbuilt-inブラウザ（cursor-ide-browser）とPlaywright MCP（user-playwright-mcp）の2系統がある。
@@ -67,7 +75,7 @@ snapshot が返す `ref` は操作のたびに変わる。**操作前に必ず�
 | `browser_select_option` | ドロップダウン選択 | `ref`, `values` |
 | `browser_hover` | ホバー | `ref`, `element` |
 | `browser_press_key` | キー押下 | `key` |
-| `browser_drag` | ドラッグ&ドロップ | `startRef`, `endRef` |
+| `browser_drag` | ドラッグ&ドロップ | `startElement`(必須), `startRef`(必須), `endElement`(必須), `endRef`(必須) |
 | `browser_file_upload` | ファイルアップロード | `paths` |
 
 `browser_fill_form` の `fields` 型（全フィールド必須）:
@@ -87,7 +95,7 @@ snapshot が返す `ref` は操作のたびに変わる。**操作前に必ず�
 | ツール | 用途 | 主要パラメータ |
 |--------|------|---------------|
 | `browser_evaluate` | JavaScript実行 | `function`, `ref` |
-| `browser_run_code` | Playwrightコード実行 | `code` |
+| `browser_run_code` | Playwrightコード実行 | `code`（`page` オブジェクトが利用可能。例: `await page.evaluate(...)`, `await page.route(...)`, `await page.request.get(url, {headers})`) |
 | `browser_handle_dialog` | ダイアログ処理 | `accept`, `promptText` |
 
 ### ブラウザ管理
@@ -134,6 +142,7 @@ snapshot が返す `ref` は操作のたびに変わる。**操作前に必ず�
 `browser_network_requests` はURL/ステータスのみ。レスポンスボディが必要な場合は、fetch/XHRをインターセプトする。APIを直接fetchするのではなく、ブラウザが通常行うリクエストをキャプチャする方式。認証の問題を回避できる。
 
 1. [scripts/intercept-api.js](scripts/intercept-api.js) の内容を読み取る
+   （パス解決できない場合: `~/.cursor/skills/playwright-browser/scripts/intercept-api.js`）
 2. `browser_evaluate` の `function` に読み取った内容を渡して実行（**操作やページ遷移の前に設置すること**）
 3. SPA内でページ遷移（クリック等）を行う — この間のAPIリクエストが自動キャプチャされる
 4. `browser_evaluate` で `return window.__captured` を実行し結果を取得
@@ -143,6 +152,28 @@ window.__captured → [{ url, status, body }, ...]
 ```
 
 スクリプトのデフォルトURLパターン（`/api/`, `/v{N}/`, `/graphql/`）に合わない場合は、対象サイトのAPIパスに合わせてスクリプトの `isApiRequest()` を調整する。
+
+注意: `browser_evaluate` で設置したインターセプターはフルページ遷移でクリアされる。SPA内のクライアントサイドルーティングでは維持されるが、ページリロードや別URLへの直接遷移では再設置が必要。
+
+### リクエストヘッダーの調査（Playwright Route傍受）
+
+SPAが実際にどのヘッダーを送信しているか調べる場合、`browser_run_code` でPlaywrightネイティブのルート傍受を使う。`browser_evaluate` のJSインターセプターと異なり、ページ遷移でクリアされない。
+
+```javascript
+// browser_run_code の code パラメータに渡す
+const captured = [];
+await page.route('**/api/**', async (route) => {
+  const request = route.request();
+  captured.push({
+    url: request.url(),
+    headers: request.headers()
+  });
+  await route.continue();
+});
+// この後SPA内で操作すると、APIリクエストのヘッダーがcapturedに記録される
+```
+
+結果の取得は `browser_evaluate` で `return window.__playwrightCaptured` 等に格納するか、`browser_run_code` の戻り値として返す。
 
 ### レスポンシブ確認
 
@@ -155,8 +186,10 @@ window.__captured → [{ url, status, body }, ...]
 
 ## 注意事項
 
-- **APIレスポンスを取得する場合、`browser_evaluate` で直接 `fetch()` しないこと。** 認証セッション（httpOnly Cookie等）の問題で失敗する。代わりに「APIレスポンスボディの取得」パターンのインターセプト方式を使う
+- **`browser_evaluate` 内の `fetch()` はhttpOnly Cookieに依存する認証では失敗する。** same-originでhttpOnly でないCookie（JWTトークン等）なら動作するが、確実性を求める場合は「APIレスポンスボディの取得」パターンのインターセプト方式を優先する
+- 複数のエージェント（メイン・サブエージェント）は**同じPlaywright MCPプロセスを共有**する。ログイン状態・Cookie・表示ページは引き継がれる
 - `browser_type` はテキストを追記する。クリア&入力したい場合は `browser_fill_form` を使う
 - `browser_handle_dialog` はダイアログが表示される**前**に呼ぶ（先行登録方式）
 - 操作のたびにrefが無効化されるため、連続操作の間に `browser_snapshot` を挟む
+- Playwright MCPが起動できない場合（ブラウザ競合等）、`cursor-ide-browser` にフォールバックせず、エラーを報告して制御を返すこと
 - ステージング環境固有のフロー（認証等）はプロジェクト固有スキルで管理する
