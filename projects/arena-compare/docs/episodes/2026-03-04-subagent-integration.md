@@ -4,7 +4,7 @@ date: 2026-03-04
 type: episode
 related:
   - type: derived_from
-    ref: ../../../../tmp/so-arena-subagent-kickoff.md
+    ref: ../plans/2026-03-03-kickoff-so-arena-subagent.md
     reason: "SO/Arena サブエージェント化キックオフに基づく実装"
   - type: derived_from
     ref: ./2026-02-24-summary-output-implementation.md
@@ -16,7 +16,7 @@ tags: [arena-compare, subagent, skill, shellcheck, validation]
 
 ## 背景
 
-SO/Arena サブエージェント化キックオフ（`tmp/so-arena-subagent-kickoff.md`）に基づき、arena-compare.sh を skill/subagent パターンに対応させた。スクリプト自体はcommandのみ存在した時期に作られたもので、以下の課題があった:
+SO/Arena サブエージェント化キックオフ（`docs/plans/2026-03-03-kickoff-so-arena-subagent.md`）に基づき、arena-compare.sh を skill/subagent パターンに対応させた。スクリプト自体はcommandのみ存在した時期に作られたもので、以下の課題があった:
 
 - `source "$meta"` による任意コード実行リスク
 - モデル名の未検証（パストラバーサル可能）
