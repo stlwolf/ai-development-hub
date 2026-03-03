@@ -192,4 +192,5 @@ await page.route('**/api/**', async (route) => {
 - `browser_handle_dialog` はダイアログが表示される**前**に呼ぶ（先行登録方式）
 - 操作のたびにrefが無効化されるため、連続操作の間に `browser_snapshot` を挟む
 - Playwright MCPが起動できない場合（ブラウザ競合等）、`cursor-ide-browser` にフォールバックせず、エラーを報告して制御を返すこと
+- `browser_take_screenshot` で `filename` を指定する場合は `.playwright-mcp/` プレフィックスを付けること（例: `.playwright-mcp/login-result.png`）。ワークスペースルートにファイルが散らばるのを防ぐ
 - ステージング環境固有のフロー（認証等）はプロジェクト固有スキルで管理する
