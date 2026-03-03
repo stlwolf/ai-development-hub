@@ -213,56 +213,51 @@ so-compare.sh に渡すプロンプトを構成する。SO の出力精度はこ
 3. **コンテキストの十分性**: SO がこのプロンプトだけで回答できるか。不足している情報（ファイル、バージョン、実行環境）はないか
 4. **反証可能性**: SO が「違う」と言える余地があるか。結論を含むプロンプトは追認を誘発する
 
-## Step 3: セカンドオピニオン取得
+## Step 3: セカンドオピニオン取得（サブエージェント委譲）
 
-`so-compare.sh` を使って Codex / Claude に同じ質問を投げる。
+SO の実行・結果読み込み・比較テーブル作成をサブエージェントに委譲し、メインコンテキストを節約する。
 
-```bash
-# 基本形: プロンプトを直接渡す
-$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh \
-  "以下のコードについて、[問題の説明]。修正方針を提案してください。" \
-  -c path/to/target-file.php
+**サブエージェントに以下を指示する**（Task tool の shell subagent を使用）:
 
-# コンテキスト付き: 複数ファイルを添付
-$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh \
-  "この修正案は安全か検証してください: [修正案の要約]" \
-  -c path/to/file1.php path/to/file2.php
+```
+以下のタスクを実行してください:
 
-# Codex のみ（claude-safe が使えない環境）
-$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh \
-  "プロンプト" --codex-only
+1. まず SO スキルを読み込む:
+   Read ~/.cursor/skills/so-compare/SKILL.md
 
-# 出力ディレクトリ指定
-$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh \
-  "プロンプト" -o tmp/so-current-task
+2. スキルのプロンプト設計原則に従い、以下のプロンプトで so-compare.sh を実行:
+   ./scripts/so-compare.sh -w "$(pwd)" "[Step 2.5 で構成したプロンプト]"
+   [イテレーション2回目以降は --prev オプションを追加]
 
-# イテレーション2回目以降: 前回の回答を自動でプロンプトに追記
-$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh \
-  "前回の指摘を踏まえて修正案を改善した。再評価してください: [改善内容]" \
-  --prev tmp/so-20260216-143000 \
-  -c path/to/target-file.php
+3. 実行完了後、codex-stdout.txt と claude-stdout.txt を読み込む
+
+4. 以下の形式で3者比較テーブルを作成し、合意判定を行う:
+   - 自分の分析: [Step 2 の分析結果をここに記載]
+   - 比較観点: 問題認識、修正方針、リスク対応
+   - 合意判定基準: スキルの「合意判定基準」に従う
+
+5. 以下の形式で結論サマリのみ返す:
+   - so-compare 出力ディレクトリパス
+   - 3者比較テーブル
+   - 合意/不一致の判定と理由
+   - 事実主張のリスト（検証が必要なもの）
+
+注意: codex-stdout.txt / claude-stdout.txt の全文は返さないこと。要約と比較テーブルのみ。
 ```
 
-実行後、結果ファイルを確認:
+**フォールバック**: サブエージェントが利用できない場合は、従来通り直接実行する:
 
 ```bash
-# 結果一覧
-ls tmp/so-*/
-
-# Codex の回答
-cat tmp/so-*/codex-stdout.txt
-
-# Claude の回答
-cat tmp/so-*/claude-stdout.txt
+./scripts/so-compare.sh -w "$(pwd)" "[プロンプト]"
 ```
 
-**ログ**: `so-compare.sh` の出力ディレクトリパスをログの該当イテレーションセクションに記録する。
+**ログ**: サブエージェントが返した出力ディレクトリパスをログに記録する。
 
 ## Step 4: 3者比較と合意判定
 
-自分の分析（Step 2）と、Codex / Claude の回答を比較する。
+サブエージェントが返した比較テーブルを確認する。サブエージェント利用時は比較テーブルが既に作成されているため、事実検証に集中する。
 
-比較観点:
+比較観点（サブエージェント未使用時に自分で作成する場合）:
 
 | 観点 | 自分 | Codex | Claude |
 |------|------|-------|--------|

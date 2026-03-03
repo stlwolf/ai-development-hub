@@ -14,6 +14,8 @@ Usage:
 Options:
   -f FILE        プロンプトをファイルから読み込み
   -c FILE...     コンテキストファイルを添付（プロンプトに内容を追記）
+                 注意: -c はプロンプト肥大化の原因になるため非推奨。-w の使用を推奨
+  -w PATH        ワークスペースパス（Codex/Claude にパス参照で渡す）
   -o DIR         出力ディレクトリを指定（デフォルト: tmp/so-YYYYMMDD-HHMMSS）
   -s MODE        Codex sandbox モード（デフォルト: read-only）
   --codex-only   Codex のみ実行
@@ -24,6 +26,7 @@ Options:
 
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
+  SO_TIMEOUT       各ツールのタイムアウト秒数（デフォルト: 240）
 USAGE
 }
 
@@ -35,13 +38,23 @@ OUT_DIR=""
 PROMPT=""
 CONTEXT_FILES=()
 PREV_DIR=""
+WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
+SO_TIMEOUT="${SO_TIMEOUT:-240}"
 
 # --- 引数解析 ---
+require_arg() {
+    if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+        echo "Error: $1 にはアーギュメントが必要です" >&2
+        exit 1
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -f)
+            require_arg "$1" "${2:-}"
             PROMPT=$(cat "$2")
             shift 2
             ;;
@@ -52,11 +65,18 @@ while [[ $# -gt 0 ]]; do
                 shift
             done
             ;;
+        -w)
+            require_arg "$1" "${2:-}"
+            WORKSPACE="$2"
+            shift 2
+            ;;
         -o)
+            require_arg "$1" "${2:-}"
             OUT_DIR="$2"
             shift 2
             ;;
         -s)
+            require_arg "$1" "${2:-}"
             SANDBOX_MODE="$2"
             shift 2
             ;;
@@ -69,6 +89,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --prev)
+            require_arg "$1" "${2:-}"
             PREV_DIR="$2"
             shift 2
             ;;
@@ -99,8 +120,28 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
+# --- コマンド存在チェック ---
+if ! command -v timeout &>/dev/null; then
+    echo "Error: timeout コマンドが見つかりません。macOS の場合: brew install coreutils" >&2
+    exit 1
+fi
+if $RUN_CODEX && ! command -v "$CODEX_CMD" &>/dev/null; then
+    echo "Error: $CODEX_CMD が見つかりません。--claude-only で Claude のみ実行できます。" >&2
+    exit 1
+fi
+if $RUN_CLAUDE && ! command -v "$CLAUDE_CMD" &>/dev/null; then
+    echo "Error: $CLAUDE_CMD が見つかりません。--codex-only で Codex のみ実行できます。" >&2
+    exit 1
+fi
+
+# --- ワークスペースパスをプロンプトに追記 ---
+if [[ -n "$WORKSPACE" ]]; then
+    PROMPT="${PROMPT}"$'\n\nワークスペース: '"$WORKSPACE"$'\n上記パス配下のファイルを参照して回答してください。'
+fi
+
 # --- コンテキストファイルの内容をプロンプトに追記 ---
 if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    echo "Warning: -c はプロンプト肥大化の原因になります。-w でワークスペースパスを渡す方式を推奨します。" >&2
     PROMPT="${PROMPT}"$'\n\n--- 添付コンテキスト ---'
     for f in "${CONTEXT_FILES[@]}"; do
         if [[ -f "$f" ]]; then
@@ -142,23 +183,38 @@ mkdir -p "$OUT_DIR"
 # --- プロンプト保存 ---
 echo "$PROMPT" > "$OUT_DIR/prompt.txt"
 
+# --- プロンプトサイズ警告 ---
+PROMPT_BYTES=$(echo "$PROMPT" | wc -c | tr -d ' ')
+if (( PROMPT_BYTES > 50000 )); then
+    echo "Warning: プロンプトサイズが ${PROMPT_BYTES} bytes（>50KB）です。タイムアウトやアンカリングの原因になります。-w の使用を検討してください。" >&2
+fi
+
 echo "=== Second Opinion Comparison ==="
 echo "出力先: $OUT_DIR"
 echo "sandbox: $SANDBOX_MODE"
+if [[ -n "$WORKSPACE" ]]; then
+    echo "ワークスペース: $WORKSPACE"
+fi
+echo "タイムアウト: ${SO_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
 echo ""
 
 # --- 実行関数 ---
 run_codex() {
     echo "[Codex] 実行中..."
-    local start end elapsed
+    local start end elapsed exit_code
     start=$(date +%s)
 
-    if $CODEX_CMD exec -s "$SANDBOX_MODE" "$PROMPT" \
+    local codex_args=("exec" "-s" "$SANDBOX_MODE")
+    if [[ -n "$WORKSPACE" ]]; then
+        codex_args+=("-C" "$WORKSPACE")
+    fi
+
+    if timeout "$SO_TIMEOUT" "$CODEX_CMD" "${codex_args[@]}" "$PROMPT" \
         > "$OUT_DIR/codex-stdout.txt" 2> "$OUT_DIR/codex-stderr.txt"; then
-        local exit_code=0
+        exit_code=0
     else
-        local exit_code=$?
+        exit_code=$?
     fi
 
     end=$(date +%s)
@@ -166,7 +222,6 @@ run_codex() {
 
     echo "[Codex] 完了 (${elapsed}秒, exit=${exit_code})"
 
-    # メタデータ
     {
         echo "tool=codex"
         echo "exit_code=$exit_code"
@@ -178,14 +233,20 @@ run_codex() {
 
 run_claude() {
     echo "[Claude] 実行中..."
-    local start end elapsed
+    local start end elapsed exit_code
     start=$(date +%s)
 
-    if $CLAUDE_CMD -p "$PROMPT" --output-format text \
+    local claude_args=("-p")
+    if [[ -n "$WORKSPACE" ]]; then
+        claude_args+=("--add-dir" "$WORKSPACE")
+    fi
+    claude_args+=("--output-format" "text")
+
+    if timeout "$SO_TIMEOUT" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
         > "$OUT_DIR/claude-stdout.txt" 2> "$OUT_DIR/claude-stderr.txt"; then
-        local exit_code=0
+        exit_code=0
     else
-        local exit_code=$?
+        exit_code=$?
     fi
 
     end=$(date +%s)
@@ -193,7 +254,6 @@ run_claude() {
 
     echo "[Claude] 完了 (${elapsed}秒, exit=${exit_code})"
 
-    # メタデータ
     {
         echo "tool=claude"
         echo "exit_code=$exit_code"
@@ -225,10 +285,11 @@ echo "=== 結果サマリ ==="
 for tool in codex claude; do
     meta="$OUT_DIR/${tool}-meta.txt"
     if [[ -f "$meta" ]]; then
-        # shellcheck disable=SC1090
-        source "$meta"
-        # shellcheck disable=SC2154
-        echo "[$tool] ${elapsed_seconds}秒 / ${stdout_lines}行 / ${stdout_bytes}bytes / exit=${exit_code}"
+        meta_exit_code=$(grep '^exit_code=' "$meta" | cut -d= -f2)
+        meta_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2)
+        meta_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2)
+        meta_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2)
+        echo "[$tool] ${meta_elapsed}秒 / ${meta_lines}行 / ${meta_bytes}bytes / exit=${meta_exit_code}"
     fi
 done
 
