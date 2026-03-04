@@ -8,7 +8,7 @@ description: so-compare.shでセカンドオピニオン（Codex/Claude）を取
 ## スクリプトの場所
 
 ```
-scripts/so-compare.sh
+so-compare   (~/bin/ にシンボリックリンク。本体: scripts/so-compare.sh)
 ```
 
 ## 呼び出し方法
@@ -16,7 +16,7 @@ scripts/so-compare.sh
 Shell ツールで実行する:
 
 ```bash
-./scripts/so-compare.sh [OPTIONS] "プロンプト"
+so-compare [OPTIONS] "プロンプト"
 ```
 
 ### オプション一覧
@@ -43,16 +43,16 @@ Shell ツールで実行する:
 
 ```bash
 # 推奨: -w でワークスペースを渡す
-./scripts/so-compare.sh -w "$(pwd)" "この修正方針を検証してください"
+so-compare -w "$(pwd)" "この修正方針を検証してください"
 
 # プロンプトファイルから
-./scripts/so-compare.sh -f prompt.txt -w "$(pwd)"
+so-compare -f prompt.txt -w "$(pwd)"
 
 # イテレーション（前回の回答を踏まえて再質問）
-./scripts/so-compare.sh --prev tmp/so-20260304-001234 -w "$(pwd)" "前回の指摘を踏まえて再評価してください"
+so-compare --prev tmp/so-20260304-001234 -w "$(pwd)" "前回の指摘を踏まえて再評価してください"
 
 # Codex のみ（claude-safe 未導入環境）
-./scripts/so-compare.sh -w "$(pwd)" "プロンプト" --codex-only
+so-compare -w "$(pwd)" "プロンプト" --codex-only
 ```
 
 ## 出力ディレクトリ構成
