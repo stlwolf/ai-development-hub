@@ -10,8 +10,11 @@ Cursor CLI（`agent` コマンド）によるマルチモデル並列比較ス�
 
 - 同一プロンプトを複数モデルに並列投入して結果を比較
 - Cursor サブスク内の全モデル（38+）を利用（外部 API 不要）
-- `--resume` によるセッション維持でイテレーション可能
-- `so-compare.sh` の Cursor ネイティブ版
+- `-w` でワークスペースパス参照（`-c` によるファイル添付は非推奨）
+- `--resume-from` によるセッション維持でイテレーション可能
+- スキル（`cursor/skill/arena-compare/SKILL.md`）とコマンド（`/arena-perspectives`）を通じたサブエージェント委譲対応
+- 探索モード: 「不可能」回答時に persistent-exploration の行動制約を注入して自動深掘り
+- `~/bin/arena-compare` として PATH 配置済み（`scripts/sync/sync-bin.sh`）
 
 詳細は [arena-compare/README.md](arena-compare/README.md) を参照。
 
