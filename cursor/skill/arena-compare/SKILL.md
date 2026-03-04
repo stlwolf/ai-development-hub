@@ -8,7 +8,7 @@ description: arena-compare.shで複数モデルに同一プロンプトを並列
 ## スクリプトの場所
 
 ```
-projects/arena-compare/arena-compare.sh
+arena-compare   (~/bin/ にシンボリックリンク。本体: projects/arena-compare/arena-compare.sh)
 ```
 
 ## 呼び出し方法
@@ -16,7 +16,7 @@ projects/arena-compare/arena-compare.sh
 Shell ツールで実行する:
 
 ```bash
-./projects/arena-compare/arena-compare.sh [OPTIONS] "プロンプト"
+arena-compare [OPTIONS] "プロンプト"
 ```
 
 ### オプション一覧
@@ -44,13 +44,13 @@ Shell ツールで実行する:
 
 ```bash
 # 推奨: -w でワークスペースを渡す
-./projects/arena-compare/arena-compare.sh -w "$(pwd)" "この設計の問題点を指摘して"
+arena-compare -w "$(pwd)" "この設計の問題点を指摘して"
 
 # モデル明示指定
-./projects/arena-compare/arena-compare.sh -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" -w "$(pwd)" "プロンプト"
+arena-compare -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" -w "$(pwd)" "プロンプト"
 
 # セッション継続（前回の回答を踏まえて追加質問）
-./projects/arena-compare/arena-compare.sh --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質問"
+arena-compare --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質問"
 ```
 
 ## モデル選択の基準

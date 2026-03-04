@@ -158,8 +158,7 @@ command -v codex &>/dev/null && echo "codex: $(codex --version 2>&1 | tail -1)" 
 command -v claude-safe &>/dev/null && echo "claude-safe: OK" || echo "claude-safe: 未インストール（Codexのみで実行可能）"
 
 # 比較スクリプト
-SO_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/scripts/so-compare.sh"
-[[ -x "$SO_SCRIPT" ]] && echo "so-compare.sh: OK" || echo "so-compare.sh: 未配置"
+command -v so-compare &>/dev/null && echo "so-compare: OK" || echo "so-compare: 未インストール（scripts/sync/sync-bin.sh を実行）"
 ```
 
 ## Step 1: タスク理解
@@ -226,7 +225,7 @@ SO の実行・結果読み込み・比較テーブル作成をサブエージ�
    Read ~/.cursor/skills/so-compare/SKILL.md
 
 2. スキルのプロンプト設計原則に従い、以下のプロンプトで so-compare.sh を実行:
-   ./scripts/so-compare.sh -w "$(pwd)" "[Step 2.5 で構成したプロンプト]"
+   so-compare -w "$(pwd)" "[Step 2.5 で構成したプロンプト]"
    [イテレーション2回目以降は --prev オプションを追加]
 
 3. 実行完了後、codex-stdout.txt と claude-stdout.txt を読み込む
@@ -248,7 +247,7 @@ SO の実行・結果読み込み・比較テーブル作成をサブエージ�
 **フォールバック**: サブエージェントが利用できない場合は、従来通り直接実行する:
 
 ```bash
-./scripts/so-compare.sh -w "$(pwd)" "[プロンプト]"
+so-compare -w "$(pwd)" "[プロンプト]"
 ```
 
 **ログ**: サブエージェントが返した出力ディレクトリパスをログに記録する。

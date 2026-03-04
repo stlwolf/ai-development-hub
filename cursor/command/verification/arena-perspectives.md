@@ -24,8 +24,7 @@
 ```bash
 command -v agent &>/dev/null && echo "agent CLI: $(agent --version 2>&1 | head -1)" || echo "agent CLI: 未インストール"
 
-ARENA_SCRIPT="$HOME/work/repos/github.com/stlwolf/ai-development-hub/projects/arena-compare/arena-compare.sh"
-[[ -x "$ARENA_SCRIPT" ]] && echo "arena-compare.sh: OK" || echo "arena-compare.sh: 未配置"
+command -v arena-compare &>/dev/null && echo "arena-compare: OK" || echo "arena-compare: 未インストール（scripts/sync/sync-bin.sh を実行）"
 ```
 
 ## Step 1: プロンプト構成
@@ -49,7 +48,7 @@ Arena の実行・summary 読み込み・要約をサブエージェントに委
    Read ~/.cursor/skills/arena-compare/SKILL.md
 
 2. スキルに従い、arena-compare.sh を実行:
-   ./projects/arena-compare/arena-compare.sh -w "$(pwd)" "[プロンプト]"
+   arena-compare -w "$(pwd)" "[プロンプト]"
    [モデル指定がある場合は -m オプションを追加]
    [セッション継続の場合は --resume-from を追加]
 
@@ -67,7 +66,7 @@ Arena の実行・summary 読み込み・要約をサブエージェントに委
 **フォールバック**: サブエージェントが利用できない場合は、従来通り直接実行する:
 
 ```bash
-./projects/arena-compare/arena-compare.sh -w "$(pwd)" "[プロンプト]"
+arena-compare -w "$(pwd)" "[プロンプト]"
 ```
 
 ## Step 3: 結果確認
