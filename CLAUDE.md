@@ -14,12 +14,21 @@ AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コ
 ./scripts/sync/sync-cursor-skills.sh    # スキル → ~/.cursor/skills/
 ./scripts/sync/sync-cursor-agents.sh    # エージェント → ~/.cursor/agents/
 ./scripts/sync/sync-cursor-mcp.sh       # MCP設定 → ~/.cursor/mcp.json
+./scripts/sync/sync-bin.sh             # so-compare, arena-compare → ~/bin/
 
 # agent-verification-flow: API検証ツール
 cd projects/agent-verification-flow
 ./scripts/cognito_auth.sh              # JWT取得（Cognito）
 ./scripts/api_call.sh GET /api/users   # Bearer Token API呼び出し
 ./scripts/session_api.sh GET /api/me   # Session Cookie + CSRF API呼び出し
+
+# so-compare: セカンドオピニオン（Codex + Claude）
+so-compare -w "$(pwd)" "プロンプト"              # 推奨: -w でワークスペース参照
+so-compare -w "$(pwd)" "プロンプト" --codex-only  # Codex のみ
+
+# arena-compare: マルチモデル並列比較（Cursor CLI）
+arena-compare -w "$(pwd)" "プロンプト"            # デフォルト3モデル
+arena-compare --resume-from tmp/arena-XXXXXXXX "追加質問"  # セッション継続
 
 # claude-safe: Cursor統合ターミナルからClaude CLIを安全に実行
 ./projects/claude-safe/claude-safe -p "prompt" --output-format text
@@ -34,13 +43,15 @@ CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-ti
 ```
 ai-development-hub/
 ├── cursor/                 # Cursor AI エディタ関連
-│   ├── command/review/     # PRレビュー・Copilotレビュー対応コマンド
+│   ├── command/             # コマンド（verification/, review/, investigation/）
 │   ├── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
 │   ├── skill/              # スキル定義（~/.cursor/skills/ にリンク）
+│   ├── agents/             # エージェント定義（~/.cursor/agents/ にリンク）
 │   ├── project-rules/      # プロジェクト固有ルール (.mdc, alwaysApply)
 │   └── user-rules/         # ユーザー共通ルール（行動規範・入力・Markdown）
 ├── projects/               # 独立したツールキット（ideas/から昇格）
 │   ├── agent-verification-flow/  # AI駆動API検証（JWT/Session対応、curl+jq）
+│   ├── arena-compare/            # マルチモデル並列比較（Cursor CLI）
 │   ├── claude-safe/              # Claude CLIラッパー（nohupでTTY競合回避）
 │   └── second-opinion-verification/  # セカンドオピニオン検証（タイムアウト付き）
 ├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
