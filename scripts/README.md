@@ -9,6 +9,7 @@ scripts/
 ├── arena-compare.sh   -> ../projects/arena-compare/arena-compare.sh
 ├── so-compare.sh
 └── sync/
+    ├── sync-bin.sh
     ├── sync-cursor-agents.sh
     ├── sync-cursor-commands.sh
     ├── sync-cursor-mcp.sh
@@ -24,6 +25,7 @@ Cursor 設定ファイルをホームディレクトリにシンボリックリ�
 | `sync-cursor-commands.sh` | `cursor/command/**/*.md` | `~/.cursor/commands/` |
 | `sync-cursor-agents.sh` | `cursor/agents/*.md` | `~/.cursor/agents/` |
 | `sync-cursor-skills.sh` | `cursor/skill/*/` | `~/.cursor/skills/` |
+| `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
 | `sync-cursor-mcp.sh` | `cursor/mcp.json` | `~/.cursor/mcp.json` |
 
 ```bash
@@ -31,6 +33,7 @@ Cursor 設定ファイルをホームディレクトリにシンボリックリ�
 ./scripts/sync/sync-cursor-agents.sh
 ./scripts/sync/sync-cursor-skills.sh
 ./scripts/sync/sync-cursor-mcp.sh
+./scripts/sync/sync-bin.sh
 ```
 
 ## ユーティリティ
