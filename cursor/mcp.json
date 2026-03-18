@@ -5,6 +5,14 @@
       "args": [
         "@playwright/mcp@latest"
       ]
+    },
+    "Notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "headers": {}
+    },
+    "Notion-Personal": {
+      "url": "https://mcp.notion.com/mcp",
+      "headers": {}
     }
   }
 }
