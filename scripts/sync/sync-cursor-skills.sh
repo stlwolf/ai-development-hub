@@ -3,14 +3,14 @@
 # sync-cursor-skills.sh
 #
 # ai-development-hub/cursor/skill/ 以下のスキルディレクトリを
-# ~/.cursor/skills/ にシンボリックリンクとして配置する
+# ~/.cursor/skills/ と ~/.claude/skills/ にシンボリックリンクとして配置する
 #
 # Usage:
 #   ./scripts/sync-cursor-skills.sh
 #
 # Description:
 #   cursor/skill/ 以下の各ディレクトリ（SKILL.md を含む）を
-#   ~/.cursor/skills/ にシンボリックリンクとして配置します。
+#   ~/.cursor/skills/ と ~/.claude/skills/ にシンボリックリンクとして配置します。
 #
 #   既にシンボリックリンクでないディレクトリが存在する場合はスキップします。
 #
@@ -24,7 +24,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 SOURCE_DIR="${REPO_ROOT}/cursor/skill"
-TARGET_DIR="${HOME}/.cursor/skills"
+TARGET_DIRS=(
+    "${HOME}/.cursor/skills"
+    "${HOME}/.claude/skills"
+)
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -42,19 +45,14 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-main() {
-    info "Source: ${SOURCE_DIR}"
-    info "Target: ${TARGET_DIR}"
-    echo ""
+sync_to_target() {
+    local target_dir="$1"
 
-    if [[ ! -d "${TARGET_DIR}" ]]; then
-        info "Creating target directory: ${TARGET_DIR}"
-        mkdir -p "${TARGET_DIR}"
-    fi
+    info "Target: ${target_dir}"
 
-    if [[ ! -d "${SOURCE_DIR}" ]]; then
-        error "Source directory not found: ${SOURCE_DIR}"
-        exit 1
+    if [[ ! -d "${target_dir}" ]]; then
+        info "Creating target directory: ${target_dir}"
+        mkdir -p "${target_dir}"
     fi
 
     local count=0
@@ -64,7 +62,7 @@ main() {
 
         local dirname
         dirname="$(basename "$skill_dir")"
-        local target_path="${TARGET_DIR}/${dirname}"
+        local target_path="${target_dir}/${dirname}"
 
         if [[ -e "${target_path}" && ! -L "${target_path}" ]]; then
             warn "Skipping (regular directory exists): ${target_path}"
@@ -77,11 +75,25 @@ main() {
     done
 
     echo ""
-    info "Done! ${count} symlink(s) created/updated."
-
+    info "Done! ${count} symlink(s) created/updated in ${target_dir}"
     echo ""
-    info "Current ~/.cursor/skills/ contents:"
-    ls -la "${TARGET_DIR}"
+    info "Contents of ${target_dir}:"
+    ls -la "${target_dir}"
+}
+
+main() {
+    info "Source: ${SOURCE_DIR}"
+    echo ""
+
+    if [[ ! -d "${SOURCE_DIR}" ]]; then
+        error "Source directory not found: ${SOURCE_DIR}"
+        exit 1
+    fi
+
+    for target_dir in "${TARGET_DIRS[@]}"; do
+        sync_to_target "${target_dir}"
+        echo ""
+    done
 }
 
 main "$@"
