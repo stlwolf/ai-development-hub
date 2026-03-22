@@ -10,6 +10,7 @@ scripts/
 ├── so-compare.sh
 └── sync/
     ├── sync-bin.sh
+    ├── sync-claude-rules.sh
     ├── sync-cursor-agents.sh
     ├── sync-cursor-commands.sh
     ├── sync-cursor-mcp.sh
@@ -27,12 +28,14 @@ Cursor 設定ファイルをホームディレクトリにシンボリックリ�
 | `sync-cursor-skills.sh` | `cursor/skill/*/` | `~/.cursor/skills/` |
 | `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
 | `sync-cursor-mcp.sh` | `cursor/mcp.json` | `~/.cursor/mcp.json` |
+| `sync-claude-rules.sh` | `cursor/user-rules/*.md` | `~/.claude/rules/` |
 
 ```bash
 ./scripts/sync/sync-cursor-commands.sh
 ./scripts/sync/sync-cursor-agents.sh
 ./scripts/sync/sync-cursor-skills.sh
 ./scripts/sync/sync-cursor-mcp.sh
+./scripts/sync/sync-claude-rules.sh
 ./scripts/sync/sync-bin.sh
 ```
 
