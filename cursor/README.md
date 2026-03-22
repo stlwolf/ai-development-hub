@@ -49,9 +49,12 @@ cursor/
 
 # cursor/mcp.json を ~/.cursor/mcp.json にシンボリックリンク
 ./scripts/sync/sync-cursor-mcp.sh
+
+# cursor/user-rules/*.md を ~/.claude/rules/ にシンボリックリンク（Claude Code 向け）
+./scripts/sync/sync-claude-rules.sh
 ```
 
 ## ルール
 
 - **`project-rules/`**: `.mdc` 形式。プロジェクトの `.cursor/rules/` にコピーして使用
-- **`user-rules/`**: `.md` 形式。Cursor の User Rules に設定して使用
+- **`user-rules/`**: `.md` 形式。Cursor の User Rules および Claude Code のユーザールール（`~/.claude/rules/`）として使用
