@@ -71,7 +71,7 @@ sync_dirs() {
 
         ln -sfn "${item_dir%/}" "${target_path}"
         info "  Linked: ${dirname}"
-        ((count++))
+        ((count++)) || true
     done
 
     info "  ${count} ${label} symlink(s) created/updated"

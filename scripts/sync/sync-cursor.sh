@@ -64,7 +64,7 @@ sync_md_files() {
 
         ln -sf "${file}" "${target_path}"
         info "  Linked: ${filename}"
-        ((count++))
+        ((count++)) || true
     done < <(find "${source_dir}" -type f -name "*.md" -print0)
 
     info "  ${count} ${label} symlink(s) created/updated"
@@ -98,7 +98,7 @@ sync_dirs() {
 
         ln -sfn "${item_dir%/}" "${target_path}"
         info "  Linked: ${dirname}"
-        ((count++))
+        ((count++)) || true
     done
 
     info "  ${count} ${label} symlink(s) created/updated"
