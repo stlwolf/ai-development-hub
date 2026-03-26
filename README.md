@@ -51,24 +51,24 @@ Cursor AIエディタで使用するルールとコマンド集。
 
 ## 使い方
 
-### Cursor 設定の同期（推奨）
+### 設定の同期（推奨）
 
-`cursor/` 配下の設定を `~/.cursor/` にシンボリックリンクとして配置できます。
+`canonical/` の共通リソースを各AIツールの設定ディレクトリにシンボリックリンクとして配置できます。
 
 ```bash
-./scripts/sync/sync-cursor-commands.sh  # コマンド → ~/.cursor/commands/
-./scripts/sync/sync-cursor-agents.sh    # エージェント → ~/.cursor/agents/
-./scripts/sync/sync-cursor-skills.sh    # スキル → ~/.cursor/skills/
-./scripts/sync/sync-cursor-mcp.sh       # MCP設定 → ~/.cursor/mcp.json
+./scripts/sync.sh              # 全ツール一括（Cursor, Claude Code, Codex, bin）
+./scripts/sync.sh cursor       # Cursor のみ
+./scripts/sync.sh claude       # Claude Code のみ
+./scripts/sync.sh --list       # 利用可能ターゲット一覧
 ```
 
 - シンボリックリンクなので、どちら側から編集しても同じファイルが変更される
 - リポジトリ側でバージョン管理が可能
 
-### Cursor AI ルールの適用
+### ルールの適用
 
 1. **プロジェクトルール**: `cursor/project-rules/*.mdc` をプロジェクトの `.cursor/rules/` にコピー
-2. **ユーザールール**: `cursor/user-rules/*.md` を参照し、Cursor の User Rules に設定
+2. **共通ルール**: `canonical/rules/*.md` を各ツールのルール設定として使用（sync で自動配置）
 
 ## タスク管理
 
@@ -80,8 +80,8 @@ Cursor AIエディタで使用するルールとコマンド集。
 
 ## コンテンツ追加ガイドライン
 
-- **新しいルール**: 用途に応じて `cursor/project-rules/` または `cursor/user-rules/` に追加
-- **コマンド**: `cursor/command/` 配下に機能別ディレクトリを作成
+- **新しいルール**: Cursor 固有は `cursor/project-rules/` に、共通ルールは `canonical/rules/` に追加
+- **コマンド**: `canonical/commands/` 配下に機能別ディレクトリを作成
 - **ドキュメント**: `docs/draft/` で作成し、成熟したら適切な場所に移動
 - **アイデア**: `ideas/YYYYMMDD/` に凍結スナップショットとして追加
 

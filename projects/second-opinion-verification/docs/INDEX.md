@@ -79,7 +79,7 @@
 |---|---|---|
 | [FACTS_TEMPLATE.md](../../agent-verification-flow/docs/templates/FACTS_TEMPLATE.md) | agent-verification-flow | facts.md 汎用テンプレート |
 | [DESIGN_PRINCIPLES.md](../../agent-verification-flow/docs/DESIGN_PRINCIPLES.md) | agent-verification-flow | ロール設計パターン（案B）追記 |
-| [peer-ai-review.md](../../cursor/command/verification/peer-ai-review.md) | cursor/command | ピアレビュー Cursor コマンド |
+| [peer-ai-review.md](../../canonical/commands/verification/peer-ai-review.md) | canonical/commands | ピアレビューコマンド |
 | [so-compare.sh](../../scripts/so-compare.sh) | scripts | Claude/Codex 並行比較スクリプト |
 
 ## 規約

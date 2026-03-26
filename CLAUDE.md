@@ -4,16 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## リポジトリ概要
 
-AI駆動開発のための統合リポジトリ。Cursor AI向けルール・コマンド、AIエージェント連携ツール、アイデアメモを集約管理。純粋なBashスクリプトとMarkdownドキュメントで構成（ビルドシステム・パッケージマネージャなし）。
+AI駆動開発のための統合リポジトリ。複数AIツール（Cursor / Claude Code / Codex）共通のルール・スキル・エージェント・コマンドと、各ツール連携プロジェクトを集約管理。純粋なBashスクリプトとMarkdownドキュメントで構成（ビルドシステム・パッケージマネージャなし）。
 
 ## コマンド
 
 ```bash
-# Cursor設定をシンボリックリンク配置
-./scripts/sync/sync-cursor-commands.sh  # コマンド → ~/.cursor/commands/
-./scripts/sync/sync-cursor-skills.sh    # スキル → ~/.cursor/skills/
-./scripts/sync/sync-cursor-agents.sh    # エージェント → ~/.cursor/agents/
-./scripts/sync/sync-cursor-mcp.sh       # MCP設定 → ~/.cursor/mcp.json
+# 全ツールへ一括 sync（canonical/ → ~/.cursor/, ~/.claude/, ~/.codex/, ~/bin/）
+./scripts/sync.sh                      # 全ターゲット実行
+./scripts/sync.sh cursor               # Cursor のみ
+./scripts/sync.sh claude codex         # 複数指定
+./scripts/sync.sh --list               # 利用可能ターゲット一覧
+
+# 個別 sync スクリプト
+./scripts/sync/sync-cursor.sh          # canonical + cursor-specific → ~/.cursor/
+./scripts/sync/sync-claude.sh          # canonical → ~/.claude/
+./scripts/sync/sync-codex.sh           # canonical → ~/.codex/
 ./scripts/sync/sync-bin.sh             # so-compare, arena-compare → ~/bin/
 
 # agent-verification-flow: API検証ツール
@@ -42,13 +47,15 @@ CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-ti
 
 ```
 ai-development-hub/
-├── cursor/                 # Cursor AI エディタ関連
-│   ├── command/             # コマンド（verification/, review/, investigation/）
-│   ├── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
-│   ├── skill/              # スキル定義（~/.cursor/skills/ にリンク）
-│   ├── agents/             # エージェント定義（~/.cursor/agents/ にリンク）
+├── canonical/              # ツール非依存の正本（rules, skills, agents, commands）
+│   ├── rules/              # ユーザー共通ルール（行動規範・入力・出力等）
+│   ├── skills/             # スキル定義（各ディレクトリに SKILL.md）
+│   ├── agents/             # エージェント定義
+│   └── commands/           # コマンド（review/, investigation/, verification/）
+├── cursor/                 # Cursor AI 固有ファイル
+│   ├── command/thread/     # Cursor 固有コマンド（archive-title）
 │   ├── project-rules/      # プロジェクト固有ルール (.mdc, alwaysApply)
-│   └── user-rules/         # ユーザー共通ルール（行動規範・入力・Markdown）
+│   └── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
 ├── projects/               # 独立したツールキット（ideas/から昇格）
 │   ├── agent-verification-flow/  # AI駆動API検証（JWT/Session対応、curl+jq）
 │   ├── arena-compare/            # マルチモデル並列比較（Cursor CLI）
@@ -57,7 +64,8 @@ ai-development-hub/
 ├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
 ├── docs/draft/             # ドラフトドキュメント
 └── scripts/                # ユーティリティ
-    └── sync/               # Cursor設定の同期スクリプト
+    ├── sync.sh             # 統合 sync ランナー
+    └── sync/               # 個別 sync スクリプト（cursor, claude, codex, bin）
 ```
 
 ### projects/ の設計
@@ -74,7 +82,7 @@ ai-development-hub/
 - 成功したアイデアは `projects/` に昇格
 - `discussion-logs/` にマルチAIブレスト記録を保存可
 
-## 行動規範（cursor/user-rules/より）
+## 行動規範（canonical/rules/より）
 
 1. **Evidence First**: 根拠は一次情報（公式ドキュメント、RFC、ソースコード、ログ）を優先。推測は明示
 2. **CLI Native**: 情報収集はCLI（gh, curl, grep等）を優先
