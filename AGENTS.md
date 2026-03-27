@@ -1,7 +1,8 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `cursor/`: Cursor command templates and rule files (`command/`, `project-rules/`, `user-rules/`).
+- `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`).
+- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands).
 - `projects/`: Standalone toolkits.
 - `projects/agent-verification-flow/`: API verification scripts and templates.
 - `projects/claude-safe/`: wrapper for safe Claude CLI execution in integrated terminals.
@@ -13,10 +14,10 @@
 ## Build, Test, and Development Commands
 This repository has no global build system; contributions are mostly Bash scripts and Markdown.
 
-- `./scripts/sync/sync-cursor-commands.sh`: symlink `cursor/command/*` into `~/.cursor/commands/`.
-- `./scripts/sync/sync-cursor-agents.sh`: symlink `cursor/agents/*` into `~/.cursor/agents/`.
-- `./scripts/sync/sync-cursor-skills.sh`: symlink `cursor/skill/*` into `~/.cursor/skills/`.
-- `./scripts/sync/sync-cursor-mcp.sh`: symlink `cursor/mcp.json` to `~/.cursor/mcp.json`.
+- `./scripts/sync.sh`: unified sync runner (all targets, or specify `cursor`, `claude`, `codex`, `bin`).
+- `./scripts/sync/sync-cursor.sh`: deploy `canonical/` + cursor-specific files to `~/.cursor/`.
+- `./scripts/sync/sync-claude.sh`: deploy `canonical/` to `~/.claude/`.
+- `./scripts/sync/sync-codex.sh`: deploy `canonical/` to `~/.codex/`.
 - `cd projects/agent-verification-flow && ./scripts/cognito_auth.sh`: fetch JWT for API verification.
 - `cd projects/agent-verification-flow && ./scripts/api_call.sh GET /api/users`: run authenticated API calls.
 - `./projects/claude-safe/claude-safe -p "prompt" --output-format text`: run Claude CLI safely via wrapper.

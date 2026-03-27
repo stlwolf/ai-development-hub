@@ -163,7 +163,7 @@ ADR は短くてよい（10行でも可）。エピソードに埋もれるよ�
 |---------|--------|------|
 | [DOCUMENT_CONVENTION.md](../second-opinion-verification/docs/DOCUMENT_CONVENTION.md) | second-opinion-verification | 本規約の派生元 |
 | [context-persistence-4layer-model.md](../../ideas/20260220/context-persistence-4layer-model.md) | ideas/ | 4層モデル（本プロジェクトは層3パイプライン） |
-| [peer-ai-review.md](../../cursor/command/verification/peer-ai-review.md) | cursor/command | 設計判断のピアレビュー用コマンド |
+| [peer-ai-review.md](../../canonical/commands/verification/peer-ai-review.md) | canonical/commands | 設計判断のピアレビュー用コマンド |
 | [BACKLOG #2](https://github.com/stlwolf/ai-development-hub/issues/2) | GitHub | 「会話ログ保存の仕組み構築」Issue |
 
 ## ADR 作成のフロー組み込み

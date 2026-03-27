@@ -6,38 +6,37 @@
 
 ```
 scripts/
+├── sync.sh            # 統合 sync ランナー
 ├── arena-compare.sh   -> ../projects/arena-compare/arena-compare.sh
 ├── so-compare.sh
 └── sync/
     ├── sync-bin.sh
-    ├── sync-claude-rules.sh
-    ├── sync-cursor-agents.sh
-    ├── sync-cursor-commands.sh
-    ├── sync-cursor-mcp.sh
-    └── sync-cursor-skills.sh
+    ├── sync-claude.sh
+    ├── sync-codex.sh
+    └── sync-cursor.sh
 ```
 
 ## sync/
 
-Cursor 設定ファイルをホームディレクトリにシンボリックリンクとして配置するスクリプト群。
+`canonical/` を正本として、各AIツールの設定ディレクトリにシンボリックリンクを配置するスクリプト群。
+
+### 統合ランナー
+
+```bash
+./scripts/sync.sh                # 全ターゲット実行
+./scripts/sync.sh cursor         # Cursor のみ
+./scripts/sync.sh claude codex   # 複数指定
+./scripts/sync.sh --list         # 利用可能ターゲット一覧
+```
+
+### 個別スクリプト
 
 | スクリプト | ソース | 配置先 |
 |---|---|---|
-| `sync-cursor-commands.sh` | `cursor/command/**/*.md` | `~/.cursor/commands/` |
-| `sync-cursor-agents.sh` | `cursor/agents/*.md` | `~/.cursor/agents/` |
-| `sync-cursor-skills.sh` | `cursor/skill/*/` | `~/.cursor/skills/` |
+| `sync-cursor.sh` | `canonical/{commands,skills,agents}` + `cursor/` 固有 | `~/.cursor/` |
+| `sync-claude.sh` | `canonical/{rules,skills,agents,commands}` | `~/.claude/` |
+| `sync-codex.sh` | `canonical/skills/` | `~/.codex/` |
 | `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
-| `sync-cursor-mcp.sh` | `cursor/mcp.json` | `~/.cursor/mcp.json` |
-| `sync-claude-rules.sh` | `cursor/user-rules/*.md` | `~/.claude/rules/` |
-
-```bash
-./scripts/sync/sync-cursor-commands.sh
-./scripts/sync/sync-cursor-agents.sh
-./scripts/sync/sync-cursor-skills.sh
-./scripts/sync/sync-cursor-mcp.sh
-./scripts/sync/sync-claude-rules.sh
-./scripts/sync/sync-bin.sh
-```
 
 ## ユーティリティ
 
@@ -72,7 +71,7 @@ so-compare.sh -w "$(pwd)" "プロンプト" --claude-only
 
 環境変数: `SO_TIMEOUT`（デフォルト: 240秒）、`PREV_MAX_BYTES`（デフォルト: 4000）
 
-関連スキル: `cursor/skill/so-compare/SKILL.md`
+関連スキル: `canonical/skills/so-compare/SKILL.md`
 
 ### `arena-compare.sh`
 

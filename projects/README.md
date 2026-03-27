@@ -12,7 +12,7 @@ Cursor CLI（`agent` コマンド）によるマルチモデル並列比較ス�
 - Cursor サブスク内の全モデル（38+）を利用（外部 API 不要）
 - `-w` でワークスペースパス参照（`-c` によるファイル添付は非推奨）
 - `--resume-from` によるセッション維持でイテレーション可能
-- スキル（`cursor/skill/arena-compare/SKILL.md`）とコマンド（`/arena-perspectives`）を通じたサブエージェント委譲対応
+- スキル（`canonical/skills/arena-compare/SKILL.md`）とコマンド（`/arena-perspectives`）を通じたサブエージェント委譲対応
 - 探索モード: 「不可能」回答時に persistent-exploration の行動制約を注入して自動深掘り
 - `~/bin/arena-compare` として PATH 配置済み（`scripts/sync/sync-bin.sh`）
 
