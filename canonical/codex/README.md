@@ -5,7 +5,7 @@ Codex専用の拡張レイヤー。既存の`canonical/{rules,skills,agents,comm
 ## Directory Layout
 
 - `commands-registry/`: 疑似コマンドと`canonical/commands`の対応定義
-- `agents/`: Codex向けsubagent定義の生成先（sync時に更新）
+- `agents/`: Codex向けsubagent定義のドキュメント/オーバーライド置き場（生成物は`~/.codex/agents/*.toml`）
 
 ## Policy
 

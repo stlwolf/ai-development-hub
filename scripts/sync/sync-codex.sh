@@ -14,7 +14,8 @@
 #   また canonical/agents/*.md から Codex 用の軽量定義（.toml）を生成し、
 #   ~/.codex/agents/ に配置します。
 #
-#   既にシンボリックリンクでないディレクトリ/ファイルが存在する場合はスキップします。
+#   skills/commands-registry は既にシンボリックリンクでないパスが存在する場合はスキップします。
+#   agents の .toml は sync スクリプトが管理するため、既存の通常ファイルは上書きします。
 #
 # Example:
 #   cd ~/work/repos/github.com/stlwolf/ai-development-hub
@@ -162,6 +163,10 @@ generate_codex_agents() {
 
         if [[ -L "${target_toml}" ]]; then
             warn "Skipping (symlink exists): ${target_toml}"
+            continue
+        fi
+        if [[ -e "${target_toml}" && ! -f "${target_toml}" ]]; then
+            warn "Skipping (non-regular file exists): ${target_toml}"
             continue
         fi
 
