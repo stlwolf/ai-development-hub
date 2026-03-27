@@ -29,7 +29,7 @@ projects/second-opinion-verification/
 
 | 成果物 | 配置先 | 内容 |
 |--------|--------|------|
-| `/second-opinion` コマンド | `cursor/command/verification/` | セカンドオピニオン取得の Cursor コマンド |
+| `/second-opinion` コマンド | `canonical/commands/verification/` | セカンドオピニオン取得コマンド |
 | `so-compare.sh` | `scripts/` | Claude / Codex 並行比較スクリプト |
 | facts.md テンプレート | `agent-verification-flow/docs/templates/` | 事実/解釈分離の構造化テンプレート |
 | ロール設計パターン（案B） | `agent-verification-flow/docs/DESIGN_PRINCIPLES.md` | 逐次専門化の設計ガイド |

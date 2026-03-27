@@ -28,7 +28,7 @@ orchestration-research/
 ### landscape/
 
 各OSSツールの調査結果を統一フォーマットで記録。横断比較を可能にする。
-`oss-researcher` サブエージェント（`cursor/agents/oss-researcher.md`）による4並列調査で21ツールを調査済み。
+`oss-researcher` サブエージェント（`canonical/agents/oss-researcher.md`）による4並列調査で21ツールを調査済み。
 
 - [INDEX.md](./landscape/INDEX.md) — カテゴリ別一覧・注目発見・独自レイヤー対応マップ
 
