@@ -11,7 +11,7 @@
 #   canonical/skills/ を ~/.codex/skills/ に同期し、
 #   canonical/codex/commands-registry/ を ~/.codex/commands-registry/ に同期します。
 #
-#   また canonical/agents/*.md から Codex 用の軽量定義（.toml）を生成し、
+#   また canonical/agents/*.md から Codex 用の role 定義（.toml）を生成し、
 #   ~/.codex/agents/ に配置します。
 #
 #   skills/commands-registry は既にシンボリックリンクでないパスが存在する場合はスキップします。
@@ -117,6 +117,15 @@ toml_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+extract_markdown_body() {
+    local file="$1"
+    awk '
+        NR == 1 && $0 == "---" { in_fm = 1; next }
+        in_fm && $0 == "---" { in_fm = 0; next }
+        !in_fm { print }
+    ' "$file"
+}
+
 extract_frontmatter_value() {
     local file="$1"
     local key="$2"
@@ -155,10 +164,11 @@ generate_codex_agents() {
         [[ -z "${name}" ]] && name="${filename}"
         [[ -z "${description}" ]] && description="Generated from canonical/agents/${base}"
 
-        local name_escaped desc_escaped path_escaped target_toml
+        local name_escaped desc_escaped instructions instructions_escaped target_toml
         name_escaped="$(toml_escape "${name}")"
         desc_escaped="$(toml_escape "${description}")"
-        path_escaped="$(toml_escape "${file}")"
+        instructions="$(extract_markdown_body "${file}")"
+        instructions_escaped="$(printf '%s' "${instructions}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
         target_toml="${target_dir}/${filename}.toml"
 
         if [[ -L "${target_toml}" ]]; then
@@ -174,7 +184,9 @@ generate_codex_agents() {
         cat > "${target_toml}" <<EOF
 name = "${name_escaped}"
 description = "${desc_escaped}"
-instruction_file = "${path_escaped}"
+developer_instructions = """
+${instructions_escaped}
+"""
 EOF
         info "  Generated: ${filename}.toml"
         ((count++)) || true
