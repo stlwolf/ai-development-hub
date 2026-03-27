@@ -165,6 +165,7 @@ generate_codex_agents() {
             continue
         fi
 
+        # Generated agent definitions are owned by this sync script, so regular files are refreshed.
         cat > "${target_toml}" <<EOF
 name = "${name_escaped}"
 description = "${desc_escaped}"
