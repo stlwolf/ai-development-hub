@@ -68,7 +68,10 @@ Cursor AIエディタで使用するルールとコマンド集。
 ### ルールの適用
 
 1. **プロジェクトルール**: `cursor/project-rules/*.mdc` をプロジェクトの `.cursor/rules/` にコピー
-2. **共通ルール**: `canonical/rules/*.md` を各ツールのルール設定として使用（sync で自動配置）
+2. **共通ルール**: `canonical/rules/*.md` を各ツールのルール設定として使用
+   - **Claude Code**: `./scripts/sync.sh claude` で `~/.claude/rules/` にシンボリックリンクを自動配置
+   - **Cursor**: User Rules として手動で登録（`sync-cursor.sh` は rules を配置しない）
+   - **Codex**: 現時点では rules 未対応（設定体系の拡張待ち、`sync-codex.sh` は skills のみ配置）
 
 ## タスク管理
 
