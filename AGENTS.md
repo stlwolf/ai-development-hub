@@ -13,8 +13,9 @@ Behavioral principles are loaded from `~/.codex/AGENTS.md` (global layer); this 
 ## Project Structure
 
 - `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`)
+- `canonical/cursor/`: Cursor-specific extension layer (Cursor-only commands)
 - `canonical/codex/`: Codex-specific extension layer
-- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands)
+- `canonical/mcp/`: MCP server configurations (`cursor.json`)
 - `projects/`: Standalone toolkits (each has its own README)
 - `ideas/`: Date-based idea snapshots (`YYYYMMDD/`), treated as frozen records
 - `scripts/`: Sync scripts and utilities

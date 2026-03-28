@@ -47,15 +47,14 @@ CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-ti
 
 ```
 ai-development-hub/
-├── canonical/              # ツール非依存の正本（rules, skills, agents, commands）
+├── canonical/              # ツール非依存の正本 + ツール固有拡張
 │   ├── rules/              # ユーザー共通ルール（行動規範・入力・出力等）
 │   ├── skills/             # スキル定義（各ディレクトリに SKILL.md）
 │   ├── agents/             # エージェント定義
-│   └── commands/           # コマンド（review/, investigation/, verification/）
-├── cursor/                 # Cursor AI 固有ファイル
-│   ├── command/thread/     # Cursor 固有コマンド（archive-title）
-│   ├── project-rules/      # プロジェクト固有ルール (.mdc, alwaysApply)
-│   └── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
+│   ├── commands/           # コマンド（review/, investigation/, verification/）
+│   ├── mcp/                # MCP設定（cursor.json → ~/.cursor/mcp.json にリンク）
+│   ├── cursor/             # Cursor 固有ファイル（archive-title 等）
+│   └── codex/              # Codex 固有ファイル（AGENTS.md, commands-registry 等）
 ├── projects/               # 独立したツールキット（ideas/から昇格）
 │   ├── agent-verification-flow/  # AI駆動API検証（JWT/Session対応、curl+jq）
 │   ├── arena-compare/            # マルチモデル並列比較（Cursor CLI）
