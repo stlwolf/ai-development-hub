@@ -14,6 +14,8 @@ OSSから抽出した概念（[concepts/](../concepts/)）と、自分の独自�
 | ノート                                              | 独自概念                   | 状態            |
 | ------------------------------------------------ | ---------------------- | ------------- |
 | [context-foundation.md](./context-foundation.md) | 4層コンテキストモデル → コンテキスト基盤 | 初版完了          |
+| [skills-level-patterns.md](./skills-level-patterns.md) | Skills/Rulesレベルの軽量パターン5類型 + 設計洞察 | 初版完了 |
+| [harness-engineering-mapping.md](./harness-engineering-mapping.md) | ハーネス概念と自設計の対応マップ。Epic #10・フック基盤への接続 | 初版完了 |
 | （未作成）認知協調                                        | セカンドオピニオン + ルーラーエージェント | コンテキスト基盤のMVP後 |
 | （未作成）正準エージェント定義                                  | ツール非依存の定義フォーマット        | コンテキスト基盤のMVP後 |
 | （未作成）全体アーキテクチャ                                   | 全独自概念の統合 + OSSインフラ層の選定 | 個別ノート完了後      |
