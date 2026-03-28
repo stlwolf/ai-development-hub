@@ -1,31 +1,47 @@
 # Repository Agent Contract
 
-このファイルは、リポジトリ全体で共通に守る最小運用ルールを定義する。
-詳細な手順・長い説明は各正本ドキュメントを参照し、このファイルには展開しない。
+This file defines the minimal operating rules shared across all AI tools working in this repository.
+Behavioral principles are loaded from `~/.codex/AGENTS.md` (global layer); this file adds project-specific context.
 
 ## Source of Truth
 
-- リポジトリ構成・運用概要: `README.md`
-- sync 実行方法: `scripts/README.md`
-- ツール非依存の正本: `canonical/`（`rules/`, `skills/`, `agents/`, `commands/`）
-- Codex専用ガードレール: `canonical/codex/AGENTS.md`
+- Repository overview & usage: `README.md`
+- Sync scripts: `scripts/README.md`
+- Tool-agnostic canonical resources: `canonical/` (`rules/`, `skills/`, `agents/`, `commands/`)
+- Codex guardrails: `canonical/codex/AGENTS.md`
 
-## Scope and Ownership
+## Project Structure
 
-- `canonical/agents/` はサブエージェント役割定義のみを保持する。
-- ツール固有ポリシーは各ツール用パスで管理し、ルートに混在させない。
-- `~/.codex/agents/*.toml` は生成物として扱い、手動編集しない。
-- `~/.codex/agents/*.toml` の変更は `canonical/agents/` と `scripts/sync/sync-codex.sh` で行う。
+- `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`)
+- `canonical/codex/`: Codex-specific extension layer
+- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands)
+- `projects/`: Standalone toolkits (each has its own README)
+- `ideas/`: Date-based idea snapshots (`YYYYMMDD/`), treated as frozen records
+- `scripts/`: Sync scripts and utilities
 
-## Operating Rules
+## Build & Development
 
-- 依頼範囲外の変更をしない。
-- 既存差分がある場合は、タスク関連ファイルのみをステージ・コミットする。
-- Bash/Markdown の既存規約（命名・記法・構成）を踏襲する。
-- スクリプト変更時は、対象スクリプトの実行確認と `shellcheck` を優先する。
+No global build system; contributions are Bash scripts and Markdown.
 
-## Contribution Baseline
+- `./scripts/sync.sh`: unified sync runner (all targets, or specify `cursor`, `claude`, `codex`, `bin`)
+- `shellcheck <script>`: run on any modified shell script before committing
 
-- コミットは Conventional Commits（`feat:`, `fix:`, `docs:`, `chore:`）を使用。
-- 1コミット1論理変更を原則とする。
-- PRには目的、影響範囲、実行した検証コマンドを明記する。
+## Coding Style
+
+- Bash 3.2+ compatible; `set -euo pipefail` in scripts (not in `.bashrc`)
+- `kebab-case` for Markdown/script filenames
+- Fenced code blocks with language identifiers; file paths in inline code
+- Bullet lists use `-` only (not `*` or `•`)
+- Keep changes minimal and scoped; follow existing patterns
+
+## Testing
+
+- No single root test runner exists
+- For scripts: run with realistic inputs, verify with `shellcheck`
+- For docs/templates: verify paths and command examples from a clean shell
+
+## Commit & PR
+
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:` (optional scope)
+- One logical change per commit
+- PRs include: purpose, impacted paths, validation commands, linked issue/context

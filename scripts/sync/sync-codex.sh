@@ -130,8 +130,9 @@ sync_single_file() {
     mkdir -p "$(dirname "${target_file}")"
 
     if [[ -e "${target_file}" && ! -L "${target_file}" ]]; then
-        warn "Skipping (regular file exists): ${target_file}"
-        return
+        local backup="${target_file}.bak"
+        warn "Regular file exists: ${target_file} → backing up to ${backup}"
+        mv "${target_file}" "${backup}"
     fi
 
     ln -sfn "${source_file}" "${target_file}"
