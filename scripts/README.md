@@ -35,10 +35,20 @@ scripts/
 |---|---|---|
 | `sync-cursor.sh` | `canonical/{commands,skills,agents}` + `cursor/` 固有 | `~/.cursor/` |
 | `sync-claude.sh` | `canonical/{rules,skills,agents,commands}` | `~/.claude/` |
-| `sync-codex.sh` | `canonical/skills/` | `~/.codex/` |
+| `sync-codex.sh` | `canonical/skills/` + `canonical/codex/{AGENTS.md,commands-registry}` + `canonical/agents`(toml生成) | `~/.codex/` |
 | `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
 
+`sync-codex.sh` は実行前に `check-codex-guardrails.sh` を呼び出し、`canonical/rules` と `canonical/codex/AGENTS.md` の整合を検証する。
+
 ## ユーティリティ
+
+### `check-codex-guardrails.sh`
+
+`canonical/rules` の主要行動原則が `canonical/codex/AGENTS.md` に反映されているかを検証する。
+
+```bash
+./scripts/check-codex-guardrails.sh
+```
 
 ### `so-compare.sh`
 

@@ -2,18 +2,22 @@
 #
 # sync-codex.sh
 #
-# canonical/ → ~/.codex/skills/ にシンボリックリンクとして配置する
+# canonical/ + canonical/codex/ → ~/.codex/ にシンボリックリンクとして配置する
 #
 # Usage:
 #   ./scripts/sync/sync-codex.sh
 #
 # Description:
-#   canonical/skills/ 以下のスキルディレクトリを
-#   ~/.codex/skills/ にシンボリックリンクとして配置します。
+#   canonical/skills/ を ~/.codex/skills/ に同期し、
+#   canonical/codex/commands-registry/ を ~/.codex/commands-registry/ に同期します。
+#   また canonical/codex/AGENTS.md を ~/.codex/AGENTS.md に同期します。
+#   同期前に canonical/rules と canonical/codex/AGENTS.md の整合チェックを実施します。
 #
-#   Codex の設定体系が拡張され次第、agents/commands/rules も追加予定。
+#   また canonical/agents/*.md から Codex 用の role 定義（.toml）を生成し、
+#   ~/.codex/agents/ に配置します。
 #
-#   既にシンボリックリンクでないディレクトリが存在する場合はスキップします。
+#   skills/commands-registry は既にシンボリックリンクでないパスが存在する場合はスキップします。
+#   agents の .toml は sync スクリプトが管理するため、既存の通常ファイルは上書きします。
 #
 # Example:
 #   cd ~/work/repos/github.com/stlwolf/ai-development-hub
@@ -25,6 +29,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CANONICAL_DIR="${REPO_ROOT}/canonical"
+CANONICAL_CODEX_DIR="${CANONICAL_DIR}/codex"
 TARGET_BASE="${HOME}/.codex"
 
 GREEN='\033[0;32m'
@@ -77,6 +82,145 @@ sync_dirs() {
     info "  ${count} ${label} symlink(s) created/updated"
 }
 
+# .md ファイルをフラット配置
+sync_md_files() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local label="$3"
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "Skipping ${label} (source not found): ${source_dir}"
+        return
+    fi
+
+    info "Syncing ${label}: ${source_dir} → ${target_dir}"
+    mkdir -p "${target_dir}"
+
+    local count=0
+    while IFS= read -r -d '' file; do
+        local filename
+        filename="$(basename "$file")"
+        local target_path="${target_dir}/${filename}"
+
+        if [[ -e "${target_path}" && ! -L "${target_path}" ]]; then
+            warn "Skipping (regular file exists): ${target_path}"
+            continue
+        fi
+
+        ln -sf "${file}" "${target_path}"
+        info "  Linked: ${filename}"
+        ((count++)) || true
+    done < <(find "${source_dir}" -type f -name "*.md" -print0)
+
+    info "  ${count} ${label} symlink(s) created/updated"
+}
+
+# 単一ファイルをシンリンク配置
+sync_single_file() {
+    local source_file="$1"
+    local target_file="$2"
+    local label="$3"
+
+    if [[ ! -f "${source_file}" ]]; then
+        warn "Skipping ${label} (source not found): ${source_file}"
+        return
+    fi
+
+    info "Syncing ${label}: ${source_file} → ${target_file}"
+    mkdir -p "$(dirname "${target_file}")"
+
+    if [[ -e "${target_file}" && ! -L "${target_file}" ]]; then
+        local backup="${target_file}.bak"
+        warn "Regular file exists: ${target_file} → backing up to ${backup}"
+        mv "${target_file}" "${backup}"
+    fi
+
+    ln -sfn "${source_file}" "${target_file}"
+    info "  Linked: $(basename "${target_file}")"
+}
+
+toml_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+extract_markdown_body() {
+    local file="$1"
+    awk '
+        NR == 1 && $0 == "---" { in_fm = 1; next }
+        in_fm && $0 == "---" { in_fm = 0; next }
+        !in_fm { print }
+    ' "$file"
+}
+
+extract_frontmatter_value() {
+    local file="$1"
+    local key="$2"
+    awk -v key="$key" '
+        NR == 1 && $0 == "---" { in_fm = 1; next }
+        in_fm && $0 == "---" { exit }
+        in_fm && $0 ~ "^" key ":[[:space:]]*" {
+            sub("^" key ":[[:space:]]*", "", $0)
+            gsub(/^"|"$/, "", $0)
+            print $0
+            exit
+        }
+    ' "$file"
+}
+
+generate_codex_agents() {
+    local source_dir="$1"
+    local target_dir="$2"
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "Skipping agents generation (source not found): ${source_dir}"
+        return
+    fi
+
+    info "Generating codex agents: ${source_dir} → ${target_dir}"
+    mkdir -p "${target_dir}"
+
+    local count=0
+    local file
+    while IFS= read -r -d '' file; do
+        local base filename name description
+        base="$(basename "$file")"
+        filename="${base%.md}"
+        name="$(extract_frontmatter_value "$file" "name")"
+        description="$(extract_frontmatter_value "$file" "description")"
+        [[ -z "${name}" ]] && name="${filename}"
+        [[ -z "${description}" ]] && description="Generated from canonical/agents/${base}"
+
+        local name_escaped desc_escaped instructions instructions_escaped target_toml
+        name_escaped="$(toml_escape "${name}")"
+        desc_escaped="$(toml_escape "${description}")"
+        instructions="$(extract_markdown_body "${file}")"
+        instructions_escaped="$(printf '%s' "${instructions}" | sed 's/\\/\\\\/g; s/"""/""\\"/g; s/"/\\"/g')"
+        target_toml="${target_dir}/${filename}.toml"
+
+        if [[ -L "${target_toml}" ]]; then
+            warn "Skipping (symlink exists): ${target_toml}"
+            continue
+        fi
+        if [[ -e "${target_toml}" && ! -f "${target_toml}" ]]; then
+            warn "Skipping (non-regular file exists): ${target_toml}"
+            continue
+        fi
+
+        # Generated agent definitions are owned by this sync script, so regular files are refreshed.
+        cat > "${target_toml}" <<EOF
+name = "${name_escaped}"
+description = "${desc_escaped}"
+developer_instructions = """
+${instructions_escaped}
+"""
+EOF
+        info "  Generated: ${filename}.toml"
+        ((count++)) || true
+    done < <(find "${source_dir}" -type f -name "*.md" -print0)
+
+    info "  ${count} codex agent definition(s) generated"
+}
+
 main() {
     info "=== sync-codex: canonical → ~/.codex/ ==="
     echo ""
@@ -86,8 +230,24 @@ main() {
         exit 1
     fi
 
+    # Guardrails alignment check
+    "${REPO_ROOT}/scripts/check-codex-guardrails.sh"
+    echo ""
+
     # Skills (directory symlinks, require SKILL.md)
     sync_dirs "${CANONICAL_DIR}/skills" "${TARGET_BASE}/skills" "skills" "SKILL.md"
+    echo ""
+
+    # Codex pseudo command registry
+    sync_md_files "${CANONICAL_CODEX_DIR}/commands-registry" "${TARGET_BASE}/commands-registry" "commands-registry"
+    echo ""
+
+    # Codex global AGENTS guardrails
+    sync_single_file "${CANONICAL_CODEX_DIR}/AGENTS.md" "${TARGET_BASE}/AGENTS.md" "AGENTS"
+    echo ""
+
+    # Codex agents generated from canonical/agents
+    generate_codex_agents "${CANONICAL_DIR}/agents" "${TARGET_BASE}/agents"
     echo ""
 
     info "=== sync-codex complete ==="
