@@ -2,14 +2,14 @@
 #
 # sync-cursor.sh
 #
-# canonical/ + cursor/ → ~/.cursor/ にシンボリックリンクとして配置する
+# canonical/ → ~/.cursor/ にシンボリックリンクとして配置する
 #
 # Usage:
 #   ./scripts/sync/sync-cursor.sh
 #
 # Description:
 #   canonical/ 以下の commands, skills, agents を ~/.cursor/ に配置します。
-#   Cursor 固有ファイル (mcp.json, archive-title) も合わせて配置します。
+#   Cursor 固有ファイル (canonical/cursor/, canonical/mcp/) も合わせて配置します。
 #
 #   既にシンボリックリンクでないファイルが存在する場合はスキップします。
 #
@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CANONICAL_DIR="${REPO_ROOT}/canonical"
-CURSOR_DIR="${REPO_ROOT}/cursor"
+CURSOR_DIR="${CANONICAL_DIR}/cursor"
 TARGET_BASE="${HOME}/.cursor"
 
 GREEN='\033[0;32m'
@@ -157,8 +157,8 @@ main() {
     sync_md_files "${CANONICAL_DIR}/agents" "${TARGET_BASE}/agents" "agents"
     echo ""
 
-    # 4. MCP config (Cursor-specific)
-    sync_single_file "${CURSOR_DIR}/mcp.json" "${TARGET_BASE}/mcp.json" "mcp.json"
+    # 4. MCP config
+    sync_single_file "${CANONICAL_DIR}/mcp/cursor.json" "${TARGET_BASE}/mcp.json" "mcp.json"
     echo ""
 
     info "=== sync-cursor complete ==="

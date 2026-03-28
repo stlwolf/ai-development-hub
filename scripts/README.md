@@ -33,7 +33,7 @@ scripts/
 
 | スクリプト | ソース | 配置先 |
 |---|---|---|
-| `sync-cursor.sh` | `canonical/{commands,skills,agents}` + `cursor/` 固有 | `~/.cursor/` |
+| `sync-cursor.sh` | `canonical/{commands,skills,agents}` + `canonical/cursor/` 固有 + `canonical/mcp/cursor.json` | `~/.cursor/` |
 | `sync-claude.sh` | `canonical/{rules,skills,agents,commands}` | `~/.claude/` |
 | `sync-codex.sh` | `canonical/skills/` + `canonical/codex/{AGENTS.md,commands-registry}` + `canonical/agents`(toml生成) | `~/.codex/` |
 | `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
