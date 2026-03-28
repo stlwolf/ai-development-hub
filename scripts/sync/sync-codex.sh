@@ -10,6 +10,8 @@
 # Description:
 #   canonical/skills/ を ~/.codex/skills/ に同期し、
 #   canonical/codex/commands-registry/ を ~/.codex/commands-registry/ に同期します。
+#   また canonical/codex/AGENTS.md を ~/.codex/AGENTS.md に同期します。
+#   同期前に canonical/rules と canonical/codex/AGENTS.md の整合チェックを実施します。
 #
 #   また canonical/agents/*.md から Codex 用の role 定義（.toml）を生成し、
 #   ~/.codex/agents/ に配置します。
@@ -113,6 +115,29 @@ sync_md_files() {
     info "  ${count} ${label} symlink(s) created/updated"
 }
 
+# 単一ファイルをシンリンク配置
+sync_single_file() {
+    local source_file="$1"
+    local target_file="$2"
+    local label="$3"
+
+    if [[ ! -f "${source_file}" ]]; then
+        warn "Skipping ${label} (source not found): ${source_file}"
+        return
+    fi
+
+    info "Syncing ${label}: ${source_file} → ${target_file}"
+    mkdir -p "$(dirname "${target_file}")"
+
+    if [[ -e "${target_file}" && ! -L "${target_file}" ]]; then
+        warn "Skipping (regular file exists): ${target_file}"
+        return
+    fi
+
+    ln -sfn "${source_file}" "${target_file}"
+    info "  Linked: $(basename "${target_file}")"
+}
+
 toml_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -204,12 +229,20 @@ main() {
         exit 1
     fi
 
+    # Guardrails alignment check
+    "${REPO_ROOT}/scripts/check-codex-guardrails.sh"
+    echo ""
+
     # Skills (directory symlinks, require SKILL.md)
     sync_dirs "${CANONICAL_DIR}/skills" "${TARGET_BASE}/skills" "skills" "SKILL.md"
     echo ""
 
     # Codex pseudo command registry
     sync_md_files "${CANONICAL_CODEX_DIR}/commands-registry" "${TARGET_BASE}/commands-registry" "commands-registry"
+    echo ""
+
+    # Codex global AGENTS guardrails
+    sync_single_file "${CANONICAL_CODEX_DIR}/AGENTS.md" "${TARGET_BASE}/AGENTS.md" "AGENTS"
     echo ""
 
     # Codex agents generated from canonical/agents

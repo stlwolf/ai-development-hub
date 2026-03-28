@@ -1,45 +1,31 @@
-# Repository Guidelines
+# Repository Agent Contract
 
-## Project Structure & Module Organization
-- `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`).
-- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands).
-- `projects/`: Standalone toolkits.
-- `projects/agent-verification-flow/`: API verification scripts and templates.
-- `projects/claude-safe/`: wrapper for safe Claude CLI execution in integrated terminals.
-- `projects/second-opinion-verification/`: timeout-enabled verification workflow and ADR-style docs.
-- `ideas/`: date-based idea snapshots (`YYYYMMDD/`), treated as frozen records.
-- `docs/draft/`: work-in-progress docs.
-- `scripts/`: repository utilities (for example command sync scripts).
+このファイルは、リポジトリ全体で共通に守る最小運用ルールを定義する。
+詳細な手順・長い説明は各正本ドキュメントを参照し、このファイルには展開しない。
 
-## Build, Test, and Development Commands
-This repository has no global build system; contributions are mostly Bash scripts and Markdown.
+## Source of Truth
 
-- `./scripts/sync.sh`: unified sync runner (all targets, or specify `cursor`, `claude`, `codex`, `bin`).
-- `./scripts/sync/sync-cursor.sh`: deploy `canonical/` + cursor-specific files to `~/.cursor/`.
-- `./scripts/sync/sync-claude.sh`: deploy `canonical/` to `~/.claude/`.
-- `./scripts/sync/sync-codex.sh`: deploy `canonical/` to `~/.codex/`.
-- `cd projects/agent-verification-flow && ./scripts/cognito_auth.sh`: fetch JWT for API verification.
-- `cd projects/agent-verification-flow && ./scripts/api_call.sh GET /api/users`: run authenticated API calls.
-- `./projects/claude-safe/claude-safe -p "prompt" --output-format text`: run Claude CLI safely via wrapper.
-- `CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-timeout -p "prompt"`: enforce timeout behavior.
+- リポジトリ構成・運用概要: `README.md`
+- sync 実行方法: `scripts/README.md`
+- ツール非依存の正本: `canonical/`（`rules/`, `skills/`, `agents/`, `commands/`）
+- Codex専用ガードレール: `canonical/codex/AGENTS.md`
 
-## Coding Style & Naming Conventions
-- Use Bash and Markdown with simple, portable patterns (`bash` 3.2+ compatible scripts).
-- Prefer `kebab-case` for Markdown/script filenames; keep directory names descriptive.
-- For idea records, use `ideas/YYYYMMDD/`.
-- In Markdown, use fenced code blocks with language identifiers and inline-code file paths.
-- Keep changes minimal and scoped; follow existing layout and phrasing patterns in each subproject.
+## Scope and Ownership
 
-## Testing Guidelines
-- No single root test runner exists.
-- For script changes, run the target script with realistic inputs and document results in the related README/docs.
-- If available, run `shellcheck <script>` for modified shell scripts before opening a PR.
-- For workflow docs/templates, verify links/paths and command examples from a clean shell session.
+- `canonical/agents/` はサブエージェント役割定義のみを保持する。
+- ツール固有ポリシーは各ツール用パスで管理し、ルートに混在させない。
+- `~/.codex/agents/*.toml` は生成物として扱い、手動編集しない。
+- `~/.codex/agents/*.toml` の変更は `canonical/agents/` と `scripts/sync/sync-codex.sh` で行う。
 
-## Commit & Pull Request Guidelines
-- Follow Conventional Commit style seen in history: `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...` (optional scope like `feat(verification): ...`).
-- Keep one logical change per commit.
-- PRs should include purpose and impacted paths.
-- PRs should include validation steps/commands executed.
-- PRs should include linked issue/context when available.
-- PRs should include sample output or screenshots when behavior/output changes.
+## Operating Rules
+
+- 依頼範囲外の変更をしない。
+- 既存差分がある場合は、タスク関連ファイルのみをステージ・コミットする。
+- Bash/Markdown の既存規約（命名・記法・構成）を踏襲する。
+- スクリプト変更時は、対象スクリプトの実行確認と `shellcheck` を優先する。
+
+## Contribution Baseline
+
+- コミットは Conventional Commits（`feat:`, `fix:`, `docs:`, `chore:`）を使用。
+- 1コミット1論理変更を原則とする。
+- PRには目的、影響範囲、実行した検証コマンドを明記する。
