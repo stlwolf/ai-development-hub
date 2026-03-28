@@ -1,45 +1,47 @@
-# Repository Guidelines
+# Repository Agent Contract
 
-## Project Structure & Module Organization
-- `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`).
-- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands).
-- `projects/`: Standalone toolkits.
-- `projects/agent-verification-flow/`: API verification scripts and templates.
-- `projects/claude-safe/`: wrapper for safe Claude CLI execution in integrated terminals.
-- `projects/second-opinion-verification/`: timeout-enabled verification workflow and ADR-style docs.
-- `ideas/`: date-based idea snapshots (`YYYYMMDD/`), treated as frozen records.
-- `docs/draft/`: work-in-progress docs.
-- `scripts/`: repository utilities (for example command sync scripts).
+This file defines the minimal operating rules shared across all AI tools working in this repository.
+Behavioral principles are loaded from `~/.codex/AGENTS.md` (global layer); this file adds project-specific context.
 
-## Build, Test, and Development Commands
-This repository has no global build system; contributions are mostly Bash scripts and Markdown.
+## Source of Truth
 
-- `./scripts/sync.sh`: unified sync runner (all targets, or specify `cursor`, `claude`, `codex`, `bin`).
-- `./scripts/sync/sync-cursor.sh`: deploy `canonical/` + cursor-specific files to `~/.cursor/`.
-- `./scripts/sync/sync-claude.sh`: deploy `canonical/` to `~/.claude/`.
-- `./scripts/sync/sync-codex.sh`: deploy `canonical/` to `~/.codex/`.
-- `cd projects/agent-verification-flow && ./scripts/cognito_auth.sh`: fetch JWT for API verification.
-- `cd projects/agent-verification-flow && ./scripts/api_call.sh GET /api/users`: run authenticated API calls.
-- `./projects/claude-safe/claude-safe -p "prompt" --output-format text`: run Claude CLI safely via wrapper.
-- `CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-timeout -p "prompt"`: enforce timeout behavior.
+- Repository overview & usage: `README.md`
+- Sync scripts: `scripts/README.md`
+- Tool-agnostic canonical resources: `canonical/` (`rules/`, `skills/`, `agents/`, `commands/`)
+- Codex guardrails: `canonical/codex/AGENTS.md`
 
-## Coding Style & Naming Conventions
-- Use Bash and Markdown with simple, portable patterns (`bash` 3.2+ compatible scripts).
-- Prefer `kebab-case` for Markdown/script filenames; keep directory names descriptive.
-- For idea records, use `ideas/YYYYMMDD/`.
-- In Markdown, use fenced code blocks with language identifiers and inline-code file paths.
-- Keep changes minimal and scoped; follow existing layout and phrasing patterns in each subproject.
+## Project Structure
 
-## Testing Guidelines
-- No single root test runner exists.
-- For script changes, run the target script with realistic inputs and document results in the related README/docs.
-- If available, run `shellcheck <script>` for modified shell scripts before opening a PR.
-- For workflow docs/templates, verify links/paths and command examples from a clean shell session.
+- `canonical/`: Tool-agnostic source of truth (`rules/`, `skills/`, `agents/`, `commands/`)
+- `canonical/codex/`: Codex-specific extension layer
+- `cursor/`: Cursor-specific files (`project-rules/`, `mcp.json`, Cursor-only commands)
+- `projects/`: Standalone toolkits (each has its own README)
+- `ideas/`: Date-based idea snapshots (`YYYYMMDD/`), treated as frozen records
+- `scripts/`: Sync scripts and utilities
 
-## Commit & Pull Request Guidelines
-- Follow Conventional Commit style seen in history: `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...` (optional scope like `feat(verification): ...`).
-- Keep one logical change per commit.
-- PRs should include purpose and impacted paths.
-- PRs should include validation steps/commands executed.
-- PRs should include linked issue/context when available.
-- PRs should include sample output or screenshots when behavior/output changes.
+## Build & Development
+
+No global build system; contributions are Bash scripts and Markdown.
+
+- `./scripts/sync.sh`: unified sync runner (all targets, or specify `cursor`, `claude`, `codex`, `bin`)
+- `shellcheck <script>`: run on any modified shell script before committing
+
+## Coding Style
+
+- Bash 3.2+ compatible; `set -euo pipefail` in scripts (not in `.bashrc`)
+- `kebab-case` for Markdown/script filenames
+- Fenced code blocks with language identifiers; file paths in inline code
+- Bullet lists use `-` only (not `*` or `•`)
+- Keep changes minimal and scoped; follow existing patterns
+
+## Testing
+
+- No single root test runner exists
+- For scripts: run with realistic inputs, verify with `shellcheck`
+- For docs/templates: verify paths and command examples from a clean shell
+
+## Commit & PR
+
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:` (optional scope)
+- One logical change per commit
+- PRs include: purpose, impacted paths, validation commands, linked issue/context
