@@ -194,7 +194,7 @@ generate_codex_agents() {
         name_escaped="$(toml_escape "${name}")"
         desc_escaped="$(toml_escape "${description}")"
         instructions="$(extract_markdown_body "${file}")"
-        instructions_escaped="$(printf '%s' "${instructions}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+        instructions_escaped="$(printf '%s' "${instructions}" | sed 's/\\/\\\\/g; s/"""/""\\"/g; s/"/\\"/g')"
         target_toml="${target_dir}/${filename}.toml"
 
         if [[ -L "${target_toml}" ]]; then
