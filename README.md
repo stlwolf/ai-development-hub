@@ -6,30 +6,28 @@ AI駆動開発のための統合リポジトリ。再利用可能なプロンプ
 
 ```
 ai-development-hub/
-├── cursor/                 # Cursor AI エディタ関連
-│   ├── agents/             # サブエージェント定義
-│   ├── command/            # 実行可能なコマンド集
-│   │   ├── review/         # PRレビュー関連コマンド
-│   │   └── verification/   # マルチエージェント検証コマンド
-│   ├── knowledge/          # ナレッジドキュメント
-│   ├── mcp.json            # MCP設定（~/.cursor/mcp.json にリンク）
-│   ├── project-rules/      # プロジェクト固有のルール (.mdc)
-│   ├── skill/              # スキル定義（~/.cursor/skills/ にリンク）
-│   └── user-rules/         # ユーザー共通ルール (.md)
+├── canonical/              # ツール非依存の正本 + ツール固有拡張
+│   ├── rules/              # ユーザー共通ルール（行動規範・入力・出力等）
+│   ├── skills/             # スキル定義（各ディレクトリに SKILL.md）
+│   ├── agents/             # エージェント定義
+│   ├── commands/           # コマンド（review/, investigation/, verification/）
+│   ├── mcp/                # MCP設定（cursor.json 等）
+│   ├── cursor/             # Cursor 固有ファイル（archive-title 等）
+│   └── codex/              # Codex 固有ファイル（AGENTS.md, commands-registry 等）
 ├── docs/                   # ドキュメント
 │   ├── draft/              # ドラフト・作成中のドキュメント
+│   ├── knowledge/          # ナレッジドキュメント（セットアップガイド等）
 │   └── BACKLOG.md          # 軽量バックログ（Issue化前の検討事項）
 ├── ideas/                  # アイデア・ブレストメモ
 ├── projects/               # 独立したプロジェクト・ツールキット
 └── scripts/                # ユーティリティスクリプト
-    └── sync/               # Cursor設定の同期スクリプト
+    └── sync/               # 各ツール設定の同期スクリプト
 ```
 
 ## 各ディレクトリの役割
 
-### `cursor/`
-Cursor AIエディタで使用するルールとコマンド集。
-詳細は [cursor/README.md](cursor/README.md) を参照。
+### `canonical/`
+ツール非依存の共通リソース（rules, skills, agents, commands）と、ツール固有の拡張レイヤー（cursor/, codex/, mcp/）を集約管理。
 
 ### `docs/`
 開発フローやベストプラクティスのドキュメント。
@@ -83,7 +81,7 @@ Cursor AIエディタで使用するルールとコマンド集。
 
 ## コンテンツ追加ガイドライン
 
-- **新しいルール**: Cursor 固有は `cursor/project-rules/` に、共通ルールは `canonical/rules/` に追加
+- **新しいルール**: 共通ルールは `canonical/rules/` に追加。Cursor 固有ルールは各プロジェクトの `.cursor/rules/` に配置
 - **コマンド**: `canonical/commands/` 配下に機能別ディレクトリを作成
 - **ドキュメント**: `docs/draft/` で作成し、成熟したら適切な場所に移動
 - **アイデア**: `ideas/YYYYMMDD/` に凍結スナップショットとして追加
