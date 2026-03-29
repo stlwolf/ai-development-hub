@@ -153,7 +153,45 @@ Discussion（探索） → KickOff（方針） → Plan（計画） → Episode�
 
 各段階で情報が蒸留され、コンテキストが小さくなる。この蒸留パイプライン自体がルーティングエンジンの主要なデータフロー。
 
-## 7. フェーズ計画
+## 7. landscape 読み込みからの追加メモ（2026-03-29）
+
+Q&A 後に landscape/ の残りドキュメントを読み込んだ際のメモ。素描への統合は未実施だが、忘れないよう記録。
+
+### 素描の既存セクションに影響するもの
+
+| 項目 | 接続先 | メモ |
+|------|--------|------|
+| **Ralph Loop の再認識** | §3 認知協調 + §5 検証ゲート | hooks があれば比較的簡単に実現可能。検証ゲートの制御ループ実装候補。「不屈」「夜通し実行」と呼ばれるものの実態 |
+| **ロール = スキルセットの動的選択** | §4 正準エージェント定義 | 任せる側がタスクに応じてどのスキルセットをロードするか自己判定する。ロールは固定ではなく動的選択というパターン |
+| **ルーティングにおけるプロンプトのカテゴリ分け** | §5 ディスパッチャ | 複数 OSS で採用。Intent Classification 層を将来追加する候補 |
+| **Observability を MVP から入れる可能性** | §5 MVP 構成 | 動作・フローの確実性・盲点の洗い出しに有用。リッチ CLI 表示 + ログ。steipete-ecosystem も強い。ただし MVP スコープ膨張リスクあり |
+| **圧縮戦略 / Decision Ledger** | §6 構造化の設計課題 | ideas/20260329 の Decision Ledger（post-commit hook + LLM で判断だけ自動抽出 → JSONL）が context-foundation の「蒸留パイプライン未実装」に対する具体的実装パス |
+| **Intent Refinement** | §3 adversarial A | 曖昧さの自動回避、多角的観点の獲得。A のチェックに「入力の曖昧さを AI が自ら検出・明確化する」ステップを追加する可能性 |
+
+### 関連プロジェクト・アイデア（別トラックだが接点あり）
+
+| 項目 | 関係 |
+|------|------|
+| **OpenHands の Docker 環境** | オーケストレーションとは別にサービス開発でも模索中。将来的にディスパッチャの実行環境として Docker 隔離を選択肢に入れられる |
+| **WezTerm AI Mode PoC → `wez` CLI** | `projects/poc/wezterm-ai-mode/`。ディスパッチャが wezterm cli 経由でペイン分割 + エージェント起動、monitor で完了監視。**Ralph Loop の物理実装基盤**になりうる。**並行して開発を進める想定** |
+| **自前 AI for CLI コマンドの並行開発** | Agent 向け CLI 記事との方向性一致。Agent DX を意識した自前 CLI がそのままディスパッチャの呼び出し先になる |
+| **Mirror Repo / プラグイン的ジョイント** | ideas/20260329。OSS のスキル群を canonical にプラグイン的に取り込む配布モデルの可能性。長期記憶の外部情報配置問題とも直結 |
+
+### 未解答の問い
+
+- 実際の人間の開発フローやチーム運用を AI でどこまで模倣する必要があるのか？
+- 大規模スキルセット系 OSS（gstack 28+、superpowers 20+）は実際どこまで使えるのか？
+- beeAI の RequirementAgent（宣言的ルール制約）とスキル組み合わせによるロール構成の違いは？
+- takt の Faceted Prompting、steipete の agent-scripts から具体的に何を流用するか？
+- Mastra の Observational Memory（Reflector / 自動圧縮）はポストコンプリート/レトロスペクティブと同じ概念か？
+
+### 並行進行の状況
+
+- **オーケストレーションツール MVP**: 本素描に基づき Phase 4 で着手
+- **WezTerm `wez` CLI**: 並行開発。Execution & Runtime 層の自前実装。Ralph Loop の物理基盤候補
+- **Decision Ledger**: ideas/20260329 で構想。蒸留パイプラインの具体実装候補として MVP に合流する可能性
+
+## 8. フェーズ計画
 
 ### Phase 3 完了条件（Synthesis）
 
@@ -181,7 +219,7 @@ Discussion（探索） → KickOff（方針） → Plan（計画） → Episode�
 - 作業タスク: GitHub Issue ベースで管理
 - MVP 実装のエピック: Phase 4 開始時に切り出す
 
-## 参照
+## 9. 参照
 
 - [Issue #18](https://github.com/stlwolf/ai-development-hub/issues/18) — Q&A → アーキテクチャ素描
 - [Epic #10](https://github.com/stlwolf/ai-development-hub/issues/10) — OSS パターン取り込み
@@ -190,3 +228,6 @@ Discussion（探索） → KickOff（方針） → Plan（計画） → Episode�
 - `synthesis/skills-level-patterns.md` — Skills/Rules レベルのパターン
 - `synthesis/harness-engineering-mapping.md` — ハーネス概念マッピング
 - `docs/draft/orchestration-control-loop-challenges.md` — 制御ループ課題
+- `ideas/20260329/metadata-layer-mirror-repo-synthesis.md` — Decision Ledger / Mirror Repo 構想
+- `projects/poc/wezterm-ai-mode/README.md` — WezTerm AI Mode PoC
+- `.thread-exports/Agent向けCLI記事とideasの方向性検証_2026-03-29.md` — Agent 向け CLI 方向性検証
