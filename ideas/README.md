@@ -8,6 +8,13 @@
 
 ## インデックス
 
+### 2026-03-29
+
+- `metadata-layer-mirror-repo-synthesis.md`: メタデータ層を使ったAI向けリポジトリ構造の自動同期 — Claude + ChatGPT のマルチAIブレスト統合。Decision Ledger を SoT とし tree を派生ビューとする設計判断、7フィールド最小スキーマ、post-commit hook + LLM による自動抽出、Ralph Loop との接続、保存の正規形/AI投影/人間投影の分離
+- `discussion-logs/`: マルチAIブレスト記録
+  - `metadata-layer-discussion-claude.md`: Claude (Opus 4.6 Extended) との壁打ちログ。orphan branch + worktree パターン、エピソード記憶 vs 意味記憶、「ゼロが10になるだけで劇的に違う」の洞察
+  - `metadata-layer-mirror-repo-discussion.md`: ChatGPT とのブレスト議論（所感・正規形比較 ledger vs tree・仮想意味論層・北極星概念・物理層起点の議論）
+
 ### 2026-02-24
 
 - `orchestration-design-principles-bath-brainstorm.md`: 入浴ブレストから収束したオーケストレーションツールの3設計原則（ベンダー非依存・直列プリミティブ合成によるスケーラビリティ・プラグイン的拡張性）。Claude/ChatGPT双方の議論裏付けを含む

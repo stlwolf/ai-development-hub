@@ -117,6 +117,47 @@ AI→AI（SOプロンプト）と人間→AI（ドメイン入力）の両方向
 - [20260220/human-input-formatting.md](20260220/human-input-formatting.md) — 人間→AI方向。AI側が質問フォーマットを提示し人間が回答する形が持続可能
 - [20260130/ai-middleware-cli-concept.md](20260130/ai-middleware-cli-concept.md) — コンテキスト「純度」の問題意識が、入力品質の標準化として具体化
 
+### Decision Ledger と意図的圧縮・永続化の収束
+
+仮説段階の三層構造（Context/Decision/Episode）→ 4層モデル → Decision Ledger + 自動抽出。理論的な「情報のライフサイクル」が、post-commit hook + LLM による具体的な自動化手段と合流。
+
+- [20260208/hypothesis-intentional-compression-and-promotion-flow.md](20260208/hypothesis-intentional-compression-and-promotion-flow.md) — 三層構造 + 昇格フロー（理論側）。Episode → Decision → Context
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層モデル。層3の抽出パイプラインが未実装というボトルネック
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — Decision Ledger を SoT とする設計。post-commit hook + LLM で層3→層2の自動抽出を実現する候補。Phase計画（flat ledger → view → AGENTS.md）は昇格フローの実装形態
+
+### メタデータ層と正規化・ビューの分離
+
+「保存の正規形」「AIへの投影」「人間への投影」を分けて考える発想。DBの正規化とビューの関係をメタデータ設計に適用。
+
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — ledger（保存） / tree（AI投影） / AGENTS.md（人間投影）の三分割。SoT は ledger、tree は materialized context view
+- [20260221/document-format-design-principles.md](20260221/document-format-design-principles.md) — write:read 比率によるフォーマット判断。「書く形式」と「読む形式」の分離が同じ問題構造
+- [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 子スレッド→親スレッドの情報昇格をJSONスキーマで構造化。ledger の保存形式との接続
+
+### エピソード記憶と決定記録の接続
+
+「何を保存すべきか」の議論が、エピソード記憶の分類から Decision Ledger の具体設計へ収束。
+
+- [20260121/episodic_memory_data.md](20260121/episodic_memory_data.md) — 意味記憶(What) vs エピソード記憶(Why/When/How) の分類（起点）
+- [20260215/ai-readable-code-evaluation-claude.md](20260215/ai-readable-code-evaluation-claude.md) — 書くためのアンカー ≈ 意味記憶、読むためのアンカー ≈ 意味記憶 + エピソード記憶
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — 「エピソード記憶の方が残りやすく、そこから意味記憶は再抽出可能」。Decision Ledger は構造化されたエピソード記憶として機能
+
+### ルーラーエージェントと Decision Ledger
+
+ルーラーエージェント（過去の判断に基づくガイド）が読むデータの永続化層として Decision Ledger が位置づけられる。
+
+- [20260218/discussion-log-inference-ratio-domain-boundaries.md](20260218/discussion-log-inference-ratio-domain-boundaries.md) — ルーラーエージェント: 新規判断はせず過去の判断に基づくガイド
+- [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — ルーラーが読むデータの永続化層
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — Decision Ledger の検索可能性がルーラーの精度を直接決める。ledger → view → AGENTS.md のパイプラインがルーラーの読み取りインターフェースになる
+
+### Mirror Repo と有機的理解の接地
+
+有機的理解（静的+動的+意味的+時間的+因果的の統合）を、repo tree という物理構造に接地させて実現する構想。
+
+- [20260215/ai-readable-code-organic-understanding-synthesis.md](20260215/ai-readable-code-organic-understanding-synthesis.md) — 有機的理解の定義。5つのアンカー群（Schema/Contract/Invariant/Flow/Decision）
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — mirror repo は「意味論的圧縮のための物理UI」。人間が理解の起点とする repo tree に接地しながら意味・判断・制約を重ねる。アンカー群の「Decision」が Decision Ledger に対応
+- [20260329/discussion-logs/metadata-layer-discussion-claude.md](20260329/discussion-logs/metadata-layer-discussion-claude.md) — 司書エージェントの発想との合流。段階的ローディングによるトークン制御
+- [20260329/discussion-logs/metadata-layer-mirror-repo-discussion.md](20260329/discussion-logs/metadata-layer-mirror-repo-discussion.md) — ledger/tree 正規形比較、仮想意味論層・北極星としての mirror、物理層起点の議論
+
 ### ドキュメントフォーマットの設計原則 → ルール分割
 
 cursor-thread-tools 4フェーズの実践から「いつフォーマットが必要で、いつ不要か」の判断基準が導出。さらに「集権的ルールをマルチエージェントにどう分割するか」の問題へ発展。
