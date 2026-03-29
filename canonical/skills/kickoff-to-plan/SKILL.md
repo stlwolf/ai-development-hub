@@ -388,6 +388,8 @@ Claude Code の対話モードでは `TaskCreate` / `TaskUpdate` でタスクリ
 
 **プラン出力後に、完全性チェックの結果（全項目の合否と具体的な数値）と判断メモをユーザーに報告する。**
 
+**Plan Review**: 変換完了後、Plan を Agent mode で実行する前に `adversarial-review` スキルの Plan Review を実行すると、漏れ・矛盾・曖昧さを検出できる（`canonical/skills/adversarial-review/SKILL.md`）。
+
 ### 変換上の判断メモ（推奨）
 
 変換中に解釈が必要だった箇所を記録する。変換の透明性を確保し、ユーザーが判断の妥当性を検証できるようにする目的。

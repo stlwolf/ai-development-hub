@@ -107,9 +107,13 @@ description: >
 - **Plan Review**: `kickoff-to-plan` 変換完了後、Plan を Agent mode で実行する前
 - **Compliance Review**: サブエージェントがタスク完了報告をした後、結果をマージ/承認する前
 
+#### 独自表現の方針（Step 1.3 / 1.4 共通）
+
+superpowers のチェック観点・構造（5カテゴリ、検証3観点）は踏襲してよい。ただし文言は逐語的翻訳ではなく、自リポのコンテキスト（canonical ルール、既存スキルの語調）に合わせて再構成する。原文の文章をそのまま使わない。
+
 #### 1.3 Plan Review プロンプトテンプレート
 
-superpowers の Spec Document Reviewer を基に独自表現に再構成する。
+superpowers の Spec Document Reviewer を基に独自表現に再構成する（上記方針に従う）。
 
 入力: レビュー対象の Plan/Spec/Kickoff ファイルパス
 
@@ -143,9 +147,13 @@ superpowers の Spec Document Reviewer を基に独自表現に再構成する�
 
 #### 1.4 Compliance Review プロンプトテンプレート
 
-superpowers の Spec Compliance Reviewer を基に独自表現に再構成する。
+superpowers の Spec Compliance Reviewer を基に独自表現に再構成する（上記方針に従う）。
 
-入力: (1) タスク要件の全文、(2) 実装者の完了報告
+入力:
+
+- (1) タスク要件: Plan ファイルパス、Task description、または Issue 本文（要件の全文が特定できるソース）
+- (2) 完了報告: サブエージェントの返答テキスト、またはコミットログ/PR description
+- (3) 変更対象ファイルパス群: レビュアーが実コードを読むための参照先（`git diff` のパス一覧等）
 
 コア指示（superpowers の「報告を信用するな」を踏襲）:
 
@@ -168,16 +176,21 @@ superpowers の Spec Compliance Reviewer を基に独自表現に再構成する
 - [Missing/Extra/Misunderstanding]: [具体的な問題] - [file:line 参照]
 ```
 
-#### 1.5 サブエージェント注入パターン
+#### 1.5 サブエージェント注入パターン（マルチツール対応）
 
-Task tool でサブエージェントとして起動する際のプロンプト組み立て方を記載する。
+各ツールでサブエージェントとして起動する際のプロンプト組み立て方を記載する。
+
+| ツール | 起動方法 | 備考 |
+|--------|---------|------|
+| **Cursor** | Task tool (`explore` or `generalPurpose`) | `description` + `prompt` にテンプレートとレビュー対象を埋め込み |
+| **Claude Code** | サブエージェント（`claude -p` でプロンプト注入） | `-w` でワークスペース参照を渡す |
+| **Codex** | `codex -p` でプロンプト注入 | `-w` でワークスペース参照を渡す |
+
+各ツール共通のプロンプト構造:
 
 ```
-Task tool (explore or generalPurpose):
-  description: "Review [plan/implementation]"
-  prompt: |
-    [SKILL.md の該当セクションから適切なテンプレートを選択]
-    [レビュー対象のパスまたは内容を埋め込み]
+[SKILL.md の該当セクションから適切なテンプレートを選択]
+[レビュー対象のパスまたは内容を埋め込み]
 ```
 
 #### 1.6 フック統合の設計メモ
@@ -217,6 +230,7 @@ Tier 1.5（#17）でフック化する際の想定を記載する（本 Step で
 
 - [ ] `scripts/sync/sync-cursor.sh` が `canonical/skills/adversarial-review/` を正しく同期するか確認
 - [ ] `scripts/sync/sync-claude.sh` が同様に同期するか確認
+- [ ] `scripts/sync/sync-codex.sh` が同様に同期するか確認
 - [ ] 必要に応じて sync スクリプトに追記（canonical/skills/ をワイルドカードで拾っているなら追記不要の可能性）
 
 ### Step 4: 試用（概算: 30分）
@@ -265,6 +279,7 @@ Tier 1.5（#17）でフック化する際の想定を記載する（本 Step で
 | Plan Review が過剰指摘（ノイズ化） | レビューが無視されるようになる | キャリブレーション（「本当の問題だけ」）を強めに設定。試用で調整 |
 | Compliance Review のコンテキスト消費 | メインセッションのコンテキストを圧迫 | サブエージェントとして起動し、結論サマリのみ返す構造にする |
 | superpowers の表現をそのまま使ってしまう | ライセンス上のリスク、自スタックとの不整合 | Step 1 GATE で独自表現への落とし込みを確認 |
+| Compliance Review のサブエージェントがコンテキスト窓内で実コード照合を完結できない | 大規模変更時に検証が表面的になり false positive を出す | 変更対象ファイルを明示列挙。大規模変更は分割レビューのガイダンスをテンプレートに含める |
 
 ## 完了条件
 
@@ -274,6 +289,8 @@ Tier 1.5（#17）でフック化する際の想定を記載する（本 Step で
 - [ ] `kickoff-to-plan` から Plan Review への参照導線がある
 - [ ] `peer-ai-review` から Plan Review への参照導線がある
 - [ ] sync で `~/.cursor/skills/adversarial-review/` に配置される
+- [ ] sync で `~/.claude/skills/adversarial-review/` に配置される
+- [ ] sync で `~/.codex/skills/adversarial-review/` に配置される
 - [ ] 1回以上試用し、結果に基づく調整が完了している
 - [ ] 出典への帰属が記載されている
 
