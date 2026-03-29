@@ -164,13 +164,14 @@ OSSがカバーしていない独自概念。landscape/ 調査の比較軸とし
 
 ## 状態
 
-concepts/ 完了。synthesis/ のコンテキスト基盤設計ノート初版完了。
+**Phase 1〜3 完了。** 本プロジェクト（リサーチ・概念抽出・設計統合）はクローズ。MVP 実装は [Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) で `projects/orchestration-engine/` として着手する。
 
 - [x] `landscape/` OSSリサーチ（21ツール調査済み、2026-02-22完了）
 - [x] `concepts/domain/` ドメイン概念10領域の定義・パターン抽出
 - [x] `concepts/implementation/` 実装特性マトリクス（言語、IF型、ラッパー分類、設定スタイル）
 - [x] `concepts/cross-cutting/` 横断的テーマ（LLM抽象化、プロンプト設計、コスト最適化、協調トポロジー）
-- [x] `synthesis/context-foundation.md` コンテキスト基盤の統合設計ノート初版
-- [ ] `synthesis/` 残りの独自概念（認知協調、正準エージェント定義等）
-- [ ] `synthesis/` 全体アーキテクチャ素描
-- [ ] 必要に応じて `vendor-inspector` サブエージェントで個別の深掘り実施
+- [x] `synthesis/context-foundation.md` コンテキスト基盤の統合設計ノート
+- [x] `synthesis/skills-level-patterns.md` Skills/Rules レベルのパターン5類型
+- [x] `synthesis/harness-engineering-mapping.md` ハーネス概念マッピング
+- [x] `synthesis/architecture-sketch.md` 全体アーキテクチャ素描（Q&A #18 経由）
+- [x] 認知協調・正準エージェント定義 → architecture-sketch.md に統合。個別文書は不要と判断
