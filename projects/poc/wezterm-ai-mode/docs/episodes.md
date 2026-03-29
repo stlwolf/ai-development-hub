@@ -182,3 +182,9 @@ bash 04-notification.sh
 
 ---
 
+## PoC-05（副次）: caffeinate
+
+未実施: [README の「副次検証: caffeinate」](../README.md) を参照。実施後、ここに日時・Macモデル・電源状態・使用フラグ（`-i` / `-d` 等）・結論を追記する。
+
+---
+

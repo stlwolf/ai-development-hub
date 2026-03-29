@@ -41,6 +41,34 @@ bash 03-output-capture.sh [pane-id]
 bash 04-notification.sh
 ```
 
+## 副次検証（オプション）: caffeinate
+
+長時間のエージェント実行や放置ジョブで、macOSのアイドルスリープがWezTerm/tmux上の処理を妨げないかを確認する。**本PoCの主目的ではない**が、将来 `wez agent` 等と組み合わせる前提の知見用。
+
+### 想定する確認観点
+
+- `caffeinate -i` で子プロセスが生きている間、アイドルスリープが抑制されるか
+- **バッテリー駆動 / 電源接続**で挙動差があるか（`man caffeinate` の `-s` 等）
+- 蓋を閉じた状態・ディスプレイスリープ（`-d`）との関係
+- **終了条件**: ジョブ完了後に抑制が残らないか（プロセスツリーで `caffeinate` が親にぶら下がっているか）
+
+### 手がかりとなるコマンド例（検証設計は各自）
+
+```bash
+# 子が終わるまでアイドルスリープを抑制して sleep を実行
+caffeinate -i sleep 120
+
+# 長いジョブをラップ（例）
+caffeinate -i bash -c 'your-long-command'
+
+# 動作中の caffeinate を確認（別ターミナル）
+pgrep -lf caffeinate
+```
+
+### 結果の記録
+
+実行したら [docs/episodes.md](docs/episodes.md) に **PoC-05（caffeinate）** として日時・環境・結論を追記する。
+
 ## Future Vision: `wez` コマンド体系
 
 PoC成功後、`projects/wezterm-ai-mode/` として昇格し `wez` コマンドとして実装する想定。CLI名は [Worktrunk](https://worktrunk.dev/) の `wt` と重ならないよう `wez` とする。
@@ -66,6 +94,7 @@ PoC成功後、`projects/wezterm-ai-mode/` として昇格し `wez` コマンド
 - `wez layout save <name>` - 現在のペインレイアウトを保存
 - `wez layout load <name>` - レイアウト復元
 - `wez layout ai-dev` - AI開発用プリセット一発構築
+- `wez session awake`（案）- 監視中のエージェントペインがある間だけ `caffeinate` 相当を維持（要検証）
 
 ## ドキュメント
 

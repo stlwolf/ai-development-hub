@@ -130,6 +130,10 @@ Lua側（`.wezterm.lua` への追記参考実装）:
 - WezTermプラグイン（agent-deck等）の追加調査の要否
 - 本格実装（dotfiles側への`.bashrc` / `.wezterm.lua` 統合）に進むか
 
+### 副次 PoC-05: caffeinate（任意）
+
+README と `docs/episodes.md` に記載。長時間エージェント実行時のスリープ抑制の実地検証。スクリプト必須ではなく、手動コマンドで可。
+
 ## 変更対象ファイル
 
 - **新規作成**: `projects/poc/wezterm-ai-mode/` 以下の全ファイル（ai-development-hubリポジトリ内）
