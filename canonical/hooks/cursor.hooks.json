@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./hooks/block-destructive.sh",
+        "failClosed": true
+      },
+      {
+        "command": "./hooks/block-force-push.sh",
+        "failClosed": true
+      }
+    ]
+  }
+}
