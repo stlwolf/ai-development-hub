@@ -159,8 +159,15 @@ sync_claude_hooks() {
         backup="${settings_target}.bak.$(date +%Y%m%d-%H%M%S)"
         cp "$settings_target" "$backup"
         info "  Backup: ${backup}"
-        jq --argjson hooks "$hooks_json" '.hooks = $hooks' "$settings_target" > "${settings_target}.tmp"
-        mv "${settings_target}.tmp" "$settings_target"
+        local tmp_settings
+        tmp_settings="$(mktemp "${settings_target}.tmp.XXXXXX")"
+        if jq --argjson hooks "$hooks_json" '.hooks = $hooks' "$settings_target" > "$tmp_settings"; then
+            mv "$tmp_settings" "$settings_target"
+        else
+            rm -f "$tmp_settings"
+            error "  Failed to merge hooks into: $(basename "${settings_target}")"
+            return 1
+        fi
         info "  Merged hooks into: $(basename "${settings_target}")"
     elif [[ ! -e "$settings_target" ]]; then
         mkdir -p "$(dirname "${settings_target}")"

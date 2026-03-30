@@ -13,33 +13,35 @@ allow() {
   exit 0
 }
 
-# Sets _rm_target; returns 0 if rm with both -r/-R and -f flags detected
+# Sets _rm_targets[]; returns 0 if rm with both -r/-R and -f flags detected
 parse_rm() {
   local c="$1"
   [[ "$c" =~ ^rm[[:space:]] ]] || return 1
 
   _rm_has_r=false
   _rm_has_f=false
-  _rm_target=""
+  _rm_targets=()
 
   local -a args
+  local saw_ddash=false
   read -ra args <<< "$c"
   for arg in "${args[@]:1}"; do
-    case "$arg" in
-      --recursive) _rm_has_r=true ;;
-      --force)     _rm_has_f=true ;;
-      -*)
-        [[ "$arg" =~ [rR] ]] && _rm_has_r=true
-        [[ "$arg" =~ f ]]    && _rm_has_f=true
-        ;;
-      *)
-        _rm_target="$arg"
-        break
-        ;;
-    esac
+    if ! $saw_ddash; then
+      case "$arg" in
+        --)          saw_ddash=true; continue ;;
+        --recursive) _rm_has_r=true; continue ;;
+        --force)     _rm_has_f=true; continue ;;
+        -*)
+          [[ "$arg" =~ [rR] ]] && _rm_has_r=true
+          [[ "$arg" =~ f ]]    && _rm_has_f=true
+          continue
+          ;;
+      esac
+    fi
+    _rm_targets+=("$arg")
   done
 
-  $_rm_has_r && $_rm_has_f && [[ -n "$_rm_target" ]]
+  $_rm_has_r && $_rm_has_f && (( ${#_rm_targets[@]} > 0 ))
 }
 
 main() {
@@ -71,17 +73,24 @@ main() {
     fi
   fi
 
-  # rm -rf: safe exceptions → early allow, then destructive targets → deny
+  # rm -rf: check ALL targets — deny if any is destructive, allow only if all are safe
   if parse_rm "$cmd_clean"; then
-    if [[ "$_rm_target" =~ $SAFE_DIRS_RE ]]; then
+    local _all_safe=true _t
+    for _t in "${_rm_targets[@]}"; do
+      if [[ "$_t" =~ $SAFE_DIRS_RE ]]; then
+        continue
+      fi
+      _all_safe=false
+      # shellcheck disable=SC2088,SC2016  # matching literal ~ and $HOME in command strings
+      case "$_t" in
+        /*|.|..|'~'|'~/'*|'$HOME'|'$HOME/'*)
+          deny "Destructive rm blocked: $cmd"
+          ;;
+      esac
+    done
+    if [[ "$_all_safe" == true ]]; then
       allow
     fi
-    # shellcheck disable=SC2088,SC2016  # matching literal ~ and $HOME in command strings
-    case "$_rm_target" in
-      /*|.|..|'~'|'~/'*|'$HOME'|'$HOME/'*)
-        deny "Destructive rm blocked: $cmd"
-        ;;
-    esac
   fi
 
   if [[ "$cmd_clean" =~ ^chmod[[:space:]]+-R[[:space:]]+777[[:space:]]+/ ]]; then
