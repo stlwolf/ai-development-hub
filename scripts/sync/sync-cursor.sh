@@ -128,6 +128,42 @@ sync_single_file() {
     info "  Linked: $(basename "${target_path}")"
 }
 
+sync_hook_scripts() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local label="$3"
+
+    info "Syncing ${label}: ${source_dir} → ${target_dir}"
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "Source directory not found: ${source_dir}"
+        return
+    fi
+
+    mkdir -p "${target_dir}"
+
+    local count=0
+    while IFS= read -r -d '' file; do
+        local filename
+        filename="$(basename "$file")"
+        local target_path="${target_dir}/${filename}"
+
+        if [[ -e "${target_path}" && ! -L "${target_path}" ]]; then
+            warn "Skipping (regular file exists): ${target_path}"
+            continue
+        fi
+
+        ln -sf "${file}" "${target_path}"
+        if [[ ! -x "${file}" ]]; then
+            chmod +x "${file}" 2>/dev/null || warn "Failed to set executable bit (non-fatal): ${file}"
+        fi
+        info "  Linked: ${filename}"
+        ((count++)) || true
+    done < <(find "${source_dir}" -type f -name "*.sh" -print0)
+
+    info "  ${count} ${label} symlink(s) created/updated"
+}
+
 main() {
     info "=== sync-cursor: canonical + cursor-specific → ~/.cursor/ ==="
     echo ""
@@ -159,6 +195,14 @@ main() {
 
     # 4. MCP config
     sync_single_file "${CANONICAL_DIR}/mcp/cursor.json" "${TARGET_BASE}/mcp.json" "mcp.json"
+    echo ""
+
+    # 5. Hooks config
+    sync_single_file "${CANONICAL_DIR}/hooks/cursor.hooks.json" "${TARGET_BASE}/hooks.json" "hooks.json"
+    echo ""
+
+    # 6. Hook scripts
+    sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
     info "=== sync-cursor complete ==="

@@ -52,6 +52,7 @@ ai-development-hub/
 │   ├── skills/             # スキル定義（各ディレクトリに SKILL.md）
 │   ├── agents/             # エージェント定義
 │   ├── commands/           # コマンド（review/, investigation/, verification/）
+│   ├── hooks/              # フック定義（ツール別設定 + 共通スクリプト → sync で配布）
 │   ├── mcp/                # MCP設定（cursor.json → ~/.cursor/mcp.json にリンク）
 │   ├── cursor/             # Cursor 固有ファイル（archive-title 等）
 │   └── codex/              # Codex 固有ファイル（AGENTS.md, commands-registry 等）

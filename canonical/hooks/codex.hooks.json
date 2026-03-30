@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/block-destructive.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/block-force-push.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
