@@ -21,16 +21,39 @@ main() {
     allow
   fi
 
-  if [[ ! "$cmd" =~ git[[:space:]]+push ]]; then
+  # Match `git push` even with intervening git options like `git -C . push`
+  if [[ ! "$cmd" =~ ^[[:space:]]*git([[:space:]]+[^[:space:]]+)*[[:space:]]+push([[:space:]]|$) ]]; then
     allow
   fi
 
-  if [[ "$cmd" == *"--force-with-lease"* ]] || [[ "$cmd" == *"--force-if-includes"* ]]; then
-    allow
-  fi
+  # Parse arguments to distinguish plain --force/-f from lease-style options
+  local -a args
+  local has_plain_force=false
+  local has_lease=false
 
-  if [[ "$cmd" == *"--force"* ]] || [[ "$cmd" =~ [[:space:]]-f([[:space:]]|$) ]]; then
+  read -r -a args <<< "$cmd"
+  for arg in "${args[@]}"; do
+    case "$arg" in
+      --force-with-lease|--force-with-lease=*)
+        has_lease=true
+        ;;
+      --force-if-includes)
+        has_lease=true
+        ;;
+      --force|-f)
+        has_plain_force=true
+        ;;
+    esac
+  done
+
+  # Plain --force present → deny regardless of lease options
+  if [[ "$has_plain_force" == true ]]; then
     deny "Force push blocked: $cmd. Use --force-with-lease instead."
+  fi
+
+  # Only lease-style force → allow
+  if [[ "$has_lease" == true ]]; then
+    allow
   fi
 
   allow

@@ -129,7 +129,9 @@ sync_hook_scripts() {
         fi
 
         ln -sf "${file}" "${target_path}"
-        chmod +x "${file}"
+        if [[ ! -x "${file}" ]]; then
+            chmod +x "${file}" 2>/dev/null || warn "Failed to set executable bit (non-fatal): ${file}"
+        fi
         info "  Linked: ${filename}"
         ((count++)) || true
     done < <(find "${source_dir}" -type f -name "*.sh" -print0)

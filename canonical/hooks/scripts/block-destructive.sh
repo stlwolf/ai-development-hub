@@ -25,13 +25,18 @@ parse_rm() {
   local -a args
   read -ra args <<< "$c"
   for arg in "${args[@]:1}"; do
-    if [[ "$arg" =~ ^-[^-] ]]; then
-      [[ "$arg" =~ [rR] ]] && _rm_has_r=true
-      [[ "$arg" =~ f ]] && _rm_has_f=true
-    elif [[ ! "$arg" =~ ^- ]]; then
-      _rm_target="$arg"
-      break
-    fi
+    case "$arg" in
+      --recursive) _rm_has_r=true ;;
+      --force)     _rm_has_f=true ;;
+      -*)
+        [[ "$arg" =~ [rR] ]] && _rm_has_r=true
+        [[ "$arg" =~ f ]]    && _rm_has_f=true
+        ;;
+      *)
+        _rm_target="$arg"
+        break
+        ;;
+    esac
   done
 
   $_rm_has_r && $_rm_has_f && [[ -n "$_rm_target" ]]
@@ -47,10 +52,23 @@ main() {
     allow
   fi
 
-  if [[ "$cmd" =~ ^sudo[[:space:]]+(.*) ]]; then
-    cmd_clean="${BASH_REMATCH[1]}"
-  else
-    cmd_clean="$cmd"
+  # Strip sudo and its options (handles: sudo rm, sudo -E rm, sudo -- rm)
+  cmd_clean="$cmd"
+  if [[ "$cmd" == sudo[[:space:]]* ]]; then
+    local -a _sudo_tokens
+    local _i
+    read -r -a _sudo_tokens <<< "$cmd"
+    _i=1
+    while (( _i < ${#_sudo_tokens[@]} )); do
+      case "${_sudo_tokens[_i]}" in
+        --)  ((_i++)); break ;;
+        -*)  ((_i++)) ;;
+        *)   break ;;
+      esac
+    done
+    if (( _i < ${#_sudo_tokens[@]} )); then
+      cmd_clean="${_sudo_tokens[*]:_i}"
+    fi
   fi
 
   # rm -rf: safe exceptions → early allow, then destructive targets → deny
