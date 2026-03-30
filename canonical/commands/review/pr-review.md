@@ -124,6 +124,16 @@ gh pr diff $PR_NUM -- path/to/file.php
 - 既存コードとの一貫性
 - テストの有無・妥当性
 
+具体的なチェック項目・重大度分類・修正アクションの詳細は `pr-review-checklist.md` を参照。上記の観点は高レベルの指針であり、詳細ルールはチェックリストを正本とする。
+
+レビュー結果は以下の形式で出力する:
+
+```
+Pre-Landing Review: N issues (X critical, Y informational)
+```
+
+CRITICAL が1件以上の場合は `request-changes` を原則とする。詳細は `pr-review-checklist.md` の「レビューアクション」「出力フォーマット」を参照。
+
 ## Step 5: レビュー結果の投稿
 
 ```bash
