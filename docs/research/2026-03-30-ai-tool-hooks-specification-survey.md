@@ -120,20 +120,20 @@
 - **専用イベント**: `beforeShellExecution`/`afterShellExecution` は Cursor 独自の分離イベント（Claude Code は PreToolUse matcher "Bash" で同等機能を実現）
 - **Tab 専用フック**: `beforeTabFileRead`, `afterTabFileEdit` はインライン補完に特化
 - **Prompt-based hooks**: LLM にポリシー判定させる `"type": "prompt"` をサポート
-- `**loop_limit`**: stop/subagentStop のフォローアップ回数制限（デフォルト 5）
-- `**failClosed**`: セキュリティクリティカルなフックで失敗時もブロックするオプション
+- `loop_limit`: stop/subagentStop のフォローアップ回数制限（デフォルト 5）
+- `failClosed`: セキュリティクリティカルなフックで失敗時もブロックするオプション
 
 ### Claude Code
 
 - **最多イベント数**: 28 イベント（Cursor: 17, Codex: 5）
 - **4種のハンドラー型**: command, http, prompt, agent（agent は サブエージェントとしてツール使用可能な検証器）
-- `**if` フィールド**: permission rule syntax による細粒度フィルタ（`"Bash(rm *)"`, `"Edit(*.ts)"`）
-- `**once` フィールド**: スキル/エージェント内で1回だけ実行
-- `**async` フィールド**: バックグラウンド実行（ブロックしない）
+- `if` フィールド: permission rule syntax による細粒度フィルタ（`"Bash(rm *)"`, `"Edit(*.ts)"`）
+- `once` フィールド: スキル/エージェント内で1回だけ実行
+- `async` フィールド: バックグラウンド実行（ブロックしない）
 - **Skill/Agent frontmatter**: スキル定義の YAML frontmatter 内でフック定義可能
-- `**CLAUDE_ENV_FILE`**: SessionStart で環境変数を永続化
-- `**disableAllHooks**`: 一時的な全フック無効化
-- `**hookSpecificOutput**`: イベント固有の構造化出力（`hookEventName` 必須）
+- `CLAUDE_ENV_FILE`: SessionStart で環境変数を永続化
+- `disableAllHooks`: 一時的な全フック無効化
+- `hookSpecificOutput`: イベント固有の構造化出力（`hookEventName` 必須）
 - **Plugin hooks**: `hooks/hooks.json` でプラグインにバンドル可能
 
 ### Codex
