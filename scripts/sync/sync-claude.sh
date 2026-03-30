@@ -103,6 +103,72 @@ sync_dirs() {
     info "  ${count} ${label} symlink(s) created/updated"
 }
 
+sync_hook_scripts() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local label="$3"
+
+    info "Syncing ${label}: ${source_dir} → ${target_dir}"
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "Source directory not found: ${source_dir}"
+        return
+    fi
+
+    mkdir -p "${target_dir}"
+
+    local count=0
+    while IFS= read -r -d '' file; do
+        local filename
+        filename="$(basename "$file")"
+        local target_path="${target_dir}/${filename}"
+
+        if [[ -e "${target_path}" && ! -L "${target_path}" ]]; then
+            warn "Skipping (regular file exists): ${target_path}"
+            continue
+        fi
+
+        ln -sf "${file}" "${target_path}"
+        chmod +x "${file}"
+        info "  Linked: ${filename}"
+        ((count++)) || true
+    done < <(find "${source_dir}" -type f -name "*.sh" -print0)
+
+    info "  ${count} ${label} symlink(s) created/updated"
+}
+
+sync_claude_hooks() {
+    local hooks_source="$1"
+    local settings_target="$2"
+    local label="$3"
+
+    info "Syncing ${label}: ${hooks_source} → ${settings_target}"
+
+    if [[ ! -f "$hooks_source" ]]; then
+        warn "Source not found: ${hooks_source}"
+        return
+    fi
+
+    local hooks_json
+    hooks_json=$(jq '.hooks' "$hooks_source")
+
+    if [[ -f "$settings_target" && ! -L "$settings_target" ]]; then
+        local backup
+        backup="${settings_target}.bak.$(date +%Y%m%d-%H%M%S)"
+        cp "$settings_target" "$backup"
+        info "  Backup: ${backup}"
+        jq --argjson hooks "$hooks_json" '.hooks = $hooks' "$settings_target" > "${settings_target}.tmp"
+        mv "${settings_target}.tmp" "$settings_target"
+        info "  Merged hooks into: $(basename "${settings_target}")"
+    elif [[ ! -e "$settings_target" ]]; then
+        mkdir -p "$(dirname "${settings_target}")"
+        jq -n --argjson hooks "$hooks_json" '{hooks: $hooks}' > "$settings_target"
+        info "  Created: $(basename "${settings_target}")"
+    else
+        warn "Skipping (symlink or special file): ${settings_target}"
+    fi
+}
+
 main() {
     info "=== sync-claude: canonical → ~/.claude/ ==="
     echo ""
@@ -126,6 +192,14 @@ main() {
 
     # 4. Commands
     sync_md_files "${CANONICAL_DIR}/commands" "${TARGET_BASE}/commands" "commands"
+    echo ""
+
+    # 5. Hooks config (merge into settings.json)
+    sync_claude_hooks "${CANONICAL_DIR}/hooks/claude.hooks.json" "${TARGET_BASE}/settings.json" "hooks"
+    echo ""
+
+    # 6. Hook scripts
+    sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
     info "=== sync-claude complete ==="
