@@ -48,6 +48,7 @@ CLAUDE_TIMEOUT=60 ./projects/second-opinion-verification/src/claude-safe-with-ti
 ```
 ai-development-hub/
 ├── canonical/              # ツール非依存の正本 + ツール固有拡張
+│   ├── CATALOG.md          # 全リソース一覧（skills/commands/agents/rules/hooks）
 │   ├── rules/              # ユーザー共通ルール（行動規範・入力・出力等）
 │   ├── skills/             # スキル定義（各ディレクトリに SKILL.md）
 │   ├── agents/             # エージェント定義

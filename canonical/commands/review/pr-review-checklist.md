@@ -1,3 +1,8 @@
+---
+name: pr-review-checklist
+description: レビュー対象のdiffをチェック項目に照らして検証し、問題があれば file:line を引用して修正を提案する。2パス制・重大度分類・Fix-First Heuristicを含む。
+---
+
 # Pre-Landing Review Checklist
 
 レビュー対象の diff を以下のチェック項目に照らして検証する。問題を見つけたら `file:line` を引用し、修正を提案する。問題がない項目はスキップする。

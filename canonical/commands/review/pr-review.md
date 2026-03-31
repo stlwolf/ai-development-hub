@@ -1,3 +1,10 @@
+---
+name: pr-review
+description: 指定したPR（またはレビュー依頼が来ているPR）を一緒にレビューする。PR情報取得、関連Issue取得、diff確認、レビュー結果投稿のフローを含む。
+depends:
+  - command: pr-review-checklist
+---
+
 # PR Review
 
 指定したPR（または自分にレビュー依頼が来ているPR）を一緒にレビューする。

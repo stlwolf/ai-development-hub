@@ -1,6 +1,8 @@
 ---
 name: kickoff-to-plan
 description: Kickoff Documentを実行可能なプランに忠実変換する。省略・要約・gate省きを防止し、全セクション・全チェックボックス・全gateを漏れなくTODO項目に展開する。Cursor Plan Mode変換時、Claude Code Tasks/TodoWrite生成時、キックオフからプラン作成時に使用する。
+depends:
+  - skill: adversarial-review
 ---
 
 # Kickoff to Plan — 忠実変換スキル

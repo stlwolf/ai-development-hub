@@ -1,6 +1,8 @@
 ---
 name: so-compare
 description: so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する。ピアレビュー、修正方針の検証、設計判断の反証に使用する。プロンプト設計原則、結果読み込み手順、合意判定基準を含む。
+depends:
+  - cli: so-compare
 ---
 
 # SO Compare — セカンドオピニオン比較

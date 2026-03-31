@@ -1,3 +1,16 @@
+---
+name: issue-debug
+description: Issue / Sentryエラーの調査・分析・修正を行う。情報取得、関連コード特定、原因分析、Arena検証、セカンドオピニオンレビュー、PR作成までのフローを含む。
+depends:
+  - skill: sentry-investigation
+  - skill: persistent-exploration
+  - skill: branch-naming
+  - skill: conventional-commits
+  - skill: pr-conventions
+  - command: arena-perspectives
+  - command: peer-ai-review
+---
+
 # Issue Debug
 
 Issue / Sentry エラーの調査・分析・修正を行う。

@@ -1,3 +1,12 @@
+---
+name: arena-perspectives
+description: 同一プロンプトを複数モデルに並列投入し、モデルごとの回答を並べて表示する。多角的視点の取得、モデル間の回答差異分析に使用する。
+depends:
+  - skill: arena-compare
+  - skill: persistent-exploration
+  - cli: arena-compare
+---
+
 # Arena Perspectives
 
 同一プロンプトを複数モデルに並列投入し、モデルごとの回答を並べて表示する。
