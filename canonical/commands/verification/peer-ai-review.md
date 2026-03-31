@@ -1,3 +1,15 @@
+---
+name: peer-ai-review
+description: 修正タスクや設計判断に対して、Codex CLIとClaude Codeにピアレビューを依頼し、3者合意に至るまでイテレーションを繰り返す。SOプロンプト構成、カバレッジギャップ分析、レビューログ運用を含む。
+depends:
+  - skill: so-compare
+  - skill: persistent-exploration
+  - skill: adversarial-review
+  - skill: implementer-contract
+  - cli: so-compare
+  - command: pr-review-checklist
+---
+
 # Peer AI Review
 
 修正タスクや設計判断に対して、Codex CLI と Claude Code にピアレビューを依頼し、自分の判断と比較する。

@@ -1,6 +1,8 @@
 ---
 name: arena-compare
 description: arena-compare.shで複数モデルに同一プロンプトを並列投入し、回答を比較する。多角的視点の取得、モデル間の回答差異分析、設計判断の補助に使用する。モデル選択基準、resume手順、summary読み込み手順を含む。
+depends:
+  - cli: arena-compare
 ---
 
 # Arena Compare — マルチモデル並列比較

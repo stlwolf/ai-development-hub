@@ -1,6 +1,10 @@
 ---
 name: plan-to-kickoff
 description: Cursor Plan / プランMDをKickoff Document形式に変換する。セカンドオピニオン投入・リポジトリアーカイブ・ピアレビュー共有時に使用する。命名規約・frontmatter・セクション構造をKickoff形式に整える。
+depends:
+  - skill: so-compare
+  - skill: kickoff-to-plan
+  - command: peer-ai-review
 ---
 
 # Plan to Kickoff — 逆変換スキル

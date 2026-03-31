@@ -8,6 +8,7 @@ Behavioral principles are loaded from `~/.codex/AGENTS.md` (global layer); this 
 - Repository overview & usage: `README.md`
 - Sync scripts: `scripts/README.md`
 - Tool-agnostic canonical resources: `canonical/` (`rules/`, `skills/`, `agents/`, `commands/`)
+- Canonical resource catalog: `canonical/CATALOG.md` (全リソース一覧 + 依存関係)
 - Codex guardrails: `canonical/codex/AGENTS.md`
 
 ## Project Structure

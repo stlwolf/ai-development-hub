@@ -1,3 +1,8 @@
+---
+name: copilot-review-response
+description: 自分のPRに対するCopilotのレビューコメントを取得し、対応可否を検討、修正、返信まで行う。
+---
+
 # Copilot Review Response
 
 自分のPRに対するCopilotのレビューコメントを取得し、対応可否を検討、修正、返信まで行う。
