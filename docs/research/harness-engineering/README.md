@@ -109,6 +109,11 @@ Quick links to captured files only (same as rows **#8–19** above).
 
 カテゴリ3（日本語解説）・カテゴリ4（スライド）は**一次情報がカテゴリ1・2で網羅済み**のため、このリポジトリでは Markdown キャプチャを作っていない。詳細な一覧・概要はこの README 冒頭のマスター表（セクション3および4）を参照。
 
+## Analysis
+
+- [`current-state-assessment.md`](./current-state-assessment.md) — 現状評価・ギャップ分析・Issue カバレッジマップ（2026-04-01）
+- 概念マッピング（自設計との対応）: [`harness-engineering-mapping.md`](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md)
+
 ## Disclaimer
 
 Copyright remains with each publisher. These files support research and agent context only; prefer the live URL for authoritative text and licensing.
