@@ -31,7 +31,7 @@
 | issue-debug | Issue / Sentryエラーの調査・分析・修正を行う | `commands/investigation/issue-debug.md` | skill: sentry-investigation, skill: persistent-exploration, skill: branch-naming, skill: conventional-commits, skill: pr-conventions, command: arena-perspectives, command: peer-ai-review |
 | pr-review | 指定したPR（またはレビュー依頼が来ているPR）を一緒にレビューする | `commands/review/pr-review.md` | command: pr-review-checklist |
 | pr-review-checklist | レビュー対象のdiffをチェック項目に照らして検証し、問題があれば修正を提案する | `commands/review/pr-review-checklist.md` | — |
-| copilot-review-response | 自分のPRに対するCopilotのレビューコメントを取得し、対応可否を検討、修正、返信まで行う | `commands/review/copilot-review-response.md` | — |
+| copilot-review-response | 未返信の Copilot レビューコメントのみ対象に、対応可否・修正・対応した／しないの返信まで行う | `commands/review/copilot-review-response.md` | — |
 
 ## Agents (3)
 
