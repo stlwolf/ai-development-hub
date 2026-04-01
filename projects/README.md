@@ -51,6 +51,15 @@ Cursorスレッド会話のMarkdownエクスポートとライフサイクル管
 
 詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
 
+### wezterm-ai-mode
+
+WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。PoC 成果は `projects/poc/wezterm-ai-mode/` に凍結。本ディレクトリは cursor-thread-tools と同型の CONVENTIONS・検証マトリクスで開発プロセスの2例目検証を行う。
+
+- [Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) でスコープ・Phase をトラッキング
+- [CONVENTIONS.md](wezterm-ai-mode/CONVENTIONS.md)、[VERIFICATION_MATRIX.md](wezterm-ai-mode/docs/VERIFICATION_MATRIX.md)
+
+詳細は [wezterm-ai-mode/README.md](wezterm-ai-mode/README.md) を参照。
+
 ### agent-rule-decomposition
 
 マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。
