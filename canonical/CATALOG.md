@@ -2,7 +2,7 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
-## Skills (14)
+## Skills (15)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -14,6 +14,7 @@
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | kickoff-to-plan | Kickoff Documentを実行可能なプランに忠実変換する | `skills/kickoff-to-plan/SKILL.md` | skill: adversarial-review |
 | markdown-conventions | Markdown記法の規約を適用する | `skills/markdown-conventions/SKILL.md` | — |
+| oss-research-session | oss-researcher 調査セッションの起動・成果保存の標準化（パス規約・注入テンプレ・チェックリスト） | `skills/oss-research-session/SKILL.md` | — |
 | persistent-exploration | 原因探索の「諦めない」深掘り行動原則 | `skills/persistent-exploration/SKILL.md` | — |
 | plan-to-kickoff | Cursor Plan / プランMDをKickoff Document形式に変換する | `skills/plan-to-kickoff/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, command: peer-ai-review |
 | playwright-browser | Playwright MCPでブラウザ操作・DOM調査・UI検証を行う | `skills/playwright-browser/SKILL.md` | — |
