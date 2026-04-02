@@ -66,6 +66,8 @@
 
 自設計の canonical ルールのうち、機械的に判定可能なものは Cursor / Claude Code のフック機構で強制すべき。これが Epic #10 #17（フック基盤整備）の背景。
 
+この原則をコミットフローに具体適用した検討が [`docs/draft/commit-gate-and-rule-observability.md`](../../../docs/draft/commit-gate-and-rule-observability.md) にある。ルールが向くもの（文脈依存の判断、例外が自然に発生）とゲートが向くもの（二値判定、スキップ理由の構造化）の仕分け原則を導出している。
+
 ### 「ハーネス = 自分が作ろうとしているもの」
 
 orchestration-research で設計しようとしている「構造化ドキュメントルーティングエンジン」は、ハーネスの語彙で言えば **コーディングエージェント特化ではない汎用ハーネス** に相当する。OpenAI や LangChain のハーネスはコーディング特化だが、構造は同型:
