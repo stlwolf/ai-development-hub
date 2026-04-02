@@ -1,6 +1,6 @@
 ---
 name: issue-conventions
-description: Issue作成の規約を適用する。Issue作成、gh issue create 時に使用する。テンプレート選択、Epic時のラベル、CLI制約のルールを含む。
+description: Issue作成の規約を適用する。Issue作成、gh issue create 時に使用する。Issueタイトル（CCプレフィックスなし）、テンプレート選択、Epic時のラベル、CLI制約を含む。
 ---
 
 # Issue 作成規約
@@ -9,6 +9,17 @@ description: Issue作成の規約を適用する。Issue作成、gh issue create
 
 - `--assignee @me` で自分をアサインする (MUST)
 - 新しいタスクに着手する前に、まず Issue を作成する
+
+## Issue タイトル
+
+PR タイトル（Conventional Commits 形）と混同しないよう、次に揃える (MUST)。
+
+- **先頭に `feat:` / `fix:` / `chore:` 等の CC 型プレフィックスは付けない**（種別はラベル・テンプレート・本文で表す）。PR 作成時にエージェントが `type` を付与する
+- 1行の短い要約に限定する（目安 60 文字以内）(SHOULD)
+- 文末の句点は付けない (SHOULD)
+- 先頭の `[WIP]` は使わない（必要なら本文で状態を書く）
+
+Issue から PR を作るときの対応: Issue タイトルは「何の作業か」が分かればよく、PR タイトルは `pr-conventions` の CC 形に **別途** 整形する（Issue タイトルのコピペを PR タイトルにしない）。
 
 ## Epic Issue
 
@@ -46,7 +57,7 @@ description: Issue作成の規約を適用する。Issue作成、gh issue create
 ## コマンド例
 
 ```bash
-gh issue create --assignee @me --body-file /tmp/issue_body.md --title "タスクタイトル"
+gh issue create --assignee @me --body-file /tmp/issue_body.md --title "ログインエラー時にメッセージを表示する"
 # Epic 指示があり、ラベル Epic が存在する場合
-gh issue create --assignee @me --body-file /tmp/issue_body.md --title "タスクタイトル" --label Epic
+gh issue create --assignee @me --body-file /tmp/issue_body.md --title "ログインエラー時にメッセージを表示する" --label Epic
 ```
