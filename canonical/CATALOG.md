@@ -42,11 +42,12 @@
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (8)
+## Rules (9)
 
 | 名前 | 説明 | パス |
 |------|------|------|
 | behavioral-rule | Evidence First、CLI Native、Safe Operations 等の行動原則 | `rules/behavioral-rule.md` |
+| careful-operations-rule | 破壊コマンドガードレール（禁止/要確認/例外の3層パターン表） | `rules/careful-operations-rule.md` |
 | decision-pacing-rule | 問題報告と対処判断を分離し、選択肢に「対処しない/保留」を含める | `rules/decision-pacing-rule.md` |
 | execution-policy-rule | read-only → 変更系の順序、gate/checkpoint の扱い | `rules/execution-policy-rule.md` |
 | implementation-gate-rule | コード変更前にPlan modeへの切り替えを提案する | `rules/implementation-gate-rule.md` |
