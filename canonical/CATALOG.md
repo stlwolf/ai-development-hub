@@ -2,7 +2,7 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
-## Skills (15)
+## Skills (16)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -21,6 +21,7 @@
 | pr-conventions | PR作成の規約を適用する | `skills/pr-conventions/SKILL.md` | — |
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する | `skills/so-compare/SKILL.md` | cli: so-compare |
+| spec-card | 蒸留パイプラインのドキュメントフォーマット適用ガイド（frontmatter・ULID・status） | `skills/spec-card/SKILL.md` | — |
 
 ## Commands (6)
 
