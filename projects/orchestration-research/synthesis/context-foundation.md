@@ -126,6 +126,8 @@
 
 **暫定判断**: ハイブリッド。Decision Record/Codebase Knowledge はMarkdown + frontmatter（人間レビュー対象）。Execution Trace/Run State はJSONL（機械処理対象）。全体構想の「SSOTはCLI/ファイルに置く」原則と合致。
 
+**具体スキーマ**: Markdown + frontmatter の正本は [`docs/specs/document-format.md`](../../../docs/specs/document-format.md)（Issue [#15](https://github.com/stlwolf/ai-development-hub/issues/15) で策定）。5文書型（Discussion / KickOff / Plan / Episode / Decision）の共通フロントマター・ULID 規約・テンプレートを定義。
+
 ### Q2: 検索・参照メカニズム
 
 | 選択肢 | 用途 | コスト | OSSでの採用 |
