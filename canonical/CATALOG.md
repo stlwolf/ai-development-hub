@@ -2,12 +2,13 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
-## Skills (17)
+## Skills (18)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
 | adversarial-review | Plan/Specの品質チェック（Plan Review）と、実装完了後の仕様照合（Compliance Review）を行う | `skills/adversarial-review/SKILL.md` | — |
 | arena-compare | arena-compare.shで複数モデルに同一プロンプトを並列投入し、回答を比較する | `skills/arena-compare/SKILL.md` | cli: arena-compare |
+| branch-finish | ブランチ完了判定フロー（検証→4択→実行→クリーンアップ） | `skills/branch-finish/SKILL.md` | skill: worktrunk-worktrees, skill: pr-conventions, skill: conventional-commits |
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約 | `skills/implementer-contract/SKILL.md` | — |
@@ -31,7 +32,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 
 | チェーン | フロー | 備考 |
 |---------|--------|------|
-| Issue → Branch → Worktree | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` | 新規タスク開始時の典型フロー |
+| Issue → Branch → Worktree → Finish | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` → `branch-finish` | タスク開始〜完了の全フロー |
 
 ## Commands (6)
 
@@ -52,7 +53,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (10)
+## Rules (11)
 
 | 名前 | 説明 | パス |
 |------|------|------|
@@ -66,6 +67,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | output-format-rule | 結論→根拠→手順→リスク→リンクの出力構造 | `rules/output-format-rule.md` |
 | skill-first-operations-rule | 定型的な開発操作はスキルに従う。操作前にスキル定義を確認 | `rules/skill-first-operations-rule.md` |
 | subagent-strategy-rule | サブエージェント活用方針、カスタムエージェント優先、1タスク1エージェント | `rules/subagent-strategy-rule.md` |
+| workflow-awareness-rule | GitHub Flow 採用。Issue 起点の作業はブランチ作成を自律的に開始 | `rules/workflow-awareness-rule.md` |
 
 ## Hooks
 
