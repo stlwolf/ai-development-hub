@@ -7,6 +7,7 @@
 - 実装タスク委譲時は `implementer-contract` スキルの返却契約（ステータス enum・報告フォーマット・self-review）に従わせる
 
 ## カスタムエージェント優先
+- タスク領域に特化したエージェントを汎用（Explore, general-purpose 等）より優先する
 - タスクをサブエージェントに委譲する前に、カスタムエージェント定義にタスク領域に合致するものがないか確認する
   - プロジェクト: `.cursor/agents/`, `.claude/agents/`, `.codex/agents/`
   - ユーザー: `~/.cursor/agents/`, `~/.claude/agents/`, `~/.codex/agents/`
