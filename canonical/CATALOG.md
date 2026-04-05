@@ -2,7 +2,7 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
-## Skills (16)
+## Skills (17)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -22,6 +22,16 @@
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する | `skills/so-compare/SKILL.md` | cli: so-compare |
 | spec-card | 蒸留パイプラインのドキュメントフォーマット適用ガイド（frontmatter・ULID・status） | `skills/spec-card/SKILL.md` | — |
+| worktrunk-worktrees | Worktrunk (wt) ベースの worktree 運用 | `skills/worktrunk-worktrees/SKILL.md` | skill: branch-naming, cli: wt |
+
+## Workflow Chains
+
+Skills テーブルの `depends` は技術的参照（このスキルが使用するスキル）を宣言する。
+以下はワークフロー上の順序であり、`depends` の方向とは異なる。
+
+| チェーン | フロー | 備考 |
+|---------|--------|------|
+| Issue → Branch → Worktree | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` | 新規タスク開始時の典型フロー |
 
 ## Commands (6)
 
@@ -42,7 +52,7 @@
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (9)
+## Rules (10)
 
 | 名前 | 説明 | パス |
 |------|------|------|
@@ -54,6 +64,7 @@
 | implementation-principles-rule | hacky な修正を避け、根本原因に対処する | `rules/implementation-principles-rule.md` |
 | input-style-rule | 音声入力によるタイポ・断片的指示への対応方針 | `rules/input-style-rule.md` |
 | output-format-rule | 結論→根拠→手順→リスク→リンクの出力構造 | `rules/output-format-rule.md` |
+| skill-first-operations-rule | 定型的な開発操作はスキルに従う。操作前にスキル定義を確認 | `rules/skill-first-operations-rule.md` |
 | subagent-strategy-rule | サブエージェント活用方針、カスタムエージェント優先、1タスク1エージェント | `rules/subagent-strategy-rule.md` |
 
 ## Hooks
