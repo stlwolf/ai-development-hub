@@ -2,7 +2,7 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
-## Skills (16)
+## Skills (17)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -22,6 +22,16 @@
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する | `skills/so-compare/SKILL.md` | cli: so-compare |
 | spec-card | 蒸留パイプラインのドキュメントフォーマット適用ガイド（frontmatter・ULID・status） | `skills/spec-card/SKILL.md` | — |
+| worktrunk-worktrees | Worktrunk (wt) ベースの worktree 運用 | `skills/worktrunk-worktrees/SKILL.md` | skill: branch-naming, cli: wt |
+
+## Workflow Chains
+
+Skills テーブルの `depends` は技術的参照（このスキルが使用するスキル）を宣言する。
+以下はワークフロー上の順序であり、`depends` の方向とは異なる。
+
+| チェーン | フロー | 備考 |
+|---------|--------|------|
+| Issue → Branch → Worktree | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` | 新規タスク開始時の典型フロー |
 
 ## Commands (6)
 

@@ -1,6 +1,6 @@
 ---
 name: branch-naming
-description: ブランチ命名規則を適用する。ブランチ作成、git checkout -b、git switch -c 時に使用する。prefix選択、Issue番号、命名フォーマットのルールを含む。
+description: ブランチ命名規則を適用する。ブランチ作成、git checkout -b、git switch -c、wt switch --create 時に使用する。prefix選択、Issue番号、命名フォーマットのルールを含む。
 ---
 
 # ブランチ命名規則
@@ -14,7 +14,9 @@ description: ブランチ命名規則を適用する。ブランチ作成、git 
 ## 前提
 
 - ブランチ作成前に対応する Issue を作成すること
-- master（デフォルトブランチ）から切る際は最新版から切る（`git pull origin master` 後に `git checkout -b`）
+- デフォルトブランチ（`master` または `main`）から切る際は最新版から切る
+  - `git pull origin master` 後に `git checkout -b`
+  - `wt` インストール済みの場合は `wt switch --create {branch}` を推奨（デフォルトブランチの最新版から自動的に worktree を作成。`wt switch ^` でデフォルトブランチを抽象的に参照可能）
 
 ## prefix の選択
 
