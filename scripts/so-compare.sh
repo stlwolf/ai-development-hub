@@ -26,7 +26,12 @@ Options:
 
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
-  SO_TIMEOUT       各ツールのタイムアウト秒数（デフォルト: 240）
+  SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
+
+Exit codes:
+  0  全プロバイダ成功
+  1  部分成功（一部のプロバイダのみ応答）
+  2  全プロバイダ失敗
 USAGE
 }
 
@@ -42,6 +47,17 @@ WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
+SO_RETRY_TIMEOUT_FACTOR=1.5
+
+# --- カラー出力（tty 時のみ） ---
+if [[ -t 1 ]]; then
+    C_RED='\033[1;31m'
+    C_YELLOW='\033[1;33m'
+    C_GREEN='\033[0;32m'
+    C_RESET='\033[0m'
+else
+    C_RED='' C_YELLOW='' C_GREEN='' C_RESET=''
+fi
 
 # --- 引数解析 ---
 require_arg() {
@@ -117,6 +133,11 @@ if [[ -z "$PROMPT" ]]; then
     echo "Error: プロンプトが指定されていません" >&2
     echo "" >&2
     usage >&2
+    exit 1
+fi
+
+if ! $RUN_CODEX && ! $RUN_CLAUDE; then
+    echo "Error: --codex-only と --claude-only を同時に指定できません" >&2
     exit 1
 fi
 
@@ -199,9 +220,37 @@ echo "タイムアウト: ${SO_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
 echo ""
 
+# --- 結果分類 ---
+# exit_code と stdout の有無から状態を判定する
+classify_result() {
+    local tool="$1" exit_code="$2"
+    local stdout_file="$OUT_DIR/${tool}-stdout.txt"
+    if [[ "$exit_code" -eq 0 ]]; then
+        if [[ -s "$stdout_file" ]]; then
+            echo "success"
+        else
+            echo "success_empty"
+        fi
+    elif [[ "$exit_code" -eq 124 ]]; then
+        if [[ -s "$stdout_file" ]]; then
+            echo "timeout_partial"
+        else
+            echo "timeout_empty"
+        fi
+    else
+        if [[ -s "$stdout_file" ]]; then
+            echo "error_partial"
+        else
+            echo "error"
+        fi
+    fi
+}
+
 # --- 実行関数 ---
+# shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
-    echo "[Codex] 実行中..."
+    local tool_timeout="${1:-$SO_TIMEOUT}"
+    echo "[Codex] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
 
@@ -210,7 +259,7 @@ run_codex() {
         codex_args+=("-C" "$WORKSPACE")
     fi
 
-    if timeout "$SO_TIMEOUT" "$CODEX_CMD" "${codex_args[@]}" "$PROMPT" \
+    if timeout "$tool_timeout" "$CODEX_CMD" "${codex_args[@]}" "$PROMPT" \
         > "$OUT_DIR/codex-stdout.txt" 2> "$OUT_DIR/codex-stderr.txt"; then
         exit_code=0
     else
@@ -220,19 +269,25 @@ run_codex() {
     end=$(date +%s)
     elapsed=$((end - start))
 
-    echo "[Codex] 完了 (${elapsed}秒, exit=${exit_code})"
+    local timeout_status
+    timeout_status=$(classify_result "codex" "$exit_code")
+
+    echo "[Codex] 完了 (${elapsed}秒, exit=${exit_code}, status=${timeout_status})"
 
     {
         echo "tool=codex"
         echo "exit_code=$exit_code"
+        echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
     } > "$OUT_DIR/codex-meta.txt"
 }
 
+# shellcheck disable=SC2120
 run_claude() {
-    echo "[Claude] 実行中..."
+    local tool_timeout="${1:-$SO_TIMEOUT}"
+    echo "[Claude] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
 
@@ -242,7 +297,7 @@ run_claude() {
     fi
     claude_args+=("--output-format" "text")
 
-    if timeout "$SO_TIMEOUT" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
+    if timeout "$tool_timeout" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
         > "$OUT_DIR/claude-stdout.txt" 2> "$OUT_DIR/claude-stderr.txt"; then
         exit_code=0
     else
@@ -252,11 +307,15 @@ run_claude() {
     end=$(date +%s)
     elapsed=$((end - start))
 
-    echo "[Claude] 完了 (${elapsed}秒, exit=${exit_code})"
+    local timeout_status
+    timeout_status=$(classify_result "claude" "$exit_code")
+
+    echo "[Claude] 完了 (${elapsed}秒, exit=${exit_code}, status=${timeout_status})"
 
     {
         echo "tool=claude"
         echo "exit_code=$exit_code"
+        echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/claude-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/claude-stdout.txt" | tr -d ' ')"
@@ -278,20 +337,98 @@ fi
 if $RUN_CODEX; then wait "$CODEX_PID" 2>/dev/null || true; fi
 if $RUN_CLAUDE; then wait "$CLAUDE_PID" 2>/dev/null || true; fi
 
-echo ""
-echo "=== 結果サマリ ==="
-
-# --- サマリ出力 ---
+# --- タイムアウト(出力なし)のリトライ（最大1回） ---
 for tool in codex claude; do
     meta="$OUT_DIR/${tool}-meta.txt"
-    if [[ -f "$meta" ]]; then
-        meta_exit_code=$(grep '^exit_code=' "$meta" | cut -d= -f2)
-        meta_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2)
-        meta_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2)
-        meta_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2)
-        echo "[$tool] ${meta_elapsed}秒 / ${meta_lines}行 / ${meta_bytes}bytes / exit=${meta_exit_code}"
+    [[ -f "$meta" ]] || continue
+    status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
+    if [[ "$status" == "timeout_empty" ]]; then
+        retry_timeout=$(awk "BEGIN {printf \"%.0f\", $SO_TIMEOUT * $SO_RETRY_TIMEOUT_FACTOR}")
+        echo ""
+        echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
+        # 元の結果をバックアップ
+        for suffix in meta.txt stdout.txt stderr.txt; do
+            cp "$OUT_DIR/${tool}-${suffix}" "$OUT_DIR/${tool}-${suffix}.attempt1" 2>/dev/null || true
+        done
+        # 同期リトライ（延長タイムアウト）
+        "run_${tool}" "$retry_timeout"
+        # リトライ情報を metadata に追記
+        {
+            echo "retry=1"
+            echo "retry_timeout=$retry_timeout"
+        } >> "$OUT_DIR/${tool}-meta.txt"
     fi
 done
+
+# --- 集計 ---
+EXPECTED=0
+SUCCEEDED=0
+PARTIAL=0
+FAILED_COUNT=0
+TOOLS_RUN=()
+
+if $RUN_CODEX; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(codex); fi
+if $RUN_CLAUDE; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(claude); fi
+
+for tool in "${TOOLS_RUN[@]}"; do
+    meta="$OUT_DIR/${tool}-meta.txt"
+    if [[ -f "$meta" ]]; then
+        ts=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
+        case "$ts" in
+            success)                                      SUCCEEDED=$((SUCCEEDED + 1)) ;;
+            success_empty|timeout_partial|error_partial) PARTIAL=$((PARTIAL + 1)) ;;
+            *)                             FAILED_COUNT=$((FAILED_COUNT + 1)) ;;
+        esac
+    else
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+    fi
+done
+
+echo ""
+echo "=== 結果サマリ ==="
+echo "期待: ${EXPECTED}者 / 成功: ${SUCCEEDED} / 部分: ${PARTIAL} / 失敗: ${FAILED_COUNT}"
+echo ""
+
+# --- 個別ツール結果 ---
+for tool in "${TOOLS_RUN[@]}"; do
+    meta="$OUT_DIR/${tool}-meta.txt"
+    if [[ -f "$meta" ]]; then
+        meta_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2 || true)
+        meta_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2 || true)
+        meta_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2 || true)
+        meta_status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
+        meta_retry=$(grep '^retry=' "$meta" | cut -d= -f2 || true)
+
+        status_label=""
+        case "$meta_status" in
+            success)         status_label="${C_GREEN}成功${C_RESET}" ;;
+            success_empty)   status_label="${C_YELLOW}成功(出力なし)${C_RESET}" ;;
+            timeout_partial) status_label="${C_YELLOW}タイムアウト(部分出力あり)${C_RESET}" ;;
+            timeout_empty)   status_label="${C_RED}タイムアウト(出力なし)${C_RESET}" ;;
+            error_partial)   status_label="${C_YELLOW}エラー(部分出力あり)${C_RESET}" ;;
+            error)           status_label="${C_RED}エラー${C_RESET}" ;;
+        esac
+        retry_label=""
+        if [[ "${meta_retry:-}" == "1" ]]; then
+            retry_label=" (リトライ済)"
+        fi
+
+        echo -e "[$tool] ${meta_elapsed}秒 / ${meta_lines}行 / ${meta_bytes}bytes / ${status_label}${retry_label}"
+    fi
+done
+
+# --- 警告・エラー ---
+if (( PARTIAL > 0 )); then
+    echo ""
+    echo -e "${C_YELLOW}[WARNING] 部分成功です。${SUCCEEDED}/${EXPECTED} 者のみ完全応答。2者レビューには再実行が必要な場合があります${C_RESET}"
+fi
+if (( FAILED_COUNT > 0 && SUCCEEDED + PARTIAL == 0 )); then
+    echo ""
+    echo -e "${C_RED}[ERROR] 全プロバイダ失敗。以下を確認してください:${C_RESET}"
+    echo "  - SO_TIMEOUT を増やす（現在: ${SO_TIMEOUT}秒）"
+    echo "  - ネットワーク接続・API キーの状態"
+    echo "  - -w でワークスペースパスを渡す方式に切り替え"
+fi
 
 echo ""
 echo "=== ファイル一覧 ==="
@@ -299,5 +436,15 @@ ls -la "$OUT_DIR"/
 
 echo ""
 echo "結果確認:"
-if $RUN_CODEX; then echo "  cat $OUT_DIR/codex-stdout.txt"; fi
-if $RUN_CLAUDE; then echo "  cat $OUT_DIR/claude-stdout.txt"; fi
+for tool in "${TOOLS_RUN[@]}"; do
+    echo "  cat $OUT_DIR/${tool}-stdout.txt"
+done
+
+# --- 構造化 exit code ---
+if (( SUCCEEDED == EXPECTED )); then
+    exit 0
+elif (( SUCCEEDED + PARTIAL > 0 )); then
+    exit 1
+else
+    exit 2
+fi
