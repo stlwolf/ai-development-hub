@@ -22,7 +22,7 @@ Options:
   --claude-only  Claude のみ実行
   --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
   --cursor-only  Cursor のみ実行
-  --cursor-model MODEL  Cursor で使用するモデル（デフォルト: agent CLI のデフォルト）
+  --cursor-model MODEL  Cursor で使用するモデル（デフォルト: auto）
   --prev DIR     前回の so-compare 出力ディレクトリ
                  回答をプロンプトに追記（上限: PREV_MAX_BYTES, デフォルト4000）
   -h, --help     このヘルプを表示
@@ -52,7 +52,7 @@ WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
 RUN_CURSOR=false
-CURSOR_MODEL="${SO_CURSOR_MODEL:-}"
+CURSOR_MODEL="${SO_CURSOR_MODEL:-auto}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
 
