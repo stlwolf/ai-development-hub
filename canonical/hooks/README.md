@@ -13,6 +13,7 @@
 |--------|-----------|------|
 | 破壊コマンドブロック | `scripts/block-destructive.sh` | `rm -rf /`, `chmod -R 777 /`, `DROP TABLE` 等の破壊的コマンドをブロック |
 | force push ブロック | `scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
+| コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 
 ## ツール別カバレッジ
 
@@ -20,6 +21,7 @@
 |--------|--------|-------------|-------|
 | 破壊コマンドブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | force push ブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
+| コミットゲート | — | `TaskCompleted` | — |
 
 ## block-destructive.sh
 
@@ -59,6 +61,29 @@
 
 - `--force-with-lease`（safer alternative）
 - `--force-if-includes`
+
+## commit-gate.sh
+
+タスク完了時（`TaskCompleted` イベント）に未コミット変更を検知し、エージェントに通知する advisory フック。ブロックはしない。
+
+### 発火条件
+
+- `TaskCompleted` イベントが発火（タスクが completed に遷移）
+- `cwd` が git リポジトリ内
+- 現在のブランチが `main` / `master` 以外（detached HEAD も対象外）
+- `git status --porcelain` で未コミット変更がある
+
+### 出力
+
+変更がある場合、`user_message` でエージェントに以下を通知:
+
+- 変更ファイル一覧（上限10件）
+- コミットまたはスキップ理由の記録を促すガイダンス
+- スキップ理由フォーマット: `Skip-Reason: {WIP / batch with next step / investigation only}`
+
+### 対象ツール
+
+Claude Code のみ。Cursor / Codex は `TaskCompleted` 相当のイベントを持たないため対象外。
 
 ## 設定ファイル
 
