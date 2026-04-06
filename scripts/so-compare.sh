@@ -26,7 +26,7 @@ Options:
 
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
-  SO_TIMEOUT       各ツールのタイムアウト秒数（デフォルト: 240）
+  SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
 
 Exit codes:
   0  全プロバイダ成功
@@ -136,6 +136,11 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
+if ! $RUN_CODEX && ! $RUN_CLAUDE; then
+    echo "Error: --codex-only と --claude-only を同時に指定できません" >&2
+    exit 1
+fi
+
 # --- コマンド存在チェック ---
 if ! command -v timeout &>/dev/null; then
     echo "Error: timeout コマンドが見つかりません。macOS の場合: brew install coreutils" >&2
@@ -221,7 +226,11 @@ classify_result() {
     local tool="$1" exit_code="$2"
     local stdout_file="$OUT_DIR/${tool}-stdout.txt"
     if [[ "$exit_code" -eq 0 ]]; then
-        echo "success"
+        if [[ -s "$stdout_file" ]]; then
+            echo "success"
+        else
+            echo "success_empty"
+        fi
     elif [[ "$exit_code" -eq 124 ]]; then
         if [[ -s "$stdout_file" ]]; then
             echo "timeout_partial"
@@ -332,7 +341,7 @@ if $RUN_CLAUDE; then wait "$CLAUDE_PID" 2>/dev/null || true; fi
 for tool in codex claude; do
     meta="$OUT_DIR/${tool}-meta.txt"
     [[ -f "$meta" ]] || continue
-    status=$(grep '^timeout_status=' "$meta" | cut -d= -f2)
+    status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
     if [[ "$status" == "timeout_empty" ]]; then
         retry_timeout=$(awk "BEGIN {printf \"%.0f\", $SO_TIMEOUT * $SO_RETRY_TIMEOUT_FACTOR}")
         echo ""
@@ -364,10 +373,10 @@ if $RUN_CLAUDE; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(claude); fi
 for tool in "${TOOLS_RUN[@]}"; do
     meta="$OUT_DIR/${tool}-meta.txt"
     if [[ -f "$meta" ]]; then
-        ts=$(grep '^timeout_status=' "$meta" | cut -d= -f2)
+        ts=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
         case "$ts" in
-            success)                       SUCCEEDED=$((SUCCEEDED + 1)) ;;
-            timeout_partial|error_partial) PARTIAL=$((PARTIAL + 1)) ;;
+            success)                                      SUCCEEDED=$((SUCCEEDED + 1)) ;;
+            success_empty|timeout_partial|error_partial) PARTIAL=$((PARTIAL + 1)) ;;
             *)                             FAILED_COUNT=$((FAILED_COUNT + 1)) ;;
         esac
     else
@@ -384,15 +393,16 @@ echo ""
 for tool in "${TOOLS_RUN[@]}"; do
     meta="$OUT_DIR/${tool}-meta.txt"
     if [[ -f "$meta" ]]; then
-        meta_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2)
-        meta_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2)
-        meta_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2)
-        meta_status=$(grep '^timeout_status=' "$meta" | cut -d= -f2)
+        meta_elapsed=$(grep '^elapsed_seconds=' "$meta" | cut -d= -f2 || true)
+        meta_lines=$(grep '^stdout_lines=' "$meta" | cut -d= -f2 || true)
+        meta_bytes=$(grep '^stdout_bytes=' "$meta" | cut -d= -f2 || true)
+        meta_status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
         meta_retry=$(grep '^retry=' "$meta" | cut -d= -f2 || true)
 
         status_label=""
         case "$meta_status" in
             success)         status_label="${C_GREEN}成功${C_RESET}" ;;
+            success_empty)   status_label="${C_YELLOW}成功(出力なし)${C_RESET}" ;;
             timeout_partial) status_label="${C_YELLOW}タイムアウト(部分出力あり)${C_RESET}" ;;
             timeout_empty)   status_label="${C_RED}タイムアウト(出力なし)${C_RESET}" ;;
             error_partial)   status_label="${C_YELLOW}エラー(部分出力あり)${C_RESET}" ;;
