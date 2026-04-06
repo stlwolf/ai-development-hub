@@ -105,10 +105,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --codex-only)
             RUN_CLAUDE=false
+            RUN_CURSOR=false
             shift
             ;;
         --claude-only)
             RUN_CODEX=false
+            RUN_CURSOR=false
             shift
             ;;
         --cursor)
@@ -177,13 +179,8 @@ if $RUN_CLAUDE && ! command -v "$CLAUDE_CMD" &>/dev/null; then
     exit 1
 fi
 if $RUN_CURSOR && ! command -v "$CURSOR_CMD" &>/dev/null; then
-    if ! $RUN_CODEX && ! $RUN_CLAUDE; then
-        echo "Error: $CURSOR_CMD が見つかりません。" >&2
-        exit 1
-    else
-        echo "Warning: $CURSOR_CMD が見つかりません。Cursor レーンをスキップします。" >&2
-        RUN_CURSOR=false
-    fi
+    echo "Error: $CURSOR_CMD が見つかりません。--cursor を外すか、agent CLI をインストールしてください。" >&2
+    exit 1
 fi
 
 # --- ワークスペースパスをプロンプトに追記 ---
