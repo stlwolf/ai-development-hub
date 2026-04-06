@@ -1,6 +1,6 @@
 ---
 name: so-compare
-description: so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する。ピアレビュー、修正方針の検証、設計判断の反証に使用する。プロンプト設計原則、結果読み込み手順、合意判定基準を含む。
+description: so-compare.shでセカンドオピニオン（Codex/Claude/Cursor）を取得し、結果を比較する。ピアレビュー、修正方針の検証、設計判断の反証に使用する。プロンプト設計原則、結果読み込み手順、合意判定基準を含む。
 depends:
   - cli: so-compare
 ---
@@ -32,6 +32,9 @@ so-compare [OPTIONS] "プロンプト"
 | `-s MODE` | Codex sandbox モード | `read-only` |
 | `--codex-only` | Codex のみ実行 | 両方実行 |
 | `--claude-only` | Claude のみ実行 | 両方実行 |
+| `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
+| `--cursor-only` | Cursor のみ実行 | 両方実行 |
+| `--cursor-model MODEL` | Cursor で使用するモデル | agent CLI のデフォルト |
 | `--prev DIR` | 前回出力を追記（イテレーション用） | なし |
 
 ### 環境変数
@@ -40,6 +43,7 @@ so-compare [OPTIONS] "プロンプト"
 |------|------|-----------|
 | `SO_TIMEOUT` | 各ツールのタイムアウト秒数 | `240` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
+| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | なし（agent CLI のデフォルト） |
 
 ### 基本パターン
 
@@ -55,6 +59,15 @@ so-compare --prev tmp/so-20260304-001234 -w "$(pwd)" "前回の指摘を踏ま�
 
 # Codex のみ（claude-safe 未導入環境）
 so-compare -w "$(pwd)" "プロンプト" --codex-only
+
+# Cursor も含めた3者比較
+so-compare --cursor -w "$(pwd)" "この設計方針を検証してください"
+
+# Cursor でモデル指定
+so-compare --cursor --cursor-model composer-1.5 -w "$(pwd)" "プロンプト"
+
+# Cursor のみ
+so-compare --cursor-only -w "$(pwd)" "プロンプト"
 ```
 
 ## 出力ディレクトリ構成
@@ -67,13 +80,16 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── codex-meta.txt      # メタデータ（tool, exit_code, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-stderr.txt   # Claude の stderr
-└── claude-meta.txt     # メタデータ
+├── claude-meta.txt     # メタデータ
+├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
+├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（--cursor 時のみ）
 ```
 
 ## 結果読み込み手順
 
 1. 実行完了後、出力ディレクトリパスを確認する
-2. `codex-stdout.txt` と `claude-stdout.txt` を Read ツールで読み込む
+2. `codex-stdout.txt`、`claude-stdout.txt`（`--cursor` 時は `cursor-stdout.txt` も）を Read ツールで読み込む
 3. 両回答を比較テーブルにまとめる
 
 ```markdown
@@ -130,5 +146,6 @@ SO 実行前に以下を確認する:
 ## 注意事項
 
 - 実行には `codex` CLI と `claude-safe` が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）
+- Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時は警告してスキップ、`--cursor-only` 時はエラー）
 - `SO_TIMEOUT` のデフォルトは180秒。大きなプロンプトでタイムアウトする場合は値を増やす
 - 出力は `tmp/` 配下で gitignore 対象
