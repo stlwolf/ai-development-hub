@@ -146,6 +146,6 @@ SO 実行前に以下を確認する:
 ## 注意事項
 
 - 実行には `codex` CLI と `claude-safe` が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）
-- Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時は警告してスキップ、`--cursor-only` 時はエラー）
+- Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時はエラー終了）
 - `SO_TIMEOUT` のデフォルトは180秒。大きなプロンプトでタイムアウトする場合は値を増やす
 - 出力は `tmp/` 配下で gitignore 対象
