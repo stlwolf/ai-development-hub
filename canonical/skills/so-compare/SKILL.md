@@ -34,7 +34,7 @@ so-compare [OPTIONS] "プロンプト"
 | `--claude-only` | Claude のみ実行 | 両方実行 |
 | `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
 | `--cursor-only` | Cursor のみ実行 | 両方実行 |
-| `--cursor-model MODEL` | Cursor で使用するモデル | agent CLI のデフォルト |
+| `--cursor-model MODEL` | Cursor で使用するモデル | `auto` |
 | `--prev DIR` | 前回出力を追記（イテレーション用） | なし |
 
 ### 環境変数
@@ -43,7 +43,7 @@ so-compare [OPTIONS] "プロンプト"
 |------|------|-----------|
 | `SO_TIMEOUT` | 各ツールのタイムアウト秒数 | `240` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
-| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | なし（agent CLI のデフォルト） |
+| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `auto` |
 
 ### 基本パターン
 
