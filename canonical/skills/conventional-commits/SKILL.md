@@ -43,6 +43,31 @@ description: コミットメッセージをConventional Commits規約に従っ�
 7. 本文には変更の動機・背景を記述する (MUST)
 8. 本文は自由な形式で、改行で区切られた複数の段落で構成してよい (MAY)
 
+## 本文ガイダンス
+
+規則7（本文には変更の動機・背景を記述する）の具体化。形式は自由だが、以下の観点を含めることで後から文脈を復元できる。
+
+### 含めるべき観点
+
+- **段階**: この変更は何の段階か（調査・実装・WIP・リファクタ・修正等）
+- **意図/仮説**: なぜこの変更をしたか。何を達成・検証しようとしているか
+
+### WIPコミット
+
+ブランチ上のWIPコミットは未完成でもよい。ただし段階と意図がメッセージから読めること。
+
+- タイトルで段階を示す: `wip(parser): add token stream — tests red expected`
+- 本文で「何が未完了か」「次に何をするか」を書く
+
+### trailers（任意）
+
+git trailers で構造化メタデータを付与してもよい（強制ではない）。
+
+```
+Stage: implementation
+Context: planner output applied, integration pending
+```
+
 ## 例
 
 本文なし:
@@ -55,11 +80,33 @@ feat: allow provided config object to extend other configs
 docs: correct spelling of CHANGELOG
 ```
 
-本文あり:
+本文あり（薄い — 意図が読めない）:
+
+```
+fix: fix the bug
+
+Fixed the issue.
+```
+
+本文あり（十分 — 段階・意図・背景が読める）:
 
 ```
 fix: prevent racing of requests
 
-Introduce a request id and a reference to latest request. Dismiss
-incoming responses other than from latest request.
+Stage: implementation — request dedup logic
+
+API呼び出しが並行して走ると古いレスポンスが最新を上書きする問題。
+リクエストIDを導入し、最新リクエスト以外のレスポンスを破棄する。
+```
+
+本文あり（WIP — 未完了だが文脈復元可能）:
+
+```
+wip(auth): add JWT validation middleware — happy path only
+
+Stage: implementation — auth middleware scaffold
+
+トークン検証のhappy pathのみ実装。次ステップ:
+- 期限切れトークンのエラーハンドリング
+- リフレッシュトークンフロー
 ```
