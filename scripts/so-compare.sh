@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # so-compare.sh - セカンドオピニオン比較実行スクリプト（使い捨て可）
-# 同一プロンプトを Codex CLI / Claude Code に投げて結果をファイルに保存する
+# 同一プロンプトを Codex CLI / Claude Code / Cursor CLI (agent) に投げて結果をファイルに保存する
 
 set -euo pipefail
 
@@ -20,6 +20,9 @@ Options:
   -s MODE        Codex sandbox モード（デフォルト: read-only）
   --codex-only   Codex のみ実行
   --claude-only  Claude のみ実行
+  --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
+  --cursor-only  Cursor のみ実行
+  --cursor-model MODEL  Cursor で使用するモデル（デフォルト: agent CLI のデフォルト）
   --prev DIR     前回の so-compare 出力ディレクトリ
                  回答をプロンプトに追記（上限: PREV_MAX_BYTES, デフォルト4000）
   -h, --help     このヘルプを表示
@@ -27,6 +30,7 @@ Options:
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
   SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
+  SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
 
 Exit codes:
   0  全プロバイダ成功
@@ -38,6 +42,7 @@ USAGE
 # --- 設定 ---
 CODEX_CMD="codex"
 CLAUDE_CMD="claude-safe"
+CURSOR_CMD="agent"
 SANDBOX_MODE="read-only"
 OUT_DIR=""
 PROMPT=""
@@ -46,6 +51,8 @@ PREV_DIR=""
 WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
+RUN_CURSOR=false
+CURSOR_MODEL="${SO_CURSOR_MODEL:-}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
 
@@ -104,6 +111,21 @@ while [[ $# -gt 0 ]]; do
             RUN_CODEX=false
             shift
             ;;
+        --cursor)
+            RUN_CURSOR=true
+            shift
+            ;;
+        --cursor-only)
+            RUN_CODEX=false
+            RUN_CLAUDE=false
+            RUN_CURSOR=true
+            shift
+            ;;
+        --cursor-model)
+            require_arg "$1" "${2:-}"
+            CURSOR_MODEL="$2"
+            shift 2
+            ;;
         --prev)
             require_arg "$1" "${2:-}"
             PREV_DIR="$2"
@@ -136,8 +158,8 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
-if ! $RUN_CODEX && ! $RUN_CLAUDE; then
-    echo "Error: --codex-only と --claude-only を同時に指定できません" >&2
+if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
+    echo "Error: 実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）" >&2
     exit 1
 fi
 
@@ -153,6 +175,15 @@ fi
 if $RUN_CLAUDE && ! command -v "$CLAUDE_CMD" &>/dev/null; then
     echo "Error: $CLAUDE_CMD が見つかりません。--codex-only で Codex のみ実行できます。" >&2
     exit 1
+fi
+if $RUN_CURSOR && ! command -v "$CURSOR_CMD" &>/dev/null; then
+    if ! $RUN_CODEX && ! $RUN_CLAUDE; then
+        echo "Error: $CURSOR_CMD が見つかりません。" >&2
+        exit 1
+    else
+        echo "Warning: $CURSOR_CMD が見つかりません。Cursor レーンをスキップします。" >&2
+        RUN_CURSOR=false
+    fi
 fi
 
 # --- ワークスペースパスをプロンプトに追記 ---
@@ -181,7 +212,7 @@ if [[ -n "$PREV_DIR" ]]; then
         echo "Warning: 前回の出力ディレクトリが見つかりません: $PREV_DIR" >&2
     else
         PROMPT="${PROMPT}"$'\n\n--- 前回のレビュー回答（参考） ---'
-        for tool in codex claude; do
+        for tool in codex claude cursor; do
             prev_file="$PREV_DIR/${tool}-stdout.txt"
             if [[ -f "$prev_file" && -s "$prev_file" ]]; then
                 prev_content=$(head -c "$PREV_MAX_BYTES" "$prev_file")
@@ -215,6 +246,9 @@ echo "出力先: $OUT_DIR"
 echo "sandbox: $SANDBOX_MODE"
 if [[ -n "$WORKSPACE" ]]; then
     echo "ワークスペース: $WORKSPACE"
+fi
+if $RUN_CURSOR; then
+    echo "Cursor: enabled${CURSOR_MODEL:+ (model: $CURSOR_MODEL)}"
 fi
 echo "タイムアウト: ${SO_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
@@ -322,6 +356,46 @@ run_claude() {
     } > "$OUT_DIR/claude-meta.txt"
 }
 
+# shellcheck disable=SC2120
+run_cursor() {
+    local tool_timeout="${1:-$SO_TIMEOUT}"
+    echo "[Cursor] 実行中... (timeout=${tool_timeout}秒)"
+    local start end elapsed exit_code
+    start=$(date +%s)
+
+    local cursor_args=(-p -f --mode ask --output-format text)
+    if [[ -n "$CURSOR_MODEL" ]]; then
+        cursor_args+=(--model "$CURSOR_MODEL")
+    fi
+    if [[ -n "$WORKSPACE" ]]; then
+        cursor_args+=(--workspace "$WORKSPACE")
+    fi
+
+    if timeout "$tool_timeout" nohup "$CURSOR_CMD" "${cursor_args[@]}" "$PROMPT" \
+        > "$OUT_DIR/cursor-stdout.txt" 2> "$OUT_DIR/cursor-stderr.txt"; then
+        exit_code=0
+    else
+        exit_code=$?
+    fi
+
+    end=$(date +%s)
+    elapsed=$((end - start))
+
+    local timeout_status
+    timeout_status=$(classify_result "cursor" "$exit_code")
+
+    echo "[Cursor] 完了 (${elapsed}秒, exit=${exit_code}, status=${timeout_status})"
+
+    {
+        echo "tool=cursor"
+        echo "exit_code=$exit_code"
+        echo "timeout_status=$timeout_status"
+        echo "elapsed_seconds=$elapsed"
+        echo "stdout_lines=$(wc -l < "$OUT_DIR/cursor-stdout.txt" | tr -d ' ')"
+        echo "stdout_bytes=$(wc -c < "$OUT_DIR/cursor-stdout.txt" | tr -d ' ')"
+    } > "$OUT_DIR/cursor-meta.txt"
+}
+
 # --- 実行 ---
 if $RUN_CODEX; then
     run_codex &
@@ -333,12 +407,18 @@ if $RUN_CLAUDE; then
     CLAUDE_PID=$!
 fi
 
+if $RUN_CURSOR; then
+    run_cursor &
+    CURSOR_PID=$!
+fi
+
 # 完了待ち
 if $RUN_CODEX; then wait "$CODEX_PID" 2>/dev/null || true; fi
 if $RUN_CLAUDE; then wait "$CLAUDE_PID" 2>/dev/null || true; fi
+if $RUN_CURSOR; then wait "$CURSOR_PID" 2>/dev/null || true; fi
 
 # --- タイムアウト(出力なし)のリトライ（最大1回） ---
-for tool in codex claude; do
+for tool in codex claude cursor; do
     meta="$OUT_DIR/${tool}-meta.txt"
     [[ -f "$meta" ]] || continue
     status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
@@ -369,6 +449,7 @@ TOOLS_RUN=()
 
 if $RUN_CODEX; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(codex); fi
 if $RUN_CLAUDE; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(claude); fi
+if $RUN_CURSOR; then EXPECTED=$((EXPECTED + 1)); TOOLS_RUN+=(cursor); fi
 
 for tool in "${TOOLS_RUN[@]}"; do
     meta="$OUT_DIR/${tool}-meta.txt"
