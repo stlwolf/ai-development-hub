@@ -63,7 +63,7 @@ wt merge --no-squash
 ```
 
 - `wt merge` はベース同期（rebase + FF）を含む
-- squash 時のコミットメッセージは Conventional Commits 形式で書き直す（conventional-commits スキル参照）
+- `wt merge` では squash 時にエディタが開くため、その場でコミットメッセージを Conventional Commits 形式に書き直す（conventional-commits スキル参照）
 - 複数の独立した論理変更を含むブランチでは `--no-squash` を検討
 
 ### Option 2: PR 作成
