@@ -35,6 +35,40 @@ wt switch --create fix/#456_token_validation --base main
 - `--base` 省略時はデフォルトブランチ（master または main）の最新版から作成される
 - ブランチ名のフォーマット: `{prefix}/#{issue番号}_{簡潔な説明}`（branch-naming スキル参照）
 
+### 作成後の位置確認
+
+`wt switch --create` は worktree 作成と切り替えをまとめて行うが、実行環境によっては worktree は作成されても、呼び出し元の現在位置が意図した worktree に移らない場合がある。
+
+作成直後は、続行前に以下を確認する。
+
+```bash
+pwd
+wt list
+```
+
+- `pwd` が意図した worktree を指していれば、そのまま作業を続けてよい
+- `wt list` に新しい worktree が見えているのに `pwd` が想定外なら、「作成は成功したが現在位置だけがずれている」状態として扱う
+- この状態で `wt switch --create` を再実行しない。まず既存 worktree を再利用する
+
+### 既存 worktree の再利用
+
+作成後に現在位置がずれていた場合や、fallback で別の worktree 進入手段を使いたい場合は、先に既存 worktree の有無を確認する。
+
+```bash
+wt list
+git worktree list
+```
+
+```bash
+# 既存 worktree へ再入場
+wt switch <branch>
+```
+
+- 同じ Issue / ブランチ向けの worktree が既に存在すれば、それを再利用する
+- 再利用時は `wt switch <branch>` を優先し、パスが明確な場合のみ `cd <worktree-path>` を使う
+- 新規作成は「該当 worktree が存在しない」と確認できた場合だけ行う
+- fallback は「新規作成」ではなく「既存 worktree への再入場」として扱う
+
 ## 一覧
 
 ```bash
@@ -73,6 +107,9 @@ wt switch pr:123
 # デフォルトブランチにマージ（squash + rebase + FF + worktree 削除）
 wt merge
 
+# commit/squash をスキップ（rebase は通常どおり継続）
+wt merge --no-commit
+
 # コミット履歴を保持してマージ
 wt merge --no-squash
 
@@ -90,7 +127,9 @@ wt remove -D
 
 `wt merge` のデフォルト動作は squash（複数コミットを1つに結合）。
 
-- squash 時のコミットメッセージは Conventional Commits 形式で書き直すこと（`wt merge` が生成するデフォルトメッセージをそのまま使わない）
+- `wt merge` では squash 時にエディタが開くので、その場でコミットメッセージを Conventional Commits 形式に書き直すこと（`wt merge` が生成するデフォルトメッセージをそのまま使わない）
+- `wt merge --no-commit` は commit/squash をスキップするが、rebase は `--no-rebase` を付けない限り継続する。clean working tree が必要
+- `wt merge --no-commit` はカスタム squash メッセージを自分で付けたいときの用途ではない。手動でコミット準備を済ませた後の特殊用途として扱う
 - 複数の独立した論理変更を含むブランチでは `--no-squash` を検討する
 - conventional-commits スキルを参照
 
