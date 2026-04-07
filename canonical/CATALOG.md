@@ -87,4 +87,4 @@ canonical/ 内のツール固有レイヤー。各ディレクトリの README �
 |-------------|-----------|------|
 | `cursor/` | Cursor | Cursor 固有コマンド（`command/thread/archive-title.md`） |
 | `codex/` | Codex | Codex 固有 AGENTS.md、commands-registry |
-| `mcp/` | Cursor | MCP サーバー設定（`cursor.json`） |
+| `mcp/` | Cursor, Claude Code | MCP サーバー設定（`cursor.json`, `claude.json`） |

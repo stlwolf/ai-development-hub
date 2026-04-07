@@ -54,7 +54,7 @@ ai-development-hub/
 │   ├── agents/             # エージェント定義
 │   ├── commands/           # コマンド（review/, investigation/, verification/）
 │   ├── hooks/              # フック定義（ツール別設定 + 共通スクリプト → sync で配布）
-│   ├── mcp/                # MCP設定（cursor.json → ~/.cursor/mcp.json にリンク）
+│   ├── mcp/                # MCP設定（cursor.json → symlink, claude.json → ~/.claude.json にマージ）
 │   ├── cursor/             # Cursor 固有ファイル（archive-title 等）
 │   └── codex/              # Codex 固有ファイル（AGENTS.md, commands-registry 等）
 ├── projects/               # 独立したツールキット（ideas/から昇格）
