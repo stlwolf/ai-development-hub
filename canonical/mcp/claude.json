@@ -1,0 +1,16 @@
+{
+  "playwright-mcp": {
+    "command": "npx",
+    "args": [
+      "@playwright/mcp@latest"
+    ]
+  },
+  "Notion": {
+    "type": "http",
+    "url": "https://mcp.notion.com/mcp"
+  },
+  "Notion-Personal": {
+    "type": "http",
+    "url": "https://mcp.notion.com/mcp"
+  }
+}

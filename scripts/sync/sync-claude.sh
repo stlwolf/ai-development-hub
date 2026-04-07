@@ -139,6 +139,52 @@ sync_hook_scripts() {
     info "  ${count} ${label} symlink(s) created/updated"
 }
 
+sync_mcp_servers() {
+    local source_file="$1"
+    local target_file="$2"
+    local label="$3"
+
+    info "Syncing ${label}: ${source_file} → ${target_file}"
+
+    if [[ ! -f "$source_file" ]]; then
+        warn "Source not found: ${source_file}"
+        return
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        warn "jq not found — skipping MCP sync"
+        return
+    fi
+
+    # claude.json の中身を mcpServers でラップして ~/.claude.json にマージ
+    local mcp_servers
+    mcp_servers=$(jq -c '.' "$source_file")
+
+    if [[ -f "$target_file" ]]; then
+        local backup
+        backup="${target_file}.bak.$(date +%Y%m%d-%H%M%S)"
+        cp "$target_file" "$backup"
+        info "  Backup: ${backup}"
+
+        local tmp_file
+        tmp_file="$(mktemp "${target_file}.tmp.XXXXXX")"
+        if jq --argjson servers "$mcp_servers" '.mcpServers = (.mcpServers // {} | . * $servers)' "$target_file" > "$tmp_file"; then
+            mv "$tmp_file" "$target_file"
+        else
+            rm -f "$tmp_file"
+            error "  Failed to merge mcpServers into: $(basename "${target_file}")"
+            return 1
+        fi
+    else
+        jq -n --argjson servers "$mcp_servers" '{mcpServers: $servers}' > "$target_file"
+        info "  Created: $(basename "${target_file}")"
+    fi
+
+    local count
+    count=$(jq 'keys | length' "$source_file")
+    info "  ${count} MCP server(s) synced"
+}
+
 sync_claude_hooks() {
     local hooks_source="$1"
     local settings_target="$2"
@@ -209,6 +255,10 @@ main() {
 
     # 6. Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
+    echo ""
+
+    # 7. MCP servers (merge into ~/.claude.json)
+    sync_mcp_servers "${CANONICAL_DIR}/mcp/claude.json" "${HOME}/.claude.json" "MCP servers"
     echo ""
 
     info "=== sync-claude complete ==="
