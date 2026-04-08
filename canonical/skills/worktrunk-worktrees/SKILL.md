@@ -1,6 +1,6 @@
 ---
 name: worktrunk-worktrees
-description: Worktrunk (wt) ベースの worktree 運用。作成・一覧・マージ・掃除・エージェント開始前チェックを含む。Cursor の worktree UI は使用せず wt CLI を正本とする。
+description: worktreeを作成・切り替え・掃除し、並列作業を開始する。wt switch --create、wt merge、wt list、Issue起点のブランチ作成時に使用する。エージェント開始前チェック、ブランチ作成フローを含む。
 depends:
   - skill: branch-naming
   - cli: wt
