@@ -15,7 +15,7 @@ Options:
   -f FILE          プロンプトをファイルから読み込み
   -m MODELS        比較モデル（カンマ区切り）
                    デフォルトはモード別:
-                     ask/plan: gpt-5.2,gemini-3.1-pro,opus-4.6-thinking
+                     ask/plan: gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking
                      agent:    gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5
   -c FILE...       コンテキストファイルを添付（プロンプトに内容を追記）
   -o DIR           出力ディレクトリを指定（デフォルト: tmp/arena-YYYYMMDD-HHMMSS）
@@ -128,7 +128,7 @@ if [[ -z "$MODELS_STR" ]]; then
     else
         case "$AGENT_MODE" in
             agent) MODELS_STR="gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5" ;;
-            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro,opus-4.6-thinking" ;;
+            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking" ;;
         esac
     fi
 fi

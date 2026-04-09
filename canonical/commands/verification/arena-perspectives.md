@@ -151,7 +151,7 @@ Arena の結果を受けてメインエージェントがアクションを提�
 
 ```bash
 # 思考モデルを含める
--m "opus-4.6-thinking,sonnet-4.6-thinking,gpt-5.2"
+-m "claude-4.6-opus-high-thinking,claude-4.6-sonnet-medium-thinking,gpt-5.2"
 
 # 軽量モデルで素早く比較
 -m "gemini-3-flash,sonnet-4.6,gpt-5.2"
