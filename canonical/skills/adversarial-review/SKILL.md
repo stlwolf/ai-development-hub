@@ -1,8 +1,6 @@
 ---
 name: adversarial-review
-description: >
-  Plan/Specの品質チェック（Plan Review）と、実装完了後の仕様照合（Compliance Review）を行う。
-  サブエージェント注入用プロンプトテンプレートを含む。
+description: Plan Review（kickoff-to-plan変換後、Plan実行前の品質チェック）とCompliance Review（サブエージェント実装完了報告後の仕様照合）を行う。サブエージェント注入用プロンプトテンプレートを含む。
 ---
 
 # Adversarial Review — Plan 品質チェック & 実装照合

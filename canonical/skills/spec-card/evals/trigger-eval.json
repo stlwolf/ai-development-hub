@@ -1,0 +1,12 @@
+[
+  {"query": "新しい kickoff ドキュメントを作成したい。frontmatter のフォーマットを教えて", "should_trigger": true},
+  {"query": "昨日の調査結果を episode として記録したい。ULID の採番ルールも確認して", "should_trigger": true},
+  {"query": "この episode は十分成熟したので decision に昇格させたい。手順を教えて", "should_trigger": true},
+  {"query": "discussion メモを docs/specs/ に作りたいんだけど、frontmatter の必須フィールドは？", "should_trigger": true},
+  {"query": "蒸留パイプラインの文書に status フィールドを追加したい。draft → active の遷移ルールは？", "should_trigger": true},
+  {"query": "kickoff を plan に変換したい。kickoff-to-plan のフローを教えて", "should_trigger": false},
+  {"query": "README.md を更新したい。プロジェクトの概要セクションを書き直して", "should_trigger": false},
+  {"query": "PR の本文にマークダウンのチェックボックスを入れたい。書式ルールは？", "should_trigger": false},
+  {"query": "コミットメッセージに docs: プレフィックスをつけたいけど、これで合ってる？", "should_trigger": false},
+  {"query": "新しい CLAUDE.md を作って、プロジェクトの説明を書きたい", "should_trigger": false}
+]

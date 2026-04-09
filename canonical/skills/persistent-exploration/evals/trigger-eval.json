@@ -1,0 +1,12 @@
+[
+  {"query": "このバグ、何回試しても再現できない。Sentry にはイベントが上がってるのに。もう手詰まりかも", "should_trigger": true},
+  {"query": "UI からこの状態に遷移する方法がどうしても見つからない。API 直叩きでも試したけどダメだった", "should_trigger": true},
+  {"query": "ログには NullPointerException が出てるけど、該当コードパスに到達する条件が特定できない。不可能に思える", "should_trigger": true},
+  {"query": "サブエージェントに調査を委譲するんだけど、諦めずに深掘りさせるプロンプトテンプレートが欲しい", "should_trigger": true},
+  {"query": "Sentry のエラー、スタックトレースは見たけど再現手順が確立できない。別のアプローチを試したい", "should_trigger": true},
+  {"query": "Sentry の Issue ID から最新のイベント詳細を取得したい", "should_trigger": false},
+  {"query": "PR のレビューをお願い。セキュリティ観点で見てほしい", "should_trigger": false},
+  {"query": "このエラーの修正方針を検証したい。so-compare でセカンドオピニオンを取って", "should_trigger": false},
+  {"query": "ブランチ作って worktree で作業開始したい", "should_trigger": false},
+  {"query": "テストが落ちてるんだけど、原因はもう分かってて修正するだけ", "should_trigger": false}
+]
