@@ -1,0 +1,12 @@
+[
+  {"query": "kickoff-to-plan の変換が終わった。Plan を実行する前に品質チェックしてほしい", "should_trigger": true},
+  {"query": "サブエージェントが実装完了と報告してきた。仕様と照合して漏れがないか検証して", "should_trigger": true},
+  {"query": "Plan ができたので、Completeness と Scope の観点でレビューしてほしい。YAGNI も気になる", "should_trigger": true},
+  {"query": "タスク完了報告が来たけど、元の kickoff の要件を全部満たしてるか確認したい", "should_trigger": true},
+  {"query": "この Plan、矛盾や曖昧な箇所がないか adversarial にチェックして", "should_trigger": true},
+  {"query": "PR #55 のコードレビューをしてほしい。diff を見て指摘して", "should_trigger": false},
+  {"query": "コードを実装して。src/auth/middleware.ts に認証ロジックを追加", "should_trigger": false},
+  {"query": "worktree を作成して新しい作業を始めたい", "should_trigger": false},
+  {"query": "この修正方針で問題ないか、Codex にセカンドオピニオンを取りたい", "should_trigger": false},
+  {"query": "kickoff ドキュメントを plan に変換して", "should_trigger": false}
+]

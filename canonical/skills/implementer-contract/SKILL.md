@@ -1,8 +1,6 @@
 ---
 name: implementer-contract
-description: >
-  サブエージェントへの実装委譲時の返却契約。ステータスenum、報告フォーマット、
-  self-reviewチェックリスト、エスカレーション条件を定義する。
+description: TaskCreate・Agentツールでサブエージェントに実装を委譲するときの返却契約。タスク委譲、サブエージェント起動時に使用する。ステータスenum、報告フォーマット、self-review、エスカレーション条件を含む。
 ---
 
 # Implementer Contract — サブエージェント実装委譲の返却契約

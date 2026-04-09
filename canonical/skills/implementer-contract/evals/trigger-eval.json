@@ -1,0 +1,12 @@
+[
+  {"query": "この実装タスクをサブエージェントに委譲したい。TaskCreate で振って、完了報告のフォーマットも決めておいて", "should_trigger": true},
+  {"query": "Agent ツールで並列に3つのサブエージェント起動して実装させたいんだけど、返却フォーマットを統一したい", "should_trigger": true},
+  {"query": "サブエージェントに実装を任せるとき、DONE とか BLOCKED のステータスで報告させるルールってある？", "should_trigger": true},
+  {"query": "タスク委譲時のプロンプトテンプレートが欲しい。self-review チェックリストも含めて", "should_trigger": true},
+  {"query": "サブエージェントが BLOCKED って返してきたんだけど、エスカレーション条件ってどうなってる？", "should_trigger": true},
+  {"query": "このタスクを3つに分解して、順番に進めたい", "should_trigger": false},
+  {"query": "コードレビューしてほしい。PR #55 の diff を確認して", "should_trigger": false},
+  {"query": "テストを書いてほしい。src/utils.ts のユニットテスト", "should_trigger": false},
+  {"query": "Plan mode で実装計画を立てて", "should_trigger": false},
+  {"query": "この Issue の調査をサブエージェントに任せたい（実装ではなく調査）", "should_trigger": false}
+]

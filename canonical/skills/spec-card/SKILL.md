@@ -1,10 +1,6 @@
 ---
 name: spec-card
-description: >
-  蒸留パイプラインのドキュメントフォーマット適用ガイド。ドキュメント作成・変換・昇格時に
-  フォーマット定義（docs/specs/document-format.md）を参照し、frontmatter の必須フィールド・
-  ULID 付与・status 管理を案内する。kickoff、episode、decision 等のドキュメント作成時、
-  蒸留（Episode → Decision 昇格）時に使用する。
+description: 蒸留パイプライン文書（kickoff/episode/decision/discussion）の作成時にフォーマットを適用する。frontmatter付与、ULID生成、ファイル命名規則の案内を含む。ドキュメント新規作成、Episode→Decision昇格時に使用する。
 ---
 
 # Spec Card — ドキュメントフォーマット適用スキル
