@@ -1,0 +1,12 @@
+[
+  {"query": "Issue #42 の作業を始めたい。ブランチ切って worktree 作ってほしい", "should_trigger": true},
+  {"query": "2つの Issue を並列で進めたいんだけど、それぞれ別の worktree で作業できる？", "should_trigger": true},
+  {"query": "wt switch --create で新しいブランチ作りたい。feature/#99_add_export から", "should_trigger": true},
+  {"query": "もう使わない worktree がいくつかあるんだけど、掃除したい。wt list で一覧見せて", "should_trigger": true},
+  {"query": "さっき作った worktree から master に戻りたい。wt merge のやり方教えて", "should_trigger": true},
+  {"query": "ブランチ名を fix/#123_login_error にしたいんだけど、命名規則ってどうなってる？", "should_trigger": false},
+  {"query": "コミットメッセージの書き方を教えて。feat とか fix のルールが知りたい", "should_trigger": false},
+  {"query": "PR を作成したい。gh pr create のオプションを確認して", "should_trigger": false},
+  {"query": "git checkout -b で新しいブランチを作りたい（worktree は使わない）", "should_trigger": false},
+  {"query": "master ブランチに直接プッシュしていい？", "should_trigger": false}
+]
