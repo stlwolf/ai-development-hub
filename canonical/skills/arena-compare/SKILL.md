@@ -61,20 +61,20 @@ arena-compare --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質�
 
 | モード | デフォルトモデル | 理由 |
 |--------|----------------|------|
-| `ask` / `plan` | `gpt-5.2,gemini-3.1-pro,opus-4.6-thinking` | 異なるファミリー3つで多様性を確保 |
+| `ask` / `plan` | `gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking` | 異なるファミリー3つで多様性を確保 |
 | `agent` | `gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5` | コード生成に強いモデルを選択 |
 
 ### 選択の指針
 
 - **ファミリー多様性**: 同じファミリー（例: Claude系×2）を避け、異なるモデルファミリーを混ぜる
 - **メインスレッドとの差異**: メインスレッドが Claude 系のため、デフォルトから Claude を外して視点の多様性を確保
-- **think モデルの混在**: 深い推論が必要な場合は think モデル（`opus-4.6-thinking`, `sonnet-4.6-thinking`）を含める
+- **think モデルの混在**: 深い推論が必要な場合は think モデル（`claude-4.6-opus-high-thinking`, `claude-4.6-sonnet-medium-thinking`）を含める
 
 ### よく使う組み合わせ
 
 ```bash
 # 思考モデルを含める
--m "opus-4.6-thinking,sonnet-4.6-thinking,gpt-5.2"
+-m "claude-4.6-opus-high-thinking,claude-4.6-sonnet-medium-thinking,gpt-5.2"
 
 # 軽量モデルで素早く比較
 -m "gemini-3-flash,sonnet-4.6,gpt-5.2"
