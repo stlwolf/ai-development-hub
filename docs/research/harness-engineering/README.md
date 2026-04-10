@@ -72,6 +72,15 @@ Source: [@shodaiiiiii / X](https://x.com/shodaiiiiii/status/2037407745704362112)
 
 NotebookLM 等へ投げる場合は各 URL をソースに直接追加すればよい。Speaker Deck（31–33）はスライドのためテキスト抽出精度は落ちる可能性あり。
 
+### 5. 追加記事（2026/4 以降）
+
+マスターインデックスのソースリスト外で、ギャップ分析（`current-state-assessment.md`）の更新契機となった記事。
+
+| 番号 | タイトル | 概要 | URL |
+|---|---------|------|-----|
+| 34 | ハーネスエンジニアリングのすすめ: 27BモデルでSWE-bench VerifiedのSLM SOTAを達成 (fltech / 富士通研究所, 2026/4/8) | Qwen3.5-27B をハーネス設計のみで TTS@8=74.8% に到達。フェーズ×ワークフロー二段制御、ファイルシステム共有領域、Orchestra (conductor + tool-specialist)、エージェント間相互テスト等の具体的な設計パターンを詳述 | https://blog.fltech.dev/entry/2026/04/07/swebench |
+| 35 | ハーネスエンジニアリングは枠組みから始めよう (CADDi Tech Blog, 2026/4/8) | 完璧なルールより空の枠組みを先に作る「Framework-first」アプローチ。`/update-coding-rule` スキルで実装中の気づきを即座にルール化する実践知。Rules index パターン（`.claude/rules/` を軽量インデックスとし本体は別ファイル）の解説 | https://caddi.tech/start-harness-engineering-with-framework |
+
 ## Index — category 1 (English primary)
 
 Quick links to captured files only (same as rows **#1–7** above).
@@ -111,7 +120,7 @@ Quick links to captured files only (same as rows **#8–19** above).
 
 ## Analysis
 
-- [`current-state-assessment.md`](./current-state-assessment.md) — 現状評価・ギャップ分析・Issue カバレッジマップ（2026-04-01）
+- [`current-state-assessment.md`](./current-state-assessment.md) — 現状評価・ギャップ分析・Issue カバレッジマップ（last_reviewed: 2026-04-10）
 - 概念マッピング（自設計との対応）: [`harness-engineering-mapping.md`](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md)
 
 ## Disclaimer
