@@ -42,14 +42,14 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | **主ファイル形式** | `.mdc`（frontmatter 付き MD） | `CLAUDE.md`（Markdown） | `AGENTS.md`（Markdown） |
 | **プロジェクトスコープ** | `.cursor/rules/*.mdc` | `./CLAUDE.md` or `./.claude/CLAUDE.md` | リポルートから CWD までの各ディレクトリの `AGENTS.md` |
 | **ユーザースコープ** | Cursor Settings > Rules | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` |
-| **組織スコープ** | Team Rules（ダッシュボード管理） | Managed policy（OS 固定パス） | -（記載なし） |
+| **組織スコープ** | Team Rules（ダッシュボード管理） | Managed policy（OS 固定パス） | `requirements.toml`（admin-enforced）/ Business・Enterprise は cloud-fetched requirements |
 | **ローカル上書き** | -（記載なし） | `./CLAUDE.local.md`（`.gitignore` 推奨） | `AGENTS.override.md`（各ディレクトリ） |
 | **サブディレクトリ** | `.cursor/rules/` 内でフォルダ分割可 | ネストした `CLAUDE.md`（サブディレクトリ） | ルートから CWD への各ディレクトリで探索 |
 | **分割ファイル** | `.cursor/rules/` に複数 `.mdc` | `.claude/rules/*.md`（再帰、symlink 可） | -（単一 `AGENTS.md` per ディレクトリ） |
 | **優先順位** | Team > Project > User | Managed > CLI args > Local > Project > User | Global → ルートから CWD へ連結（CWD に近いほど優先） |
 | **マージ方式** | マージ（衝突時は上位が優先） | 連結（全階層を結合） | 連結（空白行で結合） |
 | **サイズ制限** | 500 行未満推奨（ハード上限なし） | 長さに関わらず全文ロード（200 行未満推奨） | 合計 `project_doc_max_bytes`（既定 32 KiB） |
-| **AGENTS.md 対応** | プロジェクトルート + サブディレクトリ対応 | -（CLAUDE.md を使用） | ネイティブ |
+| **AGENTS.md 対応** | プロジェクトルート + サブディレクトリ対応 | `@AGENTS.md` import で CLAUDE.md 内から参照可能 | ネイティブ |
 | **`.cursorrules` 対応** | Legacy 対応（`.mdc` が優先） | -（記載なし） | -（記載なし） |
 
 
@@ -62,7 +62,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | **ファイルパス条件** | `globs` frontmatter（例: `**/*.py`） | `paths` frontmatter（glob 複数指定可） | -（AGENTS.md はディレクトリ単位） |
 | **説明ベース自動適用** | `description` で Agent が関連性を判断 | -（ルールの `description` は記載なし） | -（記載なし） |
 | **`alwaysApply: false` の挙動** | Agent に description を提示し適用可否を判断させる | -（`paths` の有無で二分） | -（N/A） |
-| **コンパクト後の生存** | -（記載なし） | プロジェクトルート CLAUDE.md + unscoped rules は再注入。`paths` 付き/ネスト CLAUDE.md は再読みまで失われる | -（記載なし） |
+| **コンパクト後の生存** | -（記載なし） | プロジェクトルート CLAUDE.md + ユーザー CLAUDE.md は再注入（公式確認）。unscoped rules も再注入（推定）。スキル本文は自動 re-attach（5,000/25,000 tok）。`paths` 付きルール・ネスト CLAUDE.md は再読みまで失われる | -（記載なし） |
 | **override 機構** | Team Rules が全ルールに優先 | `CLAUDE.local.md` が同ディレクトリ CLAUDE.md の後に連結 | `AGENTS.override.md` が `AGENTS.md` より先にチェックされ、存在すれば AGENTS.md は読まれない |
 
 
@@ -77,7 +77,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | **ユーザーパス** | `~/.cursor/skills/` | `~/.claude/skills/` | `~/.agents/skills/` |
 | **システムパス** | -（記載なし） | Enterprise（managed settings） | `/etc/codex/skills/`, システム同梱 |
 | **互換パス** | `.claude/skills/`, `.codex/skills/`, `~/.claude/skills/`, `~/.codex/skills/` | -（記載なし） | -（記載なし） |
-| **ロード方式** | 自動発見 + Agent が文脈判断、`/` で手動 | description は常時コンテキスト、本文は呼び出し時にフルロード（lazy） | Progressive disclosure: メタデータのみ → 使用決定時にフルロード |
+| **ロード方式** | 自動発見 + Agent が文脈判断、`/` で手動 | description は常時コンテキスト（ただし `disable-model-invocation: true` のスキルは description も非表示）、本文は呼び出し時にフルロード（lazy） | Progressive disclosure: メタデータのみ → 使用決定時にフルロード |
 | **明示起動** | `/` からスキル名検索 | `/skill-name` スラッシュコマンド | `/skills` or `$` で言及 |
 | **暗黙起動の制御** | -（記載なし） | `disable-model-invocation: true` で無効化 | `agents/openai.yaml` の `policy.allow_implicit_invocation: false` |
 | **トークン制限（per-skill）** | -（記載なし） | コンパクト後再付与: 5,000 トークン | -（記載なし） |
@@ -95,7 +95,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | **プロジェクトスコープ** | `.vscode/settings.json` | `.claude/settings.json` | `.codex/config.toml` |
 | **ユーザースコープ** | `~/Library/Application Support/Cursor/User/settings.json` | `~/.claude/settings.json` | `~/.codex/config.toml` |
 | **ローカル上書き** | -（記載なし） | `.claude/settings.local.json`（`.gitignore` 推奨） | -（記載なし） |
-| **組織スコープ** | Team/Enterprise ダッシュボード | Managed settings（MDM / サーバ配信） | -（記載なし） |
+| **組織スコープ** | Team/Enterprise ダッシュボード | Managed settings（MDM / サーバ配信） | `requirements.toml`（admin-enforced）/ cloud-fetched requirements |
 | **優先順位** | Team > Project > User | Managed > CLI args > Local > Project > User | ユーザー → プロジェクト（CWD に近いほど優先）。信頼されていないプロジェクトでは `.codex/config.toml` 無視 |
 | **スキーマ** | -（記載なし） | `json.schemastore.org/claude-code-settings.json` | `developers.openai.com/codex/config-schema.json` |
 | **profiles** | -（記載なし） | -（記載なし） | `[profiles.<name>]`（`codex --profile <name>` で切替。実験的） |
@@ -109,13 +109,13 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 
 | 項目 | Cursor | Claude Code | Codex |
 |------|--------|-------------|-------|
-| **定義形式** | Markdown + YAML frontmatter | Markdown + YAML frontmatter | `config.toml` の `[agents]` + `[agents.<role>]` |
-| **プロジェクトパス** | `.cursor/agents/`（互換: `.claude/agents/`, `.codex/agents/`） | `.claude/agents/` | -（config.toml で定義） |
-| **ユーザーパス** | `~/.cursor/agents/` | `~/.claude/agents/` | -（config.toml で定義） |
-| **frontmatter / 設定** | `name`, `description`, `model`, `readonly` | `name`, `description`, `model`, `effort`, `maxTurns`, `disallowedTools` | `agents.<role>.description`, `agents.<role>.config_file`, `agents.<role>.nickname_candidates` |
+| **定義形式** | Markdown + YAML frontmatter | Markdown + YAML frontmatter | standalone TOML files（`config.toml` の `[agents]` は `max_threads` 等のグローバル設定用） |
+| **プロジェクトパス** | `.cursor/agents/`（互換: `.claude/agents/`, `.codex/agents/`） | `.claude/agents/` | `.codex/agents/*.toml` |
+| **ユーザーパス** | `~/.cursor/agents/` | `~/.claude/agents/` | `~/.codex/agents/*.toml` |
+| **frontmatter / 設定** | `name`, `description`, `model`, `readonly` | `name`, `description`, `model`, `effort`, `maxTurns`, `disallowedTools` | `name`（必須）, `description`（必須）, `developer_instructions`（必須） |
 | **名前衝突時** | `.cursor/` が `.claude/` / `.codex/` より優先 | -（記載なし） | -（N/A） |
 | **同時実行制限** | -（記載なし） | -（記載なし） | `agents.max_threads`（既定 6） |
-| **ネスト深さ** | -（記載なし） | `context: fork` で別コンテキスト | `agents.max_depth`（既定 1、ルート深度 0） |
+| **ネスト深さ** | -（記載なし） | Agent tool で spawn 時に自動的に別コンテキスト（`context: fork` はスキルの frontmatter） | `agents.max_depth`（既定 1、ルート深度 0） |
 | **ジョブタイムアウト** | -（記載なし） | -（記載なし） | `agents.job_max_runtime_seconds`（既定 1800 秒） |
 | **Task tool との関係** | `description` が Task tool のヒントに表示 | `TaskCreated` / `TaskCompleted` フックイベント | `features.multi_agent` で `spawn_agent` 等を有効化 |
 
@@ -128,7 +128,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | **プラグインシステム** | -（VS Code 拡張機能を継承） | プラグインディレクトリ（skills, agents, hooks, MCP, LSP のバンドル） | プラグイン = スキル + apps の配布単位 |
 | **skills vs plugins** | -（N/A） | 個別スキル開発 → プラグインでバンドル配布 | スキルはローカル著者向け → プラグインで広く配布 |
 | **マーケットプレイス** | -（VS Code Marketplace） | `claude plugin install`。`enabledPlugins` / `extraKnownMarketplaces` | Codex マーケットプレイス（Build plugins ページ） |
-| **MCP との関係** | `.cursor/mcp.json` / `~/.cursor/mcp.json` で設定。stdio / SSE / Streamable HTTP | プラグイン内 `.mcp.json` or `plugin.json` インライン。有効化時に通常 MCP として統合 | `mcp_servers` config。プラグイン内 MCP は `agents/openai.yaml` の `dependencies.tools` で宣言 |
+| **MCP との関係** | `.cursor/mcp.json` / `~/.cursor/mcp.json` で設定。stdio / SSE / Streamable HTTP | プラグイン内 `.mcp.json` or `plugin.json` インライン。有効化時に通常 MCP として統合 | `mcp_servers` config。プラグインレベルは `.mcp.json` + manifest の `mcpServers`。スキルレベルは `agents/openai.yaml` の `dependencies.tools` |
 | **Third-party hooks** | `.claude/settings.json` の hooks を読み込み可能 | -（ネイティブ） | -（記載なし） |
 
 
@@ -144,7 +144,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 ### Claude Code
 
 - **CLAUDE.md は長さに関わらず全文ロード**: 他ツールと異なりハードなサイズ制限がない。ただし推奨は 200 行未満
-- **コンパクト後の生存ルール**: プロジェクトルート CLAUDE.md と unscoped rules はディスクから再注入。`paths` 付きルール・ネスト CLAUDE.md・スキル本文は再読みまで失われる
+- **コンパクト後の生存ルール**: プロジェクトルート CLAUDE.md・ユーザー CLAUDE.md・unscoped rules（推定）はディスクから再注入。スキル本文は直近の呼び出し分が自動 re-attach（5,000 tok/skill、合計 25,000 tok）。`paths` 付きルール・ネスト CLAUDE.md は再読みまで失われる
 - **スキルのトークンバジェット**: 唯一、具体的な数値が公式に開示されている（per-skill 5,000 / total 25,000 トークン、description は 250 文字切り詰め、コンテキストの 1% バジェット）
 - **settings.json の配列マージ**: 同一設定キーが複数スコープにある場合、配列系設定はマージ・重複除去される
 - **`CLAUDE_CONFIG_DIR`**: `~/.claude` の代替パスを環境変数で設定可能
@@ -156,7 +156,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 - **`project_doc_fallback_filenames`**: `AGENTS.md` 以外のファイル名も AGENTS.md として扱わせることが可能
 - **信頼レベル**: 信頼されていないプロジェクトでは `.codex/config.toml` が無視される
 - **スキルの `agents/openai.yaml`**: UI メタデータ・暗黙起動ポリシー・MCP 依存を宣言する Codex 固有のメタデータファイル
-- **`project_doc_max_bytes` の解釈**: 公式ドキュメント内で「連結合計の cap」と「ファイルあたりの cap」の両方の文言が存在し、解釈が一致しない
+- **`project_doc_max_bytes` の解釈**: AGENTS.md guide は combined size cap として明示。Config Reference は "Maximum bytes read … when building project instructions" とやや抽象的な表現だが、combined size cap と読むのが公式上もっとも直接的
 
 ## canonical/ との既存資産マッピング
 
@@ -167,18 +167,18 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | `canonical/codex/AGENTS.md` → `~/.codex/AGENTS.md` | Codex: グローバルスコープ `~/.codex/AGENTS.md` | 整合 | 公式の discovery に合致 |
 | `canonical/rules/*.md` → Cursor User Rules / Claude rules/ | Cursor: `.cursor/rules/`、Claude: `.claude/rules/` | 整合 | 両ツールとも rules/ ディレクトリをサポート |
 | `canonical/skills/*/SKILL.md` → 各ツール skills/ | Cursor: `.cursor/skills/`、Claude: `.claude/skills/`、Codex: `.agents/skills/` | **パス差異あり** | sync スクリプトで吸収済みだが、Codex は `.agents/skills/` が正式 |
-| `canonical/codex/README.md` の「rules は権限昇格専用」 | Codex: `requirements.toml` の `rules` は config-reference に存在するが詳細は未公開 | **未確認** | 公式ドキュメントでは Codex の「rules」機構の詳細は開示されていない |
+| `canonical/codex/README.md` の「rules は権限昇格専用」 | Codex: `requirements.toml` の `rules` は admin-enforced command rules として config-reference に公開済み | **出典不明** | 「権限昇格専用」という用途限定は公式に記載なし。admin-enforced command rules として公開されているが、用途の限定は運用判断 |
 | `canonical/codex/AGENTS.md` の「正本は canonical/rules/*.md（8ファイル）」 | Codex: AGENTS.md のサイズ制限 32 KiB | **要注意** | 8ファイルの rules を参照チェーンで辿らせる設計が 32 KiB 制約に収まるか要検証 |
-| `canonical/agents/*.md` → Codex `.toml` 生成 | Codex: `[agents.<role>]` は config.toml で定義 | **形式差異** | Claude/Cursor は MD 形式、Codex は TOML。sync-codex.sh の .toml 生成が吸収 |
+| `canonical/agents/*.md` → Codex `.toml` 生成 | Codex: `.codex/agents/*.toml` / `~/.codex/agents/*.toml` で standalone TOML files として定義 | **形式差異** | Claude/Cursor は MD 形式、Codex は standalone TOML。sync-codex.sh の .toml 生成が吸収 |
 
 ### 推測ベース記述の照合結果
 
 | canonical の記述 | 公式仕様との照合 | 判定 |
 |------------------|------------------|------|
-| 「Codex の rules は権限昇格コマンド制御専用として扱う」（`canonical/codex/README.md` L16） | Codex の `requirements.toml` の `rules` は config-reference に存在するが、用途の限定については公式ドキュメントに**記載なし** | **出典不明** — 運用判断としては妥当だが公式根拠は確認できず |
+| 「Codex の rules は権限昇格コマンド制御専用として扱う」（`canonical/codex/README.md` L16） | Codex の `requirements.toml` の `rules` は admin-enforced command rules として config-reference に公開済みだが、「権限昇格専用」という用途限定は公式に**記載なし** | **出典不明** — 運用判断としては妥当だが公式根拠は確認できず |
 | 「正本は canonical/rules/*.md（8ファイル）」（`canonical/codex/AGENTS.md` L7） | 現在 canonical/rules/ は 11 ファイル | **ファイル数の不一致** — 記述更新が必要 |
 | 「Codex に任意 Markdown コマンドがそのまま使えない」（`canonical/codex/commands-registry/README.md`） | Codex: スキルの `/skills` や `$` 呼び出しが存在。commands/ ディレクトリのネイティブ対応は**記載なし** | **概ね正確** — Codex にはスキル経由の呼び出しはあるが Cursor/Claude のような commands/ ディレクトリのネイティブ対応は確認できない |
-| 「~/.codex/agents/*.toml は生成物」（`canonical/codex/AGENTS.md` L51） | Codex: エージェントは `config.toml` の `[agents.<role>]` で定義 | **要確認** — 公式は config.toml 内での定義を示しており、独立 `.toml` ファイルについての公式記述は確認できない |
+| 「~/.codex/agents/*.toml は生成物」（`canonical/codex/AGENTS.md` L51） | Codex: `.codex/agents/*.toml` / `~/.codex/agents/*.toml` で standalone TOML files として定義（公式 Subagents ページに記載） | **概ね正確** — 公式が standalone TOML を一次表現としているため、sync-codex.sh での生成は妥当 |
 
 ## canonical への設計指針（Phase 1 診断への入力）
 
@@ -215,7 +215,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 | ツール | コンパクト後の再注入 | 失われるもの |
 |--------|----------------------|-------------|
 | **Cursor** | 記載なし | 記載なし |
-| **Claude Code** | プロジェクトルート CLAUDE.md + unscoped rules を再注入 | `paths` 付きルール、ネスト CLAUDE.md、スキル本文（5,000/25,000 で再付与） |
+| **Claude Code** | プロジェクトルート CLAUDE.md + ユーザー CLAUDE.md を再注入（公式確認）。unscoped rules も再注入（推定）。スキル本文は自動 re-attach（5,000/25,000 tok） | `paths` 付きルール、ネスト CLAUDE.md |
 | **Codex** | 記載なし（セッション最初のターンで注入とのみ記載） | 記載なし |
 
 **設計指針**: canonical/rules/ の最も重要なルールは `paths` なし（unscoped）にして、Claude Code のコンパクト後も生存するようにする。パス限定ルールは「あると便利だが失われても致命的でない」ものに限る。
