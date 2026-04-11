@@ -23,6 +23,7 @@ Options:
   --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
   --cursor-only  Cursor のみ実行
   --cursor-model MODEL  Cursor で使用するモデル（デフォルト: auto）
+  --claude-web   Claude Code に WebFetch を許可（-p モードで外部URL参照を要するタスク用）
   --prev DIR     前回の so-compare 出力ディレクトリ
                  回答をプロンプトに追記（上限: PREV_MAX_BYTES, デフォルト4000）
   -h, --help     このヘルプを表示
@@ -52,6 +53,7 @@ WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
 RUN_CURSOR=false
+CLAUDE_WEB=false
 CURSOR_MODEL="${SO_CURSOR_MODEL:-auto}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
@@ -127,6 +129,10 @@ while [[ $# -gt 0 ]]; do
             require_arg "$1" "${2:-}"
             CURSOR_MODEL="$2"
             shift 2
+            ;;
+        --claude-web)
+            CLAUDE_WEB=true
+            shift
             ;;
         --prev)
             require_arg "$1" "${2:-}"
@@ -327,6 +333,10 @@ run_claude() {
         claude_args+=("--add-dir" "$WORKSPACE")
     fi
     claude_args+=("--output-format" "text")
+    if $CLAUDE_WEB; then
+        # -p (print) モードは対話的承認ができないため、WebFetch を明示許可する必要がある
+        claude_args+=("--allowed-tools=WebFetch")
+    fi
 
     if timeout "$tool_timeout" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
         > "$OUT_DIR/claude-stdout.txt" 2> "$OUT_DIR/claude-stderr.txt"; then
