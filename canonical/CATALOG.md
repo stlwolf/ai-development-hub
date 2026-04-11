@@ -34,13 +34,14 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 |---------|--------|------|
 | Issue → Branch → Worktree → Finish | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` → `branch-finish` | タスク開始〜完了の全フロー |
 
-## Commands (6)
+## Commands (7)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
 | peer-ai-review | 修正タスクや設計判断に対して、Codex CLIとClaude Codeにピアレビューを依頼し、3者合意に至るまでイテレーションを繰り返す | `commands/verification/peer-ai-review.md` | skill: so-compare, skill: persistent-exploration, skill: adversarial-review, skill: implementer-contract, cli: so-compare, command: pr-review-checklist |
 | arena-perspectives | 同一プロンプトを複数モデルに並列投入し、モデルごとの回答を並べて表示する | `commands/verification/arena-perspectives.md` | skill: arena-compare, skill: persistent-exploration, cli: arena-compare |
 | issue-debug | Issue / Sentryエラーの調査・分析・修正を行う | `commands/investigation/issue-debug.md` | skill: sentry-investigation, skill: persistent-exploration, skill: branch-naming, skill: conventional-commits, skill: pr-conventions, command: arena-perspectives, command: peer-ai-review |
+| research-intake | 外部記事/論文のURL起点で、本質抽出→既存資産マッピング→統合判断→Issue化/ドキュメント化を行う | `commands/investigation/research-intake.md` | skill: oss-research-session, skill: issue-conventions, skill: markdown-conventions |
 | pr-review | 指定したPR（またはレビュー依頼が来ているPR）を一緒にレビューする | `commands/review/pr-review.md` | command: pr-review-checklist |
 | pr-review-checklist | レビュー対象のdiffをチェック項目に照らして検証し、問題があれば修正を提案する | `commands/review/pr-review-checklist.md` | — |
 | copilot-review-response | 未返信の Copilot レビューコメントのみ対象に、対応可否・修正・対応した／しないの返信まで行う | `commands/review/copilot-review-response.md` | — |
