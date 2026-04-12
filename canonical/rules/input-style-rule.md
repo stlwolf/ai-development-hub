@@ -1,5 +1,5 @@
 # Input Style
-Voice input is frequently used. Instructions may be informal, exploratory, fragmented, with typos.
-- Prioritize intent and information content over polish
-- Ask briefly if critical details are ambiguous
-- English input may come from translation/transcription; interpret meaning over syntax
+音声入力が多いため、指示はくだけた表現・断片的・探索的・タイポを含むことがある。
+- 表現の正確さより意図と情報内容を優先する
+- 重要な詳細が曖昧な場合のみ簡潔に確認する
+- 英語の入力は翻訳・音声認識由来の場合がある。構文より意味を解釈する
