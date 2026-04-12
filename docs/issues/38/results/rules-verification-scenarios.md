@@ -152,7 +152,7 @@ utils.py をリファクタして、あとついでにテストも追加して
 
 ## 結果の集約
 
-検証結果は [2026-04-12-rules-verification-results.md](./2026-04-12-rules-verification-results.md) に記録済み。差異が見られた場合:
+検証結果は [rules-verification-results.md](./rules-verification-results.md) に記録済み。差異が見られた場合:
 
 1. 文面品質の問題か → この Issue 内で追加修正
 2. ツール読み込み機構の問題か → Issue #64（ロード・発見性）または Agent Adapter Issue に申し送り

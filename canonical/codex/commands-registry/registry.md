@@ -1,7 +1,9 @@
 # Registry
 
 - `/issue-debug` -> `canonical/commands/investigation/issue-debug.md`
+- `/research-intake` -> `canonical/commands/investigation/research-intake.md`
 - `/pr-review` -> `canonical/commands/review/pr-review.md`
+- `/pr-review-checklist` -> `canonical/commands/review/pr-review-checklist.md`
 - `/copilot-review-response` -> `canonical/commands/review/copilot-review-response.md`
 - `/peer-ai-review` -> `canonical/commands/verification/peer-ai-review.md`
 - `/arena-perspectives` -> `canonical/commands/verification/arena-perspectives.md`

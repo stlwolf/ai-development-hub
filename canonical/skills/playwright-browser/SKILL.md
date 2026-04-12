@@ -1,6 +1,6 @@
 ---
 name: playwright-browser
-description: Playwright MCPでブラウザ操作・DOM調査・UI検証を行う。ブラウザ操作、E2Eテスト、画面確認、UI検証、DOM調査、ネットワーク確認時に使用する。built-inブラウザではなくPlaywright MCPツール（user-playwright-mcp）を優先する。
+description: Playwright MCPでブラウザ操作・DOM調査・UI検証を行う。ブラウザ操作、E2Eテスト、画面確認、UI検証、DOM調査、ネットワーク確認時に使用する。
 ---
 
 # Playwright MCP ブラウザ操作

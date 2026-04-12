@@ -17,7 +17,7 @@ scenarios: 2026-04-12-rules-verification-scenarios.md
 - sync 済み（静的整理 [PR #65](https://github.com/stlwolf/ai-development-hub/pull/65) マージ後）
 - 各ツールの1セッション内で3シナリオを連続実行（シナリオ間のリセットなし）
 - Plan mode 等の明示指定なし（素のルール適用のみで観察）
-- シナリオ定義: [2026-04-12-rules-verification-scenarios.md](./2026-04-12-rules-verification-scenarios.md)
+- シナリオ定義: [rules-verification-scenarios.md](./rules-verification-scenarios.md)
 
 ## シナリオ別結果
 
