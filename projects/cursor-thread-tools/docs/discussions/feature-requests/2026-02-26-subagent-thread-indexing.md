@@ -114,3 +114,11 @@ if (toolCallField) {
 | 提案3: 同時エクスポート | 低（提案2 ができれば追加コスト小） | 高（ワンコマンドで完結） |
 
 提案1 は独立して先に実装可能。提案2/3 は tool_call protobuf の調査結果に依存する。
+
+## 追記（2026-04-12）
+
+本文（2026-02-26 時点の議論）はそのまま残し、このセクションのみ後から足したメモとする。
+
+- **GitHub Issue**: このドキュメントを単体で追う Issue は、追記時点では未作成。
+- **観測**: サブエージェント系スレッドが一覧には出る一方、`cursor-thread-tools` の export で「Could not find conversation state for this thread. The thread may use a newer data format not yet supported.」となるケースがある。`composerData` のメタデータはあるが `conversationState` の取得に失敗している可能性が高い（推測）。
+- **本文との関係**: 上記は「技術的な調査ポイント」（tool_call の内部、`conversationState` / KV の実データ形式）と同じ調査レーンで扱うと重複が少ない。索引付きエクスポート（提案2/3）に着手する前に、該当スレッドの `state.vscdb` 行を一度確認するのがよい。
