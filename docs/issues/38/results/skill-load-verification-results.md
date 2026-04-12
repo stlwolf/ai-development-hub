@@ -6,9 +6,9 @@ tags: [canonical, skills, commands, cross-agent, phase1, verification]
 related_issues:
   - https://github.com/stlwolf/ai-development-hub/issues/64
   - https://github.com/stlwolf/ai-development-hub/issues/38
-static_analysis: 2026-04-12-skill-load-static-analysis.md
-test_cases: 2026-04-12-skill-load-test-cases.md
-runbook: 2026-04-12-skill-load-test-runbook.md
+static_analysis: skill-load-static-analysis.md
+test_cases: skill-load-test-cases.md
+runbook: skill-load-test-runbook.md
 ---
 
 # Issue #64: スキル/コマンド ロード検証 — 動的検証結果
@@ -20,7 +20,7 @@ runbook: 2026-04-12-skill-load-test-runbook.md
 - 各ツール 1 セッション内で 13 プロンプトを連続実行（グループ間のリセットなし）
 - Cursor のみ 1 回実行。Claude Code は Group A を 2 回実行（1 回目全滅のため）。Codex は 4 セッション（Group ごと）
 - 判定基準: SKILL.md ファイルの実際の読み込み有無（二値判定）
-- テストケース定義: [2026-04-12-skill-load-test-cases.md](./2026-04-12-skill-load-test-cases.md)
+- テストケース定義: [skill-load-test-cases.md](./skill-load-test-cases.md)
 
 ### ツール・モデル情報
 

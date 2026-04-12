@@ -7,7 +7,7 @@ related_issues:
   - https://github.com/stlwolf/ai-development-hub/issues/64
   - https://github.com/stlwolf/ai-development-hub/issues/38
 related_docs:
-  - docs/plans/epic#38/2026-04-12-skill-load-static-analysis.md
+  - docs/issues/38/results/skill-load-static-analysis.md
 ---
 
 # Issue #64: スキル/コマンド ロード検証 — テストケース定義

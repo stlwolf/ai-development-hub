@@ -22,10 +22,10 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/pull/65"
     reason: "静的整理 PR（マージ済み）"
   - type: deliverable
-    ref: "docs/plans/epic#38/2026-04-12-rules-verification-scenarios.md"
+    ref: "docs/issues/38/results/rules-verification-scenarios.md"
     reason: "動的検証シナリオ定義"
   - type: deliverable
-    ref: "docs/plans/epic#38/2026-04-12-rules-verification-results.md"
+    ref: "docs/issues/38/results/rules-verification-results.md"
     reason: "動的検証結果"
 tags: [canonical, cross-agent, phase1, diagnosis, rules]
 ---
@@ -107,8 +107,8 @@ tags: [canonical, cross-agent, phase1, diagnosis, rules]
 ## 成果物
 
 - [x] [PR #65](https://github.com/stlwolf/ai-development-hub/pull/65): 静的整理（マージ済み）
-- [x] [検証シナリオ](./2026-04-12-rules-verification-scenarios.md): 3シナリオ + 検証用プロジェクト仕様
-- [x] [検証結果](./2026-04-12-rules-verification-results.md): 3ツール × 3シナリオの結果 + findings + 到達度推定
+- [x] [検証シナリオ](../results/rules-verification-scenarios.md): 3シナリオ + 検証用プロジェクト仕様
+- [x] [検証結果](../results/rules-verification-results.md): 3ツール × 3シナリオの結果 + findings + 到達度推定
 
 ## 完了条件
 
@@ -129,4 +129,4 @@ tags: [canonical, cross-agent, phase1, diagnosis, rules]
 5. **「計画フェーズ」文言変更の影響可能性**
 6. **ルール（文書）の強制力には上限がある**: 到達度は平均 60-70%
 
-詳細は [検証結果](./2026-04-12-rules-verification-results.md) を参照。
+詳細は [検証結果](../results/rules-verification-results.md) を参照。
