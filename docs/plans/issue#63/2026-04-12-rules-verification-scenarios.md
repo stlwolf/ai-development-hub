@@ -1,12 +1,13 @@
 ---
 title: "Phase 1 Core Canonical: ルール群の動的検証シナリオ"
 date: 2026-04-12
-status: draft
+status: completed
 tags: [canonical, rules, verification, cross-agent]
 related_issues:
   - https://github.com/stlwolf/ai-development-hub/issues/63
   - https://github.com/stlwolf/ai-development-hub/issues/38
-next_step: 3ツールで実行し結果を記録
+next_step: Phase 2 での改善提案に活用
+results: 2026-04-12-rules-verification-results.md
 ---
 
 # Phase 1 Core Canonical: ルール群の動的検証シナリオ
@@ -151,7 +152,7 @@ utils.py をリファクタして、あとついでにテストも追加して
 
 ## 結果の集約
 
-検証完了後、結果を Issue #63 にコメントとして記録する。差異が見られた場合:
+検証結果は [2026-04-12-rules-verification-results.md](./2026-04-12-rules-verification-results.md) に記録済み。差異が見られた場合:
 
 1. 文面品質の問題か → この Issue 内で追加修正
 2. ツール読み込み機構の問題か → Issue #64（ロード・発見性）または Agent Adapter Issue に申し送り
