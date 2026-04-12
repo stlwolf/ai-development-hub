@@ -13,10 +13,10 @@ related:
     ref: "docs/research/2026-04-02-canonical-cross-agent-optimization-framework.md"
     reason: "基準文書: 2x3 マトリクス・判定ルール・実行順序"
   - type: source_material
-    ref: "docs/plans/issue#63/2026-04-12-rules-verification-results.md"
+    ref: "docs/plans/epic#38/2026-04-12-rules-verification-results.md"
     reason: "Phase 1 動的検証結果（3ツール × 3シナリオ）"
   - type: source_material
-    ref: "docs/plans/issue#63/2026-04-12-rules-verification-scenarios.md"
+    ref: "docs/plans/epic#38/2026-04-12-rules-verification-scenarios.md"
     reason: "Phase 1 動的検証シナリオ定義"
   - type: source_material
     ref: "docs/research/2026-04-12-cross-agent-rules-skills-config-survey.md"
@@ -87,7 +87,7 @@ Phase 2 に入る前に確認・完了すべき項目:
 
 - [ ] [#64](https://github.com/stlwolf/ai-development-hub/issues/64)（スキル/コマンドロード検証）の完了 or 並行判断
 - [ ] `canonical/rules/` の最新状態の確認（PR #65 マージ後の変更有無）
-- [ ] Phase 1 動的検証結果の再確認: `docs/plans/issue#63/2026-04-12-rules-verification-results.md`
+- [ ] Phase 1 動的検証結果の再確認: `docs/plans/epic#38/2026-04-12-rules-verification-results.md`
 - [ ] Phase 0 の設計制約の再確認: Codex 32 KiB / Claude Code コンパクト生存 / Cursor alwaysApply
 
 ## 実装計画
@@ -206,7 +206,7 @@ Epic #38 の rulesync 調査で抽出した設計パターンの適用:
 
 #### Step 9: 改修案の動的検証
 
-Phase 1 で使用した3シナリオ（`docs/plans/issue#63/2026-04-12-rules-verification-scenarios.md`）を改修適用後に再実行し、遵守度の変化を測定する。
+Phase 1 で使用した3シナリオ（`docs/plans/epic#38/2026-04-12-rules-verification-scenarios.md`）を改修適用後に再実行し、遵守度の変化を測定する。
 
 - 検証環境は Phase 1 と同一（`/tmp/rules-test-project/`）
 - シナリオ追加が必要な場合は設計してから実行
@@ -257,7 +257,7 @@ Stage 1-3 の確定した改修案を、ファイル単位またはテーマ単�
 
 - [基準文書](docs/research/2026-04-02-canonical-cross-agent-optimization-framework.md): 2x3 マトリクス・判定ルール・実行順序
 - [Phase 0 調査](docs/research/2026-04-12-cross-agent-rules-skills-config-survey.md): 3ツール仕様比較
-- [Phase 1 検証結果](docs/plans/issue#63/2026-04-12-rules-verification-results.md): 動的検証の findings
+- [Phase 1 検証結果](docs/plans/epic#38/2026-04-12-rules-verification-results.md): 動的検証の findings
 - [ハーネス現状評価](docs/research/harness-engineering/current-state-assessment.md): ギャップ分析
 - [Epic #38 コメント](https://github.com/stlwolf/ai-development-hub/issues/38): rulesync 知見・Codex 権限メモ・Phase 1 議論
 - [#24](https://github.com/stlwolf/ai-development-hub/issues/24): フック拡充エピック
