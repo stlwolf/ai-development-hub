@@ -27,9 +27,12 @@ related:
   - type: completed_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/63"
     reason: "Phase 1 Core Canonical（close 済み）"
-  - type: open_issue
+  - type: completed_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/64"
-    reason: "Phase 1 スキル/コマンドロード検証（未着手）"
+    reason: "Phase 1 スキル/コマンドロード検証（完了: PR #66）"
+  - type: source_material
+    ref: "docs/issues/38/results/skill-load-verification-results.md"
+    reason: "#64 動的検証結果（3ツール暗黙起動ロード率 + 原因分析 + Phase 2 申し送り）"
 tags: [canonical, cross-agent, phase2, proposals]
 ---
 
@@ -49,13 +52,14 @@ Phase 2 は基準文書の定義に従い、Phase 1 の findings をもとに「
 4. **例外条件はモデルに「抜け道」を提供する**: implementation-gate の軽微修正例外を3ツールとも自ら援用
 5. **「計画フェーズ」文言がツール側の Plan mode トリガーを弱めた可能性がある**
 
+6. **スキルのロード率はツール間で大きく異なる**（#64）: Cursor 92%, Codex 92%, Claude Code 23%。明示起動（`/` 等）では全ツール問題なし
+7. **Claude Code は「認識→ロード」に構造的ギャップがある**（#64）: スキルの存在を認識しつつ Skill ツール呼び出しに至らない。根本原因は Minimal Scope の WHAT/HOW 混同（スキルロードを「余計な手間」と解釈）
+8. **Codex は skill-first ルールに機械的に従う**（#64）: AGENTS.md 経由のグローバルガードレールが有効に機能。ただし「ロードはするが制御はされない」（Default mode）という別の問題がある
+
 ### Phase 1 で未実施の診断
 
-- [#64](https://github.com/stlwolf/ai-development-hub/issues/64): スキル/コマンドのロード・発見性検証（Phase 1 × Core Canonical の残）
 - Phase 1 × Agent Adapter: 各ツール展開先の配置・メタデータ診断、Codex 権限レイヤー設計
 - Automation Surface の診断: hooks / sync / mcp の非対称診断
-
-Phase 2 着手前に #64 を完了させるか、Phase 2 と並行するかは判断が必要。
 
 ## 目的
 
@@ -85,7 +89,7 @@ Phase 1 の申し送り 6 項目を改修提案レベルに具体化する:
 
 Phase 2 に入る前に確認・完了すべき項目:
 
-- [ ] [#64](https://github.com/stlwolf/ai-development-hub/issues/64)（スキル/コマンドロード検証）の完了 or 並行判断
+- [x] [#64](https://github.com/stlwolf/ai-development-hub/issues/64)（スキル/コマンドロード検証）完了（[PR #66](https://github.com/stlwolf/ai-development-hub/pull/66)）
 - [ ] `canonical/rules/` の最新状態の確認（PR #65 マージ後の変更有無）
 - [ ] Phase 1 動的検証結果の再確認: `docs/issues/38/results/rules-verification-results.md`
 - [ ] Phase 0 の設計制約の再確認: Codex 32 KiB / Claude Code コンパクト生存 / Cursor alwaysApply
@@ -125,13 +129,24 @@ Phase 1 findings のうち、正本で解決すべきものを minimal diff で�
 
 **判定**: Core Canonical のツール非依存性を維持する方針上、B（Agent Adapter）が筋。
 
-#### Step 3: Minimal Scope の遵守度差異分析
+#### Step 3: Minimal Scope の解釈曖昧性の解消 + WHAT/HOW 分離
 
-**問題**: Claude Code が最も厳格で「ついで」を拒否、Cursor は寛容に含める。ルール文面の問題か、モデル/ツール特性差かの切り分けが必要。
+**問題（ルール検証 #63）**: Claude Code が最も厳格で「ついで」を拒否、Cursor は寛容に含める。ルール文面の問題か、モデル/ツール特性差かの切り分けが必要。
+
+**問題（スキルロード検証 #64）**: Minimal Scope の WHAT/HOW 混同。現状の「依頼範囲のみ対応。『ついで』の変更はしない」は**対象スコープ（WHAT）**の制約だが、Claude Code が**手段（HOW）**にまで適用し、スキルロードを「余計な手間」と判断している。
+
+**検討する選択肢**:
+
+| 選択肢 | 内容 | リスク |
+|--------|------|--------|
+| A. WHAT/HOW 分離の明文化 | Minimal Scope に「対象スコープの制約であり、手段の選択（スキル参照・一次情報調査）を省略する根拠にはならない」を補足 | 文面追加のみで Claude Code の行動が変わるか未知 |
+| B. skill-first ルールの強化 | 「操作→スキル」マッピングテーブルの追加 + 否定形制約（「対応スキルが存在する操作をスキルロードなしで実行した場合、完了前にスキルを参照すること」） | マッピングの保守コスト |
+| C. A + B の段階的アプローチ | まず A を適用し、動的検証で改善しなければ B に進む | 二段階のコスト |
 
 **アプローチ**:
-- 同一プロンプトで文面微調整（「ついで」の強調度変更）による感度分析
-- Claude Code の厳格さがルールの意図に合致しているなら、文面強化ではなく Cursor / Codex 側の adapter で補完
+- WHAT/HOW 分離の明文化（A）は Core Canonical で対応
+- マッピングテーブル（B）は保守コストを考慮し Agent Adapter での対応も検討
+- 遵守度差異の感度分析は引き続き実施
 
 !! GATE: Stage 1 の各 Step の選択肢を決定してから Stage 2 に進む
 
@@ -162,13 +177,25 @@ Step 2 で B を採用した場合、各ツールの adapter に以下を追加:
 - **Claude Code**: `.claude/rules/` 内の adapter ルールで Plan mode トリガーの補助
 - **Codex**: AGENTS.md 内に `計画フェーズ → plan collaboration_mode での応答を意味する` を明記
 
-#### Step 6: スキル/コマンドの Codex 向け発見性改善
+#### Step 6: スキル/コマンドの発見性改善（#64 findings 反映）
 
-[#64](https://github.com/stlwolf/ai-development-hub/issues/64) の結果に依存。ロード検証の結果を踏まえて:
+[#64](https://github.com/stlwolf/ai-development-hub/issues/64) の結果（[検証結果](../results/skill-load-verification-results.md)）を踏まえた改善:
 
-- Codex が AGENTS.md 経由でスキルを発見できるか
-- rulesync の Simulated Features パターン（AGENTS.md にコマンド・スキルを命令として埋め込む）の適用可否
-- Epic #38 コメントの既知問題（コミットログ英語化、リンク形式の不備等）への対処
+**Codex（ロード率 92% — 想定以上に良好）**:
+- `agents/openai.yaml` が全 19 スキルで不在。現状は Progressive disclosure のデフォルト挙動で十分だが、再現性向上のため導入を検討
+- AGENTS.md の Context Strategy に個別スキル名→適用場面のマッピングを追加
+- description の質的改善（Grade B/C スキル: so-compare, arena-compare, oss-research-session, persistent-exploration）
+
+**Claude Code（ロード率 23% — 構造的課題）**:
+- 「認識→ロード」ギャップの解消は Step 3 の WHAT/HOW 分離 + skill-first 強化が主軸
+- description 改善だけでは解決しない（エージェント自身が「候補として認識したが使わなかった」と報告）
+- hook による機械的強制（スキル参照痕跡のチェック）の検討は Step 7 と連携
+
+**Cursor（ロード率 92%）**:
+- question-driven-design のみ NO_LOAD。description のツール固有語は PR #66 で修正済み
+- 追加対応は不要の見込み
+
+**共通**: description からのツール固有語除去は PR #66 で 5 件対応済み。残りの Grade B/C スキルは Phase 2 で検討
 
 !! GATE: Stage 2 の各 Step の方針をレビューしてから Stage 3 に進む
 
@@ -243,7 +270,7 @@ Stage 1-3 の確定した改修案を、ファイル単位またはテーマ単�
 |--------|------|------|
 | implementation-gate の文面強化だけでは効かない | 到達度が変わらず Phase 3（フック層）に持ち越し | Step 1 で段階的アプローチ（D）を採用し、検証で判断 |
 | Codex の Default mode が adapter でも制御不能 | Codex のみ到達度が低いまま | 権限レイヤー + collaboration_mode 強制を合わせて検証。最悪はオーケストレーション層（#19）依存 |
-| #64 の結果が Stage 2 の前提を変える | Step 6 の設計やり直し | #64 を先行 or 並行で進め、結果を Stage 2 GATE で統合 |
+| ~~#64 の結果が Stage 2 の前提を変える~~ | ~~Step 6 の設計やり直し~~ | **解消**: #64 完了（PR #66）。findings は Step 3・Step 6 に反映済み |
 | フック基盤が3ツールで非対称 | Step 7 の適用範囲が Cursor に偏る | 共通で使える仕組み（sync --check 等）を優先し、ツール固有フックは adapter で個別対応 |
 
 ## スコープ外
