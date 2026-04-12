@@ -2,7 +2,7 @@
 title: Harness Engineering 現状評価・ギャップ分析
 date: 2026-04-01
 status: living
-last_reviewed: 2026-04-10
+last_reviewed: 2026-04-12
 depends:
   - projects/orchestration-research/synthesis/harness-engineering-mapping.md
   - projects/orchestration-research/synthesis/architecture-sketch.md
@@ -54,7 +54,7 @@ refs:
 |---|---|---|---|
 | **Generator + Evaluator 自動ループ** | 評価 → 再生成の自動サイクル | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 4-3 | Anthropic #3 |
 | **Ralph Loop（制御ループ）** | 失敗 → 再投入 → エスカレーション | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 全体 | arch-sketch §7 |
-| **多周制御（ループ終了条件）** | 宣言的な終了条件定義 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36) | rigg review.yaml |
+| **多周制御（ループ終了条件）** | 宣言的な終了条件定義 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36)（CLOSED: 仕様整理完了、実装は #19 依存） | rigg review.yaml |
 | **Pre-completion verification** | 完了宣言前の最終チェック | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-7 | implementation-principles |
 | **監査ログ** | 全イベントの事後分析基盤 | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-8 | Observability 文献 |
 | **Negative Knowledge ledger** | 失敗の構造化蓄積・自動注入 | **Issue なし** | Hashimoto #5, ideas/20260329 |
@@ -77,19 +77,19 @@ refs:
 | 監査ログ | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-8 | 全イベント記録 |
 | Generator + Evaluator ループ | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 4-3 | 検証ゲート v1 |
 | Ralph Loop | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) | MVP 全体構成 |
-| ゲート健全性チェック | [#22](https://github.com/stlwolf/ai-development-hub/issues/22) | exit code 分離 + 部分成功検知 |
-| 多周制御 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36) | ループ終了条件の仕様整理 |
+| ゲート健全性チェック | [#22](https://github.com/stlwolf/ai-development-hub/issues/22) CLOSED | exit code 分離（0/1/2）+ 部分成功検知 + タイムアウトリトライ 実装済み（`scripts/so-compare.sh`） |
+| 多周制御 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36) CLOSED | 終了条件・ループ不変条件の仕様文書化完了（`docs/specs/2026-04-06-discussion-multi-round-control-loop.md`）。実装は #19 依存 |
 
 ### 未カバー（Issue 化されていない）
 
 | # | 施策 | 接続先 | 備考 |
 |---|---|---|---|
-| G1 | **Negative Knowledge ledger** | #19 エンベロープ, ideas/20260329 Decision Ledger | 失敗蓄積 → 次サイクル注入 |
+| G1 | **Negative Knowledge ledger** | [#62](https://github.com/stlwolf/ai-development-hub/issues/62), #19 エンベロープ, ideas/20260329 Decision Ledger | 失敗蓄積 → 次サイクル注入 |
 | G2 | **Knowledge freshness** | Doc-gardening パイプライン | 規模が小さいうちは手動で十分 |
-| G3 | **State Semantics（NLAH）** | #26 メタデータ基盤, frontmatter 拡張 | `outputs:` フィールド追加 |
-| G4 | **Failure Taxonomy（NLAH）** | implementer-contract 拡張 | リカバリパス付き失敗分類 |
+| G3 | **State Semantics（NLAH）** | [#61](https://github.com/stlwolf/ai-development-hub/issues/61), #26 メタデータ基盤, frontmatter 拡張 | `outputs:` フィールド追加。#58 の3ツール比較でコンテキスト寿命差（Claude コンパクト後の再注入、Codex 32KiB 制限）が設計入力として整理済み |
+| G4 | **Failure Taxonomy（NLAH）** | [#60](https://github.com/stlwolf/ai-development-hub/issues/60), implementer-contract 拡張 | リカバリパス付き失敗分類 |
 | G5 | **Time budgeting** | implementer-contract 拡張 | `deadline:` フィールド追加 |
-| G6 | **Initializer Agent 完全版** | #24 H-4 拡張 or #19 ディスパッチャ | CATALOG.md → 関連リソース自動選択 |
+| G6 | **Initializer Agent 完全版** | #24 H-4 拡張 or #19 ディスパッチャ | CATALOG.md → 関連リソース自動選択。`question-driven-design` スキルは Plan 手前の質問整理であり自動選択とは別軸 |
 | G7 | **Orchestra（1ターン内の役割分離）** | #19 ディスパッチャ or サブエージェント戦略拡張 | conductor + specialist の分離。arena/SO とは異なる軸 |
 
 ## 6. NLAH 論文の位置づけ
@@ -151,6 +151,38 @@ canonical との関係:
 
 **新規ギャップ**: Orchestra（1ターン内の役割分離）。conductor + tool-specialist の温度差分離パターンは既存の並列モデル比較（arena/SO）とは異なる軸であり、G7 として追跡。
 
+## 9. 2026-04-12 再評価
+
+### 前回評価（2026-04-10）からの変化
+
+**Issue 完了**:
+
+- [#22](https://github.com/stlwolf/ai-development-hub/issues/22) CLOSED（2026-04-06）: `so-compare.sh` に exit code 分離（0/1/2）・部分成功検知・タイムアウトリトライを実装
+- [#36](https://github.com/stlwolf/ai-development-hub/issues/36) CLOSED（2026-04-06）: 多周制御の終了条件・ループ不変条件を仕様文書化（`docs/specs/2026-04-06-discussion-multi-round-control-loop.md`）。実装は #19 依存
+- [#58](https://github.com/stlwolf/ai-development-hub/issues/58) CLOSED（2026-04-11）: Cursor / Claude Code / Codex の3ツール比較調査完了（`docs/research/2026-04-12-cross-agent-rules-skills-config-survey.md`）。canonical 展開時のツール間差異（コンテキスト寿命・スキルロード・トークン制限）が整理された
+
+**canonical 資産の増分**（#37 起票後）:
+
+- スキル追加: `spec-card`、`worktrunk-worktrees`、`branch-finish`、`question-driven-design`
+- ルール追加: `careful-operations-rule`、`workflow-awareness-rule`
+- フック追加: `commit-gate`（Claude Code TaskCompleted 時の advisory 通知）
+- コマンド追加: `research-intake`
+
+### G1-G7 ギャップの現状
+
+全ギャップが引き続き Issue 未作成。ただし以下の文脈変化あり:
+
+- **G3（State Semantics）**: #58 の3ツール比較で、ツール間のコンテキスト寿命差（Claude のコンパクト後の再注入挙動、Codex の 32KiB 制限等）が明確化。frontmatter `outputs:` の設計時に考慮すべき制約が具体化された
+- **G6（Initializer Agent）**: `question-driven-design` スキルが追加されたが、これは Plan mode 手前の質問フェーズであり、CATALOG からの自動コンテキスト選択（G6 の本質）とは別軸
+
+### 評価更新
+
+§2 充足領域は canonical 資産の増分（4スキル・2ルール・1フック・1コマンド）により強化されているが、カテゴリ移動が必要なレベルの変化ではない。§3 部分的領域・§4 未着手領域の構造は前回評価から変化なし。
+
+最大のギャップ（制御ループの不在）は依然として [#19](https://github.com/stlwolf/ai-development-hub/issues/19) に依存。#22/#36 の完了により、制御ループの「入力層」（exit code 契約・終了条件仕様）は整備されたが、ループ本体は未着手。
+
+#38 Phase 0（#58）の成果はハーネス評価の G3 に直接的な設計入力を提供する。#38 Phase 1（Core Canonical 診断）が進めば、canonical の品質向上を通じてハーネス全体の基盤が強化される。
+
 ## 参照
 
 - [`harness-engineering-mapping.md`](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) — ハーネス概念と自設計の対応表（本文書の基盤）
@@ -162,6 +194,8 @@ canonical との関係:
 - [#24](https://github.com/stlwolf/ai-development-hub/issues/24) — フック拡充エピック
 - [#22](https://github.com/stlwolf/ai-development-hub/issues/22) / [#35](https://github.com/stlwolf/ai-development-hub/issues/35) / [#36](https://github.com/stlwolf/ai-development-hub/issues/36) — so-compare 改善系
 - [Epic #37](https://github.com/stlwolf/ai-development-hub/issues/37) — Harness Engineering 基盤整備（本文書のギャップ追跡先）
+- [Epic #38](https://github.com/stlwolf/ai-development-hub/issues/38) — canonical cross-agent optimization
+- [#58](https://github.com/stlwolf/ai-development-hub/issues/58) — 3ツール比較調査（`docs/research/2026-04-12-cross-agent-rules-skills-config-survey.md`）
 - [NLAH 論文](https://arxiv.org/abs/2603.25723) — Natural-Language Agent Harnesses
 - [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench) — 27Bモデルでハーネス設計のみで SWE-bench Verified 74.8%（2026-04）
 - [CADDi 枠組みから始めよう](https://caddi.tech/start-harness-engineering-with-framework) — 枠組みファーストによるハーネス整備ハードル低減（2026-04）
