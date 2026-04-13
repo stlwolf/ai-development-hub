@@ -1,6 +1,6 @@
 # Execution Policy
-- read-only → 変更系 の順で進める
-- コマンドはユーザーがそのまま実行可能なコードブロックで出力する
-- プラン実行時、プラン内の gate/checkpoint/review 指示は実装ステップと同列の TODO 項目として登録すること。実装ステップの間に挿入し、前のステップ完了後・次のステップ開始前に実施する
-- 自ら確定的に提示した実行項目（test plan、検証ステップ、確認事項等）は、提示した時点で実行義務が発生する。実行せずに次のステップに進まない。実行不要と判断した場合は、理由を明示してから除外する
-- 実行中に想定外の問題が発生したら、押し続けずに止まって再計画する
+- Progress read-only first, then mutating operations.
+- Present commands in copy-pasteable code blocks.
+- When executing a plan, register gates/checkpoints/reviews as TODO items interleaved between implementation steps. Execute each before proceeding to the next step.
+- Any item you explicitly committed to (test plan, verification step, confirmation check) becomes an execution obligation. Do not skip it. To drop it, state the reason first.
+- If an unexpected issue arises during execution, stop and re-plan instead of pushing through.

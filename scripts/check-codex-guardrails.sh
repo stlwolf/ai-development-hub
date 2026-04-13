@@ -73,8 +73,11 @@ main() {
     # subagent-strategy-rule.md
     require_pattern "Subagent Strategy" "subagent-strategy-rule"
 
-    # implementation-gate-rule.md (Decision Pacing の中で反映)
-    require_pattern "実装着手前に方針確認" "implementation-gate-rule"
+    # implementation-gate-rule.md
+    require_pattern "planning phase" "implementation-gate-rule"
+
+    # skill-first-operations-rule.md
+    require_pattern "Skill-First" "skill-first-operations-rule"
 
     if [[ "$missing_count" -gt 0 ]]; then
         error "Guardrails check failed (${missing_count} missing pattern(s))"
