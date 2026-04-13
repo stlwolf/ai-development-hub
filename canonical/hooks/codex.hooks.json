@@ -11,6 +11,10 @@
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/block-force-push.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/cc-lint.sh"
           }
         ]
       }

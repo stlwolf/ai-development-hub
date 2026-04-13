@@ -9,6 +9,10 @@
       {
         "command": "$HOME/.cursor/hooks/block-force-push.sh",
         "failClosed": true
+      },
+      {
+        "command": "$HOME/.cursor/hooks/cc-lint.sh",
+        "failClosed": true
       }
     ]
   }
