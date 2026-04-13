@@ -14,6 +14,7 @@
 | 破壊コマンドブロック | `scripts/block-destructive.sh` | `rm -rf /`, `chmod -R 777 /`, `DROP TABLE` 等の破壊的コマンドをブロック |
 | force push ブロック | `scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
+| CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
 
 ## ツール別カバレッジ
 
@@ -22,6 +23,7 @@
 | 破壊コマンドブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | force push ブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | コミットゲート | — | `TaskCompleted` | — |
+| CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 
 ## block-destructive.sh
 
@@ -84,6 +86,36 @@
 ### 対象ツール
 
 Claude Code のみ。Cursor / Codex は `TaskCompleted` 相当のイベントを持たないため対象外。
+
+## cc-lint.sh
+
+`git commit -m "..."` のコミットメッセージが Conventional Commits 形式に準拠しているかチェックする。
+
+### チェック対象
+
+`git commit` コマンドで `-m` フラグを含むもの。`&&` チェーン内の `git commit` も抽出して検証する。
+
+### 許可される型
+
+`conventional-commits` スキル定義に準拠する13型:
+
+`feat`, `fix`, `ui`, `refactor`, `style`, `test`, `docs`, `revert`, `ci`, `infra`, `chore`, `local`, `wip`
+
+### CC 形式
+
+```
+<type>(<optional scope>): <description>
+```
+
+### allow されるケース
+
+- `-m` なし（エディタ起動）: `git commit`, `git commit --amend`
+- `--fixup=<sha>` / `--squash=<sha>`: 一時コミットのため無条件 allow
+- HEREDOC / コマンド置換を含むメッセージ: パース困難なため allow（保守的設計）
+
+### deny 時の出力
+
+フォーマット例と型リストを含むメッセージを出力する。
 
 ## 設定ファイル
 

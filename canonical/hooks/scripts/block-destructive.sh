@@ -4,12 +4,19 @@ set -euo pipefail
 SAFE_DIRS_RE='^(node_modules|dist|\.next|build|coverage|__pycache__|\.cache|tmp|\.turbo|\.parcel-cache)$'
 
 deny() {
-  jq -n --arg msg "$1" '{"permission":"deny","user_message":$msg}'
+  local msg="$1"
+  if [[ -n "${CURSOR_PROJECT_DIR:-}" || -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+    jq -n --arg msg "$msg" '{"permission":"deny","user_message":$msg}'
+  else
+    echo "$msg" >&2
+  fi
   exit 2
 }
 
 allow() {
-  echo '{"permission":"allow"}'
+  if [[ -n "${CURSOR_PROJECT_DIR:-}" || -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+    echo '{"permission":"allow"}'
+  fi
   exit 0
 }
 
