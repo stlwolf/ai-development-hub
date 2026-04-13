@@ -2,6 +2,11 @@
 
 `canonical/` 配下の全リソース一覧。AI がコンテキスト読み込みの起点に使うためのエントリポイント。
 
+## Language Convention
+
+- **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
+- **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
+
 ## Skills (19)
 
 | 名前 | 説明 | パス | depends |
@@ -57,19 +62,19 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 
 ## Rules (11)
 
-| 名前 | 説明 | パス |
-|------|------|------|
-| behavioral-rule | Evidence First、CLI Native、Safe Operations 等の行動原則 | `rules/behavioral-rule.md` |
-| careful-operations-rule | 破壊コマンドガードレール（禁止/要確認/例外の3層パターン表） | `rules/careful-operations-rule.md` |
-| decision-pacing-rule | 問題報告と対処判断を分離し、選択肢に「対処しない/保留」を含める | `rules/decision-pacing-rule.md` |
-| execution-policy-rule | read-only → 変更系の順序、gate/checkpoint の扱い | `rules/execution-policy-rule.md` |
-| implementation-gate-rule | コード変更前にPlan modeへの切り替えを提案する | `rules/implementation-gate-rule.md` |
-| implementation-principles-rule | hacky な修正を避け、根本原因に対処する | `rules/implementation-principles-rule.md` |
-| input-style-rule | 音声入力によるタイポ・断片的指示への対応方針 | `rules/input-style-rule.md` |
-| output-format-rule | 結論→根拠→手順→リスク→リンクの出力構造 | `rules/output-format-rule.md` |
-| skill-first-operations-rule | 定型的な開発操作はスキルに従う。操作前にスキル定義を確認 | `rules/skill-first-operations-rule.md` |
-| subagent-strategy-rule | サブエージェント活用方針、カスタムエージェント優先、1タスク1エージェント | `rules/subagent-strategy-rule.md` |
-| workflow-awareness-rule | GitHub Flow 採用。Issue 起点の作業はブランチ作成を自律的に開始 | `rules/workflow-awareness-rule.md` |
+| Name | Description | Path |
+|------|-------------|------|
+| behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns | `rules/behavioral-rule.md` |
+| careful-operations-rule | Destructive command guardrails — three-tier pattern table (blocked / requires confirmation / exceptions) | `rules/careful-operations-rule.md` |
+| decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
+| execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
+| implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
+| implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
+| input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
+| output-format-rule | Conclusion → evidence → steps → risks → links output structure | `rules/output-format-rule.md` |
+| skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
+| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract | `rules/subagent-strategy-rule.md` |
+| workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
 
 ## Hooks
 

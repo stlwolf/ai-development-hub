@@ -1,4 +1,4 @@
 # Implementation Principles
-- 修正がhackyに感じたら立ち止まり、根本原因に対処する方法を検討する
-- 完了前に「この変更で既存の動作を壊していないか」を自問する
-- 単純で明白な修正にはこの原則を過剰適用しない
+- If a fix feels hacky, stop and consider addressing the root cause.
+- Before finishing, ask: "Does this change break any existing behavior?"
+- Do not over-apply these principles to simple, obvious fixes.

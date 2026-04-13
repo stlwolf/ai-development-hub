@@ -1,15 +1,15 @@
 # Subagent Strategy
 
-## 基本方針
-- サブエージェント機能を積極的に活用し、メインコンテキストを綺麗に保つ
-- 調査・探索・並列分析はサブエージェントに委譲する
-- 1サブエージェント1タスクで集中させる
-- 実装タスク委譲時は `implementer-contract` スキルの返却契約（ステータス enum・報告フォーマット・self-review）に従わせる
+## Principles
+- Actively use subagents to keep the main context clean.
+- Delegate investigation, exploration, and parallel analysis to subagents.
+- One task per subagent — keep them focused.
+- When delegating implementation, enforce the `implementer-contract` skill (status enum, report format, self-review).
 
-## カスタムエージェント優先
-- タスク領域に特化したエージェントを汎用サブエージェントより優先する
-- タスクをサブエージェントに委譲する前に、カスタムエージェント定義にタスク領域に合致するものがないか確認する（プロジェクト配下・ユーザー配下の agents/ ディレクトリ）
-- 合致するカスタムエージェントがある場合、標準サブエージェントより優先して使う
-  - ツールがカスタムエージェントのネイティブ起動に対応していれば、それを使う
-  - ネイティブ起動が使えない場合は、定義ファイルを読み込んでサブエージェントの指示に全文注入し、カスタムエージェントのワークフロー・出力形式に従わせる
-- カスタムエージェントが該当しない場合のみ、標準サブエージェントをそのまま使う
+## Custom Agents First
+- Prefer domain-specific custom agents over generic subagents.
+- Before delegating, check project-level and user-level `agents/` directories for a matching custom agent.
+- If a match exists, use it over the standard subagent.
+  - Use the tool's native agent launch mechanism when available.
+  - Otherwise, read the definition file and inject its full content into the subagent prompt.
+- Fall back to standard subagents only when no custom agent matches.
