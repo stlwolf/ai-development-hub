@@ -1,3 +1,9 @@
+---
+description: Codex-specific guardrails. Not intended for Cursor sessions.
+globs: canonical/codex/AGENTS.md
+alwaysApply: false
+---
+
 # Codex Global Guardrails
 
 This file defines the behavioral guardrails applied to every Codex session.
