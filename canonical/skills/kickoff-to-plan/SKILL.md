@@ -1,6 +1,6 @@
 ---
 name: kickoff-to-plan
-description: Kickoff Documentを実行可能なプランに忠実変換する。省略・要約・gate省きを防止し、全セクション・全チェックボックス・全gateを漏れなくTODO項目に展開する。プラン作成時、TODO/タスクリスト生成時、キックオフからの変換時に使用する。
+description: Kickoff Documentを実行可能なプランに忠実変換する。省略・要約・gate省きを防止し、全セクション・全チェックボックス・全gateを漏れなくTODO項目に展開する。プラン作成時、TODO/タスクリスト生成時、キックオフから実行計画に変換するときに使用する。
 depends:
   - skill: adversarial-review
 ---
