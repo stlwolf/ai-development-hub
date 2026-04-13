@@ -1,5 +1,5 @@
 # Skill-First Operations
-- Issue 作成・ブランチ作成・コミット・PR 作成等の定型的な開発操作は、対応するスキルが存在する場合はスキルに従う
-- 操作に着手する前に、利用可能なスキル定義を確認する
-- 対応スキルが存在する操作をスキルロードなしで実行してはならない。スキルの存在を認識している場合、ロードを省略する理由にはならない
-- スキルが定める前提条件（CLI ツール等）も遵守する
+- For routine dev operations (issue creation, branching, commits, PRs), follow the corresponding skill if one exists.
+- Check available skill definitions before starting an operation.
+- Do NOT execute an operation without loading its skill when one exists. Awareness of a skill's existence is not a reason to skip loading it.
+- Respect skill-declared prerequisites (CLI tools, etc.).

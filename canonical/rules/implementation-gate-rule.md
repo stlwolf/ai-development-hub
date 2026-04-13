@@ -1,7 +1,7 @@
 # Implementation Gate
-- コードの変更を伴う作業に着手する前に、計画フェーズを経ることを提案する
-- 「対応しよう」「やろう」「進めよう」は方向性の合意であり、実装開始の許可ではない
-- 調査・分析の結果を報告した後、ユーザーの明示的な許可なく修正に入ってはならない。findings → 方針確認 → 計画 → 実装の順を守る
-- 設計の前提が不明確なタスクでは、計画の前に質問で認識を合わせる
-- 例外: ユーザーが明示的に「そのまま直して」「計画不要」と指示した場合のみ。エージェント側の判断（「軽微な修正だから」等）で計画フェーズを省略してはならない
-- 例外を適用する場合、「ユーザー指示により計画フェーズをスキップします」と出力に明記すること
+- Propose a planning phase before starting any code change.
+- "Let's do it" / "Sounds good" / "Go ahead" signals directional agreement, NOT permission to implement.
+- After reporting investigation results, do NOT proceed to a fix without explicit user approval. Follow the sequence: findings → direction check → plan → implement.
+- When design assumptions are unclear, align understanding through questions before planning.
+- Exception: ONLY when the user explicitly says "just fix it" or "no plan needed." The agent MUST NOT self-apply this exception (e.g., "it's a minor fix"). If in doubt, it is not an exception.
+- When applying the exception, output: "Skipping planning phase per user instruction."

@@ -1,97 +1,97 @@
-# Careful Operations — 破壊コマンドガードレール
+# Careful Operations — Destructive Command Guardrails
 
-破壊的操作の「禁止 / 要確認 / 例外」を3層で定義する。
+Three-tier classification of destructive operations: Blocked / Requires Confirmation / Exceptions.
 
-## 判断の優先順位
+## Precedence
 
-1. **フックが deny → 従う**。フックは§1の禁止パターンを機械的にブロックする。エージェントが回避策を探す必要はない
-2. **フックが通した + §2に該当 → ユーザーに確認**。文脈（本番/開発/対象リソース）で判断が変わるため、コマンドと影響範囲を提示して停止する
-3. **§3の例外に該当 → 禁止パターンでも許可**。フック側にも例外が実装されており、ルールとフックは同じ例外を認識している
+1. **Hook denies → obey.** Hooks mechanically block §1 patterns. Do not seek workarounds.
+2. **Hook passes + §2 match → ask user.** Context (prod/dev/target) matters. Present the command and blast radius, then stop.
+3. **§3 exception applies → allow** even if the pattern matches §1. Hooks recognize the same exceptions.
 
-フックが未導入の環境では、§1のパターンも§2と同様にエージェント自身がブロック判断する。フックはガードレールの自動化であり、このルールの原則はフックの有無に依存しない。
+In environments without hooks, apply §1 patterns as agent-side blocks (same as §2). The principles of this rule are independent of hook availability.
 
-`behavioral-rule.md` §3「破壊的操作は実行前に停止」の具体化。§2の要確認パターンがこの原則の主な適用対象。§1はフックが代行する。
+Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the primary application. §1 is enforced by hooks.
 
-## 1. 禁止（フックでブロック）
+## 1. Blocked (hook-enforced)
 
-以下はフックが機械的にブロックする。deny が返りコマンドは実行されない。
+Hooks mechanically block these. The command is denied.
 
-### ファイルシステム
+### Filesystem
 
-| パターン | ブロック条件 |
-|---------|-----------|
-| `rm -rf` | `-r` + `-f` の組み合わせで、安全ディレクトリ（§3）以外の絶対パス・ホーム・ルート等を対象とする場合 |
-| `chmod -R 777 /` | ルート配下への再帰的パーミッション変更 |
-| `chown -R ... /` | ルート配下への再帰的オーナー変更 |
-| `mkfs` | ファイルシステム作成 |
-| `dd of=/dev/` | デバイスへの直接書き込み |
+| Pattern | Block condition |
+|---------|----------------|
+| `rm -rf` | `-r` + `-f` targeting absolute paths, home, or root outside safe directories (§3) |
+| `chmod -R 777 /` | Recursive permission change under root |
+| `chown -R ... /` | Recursive owner change under root |
+| `mkfs` | Filesystem creation |
+| `dd of=/dev/` | Direct device write |
 
 ### Git
 
-| パターン | ブロック条件 |
-|---------|-----------|
-| `git push --force` / `-f` | 素の `--force`。`--force-with-lease` は許可（§3 例外） |
-| `git reset --hard` | 常にブロック |
-| `git clean -fdx` | `-f` + `-d` + `-x` の組み合わせ |
+| Pattern | Block condition |
+|---------|----------------|
+| `git push --force` / `-f` | Bare `--force`. `--force-with-lease` is allowed (§3) |
+| `git reset --hard` | Always blocked |
+| `git clean -fdx` | `-f` + `-d` + `-x` combined |
 
-### データベース
+### Database
 
-| パターン | ブロック条件 |
-|---------|-----------|
-| `DROP TABLE` / `DROP DATABASE` | 大文字小文字不問 |
-| `TRUNCATE TABLE` | 大文字小文字不問 |
+| Pattern | Block condition |
+|---------|----------------|
+| `DROP TABLE` / `DROP DATABASE` | Case-insensitive |
+| `TRUNCATE TABLE` | Case-insensitive |
 
-## 2. 要確認（フックでは判定できない — ルールで対応）
+## 2. Requires Confirmation (not hook-decidable — rule-enforced)
 
-以下は文脈（本番 / 開発 / テスト）や対象によって判断が変わるため、フックでの一律ブロックに適さない。エージェントは実行前に停止し、コマンドと影響範囲をユーザーに提示すること。
+Context-dependent — hooks cannot decide these. Stop before executing. Present the command and blast radius.
 
-### コンテナ・クラスタ
+### Containers / Clusters
 
-| パターン | リスク | 確認すべきこと |
-|---------|--------|---------------|
-| `kubectl delete` | Pod・Deployment・Namespace 等の削除 | 対象リソース、namespace、本番/開発の区別 |
-| `docker system prune` | 未使用イメージ・コンテナ・ボリュームの一括削除 | `--volumes` の有無、共有環境かどうか |
-| `docker rm -f` / `docker stop` | 実行中コンテナの強制停止・削除 | 他プロセスが依存していないか |
+| Pattern | Risk | Confirm |
+|---------|------|---------|
+| `kubectl delete` | Deletes Pods, Deployments, Namespaces | Target resource, namespace, prod vs dev |
+| `docker system prune` | Bulk removal of unused images/containers/volumes | `--volumes` flag, shared environment |
+| `docker rm -f` / `docker stop` | Force-stops running containers | Dependent processes |
 
-### インフラ・クラウド
+### Infrastructure / Cloud
 
-| パターン | リスク | 確認すべきこと |
-|---------|--------|---------------|
-| `terraform destroy` | インフラリソースの破壊 | plan 確認済みか、対象環境 |
-| `aws s3 rm --recursive` | S3 バケット内の一括削除 | バケット名、本番データか |
-| `gcloud ... delete` | GCP リソース削除 | プロジェクトID、リソース種別 |
+| Pattern | Risk | Confirm |
+|---------|------|---------|
+| `terraform destroy` | Destroys infra resources | Plan reviewed, target environment |
+| `aws s3 rm --recursive` | Bulk S3 deletion | Bucket name, production data |
+| `gcloud ... delete` | GCP resource deletion | Project ID, resource type |
 
-### パッケージ・依存関係
+### Packages / Dependencies
 
-| パターン | リスク | 確認すべきこと |
-|---------|--------|---------------|
-| `npm publish` / `gem push` | パッケージの公開（取り消し困難） | バージョン、対象レジストリ |
-| メジャーバージョンのダウングレード | 破壊的変更のリスク | 依存先への影響 |
+| Pattern | Risk | Confirm |
+|---------|------|---------|
+| `npm publish` / `gem push` | Public release (hard to retract) | Version, target registry |
+| Major version downgrade | Breaking change risk | Downstream impact |
 
-### Git（フック対象外）
+### Git (not hooked)
 
-| パターン | リスク | 確認すべきこと |
-|---------|--------|---------------|
-| `git rebase`（公開ブランチ） | 共有履歴の書き換え | ブランチが他者に共有されているか |
-| `git branch -D` | 未マージブランチの強制削除 | マージ済みか、作業が残っていないか |
-| `git checkout -- .` / `git restore .` | 未コミット変更の全破棄 | `git stash` で退避すべきか |
+| Pattern | Risk | Confirm |
+|---------|------|---------|
+| `git rebase` (public branch) | Rewrites shared history | Whether others share the branch |
+| `git branch -D` | Force-deletes unmerged branch | Merge status, remaining work |
+| `git checkout -- .` / `git restore .` | Discards all uncommitted changes | Whether to `git stash` first |
 
-## 3. 例外（禁止パターンだが通してよいケース）
+## 3. Exceptions (blocked patterns that are safe)
 
-### rm -rf の安全ディレクトリ
+### Safe directories for rm -rf
 
-以下はビルド成果物・キャッシュであり、`rm -rf` の対象として許可される（`block-destructive.sh` の `SAFE_DIRS_RE`）:
+Build artifacts and caches — allowed as `rm -rf` targets (`block-destructive.sh` `SAFE_DIRS_RE`):
 
 `node_modules`, `dist`, `.next`, `build`, `coverage`, `__pycache__`, `.cache`, `tmp`, `.turbo`, `.parcel-cache`
 
-### Git の安全な代替
+### Safe Git alternatives
 
-| 禁止パターン | 安全な代替 |
-|-------------|-----------|
-| `git push --force` | `git push --force-with-lease`（リモートの意図しない上書きを防止） |
-| `git reset --hard` | `git stash` → 必要なら `git stash drop` |
-| `git clean -fdx` | `git clean -fd`（`-x` なし: .gitignore 対象を保持） |
+| Blocked pattern | Safe alternative |
+|-----------------|-----------------|
+| `git push --force` | `git push --force-with-lease` (prevents unintended remote overwrite) |
+| `git reset --hard` | `git stash` → `git stash drop` if needed |
+| `git clean -fdx` | `git clean -fd` (no `-x`: preserves .gitignore targets) |
 
-### sudo の扱い
+### sudo handling
 
-`sudo` が前置されたコマンドも、フックは `sudo` を除去してパターンマッチする。`sudo rm -rf /` もブロック対象。
+Hooks strip `sudo` before pattern matching. `sudo rm -rf /` is still blocked.
