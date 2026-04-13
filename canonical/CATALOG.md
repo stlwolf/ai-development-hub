@@ -84,6 +84,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 |--------|-----------|------|
 | 破壊コマンドブロック | `hooks/scripts/block-destructive.sh` | `rm -rf /`, `DROP TABLE` 等の破壊的コマンドをブロック |
 | force push ブロック | `hooks/scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
+| CC 形式チェック | `hooks/scripts/cc-lint.sh` | `git commit -m` の Conventional Commits 形式を検証（3ツール共通） |
 | コミットゲート | `hooks/scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（Claude Code のみ） |
 
 ## ツール固有拡張
