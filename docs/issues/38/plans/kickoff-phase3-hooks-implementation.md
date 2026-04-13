@@ -3,7 +3,7 @@ id: 01KP1E4N7X8RFTV0J2AQNE3K9H
 title: "Phase 3: Hooks 実装 + Deployment 修正"
 date: 2026-04-13
 type: kickoff
-status: draft
+status: completed
 scope: canonical/hooks
 related:
   - type: parent_epic

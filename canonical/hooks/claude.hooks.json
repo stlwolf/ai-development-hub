@@ -21,6 +21,10 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/block-force-push.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/cc-lint.sh"
           }
         ]
       }

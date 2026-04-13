@@ -3,11 +3,15 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./hooks/block-destructive.sh",
+        "command": "$HOME/.cursor/hooks/block-destructive.sh",
         "failClosed": true
       },
       {
-        "command": "./hooks/block-force-push.sh",
+        "command": "$HOME/.cursor/hooks/block-force-push.sh",
+        "failClosed": true
+      },
+      {
+        "command": "$HOME/.cursor/hooks/cc-lint.sh",
         "failClosed": true
       }
     ]
