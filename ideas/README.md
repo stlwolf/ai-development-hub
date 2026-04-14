@@ -8,6 +8,13 @@
 
 ## インデックス
 
+### 2026-04-14
+
+- `harness-architecture-layer-separation-control-loop.md`: ハーネスアーキテクチャの層分離と制御ループ設計 — Claude + ChatGPT のマルチAIブレスト統合。canonical 4層分離を「決定性の境界」で再整理、コマンド責務拡張の原則（機械的判断が連続する区間をcommandに吸収）、仮想環境隔離パターン（並列探索→破棄→直列再実行）、5本柱の設計原則、CLI for AI 評価フレーム
+- `discussion-logs/`: マルチAIブレスト記録
+  - `harness-architecture-discussion-claude.md`: Claude (Opus 4.6 Extended) との壁打ちログ。風呂場着想からの3論点（コマンド内包化・仮想環境隔離・セッション管理）、オーケストレーションの3段階コマンド化、「下から積まないと上が浮く」
+  - `harness-architecture-discussion-chatgpt.md`: ChatGPT とのクロスレビュー。determinism boundary architecture、制御系5要素モデル、policy埋没リスク、仮想環境3種分離、promotion model、semantic observability、CLI for AI 4分類
+
 ### 2026-03-29
 
 - `metadata-layer-mirror-repo-synthesis.md`: メタデータ層を使ったAI向けリポジトリ構造の自動同期 — Claude + ChatGPT のマルチAIブレスト統合。Decision Ledger を SoT とし tree を派生ビューとする設計判断、7フィールド最小スキーマ、post-commit hook + LLM による自動抽出、Ralph Loop との接続、保存の正規形/AI投影/人間投影の分離
