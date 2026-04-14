@@ -25,43 +25,65 @@ refs:
 
 | ハーネス構成要素 | 対応資産 | 典拠 |
 |---|---|---|
-| **AGENTS.md = 目次** | CLAUDE.md ~100行 + canonical/ 分離 | OpenAI #1, HumanLayer #10 |
-| **Progressive Disclosure** | canonical/ 階層（rules → skills → commands） | Anthropic #4, Charlie Guo #6 |
-| **Self-verification loop** | adversarial-review + so-compare + peer-ai-review | Anthropic #3, LangChain #7 |
-| **サブエージェント契約** | implementer-contract（ステータス enum, self-review） | OpenAI #1（Epic #10 A-5） |
-| **機械的ガードレール** | hooks/（block-destructive, block-force-push） | OpenAI #1, Hashimoto #5（Epic #10 H-0） |
-| **コードレビュー = 修復プロンプト** | pr-review-checklist（各項目に修正指針） | OpenAI #1（Epic #10 A-1） |
-| **Build to Delete** | 薄いシェル方針 + canonical sync | Bouchard #2, Charlie Guo #6 |
-| **認知協調** | arena-compare（発散）+ so-compare/peer-ai-review（収束） | OSS にない独自レイヤー |
-| **Roles（NLAH）** | agents/（oss-researcher, vendor-inspector 等） | NLAH 論文 |
-| **Stage Structure（NLAH）** | commands/（issue-debug, peer-ai-review 等の手順） | NLAH 論文 |
-| **Adapters & Scripts（NLAH）** | hooks/scripts/、so-compare.sh 等 | NLAH 論文 |
+| **AGENTS.md = 目次** — リポジトリのナビゲーション起点。エージェントが最初に読む「地図」 | CLAUDE.md ~100行 + canonical/ 分離 | [OpenAI #1](./category-1/01-openai-harness-engineering.md), [HumanLayer #10](./category-2/03-humanlayer-skill-issue-harness-engineering-coding-agents.md) |
+| **Progressive Disclosure** — 情報を段階的に開示し、コンテキストウィンドウの消費を抑える | canonical/ 階層（rules → skills → commands） | [Anthropic #4](./category-1/04-anthropic-effective-harnesses-long-running-agents.md), [Charlie Guo #6](./category-1/06-charlie-guo-emerging-harness-playbook.md) |
+| **Self-verification loop** — 生成結果を別のエージェント/プロンプトで検証する自己修正サイクル | adversarial-review + so-compare + peer-ai-review | [Anthropic #3](./category-1/03-anthropic-harness-design-long-running-apps.md), [LangChain #7](./category-1/07-langchain-improving-deep-agents-harness.md) |
+| **サブエージェント契約** — 委譲先エージェントの完了報告フォーマットと品質基準の事前合意 | implementer-contract（ステータス enum, self-review） | [OpenAI #1](./category-1/01-openai-harness-engineering.md)（Epic #10 A-5） |
+| **機械的ガードレール** — 破壊的コマンドをフックで自動ブロックする安全装置 | hooks/（block-destructive, block-force-push） | [OpenAI #1](./category-1/01-openai-harness-engineering.md), [Hashimoto #5](./category-1/05-mitchell-hashimoto-ai-adoption-journey.md)（Epic #10 H-0） |
+| **コードレビュー = 修復プロンプト** — レビュー指摘自体が修正手順を含み、エージェントが即座に対応できる形 | pr-review-checklist（各項目に修正指針） | [OpenAI #1](./category-1/01-openai-harness-engineering.md)（Epic #10 A-1） |
+| **Build to Delete** — 使い捨て前提で薄く作り、陳腐化したら捨てて作り直す設計方針 | 薄いシェル方針 + canonical sync | [Bouchard #8](./category-2/01-louis-bouchard-harness-engineering-missing-layer.md), [Charlie Guo #6](./category-1/06-charlie-guo-emerging-harness-playbook.md) |
+| **認知協調** — 複数モデルに同じ問いを投げ、発散（多角的視点）と収束（合意形成）を使い分ける | arena-compare（発散）+ so-compare/peer-ai-review（収束） | OSS にない独自レイヤー |
+| **Roles（NLAH）** — エージェントに専門的な役割を割り当て、それぞれに適したツール・知識を付与する | agents/（oss-researcher, vendor-inspector 等） | [NLAH 論文](https://arxiv.org/abs/2603.25723) |
+| **Stage Structure（NLAH）** — タスクを段階（ステージ）に分割し、各段階で実行すべき手順を定義する | commands/（issue-debug, peer-ai-review 等の手順） | [NLAH 論文](https://arxiv.org/abs/2603.25723) |
+| **Adapters & Scripts（NLAH）** — エージェントとツール/環境を繋ぐ変換層。CLI ラッパーやフックスクリプト | hooks/scripts/、so-compare.sh 等 | [NLAH 論文](https://arxiv.org/abs/2603.25723) |
 
 ## 3. 部分的にカバーされている領域
 
 | ハーネス構成要素 | 現状 | ギャップ | 典拠 |
 |---|---|---|---|
-| **Loop detection** | #24 H-5 として計画済み | フック未実装 | Hashimoto #5, LangChain #7 |
-| **検証ゲートの実行証跡** | #24 H-6 として計画済み | 人間の目視依存 | arch-sketch §8 |
-| **Contracts（NLAH）** | implementer-contract のステータス enum | 停止ルールが人間依存 | NLAH 論文, 富士通 SWE-bench（`WORKFLOW: COMPLETE/GIVEUP` + 実行系の事後検証 + `required_assets` 検査が機械的な停止ルール実装例） |
-| **Failure Taxonomy（NLAH）** | BLOCKED + エスカレーション | 分類が粗い（3値） | NLAH 論文, 富士通 SWE-bench（`turn_handover_threshold` 32〜192ターン + `hard_gate_giveup_threshold=3` がリカバリパス付き閾値制御の実例） |
-| **Initializer Agent** | #24 H-4（セッション初期化）が部分対応 | タスク固有コンテキスト自動選択は未定義 | Anthropic #4 |
-| **Custom linter** | shellcheck 自動実行（#24 H-1）が1例 | 「エラーメッセージ = 修復プロンプト」の汎用パターン未整理 | OpenAI #1 |
+| **Loop detection** | #24 H-5 として計画済み | フック未実装 | [Hashimoto #5](./category-1/05-mitchell-hashimoto-ai-adoption-journey.md), [LangChain #7](./category-1/07-langchain-improving-deep-agents-harness.md) |
+| **検証ゲートの実行証跡** | #24 H-6 として計画済み | 人間の目視依存 | [`architecture-sketch.md` §8](../../../projects/orchestration-research/synthesis/architecture-sketch.md) |
+| **Contracts（NLAH）** | implementer-contract のステータス enum | 停止ルールが人間依存 | [NLAH 論文](https://arxiv.org/abs/2603.25723), [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench)（`WORKFLOW: COMPLETE/GIVEUP` + `required_assets` 検査が機械的停止ルール実装例） |
+| **Failure Taxonomy（NLAH）** | BLOCKED + エスカレーション | 分類が粗い（3値） | [NLAH 論文](https://arxiv.org/abs/2603.25723), [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench)（`hard_gate_giveup_threshold=3` がリカバリパス付き閾値制御の実例） |
+| **Initializer Agent** | #24 H-4（セッション初期化）が部分対応 | タスク固有コンテキスト自動選択は未定義 | [Anthropic #4](./category-1/04-anthropic-effective-harnesses-long-running-agents.md) |
+| **Custom linter** | shellcheck 自動実行（#24 H-1）が1例 | 「エラーメッセージ = 修復プロンプト」の汎用パターン未整理 | [OpenAI #1](./category-1/01-openai-harness-engineering.md) |
+
+### 構成要素の解説
+
+- **Loop detection**: エージェントが同じ失敗操作を繰り返す無限ループを検出して停止させる。Hashimoto は「ミスしたら二度と繰り返さない仕組みを作る」と表現。LangChain はハーネスにループ検出を追加しただけでベンチマーク順位が大幅に上がった事例を報告
+- **検証ゲートの実行証跡**: adversarial-review や so-compare 等の検証が「本当に実行されたか」を機械的に確認する仕組み。現状は人間がサマリを目視する以外に確認手段がない
+- **Contracts（NLAH）**: エージェントのタスク完了・放棄の判定ルール。現状の implementer-contract は `DONE` / `BLOCKED` 等のステータスを返す契約だが、「いつ完了と見なすか」「いつ諦めるか」の判定が人間の判断に依存している
+- **Failure Taxonomy（NLAH）**: 失敗を「なぜ失敗したか」で分類し、各分類にリカバリ手順（次に何を試すか）を紐づける体系。現状は `BLOCKED` + エスカレーションの粗い分類のみで、権限不足・仕様曖昧・ツール制約等の区別がない
+- **Initializer Agent**: セッション開始時にタスクの種類を判定し、必要なスキル・ルール・コンテキストを自動で選択してロードする。Anthropic は「コーディングサブエージェントの前にイニシャライザーエージェントを置く」パターンを推奨
+- **Custom linter**: エラーメッセージ自体がエージェントへの修復指示になるように設計されたカスタムリンター。OpenAI は「リンターは最も費用対効果の高いハーネス構成要素」と位置づけ
 
 ## 4. 未着手の領域
 
 | ハーネス構成要素 | 意味 | 既存 Issue | 典拠 |
 |---|---|---|---|
-| **Generator + Evaluator 自動ループ** | 評価 → 再生成の自動サイクル | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 4-3 | Anthropic #3 |
-| **Ralph Loop（制御ループ）** | 失敗 → 再投入 → エスカレーション | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 全体 | arch-sketch §7 |
-| **多周制御（ループ終了条件）** | 宣言的な終了条件定義 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36)（CLOSED: 仕様整理完了、実装は #19 依存） | rigg review.yaml |
-| **Pre-completion verification** | 完了宣言前の最終チェック | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-7 | implementation-principles |
-| **監査ログ** | 全イベントの事後分析基盤 | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-8 | Observability 文献 |
-| **Negative Knowledge ledger** | 失敗の構造化蓄積・自動注入 | **Issue なし** | Hashimoto #5, ideas/20260329 |
-| **Knowledge freshness** | コンテキスト陳腐化検出 | **Issue なし** | Doc-gardening の前提 |
-| **State Semantics（NLAH）** | スキル/コマンドの永続化宣言 | **Issue なし** | NLAH 論文, 富士通 SWE-bench（`/_share/` 共有領域の読み取り専用固定・回収対象許可リストが具体実装例） |
-| **Time budgeting** | サブエージェントへの時間意識注入 | **Issue なし** | mapping #3, 富士通 SWE-bench（tokenizer-aware 予算管理 + `turn_handover_threshold` が具体実装例） |
-| **Orchestra（1ターン内の役割分離）** | conductor（探索・判断）+ tool-specialist（コマンド整形）の分離 | **Issue なし** | 富士通 SWE-bench（同一モデルの温度差で探索と整形を分離。arena/SO の並列比較とは異なる軸） |
+| **Generator + Evaluator 自動ループ** | 生成 → 評価 → 再生成の自動サイクル | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 4-3 | [Anthropic #3](./category-1/03-anthropic-harness-design-long-running-apps.md) |
+| **Ralph Loop（制御ループ）** | 失敗 → 再投入 → エスカレーションの自動制御 | [#19](https://github.com/stlwolf/ai-development-hub/issues/19) 全体 | [`architecture-sketch.md` §7](../../../projects/orchestration-research/synthesis/architecture-sketch.md) |
+| **多周制御（ループ終了条件）** | 宣言的な終了条件の定義と評価 | [#36](https://github.com/stlwolf/ai-development-hub/issues/36)（CLOSED: 仕様整理完了、実装は #19 依存） | [rigg review.yaml](https://github.com/tryrigg/rigg/blob/main/.rigg/review.yaml) |
+| **Pre-completion verification** | 完了宣言前の最終チェック | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-7 | `canonical/rules/implementation-principles` |
+| **監査ログ** | 全イベントの事後分析基盤 | [#24](https://github.com/stlwolf/ai-development-hub/issues/24) H-8 | [Martin Fowler #16](./category-2/09-martin-fowler-humans-and-agents-in-software-engineering-loops.md) |
+| **Negative Knowledge ledger** | 失敗の構造化蓄積と次サイクルへの自動注入 | **Issue なし** | [Hashimoto #5](./category-1/05-mitchell-hashimoto-ai-adoption-journey.md), ideas/20260329 |
+| **Knowledge freshness** | コンテキスト文書の陳腐化を検出する仕組み | **Issue なし** | [OpenAI #1](./category-1/01-openai-harness-engineering.md)（Doc-gardening の前提） |
+| **State Semantics（NLAH）** | スキル/コマンドが生成・消費する状態の明示的宣言 | **Issue なし** | [NLAH 論文](https://arxiv.org/abs/2603.25723), [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench)（`/_share/` 共有領域が具体実装例） |
+| **Time budgeting** | サブエージェントへの時間・トークン予算の割り当て | **Issue なし** | [HumanLayer #10](./category-2/03-humanlayer-skill-issue-harness-engineering-coding-agents.md), [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench)（tokenizer-aware 予算管理が具体実装例） |
+| **Orchestra（1ターン内の役割分離）** | 探索・判断する conductor と、コマンドを整形する specialist を分離 | **Issue なし** | [富士通 SWE-bench](https://blog.fltech.dev/entry/2026/04/07/swebench)（同一モデルの温度差で分離。arena/SO とは異なる軸） |
+
+### 構成要素の解説
+
+- **Generator + Evaluator 自動ループ**: GAN に着想を得た構造。生成エージェントの出力を評価エージェントが採点し、不合格なら自動で再生成させる。Anthropic はフロントエンドデザインの主観的品質評価にこのパターンを適用
+- **Ralph Loop（制御ループ）**: タスク全体を「実行 → 検証 → 判定 → 再実行 or エスカレーション」で回す自動制御。現状は各ステップが手動接続で、人間がトリガーしないと次に進まない
+- **多周制御（ループ終了条件）**: 「findings が 0 件になるまで」「最大 N 周」「合意率が閾値以上」等の終了条件を宣言的に書く。rigg の `review.yaml` が `loop` / `max` / `until` で実装している例
+- **Pre-completion verification**: エージェントが「完了」と宣言する直前に、成果物の存在確認・テスト実行・チェックリスト照合を自動で行う最終関門
+- **監査ログ**: エージェントの全アクション（ファイル変更、コマンド実行、判断の根拠）を記録し、事後分析・改善に使う。人間が「on the loop」でハーネスを改善するための観測基盤
+- **Negative Knowledge ledger**: 過去の失敗事例（「この方法は動かなかった」「この組み合わせは問題を起こす」）を構造化して蓄積し、次のタスクサイクルで自動的にコンテキストとして注入する。Hashimoto の「エージェントがミスしたら環境を改善して二度と繰り返さない」の実装
+- **Knowledge freshness**: ルールやスキルの記述が古くなっている（実態と乖離している）ことを検出する。OpenAI は「ドキュメントガーデニング」（定期的な草取り）としてこの課題を扱う
+- **State Semantics（NLAH）**: スキルやコマンドが「どのファイルを生成するか」「何を次のステップに引き継ぐか」を frontmatter 等で明示宣言する。富士通は `/_share/` ディレクトリで会話外の永続状態をフェーズ間で共有する設計を採用
+- **Time budgeting**: サブエージェントに「あと N ターン」「あと M トークン」という予算意識を注入し、無駄な探索を抑制する。富士通は `turn_handover_threshold` でフェーズごとのターン上限を設定
+- **Orchestra（1ターン内の役割分離）**: 1回のエージェント呼び出しの中で、探索・判断を行う conductor と、具体的なコマンドを整形する tool-specialist を分離する。富士通は同一モデルの温度パラメータ差で実現。arena-compare / so-compare の「複数モデル比較」とは異なり、1モデル内での役割分離
 
 ## 5. Issue カバレッジマップ
 
