@@ -66,14 +66,16 @@
 - [20260212/hypothesis-canonical-agent-definition-format.md](20260212/hypothesis-canonical-agent-definition-format.md) — 正準エージェント定義フォーマット（具体化）
 - [20260220/so-prompt-formatting.md](20260220/so-prompt-formatting.md) — SOプロンプトのテンプレート化（AI→AI契約の実装）
 - [20260220/human-input-formatting.md](20260220/human-input-formatting.md) — 人間→AIの入力も契約化。「個人スキルではなくプロセスとして入力品質を標準化」
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — Command / Policy / Context Resolver の3分割。policyをcommandに焼き込まず外出しすることで、契約の一貫性を維持しつつプロジェクト差分を吸収
 
-### 意図的圧縮の三層 → コンテキスト永続化の4層
+### 意図的圧縮の三層 → コンテキスト永続化の4層 → Promotion Model
 
-仮説段階の三層構造が、FWアップグレード実践を経て運用指向の4層モデルへ発展。昇格ルールとTTLが加わり、抽象的な圧縮理論が具体的な情報ライフサイクル管理になった。
+仮説段階の三層構造が、FWアップグレード実践を経て運用指向の4層モデルへ発展。昇格ルールとTTLが加わり、抽象的な圧縮理論が具体的な情報ライフサイクル管理になった。4月にオーケストレーション文脈で promotion artifact の粒度設計へ展開。
 
 - [20260208/hypothesis-intentional-compression-and-promotion-flow.md](20260208/hypothesis-intentional-compression-and-promotion-flow.md) — 三層構造 + 昇格フロー（理論側）
 - [20260220/context-persistence-4layer-model.md](20260220/context-persistence-4layer-model.md) — 4層 + TTL + 昇格基準 + メタデータスキーマ（運用側）
 - [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 昇格フローのJSON実装形態。promotionフィールドが「子スレッドから親スレッドへの情報昇格」を構造化
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — promotion model をオーケストレーション文脈に適用。並列探索の成果物を本番適用に橋渡しする粒度設計（intent / evidence / diff / replayable command log の4点セット）。「再実行」ではなく「昇格」が核心
 
 ### 推測比率と確実性の構造モデル
 
@@ -175,9 +177,9 @@ cursor-thread-tools 4フェーズの実践から「いつフォーマットが�
 - [20260208/ai-orchestration-memo-idea-integration.md](20260208/ai-orchestration-memo-idea-integration.md) — 「契約で固定、ツール名では固定しない」原則
 - [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — ルールの分割粒度・配布メカニズム・衝突解決の検証
 
-### OSSオーケストレーション調査 → 自前ツール構築
+### OSSオーケストレーション調査 → 自前ツール構築 → ハーネス層分離
 
-既存OSSのインフラ層（ワークスペース隔離、プロセス管理、イベント駆動フィードバック）と、自分の検証知見のセマンティック層（認知協調、知識永続化）の非対称性を活かした統合アプローチ。
+既存OSSのインフラ層（ワークスペース隔離、プロセス管理、イベント駆動フィードバック）と、自分の検証知見のセマンティック層（認知協調、知識永続化）の非対称性を活かした統合アプローチ。4月にcanonical 4層を「決定性の境界」で再整理し、具体的なアーキテクチャ設計へ発展。
 
 - [20260204/ai-agent-orchestration.md](20260204/ai-agent-orchestration.md) — CLI連携の初期検証。マルチエージェントの本質分析、コンテキスト・エンベロープの提案（起点）
 - [20260208/ai-orchestration-synthesis-next-steps.md](20260208/ai-orchestration-synthesis-next-steps.md) — 「契約で固定、ツール名で固定しない」原則、検証優先度の整理
@@ -186,6 +188,34 @@ cursor-thread-tools 4フェーズの実践から「いつフォーマットが�
 - [projects/orchestration-research/](../projects/orchestration-research/) — 体系的調査プロジェクト
 - [20260224/orchestration-design-principles-bath-brainstorm.md](20260224/orchestration-design-principles-bath-brainstorm.md) — 3設計原則（ベンダー非依存・直列プリミティブ合成・拡張可能）。OSSリサーチアプローチの上に乗る設計指針
 - [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 親子スレッドの橋渡しをJSONスキーマで構造化。steipeteの並列ETLパターンの転用
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — 4層分離を「決定性の境界」で再整理。determinism boundary architecture、5本柱の設計原則、閉ループ制御系の5要素モデル。3設計原則の上にコマンド責務拡張・制御ループ・promotion modelの具体設計が乗る形
+
+### 決定性の境界設計と制御ループ（Determinism Boundary Architecture）
+
+canonical 4層の責務を「抽象度」ではなく「決定性」で再整理した設計軸。commands/hooks = 決定論的・検証可能、agents = 非決定論的・探索的。並列探索（非決定的）と直列適用（決定的）の分離が中核。制御ループの不在をcontroller contract で埋める方向。
+
+- [20260204/ai-agent-orchestration.md](20260204/ai-agent-orchestration.md) — 「決定論的オーケストレーターが非決定論的ワーカーを制御する」の原型
+- [20260224/orchestration-design-principles-bath-brainstorm.md](20260224/orchestration-design-principles-bath-brainstorm.md) — 3設計原則。直列プリミティブ合成が「決定論的な適用」の具体形
+- [20260218/hypothesis-inference-ratio-certainty-model.md](20260218/hypothesis-inference-ratio-certainty-model.md) — 推測比率の構造モデル。決定性の境界を明示することで推測比率を構造的に下げる手段の一つ
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — determinism boundary architecture の命名と5本柱。閉ループ制御系（Policy/Planner/Actuator/Sensor/Controller）、コマンド責務拡張（transactional workflow segment）、semantic observability
+
+### CLI for AI — 判断粒度の圧縮と評価フレーム
+
+CLI for AI の本質は「AIがCLIを使う」ではなく「AIに任せる判断とシステムに固定する判断の境界設計」。散文的な手順理解を構造化された選択に変えることで、判断粒度を圧縮する。AI middleware CLIの構想がコマンド責務拡張の原則として具体化。
+
+- [20260130/ai-middleware-cli-concept.md](20260130/ai-middleware-cli-concept.md) — AI CLIと人間の間に挟まるミドルウェア層の構想（起点）
+- [20260222/orchestration-tool-building-approach.md](20260222/orchestration-tool-building-approach.md) — 自前ツール構築のアプローチ。CLI層の具体的な位置づけ
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — CLI for AI 4分類（Primitive/Workflow/Policy-aware/Orchestration）、5軸評価フレーム、「判断の粒度が散文解釈から引数選択に落ちる」
+- [20260414/discussion-logs/harness-architecture-discussion-chatgpt.md](20260414/discussion-logs/harness-architecture-discussion-chatgpt.md) — CLIに寄せるべきもの / skill に残すべきもの / hook に残すべきもの / orchestrator に持たせるべきものの4分割判断基準
+
+### 仮想環境隔離とセッション管理 — 物理基盤としてのwez
+
+並列オーケストレーションの安全性を仮想環境隔離で確保するパターン。UI隔離 / execution隔離 / workspace隔離 の3種分離。wez CLI を session fabric として位置づけ、orchestration kernel と明確に分離する。
+
+- [20260222/orchestration-tool-building-approach.md](20260222/orchestration-tool-building-approach.md) — ワークスペース隔離をOSSインフラ層の要素として分析
+- [20260224/hypothesis-design-ci-parallel-agents.md](20260224/hypothesis-design-ci-parallel-agents.md) — 観点特化エージェント群の並列パイプライン。並列実行の具体的なユースケース
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — 仮想環境3種分離（UI/execution/workspace）、wez = session fabric / worktree = execution sandbox / orchestrator = promotion manager。セッション管理 = 認知補助（orchestration cockpit）
+- [20260414/discussion-logs/harness-architecture-discussion-claude.md](20260414/discussion-logs/harness-architecture-discussion-claude.md) — MVPシミュレーション体験からの隔離パターン導出。並列探索→破棄→直列再実行、後片付けのコマンド化
 
 ### agent-orchestrator のルール分離 → ルール分割検証
 
