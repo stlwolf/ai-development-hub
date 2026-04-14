@@ -19,7 +19,7 @@ refs:
 
 19本の記事群 + NLAH 論文（arXiv:2603.25723）+ 富士通 SWE-bench 記事（Kozuchi mini-swe-agent, 2026-04）+ CADDi 枠組み記事（2026-04）から抽出されるハーネスの構成要素に対し、canonical 資産の充足度を3段階（充足 / 部分的 / 未着手）で評価する。
 
-詳細な概念マッピングは [`harness-engineering-mapping.md`](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) を参照。
+詳細な概念マッピングは [`harness-engineering-mapping.md`](../../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) を参照。
 
 ## 2. 充足している領域
 
@@ -105,7 +105,7 @@ refs:
 
 canonical の「Markdown ドキュメント駆動」アプローチは NLAH と方向性が一致する。ただし NLAH が明示的に定義する 6 要素のうち **State Semantics**（永続化宣言）と **Failure Taxonomy**（失敗分類）が canonical に不在。
 
-詳細マッピングは [`harness-engineering-mapping.md` §NLAH](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) を参照。
+詳細マッピングは [`harness-engineering-mapping.md` §NLAH](../../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) を参照。
 
 ### オーケストレーションツールへの示唆
 
@@ -185,8 +185,8 @@ canonical との関係:
 
 ## 参照
 
-- [`harness-engineering-mapping.md`](../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) — ハーネス概念と自設計の対応表（本文書の基盤）
-- [`architecture-sketch.md`](../../projects/orchestration-research/synthesis/architecture-sketch.md) — オーケストレーションツール全体設計
+- [`harness-engineering-mapping.md`](../../../projects/orchestration-research/synthesis/harness-engineering-mapping.md) — ハーネス概念と自設計の対応表（本文書の基盤）
+- [`architecture-sketch.md`](../../../projects/orchestration-research/synthesis/architecture-sketch.md) — オーケストレーションツール全体設計
 - [`docs/research/harness-engineering/README.md`](./README.md) — 全33本の記事インデックス
 - [`docs/draft/orchestration-control-loop-challenges.md`](../../../docs/draft/orchestration-control-loop-challenges.md) — 制御ループ課題
 - [Epic #10](https://github.com/stlwolf/ai-development-hub/issues/10) — OSS パターン取り込み
