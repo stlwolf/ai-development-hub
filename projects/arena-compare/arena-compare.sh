@@ -15,8 +15,8 @@ Options:
   -f FILE          プロンプトをファイルから読み込み
   -m MODELS        比較モデル（カンマ区切り）
                    デフォルトはモード別:
-                     ask/plan: gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking
-                     agent:    gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5
+                     ask/plan: gpt-5.2,gemini-3.1-pro
+                     agent:    gpt-5.3-codex-high,gemini-3.1-pro
   -c FILE...       コンテキストファイルを添付（プロンプトに内容を追記）
   -o DIR           出力ディレクトリを指定（デフォルト: tmp/arena-YYYYMMDD-HHMMSS）
   -w PATH          ワークスペースパス（デフォルト: カレントディレクトリ）
@@ -28,7 +28,7 @@ Options:
 
 Environment:
   ARENA_MODELS     デフォルトモデル（カンマ区切り）
-  ARENA_TIMEOUT    タイムアウト秒数（デフォルト: 180）
+  ARENA_TIMEOUT    タイムアウト秒数（デフォルト: 240）
 USAGE
 }
 
@@ -127,8 +127,8 @@ if [[ -z "$MODELS_STR" ]]; then
         MODELS_STR="$ARENA_MODELS"
     else
         case "$AGENT_MODE" in
-            agent) MODELS_STR="gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5" ;;
-            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking" ;;
+            agent) MODELS_STR="gpt-5.3-codex-high,gemini-3.1-pro" ;;
+            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro" ;;
         esac
     fi
 fi
@@ -372,26 +372,12 @@ generate_summary() {
     echo "$summary"
 }
 
-# --- 全モデル並列実行（スタガー付き） ---
+# --- 全モデルシーケンシャル実行 ---
 # agent CLI は起動時に cli-config.json を書き換えるため、
-# 同時起動するとレースコンディションが発生する。2秒ずつずらして起動する。
-# create-chat もシリアルで実行し、スタガー内で完結させる。
-STAGGER_SEC=2
-declare -A PIDS
-
-for i in "${!MODELS[@]}"; do
-    model="${MODELS[$i]}"
-    if (( i > 0 )); then
-        sleep "$STAGGER_SEC"
-    fi
-    run_model "$model" "$PROMPT" "$OUT_DIR" "$WORKSPACE" "$AGENT_MODE" "$RESUME_FROM" &
-    PIDS[$model]=$!
-done
-
-# 完了待ち
+# 並列起動するとレースコンディションでハングする。シーケンシャルに実行する。
 FAILED=0
 for model in "${MODELS[@]}"; do
-    if ! wait "${PIDS[$model]}" 2>/dev/null; then
+    if ! run_model "$model" "$PROMPT" "$OUT_DIR" "$WORKSPACE" "$AGENT_MODE" "$RESUME_FROM"; then
         echo "Warning: [$model] の実行に問題がありました" >&2
         FAILED=$((FAILED + 1))
     fi

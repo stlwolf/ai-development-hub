@@ -7,7 +7,7 @@ Cursor サブスク内の全モデル（38+）を使えるため、外部 API �
 ## 使い方
 
 ```bash
-# 3モデルで比較（デフォルト: opus-4.6, gpt-5.2, gemini-3-flash）
+# 2モデルで比較（デフォルト: gpt-5.2, gemini-3.1-pro）
 ./arena-compare.sh "プロンプト"
 
 # モデル指定
@@ -68,10 +68,10 @@ agent status
 
 | モード | デフォルトモデル | 選定理由 |
 |--------|-----------------|----------|
-| ask / plan | `gpt-5.2,gemini-3.1-pro,composer-1.5` | Q&A・分析向き、異ファミリー3つ |
-| agent | `gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5` | Codex で実装力、残り2つで多角性 |
+| ask / plan | `gpt-5.2,gemini-3.1-pro` | 異ファミリー2つで多様性確保。メインスレッドの Claude と合わせて3視点 |
+| agent | `gpt-5.3-codex-high,gemini-3.1-pro` | Codex で実装力 + Gemini で多角性 |
 
-メインスレッドが Claude 系（opus-4.6 等）の場合、デフォルトから Claude を外すことで多様性を確保している。`-m` で明示すれば任意のモデルを指定可能。
+メインスレッドが Claude 系（opus-4.6 等）のため、デフォルトは非 Claude の 2 モデルに絞っている。`-m` で明示すれば任意のモデル・数を指定可能。
 
 ## 出力構造
 
@@ -87,7 +87,7 @@ tmp/arena-YYYYMMDD-HHMMSS/
 
 ## 既知の制約
 
-- **並列起動にスタガー（2秒間隔）が必要**: `agent` CLI が `~/.cursor/cli-config.json` を書き換えるため、同時起動するとレースコンディションが発生する
+- **シーケンシャル実行**: `agent` CLI が `~/.cursor/cli-config.json` を書き換えるため、並列起動するとレースコンディションでハングする。各モデルをシーケンシャルに実行して回避
 - **`nohup` + `-f` が必須**: Cursor 統合ターミナルから実行する場合、TTY 分離と Workspace Trust スキップが必要
 - **`agent ls` は非インタラクティブでは使えない**: チャット一覧は `~/.cursor/chats/` の SQLite を直接走査する必要がある
 - **`--resume` と `--mode` の併用不可**: `--resume` 使用時に `--mode ask` を指定するとハングする。初回のみ `--mode` が適用され、resume 時は自動的に省略される
