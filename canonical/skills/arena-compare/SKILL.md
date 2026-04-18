@@ -61,14 +61,14 @@ arena-compare --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質�
 
 | モード | デフォルトモデル | 理由 |
 |--------|----------------|------|
-| `ask` / `plan` | `gpt-5.2,gemini-3.1-pro,claude-4.6-opus-high-thinking` | 異なるファミリー3つで多様性を確保 |
-| `agent` | `gpt-5.3-codex-high,gemini-3.1-pro,composer-1.5` | コード生成に強いモデルを選択 |
+| `ask` / `plan` | `gpt-5.2,gemini-3.1-pro` | 異ファミリー2つ。メインスレッドの Claude と合わせて3視点 |
+| `agent` | `gpt-5.3-codex-high,gemini-3.1-pro` | Codex で実装力 + Gemini で多角性 |
 
 ### 選択の指針
 
 - **ファミリー多様性**: 同じファミリー（例: Claude系×2）を避け、異なるモデルファミリーを混ぜる
-- **メインスレッドとの差異**: メインスレッドが Claude 系のため、デフォルトから Claude を外して視点の多様性を確保
-- **think モデルの混在**: 深い推論が必要な場合は think モデル（`claude-4.6-opus-high-thinking`, `claude-4.6-sonnet-medium-thinking`）を含める
+- **メインスレッドとの差異**: メインスレッドが Claude 系のため、デフォルトは非 Claude の 2 モデルに絞っている
+- **think モデル**: 深い推論が必要な場合は `-m` で think モデル（`claude-4.6-opus-high-thinking`, `claude-4.6-sonnet-medium-thinking`）を明示指定する。デフォルトに含めると 240 秒タイムアウトでハングしやすい
 
 ### よく使う組み合わせ
 
@@ -125,7 +125,7 @@ cat tmp/arena-YYYYMMDD-HHMMSS/summary.md
 ## 注意事項
 
 - 実行には `agent` CLI（Cursor CLI）が PATH 上に必要
-- 並列実行時、agent CLI の cli-config.json レースコンディションを避けるため2秒ずつスタガー起動する
-- `ARENA_TIMEOUT` のデフォルトは180秒。全モデルタイムアウト時はガイダンスメッセージが表示される
+- 各モデルはシーケンシャルに実行される（agent CLI の cli-config.json レースコンディション回避のため）
+- `ARENA_TIMEOUT` のデフォルトは240秒。全モデルタイムアウト時はガイダンスメッセージが表示される
 - 出力は `tmp/` 配下で gitignore 対象
 - `-c` はプロンプト肥大化の原因になるため `-w` の使用を推奨
