@@ -70,11 +70,10 @@ _wez_auto_detect_socket() {
   fi
 
   # Multiple sockets: sort by mtime descending, pick first that verifies
-  local sorted=()
-  _wez_sort_by_mtime sorted "${sockets[@]}"
+  _wez_sort_by_mtime "${sockets[@]}"
 
   local sock
-  for sock in "${sorted[@]}"; do
+  for sock in "${_WEZ_SORTED_SOCKETS[@]}"; do
     if _wez_try_connect "$sock" >/dev/null 2>&1; then
       echo "$sock"
       return "${WEZ_EXIT_SUCCESS}"
@@ -87,28 +86,23 @@ _wez_auto_detect_socket() {
 
 # Sort socket paths by mtime descending (newest first).
 # Uses stat -f %m (macOS) with stat -c %Y (Linux) fallback.
+# Result is stored in _WEZ_SORTED_SOCKETS (avoids bash 3.2 incompatible local -n).
 # Args:
-#   $1 - nameref for result array
-#   $2+ - socket paths
+#   $@  - socket paths
+_WEZ_SORTED_SOCKETS=()
 _wez_sort_by_mtime() {
-  local -n _result_arr=$1
-  shift
-
   local -a pairs=()
   local sock mtime
   for sock in "$@"; do
     mtime=$(stat -f %m "$sock" 2>/dev/null || stat -c %Y "$sock" 2>/dev/null || echo 0)
-    pairs+=("${mtime}:${sock}")
+    pairs+=("${mtime} ${sock}")
   done
 
-  local sorted_str
-  sorted_str=$(printf '%s\n' "${pairs[@]}" | sort -t: -k1 -rn)
-
-  _result_arr=()
+  _WEZ_SORTED_SOCKETS=()
   local line
   while IFS= read -r line; do
-    [[ -n "$line" ]] && _result_arr+=("${line#*:}")
-  done <<< "$sorted_str"
+    [[ -n "$line" ]] && _WEZ_SORTED_SOCKETS+=("${line#* }")
+  done < <(printf '%s\n' "${pairs[@]}" | sort -k1 -rn)
 }
 
 # Try connecting to a socket via wezterm cli list.
@@ -128,6 +122,7 @@ _wez_try_connect() {
     else
       pane_count=$(echo "$output" | grep -c '"pane_id"' 2>/dev/null) || pane_count=0
     fi
+    [[ "$pane_count" =~ ^[0-9]+$ ]] || pane_count=0
     echo "$pane_count"
     return 0
   fi
@@ -170,7 +165,7 @@ wez_cmd_discover() {
       --verbose) opt_verbose=true ;;
       --socket)
         if [[ -z "${2:-}" ]]; then
-          wez_error "--socket requires a path argument"
+          wez_error "--socket requires a path argument" # always show parse errors
           return 1
         fi
         opt_socket="$2"
@@ -181,7 +176,7 @@ wez_cmd_discover() {
         return 0
         ;;
       *)
-        wez_error "Unknown option: $1"
+        wez_error "Unknown option: $1" # always show parse errors
         return 1
         ;;
     esac
@@ -199,7 +194,7 @@ wez_cmd_discover() {
 
   # Check wezterm installation
   if ! command -v wezterm >/dev/null 2>&1; then
-    wez_error "wezterm is not installed"
+    [[ "$stderr_enabled" == true ]] && wez_error "wezterm is not installed"
     return "${WEZ_EXIT_NO_WEZTERM}"
   fi
 
@@ -209,12 +204,14 @@ wez_cmd_discover() {
   local socket exit_code=0
   socket=$(wez_discover_socket "$opt_socket") || exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
-    if [[ -n "$opt_socket" ]]; then
-      wez_error "Specified socket not found: ${opt_socket}"
-    elif [[ -n "${WEZTERM_UNIX_SOCKET:-}" ]]; then
-      wez_error "WEZTERM_UNIX_SOCKET socket not found: ${WEZTERM_UNIX_SOCKET}"
-    else
-      wez_error "No WezTerm sockets found in ${_WEZ_SOCKET_DIR}"
+    if [[ "$stderr_enabled" == true ]]; then
+      if [[ -n "$opt_socket" ]]; then
+        wez_error "Specified socket not found: ${opt_socket}"
+      elif [[ -n "${WEZTERM_UNIX_SOCKET:-}" ]]; then
+        wez_error "WEZTERM_UNIX_SOCKET socket not found: ${WEZTERM_UNIX_SOCKET}"
+      else
+        wez_error "No WezTerm sockets found in ${_WEZ_SOCKET_DIR}"
+      fi
     fi
     return "$exit_code"
   fi
@@ -226,7 +223,7 @@ wez_cmd_discover() {
 
   local pane_count
   if ! pane_count=$(wez_verify_connection "$socket"); then
-    wez_error "Failed to connect to socket: ${socket}"
+    [[ "$stderr_enabled" == true ]] && wez_error "Failed to connect to socket: ${socket}"
     return "${WEZ_EXIT_CONN_FAIL}"
   fi
 
