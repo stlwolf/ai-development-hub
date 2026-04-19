@@ -99,6 +99,7 @@ projects/wezterm-ai-mode/
 ## ドキュメント
 
 - [CONVENTIONS.md](CONVENTIONS.md) — 命名・frontmatter・plan/episode 分離・gate
+- [docs/plans/](docs/plans/) — キックオフ・実装プラン
 - [docs/VERIFICATION_MATRIX.md](docs/VERIFICATION_MATRIX.md) — A: ツール / B: プロセス
 - [docs/decisions/](docs/decisions/) — ADR（設計判断記録）
 - [docs/episodes/](docs/episodes/) — 実装エピソード
