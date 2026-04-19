@@ -36,10 +36,10 @@ use_when:
 
 | ID | 検証項目 | 状態 | 結果 | 根拠 |
 |----|---------|------|------|------|
-| A-2-1 | `wez discover` 単体・全サブコマンド前提 | 未実施 | - | Issue #20 Phase 1 |
+| A-2-1 | `wez discover` 単体・全サブコマンド前提 | 実施済み | PASSED | Issue #28, E2E 9/9 パス |
 | A-2-2 | `wez pane`（list / split / send / capture / kill） | 未実施 | - | 同上 |
 | A-2-3 | `wez notify`（運用 Lua 統合方針確定後） | 未実施 | - | 同上 |
-| A-2-4 | 複数 WezTerm インスタンス時のソケット選択 | 未実施 | - | PoC 未検証 |
+| A-2-4 | 複数 WezTerm インスタンス時のソケット選択 | 設計済み | DESIGNED | ADR-002: mtime+verify ハイブリッド方式。単一インスタンスで E2E 検証済み |
 | A-2-5 | 新ペイン tmux auto-attach 後のコマンド送信（ポーリング等） | 未実施 | - | PoC-02 制約 |
 
 ---
