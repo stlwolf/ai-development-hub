@@ -49,7 +49,7 @@ wez_discover_socket() {
 # Outputs:
 #   stdout: socket path on success
 # Returns:
-#   WEZ_EXIT_SUCCESS / WEZ_EXIT_NOT_FOUND
+#   WEZ_EXIT_SUCCESS / WEZ_EXIT_NOT_FOUND / WEZ_EXIT_CONN_FAIL
 _wez_auto_detect_socket() {
   local sockets=()
   if [[ -d "$_WEZ_SOCKET_DIR" ]]; then
