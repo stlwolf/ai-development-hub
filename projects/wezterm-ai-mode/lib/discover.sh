@@ -2,7 +2,7 @@
 # discover.sh - Socket auto-discovery for wez CLI
 #
 # Sourced by bin/wez. Library functions are silent by default (DJ-3):
-# no stderr output. CLI output control is handled by bin/wez (wez_cmd_discover).
+# no stderr output. CLI handler (wez_cmd_discover) controls stderr via flags.
 
 readonly _WEZ_SOCKET_DIR="${HOME}/.local/share/wezterm"
 readonly _WEZ_SOCKET_PATTERN="gui-sock-*"
@@ -80,8 +80,8 @@ _wez_auto_detect_socket() {
     fi
   done
 
-  # Fallback: no socket passed connection verify
-  return "${WEZ_EXIT_NOT_FOUND}"
+  # Sockets found but none passed connection verify
+  return "${WEZ_EXIT_CONN_FAIL}"
 }
 
 # Sort socket paths by mtime descending (newest first).
