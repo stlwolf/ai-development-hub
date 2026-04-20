@@ -76,6 +76,8 @@ EOF
     local count=0
     if command -v jq >/dev/null 2>&1; then
       count=$(jq 'length' <<< "$json" 2>/dev/null) || count=0
+    else
+      count=$(grep -o '"pane_id"' <<< "$json" 2>/dev/null | wc -l | tr -d '[:space:]') || count=0
     fi
     wez_info "pane list: ${count} panes"
   fi
@@ -255,8 +257,9 @@ _wez_pane_send() {
         cat <<'EOF'
 Usage: wez pane send <pane-id> <text>
 
-Send text to a pane as if typed. Uses --no-paste mode.
-Newlines and carriage returns in text are rejected.
+Send text to a pane as if typed, then press Enter. Uses --no-paste mode.
+Newline and carriage-return characters in text are rejected; the command
+appends its own trailing newline when sending.
 
 Options:
   --pane-id <ID>   Target pane (alternative to positional argument)
@@ -564,6 +567,11 @@ wez_cmd_pane() {
         ;;
     esac
     return "$exit_code"
+  fi
+
+  if ! wez_verify_connection "$socket" >/dev/null; then
+    wez_error "pane: socket connection failed"
+    return "${WEZ_EXIT_CONN_FAIL}"
   fi
 
   export WEZTERM_UNIX_SOCKET="$socket"
