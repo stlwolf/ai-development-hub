@@ -12,8 +12,10 @@ readonly WEZ_EXIT_NOT_FOUND=1
 readonly WEZ_EXIT_CONN_FAIL=2
 # shellcheck disable=SC2034
 readonly WEZ_EXIT_NO_WEZTERM=127
+# shellcheck disable=SC2034
+readonly WEZ_EXIT_USAGE=64
 
-# Color codes (disabled when stdout is not a terminal)
+# Color codes (disabled when stderr is not a terminal)
 if [[ -t 2 ]]; then
   readonly WEZ_COLOR_RED=$'\033[0;31m'
   readonly WEZ_COLOR_YELLOW=$'\033[0;33m'

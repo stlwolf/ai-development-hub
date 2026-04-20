@@ -165,8 +165,8 @@ wez_cmd_discover() {
       --verbose) opt_verbose=true ;;
       --socket)
         if [[ -z "${2:-}" ]]; then
-          wez_error "--socket requires a path argument" # always show parse errors
-          return 1
+          wez_error "--socket requires a path argument"
+          return "${WEZ_EXIT_USAGE}"
         fi
         opt_socket="$2"
         shift
@@ -176,8 +176,8 @@ wez_cmd_discover() {
         return 0
         ;;
       *)
-        wez_error "Unknown option: $1" # always show parse errors
-        return 1
+        wez_error "Unknown option: $1"
+        return "${WEZ_EXIT_USAGE}"
         ;;
     esac
     shift
@@ -263,6 +263,7 @@ Exit codes:
   0    Success
   1    Socket not found
   2    Connection failed
+  64   Usage error (invalid option or missing argument)
   127  wezterm not installed
 EOF
 }

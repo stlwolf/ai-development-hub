@@ -53,7 +53,7 @@ wez_main() {
     *)
       wez_error "Unknown command: ${cmd}"
       echo "Run 'wez help' for usage information." >&2
-      exit 1
+      exit "${WEZ_EXIT_USAGE}"
       ;;
   esac
 }
