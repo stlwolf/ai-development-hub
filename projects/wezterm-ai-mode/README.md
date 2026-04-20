@@ -4,7 +4,7 @@ WezTerm の **Human Mode（tmux 維持）** と **AI Mode（`wezterm cli` 上乗
 
 ## ステータス
 
-**Phase 1 実装中** — `wez discover` が動作する状態。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で `pane`・`notify` 等を追加予定。
+**Phase 1 実装中** — `wez discover` + `wez pane` が動作する状態。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で `notify` 等を追加予定。
 
 ## クイックスタート
 
@@ -17,6 +17,13 @@ WezTerm の **Human Mode（tmux 維持）** と **AI Mode（`wezterm cli` 上乗
 
 # 他スクリプトからソケットパスを取得
 WEZTERM_UNIX_SOCKET=$(./projects/wezterm-ai-mode/bin/wez discover --quiet)
+
+# ペイン操作
+./projects/wezterm-ai-mode/bin/wez pane list
+./projects/wezterm-ai-mode/bin/wez pane split --right --percent 30
+./projects/wezterm-ai-mode/bin/wez pane send <pane-id> "echo hello"
+./projects/wezterm-ai-mode/bin/wez pane capture <pane-id> --lines 5
+./projects/wezterm-ai-mode/bin/wez pane kill <pane-id>
 ```
 
 ## CLI リファレンス
@@ -43,16 +50,6 @@ Options:
 
 明示指定（1, 2）が失敗した場合はフォールバックせず即エラー。自動検出（3）では複数ソケットがある場合に mtime 降順 + 接続確認のハイブリッド方式で最適なものを選択する。
 
-**Exit codes**:
-
-| コード | 意味 |
-|--------|------|
-| 0 | 成功 |
-| 1 | ソケット未検出 |
-| 2 | 接続失敗 |
-| 64 | 使用法エラー（不正なオプション、引数不足） |
-| 127 | wezterm 未インストール |
-
 **JSON 出力スキーマ** (`--json`):
 
 ```json
@@ -62,6 +59,81 @@ Options:
 }
 ```
 
+### `wez pane`
+
+WezTerm ペインの操作。ソケットは `wez discover` と同じ優先順位で自動解決される。`--socket` で明示指定も可能。
+
+```
+Usage: wez pane [--socket <path>] <subcommand> [options]
+
+Subcommands:
+  list      List all panes as JSON
+  split     Split a pane to create a new one
+  send      Send text to a pane
+  capture   Capture text output from a pane
+  kill      Kill (close) a pane
+```
+
+#### `wez pane list`
+
+```
+Usage: wez pane list [options]
+
+Options:
+  --quiet          Suppress status messages on stderr
+  --verbose        Show pane count on stderr
+```
+
+#### `wez pane split`
+
+```
+Usage: wez pane split [options]
+
+Options:
+  --right          Split horizontally, new pane on the right (default)
+  --bottom         Split vertically, new pane on the bottom
+  --left / --top   Other directions
+  --percent <N>    Size of the new pane as percentage 1-100 (default: 50)
+  --pane-id <ID>   Specify the source pane to split
+  --cwd <PATH>     Set working directory for the new pane
+  --json           Output result as JSON
+  --wait-ready     Wait until the new pane is ready for input
+  --timeout <SEC>  Timeout for --wait-ready in seconds (default: 10)
+```
+
+`--wait-ready` はポーリングで新ペインの出力が安定するまで待機する（tmux auto-attach のタイミング問題を吸収）。
+
+#### `wez pane send`
+
+```
+Usage: wez pane send (<pane-id> | --pane-id <ID>) <text>
+```
+
+テキストを `--no-paste` モードで送信し、末尾に改行を追加。改行・復帰文字を含むテキストは拒否。
+
+#### `wez pane capture`
+
+```
+Usage: wez pane capture (<pane-id> | --pane-id <ID>) [options]
+
+Options:
+  --lines <N>      Capture only the last N lines
+  --raw            Include ANSI escape sequences (uses get-text --escapes)
+```
+
+デフォルトはプレーンテキスト（末尾空行ストリップ済み）。
+
+#### `wez pane kill`
+
+```
+Usage: wez pane kill (<pane-id> | --pane-id <ID>) [options]
+
+Options:
+  --json           Output result as JSON
+```
+
+確認プロンプトなしで即座にペインを閉じる。
+
 ### `wez help`
 
 サブコマンド一覧を表示。
@@ -70,6 +142,21 @@ Options:
 
 バージョン情報を表示。
 
+## Exit codes
+
+全サブコマンド共通。
+
+| コード | 定数 | 意味 |
+|--------|------|------|
+| 0 | `WEZ_EXIT_SUCCESS` | 成功 |
+| 1 | `WEZ_EXIT_NOT_FOUND` | ソケット未検出 |
+| 2 | `WEZ_EXIT_CONN_FAIL` | 接続失敗 |
+| 3 | `WEZ_EXIT_PANE_NOT_FOUND` | ペイン未検出 |
+| 4 | `WEZ_EXIT_TIMEOUT` | タイムアウト（`--wait-ready`） |
+| 5 | `WEZ_EXIT_PANE_OP_FAILED` | ペイン操作失敗 |
+| 64 | `WEZ_EXIT_USAGE` | 使用法エラー（不正なオプション、引数不足） |
+| 127 | `WEZ_EXIT_NO_WEZTERM` | wezterm 未インストール |
+
 ## ファイル構成
 
 ```
@@ -77,7 +164,8 @@ projects/wezterm-ai-mode/
 ├── bin/wez              # エントリポイント（subcommand dispatcher）
 ├── lib/
 │   ├── common.sh        # 共通: カラー、ログ関数、exit code 定数
-│   └── discover.sh      # wez discover の実装
+│   ├── discover.sh      # wez discover の実装
+│   └── pane.sh          # wez pane の実装（list/split/send/capture/kill）
 ├── docs/
 │   ├── VERIFICATION_MATRIX.md
 │   ├── decisions/       # ADR（設計判断記録）
