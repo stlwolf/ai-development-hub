@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WEZ_VERSION="0.1.0"
+
+# Resolve WEZ_ROOT following symlinks (macOS-compatible, no readlink -f)
+_wez_resolve_root() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")/.." && pwd
+}
+WEZ_ROOT="$(_wez_resolve_root)"
+
+# shellcheck source=../lib/common.sh
+source "$WEZ_ROOT/lib/common.sh"
+# shellcheck source=../lib/discover.sh
+source "$WEZ_ROOT/lib/discover.sh"
+
+wez_help() {
+  cat <<EOF
+wez - WezTerm AI Mode CLI v${WEZ_VERSION}
+
+Usage: wez <command> [options]
+
+Commands:
+  discover    Auto-detect WezTerm socket and verify connection
+  help        Show this help message
+  version     Show version
+
+Run 'wez <command> --help' for more information on a command.
+EOF
+}
+
+wez_main() {
+  local cmd="${1:-help}"
+  shift || true
+
+  case "$cmd" in
+    discover)
+      wez_cmd_discover "$@"
+      ;;
+    help|--help|-h)
+      wez_help
+      ;;
+    version|--version|-V)
+      echo "wez ${WEZ_VERSION}"
+      ;;
+    *)
+      wez_error "Unknown command: ${cmd}"
+      echo "Run 'wez help' for usage information." >&2
+      exit "${WEZ_EXIT_USAGE}"
+      ;;
+  esac
+}
+
+wez_main "$@"
