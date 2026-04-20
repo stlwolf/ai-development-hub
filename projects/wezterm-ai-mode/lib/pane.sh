@@ -16,7 +16,11 @@ _wez_pane_exists() {
   if command -v jq >/dev/null 2>&1; then
     jq -e --argjson id "$pane_id" 'map(select(.pane_id == $id)) | length > 0' <<< "$json" >/dev/null 2>&1
   else
-    [[ "$json" == *"\"pane_id\":${pane_id}"* ]] || [[ "$json" == *"\"pane_id\": ${pane_id}"* ]]
+    # Boundary-aware match: pane_id must be followed by , or } (JSON delimiters)
+    [[ "$json" == *"\"pane_id\":${pane_id},"* ]] \
+      || [[ "$json" == *"\"pane_id\":${pane_id}}"* ]] \
+      || [[ "$json" == *"\"pane_id\": ${pane_id},"* ]] \
+      || [[ "$json" == *"\"pane_id\": ${pane_id}}"* ]]
   fi
 }
 
@@ -97,8 +101,8 @@ _wez_pane_split() {
       --left)        opt_direction="--left" ;;
       --top)         opt_direction="--top" ;;
       --percent)
-        if [[ -z "${2:-}" ]]; then
-          wez_error "pane split: --percent requires a value"
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+          wez_error "pane split: --percent requires a positive integer"
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_percent="$2"; shift
@@ -120,8 +124,8 @@ _wez_pane_split() {
       --json)        opt_json=true ;;
       --wait-ready)  opt_wait_ready=true ;;
       --timeout)
-        if [[ -z "${2:-}" ]]; then
-          wez_error "pane split: --timeout requires a value"
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+          wez_error "pane split: --timeout requires a positive integer (seconds)"
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_timeout="$2"; shift
@@ -201,28 +205,30 @@ _wez_pane_split_json() {
 # Non-empty: [[ "$curr" == *[!$' \t\n']* ]]
 # Stable: last 5 lines unchanged across 2 consecutive checks.
 # Interval: 0.5s. Timeout: configurable (default 10s).
+# Uses integer milliseconds to avoid bc dependency.
 _wez_wait_pane_ready() {
   local pane_id="$1"
   local timeout="${2:-10}"
-  local interval=0.5
-  local elapsed=0
+  local interval_ms=500
+  local timeout_ms=$((timeout * 1000))
+  local elapsed_ms=0
   local prev_tail=""
 
-  while (( $(echo "$elapsed < $timeout" | bc -l) )); do
+  while (( elapsed_ms < timeout_ms )); do
     local curr
     curr=$(wezterm cli get-text --pane-id "$pane_id" 2>/dev/null) || true
 
     if [[ "$curr" == *[!$' \t\n']* ]]; then
       local curr_tail
-      curr_tail=$(tail -5 <<< "$curr")
+      curr_tail=$(tail -n 5 <<< "$curr")
       if [[ -n "$prev_tail" ]] && [[ "$curr_tail" == "$prev_tail" ]]; then
         return 0
       fi
       prev_tail="$curr_tail"
     fi
 
-    sleep "$interval"
-    elapsed=$(echo "$elapsed + $interval" | bc -l)
+    sleep 0.5
+    elapsed_ms=$((elapsed_ms + interval_ms))
   done
 
   return 1
@@ -332,8 +338,8 @@ _wez_pane_capture() {
         opt_pane_id="$2"; shift
         ;;
       --lines)
-        if [[ -z "${2:-}" ]]; then
-          wez_error "pane capture: --lines requires a value"
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+          wez_error "pane capture: --lines requires a positive integer"
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_lines="$2"; shift
@@ -536,7 +542,9 @@ wez_cmd_pane() {
       *)
         subcmd="$1"
         shift
-        subcmd_args=("$@")
+        if [[ $# -gt 0 ]]; then
+          subcmd_args=("$@")
+        fi
         break
         ;;
     esac
@@ -574,11 +582,11 @@ wez_cmd_pane() {
 
   # Stage 2: dispatch to subcommand
   case "$subcmd" in
-    list)    _wez_pane_list "${subcmd_args[@]}" ;;
-    split)   _wez_pane_split "${subcmd_args[@]}" ;;
-    send)    _wez_pane_send "${subcmd_args[@]}" ;;
-    capture) _wez_pane_capture "${subcmd_args[@]}" ;;
-    kill)    _wez_pane_kill "${subcmd_args[@]}" ;;
+    list)    _wez_pane_list ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
+    split)   _wez_pane_split ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
+    send)    _wez_pane_send ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
+    capture) _wez_pane_capture ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
+    kill)    _wez_pane_kill ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
     *)
       wez_error "pane: unknown subcommand: ${subcmd}"
       echo "Run 'wez pane --help' for usage information." >&2
