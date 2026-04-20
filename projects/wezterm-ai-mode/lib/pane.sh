@@ -9,6 +9,7 @@
 
 _wez_pane_exists() {
   local pane_id="$1"
+  [[ "$pane_id" =~ ^[0-9]+$ ]] || return 1
   local json
   if ! json=$(wezterm cli list --format json 2>/dev/null); then
     return 1
