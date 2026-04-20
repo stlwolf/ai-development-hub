@@ -92,7 +92,7 @@ EOF
     wez_info "pane list: ${count} panes"
   fi
 
-  echo "$json"
+  printf '%s\n' "$json"
 }
 
 # --- Subcommand: split ---
@@ -277,7 +277,7 @@ _wez_pane_send() {
       --json)  opt_json=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane send [--pane-id <ID>] <pane-id> <text>
+Usage: wez pane send (<pane-id> | --pane-id <ID>) <text>
 
 Send text to a pane as if typed, then press Enter. Uses --no-paste mode.
 Newline and carriage-return characters in text are rejected; the command
@@ -371,7 +371,7 @@ _wez_pane_capture() {
       --raw) opt_raw=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane capture [--pane-id <ID>] <pane-id> [options]
+Usage: wez pane capture (<pane-id> | --pane-id <ID>) [options]
 
 Capture text output from a pane.
 Default: returns plain text with trailing blank lines stripped.
@@ -451,7 +451,7 @@ _wez_pane_kill() {
       --json)  opt_json=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane kill [--pane-id <ID>] <pane-id> [options]
+Usage: wez pane kill (<pane-id> | --pane-id <ID>) [options]
 
 Kill (close) a pane. No confirmation prompt.
 
