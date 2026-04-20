@@ -15,7 +15,7 @@ readonly _WEZ_SOCKET_PATTERN="gui-sock-*"
 # Outputs:
 #   stdout: socket path on success
 # Returns:
-#   WEZ_EXIT_SUCCESS / WEZ_EXIT_NOT_FOUND / WEZ_EXIT_NO_WEZTERM
+#   WEZ_EXIT_SUCCESS / WEZ_EXIT_NOT_FOUND / WEZ_EXIT_CONN_FAIL / WEZ_EXIT_NO_WEZTERM
 wez_discover_socket() {
   local explicit_socket="${1:-}"
 
@@ -209,6 +209,8 @@ wez_cmd_discover() {
         wez_error "Specified socket not found: ${opt_socket}"
       elif [[ -n "${WEZTERM_UNIX_SOCKET:-}" ]]; then
         wez_error "WEZTERM_UNIX_SOCKET socket not found: ${WEZTERM_UNIX_SOCKET}"
+      elif [[ $exit_code -eq "${WEZ_EXIT_CONN_FAIL}" ]]; then
+        wez_error "Sockets found but all failed connection verification"
       else
         wez_error "No WezTerm sockets found in ${_WEZ_SOCKET_DIR}"
       fi
