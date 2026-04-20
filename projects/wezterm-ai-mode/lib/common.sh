@@ -13,6 +13,12 @@ readonly WEZ_EXIT_CONN_FAIL=2
 # shellcheck disable=SC2034
 readonly WEZ_EXIT_NO_WEZTERM=127
 # shellcheck disable=SC2034
+readonly WEZ_EXIT_PANE_NOT_FOUND=3
+# shellcheck disable=SC2034
+readonly WEZ_EXIT_TIMEOUT=4
+# shellcheck disable=SC2034
+readonly WEZ_EXIT_PANE_OP_FAILED=5
+# shellcheck disable=SC2034
 readonly WEZ_EXIT_USAGE=64
 
 # Color codes (disabled when stderr is not a terminal)

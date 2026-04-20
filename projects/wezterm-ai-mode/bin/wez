@@ -20,6 +20,8 @@ WEZ_ROOT="$(_wez_resolve_root)"
 source "$WEZ_ROOT/lib/common.sh"
 # shellcheck source=../lib/discover.sh
 source "$WEZ_ROOT/lib/discover.sh"
+# shellcheck source=../lib/pane.sh
+source "$WEZ_ROOT/lib/pane.sh"
 
 wez_help() {
   cat <<EOF
@@ -29,6 +31,7 @@ Usage: wez <command> [options]
 
 Commands:
   discover    Auto-detect WezTerm socket and verify connection
+  pane        Manage WezTerm panes (list, split, send, capture, kill)
   help        Show this help message
   version     Show version
 
@@ -43,6 +46,9 @@ wez_main() {
   case "$cmd" in
     discover)
       wez_cmd_discover "$@"
+      ;;
+    pane)
+      wez_cmd_pane "$@"
       ;;
     help|--help|-h)
       wez_help
