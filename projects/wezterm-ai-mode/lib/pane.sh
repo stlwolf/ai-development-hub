@@ -207,8 +207,8 @@ _wez_pane_split_json() {
   local pane_id="$1"
   local status="$2"
   if command -v jq >/dev/null 2>&1; then
-    jq -n --argjson pane_id "$pane_id" --arg status "$status" \
-      '{"pane_id": $pane_id, "status": $status}'
+    jq -n --arg pane_id "$pane_id" --arg status "$status" \
+      '{"pane_id": ($pane_id | tonumber), "status": $status}'
   else
     printf '{"pane_id":%s,"status":"%s"}\n' "$pane_id" "$status"
   fi
@@ -327,7 +327,7 @@ EOF
 
   if [[ "$opt_json" == true ]]; then
     if command -v jq >/dev/null 2>&1; then
-      jq -n --argjson pane_id "$opt_pane_id" '{"pane_id": $pane_id, "status": "sent"}'
+      jq -n --arg pane_id "$opt_pane_id" '{"pane_id": ($pane_id | tonumber), "status": "sent"}'
     else
       printf '{"pane_id":%s,"status":"sent"}\n' "$opt_pane_id"
     fi
@@ -487,7 +487,7 @@ EOF
 
   if [[ "$opt_json" == true ]]; then
     if command -v jq >/dev/null 2>&1; then
-      jq -n --argjson pane_id "$opt_pane_id" '{"pane_id": $pane_id, "status": "killed"}'
+      jq -n --arg pane_id "$opt_pane_id" '{"pane_id": ($pane_id | tonumber), "status": "killed"}'
     else
       printf '{"pane_id":%s,"status":"killed"}\n' "$opt_pane_id"
     fi
