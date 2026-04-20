@@ -387,7 +387,6 @@ EOF
   fi
 
   local -a get_args=(--pane-id "$opt_pane_id")
-  [[ -n "$opt_lines" ]] && get_args+=(--start-line "-${opt_lines}")
   [[ "$opt_raw" == true ]] && get_args+=(--escapes)
 
   local output
@@ -400,10 +399,14 @@ EOF
     return "${WEZ_EXIT_PANE_OP_FAILED}"
   fi
 
-  if [[ "$opt_raw" == true ]]; then
-    echo "$output"
+  if [[ "$opt_raw" != true ]]; then
+    output=$(echo "$output" | _wez_strip_trailing_blank)
+  fi
+
+  if [[ -n "$opt_lines" ]]; then
+    echo "$output" | tail -n "$opt_lines"
   else
-    echo "$output" | _wez_strip_trailing_blank
+    echo "$output"
   fi
 }
 
