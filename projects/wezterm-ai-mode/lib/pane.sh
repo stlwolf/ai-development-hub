@@ -115,6 +115,10 @@ _wez_pane_split() {
           wez_error "pane split: --pane-id requires a value"
           return "${WEZ_EXIT_USAGE}"
         fi
+        if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+          wez_error "pane split: --pane-id requires a numeric pane id"
+          return "${WEZ_EXIT_USAGE}"
+        fi
         opt_pane_id="$2"; shift
         ;;
       --cwd)
@@ -291,6 +295,10 @@ EOF
     wez_error "pane send: pane-id is required"
     return "${WEZ_EXIT_USAGE}"
   fi
+  if ! [[ "$opt_pane_id" =~ ^[0-9]+$ ]]; then
+    wez_error "pane send: invalid pane-id: $opt_pane_id"
+    return "${WEZ_EXIT_USAGE}"
+  fi
   if [[ -z "$text" ]]; then
     wez_error "pane send: text is required"
     return "${WEZ_EXIT_USAGE}"
@@ -349,7 +357,7 @@ _wez_pane_capture() {
 Usage: wez pane capture <pane-id> [options]
 
 Capture text output from a pane.
-Default: returns unattributed text with trailing blank lines stripped.
+Default: returns plain text with trailing blank lines stripped.
 
 Options:
   --pane-id <ID>   Target pane (alternative to positional argument)
@@ -377,6 +385,10 @@ EOF
 
   if [[ -z "$opt_pane_id" ]]; then
     wez_error "pane capture: pane-id is required"
+    return "${WEZ_EXIT_USAGE}"
+  fi
+  if ! [[ "$opt_pane_id" =~ ^[0-9]+$ ]]; then
+    wez_error "pane capture: invalid pane-id: $opt_pane_id"
     return "${WEZ_EXIT_USAGE}"
   fi
 
@@ -451,6 +463,10 @@ EOF
 
   if [[ -z "$opt_pane_id" ]]; then
     wez_error "pane kill: pane-id is required"
+    return "${WEZ_EXIT_USAGE}"
+  fi
+  if ! [[ "$opt_pane_id" =~ ^[0-9]+$ ]]; then
+    wez_error "pane kill: invalid pane-id: $opt_pane_id"
     return "${WEZ_EXIT_USAGE}"
   fi
 
