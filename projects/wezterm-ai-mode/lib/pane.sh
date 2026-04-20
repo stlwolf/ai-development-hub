@@ -15,13 +15,20 @@ _wez_pane_exists() {
     return 1
   fi
   if command -v jq >/dev/null 2>&1; then
-    jq -e --arg id "$pane_id" 'map(select((.pane_id | tostring) == $id)) | length > 0' <<< "$json" >/dev/null 2>&1
+    if jq -e --arg id "$pane_id" 'map(select((.pane_id | tostring) == $id)) | length > 0' <<< "$json" >/dev/null 2>&1; then
+      return 0
+    else
+      return 1
+    fi
   else
-    # Boundary-aware match: pane_id must be followed by , or } (JSON delimiters)
-    [[ "$json" == *"\"pane_id\":${pane_id},"* ]] \
+    if [[ "$json" == *"\"pane_id\":${pane_id},"* ]] \
       || [[ "$json" == *"\"pane_id\":${pane_id}}"* ]] \
       || [[ "$json" == *"\"pane_id\": ${pane_id},"* ]] \
-      || [[ "$json" == *"\"pane_id\": ${pane_id}}"* ]]
+      || [[ "$json" == *"\"pane_id\": ${pane_id}}"* ]]; then
+      return 0
+    else
+      return 1
+    fi
   fi
 }
 
@@ -270,7 +277,7 @@ _wez_pane_send() {
       --json)  opt_json=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane send <pane-id> <text>
+Usage: wez pane send [--pane-id <ID>] <pane-id> <text>
 
 Send text to a pane as if typed, then press Enter. Uses --no-paste mode.
 Newline and carriage-return characters in text are rejected; the command
@@ -364,7 +371,7 @@ _wez_pane_capture() {
       --raw) opt_raw=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane capture <pane-id> [options]
+Usage: wez pane capture [--pane-id <ID>] <pane-id> [options]
 
 Capture text output from a pane.
 Default: returns plain text with trailing blank lines stripped.
@@ -444,7 +451,7 @@ _wez_pane_kill() {
       --json)  opt_json=true ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane kill <pane-id> [options]
+Usage: wez pane kill [--pane-id <ID>] <pane-id> [options]
 
 Kill (close) a pane. No confirmation prompt.
 
