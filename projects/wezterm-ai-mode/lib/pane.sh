@@ -14,7 +14,7 @@ _wez_pane_exists() {
     return 1
   fi
   if command -v jq >/dev/null 2>&1; then
-    jq -e --argjson id "$pane_id" 'map(select(.pane_id == $id)) | length > 0' <<< "$json" >/dev/null 2>&1
+    jq -e --arg id "$pane_id" 'map(select((.pane_id | tostring) == $id)) | length > 0' <<< "$json" >/dev/null 2>&1
   else
     # Boundary-aware match: pane_id must be followed by , or } (JSON delimiters)
     [[ "$json" == *"\"pane_id\":${pane_id},"* ]] \
@@ -101,7 +101,7 @@ _wez_pane_split() {
       --left)        opt_direction="--left" ;;
       --top)         opt_direction="--top" ;;
       --percent)
-        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
           wez_error "pane split: --percent requires a positive integer"
           return "${WEZ_EXIT_USAGE}"
         fi
@@ -124,7 +124,7 @@ _wez_pane_split() {
       --json)        opt_json=true ;;
       --wait-ready)  opt_wait_ready=true ;;
       --timeout)
-        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
           wez_error "pane split: --timeout requires a positive integer (seconds)"
           return "${WEZ_EXIT_USAGE}"
         fi
@@ -298,14 +298,9 @@ EOF
     return "${WEZ_EXIT_USAGE}"
   fi
 
-  if ! _wez_pane_exists "$opt_pane_id"; then
-    wez_error "pane send: pane ${opt_pane_id} not found"
-    return "${WEZ_EXIT_PANE_NOT_FOUND}"
-  fi
-
   if ! printf '%s\n' "$text" | wezterm cli send-text --pane-id "$opt_pane_id" --no-paste 2>/dev/null; then
     if ! _wez_pane_exists "$opt_pane_id"; then
-      wez_error "pane send: pane ${opt_pane_id} no longer exists"
+      wez_error "pane send: pane ${opt_pane_id} not found"
       return "${WEZ_EXIT_PANE_NOT_FOUND}"
     fi
     wez_error "pane send: failed to send text to pane ${opt_pane_id}"
@@ -338,7 +333,7 @@ _wez_pane_capture() {
         opt_pane_id="$2"; shift
         ;;
       --lines)
-        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
           wez_error "pane capture: --lines requires a positive integer"
           return "${WEZ_EXIT_USAGE}"
         fi
@@ -381,18 +376,13 @@ EOF
     return "${WEZ_EXIT_USAGE}"
   fi
 
-  if ! _wez_pane_exists "$opt_pane_id"; then
-    wez_error "pane capture: pane ${opt_pane_id} not found"
-    return "${WEZ_EXIT_PANE_NOT_FOUND}"
-  fi
-
   local -a get_args=(--pane-id "$opt_pane_id")
   [[ "$opt_raw" == true ]] && get_args+=(--escapes)
 
   local output
   if ! output=$(wezterm cli get-text "${get_args[@]}" 2>/dev/null); then
     if ! _wez_pane_exists "$opt_pane_id"; then
-      wez_error "pane capture: pane ${opt_pane_id} no longer exists"
+      wez_error "pane capture: pane ${opt_pane_id} not found"
       return "${WEZ_EXIT_PANE_NOT_FOUND}"
     fi
     wez_error "pane capture: failed to capture from pane ${opt_pane_id}"
@@ -400,13 +390,13 @@ EOF
   fi
 
   if [[ "$opt_raw" != true ]]; then
-    output=$(echo "$output" | _wez_strip_trailing_blank)
+    output=$(printf '%s\n' "$output" | _wez_strip_trailing_blank)
   fi
 
   if [[ -n "$opt_lines" ]]; then
-    echo "$output" | tail -n "$opt_lines"
+    printf '%s\n' "$output" | tail -n "$opt_lines"
   else
-    echo "$output"
+    printf '%s\n' "$output"
   fi
 }
 
@@ -460,14 +450,9 @@ EOF
     return "${WEZ_EXIT_USAGE}"
   fi
 
-  if ! _wez_pane_exists "$opt_pane_id"; then
-    wez_error "pane kill: pane ${opt_pane_id} not found"
-    return "${WEZ_EXIT_PANE_NOT_FOUND}"
-  fi
-
   if ! wezterm cli kill-pane --pane-id "$opt_pane_id" 2>/dev/null; then
     if ! _wez_pane_exists "$opt_pane_id"; then
-      wez_error "pane kill: pane ${opt_pane_id} already gone"
+      wez_error "pane kill: pane ${opt_pane_id} not found"
       return "${WEZ_EXIT_PANE_NOT_FOUND}"
     fi
     wez_error "pane kill: failed to kill pane ${opt_pane_id}"
