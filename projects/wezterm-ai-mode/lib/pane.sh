@@ -26,7 +26,13 @@ _wez_pane_exists() {
 }
 
 _wez_strip_trailing_blank() {
-  sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+  awk '
+    { lines[++n] = $0 }
+    END {
+      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+      for (i = 1; i <= n; i++) print lines[i]
+    }
+  '
 }
 
 _wez_strip_ansi() {
