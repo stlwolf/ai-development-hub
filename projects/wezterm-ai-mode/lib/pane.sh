@@ -35,12 +35,8 @@ _wez_strip_trailing_blank() {
   '
 }
 
-_wez_strip_ansi() {
-  # CSI sequences: ESC [ ... letter
-  # OSC sequences (BEL terminated): ESC ] ... BEL
-  # OSC sequences (ST terminated): ESC ] ... ESC backslash
-  sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g; s/\x1b\][^\x1b]*\x1b\\//g'
-}
+# _wez_strip_ansi: removed (was dormant and BSD sed incompatible).
+# Re-implement in awk when --raw post-processing is needed.
 
 # --- Subcommand: list ---
 
@@ -110,8 +106,8 @@ _wez_pane_split() {
       --left)        opt_direction="--left" ;;
       --top)         opt_direction="--top" ;;
       --percent)
-        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
-          wez_error "pane split: --percent requires a positive integer"
+        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[1-9][0-9]?$|^100$ ]]; then
+          wez_error "pane split: --percent requires an integer between 1 and 100"
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_percent="$2"; shift
@@ -130,6 +126,10 @@ _wez_pane_split() {
       --cwd)
         if [[ -z "${2:-}" ]]; then
           wez_error "pane split: --cwd requires a path"
+          return "${WEZ_EXIT_USAGE}"
+        fi
+        if [[ ! -d "$2" ]]; then
+          wez_error "pane split: --cwd path does not exist: $2"
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_cwd="$2"; shift
@@ -181,6 +181,10 @@ EOF
   local new_pane_id
   if ! new_pane_id=$(wezterm cli split-pane "${split_args[@]}" 2>/dev/null); then
     wez_error "pane split: failed to split pane"
+    return "${WEZ_EXIT_PANE_OP_FAILED}"
+  fi
+  if ! [[ "$new_pane_id" =~ ^[0-9]+$ ]]; then
+    wez_error "pane split: unexpected pane id from wezterm: ${new_pane_id}"
     return "${WEZ_EXIT_PANE_OP_FAILED}"
   fi
 
@@ -601,11 +605,11 @@ wez_cmd_pane() {
 
   # Stage 2: dispatch to subcommand
   case "$subcmd" in
-    list)    _wez_pane_list ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
-    split)   _wez_pane_split ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
-    send)    _wez_pane_send ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
-    capture) _wez_pane_capture ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
-    kill)    _wez_pane_kill ${subcmd_args[@]+"${subcmd_args[@]}"} ;;
+    list)    _wez_pane_list "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    split)   _wez_pane_split "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    send)    _wez_pane_send "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    capture) _wez_pane_capture "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    kill)    _wez_pane_kill "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
     *)
       wez_error "pane: unknown subcommand: ${subcmd}"
       echo "Run 'wez pane --help' for usage information." >&2
