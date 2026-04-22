@@ -173,6 +173,37 @@ PR 作成後、GitHub Copilot レビューで 4件の指摘を受領し対応:
 
 修正コミット: `2085b84 fix(wez): address copilot review findings`
 
+### Copilot Review 継続対応（Round 2〜6）
+
+修正プッシュごとに Copilot が再レビューを実施。累計 6 ラウンド・18 スレッド対応。Round 1 の 4 件に加え、以下が重要な追加検出:
+
+**コード品質:**
+
+| Round | 内容 | 重大度 | 対応 |
+|-------|------|--------|------|
+| R2 | title/body バリデーションを `[[:cntrl:]]` に拡張（U+0000–U+001F 全対応） | 中 | 修正 `1cebdbf` |
+| R2 | jq-less auto-detect で `tty_name` 未抽出 → TTY direct write が jq 依存 | 中 | 修正 `1cebdbf` |
+| R3 | `--pane-id` 指定時も jq-less `tty_name` 未抽出（R2 で auto-detect のみ修正） | 中 | 修正 `4e6af81` |
+| R5 | **fallback printf が `\033`/`\007` を raw ESC/BEL に展開** → send-text 先 shell の Readline が消費 | **高** | 修正 `ff36793` |
+| R6 | **encode パイプ `set -euo pipefail` 下でサイレント中断** → `if` ガードで `set -e` 適用外に | **高** | 修正 `89067f2` |
+
+**ドキュメント整合性:**
+
+| Round | 内容 | 対応 |
+|-------|------|------|
+| R2 | kickoff / episode の `tmp/` 参照が壊れたリンク | 削除・注記追加 |
+| R3 | CONVENTIONS.md パス不正（`../` → `../../`） | 修正 |
+| R4 | title/body 長さ制限が `--help` / README 未記載 | 追記 |
+| R4 | ADR-007 の TTY チェック記述に `-c` 未反映 | 更新 |
+| R5 | PoC 参照パス不正（`../../poc` → `../../../poc`） | 修正 |
+
+**教訓:**
+
+1. **jq-less パスの網羅性**: auto-detect と `--pane-id` の両分岐で抽出ロジックが必要。一方だけ修正すると他方に漏れが出る
+2. **printf のエスケープレベル管理**: 「外側 printf → 内側 printf → target shell の printf」の 3 段階エスケープは間違いやすい。`od -c` での実バイト列確認が有効
+3. **`set -e` 下の command substitution**: 裸の `var=$(cmd)` は失敗時にサイレント中断。`if ! var=$(cmd)` でガードが必須。DB-4 の当初の「`set -e` 不使用」判断は誤りで、`bin/wez` は `set -euo pipefail` 前提
+4. **Copilot の反復レビュー効果**: 修正プッシュごとに差分を再レビューするため、修正で生じた新たな不整合や見落としを段階的に検出。合計 6 ラウンドで収束
+
 ### Debugger-role Peer Review: so-compare 第2ラウンド
 
 デバッガー/バグハンター観点でゼロベースレビューを実施。プロンプト設計で `so-compare` のタイムアウト問題に遭遇（実行指示が複雑すぎたため）、v2 プロンプトでコード分析特化に変更して成功。
