@@ -38,7 +38,7 @@ _wez_notify_resolve_pane() {
     pane_id=$(jq -r '.[0].pane_id // ""' <<< "$json" 2>/dev/null) || true
     tty_name=$(jq -r '.[0].tty_name // ""' <<< "$json" 2>/dev/null) || true
   else
-    pane_id=$(grep -o '"pane_id":[0-9]*' <<< "$json" | head -1 | grep -o '[0-9]*$') || true
+    pane_id=$(grep -oE '"pane_id":[[:space:]]*[0-9]+' <<< "$json" | head -1 | grep -oE '[0-9]+$') || true
   fi
 
   if [[ -z "$pane_id" ]]; then
@@ -261,8 +261,10 @@ wez_cmd_notify() {
         --arg timeout "$opt_timeout" \
         '{"pane_id": ($pane_id | tonumber), "status": $status, "method": $method, "title": $title, "timeout": ($timeout | tonumber)}'
     else
+      local escaped_title="${title//\\/\\\\}"
+      escaped_title="${escaped_title//\"/\\\"}"
       printf '{"pane_id":%s,"status":"sent","method":"%s","title":"%s","timeout":%s}\n' \
-        "$pane_id" "$method" "$title" "$opt_timeout"
+        "$pane_id" "$method" "$escaped_title" "$opt_timeout"
     fi
   fi
 }
