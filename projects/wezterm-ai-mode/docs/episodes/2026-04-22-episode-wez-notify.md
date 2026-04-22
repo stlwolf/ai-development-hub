@@ -204,6 +204,40 @@ PR 作成後、GitHub Copilot レビューで 4件の指摘を受領し対応:
 3. **`set -e` 下の command substitution**: 裸の `var=$(cmd)` は失敗時にサイレント中断。`if ! var=$(cmd)` でガードが必須。DB-4 の当初の「`set -e` 不使用」判断は誤りで、`bin/wez` は `set -euo pipefail` 前提
 4. **Copilot の反復レビュー効果**: 修正プッシュごとに差分を再レビューするため、修正で生じた新たな不整合や見落としを段階的に検出。合計 6 ラウンドで収束
 
+### レビュー起因の実装変更コンテキスト
+
+以下はレビュー（so-compare / Copilot）で検出・変更された実装判断のうち、ADR-007 のスコープ外だがコンテキストを残すべきもの。
+
+#### 制御文字バリデーションの拡張（`\n`/`\r` → `[[:cntrl:]]`）
+
+当初は title/body に改行（`\n`/`\r`）のみ禁止していた。Copilot R2 で「jq-less JSON 出力パスでタブ等の制御文字が未エスケープのまま出力される」問題を指摘され、制御文字全般に拡張。
+
+判断根拠: JSON 仕様（RFC 8259）は U+0000–U+001F を文字列内でエスケープ必須と定めている。jq パスでは jq 自身がエスケープするが、jq-less パスでは手動エスケープが必要。制御文字をすべてエスケープするより、入力段階で拒否する方がシンプルで安全。`[[:cntrl:]]` は POSIX character class で bash 3.2 互換。
+
+#### title/body 長さ制限（title 500 / body 2000）
+
+当初は長さ制限なし。Debugger SO レビュー（DB-2）で「base64 エンコード後のペイロードが `PIPE_BUF`（macOS: 512 bytes）を超えると TTY 書き込みの atomic 性が崩れ、並行書き込み時にインターリーブするリスク」を指摘された。
+
+数値選定: title 500 文字 + body 2000 文字 + timeout + pipe 区切り → 最大 ~2500 文字。base64 で約 4/3 倍 → ~3400 bytes。`PIPE_BUF` は超えるが、単独書き込みは問題なく、並行書き込みのリスクを「実用上の上限」で緩和する意図。Phase 1 で並行通知を想定しておらず、過度に制約するより許容可能な上限を設定。
+
+#### jq 依存モデルの変更（jq 必須 → jq optional で TTY primary 利用可能）
+
+当初 jq-less パスは `pane_id` のみ grep で抽出し、`tty_name` は抽出しなかった。結果として jq 未インストール環境では TTY direct write（primary）が使えず、send-text fallback に固定されていた。
+
+ADR-007 DJ-1 は「jq は optional」と宣言していたが、実態として primary 方式に jq が必要という矛盾があった。Copilot R2/R3 の指摘で auto-detect・`--pane-id` 両パスに grep ベースの `tty_name` 抽出を追加し、設計意図（jq optional）と実装が一致。
+
+#### timeout 先頭ゼロ拒否 + base-10 強制
+
+当初の timeout バリデーションは `^[0-9]+$` で先頭ゼロ（例: `08`）を許容していた。Copilot R1（C-3）で bash の `(( ))` 算術評価が先頭ゼロを octal として解釈する問題を指摘。`08` → octal 8 は不正で `value too great for base` エラー、`010` → octal 8 で意図と異なる比較結果になる。
+
+対策: regex を `^(0|[1-9][0-9]*)$` に変更（先頭ゼロ拒否）し、算術比較に `10#$opt_timeout` を付けて base-10 解釈を強制。二重防御。
+
+#### fallback printf の raw ESC 埋め込み
+
+fallback の command string builder で `cmd=$(printf "printf '\\033]...\\007' ...")` としていたが、外側 `printf` が `\033` を octal 解釈し raw ESC バイト（0x1B）を `$cmd` に埋め込んでいた。`send-text` で target shell に送信すると、Readline が raw ESC を escape sequence 開始として消費し、残りがゴミ入力になる。
+
+これは primary（TTY direct write）が成功する環境では到達しないため E2E で検出されなかった。`\\\\033`/`\\\\007` に修正し、outer printf が literal `\033`/`\007` を出力 → target shell の printf が ESC/BEL に展開する正しいチェインに。
+
 ### Debugger-role Peer Review: so-compare 第2ラウンド
 
 デバッガー/バグハンター観点でゼロベースレビューを実施。プロンプト設計で `so-compare` のタイムアウト問題に遭遇（実行指示が複雑すぎたため）、v2 プロンプトでコード分析特化に変更して成功。
