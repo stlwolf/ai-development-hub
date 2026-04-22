@@ -77,7 +77,7 @@ _wez_notify_send_user_var() {
 
   # Fallback: command string via send-text
   local cmd
-  cmd=$(printf "printf '\\033]1337;SetUserVar=%%s=%%s\\007' '%s' '%s'" "$var_name" "$encoded_value")
+  cmd=$(printf "printf '\\\\033]1337;SetUserVar=%%s=%%s\\\\007' '%s' '%s'" "$var_name" "$encoded_value")
   if printf '%s\n' "$cmd" | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null; then
     printf 'send-text\n'
     return 0

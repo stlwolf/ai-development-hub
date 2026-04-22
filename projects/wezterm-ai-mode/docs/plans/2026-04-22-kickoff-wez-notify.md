@@ -15,10 +15,10 @@ related:
     ref: "./2026-04-20-kickoff-wez-pane.md"
     reason: "1-2 で確立した pane 操作パターンを前提とする"
   - type: derived_from
-    ref: "../../poc/wezterm-ai-mode/04-notification.sh"
+    ref: "../../../poc/wezterm-ai-mode/04-notification.sh"
     reason: "通知 PoC のコアロジック元"
   - type: derived_from
-    ref: "../../poc/wezterm-ai-mode/wezterm-config/ai-mode-events.lua"
+    ref: "../../../poc/wezterm-ai-mode/wezterm-config/ai-mode-events.lua"
     reason: "Lua ハンドラの参考実装"
   - type: design_context
     ref: "../VERIFICATION_MATRIX.md"
