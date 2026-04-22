@@ -4,7 +4,7 @@ WezTerm の **Human Mode（tmux 維持）** と **AI Mode（`wezterm cli` 上乗
 
 ## ステータス
 
-**Phase 1 実装中** — `wez discover` + `wez pane` が動作する状態。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で `notify` 等を追加予定。
+**Phase 1 実装中** — `wez discover` + `wez pane` + `wez notify` が動作する状態。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で追加機能を予定。
 
 ## クイックスタート
 
@@ -24,6 +24,10 @@ WEZTERM_UNIX_SOCKET=$(./projects/wezterm-ai-mode/bin/wez discover --quiet)
 ./projects/wezterm-ai-mode/bin/wez pane send <pane-id> "echo hello"
 ./projects/wezterm-ai-mode/bin/wez pane capture <pane-id> --lines 5
 ./projects/wezterm-ai-mode/bin/wez pane kill <pane-id>
+
+# 通知（user-var 送信）
+./projects/wezterm-ai-mode/bin/wez notify "Build Complete" "All tests passed"
+./projects/wezterm-ai-mode/bin/wez notify --json --timeout 8000 "Deploy" "Production"
 ```
 
 ## CLI リファレンス
@@ -134,6 +138,44 @@ Options:
 
 確認プロンプトなしで即座にペインを閉じる。
 
+### `wez notify`
+
+WezTerm ペインに user-var（OSC 1337 SetUserVar）を送信する。送信方式は TTY 直接書き込み（primary）と command string（fallback）の2段階。
+
+```
+Usage: wez notify [options] <title> [body]
+
+Options:
+  --pane-id <ID>    Target pane (default: auto-detect first pane)
+  --timeout <MS>    Toast duration in milliseconds (default: 4000)
+  --socket <path>   WezTerm socket path (default: auto-detect)
+  --json            Output result as JSON
+```
+
+ペイロード形式: `title|body|timeout` を base64 エンコードし、user-var `ai_notify` として送信。
+
+**制約**:
+- title と body に `|`（パイプ文字）と改行を含めることはできない
+- timeout の範囲: 100〜60000 ミリ秒
+
+**送信方式（ADR-007）**:
+- **Primary**: `wezterm cli list` から `tty_name` を取得し、TTY デバイスに OSC を直接書き込み。history 汚染なし、プロンプト状態非依存
+- **Fallback**: `tty_name` が利用不可の場合、`printf` コマンド文字列を `send-text --no-paste` で送信。history にコマンドが残る
+
+**toast 通知の表示**: Phase 1 では CLI（user-var 送信）のみ。デスクトップ通知を表示するには `.wezterm.lua` に Lua イベントハンドラが必要（Phase 2、ADR-006）。
+
+**JSON 出力スキーマ** (`--json`):
+
+```json
+{
+  "pane_id": 0,
+  "status": "sent",
+  "method": "tty",
+  "title": "Build Complete",
+  "timeout": 4000
+}
+```
+
 ### `wez help`
 
 サブコマンド一覧を表示。
@@ -165,7 +207,8 @@ projects/wezterm-ai-mode/
 ├── lib/
 │   ├── common.sh        # 共通: カラー、ログ関数、exit code 定数
 │   ├── discover.sh      # wez discover の実装
-│   └── pane.sh          # wez pane の実装（list/split/send/capture/kill）
+│   ├── pane.sh          # wez pane の実装（list/split/send/capture/kill）
+│   └── notify.sh        # wez notify の実装（TTY direct write + fallback）
 ├── docs/
 │   ├── VERIFICATION_MATRIX.md
 │   ├── decisions/       # ADR（設計判断記録）
