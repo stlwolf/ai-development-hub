@@ -160,6 +160,43 @@ E2E パス後、キックオフの必須停止 GATE に従い `so-compare` を�
 
 レビューログ: `tmp/peer-review-20260422-201901/review-log.md`
 
+### Copilot Review 対応
+
+PR 作成後、GitHub Copilot レビューで 4件の指摘を受領し対応:
+
+| # | 内容 | 対応 |
+|---|------|------|
+| C-1 | kickoff の `WEZTERM_PANE` 記載矛盾 | 修正（YAGNI に統一） |
+| C-2 | episode の DJ 番号が ADR-007 と不整合 | 修正（DJ-4 追加、DJ-3/DJ-5 明確化） |
+| C-3 | timeout validation で先頭ゼロが octal 問題を引き起こす | 修正（regex `^(0\|[1-9][0-9]*)$` + `10#` prefix） |
+| C-4 | discussion frontmatter の `ref:` 欠落 | 修正（`ref: "#"` placeholder 追加） |
+
+修正コミット: `2085b84 fix(wez): address copilot review findings`
+
+### Debugger-role Peer Review: so-compare 第2ラウンド
+
+デバッガー/バグハンター観点でゼロベースレビューを実施。プロンプト設計で `so-compare` のタイムアウト問題に遭遇（実行指示が複雑すぎたため）、v2 プロンプトでコード分析特化に変更して成功。
+
+**参加者**: Codex CLI + Claude Code。2者とも成功。
+
+**検出事項:**
+
+| # | 重大度 | 内容 | 発見者 | 対応 |
+|---|--------|------|--------|------|
+| DB-1 | 🟡 | `tty_name` の `-w` チェックが通常ファイルでも通る → OSC 誤書き込みリスク | Codex + Claude | **修正済み**（`-c` チェック追加） |
+| DB-2 | 🟡 | title/body 長さ上限なし → base64 ペイロードが PIPE_BUF 超過時の atomic 性問題 | Claude | **修正済み**（title 500/body 2000 文字制限） |
+| DB-3 | 🟢 | jq parse エラーの silent suppress | Codex | 許容（Phase 1: jq は optional） |
+| DB-4 | 🟢 | `base64` パイプ失敗で `set -e` 時にスクリプト中断 | Claude | 許容（`set -e` 不使用の設計方針） |
+| DB-5 | 🟢 | `send-text` の stdout が JSON 出力に混入する可能性 | Codex | 許容（`2>/dev/null` で stderr 抑制済み、stdout は空想定） |
+| DB-6 | 🟢 | fallback が非シェルペイン・fish 互換性に問題あり | Codex + Claude | 許容（Phase 1 スコープ外、ドキュメント化済み） |
+| DB-7 | 🟢 | 並行 TTY 書き込み時のインターリーブリスク | Claude | 許容（DB-2 の長さ制限で緩和） |
+
+**対応方針**: DB-1, DB-2 は低コスト・高インパクトのため即時実装。DB-3〜DB-7 は Phase 1 で許容し、Epic コメントで残課題として言及。
+
+修正コミット: `ccfb579 fix(wez): add character device check and length limits for notify`
+
+**プロンプト設計の教訓**: `so-compare` でロールを変える（レビューア → デバッガー）場合、「コマンド実行してテストせよ」のような指示はサンドボックス制約でタイムアウトを引き起こす。コード分析特化のプロンプトに限定すべき。
+
 ---
 
 ## 3. 振り返り（後で追記）
