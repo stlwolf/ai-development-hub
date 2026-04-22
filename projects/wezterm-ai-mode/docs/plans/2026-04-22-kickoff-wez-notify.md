@@ -304,7 +304,7 @@ Options:
 - [ ] `shellcheck` パス（全ファイル）
 - [ ] コミット: `feat(wez): add notify subcommand with user-var injection`
 
-!! GATE（必須）: Step 1 完了後、`so-compare.sh` によるコードレビュー実施。DJ-1 の送信方式実装、base64 エンコード、入力バリデーション、`pane.sh` との一貫性を検証。
+!! GATE（必須・停止）: Step 1 完了後、**ここで実装を停止しユーザーに報告する**。`so-compare` によるコードレビューを実施する。検証観点: DJ-1 の TTY direct write + fallback 実装、base64 エンコード、入力バリデーション、`pane.sh` との一貫性。so-compare の指摘対応が完了するまで Step 2 に進まない。
 
 ### Step 2: E2E 検証（概算: 15分）
 
@@ -341,15 +341,16 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 - [ ] エピソード記録（`docs/episodes/2026-04-22-wez-notify.md`）
 - [ ] コミット: `docs(wez): add notify ADR and Lua integration policy`
 
-### Step 4: PR 作成（概算: 10分）
+### Step 4: PR 作成 + Copilot レビュー（概算: 10分 + Copilot 対応）
 
 - [ ] `git fetch origin && git rebase origin/master`
 - [ ] `shellcheck` 最終確認
 - [ ] PR 本文作成（変更概要、DJ サマリ、E2E 結果、`Refs #30`）
-- [ ] `gh pr create --assignee @me`
+- [ ] `gh pr create --assignee @me --reviewer @copilot`
+- [ ] Copilot レビュー対応（3ラウンド上限。収束しない残件は Phase 2 バックログへ）
 - [ ] Epic #20 に報告コメント
 
-!! GATE: PR 作成 + CI パス。
+!! GATE: PR 作成 + CI パス + Copilot 対応完了。
 
 ## リスクと対処
 
@@ -362,9 +363,16 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 | Lua ハンドラ未適用で toast が出ない | ユーザー混乱 | README + help に「`.wezterm.lua` に Lua ハンドラが必要」と明記。CLI の責務は user-var 送信まで |
 | tmux 内ペインで OSC 1337 が吸収される | tmux 配下では通知が届かない | README に `.tmux.conf` の `allow-passthrough on` 要件を記載。Phase 2 で対応 |
 
-## peer-ai-review 実施ポイント
+## レビュー戦略（retro #28/#29 準拠）
 
-1. **Step 1 完了後（必須）**: notify 実装のコードレビュー（`so-compare.sh`）。送信方式、base64 エンコード、バリデーション、既存パターンとの一貫性を検証
+レビュー順序: so-compare（コードレビュー gate）→ push → PR + Copilot → 最終判断
+
+| タイミング | ツール | 特性 | 上限 |
+|-----------|--------|------|------|
+| **Step 1 完了後（PR 前・必須・停止）** | `so-compare` | 少数・構造的（bash 3.2 互換、設計整合性等） | 指摘対応完了まで |
+| **Step 4 PR 作成時** | Copilot (`--reviewer @copilot`) | 多数・局所的（バリデーション漏れ、ドキュメント整合等） | 3ラウンド |
+
+so-compare と Copilot の重複はほぼゼロ（#29 retro で確認済み）。so-compare は push 不要で手元で即実行できるため、PR 前に入れるのがイテレーション的に最速。
 
 ## ADR 作成チェックリスト
 
@@ -387,7 +395,8 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 - [ ] `docs/VERIFICATION_MATRIX.md` の A-2-3 が更新されている
 - [ ] `README.md` に notify セクションが追加されている
 - [ ] so-compare によるコードレビュー gate を実施し、指摘への対応を記録している
-- [ ] PR が作成され `Refs #30` で Issue と連携している
+- [ ] PR が作成され `Refs #30` で Issue と連携し、`--reviewer @copilot` でアサインされている
+- [ ] Copilot レビュー対応が完了している（3ラウンド上限）
 
 ## 実行フロー
 
