@@ -23,6 +23,10 @@ _wez_notify_resolve_pane() {
     if command -v jq >/dev/null 2>&1; then
       tty_name=$(jq -r --arg id "$opt_pane_id" \
         '.[] | select((.pane_id | tostring) == $id) | .tty_name // ""' <<< "$json" 2>/dev/null) || true
+    else
+      tty_name=$(grep -A 30 -E "\"pane_id\":[[:space:]]*${opt_pane_id}[^0-9]" <<< "$json" \
+        | grep -oE '"tty_name":[[:space:]]*"[^"]*"' | head -1 \
+        | grep -oE '/dev/[^"]+') || true
     fi
     printf '%s\t%s\n' "$opt_pane_id" "$tty_name"
     return 0

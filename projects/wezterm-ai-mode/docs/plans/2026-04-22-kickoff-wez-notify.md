@@ -36,7 +36,7 @@ related:
     ref: "../decisions/ADR-005-bash-shell-standards.md"
     reason: "Bash 3.2 互換ルール"
   - type: reference
-    ref: "../CONVENTIONS.md"
+    ref: "../../CONVENTIONS.md"
     reason: "ドキュメント規約・実行フロー"
 tags: [wez, cli, notify, phase1, bash, user-var, osc1337, lua]
 keywords: [wezterm, wez, notify, user-var, SetUserVar, OSC 1337, toast_notification, ai_notify, base64]
