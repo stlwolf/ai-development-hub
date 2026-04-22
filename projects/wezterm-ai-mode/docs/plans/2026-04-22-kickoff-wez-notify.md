@@ -242,7 +242,7 @@ printf '\033]1337;SetUserVar=...\007' | wezterm cli send-text --pane-id 0 --no-p
 # → -bash: q1337: コマンドが見つかりません
 ```
 
-command string 方式は正常動作を確認。`printf` コマンドがペイン内シェルで実行され、stdout の OSC を WezTerm が消費。**DJ-1 は option A（command string）に確定。**
+command string 方式（option A）は正常動作を確認。その後 SO ゼロベースレビューで option C（TTY 直接書き込み）が提案され、実機検証で成功。**DJ-1 は option C（TTY 直接書き込み）を primary、option A（command string）を fallback に確定。**
 
 #### 0-2: `WEZTERM_PANE` 環境変数の確認（実機検証済み — 存在確認）
 
@@ -256,7 +256,7 @@ WezTerm ペイン内で `WEZTERM_PANE=0` を確認。Cursor 統合ターミナ�
 - [ ] `lib/pane.sh` の `_wez_pane_send` 実装を精読（send-text パターンの参照）
 - [ ] PoC-04（`04-notification.sh`）のロジック精読
 
-!! GATE: 実機検証完了（DJ-1: command string に確定、DJ-2: 3段階フォールバックに確定）。前提確認後に続行。
+!! GATE: 実機検証完了（DJ-1: TTY direct write primary + command string fallback に確定、DJ-2: 2段階フォールバックに確定）。前提確認後に続行。
 
 ### Step 1: notify サブコマンド実装（概算: 30分）
 
@@ -290,14 +290,14 @@ Options:
 5. timeout バリデーション: 正の整数（100〜60000）
 6. ペイン解決: `--pane-id` 指定あり → そのまま使用。なし → `_wez_notify_auto_pane` で auto-detect
 7. ペイロード構築: `title|body|timeout` → base64（`tr -d '\n'`）
-8. user-var 送信: `_wez_notify_send_user_var` で OSC 1337 を `send-text` に注入
-9. 結果出力: 成功時は無音。`--json` 時に `{"pane_id": N, "status": "sent", "title": "...", "timeout": N}`
+8. user-var 送信: `_wez_notify_send_user_var` で OSC 1337 を送信（primary: TTY 直接書き込み、fallback: command string via `send-text`）
+9. 結果出力: 成功時は無音。`--json` 時に `{"pane_id": N, "status": "sent", "method": "tty"|"send-text", "title": "...", "timeout": N}`
 
 #### 1-3: ヘルパー関数
 
-- [ ] `_wez_notify_auto_pane()`: `wezterm cli list --format json` から最初の pane_id を取得。jq フォールバック（`grep -o` パターン）付き。取得失敗 → `WEZ_EXIT_PANE_NOT_FOUND`
+- [ ] `_wez_notify_resolve_pane(opt_pane_id)`: `--pane-id` 指定時はその値を使用。未指定時は `wezterm cli list --format json` から最初のペインの `pane_id` と `tty_name` を同時に取得。jq フォールバック（`grep -o` パターン）付き。取得失敗 → `WEZ_EXIT_PANE_NOT_FOUND`
 - [ ] `_wez_notify_encode_payload(title, body, timeout)`: `title|body|timeout` を base64 エンコード。`tr -d '\n'` で改行除去
-- [ ] `_wez_notify_send_user_var(pane_id, var_name, encoded_value)`: OSC 1337 `SetUserVar` を発行する `printf` コマンド文字列を構築し、`_wez_pane_send` と同じ `send-text --no-paste` パターンでペインのシェルに実行させる（DJ-1 検証結果: command string 方式に確定）
+- [ ] `_wez_notify_send_user_var(pane_id, var_name, encoded_value)`: DJ-1 に基づく2段階送信。primary: `wezterm cli list` から `tty_name` を取得し、OSC バイト列を TTY デバイスに直接書き込む。fallback（`tty_name` 取得不可時）: command string 方式で `_wez_pane_send` と同じ `send-text --no-paste` パターンを使用
 
 #### 1-4: 品質チェック
 
@@ -314,7 +314,8 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 
 - [ ] `$WEZ notify "Test Title" "Test Body"` が正常終了（exit 0）
 - [ ] WezTerm debug overlay で user-var `ai_notify` が受信されたことを確認
-- [ ] 送信先ペインの shell history に `printf` コマンドが残ること（command string 方式の既知副作用として確認）
+- [ ] TTY direct write 時: 送信先ペインの shell history に痕跡が**残らない**ことを確認
+- [ ] fallback（command string）時: shell history に `printf` コマンドが残ることを確認
 - [ ] `$WEZ notify "Title Only"` — body 省略で正常動作
 - [ ] `$WEZ notify --pane-id <id> "Test" "Body"` — ペイン指定で正常動作
 - [ ] `$WEZ notify --timeout 8000 "Test" "Body"` — timeout 指定
@@ -354,8 +355,8 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 
 | リスク | 影響 | 対処 |
 |--------|------|------|
-| command string 方式の history 汚染 | ペインの history に printf コマンドが残る | Phase 1 は許容。Phase 2 で `HISTCONTROL=ignorespace` + 先頭スペース付き送信を検討 |
-| ペインがプロンプト状態でない場合に失敗 | vim 中、ビルド中などで通知送信不可 | README に注意書き。Phase 3 の agent 連携設計で再評価 |
+| TTY direct write の画面描画干渉 | vim 等の curses プロセス前景時に一時的な描画乱れの可能性 | README に注意書き。Phase 2 で詳細調査 |
+| `tty_name` 取得不可時の fallback 品質 | command string fallback では history 汚染・プロンプト依存が発生 | fallback であることをログ/JSON 出力に明示。Phase 2 で SSH 対応を検討 |
 | base64 改行混入が長文 body で OSC を破壊 | 通知が届かない | `tr -d '\n'` で明示的にストリップ（DJ-5） |
 | `|` バリデーションで UX が制限される | title/body に `|` が書けない | Phase 1 は許容。Phase 2 で区切り文字変更を検討 |
 | Lua ハンドラ未適用で toast が出ない | ユーザー混乱 | README + help に「`.wezterm.lua` に Lua ハンドラが必要」と明記。CLI の責務は user-var 送信まで |
