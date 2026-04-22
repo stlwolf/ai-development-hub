@@ -158,7 +158,7 @@ E2E パス後、キックオフの必須停止 GATE に従い `so-compare` を�
 
 修正コミット: `3e3ee9f fix(wez): escape title in jq-less JSON output + harden grep pattern`
 
-レビューログ: `tmp/peer-review-20260422-201901/review-log.md`
+レビューログ: `tmp/peer-review-20260422-201901/review-log.md`（ローカル限定、リポジトリ未追跡）
 
 ### Copilot Review 対応
 

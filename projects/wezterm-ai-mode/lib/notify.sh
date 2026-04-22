@@ -39,6 +39,7 @@ _wez_notify_resolve_pane() {
     tty_name=$(jq -r '.[0].tty_name // ""' <<< "$json" 2>/dev/null) || true
   else
     pane_id=$(grep -oE '"pane_id":[[:space:]]*[0-9]+' <<< "$json" | head -1 | grep -oE '[0-9]+$') || true
+    tty_name=$(grep -oE '"tty_name":[[:space:]]*"[^"]*"' <<< "$json" | head -1 | grep -oE '/dev/[^"]+') || true
   fi
 
   if [[ -z "$pane_id" ]]; then
@@ -191,8 +192,8 @@ wez_cmd_notify() {
     wez_error "notify: title must not contain '|' (pipe character)"
     return "${WEZ_EXIT_USAGE}"
   fi
-  if [[ "$title" == *$'\n'* ]] || [[ "$title" == *$'\r'* ]]; then
-    wez_error "notify: title must not contain newlines"
+  if [[ "$title" =~ [[:cntrl:]] ]]; then
+    wez_error "notify: title must not contain control characters"
     return "${WEZ_EXIT_USAGE}"
   fi
 
@@ -201,8 +202,8 @@ wez_cmd_notify() {
       wez_error "notify: body must not contain '|' (pipe character)"
       return "${WEZ_EXIT_USAGE}"
     fi
-    if [[ "$body" == *$'\n'* ]] || [[ "$body" == *$'\r'* ]]; then
-      wez_error "notify: body must not contain newlines"
+    if [[ "$body" =~ [[:cntrl:]] ]]; then
+      wez_error "notify: body must not contain control characters"
       return "${WEZ_EXIT_USAGE}"
     fi
   fi

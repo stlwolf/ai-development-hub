@@ -38,9 +38,6 @@ related:
   - type: reference
     ref: "../CONVENTIONS.md"
     reason: "ドキュメント規約・実行フロー"
-  - type: evidence_for
-    ref: "../../tmp/peer-review-20260422-135027/review-log.md"
-    reason: "設計レビューの SO 比較ログ"
 tags: [wez, cli, notify, phase1, bash, user-var, osc1337, lua]
 keywords: [wezterm, wez, notify, user-var, SetUserVar, OSC 1337, toast_notification, ai_notify, base64]
 use_when:
