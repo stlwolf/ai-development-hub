@@ -304,8 +304,6 @@ Options:
 - [ ] `shellcheck` パス（全ファイル）
 - [ ] コミット: `feat(wez): add notify subcommand with user-var injection`
 
-!! GATE（必須・停止）: Step 1 完了後、**ここで実装を停止しユーザーに報告する**。`so-compare` によるコードレビューを実施する。検証観点: DJ-1 の TTY direct write + fallback 実装、base64 エンコード、入力バリデーション、`pane.sh` との一貫性。so-compare の指摘対応が完了するまで Step 2 に進まない。
-
 ### Step 2: E2E 検証（概算: 15分）
 
 ```bash
@@ -330,6 +328,8 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 - [ ] Lua ハンドラ適用済み環境での toast 通知表示（Phase 1 では参考確認。成功基準には含めない）
 
 !! GATE: E2E 全項目パス。失敗がある場合は Step 1 に戻って修正。
+
+!! GATE（必須・停止）: E2E パス後、**ここで停止しユーザーに報告する**。`so-compare` によるコードレビューを実施する。検証観点: DJ-1 の TTY direct write + fallback 実装、base64 エンコード、入力バリデーション、`pane.sh` との一貫性。テスト済みコードに対してレビューすることで、レビュー指摘の手戻りを最小化する。so-compare の指摘対応が完了するまで Step 3 に進まない。
 
 ### Step 3: ドキュメント・ADR・記録（概算: 15分）
 
@@ -369,10 +369,10 @@ WEZ="./projects/wezterm-ai-mode/bin/wez"
 
 | タイミング | ツール | 特性 | 上限 |
 |-----------|--------|------|------|
-| **Step 1 完了後（PR 前・必須・停止）** | `so-compare` | 少数・構造的（bash 3.2 互換、設計整合性等） | 指摘対応完了まで |
+| **Step 2 完了後（E2E パス後・PR 前・必須・停止）** | `so-compare` | 少数・構造的（bash 3.2 互換、設計整合性等） | 指摘対応完了まで |
 | **Step 4 PR 作成時** | Copilot (`--reviewer @copilot`) | 多数・局所的（バリデーション漏れ、ドキュメント整合等） | 3ラウンド |
 
-so-compare と Copilot の重複はほぼゼロ（#29 retro で確認済み）。so-compare は push 不要で手元で即実行できるため、PR 前に入れるのがイテレーション的に最速。
+so-compare と Copilot の重複はほぼゼロ（#29 retro で確認済み）。so-compare は E2E 完了後のテスト済みコードに対して実施する。未テストコードのレビューは手戻りを生むため、E2E パスを前提条件とする。
 
 ## ADR 作成チェックリスト
 
