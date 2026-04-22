@@ -266,7 +266,10 @@ wez_cmd_notify() {
   # --- Encode and send ---
 
   local encoded
-  encoded=$(_wez_notify_encode_payload "$title" "$body" "$opt_timeout")
+  if ! encoded=$(_wez_notify_encode_payload "$title" "$body" "$opt_timeout"); then
+    wez_error "notify: failed to encode payload"
+    return "${WEZ_EXIT_PANE_OP_FAILED}"
+  fi
 
   local method
   method=$(_wez_notify_send_user_var "$pane_id" "ai_notify" "$encoded" "$tty_name") || return $?
