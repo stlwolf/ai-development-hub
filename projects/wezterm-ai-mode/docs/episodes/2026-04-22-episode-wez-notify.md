@@ -1,0 +1,269 @@
+---
+id: "01KPT49WWP05M91AN9NRMGC4QS"
+title: "wez notify サブコマンド実装（Issue #30）"
+date: 2026-04-22
+type: episode
+status: draft
+related:
+  - type: implements
+    ref: ../plans/2026-04-22-kickoff-wez-notify.md
+    reason: "キックオフに基づく実装"
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/30"
+    reason: "feat(wez): notify サブコマンド + Lua 統合方針確定（1-3）"
+  - type: spawns
+    ref: ../../../../docs/specs/2026-04-22-discussion-hypothesis-driven-exploration.md
+    reason: "事前検証の TTY 発見プロセスから仮説駆動探索の再現性 discussion を派生"
+tags: [notify, implementation, so-compare, tty-direct-write, hypothesis-driven]
+---
+
+# wez notify サブコマンド実装（Issue #30）
+
+## 概要
+
+Issue #30 として `wez notify` サブコマンドを実装。OSC 1337 SetUserVar 経由で WezTerm にデスクトップ通知を送信する機能。Phase 1 は CLI のみ、Lua 統合は Phase 2 で dotfiles リポジトリに実装予定。
+
+---
+
+## 1. 事前検証（2026-04-22）
+
+### 設計判断: 送信方式の選定
+
+Issue の背景にあった PoC-04 は、`printf` コマンド文字列を `wezterm cli send-text` でペインに送り、シェルに実行させて OSC を発生させる方式（command string）。副作用として history 汚染・プロンプト状態依存がある。
+
+初期フレーミングでは以下の2択で検討を開始:
+
+| 選択肢 | 方式 | 想定 |
+|--------|------|------|
+| A | command string（PoC 踏襲） | 実績あり。副作用は Phase 2 で対処 |
+| B | raw OSC を `send-text` で直接送信 | 副作用なし。未検証 |
+
+### option B の実機検証 → NG
+
+```bash
+printf '\033]1337;SetUserVar=ai_notify=%s\007' "$(printf 'Test|Body|5000' | base64 | tr -d '\n')" \
+  | wezterm cli send-text --pane-id 0 --no-paste
+```
+
+結果: ペインのシェルに `q1337;SetUserVar=...` が可視テキストとして入力され、`command not found` エラー。
+
+原因: `send-text` は PTY **入力**（キーボード側）にバイトを書き込む。WezTerm のターミナルエミュレータが OSC を解釈するのは PTY **出力**（プロセスの stdout）のみ。ESC（`\033`）がシェルの readline に消費され、残りが通常のテキスト入力として処理された。
+
+### option A での「確定」
+
+option B が原理的に不可であることを確認し、option A（command string）で一旦確定。キックオフに検証結果を反映。
+
+### SO ゼロベースレビュー → option C の発見
+
+確定後に `so-compare` でキックオフ全体の設計レビューを実施。プロンプトで「ゼロベースで他の選択肢がないか検証して」と明示的に依頼。
+
+Claude の回答から **option C: TTY 直接書き込み** が提案された。`wezterm cli list --format json` の `tty_name` フィールド（`/dev/ttysXXX`）に OSC バイト列を直接書き込む方式。
+
+### option C の即時実機検証 → OK
+
+```bash
+TTY=$(wezterm cli list --format json | jq -r '.[0].tty_name')
+printf '\033]1337;SetUserVar=ai_notify=%s\007' \
+  "$(printf 'Test|Body|5000' | base64 | tr -d '\n')" > "$TTY"
+```
+
+結果: 成功。history 汚染なし、プロンプト状態非依存、ペイン表示への汚染なし。
+
+原理: TTY slave デバイスへの書き込みは PTY master 側に転送され、WezTerm のターミナルエミュレータが OSC を直接解釈する。シェルの stdin を一切経由しない。
+
+### 最終決定
+
+| 選択肢 | 結果 | 採否 |
+|--------|------|------|
+| A: command string | OK | fallback（`tty_name` 取得不可時） |
+| B: raw OSC via send-text | NG | 不可（原理的制約） |
+| **C: TTY 直接書き込み** | **OK** | **primary** |
+
+### メタ観察: 発見プロセスの再現性
+
+option C は初期の選択肢セット（A/B）に含まれていなかった。発見には4つの条件が揃う必要があった:
+
+1. **確定後のゼロベース再探索**: A に確定した後で、なお SO に「他に選択肢はないか」と聞いた
+2. **反証可能なプロンプト**: 「この方式を確認して」ではなく「ゼロベースで検証して」
+3. **提案の即時実機検証**: Claude の提案を「良さそう」で終わらせず、その場で検証コマンドを実行
+4. **検証環境の即時利用可能性**: WezTerm が動いていて仮説をすぐに試せた
+
+この発見プロセス自体の再現性を高める方法について、別途 [discussion: 仮説駆動探索の再現性](../../../../docs/specs/2026-04-22-discussion-hypothesis-driven-exploration.md) として議論を開始。
+
+---
+
+## 2. 実装 + Peer Review（2026-04-22）
+
+### 実装（Step 1）
+
+`lib/notify.sh` を新規作成し、`bin/wez` にルーティングを追加。キックオフの Step 1-1〜1-4 を実行。
+
+構成:
+
+| 関数 | 責務 |
+|------|------|
+| `_wez_notify_resolve_pane(opt_pane_id)` | `--pane-id` 指定 or auto-detect。`wezterm cli list` から `pane_id` + `tty_name` を同時取得 |
+| `_wez_notify_encode_payload(title, body, timeout)` | `title\|body\|timeout` を base64 エンコード（`tr -d '\n'`） |
+| `_wez_notify_send_user_var(pane_id, var_name, encoded, tty_name)` | primary: TTY 直接書き込み、fallback: command string via `send-text --no-paste` |
+| `wez_cmd_notify()` | メインディスパッチャ。ソケット探索 → バリデーション → ペイン解決 → 送信 → 出力 |
+
+設計判断の実装状況:
+
+- **DJ-1**: TTY direct write が primary。E2E で `--json` 出力の `"method": "tty"` を確認
+- **DJ-2**: 2段階フォールバック（`--pane-id` 指定 → first pane auto-detect）
+- **DJ-3**: `title|body|timeout` 形式、pipe 文字・改行禁止
+- **DJ-4**: `--timeout`（ms）、help に単位明記
+- **DJ-5**: base64 エンコード時に `tr -d '\n'` で改行除去
+
+コミット: `88d0b01 feat(wez): add notify subcommand with TTY direct write`
+
+### E2E 検証（Step 2）
+
+12項目すべてパス:
+
+| ケース | 結果 |
+|--------|------|
+| 通常送信（title + body） | exit 0 |
+| body 省略 | exit 0 |
+| `--pane-id` 指定 | exit 0 |
+| `--timeout 8000` | exit 0 |
+| `--json` 出力 | JSON + `method: "tty"` |
+| title なし | exit 64 |
+| pipe 文字入り title | exit 64 |
+| timeout 範囲外（0） | exit 64 |
+| timeout 非数値 | exit 64 |
+| 存在しないペイン | exit 3 |
+| `--help` | ヘルプ表示 |
+| shellcheck | pass |
+
+### Peer Review: so-compare（GATE）
+
+E2E パス後、キックオフの必須停止 GATE に従い `so-compare` を実施。
+
+**参加者**: Codex CLI (v0.121.0) + Claude Code。2者とも成功。
+
+**検出事項:**
+
+| # | 重大度 | 内容 | 発見者 | 対応 |
+|---|--------|------|--------|------|
+| Bug-1 | 🔴 | jq-less `--json` パスで title の `"` `\` が未エスケープ → 不正 JSON | Codex + Claude | 修正済み |
+| Obs-1 | 🟡 | jq-less `pane_id` 抽出の grep がスペース入り JSON に非対応（pane.sh との不整合） | Claude | 修正済み |
+| Obs-2 | 🟡 | `discover_socket` の exit code case が網羅的でない（pane.sh も同じ） | Claude | 許容 |
+| Obs-3 | 🟡 | fallback 時のペイン汚染（設計上の受容事項） | Codex + Claude | 許容 |
+| Obs-4 | 🟡 | `--pane-id` のペイン存在検証が遅延（pane.sh と同じパターン） | Claude + 自分 | 許容 |
+
+**合意判定**: 3者合意。Bug-1 は修正必須、Obs-1 はついでに改善、残りは Phase 1 で許容。
+
+**見落としの教訓**: pane.sh では JSON に user-controlled 文字列を含めていなかったため、jq-less パスのエスケープ問題が顕在化していなかった。notify は `title` を JSON に含めるため、この差異が新たなバグを生んだ。新規ファイル作成時は、既存ファイルとの「入力性質の差」を意識してレビューすべき。
+
+修正コミット: `3e3ee9f fix(wez): escape title in jq-less JSON output + harden grep pattern`
+
+レビューログ: `tmp/peer-review-20260422-201901/review-log.md`（ローカル限定、リポジトリ未追跡）
+
+### Copilot Review 対応
+
+PR 作成後、GitHub Copilot レビューで 4件の指摘を受領し対応:
+
+| # | 内容 | 対応 |
+|---|------|------|
+| C-1 | kickoff の `WEZTERM_PANE` 記載矛盾 | 修正（YAGNI に統一） |
+| C-2 | episode の DJ 番号が ADR-007 と不整合 | 修正（DJ-4 追加、DJ-3/DJ-5 明確化） |
+| C-3 | timeout validation で先頭ゼロが octal 問題を引き起こす | 修正（先頭ゼロ拒否 regex + `10#` prefix で base-10 強制） |
+| C-4 | discussion frontmatter の `ref:` 欠落 | 修正（`ref: "#"` placeholder 追加） |
+
+修正コミット: `2085b84 fix(wez): address copilot review findings`
+
+### Copilot Review 継続対応（Round 2〜6）
+
+修正プッシュごとに Copilot が再レビューを実施。累計 6 ラウンド・18 スレッド対応。Round 1 の 4 件に加え、以下が重要な追加検出:
+
+**コード品質:**
+
+| Round | 内容 | 重大度 | 対応 |
+|-------|------|--------|------|
+| R2 | title/body バリデーションを `[[:cntrl:]]` に拡張（U+0000–U+001F 全対応） | 中 | 修正 `1cebdbf` |
+| R2 | jq-less auto-detect で `tty_name` 未抽出 → TTY direct write が jq 依存 | 中 | 修正 `1cebdbf` |
+| R3 | `--pane-id` 指定時も jq-less `tty_name` 未抽出（R2 で auto-detect のみ修正） | 中 | 修正 `4e6af81` |
+| R5 | **fallback printf が `\033`/`\007` を raw ESC/BEL に展開** → send-text 先 shell の Readline が消費 | **高** | 修正 `ff36793` |
+| R6 | **encode パイプ `set -euo pipefail` 下でサイレント中断** → `if` ガードで `set -e` 適用外に | **高** | 修正 `89067f2` |
+
+**ドキュメント整合性:**
+
+| Round | 内容 | 対応 |
+|-------|------|------|
+| R2 | kickoff / episode の `tmp/` 参照が壊れたリンク | 削除・注記追加 |
+| R3 | CONVENTIONS.md パス不正（`../` → `../../`） | 修正 |
+| R4 | title/body 長さ制限が `--help` / README 未記載 | 追記 |
+| R4 | ADR-007 の TTY チェック記述に `-c` 未反映 | 更新 |
+| R5 | PoC 参照パス不正（`../../poc` → `../../../poc`） | 修正 |
+
+**教訓:**
+
+1. **jq-less パスの網羅性**: auto-detect と `--pane-id` の両分岐で抽出ロジックが必要。一方だけ修正すると他方に漏れが出る
+2. **printf のエスケープレベル管理**: 「外側 printf → 内側 printf → target shell の printf」の 3 段階エスケープは間違いやすい。`od -c` での実バイト列確認が有効
+3. **`set -e` 下の command substitution**: 裸の `var=$(cmd)` は失敗時にサイレント中断。`if ! var=$(cmd)` でガードが必須。DB-4 の当初の「`set -e` 不使用」判断は誤りで、`bin/wez` は `set -euo pipefail` 前提
+4. **Copilot の反復レビュー効果**: 修正プッシュごとに差分を再レビューするため、修正で生じた新たな不整合や見落としを段階的に検出。合計 6 ラウンドで収束
+
+### レビュー起因の実装変更コンテキスト
+
+以下はレビュー（so-compare / Copilot）で検出・変更された実装判断のうち、ADR-007 のスコープ外だがコンテキストを残すべきもの。
+
+#### 制御文字バリデーションの拡張（`\n`/`\r` → `[[:cntrl:]]`）
+
+当初は title/body に改行（`\n`/`\r`）のみ禁止していた。Copilot R2 で「jq-less JSON 出力パスでタブ等の制御文字が未エスケープのまま出力される」問題を指摘され、制御文字全般に拡張。
+
+判断根拠: JSON 仕様（RFC 8259）は U+0000–U+001F を文字列内でエスケープ必須と定めている。jq パスでは jq 自身がエスケープするが、jq-less パスでは手動エスケープが必要。制御文字をすべてエスケープするより、入力段階で拒否する方がシンプルで安全。`[[:cntrl:]]` は POSIX character class で bash 3.2 互換。
+
+#### title/body 長さ制限（title 500 / body 2000）
+
+当初は長さ制限なし。Debugger SO レビュー（DB-2）で「base64 エンコード後のペイロードが `PIPE_BUF`（macOS: 512 bytes）を超えると TTY 書き込みの atomic 性が崩れ、並行書き込み時にインターリーブするリスク」を指摘された。
+
+数値選定: title 500 文字 + body 2000 文字 + timeout + pipe 区切り → 最大 ~2500 文字。base64 で約 4/3 倍 → ~3400 bytes。`PIPE_BUF` は超えるが、単独書き込みは問題なく、並行書き込みのリスクを「実用上の上限」で緩和する意図。Phase 1 で並行通知を想定しておらず、過度に制約するより許容可能な上限を設定。
+
+#### jq 依存モデルの変更（jq 必須 → jq optional で TTY primary 利用可能）
+
+当初 jq-less パスは `pane_id` のみ grep で抽出し、`tty_name` は抽出しなかった。結果として jq 未インストール環境では TTY direct write（primary）が使えず、send-text fallback に固定されていた。
+
+ADR-007 DJ-1 は「jq は optional」と宣言していたが、実態として primary 方式に jq が必要という矛盾があった。Copilot R2/R3 の指摘で auto-detect・`--pane-id` 両パスに grep ベースの `tty_name` 抽出を追加し、設計意図（jq optional）と実装が一致。
+
+#### timeout 先頭ゼロ拒否 + base-10 強制
+
+当初の timeout バリデーションは `^[0-9]+$` で先頭ゼロ（例: `08`）を許容していた。Copilot R1（C-3）で bash の `(( ))` 算術評価が先頭ゼロを octal として解釈する問題を指摘。`08` → octal 8 は不正で `value too great for base` エラー、`010` → octal 8 で意図と異なる比較結果になる。
+
+対策: regex を `^(0|[1-9][0-9]*)$` に変更（先頭ゼロ拒否）し、算術比較に `10#$opt_timeout` を付けて base-10 解釈を強制。二重防御。
+
+#### fallback printf の raw ESC 埋め込み
+
+fallback の command string builder で `cmd=$(printf "printf '\\033]...\\007' ...")` としていたが、外側 `printf` が `\033` を octal 解釈し raw ESC バイト（0x1B）を `$cmd` に埋め込んでいた。`send-text` で target shell に送信すると、Readline が raw ESC を escape sequence 開始として消費し、残りがゴミ入力になる。
+
+これは primary（TTY direct write）が成功する環境では到達しないため E2E で検出されなかった。`\\\\033`/`\\\\007` に修正し、outer printf が literal `\033`/`\007` を出力 → target shell の printf が ESC/BEL に展開する正しいチェインに。
+
+### Debugger-role Peer Review: so-compare 第2ラウンド
+
+デバッガー/バグハンター観点でゼロベースレビューを実施。プロンプト設計で `so-compare` のタイムアウト問題に遭遇（実行指示が複雑すぎたため）、v2 プロンプトでコード分析特化に変更して成功。
+
+**参加者**: Codex CLI + Claude Code。2者とも成功。
+
+**検出事項:**
+
+| # | 重大度 | 内容 | 発見者 | 対応 |
+|---|--------|------|--------|------|
+| DB-1 | 🟡 | `tty_name` の `-w` チェックが通常ファイルでも通る → OSC 誤書き込みリスク | Codex + Claude | **修正済み**（`-c` チェック追加） |
+| DB-2 | 🟡 | title/body 長さ上限なし → base64 ペイロードが PIPE_BUF 超過時の atomic 性問題 | Claude | **修正済み**（title 500/body 2000 文字制限） |
+| DB-3 | 🟢 | jq parse エラーの silent suppress | Codex | 許容（Phase 1: jq は optional） |
+| DB-4 | 🟡 | `base64` パイプ失敗で `set -euo pipefail` 時にスクリプト中断 | Claude | **修正済み**（encode を `if` ガードで `set -e` 適用外に） |
+| DB-5 | 🟢 | `send-text` の stdout が JSON 出力に混入する可能性 | Codex | 許容（`2>/dev/null` で stderr 抑制済み、stdout は空想定） |
+| DB-6 | 🟢 | fallback が非シェルペイン・fish 互換性に問題あり | Codex + Claude | 許容（Phase 1 スコープ外、ドキュメント化済み） |
+| DB-7 | 🟢 | 並行 TTY 書き込み時のインターリーブリスク | Claude | 許容（DB-2 の長さ制限で緩和） |
+
+**対応方針**: DB-1, DB-2, DB-4 は低コスト・高インパクトのため即時実装。DB-3, DB-5〜DB-7 は Phase 1 で許容し、Epic コメントで残課題として言及。
+
+修正コミット: `ccfb579 fix(wez): add character device check and length limits for notify`
+
+**プロンプト設計の教訓**: `so-compare` でロールを変える（レビューア → デバッガー）場合、「コマンド実行してテストせよ」のような指示はサンドボックス制約でタイムアウトを引き起こす。コード分析特化のプロンプトに限定すべき。
+
+---
+
+## 3. 振り返り（後で追記）
+
+<!-- 実装完了後のレトロスペクティブをここに追記 -->
