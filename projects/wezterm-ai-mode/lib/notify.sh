@@ -102,12 +102,19 @@ The notification payload is sent as the 'ai_notify' user-var in the format
 'title|body|timeout' (base64 encoded). A Lua event handler in .wezterm.lua
 is required to display the actual toast notification (Phase 2).
 
+Arguments:
+  <title>           Notification title (required, max 500 chars)
+  [body]            Notification body (optional, max 2000 chars)
+
 Options:
   --pane-id <ID>    Target pane (default: auto-detect first pane)
   --timeout <MS>    Toast duration in milliseconds (default: 4000)
   --socket <path>   WezTerm socket path (default: auto-detect)
   --json            Output result as JSON
   -h, --help        Show this help
+
+Constraints:
+  title and body must not contain '|' (pipe) or control characters.
 
 Exit codes:
   0    Success

@@ -40,7 +40,7 @@ Accepted
 
 **fallback（option A）が必要なケース**: `tty_name` が JSON に含まれない旧バージョン、SSH セッション経由のペイン、TTY デバイスの書き込み権限がない場合。
 
-**実装**: `_wez_notify_send_user_var()` で `tty_name` の存在と `-w` 権限を確認し、primary を試行。失敗時に fallback へ降格。`--json` 出力の `method` フィールド（`"tty"` / `"send-text"`）でどちらが使われたか判別可能。
+**実装**: `_wez_notify_send_user_var()` で `tty_name` の存在を確認し、`-c`（character device）かつ `-w`（書き込み可能）を検証してから primary を試行。`-c` チェックにより通常ファイルへの OSC 誤書き込みを防止。失敗時に fallback へ降格。`--json` 出力の `method` フィールド（`"tty"` / `"send-text"`）でどちらが使われたか判別可能。
 
 **発見経緯**: option A に一旦確定した後の so-compare ゼロベースレビューで Claude が提案。即時実機検証で確認。詳細は [episode](../episodes/2026-04-22-episode-wez-notify.md) セクション1 に記録。
 

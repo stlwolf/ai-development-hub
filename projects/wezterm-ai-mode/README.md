@@ -155,6 +155,8 @@ Options:
 ペイロード形式: `title|body|timeout` を base64 エンコードし、user-var `ai_notify` として送信。
 
 **制約**:
+- title: 必須、最大 500 文字
+- body: 任意、最大 2000 文字
 - title と body に `|`（パイプ文字）および制御文字（改行・タブなど）を含めることはできない
 - timeout の範囲: 100〜60000 ミリ秒
 
