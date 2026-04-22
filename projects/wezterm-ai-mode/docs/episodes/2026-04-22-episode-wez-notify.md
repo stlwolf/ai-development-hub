@@ -92,9 +92,72 @@ option C は初期の選択肢セット（A/B）に含まれていなかった�
 
 ---
 
-## 2. 実装（後で追記）
+## 2. 実装 + Peer Review（2026-04-22）
 
-<!-- Issue #30 の実装記録をここに追記 -->
+### 実装（Step 1）
+
+`lib/notify.sh` を新規作成し、`bin/wez` にルーティングを追加。キックオフの Step 1-1〜1-4 を実行。
+
+構成:
+
+| 関数 | 責務 |
+|------|------|
+| `_wez_notify_resolve_pane(opt_pane_id)` | `--pane-id` 指定 or auto-detect。`wezterm cli list` から `pane_id` + `tty_name` を同時取得 |
+| `_wez_notify_encode_payload(title, body, timeout)` | `title\|body\|timeout` を base64 エンコード（`tr -d '\n'`） |
+| `_wez_notify_send_user_var(pane_id, var_name, encoded, tty_name)` | primary: TTY 直接書き込み、fallback: command string via `send-text --no-paste` |
+| `wez_cmd_notify()` | メインディスパッチャ。ソケット探索 → バリデーション → ペイン解決 → 送信 → 出力 |
+
+設計判断の実装状況:
+
+- **DJ-1**: TTY direct write が primary。E2E で `--json` 出力の `"method": "tty"` を確認
+- **DJ-2**: 2段階フォールバック（`--pane-id` 指定 → first pane auto-detect）
+- **DJ-3**: `title|body|timeout` 形式、base64 + `tr -d '\n'`
+- **DJ-5**: pipe 文字・改行禁止、timeout 範囲チェック（100-60000）
+
+コミット: `88d0b01 feat(wez): add notify subcommand with TTY direct write`
+
+### E2E 検証（Step 2）
+
+12項目すべてパス:
+
+| ケース | 結果 |
+|--------|------|
+| 通常送信（title + body） | exit 0 |
+| body 省略 | exit 0 |
+| `--pane-id` 指定 | exit 0 |
+| `--timeout 8000` | exit 0 |
+| `--json` 出力 | JSON + `method: "tty"` |
+| title なし | exit 64 |
+| pipe 文字入り title | exit 64 |
+| timeout 範囲外（0） | exit 64 |
+| timeout 非数値 | exit 64 |
+| 存在しないペイン | exit 3 |
+| `--help` | ヘルプ表示 |
+| shellcheck | pass |
+
+### Peer Review: so-compare（GATE）
+
+E2E パス後、キックオフの必須停止 GATE に従い `so-compare` を実施。
+
+**参加者**: Codex CLI (v0.121.0) + Claude Code。2者とも成功。
+
+**検出事項:**
+
+| # | 重大度 | 内容 | 発見者 | 対応 |
+|---|--------|------|--------|------|
+| Bug-1 | 🔴 | jq-less `--json` パスで title の `"` `\` が未エスケープ → 不正 JSON | Codex + Claude | 修正済み |
+| Obs-1 | 🟡 | jq-less `pane_id` 抽出の grep がスペース入り JSON に非対応（pane.sh との不整合） | Claude | 修正済み |
+| Obs-2 | 🟡 | `discover_socket` の exit code case が網羅的でない（pane.sh も同じ） | Claude | 許容 |
+| Obs-3 | 🟡 | fallback 時のペイン汚染（設計上の受容事項） | Codex + Claude | 許容 |
+| Obs-4 | 🟡 | `--pane-id` のペイン存在検証が遅延（pane.sh と同じパターン） | Claude + 自分 | 許容 |
+
+**合意判定**: 3者合意。Bug-1 は修正必須、Obs-1 はついでに改善、残りは Phase 1 で許容。
+
+**見落としの教訓**: pane.sh では JSON に user-controlled 文字列を含めていなかったため、jq-less パスのエスケープ問題が顕在化していなかった。notify は `title` を JSON に含めるため、この差異が新たなバグを生んだ。新規ファイル作成時は、既存ファイルとの「入力性質の差」を意識してレビューすべき。
+
+修正コミット: `3e3ee9f fix(wez): escape title in jq-less JSON output + harden grep pattern`
+
+レビューログ: `tmp/peer-review-20260422-201901/review-log.md`
 
 ---
 
