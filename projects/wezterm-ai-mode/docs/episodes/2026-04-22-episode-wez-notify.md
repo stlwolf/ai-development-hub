@@ -111,8 +111,9 @@ option C は初期の選択肢セット（A/B）に含まれていなかった�
 
 - **DJ-1**: TTY direct write が primary。E2E で `--json` 出力の `"method": "tty"` を確認
 - **DJ-2**: 2段階フォールバック（`--pane-id` 指定 → first pane auto-detect）
-- **DJ-3**: `title|body|timeout` 形式、base64 + `tr -d '\n'`
-- **DJ-5**: pipe 文字・改行禁止、timeout 範囲チェック（100-60000）
+- **DJ-3**: `title|body|timeout` 形式、pipe 文字・改行禁止
+- **DJ-4**: `--timeout`（ms）、help に単位明記
+- **DJ-5**: base64 エンコード時に `tr -d '\n'` で改行除去
 
 コミット: `88d0b01 feat(wez): add notify subcommand with TTY direct write`
 

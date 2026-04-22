@@ -27,7 +27,8 @@ related:
     ref: projects/arena-compare/docs/episodes/2026-03-04-exploration-mode-and-command-path.md
     reason: "探索モード — persistent-exploration の行動制約を SO/Arena に自動注入"
   - type: design_context
-    reason: "別プロジェクトの Sentry 調査中に抽出されたコードパス網羅原則。同じ「網羅性が保証される前に結論に飛ぶな」構造"
+    ref: "#"
+    reason: "別プロジェクトの Sentry 調査中に抽出されたコードパス網羅原則。同じ「網羅性が保証される前に結論に飛ぶな」構造（外部リポジトリのため ref 省略）"
 tags: [hypothesis-driven, exploration, so-compare, arena-compare, persistent-exploration, reproducibility, exhaustion-before-conclusion]
 ---
 

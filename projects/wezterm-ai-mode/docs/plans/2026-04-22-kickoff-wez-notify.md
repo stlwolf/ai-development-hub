@@ -246,7 +246,7 @@ command string 方式（option A）は正常動作を確認。その後 SO ゼ�
 
 #### 0-2: `WEZTERM_PANE` 環境変数の確認（実機検証済み — 存在確認）
 
-WezTerm ペイン内で `WEZTERM_PANE=0` を確認。Cursor 統合ターミナルでは未設定。**DJ-2 の優先順位に `$WEZTERM_PANE` を挿入済み。**
+WezTerm ペイン内で `WEZTERM_PANE=0` を確認。Cursor 統合ターミナルでは未設定。**存在は確認したが、Phase 1 の DJ-2 優先順位には組み込まない（YAGNI）。**
 
 #### 0-3: 前提確認
 

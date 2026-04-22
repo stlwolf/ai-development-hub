@@ -197,11 +197,11 @@ wez_cmd_notify() {
     fi
   fi
 
-  if ! [[ "$opt_timeout" =~ ^[0-9]+$ ]]; then
-    wez_error "notify: --timeout requires a numeric value"
+  if ! [[ "$opt_timeout" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    wez_error "notify: --timeout requires a numeric value (no leading zeros)"
     return "${WEZ_EXIT_USAGE}"
   fi
-  if (( opt_timeout < 100 || opt_timeout > 60000 )); then
+  if (( 10#$opt_timeout < 100 || 10#$opt_timeout > 60000 )); then
     wez_error "notify: --timeout must be between 100 and 60000 (milliseconds)"
     return "${WEZ_EXIT_USAGE}"
   fi
