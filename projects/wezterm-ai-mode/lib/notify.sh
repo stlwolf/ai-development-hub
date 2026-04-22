@@ -62,8 +62,8 @@ _wez_notify_send_user_var() {
   local encoded_value="$3"
   local tty_name="$4"
 
-  # Primary: TTY direct write
-  if [[ -n "$tty_name" ]] && [[ -w "$tty_name" ]]; then
+  # Primary: TTY direct write (-c: character device check to avoid writing to regular files)
+  if [[ -n "$tty_name" ]] && [[ -c "$tty_name" ]] && [[ -w "$tty_name" ]]; then
     if printf '\033]1337;SetUserVar=%s=%s\007' "$var_name" "$encoded_value" > "$tty_name" 2>/dev/null; then
       printf 'tty\n'
       return 0
@@ -174,6 +174,16 @@ wez_cmd_notify() {
   if [[ -z "$title" ]]; then
     wez_error "notify: title is required"
     echo "Run 'wez notify --help' for usage information." >&2
+    return "${WEZ_EXIT_USAGE}"
+  fi
+
+  if [[ ${#title} -gt 500 ]]; then
+    wez_error "notify: title must not exceed 500 characters"
+    return "${WEZ_EXIT_USAGE}"
+  fi
+
+  if [[ -n "$body" ]] && [[ ${#body} -gt 2000 ]]; then
+    wez_error "notify: body must not exceed 2000 characters"
     return "${WEZ_EXIT_USAGE}"
   fi
 
