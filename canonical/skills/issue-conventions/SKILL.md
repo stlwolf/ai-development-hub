@@ -48,6 +48,32 @@ Issue から PR を作るときの対応: Issue タイトルは「何の作業�
 
 テンプレートが存在しない場合は、目的・作業内容を本文に記述する。
 
+## サブ Issue（GitHub ネイティブ sub-issue）
+
+「サブ Issue」「子 Issue」「Epic のサブ」等の指示がある場合、GitHub ネイティブの sub-issue 機能を使う (MUST)。本文中の `Refs #N` やテキストテーブルだけでは親子関係は成立しない。
+
+### 手順
+
+1. 子 Issue を `gh issue create` で作成（通常どおり）
+2. 作成後に返される Issue 番号（または ID）を取得
+3. `gh api` で親 Issue に紐づける:
+
+```bash
+# 子 Issue の ID を取得
+CHILD_ID=$(gh api repos/:owner/:repo/issues/<child_number> --jq '.id')
+
+# 親 Issue に sub-issue として追加
+gh api repos/:owner/:repo/issues/<parent_number>/sub_issues \
+  --method POST \
+  --field sub_issue_id="$CHILD_ID"
+```
+
+### 注意
+
+- `Refs #<parent>` を本文に書くのは参照リンクとしては有用だが、ネイティブ sub-issue 関係は作らない
+- Epic 本文のサブ Issue テーブル（テキスト）は人間向けの索引として併用してよい
+- 親 Issue が存在しない場合や、サブ Issue 機能が無効なリポジトリではエラーになる。その場合はテキスト参照にフォールバックし、ユーザーに通知する
+
 ## CLI 制約
 
 - `--body` に複数行のマークダウンを直接渡さない
@@ -60,4 +86,8 @@ Issue から PR を作るときの対応: Issue タイトルは「何の作業�
 gh issue create --assignee @me --body-file /tmp/issue_body.md --title "ログインエラー時にメッセージを表示する"
 # Epic 指示があり、ラベル Epic が存在する場合
 gh issue create --assignee @me --body-file /tmp/issue_body.md --title "ログインエラー時にメッセージを表示する" --label Epic
+
+# サブ Issue を親に紐づける
+CHILD_ID=$(gh api repos/:owner/:repo/issues/76 --jq '.id')
+gh api repos/:owner/:repo/issues/35/sub_issues --method POST --field sub_issue_id="$CHILD_ID"
 ```
