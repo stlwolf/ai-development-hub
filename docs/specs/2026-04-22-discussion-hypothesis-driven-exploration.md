@@ -17,6 +17,9 @@ related:
   - type: sibling
     ref: docs/specs/2026-04-06-discussion-multi-round-control-loop.md
     reason: "多周制御の仕様 — findings 収束管理。本 discussion は仮説拡張の方向"
+  - type: sibling
+    ref: docs/specs/2026-04-23-discussion-exploration-process-design.md
+    reason: "Notion (Claude + ChatGPT) 統合。Issue 化方針・認知モード・本 discussion の続き"
   - type: design_context
     ref: projects/orchestration-research/synthesis/architecture-sketch.md
     reason: "認知協調層（arena=発散、peer-review=収束）の位置づけ"
