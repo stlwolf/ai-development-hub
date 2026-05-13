@@ -26,7 +26,7 @@ wez_discover_socket() {
   # Priority 1: explicit --socket argument
   if [[ -n "$explicit_socket" ]]; then
     if [[ -S "$explicit_socket" ]]; then
-      echo "$explicit_socket"
+      printf '%s\n' "$explicit_socket"
       return "${WEZ_EXIT_SUCCESS}"
     fi
     return "${WEZ_EXIT_NOT_FOUND}"
@@ -35,7 +35,7 @@ wez_discover_socket() {
   # Priority 2: WEZTERM_UNIX_SOCKET environment variable
   if [[ -n "${WEZTERM_UNIX_SOCKET:-}" ]]; then
     if [[ -S "$WEZTERM_UNIX_SOCKET" ]]; then
-      echo "$WEZTERM_UNIX_SOCKET"
+      printf '%s\n' "$WEZTERM_UNIX_SOCKET"
       return "${WEZ_EXIT_SUCCESS}"
     fi
     return "${WEZ_EXIT_NOT_FOUND}"
@@ -65,7 +65,7 @@ _wez_auto_detect_socket() {
   fi
 
   if [[ ${#sockets[@]} -eq 1 ]]; then
-    echo "${sockets[0]}"
+    printf '%s\n' "${sockets[0]}"
     return "${WEZ_EXIT_SUCCESS}"
   fi
 
@@ -75,7 +75,7 @@ _wez_auto_detect_socket() {
   local sock
   for sock in "${_WEZ_SORTED_SOCKETS[@]}"; do
     if _wez_try_connect "$sock" >/dev/null 2>&1; then
-      echo "$sock"
+      printf '%s\n' "$sock"
       return "${WEZ_EXIT_SUCCESS}"
     fi
   done
@@ -123,7 +123,7 @@ _wez_try_connect() {
       pane_count=$(echo "$output" | grep -c '"pane_id"' 2>/dev/null) || pane_count=0
     fi
     [[ "$pane_count" =~ ^[0-9]+$ ]] || pane_count=0
-    echo "$pane_count"
+    printf '%s\n' "$pane_count"
     return 0
   fi
   return 1
@@ -140,7 +140,7 @@ wez_verify_connection() {
   local sock="$1"
   local pane_count
   if pane_count=$(_wez_try_connect "$sock"); then
-    echo "$pane_count"
+    printf '%s\n' "$pane_count"
     return "${WEZ_EXIT_SUCCESS}"
   fi
   return "${WEZ_EXIT_CONN_FAIL}"
@@ -237,10 +237,12 @@ wez_cmd_discover() {
       jq -n --arg socket "$socket" --argjson pane_count "$pane_count" \
         '{"socket": $socket, "pane_count": $pane_count}'
     else
-      printf '{"socket":"%s","pane_count":%s}\n' "$socket" "$pane_count"
+      local escaped_socket="${socket//\\/\\\\}"
+      escaped_socket="${escaped_socket//\"/\\\"}"
+      printf '{"socket":"%s","pane_count":%s}\n' "$escaped_socket" "$pane_count"
     fi
   else
-    echo "$socket"
+    printf '%s\n' "$socket"
   fi
 
   return "${WEZ_EXIT_SUCCESS}"

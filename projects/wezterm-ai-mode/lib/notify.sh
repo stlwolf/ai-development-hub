@@ -187,7 +187,7 @@ wez_cmd_notify() {
 
   if [[ -z "$title" ]] || [[ "$title" =~ ^[[:space:]]+$ ]]; then
     wez_error "notify: title is required (must not be empty or whitespace-only)"
-    echo "Run 'wez notify --help' for usage information." >&2
+    printf '%s\n' "Run 'wez notify --help' for usage information." >&2
     return "${WEZ_EXIT_USAGE}"
   fi
 
