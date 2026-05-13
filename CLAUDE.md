@@ -19,7 +19,7 @@ AI駆動開発のための統合リポジトリ。複数AIツール（Cursor / C
 ./scripts/sync/sync-cursor.sh          # canonical + cursor-specific → ~/.cursor/
 ./scripts/sync/sync-claude.sh          # canonical → ~/.claude/
 ./scripts/sync/sync-codex.sh           # canonical → ~/.codex/
-./scripts/sync/sync-bin.sh             # so-compare, arena-compare → ~/bin/
+./scripts/sync/sync-bin.sh             # so-compare, arena-compare, wez → ~/bin/
 
 # agent-verification-flow: API検証ツール
 cd projects/agent-verification-flow
@@ -34,6 +34,17 @@ so-compare -w "$(pwd)" "プロンプト" --codex-only  # Codex のみ
 # arena-compare: マルチモデル並列比較（Cursor CLI）
 arena-compare -w "$(pwd)" "プロンプト"            # デフォルト3モデル
 arena-compare --resume-from tmp/arena-XXXXXXXX "追加質問"  # セッション継続
+
+# wez: WezTerm AI Mode CLI（~/bin/wez として配置）
+wez discover                           # ソケット自動検出
+wez discover --json                    # JSON出力
+wez pane list                          # ペイン一覧
+wez pane split --bottom --percent 25   # ペイン分割
+wez pane send <pane-id> "command"      # コマンド送信
+wez pane capture <pane-id> --lines 10  # 出力キャプチャ
+wez pane kill <pane-id>                # ペイン削除
+wez notify "title" "body"              # 通知送信
+wez notify --json "title" "body"       # JSON出力付き通知
 
 # claude-safe: Cursor統合ターミナルからClaude CLIを安全に実行
 ./projects/claude-safe/claude-safe -p "prompt" --output-format text
@@ -61,6 +72,7 @@ ai-development-hub/
 │   ├── agent-verification-flow/  # AI駆動API検証（JWT/Session対応、curl+jq）
 │   ├── arena-compare/            # マルチモデル並列比較（Cursor CLI）
 │   ├── claude-safe/              # Claude CLIラッパー（nohupでTTY競合回避）
+│   ├── wezterm-ai-mode/          # WezTerm AI Mode CLI（wez discover/pane/notify）
 │   └── second-opinion-verification/  # セカンドオピニオン検証（タイムアウト付き）
 ├── ideas/                  # アイデア（YYYYMMDD形式、凍結スナップショット）
 ├── docs/draft/             # ドラフトドキュメント
