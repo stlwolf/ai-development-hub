@@ -53,8 +53,11 @@ Cursorスレッド会話のMarkdownエクスポートとライフサイクル管
 
 ### wezterm-ai-mode
 
-WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。PoC 成果は `projects/poc/wezterm-ai-mode/` に凍結。本ディレクトリは cursor-thread-tools と同型の CONVENTIONS・検証マトリクスで開発プロセスの2例目検証を行う。
+WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。Phase 1 完了。
 
+- サブコマンド: `discover`（ソケット自動検出）/ `pane`（list/split/send/capture/kill）/ `notify`（OSC 1337 user-var 送信）
+- Cursor / Claude Code / Codex CLI の3ツールで E2E 検証済み
+- `~/bin/wez` として PATH 配置済み（`scripts/sync/sync-bin.sh`）
 - [Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) でスコープ・Phase をトラッキング
 - [CONVENTIONS.md](wezterm-ai-mode/CONVENTIONS.md)、[VERIFICATION_MATRIX.md](wezterm-ai-mode/docs/VERIFICATION_MATRIX.md)
 

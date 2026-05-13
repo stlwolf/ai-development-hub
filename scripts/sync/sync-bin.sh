@@ -8,9 +8,10 @@
 #   ./scripts/sync/sync-bin.sh
 #
 # Description:
-#   so-compare.sh, arena-compare.sh 等のスクリプトを
+#   so-compare.sh, arena-compare.sh, wez 等のスクリプトを
 #   ~/bin/ にシンボリックリンクとして配置します。
-#   リンク名は拡張子なし（so-compare, arena-compare）になります。
+#   リンク名は拡張子なし（so-compare, arena-compare）または
+#   元のファイル名のまま（wez）になります。
 #
 #   既にシンボリックリンクでないファイルが存在する場合はスキップします。
 #
@@ -41,10 +42,11 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-CMD_NAMES=("so-compare" "arena-compare")
+CMD_NAMES=("so-compare" "arena-compare" "wez")
 CMD_SOURCES=(
     "${REPO_ROOT}/scripts/so-compare.sh"
     "${REPO_ROOT}/projects/arena-compare/arena-compare.sh"
+    "${REPO_ROOT}/projects/wezterm-ai-mode/bin/wez"
 )
 
 main() {

@@ -50,10 +50,10 @@ use_when:
 
 | ID | 検証項目 | 状態 | 結果 | 根拠 |
 |----|---------|------|------|------|
-| B-1 | Stage 1: Agent mode で plan MD 作成 + peer-ai-review | 未実施 | - | [CONVENTIONS.md](../CONVENTIONS.md) |
-| B-2 | Stage 2: 確定プランを Plan mode に変換して実装 | 未実施 | - | 同上 |
-| B-3 | Stage 3: episode + ADR + 本ファイル更新 + キックオフ突合 | 未実施 | - | 同上 |
-| B-4 | plan と episode の分離が運用で守られたか | 未実施 | - | 同上 |
+| B-1 | Stage 1: Agent mode で plan MD 作成 + peer-ai-review | スキップ | - | Phase 1 は Issue 駆動で進行。Stage 分離フローの本格検証は Phase 2 以降 |
+| B-2 | Stage 2: 確定プランを Plan mode に変換して実装 | スキップ | - | 同上 |
+| B-3 | Stage 3: episode + ADR + 本ファイル更新 + キックオフ突合 | スキップ | - | 同上 |
+| B-4 | plan と episode の分離が運用で守られたか | 実施済み | PARTIAL | plans/ と episodes/ の分離は維持。ただし Stage 順序の厳格運用ではない |
 | B-5 | 実装後 `so-compare.sh` gate + `shellcheck` 前提のレビュー | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md) §3。Codex+Claude 2者合意、medium 2件修正済み |
 
 ---
