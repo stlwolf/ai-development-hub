@@ -35,13 +35,13 @@ else
 fi
 
 wez_info() {
-  echo "${WEZ_COLOR_GREEN}[wez]${WEZ_COLOR_RESET} $*" >&2
+  printf '%s %s\n' "${WEZ_COLOR_GREEN}[wez]${WEZ_COLOR_RESET}" "$*" >&2
 }
 
 wez_warn() {
-  echo "${WEZ_COLOR_YELLOW}[wez]${WEZ_COLOR_RESET} WARNING: $*" >&2
+  printf '%s %s\n' "${WEZ_COLOR_YELLOW}[wez]${WEZ_COLOR_RESET}" "WARNING: $*" >&2
 }
 
 wez_error() {
-  echo "${WEZ_COLOR_RED}[wez]${WEZ_COLOR_RESET} ERROR: $*" >&2
+  printf '%s %s\n' "${WEZ_COLOR_RED}[wez]${WEZ_COLOR_RESET}" "ERROR: $*" >&2
 }

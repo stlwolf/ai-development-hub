@@ -201,7 +201,7 @@ EOF
       if [[ "$opt_json" == true ]]; then
         _wez_pane_split_json "$new_pane_id" "timeout"
       else
-        echo "$new_pane_id"
+        printf '%s\n' "$new_pane_id"
       fi
       return "${WEZ_EXIT_TIMEOUT}"
     fi
@@ -210,7 +210,7 @@ EOF
   if [[ "$opt_json" == true ]]; then
     _wez_pane_split_json "$new_pane_id" "ok"
   else
-    echo "$new_pane_id"
+    printf '%s\n' "$new_pane_id"
   fi
 }
 
@@ -619,7 +619,7 @@ wez_cmd_pane() {
     kill)    _wez_pane_kill "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
     *)
       wez_error "pane: unknown subcommand: ${subcmd}"
-      echo "Run 'wez pane --help' for usage information." >&2
+      printf '%s\n' "Run 'wez pane --help' for usage information." >&2
       return "${WEZ_EXIT_USAGE}"
       ;;
   esac

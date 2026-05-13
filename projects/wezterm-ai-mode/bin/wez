@@ -60,11 +60,11 @@ wez_main() {
       wez_help
       ;;
     version|--version|-V)
-      echo "wez ${WEZ_VERSION}"
+      printf '%s\n' "wez ${WEZ_VERSION}"
       ;;
     *)
       wez_error "Unknown command: ${cmd}"
-      echo "Run 'wez help' for usage information." >&2
+      printf '%s\n' "Run 'wez help' for usage information." >&2
       exit "${WEZ_EXIT_USAGE}"
       ;;
   esac

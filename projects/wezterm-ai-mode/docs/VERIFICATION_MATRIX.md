@@ -41,6 +41,8 @@ use_when:
 | A-2-3 | `wez notify`（user-var 送信 + Lua 統合方針 ADR） | 実施済み | PASSED（CLI 層。toast は Phase 2） | Issue #30, E2E 12/12 パス, ADR-006/007 |
 | A-2-4 | 複数 WezTerm インスタンス時のソケット選択 | 設計済み | DESIGNED | ADR-002: mtime+verify ハイブリッド方式。単一インスタンスで E2E 検証済み |
 | A-2-5 | 新ペイン tmux auto-attach 後のコマンド送信（ポーリング等） | 実施済み | PASSED（--wait-ready） | ADR-003: ポーリング方式採用。E2E で send → capture 正常動作確認 |
+| A-2-6 | 3ツール横断 7ステップ統合フロー（discover→kill） | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md), #20 コメント群（Cursor/CC/Codex 全成功） |
+| A-2-7 | 空 title バリデーション（課題 E 修正） | 実施済み | PASSED | Issue #31, `fix(wez): reject empty title` |
 
 ---
 
@@ -52,7 +54,7 @@ use_when:
 | B-2 | Stage 2: 確定プランを Plan mode に変換して実装 | 未実施 | - | 同上 |
 | B-3 | Stage 3: episode + ADR + 本ファイル更新 + キックオフ突合 | 未実施 | - | 同上 |
 | B-4 | plan と episode の分離が運用で守られたか | 未実施 | - | 同上 |
-| B-5 | 実装後 `so-compare.sh` gate + `shellcheck` 前提のレビュー | 未実施 | - | CONVENTIONS「標準 gate」 |
+| B-5 | 実装後 `so-compare.sh` gate + `shellcheck` 前提のレビュー | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md) §3。Codex+Claude 2者合意、medium 2件修正済み |
 
 ---
 
