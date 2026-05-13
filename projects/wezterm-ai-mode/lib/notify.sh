@@ -133,6 +133,7 @@ wez_cmd_notify() {
   local opt_timeout="4000"
   local opt_json=false
   local title=""
+  local title_set=false
   local body=""
 
   while [[ $# -gt 0 ]]; do
@@ -168,8 +169,9 @@ wez_cmd_notify() {
         return "${WEZ_EXIT_USAGE}"
         ;;
       *)
-        if [[ -z "$title" ]]; then
+        if [[ "$title_set" == false ]]; then
           title="$1"
+          title_set=true
         elif [[ -z "$body" ]]; then
           body="$1"
         else
@@ -183,9 +185,9 @@ wez_cmd_notify() {
 
   # --- Validation ---
 
-  if [[ -z "$title" ]]; then
-    wez_error "notify: title is required"
-    echo "Run 'wez notify --help' for usage information." >&2
+  if [[ -z "$title" ]] || [[ "$title" =~ ^[[:space:]]+$ ]]; then
+    wez_error "notify: title is required (must not be empty or whitespace-only)"
+    printf '%s\n' "Run 'wez notify --help' for usage information." >&2
     return "${WEZ_EXIT_USAGE}"
   fi
 
