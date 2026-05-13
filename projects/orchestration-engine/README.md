@@ -42,6 +42,28 @@ projects/orchestration-engine/
 
 docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の構造を踏襲し、`spec-card` スキルの蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision/ADR）に準拠する。
 
+## 観測層と駆動層の分離
+
+本プロジェクトは **観測層** と **駆動層** を明示的に分離した運用を行う。これは MVP 完成前のドッグフード検証でもある（orchestration-engine が解決したい問題そのもの = 「スレッド/セッション間のコンテキスト引き継ぎを構造化ドキュメントで実現」）。
+
+| 層 | 配置 | 役割 |
+|----|------|------|
+| **観測層** | GitHub Issue / コメント / PR | MVP **外** からのプロジェクト進捗の俯瞰、人間のスプリント管理、外部ステークホルダーへの可視化 |
+| **駆動層** | `docs/{discussions,plans,episodes,decisions}/` | エージェントが読み書きするコンテキスト引き継ぎ装置。開発サイクル自体はここで完結 |
+
+### 運用ルール
+
+- **開発サイクルは駆動層で完結**: KickOff → Plan → Episode → ADR の蒸留パイプラインで進める
+- **Issue / コメントは観測用ハイライト**: スプリント運用に必要な情報を残すが、エージェントが Issue を読まないと進められない状態にはしない
+- **エージェントの初期入力は driving layer のみで完結すべき**: 「`#19` の本文 + 本 README + 該当 KickOff / Plan」だけで Step を進められる状態を維持
+- **観測層→駆動層への翻訳が必要なら ADR / Episode 化**: Issue コメントで重要な意思決定が発生したら ADR に蒸留して駆動層に持ち込む
+
+### Dogfood 視点
+
+orchestration-engine の MVP は「閉セッション間のリアルタイム双方向通信」を扱う（[Discussion §4](./docs/discussions/2026-05-13-discussion-engine-scope-and-goals.md)）。スレッド / Cursor チャットセッションも閉セッションの一種であり、driving layer のドキュメントだけで次セッションへ引き継ぎできるかが、本 MVP の有効性検証になる。
+
+検証成功条件: 新規スレッドが本 README + 該当 Discussion / KickOff / Plan を読むだけで、人間が前スレッドの会話履歴を伝えなくても Step を進められること。
+
 ## 状態
 
 **Phase 4 Step 4-0 進行中**（[#81](https://github.com/stlwolf/ai-development-hub/issues/81)）。

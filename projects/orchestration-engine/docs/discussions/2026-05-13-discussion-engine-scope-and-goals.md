@@ -303,10 +303,63 @@ arena 結果から以下を採用:
 
 ## 次のステップ
 
-1. 本 Discussion のレビュー（人間 + so-compare で Codex + Claude のセカンドオピニオン）
-2. レビュー反映後、Step 4-1（エンベロープ + ディスパッチャの骨格）の **KickOff** を `plans/` に作成
-3. KickOff から `kickoff-to-plan` で Plan に展開
-4. Plan 実行 → Episode に記録 → 設計判断は ADR に蒸留
+1. Step 4-1（エンベロープ + ディスパッチャの骨格）の **KickOff** を `plans/` に作成
+2. KickOff から `kickoff-to-plan` で Plan に展開
+3. Plan 実行 → Episode に記録 → 設計判断は ADR に蒸留
+
+なお Step 4-1 以降は本リポジトリの **観測層 vs 駆動層** 運用方針（[`projects/orchestration-engine/README.md`](../../README.md) §「観測層と駆動層の分離」参照）に従い、ドキュメント駆動で進める。Issue / コメントは外部観測（プロジェクト進捗の俯瞰）のための記録に留め、開発サイクル自体は本 docs 配下で完結させる。
+
+## Appendix A: arena ラウンド1 結果サマリ
+
+`tmp/arena-20260513-200204/summary.md` の主要結果を本 Discussion に永続化（`tmp/` は gitignore 対象のため）。
+
+### 実行条件
+
+- ツール: `arena-compare -w "$(pwd)" --mode plan -f /tmp/arena-prompt-4-0.txt`
+- モデル: `gpt-5.5-medium` (113 秒) + `gemini-3.1-pro` (210 秒)
+- 出力: gpt 71 行 / 9634 bytes、gemini 53 行 / 8932 bytes
+
+### gpt-5.5-medium の主要指摘
+
+- **State Semantics / 共有状態の契約**: 通信プロトコル以前に、どの状態を誰が生成・永続化し、次セッションが何を読めるかの契約が必要（G3 未カバー）
+- **観測性・監査ログ・リプレイ可能性**: 人間が常駐しない MVP では事後復元できないと運用不能
+- **Resource / Time budgeting**: 終了条件だけでなく時間・ターン・コスト・ペイン数の上限が必要（G5 未カバー）
+- **通信プロトコルの信頼性契約**: message id / ack / 順序 / 重複 / タイムアウト / 再送 / interrupt 優先度を中間層に
+- **依存関係 `5 → 9 → 4`**: UC が中間層プロトコル要件を決める入力。仮置きと逆転
+- **論点 7 と論点 9 の衝突**: ディスパッチャを CLI ラッパー層までと限定すると、中間層が listener / ack / 構造化イベントを要求した時に矛盾
+- **G1 と G4 の循環**: 失敗蓄積には分類が必要、分類育成には実行ログが必要
+- **G4 最小版を MVP に**: `success / partial / retryable_failure / blocked / protocol_error / timeout` 程度の 6 分類
+- **G6 完全版不要だが initializer envelope は必要**: 読む docs / 使う skill / 出力先 / 終了条件を固定
+- **リアルタイム双方向通信は MVP に過剰**: `spawn → liveness/progress取得 → completion/blocked検知 → interrupt可能 → artifact handoff` で十分
+- **独自視点**: 型安全性より先にイベント語彙の閉集合化が重要。MVP に「リアルタイム」を入れるなら最小 SLO を明記
+
+### gemini-3.1-pro の主要指摘
+
+- **ゾンビペイン問題**: 親エージェントクラッシュ時の子プロセス放置リスク。`trap` フックによる orphaned ペイン破棄が必要
+- **権限分離・セキュリティ境界**: spawn 時にサブへ破壊的操作の権限を引き継ぐかの境界設計が抜けている
+- **暴走ループ防止・サーキットブレーカー**: セッション/タスク単位での絶対的な実行回数・トークン上限
+- **依存関係 `5 → 9 → 3, 4`**: gpt と同じ指摘
+- **論点 4 と論点 7 の矛盾**: 「リアルタイム双方向」と「CLI ラッパー層まで」が強結合衝突
+- **G4 除外のリスク**: 「リトライ可能/不可能」程度の最小限分類は MVP に不可欠
+- **論点 4 過剰スコープ**: オープンループ（capture ポーリング方式）で十分自律サイクルは回せる、完全 event-driven は Phase 5 以降
+- **独自視点**: Schema-driven Boundaries（jq 厳格検証 + fail-fast）を MVP 最優先要件に
+
+### 採用済み（本 Discussion 反映）
+
+- 論点 4 書き換え → §4 オープンループ自律サイクル + 最小 SLO
+- 論点 6 分割 → §6 G4 最小分類 + G6 envelope + G3 部分 + G5 を MVP に
+- 依存関係修正 → §「論点間の依存関係」グラフ
+- 論点 5 UC ハイブリッド → §5 gemini ベース + gpt 観測性上乗せ
+- 論点 7 と 4 の整合 → §7 ディスパッチャは CLI ラッパー + 最小解析
+- 論点 11〜15 新規追加 → §11 観測性 / §12 サーキットブレーカー / §13 権限分離 / §14 クリーンアップ / §15 Schema-driven
+
+### UC ハイブリッドのモデル別出典
+
+| UC | 基盤（gemini） | 上乗せ（gpt） |
+|---|---|---|
+| UC-1 監督ループ | SIGINT + プロンプト注入、ポーリング監視 | 状態語彙閉集合 `spawn/ready/progress/done/blocked` + 監査ログ |
+| UC-2 並列協調 | ファイルベース KVS + ブロッキング監視 | registry + ledger + ownership 宣言 + コンフリクト検出（#47 反映） |
+| UC-3 人間俯瞰 | WezTerm 物理 UI + 直接 TTY 入力 + `wez notify` | dashboard API + 人間決定の監査ログ |
 
 ## 関連
 
