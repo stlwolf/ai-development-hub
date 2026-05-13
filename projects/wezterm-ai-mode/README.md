@@ -4,7 +4,11 @@ WezTerm の **Human Mode（tmux 維持）** と **AI Mode（`wezterm cli` 上乗
 
 ## ステータス
 
-**Phase 1 実装中** — `wez discover` + `wez pane` + `wez notify` が動作する状態。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で追加機能を予定。
+**Phase 1 完了** — `wez discover` + `wez pane` (list/split/send/capture/kill) + `wez notify` が動作し、Cursor / Claude Code / Codex CLI の3ツールで7ステップ統合フロー（discover → pane list → split → send → capture → notify → kill）の E2E 検証を完了。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で Phase 2 以降の追加機能を予定。
+
+**既知制約**:
+- capture の出力に tmux statusbar / prompt 装飾が混入する。`wez pane capture --raw` は ANSI escape を保持するオプション（CLI リファレンス参照）であり、装飾除去ではない。マーカー方式で回避可能。装飾を落とすフィルタやオーケストレータ向けの専用オプションは Phase 2 で検討。
+- Cursor / Codex CLI のサンドボックス環境では `required_permissions: ["all"]` が必要（WezTerm の Unix ソケットへのアクセス制限）
 
 ## クイックスタート
 
@@ -239,6 +243,11 @@ projects/wezterm-ai-mode/
 - [docs/episodes/](docs/episodes/) — 実装エピソード
 - [docs/raw-logs/README.md](docs/raw-logs/README.md) — 層3の一時ログ置き場
 
-## sync-bin.sh 統合（未実施）
+## sync-bin.sh 統合
 
-`bin/wez` を [scripts/sync/sync-bin.sh](../../scripts/sync/sync-bin.sh) 経由で `~/bin/` にシンボリックリンクし、パスなしで `wez discover` を実行可能にする予定（Phase 1 ステップ 1-5）。
+`~/bin/wez` として PATH 配置済み（[`scripts/sync/sync-bin.sh`](../../scripts/sync/sync-bin.sh) 経由のシンボリックリンク）。`so-compare` / `arena-compare` と同じパターン。
+
+```bash
+./scripts/sync.sh bin   # ~/bin/wez を作成・更新
+wez discover            # パスなしで実行可能
+```
