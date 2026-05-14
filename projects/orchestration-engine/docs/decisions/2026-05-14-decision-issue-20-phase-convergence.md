@@ -64,3 +64,23 @@ orchestration-engine（Epic [#19](https://github.com/stlwolf/ai-development-hub/
 - #20 Phase 2 で `--raw` オプション等の新機能が追加され、Step 4-1 の capture 解析に影響する場合 → DI-8（最小解析ラッパー）の再評価
 - Phase 3 設計時に Step 4-1 のエンベロープスキーマが不十分と判明した場合 → Step 4-5 フィードバックで修正
 - 3 層モデルの中間層が `wez` 以外の実装に拡張される場合 → 本 ADR の合流点定義を再検討
+
+## フェーズ 2〜4 成果の統合（Step 4-1 フェーズ 5 で追記）
+
+フェーズ 1 で確定した合流方針（Step 4-1 完了 → #20 Phase 3 着手）を前提に、フェーズ 2〜4 で確定した設計が #20 Phase 3 の入力となる。
+
+### 中間層プロトコル仕様の確定結果
+
+| 要素 | 確定内容 | Schema 参照 |
+|------|---------|------------|
+| Registry | `session_id ⇔ pane_id` 対応は envelope の `session_id` + `pane_id` で表現。専用 registry ファイルは不要（`wez pane list` + KVS で代替） | `envelope.schema.json` |
+| KVS | `{session_id}.state.json` 単一 JSON + atomic rename | `session-state.schema.json` |
+| 監査ログ | `audit/${session_id}.jsonl` JSON Lines 9 event_type | `audit-log.schema.json` |
+| SLO | ポーリング 2 秒 / 状態変化検知 5 秒 / サイクル完走 30 分 | Episode 参照 |
+| Failure Taxonomy | 6 値 enum + exit code 2 段階マッピング | `failure-taxonomy.schema.json`, `exit-code-mapping.schema.json` |
+
+### #20 Phase 3 への申し送り
+
+- `wez agent monitor`: ポーリング間隔 2 秒 + マーカースキャンの実装基盤は Step 4-1 で設計済み
+- `wez agent spawn`: envelope JSON をプロンプト先頭展開する注入方式は Step 4-1 で確定済み
+- 状態語彙 5 値 (`spawn/ready/progress/done/blocked`) は #20 Phase 3 の状態遷移 API の語彙基盤
