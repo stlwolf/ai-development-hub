@@ -67,7 +67,7 @@ tags: [orchestration, mvp, step-4-2, kickoff, parse, state-management, marker, m
 
 - [#19](https://github.com/stlwolf/ai-development-hub/issues/19) — Epic 親、Phase 4 ステップ管理
 - [#84](https://github.com/stlwolf/ai-development-hub/issues/84) — Step 4-1 サブ Issue（closed、[PR #85](https://github.com/stlwolf/ai-development-hub/pull/85)）
-- 4-2 用サブ Issue — 本 KickOff 作成後に別途作成
+- [#87](https://github.com/stlwolf/ai-development-hub/issues/87) — Step 4-2 サブ Issue（本 KickOff の観測層）
 
 ## スコープ
 
@@ -279,7 +279,7 @@ flowchart TD
 
 - [#19](https://github.com/stlwolf/ai-development-hub/issues/19) — Epic 親、Phase 4 ステップ管理
 - [#84](https://github.com/stlwolf/ai-development-hub/issues/84) — Step 4-1 サブ Issue（closed）
-- 4-2 用サブ Issue — 本 KickOff 作成後に別途作成
+- [#87](https://github.com/stlwolf/ai-development-hub/issues/87) — Step 4-2 サブ Issue（本 KickOff の観測層）
 
 ### 並行・合流候補
 
