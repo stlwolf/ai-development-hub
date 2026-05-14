@@ -34,6 +34,20 @@ set -euo pipefail
 log_dir="${OE_MOCK_LOG_DIR:?}"
 
 if [[ "${1:-}" == "pane" && "${2:-}" == "split" ]]; then
+  shift 2
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bottom|--right|--left|--top|--wait-ready|--json) shift ;;
+      --percent|--timeout|--pane-id|--cwd)
+        [[ $# -ge 2 ]] || exit 1
+        shift 2
+        ;;
+      *)
+        echo "unexpected wez split option: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
   echo "777"
   exit 0
 fi

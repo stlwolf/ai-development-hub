@@ -8,14 +8,47 @@ OE_MANAGED_PANES=()
 # 完了済みペイン（マーカー検出済み、監視対象から除外）
 OE_DONE_PANES=()
 
-# 前回 state 保持（Bash 4+ 必須: declare -A）
-declare -A OE_LAST_STATE
+# 前回 state 保持（Bash 3.2 互換: ペイン ID と state を平行配列で保持）
+_OE_LAST_STATE_PANES=()
+_OE_LAST_STATE_VALS=()
 
 # シグナル受信フラグ（trap ハンドラ用グローバル）
 _OE_MONITOR_INTERRUPTED=0
 
 # SIGINT / SIGTERM 区別（trap から設定、interrupt 監査の payload.method に使用）
 _OE_INTERRUPT_METHOD=""
+
+_oe_monitor_last_state_clear() {
+  _OE_LAST_STATE_PANES=()
+  _OE_LAST_STATE_VALS=()
+}
+
+# 戻り値: 0 で stdout に state（改行なし）、未登録は 1
+_oe_monitor_last_state_get() {
+  local pane_id="$1"
+  local i
+  for (( i = 0; i < ${#_OE_LAST_STATE_PANES[@]}; i++ )); do
+    if [[ "${_OE_LAST_STATE_PANES[i]}" == "$pane_id" ]]; then
+      printf '%s' "${_OE_LAST_STATE_VALS[i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_oe_monitor_last_state_set() {
+  local pane_id="$1"
+  local state="$2"
+  local i
+  for (( i = 0; i < ${#_OE_LAST_STATE_PANES[@]}; i++ )); do
+    if [[ "${_OE_LAST_STATE_PANES[i]}" == "$pane_id" ]]; then
+      _OE_LAST_STATE_VALS[i]="$state"
+      return 0
+    fi
+  done
+  _OE_LAST_STATE_PANES+=("$pane_id")
+  _OE_LAST_STATE_VALS+=("$state")
+}
 
 # oe_monitor_loop — メインポーリングループ
 #
@@ -29,7 +62,7 @@ oe_monitor_loop() {
 
   OE_MANAGED_PANES=("$@")
   OE_DONE_PANES=()
-  OE_LAST_STATE=()
+  _oe_monitor_last_state_clear
   _OE_MONITOR_INTERRUPTED=0
   _OE_INTERRUPT_METHOD=""
 
@@ -80,8 +113,10 @@ oe_monitor_loop() {
           oe_capture_classify "$OE_SCAN_VALUE" "$OE_SCAN_BLOCKED"
 
           # 状態変化時に state_change → session_end の順で emit
-          if [[ "${OE_LAST_STATE[$pane_id]:-}" != "$OE_CLASSIFY_STATE" ]]; then
-            OE_LAST_STATE[$pane_id]="$OE_CLASSIFY_STATE"
+          local _prev_ls
+          _prev_ls="$(_oe_monitor_last_state_get "$pane_id" 2>/dev/null || true)"
+          if [[ "$_prev_ls" != "$OE_CLASSIFY_STATE" ]]; then
+            _oe_monitor_last_state_set "$pane_id" "$OE_CLASSIFY_STATE"
             oe_audit_emit "state_change" "$session_id" "$pane_id" "$OE_CLASSIFY_STATE"
           fi
 

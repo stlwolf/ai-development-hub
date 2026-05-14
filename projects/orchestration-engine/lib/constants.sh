@@ -25,6 +25,9 @@ OE_SLO_DETECT_SEC=5
 # ポーリング間隔（秒）
 OE_POLL_INTERVAL=2
 
+# wez pane split --wait-ready のタイムアウト（秒）。ADR-003 に準拠。
+OE_SPAWN_WAIT_READY_SEC="${OE_SPAWN_WAIT_READY_SEC:-10}"
+
 # KVS パス（OE_DATA_DIR でオーバーライド可能、デフォルトはプロジェクトルート相対）
 OE_STATE_DIR="${OE_DATA_DIR:-${PROJECT_DIR}}/state"
 

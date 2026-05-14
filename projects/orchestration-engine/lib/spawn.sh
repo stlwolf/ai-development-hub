@@ -8,7 +8,8 @@ OE_SPAWN_PANE_ID=""
 # oe_spawn_prepare_pane — 新ペインを作成し OE_SPAWN_PANE_ID に保存
 oe_spawn_prepare_pane() {
   OE_SPAWN_PANE_ID=""
-  OE_SPAWN_PANE_ID="$(wez pane split --bottom --percent 30)"
+  # --wait-ready: 新ペインが入力受付可能になるまで待機（tmux auto-attach 等のタイミング問題の緩和）
+  OE_SPAWN_PANE_ID="$(wez pane split --bottom --percent 30 --wait-ready --timeout "$OE_SPAWN_WAIT_READY_SEC")"
 }
 
 # oe_spawn_send — 既存ペインに AI CLI コマンド + マーカー emit を送信

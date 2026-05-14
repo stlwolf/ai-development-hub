@@ -153,7 +153,7 @@ oe_monitor_loop "sess-a" "p1"
 
 assert_eq "OE_DONE_PANES count" "1" "${#OE_DONE_PANES[@]}"
 assert_eq "OE_DONE_PANES[0]" "p1" "${OE_DONE_PANES[0]}"
-assert_eq "OE_LAST_STATE[p1]" "success" "${OE_LAST_STATE[p1]}"
+assert_eq "OE_LAST_STATE[p1]" "success" "$(_oe_monitor_last_state_get p1 || true)"
 assert_eq "capture count for p1" "1" "$(mock_capture_count p1)"
 assert_eq "KVS write count" "1" "$_MOCK_KVS_WRITE_COUNT"
 assert_eq "KVS args include session/pane/state" "sess-a|p1|success" "$_MOCK_KVS_LAST_ARGS"
