@@ -111,7 +111,7 @@
     "auxiliary_signals": {
       "end_marker_blocked": {
         "method": "end_marker_scan",
-        "pattern": "===STATE: blocked==="
+        "pattern": "@@OE_BLOCKED"
       }
     }
   }

@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# oe — orchestration-engine エントリポイント
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LIB_DIR="${PROJECT_DIR}/lib"
+export PROJECT_DIR
+
+# source lib/*.sh
+# shellcheck source=../lib/constants.sh
+source "${LIB_DIR}/constants.sh"
+# shellcheck source=../lib/envelope.sh
+source "${LIB_DIR}/envelope.sh"
+# shellcheck source=../lib/spawn.sh
+source "${LIB_DIR}/spawn.sh"
+# shellcheck source=../lib/capture.sh
+source "${LIB_DIR}/capture.sh"
+# shellcheck source=../lib/monitor.sh
+source "${LIB_DIR}/monitor.sh"
+# shellcheck source=../lib/audit.sh
+source "${LIB_DIR}/audit.sh"
+# shellcheck source=../lib/cleanup.sh
+source "${LIB_DIR}/cleanup.sh"
+
+export OE_CURRENT_SESSION_ID=""
+trap oe_cleanup EXIT INT TERM
+
+oe_generate_session_id() {
+  local ts
+  local rand
+  # 26 文字: 先頭 14 は数字（ULID 時刻部相当）、残り 12 は Crockford base32（I/L/O/U 除外）
+  ts="$(date -u +%Y%m%d%H%M%S)"
+  rand="$(LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z' </dev/urandom | head -c 12)"
+  printf '%s%s\n' "$ts" "$rand"
+}
+
+oe_main() {
+  # 3) state/audit ディレクトリ準備
+  mkdir -p "${OE_STATE_DIR}" "${OE_AUDIT_DIR}"
+
+  # 4) セッションID確定
+  OE_CURRENT_SESSION_ID="$(oe_generate_session_id)"
+
+  # E2E タスク説明（未指定時は既定値）
+  local task_description="${*:-Run orchestration task}"
+  local pane_id
+
+  # 5) spawn 準備 → envelope 生成 → send
+  oe_spawn_prepare_pane
+  pane_id="$OE_SPAWN_PANE_ID"
+  oe_envelope_create "$OE_CURRENT_SESSION_ID" "$pane_id" "$task_description" "$PROJECT_DIR" "$OE_CB_TIMEOUT"
+  oe_spawn_send "$OE_CURRENT_SESSION_ID" "$pane_id" "$OE_ENVELOPE_PATH"
+
+  # 6) monitor loop
+  local monitor_rc
+  if oe_monitor_loop "$OE_CURRENT_SESSION_ID" "$pane_id"; then
+    monitor_rc=0
+  else
+    monitor_rc=$?
+  fi
+
+  # monitor が INT/TERM trap を解除するため、EXIT 経路の cleanup を再確保
+  trap oe_cleanup EXIT INT TERM
+
+  # 7) monitor 戻り値を尊重
+  return "$monitor_rc"
+}
+
+oe_main "$@"
