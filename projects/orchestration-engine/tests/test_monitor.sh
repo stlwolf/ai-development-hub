@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034,SC2317
 set -euo pipefail
 
 # test_monitor.sh — monitor.sh のユニットテスト
@@ -98,6 +98,7 @@ reset_mocks() {
   _MOCK_KVS_WRITE_COUNT=0
   _MOCK_KVS_LAST_ARGS=""
   _OE_MONITOR_INTERRUPTED=0
+  _OE_INTERRUPT_METHOD=""
   OE_CB_TIMEOUT=1800
   OE_CB_MAX_TURNS=10
   OE_CB_MAX_PANES=5
@@ -229,6 +230,33 @@ assert_contains "CB pane_count_exceeded" \
   'circuit_breaker_triggered|sess-e|0||{"reason":"max_panes"}' \
   "${_MOCK_AUDIT_CALLS[@]}"
 assert_eq "kill count" "3" "${#_MOCK_KILL_CALLS[@]}"
+
+# --- テスト g: interrupt（SIGINT 経路）---
+echo ""
+echo "=== Test g: interrupt (SIGINT) ==="
+reset_mocks
+_MOCK_CAPTURE_OUTPUT[p1]="running without marker"
+OE_CB_MAX_TURNS=100
+_OE_MONITOR_SLEEP_INT_PHASE=0
+sleep() {
+  if [[ $_OE_MONITOR_SLEEP_INT_PHASE -eq 0 ]]; then
+    _OE_MONITOR_SLEEP_INT_PHASE=1
+    return 0
+  fi
+  _OE_MONITOR_INTERRUPTED=1
+  _OE_INTERRUPT_METHOD=SIGINT
+  return 0
+}
+
+int_rc=0
+oe_monitor_loop "sess-int" "p1" || int_rc=$?
+
+assert_eq "interrupt exit code 130" "130" "$int_rc"
+assert_contains "interrupt audit emitted" \
+  'interrupt|sess-int|0||{"method":"SIGINT"}' \
+  "${_MOCK_AUDIT_CALLS[@]}"
+
+sleep() { :; }
 
 # --- テスト f: trap 復元 ---
 echo ""

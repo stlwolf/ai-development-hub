@@ -14,6 +14,9 @@ declare -A OE_LAST_STATE
 # シグナル受信フラグ（trap ハンドラ用グローバル）
 _OE_MONITOR_INTERRUPTED=0
 
+# SIGINT / SIGTERM 区別（trap から設定、interrupt 監査の payload.method に使用）
+_OE_INTERRUPT_METHOD=""
+
 # oe_monitor_loop — メインポーリングループ
 #
 # 引数: session_id pane_id1 [pane_id2 ...]
@@ -28,6 +31,7 @@ oe_monitor_loop() {
   OE_DONE_PANES=()
   OE_LAST_STATE=()
   _OE_MONITOR_INTERRUPTED=0
+  _OE_INTERRUPT_METHOD=""
 
   local cb_payload
 
@@ -39,13 +43,17 @@ oe_monitor_loop() {
     return 1
   fi
 
-  trap '_OE_MONITOR_INTERRUPTED=1' INT TERM
+  trap '_OE_MONITOR_INTERRUPTED=1; _OE_INTERRUPT_METHOD=SIGINT' INT
+  trap '_OE_MONITOR_INTERRUPTED=1; _OE_INTERRUPT_METHOD=SIGTERM' TERM
 
   local turn=0
   SECONDS=0
 
   while true; do
     if [[ $_OE_MONITOR_INTERRUPTED -ne 0 ]]; then
+      local intr_payload
+      intr_payload="$(jq -cn --arg m "${_OE_INTERRUPT_METHOD:-SIGINT}" '{method:$m}')"
+      oe_audit_emit "interrupt" "$session_id" 0 "" "$intr_payload" || true
       monitor_rc=130
       break
     fi

@@ -52,6 +52,11 @@ assert_eq "line2 state value" "success" "$(jq -r 'select(.event_type=="session_e
 assert_eq "line2 pane_id type number" "number" "$(jq -r 'select(.event_type=="session_end") | (.pane_id|type)' "$audit_file")"
 assert_eq "line2 payload inserted" "ok" "$(jq -r 'select(.event_type=="session_end") | .payload.note' "$audit_file")"
 
+oe_audit_emit "interrupt" "$session_id" 0 "" '{"method":"SIGINT"}'
+assert_eq "jsonl line count after interrupt" "3" "$(wc -l < "$audit_file" | tr -d ' ')"
+assert_eq "interrupt line state null" "null" "$(jq -r 'select(.event_type=="interrupt") | (.state|tostring)' "$audit_file")"
+assert_eq "interrupt payload method" "SIGINT" "$(jq -r 'select(.event_type=="interrupt") | .payload.method' "$audit_file")"
+
 echo ""
 echo "=== invalid payload rejected ==="
 if oe_audit_emit "session_end" "$session_id" 0 "success" '[]' 2>/dev/null; then

@@ -32,7 +32,7 @@
 6. ⚠️ Audit log 7 種イベント JSONL 出力  
    - 根拠コマンド: `bash ./tests/test_audit.sh`, `bash ./tests/test_monitor.sh`, `bash ./tests/test_e2e_smoke.sh`  
    - 根拠ファイル: `lib/audit.sh`, `lib/monitor.sh`, `lib/cleanup.sh`, `lib/spawn.sh`  
-   - 観測: `session_start/state_change/circuit_breaker_triggered/cleanup/session_end` は実出力確認済み。`interrupt/human_input` は呼び出し実装・検証が未追加
+   - 観測: `session_start/state_change/interrupt/circuit_breaker_triggered/cleanup/session_end` は実出力確認済み。`human_input` は呼び出し実装・検証が未追加
 
 7. ✅ trap EXIT でペイン kill + 一時ファイル削除  
    - 根拠コマンド: `bash ./tests/test_cleanup.sh`, `bash ./tests/test_e2e_smoke.sh`  
@@ -59,7 +59,7 @@ bash ./tests/test_e2e_smoke.sh
 
 ## 未達・懸念
 
-- 完了条件 6 の「7 種イベント実出力」は未達。`interrupt` と `human_input` の emit 経路（および検証）を追加すると完全充足になる。
+- 完了条件 6 の「7 種イベント実出力」は一部未達。`human_input` の emit 経路（および検証）を追加すると完全充足になる。
 
 ## 追記: Phase D ハードニング (2026-05-15)
 
@@ -72,3 +72,4 @@ so-compare レビューの指摘を受け、Phase D / E の結線に関する以
 - `spawn.sh` を2段階API（`prepare_pane` と `send`）に分割（`pane_id` 依存解消）
 - `capture.sh` で `\r` と ANSI エスケープを除去する前処理を追加
 - 監査ログ `payload` が JSON Object であることを `jq` で事前検証
+- `interrupt` イベント: `monitor.sh` が SIGINT/SIGTERM 検知時に `payload.method` を付与して emit
