@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/failure-taxonomy.schema.json",
+  "title": "Failure Taxonomy",
+  "description": "G4 Failure Taxonomy — 6 値の状態分類。サブエージェント実行結果を success / partial / retryable_failure / blocked / protocol_error / timeout に分類する。監査ログの state フィールドおよびエンベロープの exit_state フィールドで使用。",
+  "type": "string",
+  "enum": [
+    "success",
+    "partial",
+    "retryable_failure",
+    "blocked",
+    "protocol_error",
+    "timeout"
+  ]
+}
