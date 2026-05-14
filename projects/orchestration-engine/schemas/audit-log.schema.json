@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/audit-log.schema.json",
+  "title": "Audit Log Entry",
+  "description": "監査ログ JSON Lines の 1 行分のスキーマ。ディスパッチャが audit/${session_id}.jsonl に追記する。1 セッション 1 ファイル、1 行 1 イベント。session_start → state_change* → session_end の時系列から 1 サイクルの流れを再構成可能。",
+  "type": "object",
+  "required": ["ts", "session_id", "pane_id", "event_type"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "description": "イベント発生時刻（ISO 8601 with timezone）",
+      "format": "date-time",
+      "examples": ["2026-05-14T15:30:00+09:00"]
+    },
+    "session_id": {
+      "type": "string",
+      "description": "セッション識別子（ULID 形式）",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "pane_id": {
+      "type": "integer",
+      "description": "WezTerm ペイン ID",
+      "minimum": 0
+    },
+    "event_type": {
+      "type": "string",
+      "description": "イベント種別",
+      "enum": [
+        "session_start",
+        "state_change",
+        "polling_snapshot",
+        "interrupt",
+        "human_input",
+        "circuit_breaker_triggered",
+        "validation_failure",
+        "cleanup",
+        "session_end"
+      ]
+    },
+    "state": {
+      "type": ["string", "null"],
+      "description": "failure-taxonomy enum 値。session_end 時は最終 exit_state、state_change 時は遷移先。該当しないイベントでは null。",
+      "enum": [
+        "success",
+        "partial",
+        "retryable_failure",
+        "blocked",
+        "protocol_error",
+        "timeout",
+        null
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "description": "イベント種別ごとの付加情報（自由形式）。MVP では厳格な payload スキーマは定義しない。",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "event_type": { "const": "session_start" } }
+      },
+      "then": {
+        "description": "セッション開始（envelope 注入完了時）。payload に envelope サマリを含めてもよい。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "state_change" } }
+      },
+      "then": {
+        "required": ["state"],
+        "description": "状態遷移。state に新状態を記録。payload に from/to を含めてもよい。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "polling_snapshot" } }
+      },
+      "then": {
+        "description": "ポーリング取得（状態変化があった場合のみ記録）。payload にスナップショット要約を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "interrupt" } }
+      },
+      "then": {
+        "description": "割り込み実行。payload に method (SIGINT / tty_inject) を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "human_input" } }
+      },
+      "then": {
+        "description": "人間の直接入力（UC-3 監査要件）。payload に target_pane_id と input_content を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "circuit_breaker_triggered" } }
+      },
+      "then": {
+        "description": "サーキットブレーカー発動。payload に limit_type (timeout / max_turns / max_panes) と reached_value を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "validation_failure" } }
+      },
+      "then": {
+        "description": "Schema 検証失敗。payload に schema_path と error_detail を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "cleanup" } }
+      },
+      "then": {
+        "description": "クリーンアップ実行（Discussion §14 準拠）。payload に killed_pane_ids を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "session_end" } }
+      },
+      "then": {
+        "required": ["state"],
+        "description": "セッション終了。state に最終 exit_state を記録。"
+      }
+    }
+  ]
+}

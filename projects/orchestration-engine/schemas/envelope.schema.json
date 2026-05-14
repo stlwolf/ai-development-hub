@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/envelope.schema.json",
+  "title": "Initializer Envelope",
+  "description": "G6 Initializer Envelope — サブエージェント起動時に注入するコンテキスト。ディスパッチャがプロンプト先頭に展開して注入する。JSON 単一ファイル形式。",
+  "type": "object",
+  "required": ["session_id", "pane_id", "task", "context", "constraints"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "セッション識別子（ULID 形式）",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "pane_id": {
+      "type": "integer",
+      "description": "WezTerm ペイン ID",
+      "minimum": 0
+    },
+    "task": {
+      "type": "object",
+      "description": "サブエージェントに委譲するタスク定義",
+      "required": ["description", "output_dir", "exit_conditions"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "タスクの自然言語による説明"
+        },
+        "read_docs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "読むべきドキュメントの相対パス一覧",
+          "default": []
+        },
+        "use_skills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "使用するスキル名一覧",
+          "default": []
+        },
+        "output_dir": {
+          "type": "string",
+          "description": "成果物の出力先ディレクトリ（相対パス）。outputs 宣言の正本"
+        },
+        "exit_conditions": {
+          "type": "object",
+          "description": "終了条件",
+          "required": ["marker", "timeout_seconds"],
+          "properties": {
+            "marker": {
+              "type": "string",
+              "description": "終了マーカー文字列（例: ===STATE: done===）"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "description": "タイムアウト秒数",
+              "minimum": 1
+            },
+            "max_turns": {
+              "type": "integer",
+              "description": "最大ターン数",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "実行コンテキスト（親セッション情報・関連リソース）",
+      "properties": {
+        "parent_session_id": {
+          "type": ["string", "null"],
+          "description": "親セッションの ULID（トップレベルの場合は null）"
+        },
+        "related_issues": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "関連 Issue の URL 一覧",
+          "default": []
+        },
+        "shared_kvs_path": {
+          "type": ["string", "null"],
+          "description": "共有 KVS ディレクトリパス（UC-2 並列協調用）"
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "リソース制約",
+      "required": ["max_panes", "state_vocabulary"],
+      "properties": {
+        "max_panes": {
+          "type": "integer",
+          "description": "同時起動可能な最大ペイン数",
+          "minimum": 1
+        },
+        "state_vocabulary": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["spawn", "ready", "progress", "done", "blocked"]
+          },
+          "description": "状態語彙の閉集合（5 値）",
+          "minItems": 5,
+          "maxItems": 5
+        }
+      }
+    },
+    "exit_state": {
+      "type": "string",
+      "description": "完了時に書き込まれる最終状態（failure-taxonomy enum）。起動時は未設定",
+      "enum": [
+        "success",
+        "partial",
+        "retryable_failure",
+        "blocked",
+        "protocol_error",
+        "timeout"
+      ]
+    }
+  }
+}
