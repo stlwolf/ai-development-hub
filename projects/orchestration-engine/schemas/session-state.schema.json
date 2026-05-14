@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/session-state.schema.json",
+  "title": "Session State (File-based KVS)",
+  "description": "UC-2 ファイルベース KVS の最小契約。各セッションが {session_id}.state.json として自身の状態を書き出し、親エージェントが読む。ロック戦略は atomic rename（mv は POSIX で atomic）。注: 本 KVS はセッション完了時にのみ書き込む。実行中の状態（spawn/ready/progress 等）は wez pane capture のマーカースキャンで取得する（so-compare レビュー episode 参照）。",
+  "type": "object",
+  "required": ["session_id", "pane_id", "state", "last_updated"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "セッション識別子（ULID 形式）",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "pane_id": {
+      "type": "integer",
+      "description": "WezTerm ペイン ID",
+      "minimum": 0
+    },
+    "state": {
+      "type": "string",
+      "description": "セッション完了時の最終状態（failure-taxonomy enum）。実行中には書き込まない",
+      "enum": [
+        "success",
+        "partial",
+        "retryable_failure",
+        "blocked",
+        "protocol_error",
+        "timeout"
+      ]
+    },
+    "last_updated": {
+      "type": "string",
+      "description": "最終更新日時（ISO 8601 形式）",
+      "format": "date-time"
+    },
+    "outputs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "生成された成果物ファイルの相対パス一覧",
+      "default": []
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "ブロッカーの自由記述一覧",
+      "default": []
+    }
+  }
+}

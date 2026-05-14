@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/exit-code-mapping.schema.json",
+  "title": "Exit Code to Failure Taxonomy Mapping",
+  "description": "サブエージェントの exit code を G4 Failure Taxonomy 6 値にマッピングするルール定義。exit code 単独で判別不能な値は補助シグナル（終了マーカースキャン）で分岐する。#22 so-compare.sh 由来の 0/1/2 基本分類を踏襲。",
+  "type": "object",
+  "required": ["mappings", "auxiliary_signals"],
+  "properties": {
+    "mappings": {
+      "type": "array",
+      "description": "exit code → failure-taxonomy 6 値のマッピングテーブル。配列順に評価し、最初に一致したルールを適用する。",
+      "items": {
+        "type": "object",
+        "required": ["exit_code", "primary_state"],
+        "properties": {
+          "exit_code": {
+            "description": "対象の exit code。整数値または \"other\" (≥3 かつ 124 以外のフォールバック)",
+            "oneOf": [
+              { "type": "integer", "minimum": 0 },
+              { "type": "string", "enum": ["other"] }
+            ]
+          },
+          "primary_state": {
+            "type": "string",
+            "description": "exit code のみで判定される一次マッピング先",
+            "enum": ["success", "partial", "retryable_failure", "blocked", "protocol_error", "timeout"]
+          },
+          "auxiliary_override": {
+            "type": ["object", "null"],
+            "description": "補助シグナルによる上書きルール。null の場合は一次マッピングがそのまま最終 state になる",
+            "properties": {
+              "signal": {
+                "type": "string",
+                "description": "補助シグナルの識別子（auxiliary_signals で定義）"
+              },
+              "override_state": {
+                "type": "string",
+                "description": "補助シグナルが真の場合の上書き先 state",
+                "enum": ["success", "partial", "retryable_failure", "blocked", "protocol_error", "timeout"]
+              }
+            },
+            "required": ["signal", "override_state"]
+          },
+          "note": {
+            "type": "string",
+            "description": "判定ロジックの補足"
+          }
+        }
+      },
+      "minItems": 5
+    },
+    "auxiliary_signals": {
+      "type": "object",
+      "description": "補助シグナルの定義。exit code だけでは区別できない状態を判定するための追加検査",
+      "properties": {
+        "end_marker_blocked": {
+          "type": "object",
+          "description": "終了マーカーに BLOCKED が含まれるかをスキャンする補助シグナル（DI-8 終了マーカー仕様に準拠）",
+          "required": ["method", "pattern"],
+          "properties": {
+            "method": {
+              "type": "string",
+              "description": "検査方法",
+              "enum": ["end_marker_scan"]
+            },
+            "pattern": {
+              "type": "string",
+              "description": "マーカー検出パターン"
+            }
+          }
+        }
+      }
+    }
+  },
+  "default": {
+    "mappings": [
+      {
+        "exit_code": 0,
+        "primary_state": "success",
+        "auxiliary_override": null,
+        "note": "正常終了。タスク完了。"
+      },
+      {
+        "exit_code": 1,
+        "primary_state": "partial",
+        "auxiliary_override": null,
+        "note": "部分完了。成果物は一部生成されたが完全ではない。"
+      },
+      {
+        "exit_code": 2,
+        "primary_state": "retryable_failure",
+        "auxiliary_override": {
+          "signal": "end_marker_blocked",
+          "override_state": "blocked"
+        },
+        "note": "リトライ可能な失敗。終了マーカーに BLOCKED が含まれる場合は blocked に上書き。"
+      },
+      {
+        "exit_code": 124,
+        "primary_state": "timeout",
+        "auxiliary_override": null,
+        "note": "Bash timeout コマンドの exit code。DI-7+DI-12 サーキットブレーカーと整合。"
+      },
+      {
+        "exit_code": "other",
+        "primary_state": "protocol_error",
+        "auxiliary_override": null,
+        "note": "exit code ≥3 かつ 124 以外。想定外のエラー。"
+      }
+    ],
+    "auxiliary_signals": {
+      "end_marker_blocked": {
+        "method": "end_marker_scan",
+        "pattern": "===STATE: blocked==="
+      }
+    }
+  }
+}
