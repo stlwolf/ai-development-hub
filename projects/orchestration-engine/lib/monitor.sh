@@ -80,7 +80,7 @@ oe_monitor_loop() {
   trap '_OE_MONITOR_INTERRUPTED=1; _OE_INTERRUPT_METHOD=SIGTERM' TERM
 
   local turn=0
-  SECONDS=0
+  local start_seconds=$SECONDS
 
   while true; do
     if [[ $_OE_MONITOR_INTERRUPTED -ne 0 ]]; then
@@ -130,8 +130,8 @@ oe_monitor_loop() {
       esac
     done
 
-    # CB: 経過時間
-    if [[ $SECONDS -ge $OE_CB_TIMEOUT ]]; then
+    # CB: 経過時間（呼び出し元の SECONDS を壊さないようローカル起点との差分で判定）
+    if [[ $((SECONDS - start_seconds)) -ge $OE_CB_TIMEOUT ]]; then
       cb_payload='{"reason":"timeout"}'
       oe_audit_emit "circuit_breaker_triggered" "$session_id" 0 "" "$cb_payload"
       _oe_monitor_kill_all_panes

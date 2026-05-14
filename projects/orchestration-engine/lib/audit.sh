@@ -28,7 +28,7 @@ oe_audit_emit() {
   fi
 
   if [[ -n "$payload_json" ]]; then
-    if ! echo "$payload_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    if ! printf '%s\n' "$payload_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
       echo "oe_audit_emit: invalid payload (must be JSON object)" >&2
       return 1
     fi
