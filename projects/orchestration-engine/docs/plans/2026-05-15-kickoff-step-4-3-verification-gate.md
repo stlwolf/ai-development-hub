@@ -3,11 +3,17 @@ id: "01KRKXXS2F5FZBBR260PHPQ8NJ"
 title: "orchestration-engine Step 4-3 検証ゲート v1 KickOff"
 date: 2026-05-15
 type: kickoff
-status: draft
+status: confirmed
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
     reason: "Epic #19 Phase 4 MVP 実装の Step 4-3（観測層・親 Epic）"
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/89"
+    reason: "Step 4-3 観測層 Issue（本 KickOff の主スコープ）"
+  - type: source_material
+    ref: "projects/orchestration-engine/docs/discussions/2026-05-15-discussion-step-4-3-verification-gate.md"
+    reason: "Step 4-3 Discussion（QDD 全 7 Q closed、本 KickOff の確定根拠）"
   - type: source_material
     ref: "projects/orchestration-engine/docs/plans/2026-05-14-kickoff-step-4-2-parse-and-state-management.md"
     reason: "Step 4-2 KickOff（7 DI、パース + 状態管理。本 Step の前提）"
@@ -20,6 +26,9 @@ related:
   - type: source_material
     ref: "projects/orchestration-engine/docs/discussions/2026-05-13-discussion-engine-scope-and-goals.md"
     reason: "Step 4-0 Discussion（15 論点・3 UC・arena 反映済み、全体スコープの正本）"
+  - type: design_context
+    ref: "canonical/skills/adversarial-review/SKILL.md"
+    reason: "Plan Review / Compliance Review プロンプト規約。本 Step は Compliance Review モードに統合"
   - type: design_context
     ref: "projects/orchestration-engine/README.md"
     reason: "プロジェクト概要・観測層/駆動層分離・Step 一覧"
@@ -146,46 +155,50 @@ Step 4-3 の Discussion・設計に入る前に、前 Step の陳腐化を解消
 - [ ] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh` がクリーンであることを確認
 - [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` が全 PASS であることを確認
 
-## スコープ（仮置き — Discussion で確定）
+## スコープ（確定 — [Discussion](../discussions/2026-05-15-discussion-step-4-3-verification-gate.md) 全 7 Q closed）
 
 ### Step 4-3 の主題
 
-**検証ゲート v1**: サブエージェントの出力を別エージェントが adversarial review する仕組み。
+**検証ゲート v1**: サブエージェントの出力を別エージェントが Compliance Review する仕組み。`adversarial-review` skill の Compliance Review モードを engine の駆動と統合する。
 
-### 想定 DI（Discussion で絞り込む）
+### 確定 DI（7 項目 — Discussion Q1〜Q7 から変換）
 
-以下は仮置き。Step 4-3 の Discussion で質問駆動設計（QDD）を行い、合意後に DI を確定する。
-
-- 検証ゲートの発火条件（全タスク完了後 / 各タスク完了ごと / 手動トリガー）
-- 検証エージェントの起動方法（新ペイン / 既存ペインの再利用）
-- 検証プロンプトの構成（何を渡すか: 成果物パス、audit ログ、元タスク記述）
-- 検証結果の表現（pass/fail/warn 等の語彙、KVS への書き込み方法）
-- 不合格時のフロー（リトライ / エスカレーション / 人間介入）
-- adversarial-review スキルとの関係（スキルの検証ロジックを engine に統合するか、独立呼び出しか）
+- **DI-1: 検証モードのスコープ** = Compliance Review のみ（Plan Review は engine 統合せず、必要時は人間が skill 単独起動）
+- **DI-2: 発火タイミング** = end-of-session（全 `OE_DONE_PANES` 完了時に検証フェーズへ遷移）+ **セッション内 fail 率を実運用データとして記録**
+- **DI-3: 検証エージェント起動** = 新ペイン spawn（`lib/spawn.sh` を再利用、検証用 envelope を生成）
+- **DI-4: 検証プロンプト入力** = envelope（要件）+ audit JSONL の最終 `state_change`（完了報告）+ KVS の `outputs[]`（変更ファイル）の 3 ソース統合。skill の Compliance Review プロンプト本文を使い、3 入力部分のみ engine が動的展開
+- **DI-5: 検証結果の表現** = `schemas/session-state.schema.json` に `verification`（per-pane）と `verification_summary`（セッション集計、fail 率含む）を追加。語彙 = `pass` / `fail` / `warn`。audit ログに `verification_started` / `verification_completed` の 2 イベント追加
+- **DI-6: 不合格時のフロー** = 記録のみ（v1）+ `wez notify` で完了通知（自動リトライ・人間エスカレーションは Step 4-4 以降の派生課題）
+- **DI-7: skill 統合方針** = envelope の `task.use_skills: [adversarial-review]` で指定（疎結合）。engine は envelope の `task.exit_conditions.marker` 拡張で `@@OE_VERIFY:{pass|fail|warn}` を要求し、`capture.sh` の正規表現を拡張してパース
 
 ### スコープ外
 
 - `human_input` audit イベントの実装（必要時に追加、本 Step 必須ではない）
-- スキーマの変更（4-5 フィードバック Step で実施）
+- ~~スキーマの変更（4-5 フィードバック Step で実施）~~ → **DI-5 により `session-state.schema.json` と `audit-log.schema.json` の最小拡張は本 Step に含める**（Discussion Q5 で user 確認済み）
 - wez CLI Phase 3 の設計（#20 側で実施、ADR DI-10 参照）
+- adversarial-review skill 側の改修（派生課題、本 Step 結果を踏まえて Step 4-4 以降で判断）
+- per-pane 発火への昇格（DI-2 案 A）、自動リトライ / 人間エスカレーション（DI-6 案 B/C）
 
-## 完了条件（仮置き — Discussion 後に確定）
+## 完了条件（確定 — Discussion §「完了条件」から転記）
 
-- [ ] 検証ゲートの設計 Discussion が completed
-- [ ] KickOff → Plan への変換が完了
-- [ ] 検証ゲートの実装が動作する（テスト付き）
+- [ ] 検証ゲートが Compliance Review モードで動作する（end-of-session 発火、新ペイン spawn、envelope の `use_skills: [adversarial-review]` で skill 指定）
+- [ ] 検証 agent が出力末尾に `@@OE_VERIFY:{pass|fail|warn}` マーカーを出し、engine がこれをパースする
+- [ ] 検証結果が KVS の `verification` フィールドに、セッション集計が `verification_summary` フィールドに記録される（fail 率含む）
+- [ ] audit ログに `verification_started` / `verification_completed` の 2 イベントが追加される
+- [ ] 不合格時も engine は停止せず、`wez notify` で完了通知のみ出す
 - [ ] shellcheck で全スクリプトが pass
-- [ ] E2E テストで検証ゲートを含む 1 サイクルが完走
+- [ ] テストスイート: 検証プロンプト構築 / 結果パース / KVS 拡張のユニットテスト + E2E スモーク（wez モック）が PASS
+- [ ] `schemas/session-state.schema.json` / `schemas/audit-log.schema.json` の拡張が `scripts/validate-envelope.sh` 系の検証と整合（必要なら新規 validator を追加）
 
 ## 進め方
 
-1. **着手前タスク**を完了する（上記チェックリスト）
-2. Step 4-3 の **Discussion** を `docs/discussions/` に作成（質問駆動設計）
-3. ユーザーに Discussion の内容を確認してもらう
-4. 合意後、本 KickOff の「仮置き」セクションを確定版に更新
-5. `kickoff-to-plan` スキルで Plan に変換
-6. Plan に従い実装・テスト
-7. Episode で検証結果を記録
+1. ✅ **着手前タスク**を完了する（README 更新は PR で実施、Issue #81 既クローズ、shellcheck/tests PASS 確認、Epic #19 checkbox は user 対応）
+2. ✅ Step 4-3 の **Discussion** を `docs/discussions/` に作成（[2026-05-15-discussion-step-4-3-verification-gate.md](../discussions/2026-05-15-discussion-step-4-3-verification-gate.md)、QDD 全 7 Q closed）
+3. ✅ ユーザーに Discussion の内容を確認してもらう（1 問ずつの対話で合意）
+4. ✅ 合意後、本 KickOff の「仮置き」セクションを確定版に更新（本コミット）
+5. → `kickoff-to-plan` スキルで Plan に変換
+6. → Plan に従い実装・テスト
+7. → Episode で検証結果を記録
 
 ## リポジトリ規約（CLAUDE.md / AGENTS.md より）
 
