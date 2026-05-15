@@ -118,19 +118,30 @@ Discussion §「未解決の細部（Plan で詰める）」:
 
 ### Step 1: `session-state.schema.json` 拡張
 
-- [ ] `verification` フィールドを追加:
-  - `result`: enum [`pass`, `fail`, `warn`]
-  - `reviewer_session_id`: string（検証 agent のセッション ID、ULID）
-  - `issues_count`: integer >= 0
-  - `completed_at`: string (ISO 8601)
-- [ ] `verification_summary` フィールドを追加:
-  - `total`: integer >= 0（検証実行件数）
+- [ ] `verification` フィールドを追加（**pane-keyed map**、複数 target pane の per-pane 結果を保持）:
+  ```json
+  "verification": {
+    "<target_pane_id>": {
+      "result": "pass" | "fail" | "warn",
+      "reviewer_session_id": "<ULID>",
+      "reviewer_pane_id": "<pane_id>",
+      "issues_count": 0,
+      "marker_raw": "@@OE_VERIFY:pass",
+      "completed_at": "<ISO 8601>"
+    },
+    ...
+  }
+  ```
+- [ ] `verification_summary` フィールドを追加（セッション全体集計、`verification` map から導出）:
+  - `total`: integer >= 0（検証実行件数 = `verification` map のキー数）
   - `passed`: integer >= 0
   - `failed`: integer >= 0
   - `warned`: integer >= 0
-  - `fail_rate`: number, 0.0〜1.0（小数 3 桁、`failed / total` を engine が計算）
+  - `fail_rate`: number, 0.0〜1.0（小数 3 桁、`failed / total` を engine が `awk` で計算）
 - [ ] 既存フィールド (`session_id`, `state`, `outputs`, `blockers`, `last_updated`) との `required` 整合性確認（`verification`/`verification_summary` は optional、検証フェーズ実行後にのみ存在）
-- [ ] スキーマ `$id` / `description` の更新（Step 4-3 拡張を明記）
+- [ ] スキーマ `$id` / `description` の更新（Step 4-3 拡張を明記、pane-keyed map 構造の意図を `description` で明文化）
+
+> **so-compare レビュー反映 (F5)**: `verification` を単一オブジェクトではなく **pane-keyed map** に変更。Discussion §「Q5 KVS 拡張仕様」では単一オブジェクト表記だったが、Q2 で確定した「セッション内 fail 率を実運用データとして記録」要件には複数 target pane の per-pane 結果を保持する必要があるため、pane-keyed map が正しい構造。本 Plan が確定形とする。
 
 ### Step 2: `audit-log.schema.json` 拡張
 
@@ -171,14 +182,16 @@ Discussion §「未解決の細部（Plan で詰める）」:
 - [ ] `oe_verify_envelope_create()` 関数:
   - 入力: 被検証ペインの `target_pane_id`, `target_session_id`, `target_envelope_path`
   - 出力: 検証用 envelope ファイル（`/tmp/oe-{reviewer_session_id}-verify-envelope.json`）と環境変数 `OE_VERIFY_ENVELOPE_PATH`
-  - envelope 内容:
-    - `task.description`: skill の Compliance Review プロンプト本文 + 3 入力プレースホルダ展開
+  - envelope 内容（**疎結合: engine は構造化入力のみ注入、プロンプト本文は skill 側で組み立てる**）:
+    - `task.description`: 「Compliance Review を実行せよ。3 入力は `read_docs` の各ファイルから読み取れ」程度の **検証指示の概要のみ**。skill の Compliance Review プロンプト本文は engine に持たない
     - `task.use_skills`: `["adversarial-review"]`
-    - `task.read_docs`: 被検証 envelope パス + audit JSONL パス + KVS パス
+    - `task.read_docs`: skill ファイル (`canonical/skills/adversarial-review/SKILL.md`) + 被検証 envelope パス + audit JSONL パス + KVS パス + （後述 Phase C で生成する）`OE_VERIFY_PROMPT_PATH` のプロンプトファイル
     - `task.exit_conditions.marker`: `@@OE_VERIFY:` を新マーカーとして指定（既存の `@@OE_EXIT:` は従来通り正常終了通知に使う）
     - `task.exit_conditions.timeout_seconds`: 1800（既存 CB と同値、Discussion §「未解決の細部」で確定）
     - `context.parent_session_id`: 被検証セッション ID
 - [ ] `oe_verify_envelope_create` が `scripts/validate-envelope.sh` で PASS する envelope を生成すること
+
+> **so-compare レビュー反映 (F4)**: DI-7 の `use_skills` 疎結合方針と整合させるため、Compliance Review プロンプト本文の static copy を envelope に含めない設計に変更。検証 agent は `read_docs` で skill を読み、自分でプロンプトを組み立てる。engine 側は「何を読むべきか」のリストと 3 入力（後述 Phase C で生成）の所在を構造化注入するだけに責務を限定する。
 
 ### Step 5: 検証ペイン spawn
 
@@ -205,20 +218,23 @@ Discussion §「未解決の細部（Plan で詰める）」:
 
 ### Step 6: プロンプト構築関数
 
-- [ ] `oe_verify_prompt_build()` 関数（`lib/verify.sh` 内）:
+- [ ] `oe_verify_prompt_build()` 関数（`lib/verify.sh` 内、**engine は 3 入力の構造化抽出のみ。Compliance Review プロンプト本文は組み立てない**）:
   - 入力: 被検証ペインの `target_pane_id`, `target_session_id`, `target_envelope_path`
-  - 構築要素:
+  - 構築要素（3 入力ファイル化のみ）:
     - 要件: `target_envelope_path` の `task.description` を `jq -r` で抽出
     - 完了報告: `audit/{target_session_id}.jsonl` から最後の `state_change` イベントを抽出（`jq -s 'map(select(.event_type=="state_change")) | last'`）
-    - 変更ファイル: `state/{target_session_id}.state.json` の `outputs[]` を抽出。空なら `git diff --name-only` のフォールバックを試行（実装は wez モックでも検証可能な形式に）
-  - 出力: 一時ファイル `/tmp/oe-{reviewer_session_id}-verify-prompt.md` に Compliance Review プロンプト本文 + 展開済み 3 入力を書き出し、パスを `OE_VERIFY_PROMPT_PATH` でエクスポート
-- [ ] プロンプト本文は `adversarial-review` skill の Compliance Review テンプレートをそのままコピー（skill 改訂に追従するため、構築関数内に skill パスからの読み込みを行う案も検討 → スコープ外、初期実装は static テンプレートでよい）
+    - 変更ファイル: `state/{target_session_id}.state.json` の `outputs[]` を抽出。**MVP では `capture.sh:104` で `outputs[]` は常に空配列で書き出される**ため、実運用ではフォールバックの `git diff --name-only` が常に選択される。`outputs[]` 自体への書き込み拡張は本 Step スコープ外（F7）
+  - 出力: 一時ファイル `/tmp/oe-{reviewer_session_id}-verify-inputs.md` に **3 入力のみを構造化してダンプ**（YAML ブロックや見出し付きセクションで「## 要件」「## 完了報告」「## 変更ファイル」を区切る）、パスを `OE_VERIFY_PROMPT_PATH` でエクスポート
+- [ ] **engine は skill の Compliance Review プロンプト本文を内蔵しない**。検証 agent は envelope の `task.use_skills: [adversarial-review]` と `task.read_docs` で skill を読み、3 入力ファイル (`OE_VERIFY_PROMPT_PATH`) を参照して自分でプロンプトを組み立てる
+- [ ] `oe_verify_prompt_build` の出力ファイル仕様は `tests/test_verify.sh` でアサーション（3 セクション存在 + 各セクション内容の jq 抽出結果と一致）
+
+> **so-compare レビュー反映 (F4 + F7)**: skill の Compliance Review テンプレートを engine 側に static copy する設計を撤回。engine は 3 入力の構造化抽出だけに責務を限定し、プロンプト組み立ては skill 側 + 検証 agent 側に委譲する。これにより skill 改訂時の追従が自動化される（DI-7 の `use_skills` 疎結合方針と整合）。`outputs[]` フォールバックは MVP では常に `git diff` パスを選択し、`outputs[]` 書き込みの拡張は本 Step スコープ外と明示。
 
 ### Step 7: envelope への注入
 
-- [ ] `oe_verify_envelope_create()` を更新し、生成プロンプトパスを `task.description` に含める or `OE_VERIFY_PROMPT_PATH` 環境変数で渡す（実装フェーズで決定、ただし `wez pane send` で 1 行コマンドに収まる方式を優先）
+- [ ] `oe_verify_envelope_create()` を更新し、生成プロンプトパス (`OE_VERIFY_PROMPT_PATH`) を `task.read_docs` 配列に追加する（task.description にプロンプト本文を含めない、F4 と整合）
 - [ ] テスト: `tests/test_verify.sh` に「プロンプト構築 → ファイル出力 → 内容アサーション」ケース追加
-- [ ] テスト: 3 入力のうち audit JSONL / KVS が空の場合のフォールバック動作確認
+- [ ] テスト: 3 入力のうち audit JSONL / KVS が空の場合のフォールバック動作確認（`outputs[]` 空 → `git diff` パスが選択されること）
 
 ### GATE: Phase C 完了確認
 
@@ -232,29 +248,39 @@ Discussion §「未解決の細部（Plan で詰める）」:
 
 > 検証 agent の出力末尾 `@@OE_VERIFY:{result}` を `capture.sh` の正規表現で検出し、KVS の `verification` フィールドへの書き込み、`verification_summary` の集計、audit イベント emit を行う。
 
-### Step 8: `capture.sh` 拡張（`@@OE_VERIFY:` 検出）
+### Step 8: `capture.sh` 拡張（`@@OE_VERIFY:` 検出、**戻り値を二値保持に変更**）
 
 - [ ] `_oe_capture_scan_parse()` の正規表現を拡張: 既存 `@@OE_EXIT:{1-3 桁 code}` に加え `@@OE_VERIFY:{pass|fail|warn}` を検出
-- [ ] 戻り値: `marker_type=verify` + `value=pass|fail|warn` の構造（既存 `marker_type=exit` パターンと対称）
-- [ ] テスト: `tests/test_capture.sh` に `@@OE_VERIFY:` 各値ケース追加（pass / fail / warn / 不正値 / CR 付き / ANSI 付き / 行頭アンカー）
+- [ ] **戻り値構造を二値保持に変更**: 既存 `marker_type` + `value` の単一構造は、検証 agent の出力に `@@OE_VERIFY:fail` と `@@OE_EXIT:0` の両方が並ぶケースで一方が上書きされる問題がある（`spawn.sh:24-25` が必ず `@@OE_EXIT:{code}` を後置するため）。新構造は以下:
+  - `OE_SCAN_EXIT_CODE`: integer or empty（`@@OE_EXIT:` の値、検出時のみセット）
+  - `OE_SCAN_VERIFY_RESULT`: string ["pass" | "fail" | "warn"] or empty（`@@OE_VERIFY:` の値、検出時のみセット）
+  - `OE_SCAN_BLOCKED_FLAG`: 既存維持（`@@OE_BLOCKED` 検出）
+  - 既存 `OE_SCAN_MARKER_TYPE` / `OE_SCAN_VALUE` は後方互換のため残し、`OE_SCAN_EXIT_CODE` が空でないなら `MARKER_TYPE=exit` 同等、`OE_SCAN_VERIFY_RESULT` が空でないなら `MARKER_TYPE=verify` 同等とする（既存テストへの影響最小化）
+- [ ] `monitor.sh` の `case "$OE_SCAN_MARKER_TYPE"` 分岐は通常ペインでは現状維持（EXIT のみ）。検証ペインの監視は `verify.sh` 側の独立ループに集約（後述 F1 / Phase E Step 11）
+- [ ] テスト: `tests/test_capture.sh` に `@@OE_VERIFY:` 各値ケース追加（pass / fail / warn / 不正値 / CR 付き / ANSI 付き / 行頭アンカー）+ **「VERIFY + EXIT 両方検出」**ケース（両変数が同時にセットされ、`OE_SCAN_EXIT_CODE=0` と `OE_SCAN_VERIFY_RESULT=fail` 等の組み合わせ）
 
-### Step 9: KVS 書き込み（`oe_verify_write_kvs`）
+> **so-compare レビュー反映 (F3)**: VERIFY と EXIT の同時検出時の優先順位未定義問題を、`OE_SCAN_EXIT_CODE` と `OE_SCAN_VERIFY_RESULT` の **二値保持**で根本解決。既存の単一 `OE_SCAN_MARKER_TYPE` / `OE_SCAN_VALUE` は後方互換のため残すが、検証ペインの処理側 (`verify.sh`) は二値変数を直接参照する。
+
+### Step 9: KVS 書き込み（`oe_verify_write_kvs`、**pane-keyed map 構造**）
 
 - [ ] `oe_verify_write_kvs()` 関数（`lib/verify.sh` 内）:
-  - 入力: `target_session_id`, `target_pane_id`, `reviewer_session_id`, `result`, `issues_count`, `marker_raw`
-  - 既存 `state/{target_session_id}.state.json` を読み、`verification` フィールドを書き込み（atomic rename）
+  - 入力: `target_session_id`, `target_pane_id`, `reviewer_session_id`, `reviewer_pane_id`, `result`, `issues_count`, `marker_raw`
+  - 既存 `state/{target_session_id}.state.json` を読み、`verification.{target_pane_id}` キーに per-pane オブジェクトを書き込み（atomic rename、`jq '.verification[$pid] = {...}'` パターン）
   - `completed_at` は `date -u +%Y-%m-%dT%H:%M:%SZ` で生成
+  - 既存 `verification` map に他 pane の結果がある場合は維持（破壊しない）
 - [ ] `oe_verify_summary_update()` 関数:
-  - セッション内全ペインの `verification.result` を集計
+  - `state/{target_session_id}.state.json` の `verification` map を `jq` で集計（`verification | to_entries | map(.value.result)` → group → count）
   - `verification_summary.{total, passed, failed, warned, fail_rate}` を KVS に書き込み
   - `fail_rate` は `failed / total` を `awk` で計算（Bash 3.2 整数演算回避）、小数 3 桁に丸め
-- [ ] テスト: `tests/test_verify.sh` に KVS 書き込みケース追加、`validate-session-state.sh` で出力検証
+- [ ] テスト: `tests/test_verify.sh` に KVS 書き込みケース追加（**複数 pane の連続書き込み + summary 集計**を確認）、`validate-session-state.sh` で出力検証
 
-### Step 10: audit イベント emit
+### Step 10: audit イベント `verification_completed` emit
 
-- [ ] `oe_verify_spawn()` の最後で `verification_started` を emit
-- [ ] `@@OE_VERIFY:` 検出後（`oe_verify_write_kvs` の前後）に `verification_completed` を emit
-- [ ] テスト: audit JSONL に新 2 イベントが正しいフォーマットで記録されることを確認
+- [ ] **`verification_started` の emit は Phase B Step 5 で `oe_verify_spawn()` 内に配置済み**。本 Step では追加しない（F6: 二重宣言の削除）
+- [ ] `@@OE_VERIFY:` 検出後（`oe_verify_write_kvs` の直後）に `verification_completed` を emit
+- [ ] テスト: audit JSONL に `verification_started`（Phase B 由来）+ `verification_completed`（本 Step 由来）の 2 イベントが正しいフォーマットで 1 検証あたり 1 件ずつ記録されることを確認
+
+> **so-compare レビュー反映 (F6)**: `verification_started` emit を Phase B Step 5 のみに配置することで二重宣言を解消。本 Step は `verification_completed` の新規 emit に責務を限定。テストは Phase B 側で `verification_started`、Phase D 側で `verification_completed` を独立にアサーション。
 
 ### GATE: Phase D 完了確認
 
@@ -270,18 +296,24 @@ Discussion §「未解決の細部（Plan で詰める）」:
 
 > `monitor.sh` の end-of-session 後に検証フェーズへ遷移する処理を追加。`cleanup.sh` 末尾で `wez notify` を呼び出し。最後に E2E スモークで 1 サイクル完走を確認する。
 
-### Step 11: `monitor.sh` 末尾に検証フェーズ遷移
+### Step 11: 検証フェーズ統合 — `monitor.sh` から `verify.sh` の独立ループへ遷移
 
-- [ ] `oe_monitor_loop()` の終了条件（全 `OE_DONE_PANES` 完了 or CB 発動）の後に検証フェーズ遷移を追加:
-  - CB 発動時は検証スキップ（既存 `circuit_breaker_triggered` イベントで終了）
-  - 全完了時のみ、各被検証ペインに対して順次:
-    1. `oe_verify_envelope_create`
-    2. `oe_verify_prompt_build`
-    3. `oe_verify_spawn`
-    4. 検証ペインの完了を待機（既存ポーリングループを再利用、`OE_DONE_PANES` 集合に検証ペインも追加する設計）
-    5. `@@OE_VERIFY:` 検出 → `oe_verify_write_kvs` + audit emit
-  - 全検証完了後 `oe_verify_summary_update` でセッション集計
-- [ ] 並列性: MVP は逐次（per-target-pane）で起動。並列化は Step 4-4 以降
+- [ ] `oe_monitor_loop()` の終了条件（全 `OE_DONE_PANES` 完了 or CB 発動）の後に **`verify.sh` 内の独立関数 `oe_verify_run_phase()` を呼び出す**（monitor.sh の責務範囲を膨らませない、`OE_DONE_PANES` の意味を「通常ペイン完了集合」のまま保持）:
+  - CB 発動時は検証スキップ（既存 `circuit_breaker_triggered` イベントで終了、`oe_verify_run_phase` を呼ばない）
+  - 全完了時のみ `oe_verify_run_phase()` を呼ぶ
+- [ ] `oe_verify_run_phase()` 関数（`lib/verify.sh` 内、独立ポーリングループ）:
+  1. `OE_MANAGED_PANES` （通常ペイン集合）の各被検証ペインに対して順次:
+     a. `oe_verify_envelope_create`
+     b. `oe_verify_prompt_build`
+     c. `oe_verify_spawn` → 検証ペイン ID を `OE_VERIFY_MANAGED_PANES` 配列に追加（**通常ペインの `OE_MANAGED_PANES` / `OE_DONE_PANES` とは別配列**、F2）
+     d. 内部ポーリングループ: `OE_POLL_INTERVAL` 間隔で `oe_capture_scan` → `OE_SCAN_VERIFY_RESULT` が非空になるまで待機（F3 の二値保持を利用）
+     e. 検出時: `oe_verify_write_kvs` → `oe_audit_emit verification_completed` → `OE_VERIFY_DONE_PANES` に追加
+     f. CB タイムアウト（`OE_CB_MAX_TURNS_PER_SESSION`、既存 1800s 同値）超過時は当該検証をスキップして次へ
+  2. 全検証完了後 `oe_verify_summary_update` でセッション集計
+- [ ] **並列性**: MVP は逐次（per-target-pane）で起動。並列化は Step 4-4 以降
+- [ ] `lib/constants.sh` に追加: `OE_VERIFY_MANAGED_PANES=()` / `OE_VERIFY_DONE_PANES=()` の配列宣言（Bash 3.2 互換、`declare -a` で空配列初期化）
+
+> **so-compare レビュー反映 (F1 + F2)**: 検証ペイン監視を `verify.sh` 内の独立関数 `oe_verify_run_phase()` + 独立ループに確定。`monitor.sh` の責務範囲を「通常ペイン監視」に限定し、検証フェーズへの遷移は単純な関数呼び出し 1 行に縮約する。`OE_DONE_PANES`（既存「完了済み通常ペイン」集合）と `OE_VERIFY_DONE_PANES`（新規「完了済み検証ペイン」集合）を別配列にすることで、意味の衝突を回避（実装者が解釈で割れる余地を消す）。
 
 ### Step 12: `cleanup.sh` 末尾に `wez notify` 統合
 
@@ -315,7 +347,7 @@ Discussion §「未解決の細部（Plan で詰める）」:
 ## STOP: Step 4-3 実装完了 — user 報告 + PR 作成判断
 
 - [ ] Phase A〜E 全 GATE クリア + ADR / Episode 記録完了を user に報告
-- [ ] user の判断: PR 作成に進む / 追加レビュー（so-compare 等）を挟む
+- [ ] user の判断: PR 作成に進む / 追加レビュー（so-compare）を挟む
 
 ---
 
@@ -373,7 +405,7 @@ KickOff §完了条件のチェックボックス 8 項目を、Phase 実装後�
 | DI 数 → 実装 Step 配置数（DI 対応分） | 7 件 | 7 件（DI-1=Context、DI-2/6=Phase E、DI-3=Phase B、DI-4=Phase C、DI-5=Phase A+D、DI-7=Phase B+D） | ✅ |
 | STOP 指示数 → STOP TODO 数 | 0（KickOff 明示なし） | 1（Phase E 完了後、ユーザー指定の補強） | ✅（判断メモ §6） |
 | 全ての GATE が独立 TODO 項目（Step 子 TODO に埋没していない） | — | 5 件全て独立（Phase A/B/C/D/E 各末尾） | ✅ |
-| 「〜等」「〜など」で省略された項目がない | — | 0 件 | ✅ |
+| 「〜等」「〜など」で省略された項目がない | — | 0 件（so-compare 初回レビューで `plan:318` に「so-compare 等」を検出 → F8 で修正済み） | ✅ |
 
 ### 推奨
 
@@ -391,3 +423,38 @@ KickOff §完了条件のチェックボックス 8 項目を、Phase 実装後�
 | コード例・スキーマ定義例 | ✅ Phase A の JSON 構造例は Discussion §Q5 から保持 |
 | frontmatter の related 参照が Context または Phase に含まれている | ✅ 全 9 件が「設計入力」「駆動層入力」「観測層 Issue」「スコープ外」に分配 |
 | 引き継ぎの「解決済み」が Context に含まれている | ✅ Step 4-2 PR #88 完了、Discussion 全 Q closed、DI-1 確定を Context に明記 |
+
+## Review 履歴
+
+### so-compare 初回レビュー (2026-05-15、`tmp/so-20260515-163925/`)
+
+**Reviewer:** Codex (126s) + Claude (197s) の 2 者並列
+
+**結果:** **Issues Found** — 実装ブロックなしだが、Plan 文書の修正で解消可能な指摘 8 件。同一コミット (F1〜F8) で反映済み。
+
+#### 反映済み修正一覧
+
+| ID | 区分 | 指摘 | 反映箇所 |
+|----|------|------|----------|
+| **F1** | Critical (Clarity, 両者一致) | Phase E Step 11 の検証ペイン監視所在が 3 通り解釈可能 | Phase E Step 11: `verify.sh` 内 `oe_verify_run_phase()` 独立ループに確定 |
+| **F2** | Critical (Clarity, Claude) | `OE_DONE_PANES` を検証ペイン用に再利用すると現状の「完了済み通常ペイン」意味と衝突 | Phase E Step 11: `OE_VERIFY_MANAGED_PANES` / `OE_VERIFY_DONE_PANES` を別配列として導入 |
+| **F3** | Critical (Clarity, 両者一致) | `@@OE_VERIFY:` と `@@OE_EXIT:` 同時検出時の優先順位未定義 (`spawn.sh:24-25` が必ず後置するため) | Phase D Step 8: scan 結果を `OE_SCAN_EXIT_CODE` + `OE_SCAN_VERIFY_RESULT` の二値保持に変更 |
+| **F4** | Strong (Consistency + YAGNI, Codex) | DI-7 の `use_skills` 疎結合方針と矛盾する skill prompt の static copy | Phase B Step 4 + Phase C Step 6: engine は 3 入力の構造化抽出のみ、プロンプト組み立ては検証 agent が `read_docs` で skill を読んで実施 |
+| **F5** | Strong (Consistency, Codex) | `verification` が単一オブジェクトのため複数 target pane の per-pane 結果を保持できない | Phase A Step 1: `verification` を **pane-keyed map** に変更 (`verification.{target_pane_id}.{result, ...}`) |
+| **F6** | Strong (Consistency, Claude) | `verification_started` emit が Phase B Step 5 と Phase D Step 10 で二重宣言 | Phase D Step 10: `verification_started` 削除、`verification_completed` の新規 emit のみに責務限定 |
+| **F7** | Strong (Clarity, Claude) | `outputs[]` フォールバック「`git diff` の試行」が具体性低い、`capture.sh:104` で常に空配列のため挙動不明 | Phase C Step 6: 「MVP では `outputs[]` は常に空配列、`git diff` パスが常時選択、`outputs[]` 拡張は本 Step スコープ外」と明示 |
+| **F8** | Trivial (Codex) | 完全性チェック表「〜等」省略 0 件と主張だが `plan:318` に「so-compare 等」を検出 | STOP セクション「so-compare 等」→ 「so-compare」に修正、完全性チェック表に補足注記 |
+
+#### 観点別判定（修正反映後の見込み）
+
+| 観点 | 初回 (Codex / Claude) | 修正後の見込み |
+|------|---------------------|---------------|
+| Completeness | Issues Found / Approved | Approved（F4 解消で曖昧記述なし） |
+| Consistency | Issues Found / Issues Found | Approved（F4 F5 F6 解消） |
+| Clarity | Issues Found / Issues Found | Approved（F1 F2 F3 F7 解消） |
+| Scope | Approved / Approved | Approved（変更なし） |
+| YAGNI | Issues Found / Approved | Approved（F4 解消） |
+| 完了条件 ↔ 最終検証 1:1 | ✅ 8↔8 / ✅ 8↔8 | ✅ 維持 |
+| DI ↔ Step | ✅ 7↔7 / ✅ 7↔7 | ✅ 維持 |
+
+修正後の再レビューは user の判断に委ねる（必須ではない、追加 so-compare 1 イテレーションで判定可能）。
