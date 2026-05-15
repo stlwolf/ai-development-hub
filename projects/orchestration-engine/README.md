@@ -33,6 +33,22 @@
 ```
 projects/orchestration-engine/
 ├── README.md                  # このファイル
+├── bin/
+│   └── oe                     # エントリポイント（`bash bin/oe "タスク記述"`）
+├── lib/                       # Bash 関数ライブラリ
+│   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR 等
+│   ├── envelope.sh            # JSON エンベロープ生成
+│   ├── spawn.sh               # wez pane split + send
+│   ├── capture.sh             # マーカー検出・6 値分類・KVS 書き込み
+│   ├── monitor.sh             # ポーリングループ + サーキットブレーカー
+│   ├── audit.sh               # JSONL 監査ログ追記
+│   └── cleanup.sh             # trap EXIT 用ペイン kill + tmp 削除
+├── schemas/                   # JSON Schema 5 件（Step 4-1 確定、実装の契約）
+├── tests/                     # シェルスクリプトテストスイート（wez モック経由）
+├── scripts/
+│   └── validate-envelope.sh   # エンベロープ JSON 検証
+├── audit/                     # 監査ログ JSONL 出力先（runtime）
+├── state/                     # セッション状態 KVS 出力先（runtime）
 └── docs/
     ├── discussions/           # 探索・ブレスト・調査メモ
     ├── plans/                 # KickOff / Plan（実行可能粒度）
@@ -66,14 +82,14 @@ orchestration-engine の MVP は「閉セッション間のリアルタイム双
 
 ## 状態
 
-**Phase 4 Step 4-0 進行中**（[#81](https://github.com/stlwolf/ai-development-hub/issues/81)）。
+**Phase 4 Step 4-3 着手準備中**（[#89](https://github.com/stlwolf/ai-development-hub/issues/89)）。Step 4-0〜4-2 完了。
 
 | Step | 内容 | 状態 |
 |------|------|------|
 | 4-0 | PJ 立ち上げ + Discussion 作成（スコープ・ゴール・docs 配置確定） | 完了（#81） |
 | 4-1 | エンベロープ + ディスパッチャの骨格 | 完了（#84 / PR #85） |
-| 4-2 | 成果物パース + 状態管理 | 未着手 |
-| 4-3 | 検証ゲート v1（adversarial review 相当） | 未着手 |
+| 4-2 | 成果物パース + 状態管理 | 完了（#87 / PR #88） |
+| 4-3 | 検証ゲート v1（adversarial review 相当） | 着手準備中（#89） |
 | 4-4 | E2E 検証（ツール改善タスクで1サイクル完走） | 未着手 |
 | 4-5 | フィードバック → 設計修正 | 未着手 |
 
