@@ -144,16 +144,16 @@ Discussion や Episode で `tmp/arena-...` や `tmp/so-...` が参照されて�
 - **wez CLI**（`projects/wezterm-ai-mode/`）: Phase 1 完了。`wez pane split/send/capture/kill` を orchestration-engine が使用。Phase 3（`wez agent`）は Step 4-1 確定内容が入力になる予定（ADR DI-10）
 - **orchestration-research/**（frozen）: 研究フェーズ成果。参照のみ、直接編集しない
 
-## 着手前タスク（チェックリスト）
+## 着手前タスク（チェックリスト — 全項目完了済み）
 
-Step 4-3 の Discussion・設計に入る前に、前 Step の陳腐化を解消する。
+Step 4-3 の Discussion・設計に入る前に、前 Step の陳腐化を解消した履歴。本 KickOff は status: confirmed のため、本セクションは履歴として全項目チェック済み（Copilot レビュー指摘反映）。
 
-- [ ] `README.md` の状態テーブルを更新（Step 4-0〜4-2 を「完了」に、見出しも修正）
-- [ ] `README.md` の構成セクションに `bin/`, `lib/`, `schemas/`, `tests/`, `scripts/`, `audit/`, `state/` を追記
-- [ ] Issue [#81](https://github.com/stlwolf/ai-development-hub/issues/81)（Step 4-0）をクローズ
-- [ ] Epic [#19](https://github.com/stlwolf/ai-development-hub/issues/19) のチェックボックスを Step 4-0〜4-2 にチェック
-- [ ] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh` がクリーンであることを確認
-- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` が全 PASS であることを確認
+- [x] `README.md` の状態テーブルを更新（Step 4-0〜4-2 を「完了」に、見出しも修正） — 本 PR コミット `315b464` で対応
+- [x] `README.md` の構成セクションに `bin/`, `lib/`, `schemas/`, `tests/`, `scripts/`, `audit/`, `state/` を追記 — 本 PR コミット `315b464` で対応
+- [x] Issue [#81](https://github.com/stlwolf/ai-development-hub/issues/81)（Step 4-0）をクローズ — Step 4-0 完了時に対応済み
+- [x] Epic [#19](https://github.com/stlwolf/ai-development-hub/issues/19) のチェックボックスを Step 4-0〜4-2 にチェック — user 対応済み
+- [x] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh` がクリーンであることを確認 — Step 4-2 PR #88 で確認、本 PR 着手時に再確認済み
+- [x] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` が全 PASS であることを確認 — Step 4-2 PR #88 で確認、本 PR 着手時に再確認済み
 
 ## スコープ（確定 — [Discussion](../discussions/2026-05-15-discussion-step-4-3-verification-gate.md) 全 7 Q closed）
 

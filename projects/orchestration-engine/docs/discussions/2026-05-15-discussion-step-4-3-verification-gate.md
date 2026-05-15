@@ -215,10 +215,15 @@ skill の Compliance Review は `Status: Spec Compliant | Issues Found` を返�
   "blockers": [...],
   "last_updated": "...",
   "verification": {
-    "result": "pass" | "fail" | "warn",
-    "reviewer_session_id": "01KRK...",
-    "issues_count": 0,
-    "completed_at": "..."
+    "<target_pane_id>": {
+      "result": "pass" | "fail" | "warn",
+      "reviewer_session_id": "01KRK...",
+      "reviewer_pane_id": "...",
+      "issues_count": 0,
+      "marker_raw": "@@OE_VERIFY:pass",
+      "completed_at": "..."
+    },
+    "...": "..."
   },
   "verification_summary": {
     "total": 3,
@@ -230,7 +235,9 @@ skill の Compliance Review は `Status: Spec Compliant | Issues Found` を返�
 }
 ```
 
-`verification` は **per-pane** の個別結果（end-of-session タイミングでも各被検証ペインに紐付く形）。`verification_summary` はセッション全体の集計。
+`verification` は **per-pane の個別結果を target_pane_id でキー付けした map**（複数 target pane の per-pane 結果を保持できる構造）。`verification_summary` はセッション全体の集計（`verification` map から導出）。
+
+> **修正履歴**: 本セクション初稿では `verification` を単一オブジェクト表記としていたが、Q2 の「セッション内 fail 率を実運用データとして記録」要件には複数 target pane の per-pane 結果保持が必須のため、[Plan F5](../plans/2026-05-15-plan-step-4-3-verification-gate.md#review-履歴) で pane-keyed map に確定。本 Discussion の例も Plan 確定形に揃えた（Copilot レビュー指摘反映）。
 
 **audit イベント追加**:
 - `verification_started` (検証 agent spawn 時)
