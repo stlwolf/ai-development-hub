@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/stlwolf/ai-development-hub/schemas/session-state.schema.json",
   "title": "Session State (File-based KVS)",
-  "description": "UC-2 ファイルベース KVS の最小契約。各セッションが {session_id}.state.json として自身の状態を書き出し、親エージェントが読む。ロック戦略は atomic rename（mv は POSIX で atomic）。注: 本 KVS はセッション完了時にのみ書き込む。実行中の状態（spawn/ready/progress 等）は wez pane capture のマーカースキャンで取得する（so-compare レビュー episode 参照）。",
+  "description": "UC-2 ファイルベース KVS の最小契約。各セッションが {session_id}.state.json として自身の状態を書き出し、親エージェントが読む。ロック戦略は atomic rename（mv は POSIX で atomic）。注: 本 KVS はセッション完了時にのみ書き込む。実行中の状態（spawn/ready/progress 等）は wez pane capture のマーカースキャンで取得する（so-compare レビュー episode 参照）。Step 4-3 で verification / verification_summary を追加（検証ゲート v1、optional）。",
   "type": "object",
   "required": ["session_id", "pane_id", "state", "last_updated"],
   "properties": {
@@ -44,6 +44,80 @@
       "items": { "type": "string" },
       "description": "ブロッカーの自由記述一覧",
       "default": []
+    },
+    "verification": {
+      "type": "object",
+      "description": "Step 4-3 検証ゲート v1: target_pane_id をキーとする per-pane の検証結果 map。検証フェーズ実行後に書き込まれる（optional）。複数 target pane がある場合は各ペイン分のエントリを持つ。",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["result", "reviewer_session_id", "reviewer_pane_id", "completed_at"],
+        "properties": {
+          "result": {
+            "type": "string",
+            "description": "検証結果（@@OE_VERIFY: マーカー値）",
+            "enum": ["pass", "fail", "warn"]
+          },
+          "reviewer_session_id": {
+            "type": "string",
+            "description": "検証 agent のセッション ID（ULID）",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "reviewer_pane_id": {
+            "type": "integer",
+            "description": "検証 agent のペイン ID",
+            "minimum": 0
+          },
+          "issues_count": {
+            "type": "integer",
+            "description": "検証で検出された問題件数（skill の Compliance Review 出力から抽出）",
+            "minimum": 0,
+            "default": 0
+          },
+          "marker_raw": {
+            "type": "string",
+            "description": "捕捉した @@OE_VERIFY:{value} の原文",
+            "pattern": "^@@OE_VERIFY:(pass|fail|warn)$"
+          },
+          "completed_at": {
+            "type": "string",
+            "description": "検証完了時刻（ISO 8601）",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "verification_summary": {
+      "type": "object",
+      "description": "Step 4-3 検証ゲート v1: セッション全体の検証結果集計。verification map から engine が導出（optional）。Q2「fail 率を実運用データとして記録」要件に対応。",
+      "required": ["total", "passed", "failed", "warned", "fail_rate"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "description": "検証実行件数（verification map のキー数）",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "integer",
+          "description": "result=pass の件数",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "description": "result=fail の件数",
+          "minimum": 0
+        },
+        "warned": {
+          "type": "integer",
+          "description": "result=warn の件数",
+          "minimum": 0
+        },
+        "fail_rate": {
+          "type": "number",
+          "description": "failed / total の値。total=0 の場合は 0。小数 3 桁に丸める",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
     }
   }
 }
