@@ -51,9 +51,18 @@ oe_verify_envelope_create() {
   local audit_path="${OE_AUDIT_DIR}/${target_session_id}.jsonl"
   local kvs_path="${OE_STATE_DIR}/${target_session_id}.state.json"
 
-  # task.description は検証指示の概要のみ。skill prompt 本文は engine に持たない (F4)
+  # task.description: 検証指示の概要 + skill 出力 → @@OE_VERIFY マッピング (F-SO-1)
+  # skill prompt 本文は engine に持たない (F4)。skill 規約 (Spec Compliant / Issues Found) と
+  # engine プロトコル (@@OE_VERIFY:pass/fail/warn) の対応を明示しないと検証 agent ごとに揺れる。
   local task_desc
-  task_desc="Compliance Review per the adversarial-review skill. Read the inputs in read_docs and emit one of: @@OE_VERIFY:pass / @@OE_VERIFY:fail / @@OE_VERIFY:warn on a new line based on your conclusion before exit."
+  task_desc="Compliance Review per the adversarial-review skill listed in task.use_skills. Read task.read_docs in order (skill, target envelope, audit JSONL, KVS, verify-inputs) and execute the review.
+
+Emit exactly one of the following on a new line at the very end, immediately before exiting:
+- @@OE_VERIFY:pass — when the skill report concludes \"Status: Spec Compliant\" with no critical issues (advisory recommendations are acceptable for pass)
+- @@OE_VERIFY:fail — when the skill report concludes \"Status: Issues Found\" with one or more critical issues (Missing requirements / Extra unneeded work / Misunderstandings that affect functionality)
+- @@OE_VERIFY:warn — when the skill report concludes \"Status: Spec Compliant\" but the Recommendations section is non-trivial, or when issues are observed but are minor / advisory / non-blocking
+
+The marker must be on its own line, no surrounding spaces, exact case. The shell will append @@OE_EXIT:0 automatically."
 
   # read_docs 配列を構築 (verify_prompt_path が指定されたら 5 件目に追加)
   local read_docs_json
@@ -81,7 +90,6 @@ oe_verify_envelope_create() {
     --arg odir "$PROJECT_DIR" \
     --argjson timeout "$OE_CB_TIMEOUT" \
     --argjson read_docs "$read_docs_json" \
-    --arg tkvs "$kvs_path" \
     --arg parent "$target_session_id" \
     --argjson max_panes "$OE_CB_MAX_PANES" \
     '{
@@ -100,7 +108,7 @@ oe_verify_envelope_create() {
       context: {
         parent_session_id: $parent,
         related_issues: [],
-        shared_kvs_path: $tkvs
+        shared_kvs_path: null
       },
       constraints: {
         max_panes: $max_panes,
@@ -271,6 +279,7 @@ oe_verify_spawn() {
 #   result                "pass" | "fail" | "warn" (@@OE_VERIFY: の値)
 #   [issues_count]        skill 出力からの問題件数 (デフォルト 0)
 #   [marker_raw]          捕捉したマーカー原文 (デフォルト "@@OE_VERIFY:{result}")
+#   [exit_code]           F-SO-2: 検証 agent の exit_code が非 0 のとき指定。空文字は省略扱い
 #
 # F5 反映: pane-keyed map で書き込む。既存 verification map に他 pane エントリがあれば維持する。
 # atomic rename パターン (Step 4-2 oe_capture_write_kvs と同様)。
@@ -282,6 +291,7 @@ oe_verify_write_kvs() {
   local result="$5"
   local issues_count="${6:-0}"
   local marker_raw="${7:-@@OE_VERIFY:${result}}"
+  local exit_code="${8:-}"
 
   local state_file="${OE_STATE_DIR}/${target_session_id}.state.json"
   local tmp_file="${OE_STATE_DIR}/.${target_session_id}.state.json.$$"
@@ -295,23 +305,46 @@ oe_verify_write_kvs() {
   completed_at="$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")"
 
   # verification.{target_pane_id} を更新 (既存 map は維持)
-  jq \
-    --arg pid "$target_pane_id" \
-    --arg result "$result" \
-    --arg rsid "$reviewer_session_id" \
-    --argjson rpid "$reviewer_pane_id" \
-    --argjson issues "$issues_count" \
-    --arg marker_raw "$marker_raw" \
-    --arg completed_at "$completed_at" \
-    '.verification = ((.verification // {}) | .[$pid] = {
-       result: $result,
-       reviewer_session_id: $rsid,
-       reviewer_pane_id: $rpid,
-       issues_count: $issues,
-       marker_raw: $marker_raw,
-       completed_at: $completed_at
-     })' \
-    "$state_file" > "$tmp_file"
+  # F-SO-2: exit_code が指定された場合のみ exit_code フィールドを含める
+  if [[ -n "$exit_code" ]]; then
+    jq \
+      --arg pid "$target_pane_id" \
+      --arg result "$result" \
+      --arg rsid "$reviewer_session_id" \
+      --argjson rpid "$reviewer_pane_id" \
+      --argjson issues "$issues_count" \
+      --arg marker_raw "$marker_raw" \
+      --arg completed_at "$completed_at" \
+      --argjson exit_code "$exit_code" \
+      '.verification = ((.verification // {}) | .[$pid] = {
+         result: $result,
+         reviewer_session_id: $rsid,
+         reviewer_pane_id: $rpid,
+         issues_count: $issues,
+         marker_raw: $marker_raw,
+         completed_at: $completed_at,
+         exit_code: $exit_code
+       })' \
+      "$state_file" > "$tmp_file"
+  else
+    jq \
+      --arg pid "$target_pane_id" \
+      --arg result "$result" \
+      --arg rsid "$reviewer_session_id" \
+      --argjson rpid "$reviewer_pane_id" \
+      --argjson issues "$issues_count" \
+      --arg marker_raw "$marker_raw" \
+      --arg completed_at "$completed_at" \
+      '.verification = ((.verification // {}) | .[$pid] = {
+         result: $result,
+         reviewer_session_id: $rsid,
+         reviewer_pane_id: $rpid,
+         issues_count: $issues,
+         marker_raw: $marker_raw,
+         completed_at: $completed_at
+       })' \
+      "$state_file" > "$tmp_file"
+  fi
 
   mv -f "$tmp_file" "$state_file"
   return 0
@@ -335,11 +368,13 @@ oe_verify_summary_update() {
     return 1
   fi
 
-  local total passed failed warned
+  local total passed failed warned protocol_errors
   total="$(jq '(.verification // {}) | length' "$state_file")"
   passed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "pass")) | length' "$state_file")"
   failed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "fail")) | length' "$state_file")"
   warned="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "warn")) | length' "$state_file")"
+  # F-SO-2/12: exit_code が non-zero として記録されたエントリ数
+  protocol_errors="$(jq '(.verification // {}) | to_entries | map(select(.value.exit_code != null and .value.exit_code != 0)) | length' "$state_file")"
 
   local fail_rate
   if [[ "$total" -gt 0 ]]; then
@@ -354,12 +389,14 @@ oe_verify_summary_update() {
     --argjson failed "$failed" \
     --argjson warned "$warned" \
     --argjson fail_rate "$fail_rate" \
+    --argjson protocol_errors "$protocol_errors" \
     '.verification_summary = {
        total: $total,
        passed: $passed,
        failed: $failed,
        warned: $warned,
-       fail_rate: $fail_rate
+       fail_rate: $fail_rate,
+       protocol_errors: $protocol_errors
      }' \
     "$state_file" > "$tmp_file"
 
@@ -421,9 +458,16 @@ _oe_verify_generate_session_id() {
 #
 # F1: monitor.sh の責務範囲を膨らませない (独立ループ)
 # F2: OE_VERIFY_MANAGED_PANES / OE_VERIFY_DONE_PANES は通常ペイン配列と別物
+# F-SO-2: OE_SCAN_EXIT_CODE 非 0 のとき verification_protocol_error 監査 + KVS に exit_code 併記
+# F-SO-4: 検証ペインは verbose 出力のため oe_capture_scan に lines=200 を渡す
+# F-SO-6: ai_cli (デフォルト cursor) を引数で受け取り oe_verify_spawn に伝播
 oe_verify_run_phase() {
   local target_session_id="$1"
   shift
+
+  # 末尾オプション: ai_cli (位置引数ではなく環境変数 OE_VERIFY_AI_CLI で渡す設計、
+  # 後方互換維持のため位置引数化はしない)
+  local ai_cli="${OE_VERIFY_AI_CLI:-cursor}"
 
   if [[ $# -eq 0 ]]; then
     return 0
@@ -440,19 +484,34 @@ oe_verify_run_phase() {
       "$reviewer_session_id" \
       "$target_pane_id" \
       "$target_session_id" \
-      "$target_envelope_path"
+      "$target_envelope_path" \
+      "$ai_cli"
 
     local reviewer_pane_id="$OE_VERIFY_PANE_ID"
     OE_VERIFY_MANAGED_PANES+=("$reviewer_pane_id")
 
-    # 独立ポーリングループ
+    # 独立ポーリングループ (検証ペインは verbose 出力対策で lines=200)
     local start_seconds=$SECONDS
     local verified=0
     while true; do
       sleep "$OE_POLL_INTERVAL"
-      oe_capture_scan "$reviewer_pane_id"
+      oe_capture_scan "$reviewer_pane_id" 200
 
       if [[ -n "$OE_SCAN_VERIFY_RESULT" ]]; then
+        # F-SO-2: exit_code が非 0 ならプロトコルエラー監査 + KVS に exit_code 併記
+        local exit_code_field=""
+        if [[ -n "$OE_SCAN_EXIT_CODE" && "$OE_SCAN_EXIT_CODE" != "0" ]]; then
+          exit_code_field="$OE_SCAN_EXIT_CODE"
+          local protocol_payload
+          protocol_payload="$(jq -cn \
+            --argjson tpid "$target_pane_id" \
+            --arg result "$OE_SCAN_VERIFY_RESULT" \
+            --argjson exit_code "$OE_SCAN_EXIT_CODE" \
+            --arg marker_raw "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}" \
+            '{target_pane_id: $tpid, verify_result: $result, exit_code: $exit_code, marker_raw: $marker_raw}')"
+          oe_audit_emit "verification_protocol_error" "$target_session_id" "$target_pane_id" "" "$protocol_payload" || true
+        fi
+
         oe_verify_write_kvs \
           "$target_session_id" \
           "$target_pane_id" \
@@ -460,7 +519,8 @@ oe_verify_run_phase() {
           "$reviewer_pane_id" \
           "$OE_SCAN_VERIFY_RESULT" \
           0 \
-          "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}"
+          "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}" \
+          "$exit_code_field"
         oe_verify_emit_completed \
           "$target_session_id" \
           "$target_pane_id" \

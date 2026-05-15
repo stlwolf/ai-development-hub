@@ -132,6 +132,15 @@ if jq -e 'has("verification")' "$TARGET" >/dev/null 2>&1; then
         "$TARGET" >/dev/null 2>&1 \
         || fail "verification.$pane_key.marker_raw must match @@OE_VERIFY:(pass|fail|warn)"
     fi
+
+    # F-SO-2: exit_code は optional、ある場合は非負整数
+    if jq -e --arg k "$pane_key" '.verification[$k] | has("exit_code")' \
+      "$TARGET" >/dev/null 2>&1; then
+      jq -e --arg k "$pane_key" \
+        '.verification[$k].exit_code | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
+        "$TARGET" >/dev/null 2>&1 \
+        || fail "verification.$pane_key.exit_code must be non-negative integer"
+    fi
   done < <(jq -r '.verification | keys[]' "$TARGET")
 fi
 
@@ -159,6 +168,14 @@ if jq -e 'has("verification_summary")' "$TARGET" >/dev/null 2>&1; then
     '.verification_summary.fail_rate | type == "number" and . >= 0 and . <= 1' \
     "$TARGET" >/dev/null 2>&1 \
     || fail "verification_summary.fail_rate must be number in [0, 1]"
+
+  # F-SO-2: protocol_errors は optional、ある場合は非負整数
+  if jq -e '.verification_summary | has("protocol_errors")' "$TARGET" >/dev/null 2>&1; then
+    jq -e \
+      '.verification_summary.protocol_errors | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
+      "$TARGET" >/dev/null 2>&1 \
+      || fail "verification_summary.protocol_errors must be non-negative integer"
+  fi
 fi
 
 echo "OK: $TARGET"

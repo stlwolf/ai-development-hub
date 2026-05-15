@@ -142,8 +142,10 @@ assert_eq "task.exit_conditions.marker" "@@OE_VERIFY" "$(jq -r '.task.exit_condi
 assert_eq "task.exit_conditions.timeout_seconds" "$OE_CB_TIMEOUT" "$(jq -r '.task.exit_conditions.timeout_seconds' "$JSON")"
 assert_eq "task.use_skills" '["adversarial-review"]' "$(jq -c '.task.use_skills' "$JSON")"
 assert_eq "context.parent_session_id" "$target_session_id" "$(jq -r '.context.parent_session_id' "$JSON")"
-assert_eq "context.shared_kvs_path includes target session_id" "true" \
-  "$(jq -r --arg sid "$target_session_id" '.context.shared_kvs_path | endswith($sid + ".state.json")' "$JSON")"
+# F-SO-3: shared_kvs_path は null (schema 意図 = UC-2 並列協調用ディレクトリパス と乖離するため)
+# KVS パスは read_docs 経由で参照する
+assert_eq "context.shared_kvs_path = null (F-SO-3)" "null" \
+  "$(jq -r '.context.shared_kvs_path' "$JSON")"
 
 echo "-- task.read_docs に skill / 被検証 envelope / audit / KVS が含まれる --"
 assert_eq "read_docs 件数" "4" "$(jq '.task.read_docs | length' "$JSON")"
@@ -158,6 +160,18 @@ assert_eq "read_docs[3] = KVS state" "true" \
 echo "-- task.description に @@OE_VERIFY 指示が含まれる --"
 assert_eq "description references @@OE_VERIFY" "true" \
   "$(jq -r '.task.description | test("@@OE_VERIFY")' "$JSON")"
+
+# F-SO-1: skill 出力 → @@OE_VERIFY マッピング (Spec Compliant→pass / Issues Found→fail / advisory→warn) 明示
+assert_eq "F-SO-1: description に Spec Compliant マッピング" "true" \
+  "$(jq -r '.task.description | test("Spec Compliant")' "$JSON")"
+assert_eq "F-SO-1: description に Issues Found マッピング" "true" \
+  "$(jq -r '.task.description | test("Issues Found")' "$JSON")"
+assert_eq "F-SO-1: description に @@OE_VERIFY:pass" "true" \
+  "$(jq -r '.task.description | test("@@OE_VERIFY:pass")' "$JSON")"
+assert_eq "F-SO-1: description に @@OE_VERIFY:fail" "true" \
+  "$(jq -r '.task.description | test("@@OE_VERIFY:fail")' "$JSON")"
+assert_eq "F-SO-1: description に @@OE_VERIFY:warn" "true" \
+  "$(jq -r '.task.description | test("@@OE_VERIFY:warn")' "$JSON")"
 
 echo ""
 echo "-- 異なる reviewer_session_id で再生成 --"
@@ -466,6 +480,91 @@ echo "-- F6: verification_started は本 Phase D で emit されない --"
 echo "   (Phase B 初回 oe_verify_spawn + Phase C 再 oe_verify_spawn の 2 件のみ、Phase D は emit しない)"
 assert_eq "verification_started 件数 (Phase B + Phase C spawn の 2 件)" "2" \
   "$(jq -r 'select(.event_type=="verification_started") | 1' "$target_audit_file" | wc -l | tr -d ' ')"
+
+# ---- F-SO-2: exit_code 非 0 のとき verification_protocol_error + KVS に exit_code 併記 ----
+echo ""
+echo "=== F-SO-2: protocol error 経路 (exit_code != 0) ==="
+
+# 新しい target session を別途用意 (既存の集計と分離)
+proto_session="01KRSTERR00000000000000001"
+oe_capture_write_kvs "$proto_session" 60 "success"
+
+# exit_code=1 のケース: write_kvs に 8 引数目を渡す
+oe_verify_write_kvs \
+  "$proto_session" \
+  60 \
+  "01KRMYHMETZZZZZZZZZZZZZZZV" \
+  300 \
+  "pass" \
+  0 \
+  "@@OE_VERIFY:pass" \
+  1
+
+proto_state_file="${OE_STATE_DIR}/${proto_session}.state.json"
+assert_eq "F-SO-2: verification.60.exit_code 記録" "1" "$(jq -r '.verification."60".exit_code' "$proto_state_file")"
+assert_eq "F-SO-2: result は記録される (pass)" "pass" "$(jq -r '.verification."60".result' "$proto_state_file")"
+
+# exit_code=0 / 未指定なら exit_code フィールドは無い
+oe_verify_write_kvs \
+  "$proto_session" \
+  61 \
+  "01KRMYHMETZZZZZZZZZZZZZZZS" \
+  301 \
+  "pass" \
+  0 \
+  "@@OE_VERIFY:pass"
+assert_eq "F-SO-2: exit_code 未指定なら欠落" "false" \
+  "$(jq -r '.verification."61" | has("exit_code")' "$proto_state_file")"
+
+# summary に protocol_errors が記録される
+oe_verify_summary_update "$proto_session"
+assert_eq "F-SO-2: verification_summary.protocol_errors=1" "1" \
+  "$(jq -r '.verification_summary.protocol_errors' "$proto_state_file")"
+assert_eq "F-SO-2: total=2 (両エントリ集計対象)" "2" \
+  "$(jq -r '.verification_summary.total' "$proto_state_file")"
+
+# validate-session-state.sh で PASS (exit_code 拡張 + protocol_errors 拡張)
+if "${PROJECT_DIR}/scripts/validate-session-state.sh" "$proto_state_file" > /dev/null 2>&1; then
+  echo "  PASS: F-SO-2: validate-session-state.sh で拡張 KVS が PASS"
+  (( PASS++ )) || true
+else
+  echo "  FAIL: F-SO-2: validate-session-state.sh で拡張 KVS が FAIL"
+  "${PROJECT_DIR}/scripts/validate-session-state.sh" "$proto_state_file" 2>&1 | sed 's/^/    /'
+  (( FAIL++ )) || true
+fi
+
+# ---- F-SO-4: oe_capture_scan の 2 引数目 (lines) 動作 ----
+echo ""
+echo "=== F-SO-4: oe_capture_scan の lines 引数 ==="
+
+# capture.sh が直接 source されていないので import
+# shellcheck source=../lib/capture.sh
+source "${PROJECT_DIR}/lib/capture.sh"
+
+# capture が wez を適切な --lines で呼ぶことを確認するため、wez モックを差し替える。
+# oe_capture_scan は wez を $(...) subshell 内で呼ぶため、変数記録は失われる。
+# ファイル経由で記録する。
+_F_SO_4_log="${_TMP_DIR}/f_so_4_lines.log"
+: > "$_F_SO_4_log"
+# shellcheck disable=SC2317  # wez は関数として PATH より優先される (function takes precedence)
+wez() {
+  if [[ "${1:-}" == "pane" && "${2:-}" == "capture" ]]; then
+    # arg3 = pane_id, arg4 = --lines, arg5 = lines value
+    printf '%s\n' "${5:-}" >> "$_F_SO_4_log"
+    echo "@@OE_EXIT:0"
+    return 0
+  fi
+  return 1
+}
+export -f wez
+
+oe_capture_scan "888"  # デフォルト lines=50
+assert_eq "F-SO-4: デフォルト lines=50" "50" "$(tail -1 "$_F_SO_4_log")"
+
+oe_capture_scan "888" 200  # 検証ペイン用 lines=200
+assert_eq "F-SO-4: lines=200 を渡せる" "200" "$(tail -1 "$_F_SO_4_log")"
+
+unset -f wez
 
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

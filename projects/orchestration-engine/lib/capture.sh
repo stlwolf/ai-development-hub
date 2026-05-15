@@ -22,6 +22,7 @@ OE_CLASSIFY_STATE=""
 #   マーカー未検出時は両方空文字
 oe_capture_scan() {
   local pane_id="$1"
+  local lines="${2:-50}"  # F-SO-4: 検証ペインなど verbose 出力を扱うケースでは呼び出し側が 200 を渡す
 
   OE_SCAN_MARKER_TYPE=""
   OE_SCAN_VALUE=""
@@ -30,7 +31,7 @@ oe_capture_scan() {
   OE_SCAN_VERIFY_RESULT=""
 
   local captured
-  captured="$(wez pane capture "$pane_id" --lines 50 2>/dev/null)" || return 0
+  captured="$(wez pane capture "$pane_id" --lines "$lines" 2>/dev/null)" || return 0
 
   local normalized
   normalized="$(printf '%s' "$captured" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g')"
@@ -73,6 +74,11 @@ _oe_capture_scan_parse() {
   done <<< "$input"
 
   # 後方互換: MARKER_TYPE / VALUE を設定
+  #
+  # 重要 (F-SO-5): MARKER_TYPE="VERIFY" は **検証専用ループ (oe_verify_run_phase) からのみ参照される
+  # 後方互換の内部値**。monitor.sh の case "$OE_SCAN_MARKER_TYPE" に "VERIFY)" 分岐を**追加してはならない**。
+  # 通常 agent ペインで偶発的に @@OE_VERIFY: が出現した場合、誤動作の原因になる。
+  # 検証側は OE_SCAN_VERIFY_RESULT を直接参照する設計 (lib/verify.sh:oe_verify_run_phase)。
   if [[ -n "$OE_SCAN_EXIT_CODE" ]]; then
     OE_SCAN_MARKER_TYPE="EXIT"
     OE_SCAN_VALUE="$OE_SCAN_EXIT_CODE"

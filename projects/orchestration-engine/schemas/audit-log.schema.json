@@ -36,7 +36,8 @@
         "cleanup",
         "session_end",
         "verification_started",
-        "verification_completed"
+        "verification_completed",
+        "verification_protocol_error"
       ]
     },
     "state": {
@@ -147,6 +148,14 @@
       },
       "then": {
         "description": "Step 4-3: 検証結果確定時。payload に target_pane_id, result (pass/fail/warn), issues_count, marker_raw を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "verification_protocol_error" } }
+      },
+      "then": {
+        "description": "F-SO-2 (Step 4-3): 検証 agent が @@OE_VERIFY を emit したが exit_code が non-zero だった場合に追加で emit。payload に target_pane_id, verify_result, exit_code, marker_raw を含む。verification_completed も並行して emit される (verify_result 自体は KVS に書き込まれるが、exit_code が付記される)。"
       }
     }
   ]

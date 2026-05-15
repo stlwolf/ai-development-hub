@@ -82,6 +82,11 @@
             "type": "string",
             "description": "検証完了時刻（ISO 8601）",
             "format": "date-time"
+          },
+          "exit_code": {
+            "type": "integer",
+            "description": "F-SO-2: 検証 agent の exit_code が non-zero だった場合に記録される (protocol error 検出用)。0 または欠落時は正常完了。",
+            "minimum": 0
           }
         }
       }
@@ -116,6 +121,11 @@
           "description": "failed / total の値。total=0 の場合は 0。小数 3 桁に丸める",
           "minimum": 0,
           "maximum": 1
+        },
+        "protocol_errors": {
+          "type": "integer",
+          "description": "F-SO-2/12: 検証 agent の exit_code が non-zero として記録されたエントリ数 (verification[*].exit_code が 0 以外)。protocol error の総数。",
+          "minimum": 0
         }
       }
     }
