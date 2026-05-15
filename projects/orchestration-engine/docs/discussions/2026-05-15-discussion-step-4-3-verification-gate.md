@@ -3,7 +3,7 @@ id: "01KRKZVWWQ6NHWJX51YXNG8SQB"
 title: "Step 4-3 検証ゲート v1 の設計判断（質問駆動設計）"
 date: 2026-05-15
 type: discussion
-status: draft
+status: closed
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
@@ -37,9 +37,9 @@ tags: [orchestration, mvp, step-4-3, question-driven-design, verification-gate, 
 
 # Step 4-3 検証ゲート v1 の設計判断（質問駆動設計）
 
-> Step 4-2（成果物パース + 状態管理、[PR #88](https://github.com/stlwolf/ai-development-hub/pull/88)）完了後、Step 4-3「検証ゲート v1」の実装に先立ち `question-driven-design` スキルで設計論点を探索する記録。
+> Step 4-2（成果物パース + 状態管理、[PR #88](https://github.com/stlwolf/ai-development-hub/pull/88)）完了後、Step 4-3「検証ゲート v1」の実装に先立ち `question-driven-design` スキルで設計論点を探索した記録。
 >
-> 本 Discussion は **draft 状態で起草**し、各 Q について **推奨案を提示**した上で user との 1 問ずつの対話で確定する。全 Q 合意後に status: closed にし、KickOff の仮置きセクションを確定版に反映する。
+> 全 7 問について選択肢を提示し、1 問ずつ user との対話で合意した（status: closed）。合意結果は KickOff（[`2026-05-15-kickoff-step-4-3-verification-gate.md`](../plans/2026-05-15-kickoff-step-4-3-verification-gate.md)）の仮置きセクションに反映し、続く `kickoff-to-plan` で Plan に変換する。
 
 ## 進め方の前提
 
@@ -81,7 +81,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 
 ### Q1: 検証モードのスコープ（v1 で何を実装するか）
 
-**status**: open
+**status**: closed
 
 **質問**: v1 は Plan Review / Compliance Review のどちらをサポートするか?
 
@@ -91,7 +91,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 | **B. Compliance Review のみ** | サブエージェント完了後の実装照合 | engine の主用途（駆動）と整合。Step 4-2 のペイン管理が直接活きる |
 | C. 両方 | Plan + Compliance | スコープ肥大。MVP には過剰 |
 
-**推奨**: **B. Compliance Review のみ**
+**決定**: **B. Compliance Review のみ**
 
 **根拠**:
 - engine の主用途は「サブエージェントを駆動して成果物を得る」こと。検証ゲートはこの下流にある
@@ -103,7 +103,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 
 ### Q2: 発火タイミング
 
-**status**: open
+**status**: closed
 
 **質問**: 検証ゲートをいつ発火させるか?
 
@@ -113,7 +113,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 | **B. 全タスク完了後（end-of-session）** | 全管理ペイン完了後に検証フェーズへ遷移 | シンプル、リソース集約、状態遷移が明確。各タスク独立検証性は低下 |
 | C. ハイブリッド（envelope で指定） | envelope の `task.verification.mode` で選択可能 | 柔軟。MVP には過剰、契約変更を伴う |
 
-**推奨**: **B. 全タスク完了後（end-of-session）**
+**決定**: **B. 全タスク完了後（end-of-session）** + **fail 率を記録（実運用データ）**
 
 **根拠**:
 - MVP は単一 UC（ai-development-hub 内のツール改善タスク、1 サイクル完走）を最優先（Step 4-0 Discussion §UC）
@@ -121,11 +121,17 @@ Step 4-3 の設計判断に直接影響する既存資産:
 - `monitor.sh` の終了条件（全 `OE_DONE_PANES` 完了）にフックする実装が直線的
 - per-pane 検証が必要になるのは Step 4-4 以降の E2E 検証で発見されたタイミングで追加（A への昇格パス）
 
+**追加決定（user 確認 2026-05-15）**:
+- セッション内の **fail 率** を記録する。Q5（KVS スキーマ）で集計フィールドを設計に含める
+- 集計対象: 1 セッション内の検証実行件数・pass 件数・fail 件数（warn を追加した場合は warn も）
+- 目的: 実運用時の検証ゲート信頼性データ蓄積。Step 4-4 / 4-5 のフィードバックに使う
+- セッション跨ぎの集計は audit ログから後段で導出可能なため本 Step では含めない
+
 ---
 
 ### Q3: 検証エージェントの起動方法
 
-**status**: open
+**status**: closed
 
 **質問**: 検証用サブエージェントをどう起動するか?
 
@@ -135,7 +141,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 | B. 既存ペインの再利用 | 完了したサブエージェントペインに検証プロンプトを送信 | リソース節約。状態混入リスク（前タスクの会話履歴が漏れる）|
 | C. 同期外部コマンド | `claude -p` / `codex -p` を engine の同じプロセスで実行（ペインなし）| 単純。ただし `wez` 基盤と非対称、進捗が観測層から見えない |
 
-**推奨**: **A. 新ペイン spawn**
+**決定**: **A. 新ペイン spawn**
 
 **根拠**:
 - Step 4-2 の `spawn.sh` / `monitor.sh` / `capture.sh` / `cleanup.sh` がそのまま転用可能。新規実装は最小化
@@ -148,7 +154,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 
 ### Q4: 検証プロンプトの構成
 
-**status**: open
+**status**: closed
 
 **質問**: 検証 agent に何を渡すか?
 
@@ -164,7 +170,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 | **B. envelope + audit ログ + KVS** | 要件は envelope、完了報告は audit JSONL から、変更ファイルは KVS の `outputs` から | engine の既存出力を最大活用、再現性高 |
 | C. 自由フォーマット | 検証エージェントが必要な情報を能動的に集める | 柔軟だが engine の出力契約が活きない |
 
-**推奨**: **B. envelope + audit ログ + KVS**
+**決定**: **B. envelope + audit ログ + KVS**
 
 **根拠**:
 - engine の出力（envelope.json / audit.jsonl / session-state.json）が **検証 agent への構造化入力** として既に整っている
@@ -178,7 +184,7 @@ Step 4-3 の設計判断に直接影響する既存資産:
 
 ### Q5: 検証結果の表現と KVS への書き込み
 
-**status**: open
+**status**: closed
 
 **質問**: 検証結果の語彙と保存先は?
 
@@ -187,100 +193,162 @@ skill の Compliance Review は `Status: Spec Compliant | Issues Found` を返�
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
 | A. 既存 6 値の `partial` に集約 | 検証不合格 = `partial` として KVS に書く | 軸が同じになり混乱、検証軸が消える |
-| **B. 別軸の検証結果フィールドを追加** | KVS に `verification: { result: "pass" \| "fail" \| "warn", reviewer_session_id, issues_count }` 等を追加 | 軸が明確、スキーマ変更必要（最小） |
+| **B'. 別軸の検証結果フィールド + セッション集計を KVS に追加** | `verification` と `verification_summary` を `session-state.schema.json` に追加 | 軸が明確、Q2 の fail 率記録要求と整合、最小スキーマ拡張 |
 | C. audit ログのみで表現 | 検証結果イベントを `verification_completed` 等で audit に出すのみ、KVS には書かない | KVS への書き込み責務を増やさない。問い合わせ時に audit を読む必要 |
 
-**推奨**: **B. 別軸の検証結果フィールド**（`schemas/session-state.schema.json` への最小拡張）
+**決定**: **B'. KVS スキーマを最小拡張**（user 確認 2026-05-15）
 
 **根拠**:
 - 検証結果は実装結果 (`state`) とは独立した軸であり、同一 KVS の別フィールドが意味的に最も自然
-- 「Step 4-3 はスキーマ変更を最小に」という制約と矛盾するが、検証結果を駆動層から問い合わせ可能にするには KVS が最適（audit JSONL は時系列、問い合わせコスト高）
-- ただし「フィールド追加が必要 = スキーマ変更最小限ルール再確認」を user に確認したい
-- 語彙は skill の `Spec Compliant` / `Issues Found` に対応する `pass` / `fail` を基本とし、将来 `warn` を追加可能な enum とする
-- audit ログには `verification_started` / `verification_completed` の 2 イベントを追加（KickOff の `human_input` と同様、本 Step で追加）
+- Q2 の追加決定（fail 率を実運用データとして記録）には、駆動層から問い合わせ可能な構造化フィールドが必要。audit JSONL の都度走査は問い合わせコストが高い
+- KickOff §「スコープ外」の「スキーマの変更（4-5 で実施）」は **検証ゲート要件によって緩和**する（KickOff §「完了条件」確定時に明記）
+- 語彙: skill の `Spec Compliant` / `Issues Found` に対応する `pass` / `fail` を基本、将来 `warn` 追加可能な enum とする
+- audit ログには `verification_started` / `verification_completed` の 2 イベントを追加
 
-**未解決の細部**: スキーマ変更を本 Step に含めることの可否。含めない場合、検証結果は audit ログのみ（案 C）にフォールバック。
+**KVS 拡張仕様（確定）**:
+
+```json
+{
+  "session_id": "...",
+  "state": "success",
+  "outputs": [...],
+  "blockers": [...],
+  "last_updated": "...",
+  "verification": {
+    "result": "pass" | "fail" | "warn",
+    "reviewer_session_id": "01KRK...",
+    "issues_count": 0,
+    "completed_at": "..."
+  },
+  "verification_summary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "warned": 0,
+    "fail_rate": 0.333
+  }
+}
+```
+
+`verification` は **per-pane** の個別結果（end-of-session タイミングでも各被検証ペインに紐付く形）。`verification_summary` はセッション全体の集計。
+
+**audit イベント追加**:
+- `verification_started` (検証 agent spawn 時)
+- `verification_completed` (検証結果確定時、result / issues_count 等の payload)
 
 ---
 
 ### Q6: 不合格時のフロー
 
-**status**: open
+**status**: closed
 
 **質問**: 検証で `fail` / `Issues Found` だった場合のフローは?
 
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
-| **A. 記録のみ（v1）** | 結果を KVS / audit に書いて終了。人間が後から判断 | 最小実装、フロー単純、自動修正なし |
+| **A. 記録のみ（v1）+ 完了通知** | 結果を KVS / audit に書いて終了。人間が後から判断。`wez notify` で完了通知のみ出す | 最小実装、フロー単純、自動修正なし |
 | B. 自動リトライ（回数制限） | 検証 fail → 同じタスクを再 spawn、N 回まで | 自動修正可能。再 spawn のコスト、サブ側の冪等性前提 |
-| C. 人間エスカレーション | 検証 fail → 通知（`wez notify` 等）して停止、人間判断待ち | 安全、人間介入の入口がある。通知統合実装が必要 |
+| C. 人間エスカレーション | 検証 fail → 通知して停止、人間判断待ち | 安全、人間介入の入口がある。通知統合実装が必要 |
 
-**推奨**: **A. 記録のみ（v1）**、ただし `wez notify` で完了通知は出す（既存機能）
+**決定**: **A. 記録のみ（v1）+ 完了通知**
 
 **根拠**:
 - 「v1」「MVP」のスコープに忠実。リトライ・エスカレーションは Step 4-4 の E2E 検証で必要性が明確になってから追加
 - 記録のみでも検証ゲートとしての価値は確保される（後段の人間レビューに信頼できる検証結果を提供）
-- `wez notify` は既存機能（`projects/wezterm-ai-mode/`）であり、通知統合は engine の `cleanup.sh` か `monitor.sh` 末尾に 1 行追加するだけ
+- `wez notify` は既存機能（`projects/wezterm-ai-mode/`）。`cleanup.sh` か `monitor.sh` 末尾に 1 行追加で統合
 - 自動リトライは「サブ側が同じ failure を繰り返す」リスクが高く、Discussion / DI で慎重に設計すべき。本 Step では避ける
+
+**通知仕様**:
+- 通知内容: セッション ID + 検証結果 summary（例: `verification: pass=2, fail=1, fail_rate=0.333`）
+- 「人間エスカレーション」とは区別する: 検証 fail でも engine は停止せず、単純な完了通知を出すのみ
 
 ---
 
 ### Q7: adversarial-review スキルとの統合方針
 
-**status**: open
+**status**: closed
 
-**質問**: skill の検証ロジックを engine にどこまで取り込むか?
-
-skill が提供するもの:
-- プロンプトテンプレート（Plan Review / Compliance Review 共通）
-- ツール別起動コマンド（Cursor Task / `claude -p` / `codex -p`）
-- 出力形式（`Status: ... / Issues: ... / Files reviewed: ...`）
-
-engine 側が必要なもの:
-- 検証 agent への注入（プロンプト構築 + 起動）
-- 結果のパース（出力テキストから `Status` を抽出）
-- KVS / audit への書き込み
+**質問 7-1**: skill の検証ロジックを engine にどこまで取り込むか?
 
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
-| **A. engine が薄く統合（スキル prompt を埋め込み）** | engine 内に skill prompt を直接埋め込み、3 入力 (envelope / audit / KVS) を展開して送信 | 駆動層完結、skill の改訂を engine 側で追従する必要 |
-| B. engine は spawn だけ、検証 agent が skill を読む | 検証 agent への envelope に `read_docs: [skill path]` `use_skills: [adversarial-review]` を指定 | 疎結合、skill 改訂に自動追従。検証 agent 側の負荷増（skill 解釈） |
-| C. skill 側に engine 統合用 entry を追加 | `adversarial-review` skill に「engine から呼ばれた時の構造化入力受け取り口」を追加 | クリーン、ただし skill 側の改修が必要、スコープ越境 |
+| A. engine 内に skill prompt を埋め込み | engine 内に skill prompt を直接埋め込み、3 入力を展開して送信 | 駆動層完結、skill 改訂を engine 側で追従必要 |
+| **B. envelope の `use_skills` で指定** | `use_skills: [adversarial-review]` + `read_docs` を envelope に指定。検証 agent が skill を読む | 疎結合、skill 改訂に自動追従、engine 責務が純粋化 |
+| C. skill 側に engine 統合用 entry 追加 | skill に「engine から呼ばれた時の構造化入力受け取り口」を追加 | クリーン、ただし skill 改修必要、スコープ越境 |
 
-**推奨**: **B. envelope に `use_skills` 指定（skill 改訂への自動追従）**
+**決定**: **B. envelope の `use_skills` で指定**
 
 **根拠**:
 - envelope schema には既に `task.use_skills` と `task.read_docs` が存在する（Step 4-1 確定、Step 4-2 で実装ペインに渡している）。検証 agent でも同じ仕組みを使えば対称
 - skill の prompt 改訂時に engine 側の再実装不要（疎結合）
 - engine の責務は「検証 agent を spawn し、入力 envelope に必要なコンテキストを構造化注入する」に純粋化される
-- 検証 agent は envelope を読み、`adversarial-review` skill の Compliance Review プロンプトに従って動作する（出力形式も skill 規定に従う）
-- engine 側は出力テキストから `Status: Spec Compliant | Issues Found` を grep してパースする（マーカー方式の延長）
-
-**未解決の細部**:
-- 出力パースのマーカー: skill の出力形式に明示マーカー（例: `@@OE_VERIFY:pass` 等）を追加するか、`Status: Spec Compliant` テキストを正規表現で拾うか。前者は skill 改修を伴う
+- 検証 agent は envelope を読み、`adversarial-review` skill の Compliance Review プロンプトに従って動作する
 
 ---
 
-## 完了条件案（仮置き）
+**質問 7-2**: engine が検証結果をどうパースするか?
 
-全 Q 合意後、KickOff §「完了条件」に反映する。
+| 案 | 内容 | トレードオフ |
+|----|------|-------------|
+| (i) skill 出力形式に明示マーカー追加 | `@@OE_VERIFY:pass` / `@@OE_VERIFY:fail` を skill 側に追加 | engine のパース堅牢、skill 改修を伴う |
+| (ii) skill 既存出力を正規表現で抽出 | `**Status:** Spec Compliant` をパース | skill 改修不要、テキスト変動に脆弱 |
+| **(iii) engine が検証用マーカーを envelope で要求** | envelope の `task.exit_conditions.marker` の延長で `@@OE_VERIFY:{result}` を別途指定、検証 agent はそれを末尾に出力 | 既存 `@@OE_EXIT:{code}` パターンと整合、skill 改修不要、パース堅牢 |
 
-- 検証ゲートが Compliance Review モードで動作する（end-of-session 発火、新ペイン spawn、envelope に skill 指定）
-- 検証結果が KVS（拡張）と audit ログに記録される
-- 不合格時も engine は停止せず記録のみ（v1）
+**決定**: **(iii) engine が envelope で `@@OE_VERIFY:{result}` を要求**
+
+**根拠**:
+- 既存の `@@OE_EXIT:{code}` マーカー方式（Step 4-2 で確立、Bash 3.2 互換でテスト済み）と整合
+- skill 規約（出力形式）と engine プロトコル（マーカー検出）を分離。skill 側の自由度を維持しつつ、engine 側はパース堅牢
+- `capture.sh` の正規表現拡張のみで実装可能（`@@OE_EXIT:` の隣に `@@OE_VERIFY:` を追加）
+
+**マーカー仕様 (確定)**:
+- 値の語彙: `pass` / `fail` / `warn`（Q5 の verification.result enum と一致）
+- 検証 agent は出力末尾に `@@OE_VERIFY:{result}` を出す
+- 検証完了は従来通り `@@OE_EXIT:0`（正常完了 = 検証フロー自体は成功、ただし result は別軸）
+
+---
+
+**派生課題 (本 Step スコープ外、user 確認 2026-05-15)**:
+
+本 Step の実装結果と運用フィードバックを踏まえ、`adversarial-review` skill 側の改修を **想定** する。当面は本 Discussion での記録のみ、Issue 化は後段で判断。
+
+- skill が orchestration 前提で使われる頻度が増える想定 → engine 統合に合わせた skill 改修方針はあり
+- 候補となる改修方向:
+  - 案 (i)（skill 出力に `@@OE_VERIFY:` マーカーを内包）を skill 側にバックポートし、engine 不要時も統一フォーマット化
+  - 案 C（skill に engine 用 entry を設ける、3 入力の構造化受け取り口）
+- 改修時期: Step 4-4 (E2E 検証) で実利用フィードバックを得てから判断
+
+---
+
+## 完了条件（確定）
+
+全 Q closed 後の確定版。KickOff §「完了条件」に反映する。
+
+- 検証ゲートが Compliance Review モードで動作する（end-of-session 発火、新ペイン spawn、envelope の `use_skills: [adversarial-review]` で skill 指定）
+- 検証 agent が出力末尾に `@@OE_VERIFY:{pass|fail|warn}` マーカーを出し、engine がこれをパースする
+- 検証結果が KVS の `verification` フィールドに、セッション集計が `verification_summary` フィールドに記録される（fail 率含む）
+- audit ログに `verification_started` / `verification_completed` の 2 イベントが追加される
+- 不合格時も engine は停止せず、`wez notify` で完了通知のみ出す（v1）
 - shellcheck で全スクリプトが pass
-- テストスイート: 検証プロンプト構築 / 結果パース / KVS 拡張のユニットテスト + E2E スモーク（モック）
+- テストスイート: 検証プロンプト構築 / 結果パース / KVS 拡張のユニットテスト + E2E スモーク（wez モック）
 
-## 未解決の論点（Discussion 内で扱わないもの）
+## 派生課題（本 Step スコープ外、後段で判断）
 
-- 検証 agent 自体の選択（`claude -p` / `codex -p` / Cursor Task）→ 実装フェーズで決める / envelope で指定可能にする
-- 検証プロンプトの細部最適化 → skill 側の Compliance Review プロンプトに従う
-- 検証エージェントへの「変更対象ファイル」リストの構築方法（KVS の `outputs[]` で十分か、`git diff` も組み合わせるか）→ Plan で詰める
+- **adversarial-review skill 改修**: 本 Step の実装結果と運用フィードバックを踏まえ、skill 側に `@@OE_VERIFY:` マーカーを内包する／engine 統合用 entry を設ける、等の改修を Step 4-4 以降で検討。Issue 化は時期判断
+- **per-pane 発火 (Q2 案 A)**: end-of-session で実運用上の早期 FB が不足するなら Step 4-4 で per-pane に昇格
+- **自動リトライ / 人間エスカレーション (Q6 案 B/C)**: 実運用 fail 率データを踏まえて Step 4-4 / 4-5 で判断
 
-## 進め方
+## 未解決の細部（Plan で詰める）
 
-1. user が Q1 から順にレビューし、推奨案で OK か別案かを判断
-2. 合意した Q から個別に `status: closed` + 決定内容を追記
-3. 全 Q closed 後、本 Discussion 全体を `status: closed` に
-4. KickOff の「仮置き」セクションを Discussion 結果で確定
-5. `kickoff-to-plan` skill で Plan に変換
+- 検証 agent 自体の選択（`claude -p` / `codex -p` / Cursor Task）— envelope で指定可能にする方向
+- 検証プロンプトの送信手段（`wez pane send` で直接展開 vs 一時ファイル経由 `OE_VERIFY_PROMPT_PATH`）
+- 「変更対象ファイル」リストの構築（KVS `outputs[]` を主、`git diff --name-only` をフォールバック）
+- 検証 agent の CB タイムアウト値（既存 1800s で十分か、検証用に別値を持つか）
+
+## 進め方（履歴）
+
+1. ✅ user が Q1 から順にレビュー、推奨案 or 別案で判断（Q1〜Q7 全て closed）
+2. ✅ 合意 Q ごとに `status: closed` + 決定内容を追記
+3. ✅ 本 Discussion 全体を `status: closed` に
+4. → KickOff の「仮置き」セクションを Discussion 結果で確定（次タスク）
+5. → `kickoff-to-plan` skill で Plan に変換
