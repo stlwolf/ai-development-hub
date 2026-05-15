@@ -260,3 +260,137 @@ oe_verify_spawn() {
 
   OE_VERIFY_PANE_ID="$reviewer_pane_id"
 }
+
+# oe_verify_write_kvs — Step 4-3 Phase D: 検証結果を KVS の verification (pane-keyed map) に書き込む
+#
+# 引数:
+#   target_session_id     被検証セッション ID
+#   target_pane_id        被検証ペイン ID (verification map のキー)
+#   reviewer_session_id   検証 agent セッション ID
+#   reviewer_pane_id      検証 agent ペイン ID
+#   result                "pass" | "fail" | "warn" (@@OE_VERIFY: の値)
+#   [issues_count]        skill 出力からの問題件数 (デフォルト 0)
+#   [marker_raw]          捕捉したマーカー原文 (デフォルト "@@OE_VERIFY:{result}")
+#
+# F5 反映: pane-keyed map で書き込む。既存 verification map に他 pane エントリがあれば維持する。
+# atomic rename パターン (Step 4-2 oe_capture_write_kvs と同様)。
+oe_verify_write_kvs() {
+  local target_session_id="$1"
+  local target_pane_id="$2"
+  local reviewer_session_id="$3"
+  local reviewer_pane_id="$4"
+  local result="$5"
+  local issues_count="${6:-0}"
+  local marker_raw="${7:-@@OE_VERIFY:${result}}"
+
+  local state_file="${OE_STATE_DIR}/${target_session_id}.state.json"
+  local tmp_file="${OE_STATE_DIR}/.${target_session_id}.state.json.$$"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "oe_verify_write_kvs: state file not found: $state_file" >&2
+    return 1
+  fi
+
+  local completed_at
+  completed_at="$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")"
+
+  # verification.{target_pane_id} を更新 (既存 map は維持)
+  jq \
+    --arg pid "$target_pane_id" \
+    --arg result "$result" \
+    --arg rsid "$reviewer_session_id" \
+    --argjson rpid "$reviewer_pane_id" \
+    --argjson issues "$issues_count" \
+    --arg marker_raw "$marker_raw" \
+    --arg completed_at "$completed_at" \
+    '.verification = ((.verification // {}) | .[$pid] = {
+       result: $result,
+       reviewer_session_id: $rsid,
+       reviewer_pane_id: $rpid,
+       issues_count: $issues,
+       marker_raw: $marker_raw,
+       completed_at: $completed_at
+     })' \
+    "$state_file" > "$tmp_file"
+
+  mv -f "$tmp_file" "$state_file"
+  return 0
+}
+
+# oe_verify_summary_update — KVS の verification map を集計し verification_summary に書き込む
+#
+# 引数: target_session_id
+#
+# total = verification map のキー数
+# passed/failed/warned = 各 result 値の件数
+# fail_rate = failed / total を awk で 3 桁丸め (Bash 3.2 整数演算回避)
+oe_verify_summary_update() {
+  local target_session_id="$1"
+
+  local state_file="${OE_STATE_DIR}/${target_session_id}.state.json"
+  local tmp_file="${OE_STATE_DIR}/.${target_session_id}.state.json.$$"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "oe_verify_summary_update: state file not found: $state_file" >&2
+    return 1
+  fi
+
+  local total passed failed warned
+  total="$(jq '(.verification // {}) | length' "$state_file")"
+  passed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "pass")) | length' "$state_file")"
+  failed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "fail")) | length' "$state_file")"
+  warned="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "warn")) | length' "$state_file")"
+
+  local fail_rate
+  if [[ "$total" -gt 0 ]]; then
+    fail_rate="$(awk -v f="$failed" -v t="$total" 'BEGIN{ printf "%.3f", f/t }')"
+  else
+    fail_rate="0.000"
+  fi
+
+  jq \
+    --argjson total "$total" \
+    --argjson passed "$passed" \
+    --argjson failed "$failed" \
+    --argjson warned "$warned" \
+    --argjson fail_rate "$fail_rate" \
+    '.verification_summary = {
+       total: $total,
+       passed: $passed,
+       failed: $failed,
+       warned: $warned,
+       fail_rate: $fail_rate
+     }' \
+    "$state_file" > "$tmp_file"
+
+  mv -f "$tmp_file" "$state_file"
+  return 0
+}
+
+# oe_verify_emit_completed — verification_completed イベントを target session の audit log に emit
+#
+# 引数:
+#   target_session_id     被検証セッション ID
+#   target_pane_id        被検証ペイン ID
+#   result                "pass" | "fail" | "warn"
+#   [issues_count]        問題件数 (デフォルト 0)
+#   [marker_raw]          捕捉したマーカー原文 (デフォルト "@@OE_VERIFY:{result}")
+#
+# F6: verification_started は Phase B (oe_verify_spawn) のみ、本関数は completed のみ emit
+oe_verify_emit_completed() {
+  local target_session_id="$1"
+  local target_pane_id="$2"
+  local result="$3"
+  local issues_count="${4:-0}"
+  local marker_raw="${5:-@@OE_VERIFY:${result}}"
+
+  local payload
+  payload="$(jq -cn \
+    --argjson tpid "$target_pane_id" \
+    --arg result "$result" \
+    --argjson issues "$issues_count" \
+    --arg marker_raw "$marker_raw" \
+    '{target_pane_id: $tpid, result: $result, issues_count: $issues, marker_raw: $marker_raw}')"
+
+  oe_audit_emit "verification_completed" "$target_session_id" "$target_pane_id" "" "$payload"
+}

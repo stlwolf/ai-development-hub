@@ -335,6 +335,138 @@ assert_eq "spawn-generated envelope read_docs[4] = prompt" "$OE_VERIFY_PROMPT_PA
 # クリーンアップ追加
 rm -f "/tmp/oe-${reviewer_spawn_c}-verify-envelope.json" "/tmp/oe-${reviewer_spawn_c}-verify-inputs.md"
 
+# ---- Phase D Step 9-10: KVS pane-keyed map 書き込み + summary 集計 + audit emit ----
+echo ""
+echo "=== oe_verify_write_kvs / oe_verify_summary_update / oe_verify_emit_completed (Phase D) ==="
+
+# Phase D テスト用に target KVS を初期化 (oe_capture_write_kvs 経由で legacy 形式)
+# shellcheck source=../lib/capture.sh
+source "${PROJECT_DIR}/lib/capture.sh"
+oe_capture_write_kvs "$target_session_id" "$target_pane_id" "success"
+
+echo "-- Pane 42 の検証結果を書き込み (pass) --"
+oe_verify_write_kvs \
+  "$target_session_id" \
+  "$target_pane_id" \
+  "01KRMYHMETZZZZZZZZZZZZZZZZ" \
+  101 \
+  "pass" \
+  0 \
+  "@@OE_VERIFY:pass"
+
+state_file="${OE_STATE_DIR}/${target_session_id}.state.json"
+assert_eq "state file 維持" "true" "$( [[ -f "$state_file" ]] && echo true || echo false )"
+assert_eq "verification.42.result" "pass" "$(jq -r '.verification."42".result' "$state_file")"
+assert_eq "verification.42.reviewer_session_id" "01KRMYHMETZZZZZZZZZZZZZZZZ" \
+  "$(jq -r '.verification."42".reviewer_session_id' "$state_file")"
+assert_eq "verification.42.reviewer_pane_id" "101" \
+  "$(jq -r '.verification."42".reviewer_pane_id' "$state_file")"
+assert_eq "verification.42.issues_count" "0" \
+  "$(jq -r '.verification."42".issues_count' "$state_file")"
+assert_eq "verification.42.marker_raw" "@@OE_VERIFY:pass" \
+  "$(jq -r '.verification."42".marker_raw' "$state_file")"
+assert_eq "verification.42.completed_at 存在" "true" \
+  "$(jq -r '.verification."42".completed_at | length > 0' "$state_file")"
+
+echo "-- 既存 state ({session_id, pane_id, state, ...}) は維持 --"
+assert_eq "session_id 維持" "$target_session_id" "$(jq -r '.session_id' "$state_file")"
+assert_eq "state 維持" "success" "$(jq -r '.state' "$state_file")"
+
+echo "-- Pane 43 の検証結果を追加書き込み (fail, issues=3) --"
+oe_verify_write_kvs \
+  "$target_session_id" \
+  43 \
+  "01KRMYHMETZZZZZZZZZZZZZZZY" \
+  102 \
+  "fail" \
+  3 \
+  "@@OE_VERIFY:fail"
+
+assert_eq "verification map 件数" "2" "$(jq '.verification | length' "$state_file")"
+assert_eq "verification.42 維持 (上書きなし)" "pass" "$(jq -r '.verification."42".result' "$state_file")"
+assert_eq "verification.43.result" "fail" "$(jq -r '.verification."43".result' "$state_file")"
+assert_eq "verification.43.issues_count" "3" "$(jq -r '.verification."43".issues_count' "$state_file")"
+
+echo "-- Pane 44 を warn で追加書き込み --"
+oe_verify_write_kvs \
+  "$target_session_id" \
+  44 \
+  "01KRMYHMETZZZZZZZZZZZZZZZX" \
+  103 \
+  "warn" \
+  1 \
+  "@@OE_VERIFY:warn"
+
+assert_eq "verification map 件数 (3 pane)" "3" "$(jq '.verification | length' "$state_file")"
+
+echo ""
+echo "-- oe_verify_summary_update でセッション集計 --"
+oe_verify_summary_update "$target_session_id"
+
+assert_eq "verification_summary.total" "3" "$(jq -r '.verification_summary.total' "$state_file")"
+assert_eq "verification_summary.passed" "1" "$(jq -r '.verification_summary.passed' "$state_file")"
+assert_eq "verification_summary.failed" "1" "$(jq -r '.verification_summary.failed' "$state_file")"
+assert_eq "verification_summary.warned" "1" "$(jq -r '.verification_summary.warned' "$state_file")"
+assert_eq "verification_summary.fail_rate" "0.333" \
+  "$(jq -r '.verification_summary.fail_rate' "$state_file")"
+
+echo ""
+echo "-- 集計後の KVS が validate-session-state.sh で PASS --"
+if "${PROJECT_DIR}/scripts/validate-session-state.sh" "$state_file" > /dev/null 2>&1; then
+  echo "  PASS: validate-session-state.sh"
+  (( PASS++ )) || true
+else
+  echo "  FAIL: validate-session-state.sh"
+  "${PROJECT_DIR}/scripts/validate-session-state.sh" "$state_file" 2>&1 | sed 's/^/    /'
+  (( FAIL++ )) || true
+fi
+
+echo ""
+echo "-- fail のみ (total=1, failed=1, fail_rate=1.000) のケース --"
+# 別 target session で完全 fail パターンを検証
+fail_session="01KRFAIL000000000000000001"
+oe_capture_write_kvs "$fail_session" 50 "success"
+oe_verify_write_kvs "$fail_session" 50 "01KRMYHMETZZZZZZZZZZZZZZZW" 200 "fail" 5 "@@OE_VERIFY:fail"
+oe_verify_summary_update "$fail_session"
+
+fail_state_file="${OE_STATE_DIR}/${fail_session}.state.json"
+assert_eq "fail-only total" "1" "$(jq -r '.verification_summary.total' "$fail_state_file")"
+assert_eq "fail-only failed" "1" "$(jq -r '.verification_summary.failed' "$fail_state_file")"
+assert_eq "fail-only fail_rate" "1.000" "$(jq -r '.verification_summary.fail_rate' "$fail_state_file")"
+
+echo ""
+echo "-- oe_verify_emit_completed が target audit log に追記 --"
+target_audit_file="${OE_AUDIT_DIR}/${target_session_id}.jsonl"
+oe_verify_emit_completed "$target_session_id" "$target_pane_id" "pass" 0 "@@OE_VERIFY:pass"
+oe_verify_emit_completed "$target_session_id" 43 "fail" 3 "@@OE_VERIFY:fail"
+
+assert_eq "verification_completed 件数" "2" \
+  "$(jq -r 'select(.event_type=="verification_completed") | 1' "$target_audit_file" | wc -l | tr -d ' ')"
+
+# 最初の verification_completed (pane 42, pass)
+assert_eq "verification_completed[0].pane_id" "$target_pane_id" \
+  "$(jq -s 'map(select(.event_type=="verification_completed")) | .[0].pane_id' "$target_audit_file")"
+assert_eq "verification_completed[0].payload.result" "pass" \
+  "$(jq -s -r 'map(select(.event_type=="verification_completed")) | .[0].payload.result' "$target_audit_file")"
+assert_eq "verification_completed[0].payload.issues_count" "0" \
+  "$(jq -s -r 'map(select(.event_type=="verification_completed")) | .[0].payload.issues_count' "$target_audit_file")"
+assert_eq "verification_completed[0].payload.marker_raw" "@@OE_VERIFY:pass" \
+  "$(jq -s -r 'map(select(.event_type=="verification_completed")) | .[0].payload.marker_raw' "$target_audit_file")"
+
+# 2 件目 (pane 43, fail, issues=3)
+assert_eq "verification_completed[1].pane_id" "43" \
+  "$(jq -s 'map(select(.event_type=="verification_completed")) | .[1].pane_id' "$target_audit_file")"
+assert_eq "verification_completed[1].payload.result" "fail" \
+  "$(jq -s -r 'map(select(.event_type=="verification_completed")) | .[1].payload.result' "$target_audit_file")"
+assert_eq "verification_completed[1].payload.issues_count" "3" \
+  "$(jq -s -r 'map(select(.event_type=="verification_completed")) | .[1].payload.issues_count' "$target_audit_file")"
+
+echo ""
+echo "-- F6: verification_started は本 Phase D で emit されない --"
+echo "   (Phase B 初回 oe_verify_spawn + Phase C 再 oe_verify_spawn の 2 件のみ、Phase D は emit しない)"
+assert_eq "verification_started 件数 (Phase B + Phase C spawn の 2 件)" "2" \
+  "$(jq -r 'select(.event_type=="verification_started") | 1' "$target_audit_file" | wc -l | tr -d ' ')"
+
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then

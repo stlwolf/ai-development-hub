@@ -8,6 +8,9 @@ OE_MARKER_PREFIX="@@OE_"
 # EXIT マーカー正規表現（行頭・行末アンカー付き）
 OE_EXIT_MARKER_RE='^@@OE_EXIT:([0-9]{1,3})$'
 
+# VERIFY マーカー正規表現 (Step 4-3 検証ゲート v1、行頭・行末アンカー付き)
+OE_VERIFY_MARKER_RE='^@@OE_VERIFY:(pass|fail|warn)$'
+
 # 将来マーカー種別の予約（MVP では未使用）:
 #   @@OE_STATUS:{state}  — 進捗状態の報告
 #   @@OE_READY           — サブエージェント準備完了
