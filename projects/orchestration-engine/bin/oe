@@ -16,10 +16,12 @@ source "${LIB_DIR}/envelope.sh"
 source "${LIB_DIR}/spawn.sh"
 # shellcheck source=../lib/capture.sh
 source "${LIB_DIR}/capture.sh"
-# shellcheck source=../lib/monitor.sh
-source "${LIB_DIR}/monitor.sh"
 # shellcheck source=../lib/audit.sh
 source "${LIB_DIR}/audit.sh"
+# shellcheck source=../lib/verify.sh
+source "${LIB_DIR}/verify.sh"
+# shellcheck source=../lib/monitor.sh
+source "${LIB_DIR}/monitor.sh"
 # shellcheck source=../lib/cleanup.sh
 source "${LIB_DIR}/cleanup.sh"
 
@@ -63,7 +65,12 @@ oe_main() {
   # monitor が INT/TERM trap を解除するため、EXIT 経路の cleanup を再確保
   trap oe_cleanup EXIT INT TERM
 
-  # 7) monitor 戻り値を尊重
+  # 7) Step 4-3 Phase E: 検証フェーズ (CB / interrupt 発動時はスキップ)
+  if [[ "$monitor_rc" -eq 0 ]]; then
+    oe_verify_run_phase "$OE_CURRENT_SESSION_ID" "$pane_id"
+  fi
+
+  # 8) monitor 戻り値を尊重 (検証フェーズの結果は KVS / audit に記録、engine 自体は停止しない)
   return "$monitor_rc"
 }
 

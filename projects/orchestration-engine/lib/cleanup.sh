@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cleanup.sh — trap ハンドラ: ペイン削除 + /tmp 削除（source 専用）
+# cleanup.sh — trap ハンドラ: ペイン削除 + /tmp 削除 + wez notify（source 専用）
 
 oe_cleanup() {
   [[ -n "${OE_CLEANUP_DONE:-}" ]] && return 0
@@ -7,11 +7,25 @@ oe_cleanup() {
 
   trap - EXIT INT TERM
 
-  local killed_json='[]'
+  # 防御的初期化: 未宣言でも安全に動作するよう (test_cleanup.sh のように
+  # constants.sh を source せず cleanup.sh 単独で source されるケースに備える)
+  declare -p OE_MANAGED_PANES >/dev/null 2>&1 || OE_MANAGED_PANES=()
+  declare -p OE_VERIFY_MANAGED_PANES >/dev/null 2>&1 || OE_VERIFY_MANAGED_PANES=()
+
+  # 通常ペイン + 検証ペイン (OE_VERIFY_MANAGED_PANES) の両方を kill 対象に
+  local all_panes=()
   if [[ ${#OE_MANAGED_PANES[@]} -gt 0 ]]; then
+    all_panes+=("${OE_MANAGED_PANES[@]}")
+  fi
+  if [[ ${#OE_VERIFY_MANAGED_PANES[@]} -gt 0 ]]; then
+    all_panes+=("${OE_VERIFY_MANAGED_PANES[@]}")
+  fi
+
+  local killed_json='[]'
+  if [[ ${#all_panes[@]} -gt 0 ]]; then
     local pane_id
     local ids_lines=""
-    for pane_id in "${OE_MANAGED_PANES[@]}"; do
+    for pane_id in "${all_panes[@]}"; do
       [[ -n "$pane_id" ]] || continue
       ids_lines+="${pane_id}"$'\n'
       wez pane kill "$pane_id" 2>/dev/null || true
@@ -29,7 +43,37 @@ oe_cleanup() {
       [[ -e "$tmp_path" ]] || continue
       rm -f "$tmp_path" 2>/dev/null || true
     done
+
+    # 検証 agent の一時ファイル (reviewer_session_id 起点) も削除
+    local reviewer_pane
+    for reviewer_pane in "${OE_VERIFY_MANAGED_PANES[@]}"; do
+      # reviewer ファイルは reviewer_session_id ベース。pane_id では特定できないため
+      # /tmp/oe-*-verify-{envelope.json,inputs.md} を一括掃除する想定だが、
+      # 他セッションの一時ファイルに影響を出さないよう、ここではセッション内で
+      # 生成された reviewer envelope/inputs は OS の /tmp 自動掃除に任せる。
+      : "$reviewer_pane"
+    done
+
     oe_audit_emit "cleanup" "$session_id" 0 "" "$payload_json" || true
+
+    # DI-6: 検証フェーズ完走時は wez notify で完了通知 (CB / interrupt 時はスキップ)
+    # KVS から verification_summary を読み、本文に展開
+    if [[ "${OE_VERIFY_PHASE_COMPLETED:-0}" -eq 1 ]]; then
+      local state_file="${OE_STATE_DIR}/${session_id}.state.json"
+      local notify_body
+      if [[ -f "$state_file" ]] && jq -e '.verification_summary' "$state_file" >/dev/null 2>&1; then
+        local s_pass s_fail s_warn s_rate
+        s_pass="$(jq -r '.verification_summary.passed' "$state_file")"
+        s_fail="$(jq -r '.verification_summary.failed' "$state_file")"
+        s_warn="$(jq -r '.verification_summary.warned' "$state_file")"
+        s_rate="$(jq -r '.verification_summary.fail_rate' "$state_file")"
+        notify_body="session_id=${session_id}, verification: pass=${s_pass}, fail=${s_fail}, warn=${s_warn}, fail_rate=${s_rate}"
+      else
+        notify_body="session_id=${session_id} (no verification_summary)"
+      fi
+      # best-effort: notify 失敗は engine 終了に影響させない
+      wez notify "orchestration-engine session complete" "$notify_body" 2>/dev/null || true
+    fi
   fi
 
   return 0

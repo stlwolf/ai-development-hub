@@ -36,3 +36,10 @@ OE_STATE_DIR="${OE_DATA_DIR:-${PROJECT_DIR}}/state"
 
 # 監査ログパス
 OE_AUDIT_DIR="${OE_DATA_DIR:-${PROJECT_DIR}}/audit"
+
+# Step 4-3 Phase E: 検証ペイン管理用配列 (F2: 通常ペイン OE_MANAGED_PANES / OE_DONE_PANES と分離)
+OE_VERIFY_MANAGED_PANES=()
+OE_VERIFY_DONE_PANES=()
+
+# Step 4-3 Phase E: 検証フェーズ完走フラグ (cleanup の wez notify 発火条件、CB 発動時は未設定のまま)
+OE_VERIFY_PHASE_COMPLETED=0

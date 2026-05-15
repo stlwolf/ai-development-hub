@@ -394,3 +394,98 @@ oe_verify_emit_completed() {
 
   oe_audit_emit "verification_completed" "$target_session_id" "$target_pane_id" "" "$payload"
 }
+
+# _oe_verify_generate_session_id — 検証 agent 用の ULID 形式セッション ID を生成
+# (bin/oe の oe_generate_session_id と同フォーマット: 14 桁数字 + 12 桁 Crockford base32)
+_oe_verify_generate_session_id() {
+  local ts rand
+  ts="$(date -u +%Y%m%d%H%M%S)"
+  rand="$(LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z' </dev/urandom | head -c 12)"
+  printf '%s%s\n' "$ts" "$rand"
+}
+
+# oe_verify_run_phase — Step 4-3 Phase E: end-of-session 発火の検証フェーズ
+#
+# 引数: target_session_id target_pane_id1 [target_pane_id2 ...]
+#
+# 各 target pane に対して以下を順次実行 (MVP は逐次):
+#   1. reviewer_session_id を生成
+#   2. oe_verify_spawn → 検証 agent ペイン起動 + verification_started emit
+#   3. 独立ポーリングループ: OE_POLL_INTERVAL 間隔で reviewer pane を scan
+#      OE_SCAN_VERIFY_RESULT (Phase D F3 二値保持) を検出するまで待機
+#   4. 検出時: oe_verify_write_kvs + oe_verify_emit_completed
+#   5. CB タイムアウト (OE_CB_TIMEOUT) 超過時は当該検証スキップ
+#
+# 完了後: oe_verify_summary_update でセッション集計
+# OE_VERIFY_PHASE_COMPLETED=1 をセット (cleanup の wez notify 発火条件)
+#
+# F1: monitor.sh の責務範囲を膨らませない (独立ループ)
+# F2: OE_VERIFY_MANAGED_PANES / OE_VERIFY_DONE_PANES は通常ペイン配列と別物
+oe_verify_run_phase() {
+  local target_session_id="$1"
+  shift
+
+  if [[ $# -eq 0 ]]; then
+    return 0
+  fi
+
+  local target_envelope_path="/tmp/oe-${target_session_id}-envelope.json"
+
+  local target_pane_id
+  for target_pane_id in "$@"; do
+    local reviewer_session_id
+    reviewer_session_id="$(_oe_verify_generate_session_id)"
+
+    oe_verify_spawn \
+      "$reviewer_session_id" \
+      "$target_pane_id" \
+      "$target_session_id" \
+      "$target_envelope_path"
+
+    local reviewer_pane_id="$OE_VERIFY_PANE_ID"
+    OE_VERIFY_MANAGED_PANES+=("$reviewer_pane_id")
+
+    # 独立ポーリングループ
+    local start_seconds=$SECONDS
+    local verified=0
+    while true; do
+      sleep "$OE_POLL_INTERVAL"
+      oe_capture_scan "$reviewer_pane_id"
+
+      if [[ -n "$OE_SCAN_VERIFY_RESULT" ]]; then
+        oe_verify_write_kvs \
+          "$target_session_id" \
+          "$target_pane_id" \
+          "$reviewer_session_id" \
+          "$reviewer_pane_id" \
+          "$OE_SCAN_VERIFY_RESULT" \
+          0 \
+          "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}"
+        oe_verify_emit_completed \
+          "$target_session_id" \
+          "$target_pane_id" \
+          "$OE_SCAN_VERIFY_RESULT" \
+          0 \
+          "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}"
+        OE_VERIFY_DONE_PANES+=("$reviewer_pane_id")
+        verified=1
+        break
+      fi
+
+      # CB: タイムアウト
+      if [[ $((SECONDS - start_seconds)) -ge $OE_CB_TIMEOUT ]]; then
+        local cb_payload
+        cb_payload="$(jq -cn --argjson tpid "$target_pane_id" \
+          '{reason:"verification_timeout", target_pane_id:$tpid}')"
+        oe_audit_emit "circuit_breaker_triggered" "$target_session_id" "$target_pane_id" "" "$cb_payload" || true
+        break
+      fi
+    done
+
+    # verified は将来の拡張 (リトライ判断) で参照する想定 — 現状は debug 用に保持
+    : "$verified"
+  done
+
+  oe_verify_summary_update "$target_session_id"
+  OE_VERIFY_PHASE_COMPLETED=1
+}
