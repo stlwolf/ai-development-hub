@@ -3,7 +3,7 @@ id: "01KRR7BP14TWDWQFVSBYYB4K5V"
 title: "Step 4-4 E2E 検証 (実 agent で 1 サイクル完走) の設計判断（質問駆動設計）"
 date: 2026-05-16
 type: discussion
-status: draft
+status: closed
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
@@ -80,7 +80,7 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 
 ### Q1: 1 サイクル完走の対象タスク (UC-1 の具体化)
 
-**status**: open
+**status**: closed
 
 **質問**: 「ツール改善タスクで 1 サイクル完走」の具体タスクは何にするか?
 
@@ -91,7 +91,7 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 | C. wez CLI Phase 3 (`wez agent`) の一部設計支援 | Phase 3 ([#20](https://github.com/stlwolf/ai-development-hub/issues/20)) と合流、現実的価値高 | スコープ外の Phase 3 設計判断が混入 |
 | D. 既存 ideas/ から 1 つ pick して projects/ への昇格作業 | 明確に「ツール改善」、独立性高 | ideas/ の凍結原則と矛盾しない選定が必要 |
 
-**推奨**: **B. orchestration-engine 自体の小機能追加**
+**決定**: **B. orchestration-engine 自体の小機能追加**
 
 **根拠**:
 - 検証 agent が「正しい変更か」を判断するには、target task の要件 (envelope の task.description) が明確である必要がある。orchestration-engine の既存仕様 (schemas / KickOff / Episode) は明確に書かれているため、判断基準が揃いやすい
@@ -106,11 +106,13 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 
 ---
 
-### Q2: 使用する実 CLI の選択
+### Q2: 使用する実 CLI とモデルの選択
 
-**status**: open
+**status**: closed
 
-**質問**: target agent / 検証 agent でどの実 CLI を使うか?
+**質問**: target agent / 検証 agent でどの実 CLI とモデルを使うか?
+
+#### CLI レベルの選択
 
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
@@ -120,21 +122,57 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 | **D. 1 サイクル目: `cursor` (target) + `claude -p` (検証) のクロス** | 異なる CLI で動作確認、検証 agent の独立性も担保 | 2 CLI 必要、起動オプション両対応必要 |
 | E. 3 CLI 全部対応 | 完全網羅 | スコープ膨張、MVP 過剰 |
 
-**推奨**: **D. cursor (target) + claude -p (検証) のクロス**
+**CLI 決定**: **D. cursor (target) + claude -p (検証) のクロス**
 
-**根拠**:
-- target / 検証で異なる CLI を使うことで、検証 agent の「独立性」が agent モデル/CLI レベルでも担保される (adversarial review の本質)
-- cursor は既存 envelope の default、claude は Compliance Review skill の本家規約
-- [#91](https://github.com/stlwolf/ai-development-hub/issues/91) で CLI ディスパッチャを実装する際、`cursor` と `claude -p` の 2 種に絞れば実装規模が小さい
-- 3 CLI 対応は Step 4-5 以降で必要性が見えれば追加
+#### モデルレベルの選択
 
-**未解決の細部**: cursor / cursor-agent / claude / claude-safe / codex のうち実際の invocation 仕様。KickOff で確定。
+deterministic な実行を担保するため `auto` ではなく **明示指定** を要件とした (検証としての再現性 + 結果の比較可能性確保)。
+
+**Target (cursor) モデル選択**:
+
+| 候補 | コスト感 | 独立性 (claude-sonnet-4-6 との関係) | 適性 |
+|------|--------|------------------------------|------|
+| **composer-2 (Cursor 自社最新)** | Pro/Business サブスク内、最安系 | ◎ model 系列完全独立 | coding 特化、orchestration-engine 小機能追加に適合 |
+| claude-sonnet-4-6 (Cursor 経由) | サブスク内 | × 同モデル、共通バイアス | 高品質だがクロス独立性なし |
+| gpt-5 / gpt-4.1 | Cursor plan 依存 | ◎ OpenAI 系で独立 | 安定、独立性は composer-2 と同等 |
+
+**Target モデル決定**: **composer-2** (Cursor 自社最新、サブスク内コスト、model 系列完全独立)
+
+**検証 (claude -p) モデル選択**:
+
+| 候補 | コスト感 (1 サイクル) | 適性 (Compliance Review) |
+|------|------------------|------------------------|
+| claude-haiku-4-5-20251001 | ~$0.01 | 推論やや弱、ニュアンス検出に不安 |
+| **claude-sonnet-4-6** | ~$0.045 | バランス◎、パターン認識 + 構造判定に十分 |
+| claude-opus-4-7 | ~$0.20 | Compliance Review に過剰 |
+
+**検証モデル決定**: **claude-sonnet-4-6** (Sonnet 4.6 で十分、Opus は過剰、Haiku は判定品質に不安)
+
+#### 確定構成
+
+| 役割 | CLI | モデル | コスト |
+|------|------|--------|--------|
+| target agent | `cursor-agent` | `composer-2` (Cursor 自社) | Pro/Business サブスク内 |
+| 検証 agent | `claude -p` | `claude-sonnet-4-6` | ~$0.045/サイクル |
+
+#### 根拠
+
+- target / 検証で異なる CLI かつ異なる model 系列を使うことで、検証 agent の独立性が CLI + model の二重レベルで担保される (adversarial review の本質)
+- `composer-2` は Cursor 自社最新、サブスク内コスト + deterministic な指定が可能。`claude-sonnet-4-6` は Compliance Review のパターン認識 + 構造判定に十分な推論力 + Opus の 1/5 のコスト
+- 半自動 (Q5) で実行回数は限定的 (5-10 回想定) → 合計コスト $0.5 以下
+- 3 CLI / 多モデル対応は Step 4-5 以降で必要性が見えれば追加
+
+#### 未解決の細部 (KickOff で確定)
+
+- `cursor-agent` の実際の invocation 仕様 ([#91](https://github.com/stlwolf/ai-development-hub/issues/91) Phase A 冒頭で実機確認)
+- composer-2 の Bash + Markdown 実力 (Plan の Phase A 冒頭で「簡単な Bash 関数追加」で動作確認、不安定なら gpt-4.1 への退避案を Plan に明示)
+- claude-sonnet-4-6 を CLI 引数で指定する方法 (`claude -p ... --model claude-sonnet-4-6 ...` 等、Plan で確定)
 
 ---
 
 ### Q3: [#91](https://github.com/stlwolf/ai-development-hub/issues/91) (AI CLI 起動オプション修正) の組み込み方
 
-**status**: open
+**status**: closed
 
 **質問**: [#91](https://github.com/stlwolf/ai-development-hub/issues/91) の修正を本 Step とどう連動させるか?
 
@@ -144,7 +182,7 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 | **B. 本 Step Plan の Phase A として組み込み (本 Step PR で同時マージ)** | 1 つの一貫した Step、レビューも一括 | スコープ膨張気味だが必然性あり |
 | C. 本 Step の Discussion 段階で並行起動 (#91 を別ブランチで対応中に Discussion を進める) | 並行作業で時間効率↑ | コンフリクト管理が複雑 |
 
-**推奨**: **B. 本 Step Plan の Phase A として組み込み**
+**決定**: **B. 本 Step Plan の Phase A として組み込み**
 
 **根拠**:
 - [#91](https://github.com/stlwolf/ai-development-hub/issues/91) は Step 4-3 派生だが、本 Step (E2E 実 agent) では **必須の前提**。独立した PR にすると Step 4-4 が着手不可
@@ -154,32 +192,33 @@ so-compare (Codex + Claude 並列) で「mock では動くが実 agent では動
 
 ---
 
-### Q4: 検証 agent と target agent の CLI 関係
+### Q4: 検証 agent と target agent の CLI / モデル関係
 
-**status**: open
+**status**: closed
 
-**質問**: 検証 agent と target agent で同一 CLI を使うか、別 CLI を使うか?
+**質問**: 検証 agent と target agent で同一 CLI / モデルを使うか、別 CLI / 別モデルを使うか?
 
-Q2 で「cross (cursor target + claude 検証)」を推奨したため、本 Q はその深堀り。
+Q2 で「cross (cursor-agent/composer-2 target + claude -p/sonnet-4-6 検証)」を確定したため、本 Q はその固定方針の確認。
 
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
-| **A. 別 CLI 固定 (cursor target + claude 検証)** | 独立性最大、adversarial review の本質 | 同一モデルでの再現性検証はできない |
-| B. 同一 CLI 固定 (target / 検証両方 cursor or claude) | 単純、CLI 1 種で済む | 検証 agent の独立性が agent モデル/CLI レベルで担保されない |
-| C. envelope で指定可能 (`OE_VERIFY_AI_CLI` 既実装 + target 側も同様の env var 化) | 柔軟、運用で選択可 | テストパターン爆発 |
+| **A. 別 CLI + 別モデル固定** (Q2 確定構成) | 独立性最大、adversarial review の本質 | 同一モデルでの再現性検証はできない |
+| B. 同一 CLI / 同一モデル | 単純、CLI 1 種で済む | 検証 agent の独立性が CLI / モデルレベルで担保されない |
+| C. envelope で指定可能 (target / 検証両方を env var 化) | 柔軟、運用で選択可 | テストパターン爆発 |
 
-**推奨**: **A. 別 CLI 固定 (cursor target + claude 検証)**
+**決定**: **A. 別 CLI + 別モデル固定 + env var 化 (target / 検証両方)**
 
-**根拠**:
-- Q2 と同根拠: 異 CLI で検証 agent の独立性を担保
-- `OE_VERIFY_AI_CLI` は既に Step 4-3 で実装済み (F-SO-6)、target 側も同様の env var (例: `OE_TARGET_AI_CLI`) を追加すれば運用切替も可
-- KickOff / Plan で envelope schema の `task.ai_cli` フィールド追加を検討する余地あり (本 Discussion ではスコープに留める)
+**具体的な実装方針** (Plan で確定):
+- `bin/oe` の `oe_main` で `OE_TARGET_AI_CLI` / `OE_TARGET_AI_MODEL` env var を読む (デフォルト = `cursor-agent` / `composer-2`)
+- `oe_spawn_send` の引数に ai_cli + ai_model を追加して `_oe_spawn_build_cli_command` に伝播
+- `OE_VERIFY_AI_CLI` (既実装) と並行で `OE_VERIFY_AI_MODEL` env var を追加 (デフォルト = `claude` / `claude-sonnet-4-6`)
+- envelope schema への `task.ai_cli` / `task.ai_model` フィールド追加は Step 4-5 候補
 
 ---
 
 ### Q5: 実 agent E2E の自動化境界
 
-**status**: open
+**status**: closed
 
 **質問**: 実 agent E2E をどこまで自動化するか?
 
@@ -189,19 +228,20 @@ Q2 で「cross (cursor target + claude 検証)」を推奨したため、本 Q �
 | **B. 半自動 (実 agent を起動するスモークテストを `tests/` 配下に追加、人間が結果を承認)** | 起動の再現性 + 人間判断の両立 | CLI key / 認証 / レート制限の管理が必要 |
 | C. 完全 CI 自動 (GitHub Actions 等で実 CLI を呼ぶ) | 完全回帰検出 | API key の secret 管理、レート制限、コスト |
 
-**推奨**: **B. 半自動 (スモークテストスクリプト + 人間承認)**
+**決定**: **B. 半自動 (スモークテストスクリプト + 人間承認)**
 
-**根拠**:
-- MVP では「1 サイクル完走の実証」が目的であり、CI で常時回す必要性は低い
-- スモークテストを `tests/e2e_real_agent/` 等 (mock と分離) に配置することで、開発者が手元で `bash tests/e2e_real_agent/smoke_cursor_claude.sh` で再現できる
-- 結果 (audit log / KVS の状態 / 実成果物) を人間が確認して承認 / 失敗判定
+**具体的な実装方針** (Plan で確定):
+- `tests/e2e_real_agent/` ディレクトリ新設 (mock テスト `tests/test_*.sh` と完全分離)
+- 起動スクリプト: 環境変数 (`OE_TARGET_AI_CLI` / `OE_TARGET_AI_MODEL` 等) を明示セット → `bin/oe` 呼び出し → 結果ファイルパス出力
+- 完走条件チェッカー (`tests/e2e_real_agent/check_cycle_complete.sh`): audit / KVS / notify ログから Q8 の判定項目を確認
+- 環境前提を README で明示: `cursor-agent` (Pro/Business サブスク) + `claude` CLI (API key) の両方が必要
 - 完全 CI 自動は Step 4-5 以降で必要性が確認された場合に追加
 
 ---
 
 ### Q6: mock テストとの併存
 
-**status**: open
+**status**: closed
 
 **質問**: 既存 wez mock E2E (`tests/test_e2e_smoke.sh` の 43 assertions) と実 agent E2E をどう併存させるか?
 
@@ -211,19 +251,19 @@ Q2 で「cross (cursor target + claude 検証)」を推奨したため、本 Q �
 | B. mock テストを「real CLI モード」で再利用可能に拡張 (env var で切替) | テスト 1 セット、保守単純化 | mock と real の挙動差を吸収するロジックが複雑化 |
 | C. mock テストは廃止、実 agent E2E のみ | 単純化 | CI で実 CLI 呼べない場合に回帰検出が完全に止まる |
 
-**推奨**: **A. 別ディレクトリで併存**
+**決定**: **A. 別ディレクトリで併存**
 
-**根拠**:
-- mock テスト 299 assertions は「engine の内部構造の回帰検出」として価値が高く、廃止すべきでない
-- 実 agent E2E は「engine の対外境界 (実 CLI) との接続性の検証」として目的が異なる
-- 2 系統に分離することで、CI (mock) と開発者 / リリース前 (real) の役割分担が明確
-- ディレクトリ案: `tests/e2e_real_agent/` (mock は `tests/test_*.sh` のまま)
+**具体的な実装方針** (Plan で確定):
+- `tests/test_*.sh` → 既存 mock テスト、CI 対象 (回帰検出)
+- `tests/e2e_real_agent/*.sh` → 実 agent E2E、開発者が手元で実行 (Q5 半自動)
+- `tests/e2e_real_agent/README.md` で環境前提 (cursor-agent + claude CLI 両方) + 実行手順を明示
+- shellcheck は両方対象に含める
 
 ---
 
 ### Q7: 実 agent の non-determinism への対処
 
-**status**: open
+**status**: closed
 
 **質問**: 実 agent は同じプロンプトに対して異なる応答を返す。E2E の合否判定をどうするか?
 
@@ -233,36 +273,39 @@ Q2 で「cross (cursor target + claude 検証)」を推奨したため、本 Q �
 | **B. 構造的判定 (マーカー emit、KVS 書き込み、verification entry 生成、notify 呼び出しの 4 点を「成功」と定義)** | 実 agent の応答内容に依存しない、engine の動作のみを検証 | 「verify result が pass か fail か」は判定対象外 (cycle 完走自体は成功) |
 | C. 統計判定 (3 回連続実行、majority decision) | 信頼性高 | コスト 3 倍、レート制限リスク |
 
-**推奨**: **B. 構造的判定**
+**決定**: **B. 構造的判定**
 
-**根拠**:
-- E2E の目的は「engine が実 agent と接続して 1 サイクル動く」ことの実証であり、検証結果の正確性ではない (それは検証 agent 自体の品質、本 Step スコープ外)
-- mock テストでは marker emit / KVS / audit / notify を assertion している。同じ assertion を real agent でも適用する
-- non-determinism は「verify_result が pass か fail か」の部分にのみ現れる。engine の動作 (spawn, capture, write, emit, cleanup) は決定的
+**具体的な実装方針** (Plan で確定):
+- `tests/e2e_real_agent/check_cycle_complete.sh` で以下を assertion (Q8 の判定項目と整合):
+  - `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass|fail|warn}` (reviewer) が両方 emit
+  - `state/{session_id}.state.json` に `state: success` + `verification[].result` 記録
+  - `audit/{session_id}.jsonl` に主要 7 イベント記録
+  - `wez notify` が呼ばれ、本文に summary 展開
+- `verify_result` の値 (pass/fail/warn) は assertion 対象外、Episode に観察記録として残す
 - 統計判定は Step 4-5 以降で必要性が見えれば追加
 
 ---
 
 ### Q8: 完了条件 (1 サイクル完走の判定基準)
 
-**status**: open
+**status**: closed
 
 **質問**: 何をもって「1 サイクル完走」と判定するか?
 
 Q7 の「構造的判定」を採用するなら、判定項目は engine 出力の 4 点に絞られる。それを完了条件として明文化する。
 
-| 候補 | 内容 |
-|------|------|
-| (1) `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass\|fail\|warn}` (reviewer) が両方 emit される | engine が両 marker を捕捉できる |
-| (2) `state/{session_id}.state.json` に `state: success` と `verification[].result` が記録 | KVS が正しく書かれる |
-| (3) `audit/{session_id}.jsonl` に主要 7 イベント (session_start, state_change, session_end, verification_started, verification_completed, cleanup, [optional protocol_error]) が記録 | audit log が正しく書かれる |
-| (4) `wez notify` が呼ばれ、本文に summary が展開される | 通知が動く |
-| (5) shellcheck クリーン + 既存 299 mock assertions 回帰なし | engine 全体の回帰検出 |
-| (6) [#91](https://github.com/stlwolf/ai-development-hub/issues/91) の CLI ディスパッチャが少なくとも 2 CLI (cursor + claude) で動作 | Phase A 相当の完了 |
-| (7) 実 agent E2E スクリプトが `tests/e2e_real_agent/` に存在し、再現可能 | 半自動テストの成立 |
-| (8) Step 4-5 (architecture-sketch 更新) のフィードバック材料として、実 agent E2E の Episode が記録される | 後続 Step への引き継ぎ |
+| # | 完了条件 | 検証方法 |
+|---|---------|---------|
+| (1) | `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass\|fail\|warn}` (reviewer) が両方 emit される | audit log + KVS から確認 |
+| (2) | `state/{session_id}.state.json` に `state: success` と `verification[].result` が記録 | `validate-session-state.sh` で validation |
+| (3) | `audit/{session_id}.jsonl` に主要 7 イベント (`session_start`, `state_change`, `session_end`, `verification_started`, `verification_completed`, `cleanup`, [optional `verification_protocol_error`]) が記録 | `jq` でイベント件数確認 |
+| (4) | `wez notify` が呼ばれ、本文に `pass={} fail={} warn={} fail_rate={} protocol_errors={} timeouts={}` が展開される | notify log 確認 |
+| (5) | shellcheck クリーン + 既存 299 mock assertions 回帰なし | `shellcheck` + `bash tests/test_*.sh` |
+| (6) | [#91](https://github.com/stlwolf/ai-development-hub/issues/91) の CLI ディスパッチャが少なくとも 2 CLI (`cursor-agent` + `claude -p`) で動作 | `_oe_spawn_build_cli_command` 動作確認 + 既存 mock テスト通過 |
+| (7) | 実 agent E2E スクリプトが `tests/e2e_real_agent/` に存在し、再現可能 (cursor-agent + claude CLI 環境で 1 回完走実証) | `bash tests/e2e_real_agent/smoke_*.sh` で完走 + 結果ログを Episode に記録 |
+| (8) | Step 4-5 (architecture-sketch 更新) のフィードバック材料として、実 agent E2E の Episode が記録される | `docs/episodes/<date>-episode-step-4-4-implementation.md` に実 agent 動作観察 + コスト記録 |
 
-**推奨**: 上記 (1)〜(8) **すべて** を完了条件とする (KickOff で確定)。
+**決定**: 上記 (1)〜(8) **すべて** を完了条件とする (KickOff §「完了条件」に転記)。
 
 **根拠**:
 - (1)〜(4) は engine の動作実証 (Q7 構造的判定の実体)
@@ -273,21 +316,31 @@ Q7 の「構造的判定」を採用するなら、判定項目は engine 出力
 
 ---
 
-## 完了条件案 (仮置き)
+## 完了条件 (確定)
 
-全 Q closed 後、KickOff §「完了条件」に確定版として反映。Q8 の 8 項目をベースに記述する。
+Q8 の (1)〜(8) を完了条件として KickOff §「完了条件」に転記する。
 
-## 未解決の論点 (本 Discussion で扱わないもの)
+## 未解決の論点 (本 Discussion で扱わない / Plan で詰める)
 
-- 具体的なツール改善タスクの選定 (Q1 で方向性のみ確定、具体は KickOff で決定)
-- envelope schema への `task.ai_cli` フィールド追加 (Step 4-5 候補)
+- **Q1 の具体タスク選定**: Q1 で方向性 (orchestration-engine 自体の小機能追加) のみ確定、具体は KickOff / Plan で 1 つに絞る (候補例: `OE_VERIFY_REVIEWER_SESSION_IDS` 追跡、`OE_VERIFY_AI_CLI` envelope 指定可能化、`oe_verify_summary_update` の audit 派生集計)
+- **`cursor-agent` の実 invocation 仕様**: Plan Phase A 冒頭で実機確認 obligation 化
+- **composer-2 の Bash + Markdown 実力**: Plan Phase A 冒頭で「簡単な Bash 関数追加」で動作確認、不安定なら gpt-4.1 への退避案を Plan に明示
+- **`claude -p ... --model claude-sonnet-4-6` の明示指定方法**: Plan Phase A で確定
+
+## 派生課題 (本 Step スコープ外、後段で判断)
+
+- envelope schema への `task.ai_cli` / `task.ai_model` フィールド追加 (Step 4-5 候補)
 - 検証 agent 自体の品質評価 (検証結果が「正しいか」の判定、本 Step スコープ外)
-- 3 CLI 全対応 (Step 4-5 以降の判断)
+- 3 CLI 全対応 (Step 4-5 以降の判断、現状 `codex` は CLI ディスパッチャにスタブとして残す)
+- 完全 CI 自動化 (Step 4-5 以降)
+- 統計判定 (Q7 案 C、必要性が見えてから)
 
-## 進め方
+## 進め方 (履歴)
 
-1. user が Q1 から順にレビューし、推奨案で OK か別案かを判断
-2. 合意した Q から個別に `status: closed` + 決定内容を追記
-3. 全 Q closed 後、本 Discussion 全体を `status: closed` に
-4. KickOff の「仮置き」セクションを Discussion 結果で確定
-5. `kickoff-to-plan` skill で Plan に変換 (Step 4-3 と同じ 5 Phase 構成想定: A=#91 修正 + envelope 拡張、B=実 agent spawn、C=検証フェーズ E2E、D=KVS / audit / notify アサーション、E=Episode + 統合テスト)
+1. ✅ user が Q1 から順にレビュー、推奨案 or 別案で判断 (Q1〜Q8 全て closed)
+2. ✅ 合意 Q ごとに `status: closed` + 決定内容を追記
+3. ✅ 本 Discussion 全体を `status: closed` に
+4. → KickOff の「仮置き」セクションを Discussion 結果で確定 (次タスク、起草予定)
+5. → `kickoff-to-plan` skill で Plan に変換 (Step 4-3 と同じ 5 Phase 構成想定: A=[#91](https://github.com/stlwolf/ai-development-hub/issues/91) 修正 + env var 拡張、B=実 agent spawn dispatcher、C=検証フェーズ E2E、D=tests/e2e_real_agent/ 整備、E=Episode + 統合テスト)
+6. → Plan 段階で so-compare (iter1) → 反映 → docs PR
+7. → 実装 PR (Phase A〜E + so-compare iter2 + Episode + ADR)
