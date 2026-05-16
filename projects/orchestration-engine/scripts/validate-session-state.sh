@@ -65,12 +65,16 @@ jq -e '.session_id | type == "string"' "$TARGET" >/dev/null 2>&1 \
   || fail "session_id must be string"
 jq -e '.session_id | test("^[0-9A-HJKMNP-TV-Z]{26}$")' "$TARGET" >/dev/null 2>&1 \
   || fail "session_id must match ULID pattern"
-jq -e '.pane_id | type == "number"' "$TARGET" >/dev/null 2>&1 \
-  || fail "pane_id must be number"
+# iter2 #3252519552 反映: pane_id は非負整数 (JSON number だけでなく、整数 + 非負)
+jq -e '.pane_id | type == "number" and . >= 0 and (. - (. | floor) == 0)' "$TARGET" >/dev/null 2>&1 \
+  || fail "pane_id must be non-negative integer"
 jq -e '.state | type == "string"' "$TARGET" >/dev/null 2>&1 \
   || fail "state must be string"
 jq -e '.last_updated | type == "string"' "$TARGET" >/dev/null 2>&1 \
   || fail "last_updated must be string"
+# iter2 #3252519582 反映: last_updated を ISO 8601 date-time pattern で検証
+jq -e '.last_updated | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$")' "$TARGET" >/dev/null 2>&1 \
+  || fail "last_updated must match ISO 8601 date-time pattern"
 
 log "checking state enum..."
 VALID_STATES='["success","partial","retryable_failure","blocked","protocol_error","timeout"]'
@@ -80,13 +84,18 @@ jq -e --argjson valid "$VALID_STATES" \
   || fail "state must be one of: success, partial, retryable_failure, blocked, protocol_error, timeout"
 
 log "checking optional outputs / blockers arrays..."
+# iter2 #3252519576 反映: 配列の各要素も string であることを検証
 if jq -e 'has("outputs")' "$TARGET" >/dev/null 2>&1; then
   jq -e '.outputs | type == "array"' "$TARGET" >/dev/null 2>&1 \
     || fail "outputs must be array"
+  jq -e '(.outputs // []) | all(type == "string")' "$TARGET" >/dev/null 2>&1 \
+    || fail "outputs elements must all be strings"
 fi
 if jq -e 'has("blockers")' "$TARGET" >/dev/null 2>&1; then
   jq -e '.blockers | type == "array"' "$TARGET" >/dev/null 2>&1 \
     || fail "blockers must be array"
+  jq -e '(.blockers // []) | all(type == "string")' "$TARGET" >/dev/null 2>&1 \
+    || fail "blockers elements must all be strings"
 fi
 
 log "checking optional verification map (Step 4-3)..."
@@ -125,10 +134,17 @@ if jq -e 'has("verification")' "$TARGET" >/dev/null 2>&1; then
       "$TARGET" >/dev/null 2>&1 \
       || fail "verification.$pane_key.reviewer_session_id must match ULID pattern"
 
+    # iter2 #3252519556 反映: reviewer_pane_id は非負整数 (JSON number だけでなく、整数 + 非負)
     jq -e --arg k "$pane_key" \
-      '.verification[$k].reviewer_pane_id | type == "number"' \
+      '.verification[$k].reviewer_pane_id | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
       "$TARGET" >/dev/null 2>&1 \
-      || fail "verification.$pane_key.reviewer_pane_id must be number"
+      || fail "verification.$pane_key.reviewer_pane_id must be non-negative integer"
+
+    # iter2 #3252519582 反映: completed_at は ISO 8601 date-time
+    jq -e --arg k "$pane_key" \
+      '.verification[$k].completed_at | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$")' \
+      "$TARGET" >/dev/null 2>&1 \
+      || fail "verification.$pane_key.completed_at must match ISO 8601 date-time pattern"
 
     # marker_raw は optional だが、ある場合はパターン検証
     if jq -e --arg k "$pane_key" '.verification[$k] | has("marker_raw")' \

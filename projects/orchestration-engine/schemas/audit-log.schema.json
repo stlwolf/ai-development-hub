@@ -155,7 +155,7 @@
         "properties": { "event_type": { "const": "verification_protocol_error" } }
       },
       "then": {
-        "description": "F-SO-2 (Step 4-3): 検証 agent が @@OE_VERIFY を emit したが exit_code が non-zero だった場合に追加で emit。payload に target_pane_id, verify_result, exit_code, marker_raw を含む。verification_completed も並行して emit される (verify_result 自体は KVS に書き込まれるが、exit_code が付記される)。"
+        "description": "F-SO-2 + iter2 #3252519572 (Step 4-3): 検証 agent の protocol 違反時に emit。2 ケースをカバー: (1) @@OE_VERIFY が emit されたが exit_code が non-zero — payload に target_pane_id, verify_result, exit_code, marker_raw を含む。verification_completed も並行 emit される (verify_result は KVS に書き込まれるが exit_code が付記される)。(2) @@OE_EXIT が emit されたが @@OE_VERIFY が未 emit (exit_without_verify_marker) — payload に target_pane_id, exit_code, reason: 'exit_without_verify_marker' を含む。verification_completed は emit されず、verification map にエントリは残らない (verification_summary.timeouts に計上される)。"
       }
     }
   ]

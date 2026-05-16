@@ -160,7 +160,8 @@ Step 4-3 の主題は **「サブエージェントの出力を別エージェ�
     "failed": <int>,
     "warned": <int>,
     "fail_rate": <number>,
-    "protocol_errors": <int>  // F-SO-12: exit_code != 0 のエントリ数
+    "protocol_errors": <int>,  // F-SO-12: verification entry の exit_code != 0 件数
+    "timeouts": <int>          // iter2 #3252519565: verification entry を残せなかった件数 (CB timeout + exit_without_verify_marker)
   }
 }
 ```
@@ -169,11 +170,11 @@ Step 4-3 の主題は **「サブエージェントの出力を別エージェ�
 
 - `verification_started` — Phase B (`oe_verify_spawn`) で emit (F6 反映)
 - `verification_completed` — Phase D (`oe_verify_emit_completed`) で emit (F6 反映)
-- `verification_protocol_error` — F-SO-2 反映、`@@OE_VERIFY:` 検出時に `OE_SCAN_EXIT_CODE` が非 0 だった場合に追加 emit
+- `verification_protocol_error` — F-SO-2 反映、2 ケースをカバー: (1) `@@OE_VERIFY:` 検出時に `OE_SCAN_EXIT_CODE` が非 0、(2) `@@OE_EXIT` が見えたが `@@OE_VERIFY` 未 emit (`exit_without_verify_marker`)
 
 ### 7. 不合格時のフロー
 
-不合格 (result=fail) でも engine は停止しない。CB / interrupt が発動しなかった場合のみ `cleanup.sh` 末尾で `wez notify "orchestration-engine session complete"` を呼び、本文に `session_id={} verification: pass={} fail={} warn={} fail_rate={}` を展開する (DI-6 + Q2 追加決定: fail 率を実運用データとして記録)。
+不合格 (result=fail) でも engine は停止しない。CB / interrupt が発動しなかった場合のみ `cleanup.sh` 末尾で `wez notify "orchestration-engine session complete"` を呼び、本文に `session_id={} verification: pass={} fail={} warn={} fail_rate={} protocol_errors={} timeouts={}` を展開する (DI-6 + Q2 追加決定: fail 率を実運用データとして記録、iter2 #3252519569 反映: protocol_errors / timeouts を notify に含めて誤った成功通知を防ぐ)。
 
 ### 8. スコープ外 (派生課題として記録)
 

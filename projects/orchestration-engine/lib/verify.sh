@@ -183,8 +183,10 @@ oe_verify_prompt_build() {
     changed_files_block="$(jq -r '.outputs[] | "- " + .' "$kvs_path")"
   else
     # フォールバック: git diff --name-only (MVP では常にこちらが選択される)
+    # iter2 #3252519559 反映: PROJECT_DIR で git を実行することで、caller の CWD に依存しない安定した
+    # 結果を得る。target task の実際の output_dir に紐づけるのは派生 Issue #92 のスコープ。
     local git_output
-    if git_output="$(git diff --name-only 2>/dev/null)" && [[ -n "$git_output" ]]; then
+    if git_output="$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null)" && [[ -n "$git_output" ]]; then
       changed_files_block="$(printf '%s\n' "$git_output" | awk 'NF { print "- " $0 }')"
     else
       changed_files_block="(no changes detected from KVS outputs[] or git diff)"
@@ -569,9 +571,10 @@ oe_verify_run_phase() {
         break
       fi
 
-      # Copilot #1 反映: @@OE_EXIT は見えたが @@OE_VERIFY が出ていない → protocol error として早期 break
-      # (例: CLI 起動エラーで shell が @@OE_EXIT:1 を後置するケース。CB timeout 待ちは無駄)
-      if [[ -z "$OE_SCAN_VERIFY_RESULT" && -n "$OE_SCAN_EXIT_CODE" && "$OE_SCAN_EXIT_CODE" != "0" ]]; then
+      # Copilot #1 反映 + iter2 #3252519542: @@OE_EXIT は見えたが @@OE_VERIFY が出ていない → protocol error として早期 break
+      # exit_code が 0 でも (reviewer が正常終了したが marker emit を忘れた) protocol 違反とする。
+      # 30 分の CB timeout 待ちを避け、即座に protocol error として記録する。
+      if [[ -z "$OE_SCAN_VERIFY_RESULT" && -n "$OE_SCAN_EXIT_CODE" ]]; then
         local protocol_payload
         protocol_payload="$(jq -cn \
           --argjson tpid "$target_pane_id" \

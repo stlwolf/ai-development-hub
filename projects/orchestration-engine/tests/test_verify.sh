@@ -36,7 +36,15 @@ assert_eq() {
 # OE_MOCK_GIT_FILES が設定されていればそれを返し、未設定なら空文字列を返す
 cat > "${_TMP_DIR}/bin/git" <<'EOF'
 #!/usr/bin/env bash
-if [[ "${1:-}" == "diff" && "${2:-}" == "--name-only" ]]; then
+# iter2 #3252519559 反映: verify.sh は `git -C "$PROJECT_DIR" diff --name-only` 形式で呼ぶようになった。
+# 先頭の -C <dir> を skip して subcommand を判定する。
+args=("$@")
+i=0
+# -C <path> を skip
+if [[ "${args[0]:-}" == "-C" && -n "${args[1]:-}" ]]; then
+  i=2
+fi
+if [[ "${args[i]:-}" == "diff" && "${args[$((i+1))]:-}" == "--name-only" ]]; then
   if [[ -n "${OE_MOCK_GIT_FILES:-}" ]]; then
     printf '%s\n' "${OE_MOCK_GIT_FILES}"
   fi
