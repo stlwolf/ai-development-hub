@@ -211,6 +211,11 @@ assert_eq "send payload に verify envelope パス" "true" \
 assert_eq "send payload に @@OE_EXIT printf" "true" \
   "$(awk -F'|' 'index($0, "@@OE_EXIT"){found=1} END{print (found+0==1) ? "true" : "false"}' "$send_log")"
 
+# Copilot #5: prepare_pane 直後に OE_VERIFY_MANAGED_PANES に追加されている (orphan pane 防止)
+echo "-- Copilot #5: OE_VERIFY_MANAGED_PANES に reviewer pane が追加される --"
+assert_eq "OE_VERIFY_MANAGED_PANES に 888 が含まれる" "true" \
+  "$(printf '%s\n' "${OE_VERIFY_MANAGED_PANES[@]}" | grep -q '^888$' && echo true || echo false)"
+
 echo "-- verification_started audit emit (target session の audit log に追記) --"
 target_audit="${OE_AUDIT_DIR}/${target_session_id}.jsonl"
 assert_eq "audit file exists" "true" "$( [[ -f "$target_audit" ]] && echo true || echo false )"
@@ -305,6 +310,21 @@ unset OE_MOCK_GIT_FILES
 oe_verify_prompt_build "RTEST_PROMPT_02" "$target_pane_id" "$target_session_id" "$target_envelope_path"
 assert_eq "プレースホルダ表示" "true" \
   "$(grep -q 'no changes detected' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+
+# Copilot #3 反映: state_change は target_pane_id でフィルタされる
+# 別 pane (99) の state_change イベントを混入させても、target (pane 42) の方が選ばれることを確認
+echo ""
+echo "-- Copilot #3: oe_verify_prompt_build は state_change を target_pane_id でフィルタ --"
+oe_audit_emit "state_change" "$target_session_id" 99 "partial" '{"from":"progress","to":"partial","note":"different pane"}'
+oe_verify_prompt_build "RTEST_PROMPT_FILTER" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+filter_prompt_path="$OE_VERIFY_PROMPT_PATH"
+
+assert_eq "Copilot #3: prompt に target pane_id=42 が含まれる" "true" \
+  "$(grep -q '"pane_id": 42' "$filter_prompt_path" && echo true || echo false)"
+assert_eq "Copilot #3: 別 pane 99 の state_change は混入しない" "false" \
+  "$(grep -q '"pane_id": 99' "$filter_prompt_path" && echo true || echo false)"
+
+rm -f "/tmp/oe-RTEST_PROMPT_FILTER-verify-inputs.md"
 
 # ---- Phase C: oe_verify_envelope_create に prompt path を渡すと read_docs に 5 件目が追加される ----
 echo ""

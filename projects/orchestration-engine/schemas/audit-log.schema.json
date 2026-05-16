@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/stlwolf/ai-development-hub/schemas/audit-log.schema.json",
   "title": "Audit Log Entry",
-  "description": "監査ログ JSON Lines の 1 行分のスキーマ。ディスパッチャが audit/${session_id}.jsonl に追記する。1 セッション 1 ファイル、1 行 1 イベント。session_start → state_change* → session_end の時系列から 1 サイクルの流れを再構成可能。Step 4-3 で verification_started / verification_completed の 2 イベントを追加（検証ゲート v1）。",
+  "description": "監査ログ JSON Lines の 1 行分のスキーマ。ディスパッチャが audit/${session_id}.jsonl に追記する。1 セッション 1 ファイル、1 行 1 イベント。session_start → state_change* → session_end の時系列から 1 サイクルの流れを再構成可能。Step 4-3 で verification_started / verification_completed / verification_protocol_error の 3 イベントを追加（検証ゲート v1）。",
   "type": "object",
   "required": ["ts", "session_id", "pane_id", "event_type"],
   "properties": {

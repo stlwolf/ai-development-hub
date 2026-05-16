@@ -30,10 +30,16 @@ trap oe_cleanup EXIT INT TERM
 
 oe_generate_session_id() {
   local ts
+  local raw
   local rand
   # 26 文字: 先頭 14 は数字（ULID 時刻部相当）、残り 12 は Crockford base32（I/L/O/U 除外）
+  #
+  # Copilot #4 反映: tr の出力を head -c で早期 close すると tr に SIGPIPE が飛び、
+  # set -o pipefail 環境下で assignment が失敗する。固定バイト数を先に読んでから tr で
+  # filter する形に変更 (パイプの早期 close を回避)。
   ts="$(date -u +%Y%m%d%H%M%S)"
-  rand="$(LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z' </dev/urandom | head -c 12)"
+  raw="$(LC_ALL=C head -c 4096 /dev/urandom | LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z')"
+  rand="${raw:0:12}"
   printf '%s%s\n' "$ts" "$rand"
 }
 

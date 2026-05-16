@@ -47,49 +47,52 @@
     },
     "verification": {
       "type": "object",
-      "description": "Step 4-3 検証ゲート v1: target_pane_id をキーとする per-pane の検証結果 map。検証フェーズ実行後に書き込まれる（optional）。複数 target pane がある場合は各ペイン分のエントリを持つ。",
-      "additionalProperties": {
-        "type": "object",
-        "required": ["result", "reviewer_session_id", "reviewer_pane_id", "completed_at"],
-        "properties": {
-          "result": {
-            "type": "string",
-            "description": "検証結果（@@OE_VERIFY: マーカー値）",
-            "enum": ["pass", "fail", "warn"]
-          },
-          "reviewer_session_id": {
-            "type": "string",
-            "description": "検証 agent のセッション ID（ULID）",
-            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
-          },
-          "reviewer_pane_id": {
-            "type": "integer",
-            "description": "検証 agent のペイン ID",
-            "minimum": 0
-          },
-          "issues_count": {
-            "type": "integer",
-            "description": "検証で検出された問題件数（skill の Compliance Review 出力から抽出）",
-            "minimum": 0,
-            "default": 0
-          },
-          "marker_raw": {
-            "type": "string",
-            "description": "捕捉した @@OE_VERIFY:{value} の原文",
-            "pattern": "^@@OE_VERIFY:(pass|fail|warn)$"
-          },
-          "completed_at": {
-            "type": "string",
-            "description": "検証完了時刻（ISO 8601）",
-            "format": "date-time"
-          },
-          "exit_code": {
-            "type": "integer",
-            "description": "F-SO-2: 検証 agent の exit_code が non-zero だった場合に記録される (protocol error 検出用)。0 または欠落時は正常完了。",
-            "minimum": 0
+      "description": "Step 4-3 検証ゲート v1: target_pane_id をキーとする per-pane の検証結果 map。検証フェーズ実行後に書き込まれる（optional）。複数 target pane がある場合は各ペイン分のエントリを持つ。Copilot #7 反映: キーは pane_id (非負整数の文字列形式) のみを許容する。",
+      "patternProperties": {
+        "^[0-9]+$": {
+          "type": "object",
+          "required": ["result", "reviewer_session_id", "reviewer_pane_id", "completed_at"],
+          "properties": {
+            "result": {
+              "type": "string",
+              "description": "検証結果（@@OE_VERIFY: マーカー値）",
+              "enum": ["pass", "fail", "warn"]
+            },
+            "reviewer_session_id": {
+              "type": "string",
+              "description": "検証 agent のセッション ID（ULID）",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "reviewer_pane_id": {
+              "type": "integer",
+              "description": "検証 agent のペイン ID",
+              "minimum": 0
+            },
+            "issues_count": {
+              "type": "integer",
+              "description": "検証で検出された問題件数（skill の Compliance Review 出力から抽出予定）。MVP では常に 0 (派生 Issue #92 で skill 出力からの抽出を実装予定)。",
+              "minimum": 0,
+              "default": 0
+            },
+            "marker_raw": {
+              "type": "string",
+              "description": "捕捉した @@OE_VERIFY:{value} の原文",
+              "pattern": "^@@OE_VERIFY:(pass|fail|warn)$"
+            },
+            "completed_at": {
+              "type": "string",
+              "description": "検証完了時刻（ISO 8601）",
+              "format": "date-time"
+            },
+            "exit_code": {
+              "type": "integer",
+              "description": "F-SO-2: 検証 agent の exit_code が non-zero だった場合に記録される (protocol error 検出用)。0 または欠落時は正常完了。",
+              "minimum": 0
+            }
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "verification_summary": {
       "type": "object",
@@ -125,6 +128,11 @@
         "protocol_errors": {
           "type": "integer",
           "description": "F-SO-2/12: 検証 agent の exit_code が non-zero として記録されたエントリ数 (verification[*].exit_code が 0 以外)。protocol error の総数。",
+          "minimum": 0
+        },
+        "timeouts": {
+          "type": "integer",
+          "description": "Copilot #2 反映: verification CB timeout で verification entry を残せなかった件数 + @@OE_EXIT のみ見えて @@OE_VERIFY が emit されなかった件数 (exit_without_verify_marker)。total には含まれない。",
           "minimum": 0
         }
       }

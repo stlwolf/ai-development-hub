@@ -205,6 +205,16 @@ assert_eq "notify 本文に pass=1" "true" \
 assert_eq "notify 本文に fail_rate=0.000" "true" \
   "$(awk -F'|' 'NR==1 && index($2, "fail_rate=0.000"){f=1} END{print (f+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/notify.log")"
 
+# Copilot #8 + #2: notify 本文に protocol_errors / timeouts が含まれる (誤った成功通知の防止)
+assert_eq "notify 本文に protocol_errors=0" "true" \
+  "$(awk -F'|' 'NR==1 && index($2, "protocol_errors=0"){f=1} END{print (f+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/notify.log")"
+assert_eq "notify 本文に timeouts=0" "true" \
+  "$(awk -F'|' 'NR==1 && index($2, "timeouts=0"){f=1} END{print (f+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/notify.log")"
+
+# Copilot #2: verification_summary に timeouts フィールドが追加される
+assert_eq "verification_summary.timeouts = 0 (正常完了時)" "0" \
+  "$(jq -r '.verification_summary.timeouts' "$state_file")"
+
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then

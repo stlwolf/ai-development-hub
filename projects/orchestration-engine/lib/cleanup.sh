@@ -56,18 +56,24 @@ oe_cleanup() {
 
     oe_audit_emit "cleanup" "$session_id" 0 "" "$payload_json" || true
 
-    # DI-6: 検証フェーズ完走時は wez notify で完了通知 (CB / interrupt 時はスキップ)
-    # KVS から verification_summary を読み、本文に展開
+    # DI-6: 検証フェーズが走った場合は wez notify で完了通知
+    # (monitor の CB / interrupt で検証フェーズに到達しなかった場合は OE_VERIFY_PHASE_COMPLETED=0 のままスキップ)
+    #
+    # Copilot #2 反映: OE_VERIFY_PHASE_COMPLETED=1 は「検証フェーズが走った」事実を示す。
+    #                   timeouts / protocol_errors は notify 本文で別途明示する。
+    # Copilot #8 反映: protocol_errors + timeouts を notify 本文に含めることで誤った成功通知を防ぐ。
     if [[ "${OE_VERIFY_PHASE_COMPLETED:-0}" -eq 1 ]]; then
       local state_file="${OE_STATE_DIR}/${session_id}.state.json"
       local notify_body
       if [[ -f "$state_file" ]] && jq -e '.verification_summary' "$state_file" >/dev/null 2>&1; then
-        local s_pass s_fail s_warn s_rate
+        local s_pass s_fail s_warn s_rate s_protocol s_timeouts
         s_pass="$(jq -r '.verification_summary.passed' "$state_file")"
         s_fail="$(jq -r '.verification_summary.failed' "$state_file")"
         s_warn="$(jq -r '.verification_summary.warned' "$state_file")"
         s_rate="$(jq -r '.verification_summary.fail_rate' "$state_file")"
-        notify_body="session_id=${session_id}, verification: pass=${s_pass}, fail=${s_fail}, warn=${s_warn}, fail_rate=${s_rate}"
+        s_protocol="$(jq -r '.verification_summary.protocol_errors // 0' "$state_file")"
+        s_timeouts="$(jq -r '.verification_summary.timeouts // 0' "$state_file")"
+        notify_body="session_id=${session_id}, verification: pass=${s_pass}, fail=${s_fail}, warn=${s_warn}, fail_rate=${s_rate}, protocol_errors=${s_protocol}, timeouts=${s_timeouts}"
       else
         notify_body="session_id=${session_id} (no verification_summary)"
       fi

@@ -157,12 +157,16 @@ oe_verify_prompt_build() {
     task_description="(target envelope not found: $target_envelope_path)"
   fi
 
-  # 完了報告: audit JSONL から最後の state_change イベントを抽出
+  # 完了報告: audit JSONL から target_pane_id の最後の state_change イベントを抽出
+  # Copilot #3 反映: 全セッションの最後の state_change ではなく、target_pane_id でフィルタする
+  # (oe_verify_run_phase は複数 target pane を順次扱うため、混線を避ける)
   local last_state_change
   if [[ -f "$audit_path" ]]; then
-    last_state_change="$(jq -s 'map(select(.event_type == "state_change")) | last // null' "$audit_path")"
+    last_state_change="$(jq -s --argjson pid "$target_pane_id" \
+      'map(select(.event_type == "state_change" and .pane_id == $pid)) | last // null' \
+      "$audit_path")"
     if [[ "$last_state_change" == "null" ]]; then
-      last_state_change="(no state_change events recorded in audit log)"
+      last_state_change="(no state_change events recorded for target_pane_id=${target_pane_id} in audit log)"
     fi
   else
     last_state_change="(audit log not found: $audit_path)"
@@ -230,6 +234,11 @@ oe_verify_spawn() {
   # 検証 agent 用ペインを準備 (Step 4-2 の lib/spawn.sh を再利用)
   oe_spawn_prepare_pane
   local reviewer_pane_id="$OE_SPAWN_PANE_ID"
+
+  # Copilot #5 反映: prepare_pane 直後に OE_VERIFY_MANAGED_PANES に追加。
+  # 以降の envelope 生成 / send / audit emit のいずれかで失敗しても、cleanup.sh が
+  # 確実にこの reviewer pane を kill できるようにする (orphan pane 防止)。
+  OE_VERIFY_MANAGED_PANES+=("$reviewer_pane_id")
 
   # Phase C: プロンプト (3 入力の構造化抽出) を先に構築
   oe_verify_prompt_build \
@@ -368,13 +377,16 @@ oe_verify_summary_update() {
     return 1
   fi
 
-  local total passed failed warned protocol_errors
+  local total passed failed warned protocol_errors timeouts
   total="$(jq '(.verification // {}) | length' "$state_file")"
   passed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "pass")) | length' "$state_file")"
   failed="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "fail")) | length' "$state_file")"
   warned="$(jq '(.verification // {}) | to_entries | map(select(.value.result == "warn")) | length' "$state_file")"
   # F-SO-2/12: exit_code が non-zero として記録されたエントリ数
   protocol_errors="$(jq '(.verification // {}) | to_entries | map(select(.value.exit_code != null and .value.exit_code != 0)) | length' "$state_file")"
+  # Copilot #2 反映: timeout / exit_without_verify_marker で verification entry を残せなかった件数
+  # (oe_verify_run_phase が OE_VERIFY_TIMEOUTS_LOCAL でカウント)
+  timeouts="${OE_VERIFY_TIMEOUTS_LOCAL:-0}"
 
   local fail_rate
   if [[ "$total" -gt 0 ]]; then
@@ -390,13 +402,15 @@ oe_verify_summary_update() {
     --argjson warned "$warned" \
     --argjson fail_rate "$fail_rate" \
     --argjson protocol_errors "$protocol_errors" \
+    --argjson timeouts "$timeouts" \
     '.verification_summary = {
        total: $total,
        passed: $passed,
        failed: $failed,
        warned: $warned,
        fail_rate: $fail_rate,
-       protocol_errors: $protocol_errors
+       protocol_errors: $protocol_errors,
+       timeouts: $timeouts
      }' \
     "$state_file" > "$tmp_file"
 
@@ -434,10 +448,17 @@ oe_verify_emit_completed() {
 
 # _oe_verify_generate_session_id — 検証 agent 用の ULID 形式セッション ID を生成
 # (bin/oe の oe_generate_session_id と同フォーマット: 14 桁数字 + 12 桁 Crockford base32)
+#
+# Copilot #4 反映: tr の出力を head -c で早期 close すると tr に SIGPIPE が飛び、
+# set -o pipefail 環境下で assignment が失敗する。/dev/urandom から固定バイト数を先に
+# 読んでから tr で filter する形に変更 (パイプの早期 close を回避)。
 _oe_verify_generate_session_id() {
-  local ts rand
+  local ts raw rand
   ts="$(date -u +%Y%m%d%H%M%S)"
-  rand="$(LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z' </dev/urandom | head -c 12)"
+  # 4096 バイト読めば Crockford base32 alphabet (32/256 = 12.5%) で期待 ~512 valid 文字、
+  # 12 文字必要なので統計的に十分なマージン
+  raw="$(LC_ALL=C head -c 4096 /dev/urandom | LC_ALL=C tr -dc '0-9A-HJKMNP-TV-Z')"
+  rand="${raw:0:12}"
   printf '%s%s\n' "$ts" "$rand"
 }
 
@@ -461,6 +482,14 @@ _oe_verify_generate_session_id() {
 # F-SO-2: OE_SCAN_EXIT_CODE 非 0 のとき verification_protocol_error 監査 + KVS に exit_code 併記
 # F-SO-4: 検証ペインは verbose 出力のため oe_capture_scan に lines=200 を渡す
 # F-SO-6: ai_cli (デフォルト cursor) を引数で受け取り oe_verify_spawn に伝播
+#
+# Codex P2 + Copilot 反映:
+#   - 記録は @@OE_VERIFY と @@OE_EXIT の **両方** が見えた時点で行う (timing window で
+#     片方しか見えていない状態の record を避ける)
+#   - @@OE_EXIT が先に見えて @@OE_VERIFY が出ない場合は protocol error として早期 break
+#   - timeout / protocol-only error の件数を local counter で追跡し、summary に timeouts として記録
+#   - OE_VERIFY_PHASE_COMPLETED は「検証フェーズが走った」事実を示すフラグであり、
+#     timeouts / protocol_errors の有無は notify 本文で別途表現する (cleanup.sh の wez notify)
 oe_verify_run_phase() {
   local target_session_id="$1"
   shift
@@ -475,6 +504,10 @@ oe_verify_run_phase() {
 
   local target_envelope_path="/tmp/oe-${target_session_id}-envelope.json"
 
+  # local counter: 本フェーズで発生した timeout 件数 (verify_result も emit されなかった pane)
+  # summary に timeouts として記録するため OE_VERIFY_TIMEOUTS_LOCAL を export
+  local timeouts_local=0
+
   local target_pane_id
   for target_pane_id in "$@"; do
     local reviewer_session_id
@@ -488,19 +521,23 @@ oe_verify_run_phase() {
       "$ai_cli"
 
     local reviewer_pane_id="$OE_VERIFY_PANE_ID"
-    OE_VERIFY_MANAGED_PANES+=("$reviewer_pane_id")
+    # 注: oe_verify_spawn は内部で OE_VERIFY_MANAGED_PANES に append 済み
+    # (Copilot #5 反映: prepare_pane 直後に登録、途中失敗時の cleanup 取り逃しを防ぐ)
 
     # 独立ポーリングループ (検証ペインは verbose 出力対策で lines=200)
     local start_seconds=$SECONDS
-    local verified=0
+    local resolved=0
     while true; do
       sleep "$OE_POLL_INTERVAL"
       oe_capture_scan "$reviewer_pane_id" 200
 
-      if [[ -n "$OE_SCAN_VERIFY_RESULT" ]]; then
+      # Codex P2: @@OE_VERIFY と @@OE_EXIT の **両方** が見えるまで待つ
+      # 片方しか見えていない状態で記録すると、agent が後で非 0 終了した場合に
+      # exit_code を取り逃して protocol error が隠蔽される
+      if [[ -n "$OE_SCAN_VERIFY_RESULT" && -n "$OE_SCAN_EXIT_CODE" ]]; then
         # F-SO-2: exit_code が非 0 ならプロトコルエラー監査 + KVS に exit_code 併記
         local exit_code_field=""
-        if [[ -n "$OE_SCAN_EXIT_CODE" && "$OE_SCAN_EXIT_CODE" != "0" ]]; then
+        if [[ "$OE_SCAN_EXIT_CODE" != "0" ]]; then
           exit_code_field="$OE_SCAN_EXIT_CODE"
           local protocol_payload
           protocol_payload="$(jq -cn \
@@ -528,7 +565,22 @@ oe_verify_run_phase() {
           0 \
           "@@OE_VERIFY:${OE_SCAN_VERIFY_RESULT}"
         OE_VERIFY_DONE_PANES+=("$reviewer_pane_id")
-        verified=1
+        resolved=1
+        break
+      fi
+
+      # Copilot #1 反映: @@OE_EXIT は見えたが @@OE_VERIFY が出ていない → protocol error として早期 break
+      # (例: CLI 起動エラーで shell が @@OE_EXIT:1 を後置するケース。CB timeout 待ちは無駄)
+      if [[ -z "$OE_SCAN_VERIFY_RESULT" && -n "$OE_SCAN_EXIT_CODE" && "$OE_SCAN_EXIT_CODE" != "0" ]]; then
+        local protocol_payload
+        protocol_payload="$(jq -cn \
+          --argjson tpid "$target_pane_id" \
+          --argjson exit_code "$OE_SCAN_EXIT_CODE" \
+          '{target_pane_id: $tpid, exit_code: $exit_code, reason: "exit_without_verify_marker"}')"
+        oe_audit_emit "verification_protocol_error" "$target_session_id" "$target_pane_id" "" "$protocol_payload" || true
+        # verification 結果が無いまま break。verification entry は書かない (timeouts と同様の扱い)
+        timeouts_local=$((timeouts_local + 1))
+        resolved=1
         break
       fi
 
@@ -538,14 +590,17 @@ oe_verify_run_phase() {
         cb_payload="$(jq -cn --argjson tpid "$target_pane_id" \
           '{reason:"verification_timeout", target_pane_id:$tpid}')"
         oe_audit_emit "circuit_breaker_triggered" "$target_session_id" "$target_pane_id" "" "$cb_payload" || true
+        timeouts_local=$((timeouts_local + 1))
         break
       fi
     done
 
-    # verified は将来の拡張 (リトライ判断) で参照する想定 — 現状は debug 用に保持
-    : "$verified"
+    # resolved は将来の拡張 (リトライ判断) で参照する想定 — 現状は debug 用に保持
+    : "$resolved"
   done
 
+  # timeout / exit_without_verify_marker 件数を summary_update に渡すため export
+  export OE_VERIFY_TIMEOUTS_LOCAL="$timeouts_local"
   oe_verify_summary_update "$target_session_id"
   OE_VERIFY_PHASE_COMPLETED=1
 }

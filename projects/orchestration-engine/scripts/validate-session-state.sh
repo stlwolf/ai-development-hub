@@ -98,6 +98,12 @@ if jq -e 'has("verification")' "$TARGET" >/dev/null 2>&1; then
   # 各 pane キーのオブジェクトを検証
   while IFS= read -r pane_key; do
     log "  checking verification.$pane_key ..."
+
+    # Copilot #7 反映: キーは pane_id 形式 (非負整数の文字列) のみ許容
+    if [[ ! "$pane_key" =~ ^[0-9]+$ ]]; then
+      fail "verification key '$pane_key' must match ^[0-9]+$ (target_pane_id integer string)"
+    fi
+
     jq -e --arg k "$pane_key" '.verification[$k] | type == "object"' "$TARGET" >/dev/null 2>&1 \
       || fail "verification.$pane_key must be object"
 
@@ -141,6 +147,15 @@ if jq -e 'has("verification")' "$TARGET" >/dev/null 2>&1; then
         "$TARGET" >/dev/null 2>&1 \
         || fail "verification.$pane_key.exit_code must be non-negative integer"
     fi
+
+    # Copilot #10 反映: issues_count は optional、ある場合は非負整数
+    if jq -e --arg k "$pane_key" '.verification[$k] | has("issues_count")' \
+      "$TARGET" >/dev/null 2>&1; then
+      jq -e --arg k "$pane_key" \
+        '.verification[$k].issues_count | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
+        "$TARGET" >/dev/null 2>&1 \
+        || fail "verification.$pane_key.issues_count must be non-negative integer"
+    fi
   done < <(jq -r '.verification | keys[]' "$TARGET")
 fi
 
@@ -175,6 +190,14 @@ if jq -e 'has("verification_summary")' "$TARGET" >/dev/null 2>&1; then
       '.verification_summary.protocol_errors | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
       "$TARGET" >/dev/null 2>&1 \
       || fail "verification_summary.protocol_errors must be non-negative integer"
+  fi
+
+  # Copilot #2 反映: timeouts は optional、ある場合は非負整数
+  if jq -e '.verification_summary | has("timeouts")' "$TARGET" >/dev/null 2>&1; then
+    jq -e \
+      '.verification_summary.timeouts | type == "number" and . >= 0 and (. - (. | floor) == 0)' \
+      "$TARGET" >/dev/null 2>&1 \
+      || fail "verification_summary.timeouts must be non-negative integer"
   fi
 fi
 
