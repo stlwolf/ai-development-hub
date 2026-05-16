@@ -7,6 +7,11 @@ OE_SCAN_MARKER_TYPE=""
 OE_SCAN_VALUE=""
 OE_SCAN_BLOCKED="false"
 
+# Step 4-3 F3: 二値保持 — @@OE_EXIT: と @@OE_VERIFY: の同時検出に対応
+# (検証 agent の出力では shell が @@OE_EXIT:{code} を後置するため両方が並ぶ)
+OE_SCAN_EXIT_CODE=""
+OE_SCAN_VERIFY_RESULT=""
+
 # グローバル変数: oe_capture_classify() の戻り値
 OE_CLASSIFY_STATE=""
 
@@ -17,13 +22,16 @@ OE_CLASSIFY_STATE=""
 #   マーカー未検出時は両方空文字
 oe_capture_scan() {
   local pane_id="$1"
+  local lines="${2:-50}"  # F-SO-4: 検証ペインなど verbose 出力を扱うケースでは呼び出し側が 200 を渡す
 
   OE_SCAN_MARKER_TYPE=""
   OE_SCAN_VALUE=""
   OE_SCAN_BLOCKED="false"
+  OE_SCAN_EXIT_CODE=""
+  OE_SCAN_VERIFY_RESULT=""
 
   local captured
-  captured="$(wez pane capture "$pane_id" --lines 50 2>/dev/null)" || return 0
+  captured="$(wez pane capture "$pane_id" --lines "$lines" 2>/dev/null)" || return 0
 
   local normalized
   normalized="$(printf '%s' "$captured" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g')"
@@ -33,12 +41,22 @@ oe_capture_scan() {
 
 # _oe_capture_scan_parse — capture 出力文字列をパースする内部関数
 # テスト容易性のために wez 呼び出しと分離
+#
+# Step 4-3 F3: 二値保持
+#   OE_SCAN_EXIT_CODE         @@OE_EXIT:{1-3 桁} 検出時の値
+#   OE_SCAN_VERIFY_RESULT     @@OE_VERIFY:(pass|fail|warn) 検出時の値
+#   OE_SCAN_MARKER_TYPE/VALUE 後方互換のため残す:
+#     - EXIT 検出時 → MARKER_TYPE=EXIT, VALUE=exit_code (従来通り)
+#     - VERIFY のみ検出時 → MARKER_TYPE=VERIFY, VALUE=verify_result
+#     - 両方検出時 → MARKER_TYPE=EXIT (既存 monitor.sh への影響最小化、verify.sh は新変数を直接参照)
 _oe_capture_scan_parse() {
   local input="$1"
 
   OE_SCAN_MARKER_TYPE=""
   OE_SCAN_VALUE=""
   OE_SCAN_BLOCKED="false"
+  OE_SCAN_EXIT_CODE=""
+  OE_SCAN_VERIFY_RESULT=""
 
   local line
   while IFS= read -r line; do
@@ -47,10 +65,27 @@ _oe_capture_scan_parse() {
     fi
 
     if [[ "$line" =~ $OE_EXIT_MARKER_RE ]]; then
-      OE_SCAN_MARKER_TYPE="EXIT"
-      OE_SCAN_VALUE="${BASH_REMATCH[1]}"
+      OE_SCAN_EXIT_CODE="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ "$line" =~ $OE_VERIFY_MARKER_RE ]]; then
+      OE_SCAN_VERIFY_RESULT="${BASH_REMATCH[1]}"
     fi
   done <<< "$input"
+
+  # 後方互換: MARKER_TYPE / VALUE を設定
+  #
+  # 重要 (F-SO-5): MARKER_TYPE="VERIFY" は **検証専用ループ (oe_verify_run_phase) からのみ参照される
+  # 後方互換の内部値**。monitor.sh の case "$OE_SCAN_MARKER_TYPE" に "VERIFY)" 分岐を**追加してはならない**。
+  # 通常 agent ペインで偶発的に @@OE_VERIFY: が出現した場合、誤動作の原因になる。
+  # 検証側は OE_SCAN_VERIFY_RESULT を直接参照する設計 (lib/verify.sh:oe_verify_run_phase)。
+  if [[ -n "$OE_SCAN_EXIT_CODE" ]]; then
+    OE_SCAN_MARKER_TYPE="EXIT"
+    OE_SCAN_VALUE="$OE_SCAN_EXIT_CODE"
+  elif [[ -n "$OE_SCAN_VERIFY_RESULT" ]]; then
+    OE_SCAN_MARKER_TYPE="VERIFY"
+    OE_SCAN_VALUE="$OE_SCAN_VERIFY_RESULT"
+  fi
 }
 
 # oe_capture_classify — exit code を failure-taxonomy 6 値に分類

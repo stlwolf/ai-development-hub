@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/stlwolf/ai-development-hub/schemas/audit-log.schema.json",
   "title": "Audit Log Entry",
-  "description": "監査ログ JSON Lines の 1 行分のスキーマ。ディスパッチャが audit/${session_id}.jsonl に追記する。1 セッション 1 ファイル、1 行 1 イベント。session_start → state_change* → session_end の時系列から 1 サイクルの流れを再構成可能。",
+  "description": "監査ログ JSON Lines の 1 行分のスキーマ。ディスパッチャが audit/${session_id}.jsonl に追記する。1 セッション 1 ファイル、1 行 1 イベント。session_start → state_change* → session_end の時系列から 1 サイクルの流れを再構成可能。Step 4-3 で verification_started / verification_completed / verification_protocol_error の 3 イベントを追加（検証ゲート v1）。",
   "type": "object",
   "required": ["ts", "session_id", "pane_id", "event_type"],
   "properties": {
@@ -34,7 +34,10 @@
         "circuit_breaker_triggered",
         "validation_failure",
         "cleanup",
-        "session_end"
+        "session_end",
+        "verification_started",
+        "verification_completed",
+        "verification_protocol_error"
       ]
     },
     "state": {
@@ -129,6 +132,30 @@
       "then": {
         "required": ["state"],
         "description": "セッション終了。state に最終 exit_state を記録。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "verification_started" } }
+      },
+      "then": {
+        "description": "Step 4-3: 検証 agent spawn 時。payload に target_pane_id, target_session_id, reviewer_pane_id, reviewer_session_id を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "verification_completed" } }
+      },
+      "then": {
+        "description": "Step 4-3: 検証結果確定時。payload に target_pane_id, result (pass/fail/warn), issues_count, marker_raw を含む。"
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "verification_protocol_error" } }
+      },
+      "then": {
+        "description": "F-SO-2 + iter2 #3252519572 (Step 4-3): 検証 agent の protocol 違反時に emit。2 ケースをカバー: (1) @@OE_VERIFY が emit されたが exit_code が non-zero — payload に target_pane_id, verify_result, exit_code, marker_raw を含む。verification_completed も並行 emit される (verify_result は KVS に書き込まれるが exit_code が付記される)。(2) @@OE_EXIT が emit されたが @@OE_VERIFY が未 emit (exit_without_verify_marker) — payload に target_pane_id, exit_code, reason: 'exit_without_verify_marker' を含む。verification_completed は emit されず、verification map にエントリは残らない (verification_summary.timeouts に計上される)。"
       }
     }
   ]
