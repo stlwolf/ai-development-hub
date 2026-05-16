@@ -111,6 +111,65 @@ assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value" "2" "$OE_SCAN_VALUE"
 assert_eq "blocked_flag" "true" "$OE_SCAN_BLOCKED"
 
+# --- Step 4-3 F3: @@OE_VERIFY: 検出と二値保持 ---
+echo ""
+echo "=== _oe_capture_scan_parse — @@OE_VERIFY: (Step 4-3 F3) ==="
+
+echo "-- VERIFY のみ (pass) --"
+_oe_capture_scan_parse "review output
+@@OE_VERIFY:pass"
+assert_eq "verify_result" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "exit_code (空)" "" "$OE_SCAN_EXIT_CODE"
+assert_eq "marker_type (VERIFY 単独 → VERIFY)" "VERIFY" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (VERIFY 単独 → pass)" "pass" "$OE_SCAN_VALUE"
+
+echo "-- VERIFY のみ (fail) --"
+_oe_capture_scan_parse "@@OE_VERIFY:fail"
+assert_eq "verify_result" "fail" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "marker_type" "VERIFY" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value" "fail" "$OE_SCAN_VALUE"
+
+echo "-- VERIFY のみ (warn) --"
+_oe_capture_scan_parse "@@OE_VERIFY:warn"
+assert_eq "verify_result" "warn" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- VERIFY 不正値 → 無視 --"
+_oe_capture_scan_parse "@@OE_VERIFY:invalid"
+assert_eq "verify_result (不正値)" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "exit_code (不正値)" "" "$OE_SCAN_EXIT_CODE"
+assert_eq "marker_type (不正値)" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- VERIFY 値なし @@OE_VERIFY: は無視 --"
+_oe_capture_scan_parse "@@OE_VERIFY:"
+assert_eq "verify_result (値なし)" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- 行途中の VERIFY マーカーは無視 (行頭アンカー) --"
+_oe_capture_scan_parse "prefix @@OE_VERIFY:pass suffix"
+assert_eq "verify_result (行途中)" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- VERIFY + EXIT 両方検出 (二値保持) --"
+_oe_capture_scan_parse "task output
+@@OE_VERIFY:pass
+@@OE_EXIT:0"
+assert_eq "verify_result (両方検出)" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "exit_code (両方検出)" "0" "$OE_SCAN_EXIT_CODE"
+assert_eq "marker_type (両方 → EXIT 優先で後方互換)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (両方 → exit_code)" "0" "$OE_SCAN_VALUE"
+
+echo "-- VERIFY + EXIT 両方検出 (fail + 0) --"
+_oe_capture_scan_parse "@@OE_VERIFY:fail
+@@OE_EXIT:0"
+assert_eq "verify_result (fail)" "fail" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "exit_code (0)" "0" "$OE_SCAN_EXIT_CODE"
+assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value" "0" "$OE_SCAN_VALUE"
+
+echo "-- 複数 VERIFY → 最後の 1 つを採用 --"
+_oe_capture_scan_parse "@@OE_VERIFY:pass
+middle output
+@@OE_VERIFY:fail"
+assert_eq "verify_result (最後)" "fail" "$OE_SCAN_VERIFY_RESULT"
+
 # --- oe_capture_scan テスト（wez モック経由） ---
 echo ""
 echo "=== oe_capture_scan (wez mock) ==="
