@@ -33,6 +33,11 @@ export OE_VERIFY_AI_MODEL="${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}"
 export OE_DATA_DIR="${TMP_DATA_DIR}"
 export OE_MOCK_LOG_DIR="${LOG_DIR}"
 
+# Step 4-4 Phase C 反映: 実 agent (composer-2) は mock 想定の MAX_TURNS=10 (=20s @ 2s poll) が短すぎる。
+# 実機 smoke は 20 分 (600 turns × 2s poll) まで待つ。本上限は TIMEOUT (1800s = 30 min) の内側。
+export OE_CB_MAX_TURNS="${OE_CB_MAX_TURNS:-600}"
+export OE_CB_TIMEOUT="${OE_CB_TIMEOUT:-1800}"
+
 # F-SO 反映 (Plan iter2): wez shim の notify.log 書き込み先を保証
 mkdir -p "${OE_MOCK_LOG_DIR}"
 

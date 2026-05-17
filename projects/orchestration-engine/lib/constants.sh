@@ -18,9 +18,11 @@ OE_VERIFY_MARKER_RE='^@@OE_VERIFY:(pass|fail|warn)$'
 #   @@OE_BLOCKED:{reason} — ブロック理由の報告
 
 # サーキットブレーカー閾値
-OE_CB_TIMEOUT=1800
-OE_CB_MAX_TURNS=10
-OE_CB_MAX_PANES=5
+# Step 4-4 Phase C 発見: 実 agent (cursor-agent/composer-2) では mock 想定の MAX_TURNS=10 (=20s @ 2s poll) が短すぎる。
+# env override 可能にしつつデフォルトは mock テスト互換のため維持。
+OE_CB_TIMEOUT="${OE_CB_TIMEOUT:-1800}"
+OE_CB_MAX_TURNS="${OE_CB_MAX_TURNS:-10}"
+OE_CB_MAX_PANES="${OE_CB_MAX_PANES:-5}"
 
 # SLO: マーカー検出目標（秒）
 OE_SLO_DETECT_SEC=5
