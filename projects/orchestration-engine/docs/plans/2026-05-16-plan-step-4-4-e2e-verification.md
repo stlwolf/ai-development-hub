@@ -659,18 +659,104 @@ PR #96 docs PR の Copilot レビュー 21 件 (A-H 全カテゴリ) を本 Plan
 | frontmatter の related 参照が Context または Phase に含まれている | ✅ 全 9 件が「設計入力」「駆動層入力」「観測層 Issue」「スコープ外」に分配 |
 | 引き継ぎの「解決済み」が Context に含まれている | ✅ Step 4-3 PR #94 完了、Discussion 全 Q closed を Context に明記 |
 
-## 物理前提の実機確認結果 (Phase A Step 1 で追記する)
+## 物理前提の実機確認結果 (Phase A Step 1 実施: 2026-05-17)
 
-> Phase A Step 1 実施時に、本セクションを追記する。Plan が変更されるため commit が必要。
->
-> 確認項目 (F-3, F-4, F-7 反映):
-> - `cursor-agent` 実 invocation 仕様 (バイナリ名 / 引数形式): (TBD)
-> - `claude -p` 実 invocation 仕様 + `--model claude-sonnet-4-6` 指定方法: (TBD)
-> - **F-4**: `claude -p -w "$(pwd)"` で workspace 外の `canonical/skills/...` skill ファイルを Read tool で読めるか、回避策 (a)/(b)/(c) のどれを採用するか: (TBD)
-> - **F-7**: claude API 認証 + claude-sonnet-4-6 アクセス権 (最小通電確認 `claude -p "echo ok" --model claude-sonnet-4-6`): (TBD、PASS/FAIL を記録)
-> - **F-7**: claude vs claude-safe のどちらを採用するか (TTY 競合確認結果): (TBD)
-> - **F-3**: `composer-2` の Bash + Markdown 実力確認 (1 回試行 + 1 リトライ + 失敗で gpt-4.1 退避):
->   - 1 回目: (TBD、PASS/FAIL 詳細)
->   - 2 回目 (1 回目 FAIL 時): (TBD)
->   - 採用モデル: (composer-2 / gpt-4.1)
->   - 退避時の KickOff §DI-2 更新: (実施 / 不要)
+> 実施環境: macOS, Darwin 24.6.0、開発者環境
+> 実施: Claude Code が user 環境で実機検証 (user が cursor-agent + claude CLI インストール済み + ログイン済みを確認)
+
+### CLI バージョン (確認結果)
+
+| CLI | バイナリ位置 | バージョン |
+|------|------------|----------|
+| `cursor-agent` | `/opt/homebrew/bin/cursor-agent` | `2026.01.28-fd13201` |
+| `cursor` (補助) | `/Users/eddy/.local/bin/cursor` | `3.3.30` |
+| `claude` | `/Users/eddy/.local/bin/claude` | `2.1.143 (Claude Code)` |
+| `claude-safe` (ラッパー) | `projects/claude-safe/claude-safe` | `2.1.143 (Claude Code)` (claude wrapped with nohup) |
+| `codex` (将来用、スタブ実装対象) | `/opt/homebrew/bin/codex` | `codex-cli 0.130.0` |
+
+### cursor-agent 正式 invocation 仕様 (確認結果)
+
+- 推奨形: `cursor-agent --print --model <model> --workspace <path> --force "<prompt>"`
+- `-p` / `--print`: non-interactive
+- `--model <model>`: 明示指定 (例: `composer-2`、`gpt-5.2`、`sonnet-4-thinking` 等)
+- `--workspace <path>`: workspace ディレクトリ (デフォルト = CWD)
+- `--force`: 確認なしで全コマンド許可 (engine の非対話実行で必要)
+- prompt は positional argument (claude / codex と同様)
+- composer-2 は `cursor-agent --list-models` の出力に存在、default は `composer-2-fast`、本 Plan では明示的に `composer-2` (full 版) を指定する
+
+### claude -p 正式 invocation 仕様 (確認結果)
+
+- 推奨形: `claude -p "<prompt>" --model <model> --add-dir <repo_root> --add-dir /tmp --output-format text --no-session-persistence --max-budget-usd 1.0`
+- `-p` / `--print`: non-interactive
+- `--model <model>`: 明示指定 (例: `claude-sonnet-4-6`、エイリアス `sonnet` も可)
+- `--add-dir <directories>`: **CWD 以外のディレクトリ読み取り許可** (F-4 で必須、複数指定可)
+- `--no-session-persistence`: セッション保存無し (E2E テスト用)
+- `--max-budget-usd <amount>`: コスト上限 (推奨 `1.0`、`0.05` は system prompt loading で超過する)
+
+### F-4 確認結果: workspace 外 skill アクセス
+
+**実機テスト 1 (with `--add-dir <repo_root>`)**:
+```bash
+claude -p "Read /Users/.../canonical/skills/adversarial-review/SKILL.md and output only its first line" \
+  --model claude-sonnet-4-6 --add-dir <repo_root> --output-format text --no-session-persistence --max-budget-usd 1.0
+```
+→ **PASS**: `---` (skill frontmatter の最初の行) を正しく出力
+
+**実機テスト 2 (without `--add-dir`)**:
+→ **FAIL**: `"permission hasn't been granted"` で拒否
+
+**採用案**: **(b) `claude -p ... --add-dir <repo_root>`** (Plan F-4 の (a)(b)(c) のうち (b))。engine 側で reviewer 用 envelope の `task.read_docs` に skill ファイルパスを含めるとともに、`claude -p` 起動時に `--add-dir <repo_root>` を必ず付与する。
+
+加えて `/tmp` 配下の envelope / verify-inputs.md にもアクセスする必要があるため、CLI ディスパッチャは `--add-dir /tmp` も付与する (Step 4-2 の envelope パス規約 `/tmp/oe-{sid}-envelope.json` を前提)。
+
+### F-7 確認結果
+
+**(a) API 認証 + sonnet-4-6 アクセス権 (最小通電)**:
+```bash
+claude -p "Output exactly: ok" --model claude-sonnet-4-6 --output-format text --no-session-persistence --max-budget-usd 1.0
+```
+→ **PASS**: `ok` を出力
+
+備考:
+- 初回 `--max-budget-usd 0.05` では `Exceeded USD budget` でエラー。**system prompt loading (CLAUDE.md / hooks / settings) が想定より重く、$0.05 を超える**。実用上は `$1.0` (検証 1 セッションのバッファ込み) を推奨
+- `--bare` モード (system prompt skip) は `ANTHROPIC_API_KEY` env var 要 / OAuth / keychain を読まないため、API key 未設定環境では `Not logged in` エラー。**engine 側では `--bare` 不使用、OAuth / keychain (Claude Code default) を利用**
+
+**(b) claude vs claude-safe の選択**:
+- `claude` 直接呼び出し: wez pane 内の独立 pty で TTY 競合なし、実機確認で問題なし
+- `claude-safe`: nohup ラッパー、Cursor 統合ターミナル等での TTY 競合回避用
+- **採用**: `claude` 直接 (wez pane 環境では claude-safe 不要)
+
+### F-3 確認結果: composer-2 の Bash + Markdown 実力
+
+**実機テスト (1 回目試行、tmp dir で実施)**:
+
+タスク: 「`lib/test_dummy.sh` を作成して shebang と `set -euo pipefail` だけ書いて。`ls -la` で確認して」
+
+結果:
+- ファイル作成: ✅ `lib/test_dummy.sh` (38 bytes)
+- 内容: ✅ `#!/usr/bin/env bash\nset -euo pipefail\n` (要件どおり 2 行のみ、余分なし)
+- `ls -la` 確認: ✅ composer-2 自身が `ls -la` を実行して属性確認
+- shellcheck 確認 (人間が後段で実行): ✅ no warnings/errors
+- 応答品質: ✅ 構造化マークダウン (結論 / 根拠 / 手順 / 補足 / 関連リンク) で出力
+
+→ **1 回目 PASS、退避不要**。**採用モデル: `composer-2`**
+
+退避時の KickOff §DI-2 更新: **不要** (composer-2 採用継続)
+
+### CLI ディスパッチャ実装方針 (Phase A Step 2 への入力)
+
+実機確認結果から、`_oe_spawn_build_cli_command(ai_cli, ai_model, envelope_path, [workspace])` は以下を生成する:
+
+| ai_cli | invocation テンプレート (placeholder) |
+|--------|------------------------------------|
+| `cursor-agent` (or alias `cursor`) | `cursor-agent --print --model ${ai_model} --workspace ${workspace} --force "Read ${envelope_path} and execute the task"` |
+| `claude` (or alias `claude-safe`) | `claude -p "Read ${envelope_path} and execute the task" --model ${ai_model} --add-dir ${repo_root} --add-dir /tmp --output-format text --no-session-persistence --max-budget-usd 1.0` |
+| `codex` | スタブ (claude と同様の形式、本 Step では動作確認なし) |
+
+`${repo_root}` は engine が `git rev-parse --show-toplevel` で動的に解決、または `lib/verify.sh` 既存パターン (`$(cd "${PROJECT_DIR}/../.." && pwd)`) で導出。
+
+### コスト見込み (実機確認時の使用量)
+
+- claude 1 セッションあたり: system prompt + small response で **~$0.05-0.1** (実観測)
+- Plan §Q2 の推定「~$0.045/サイクル」は **やや楽観的**だが桁としては正しい。Phase E で正確値を Episode に記録予定
+- cursor-agent (composer-2): サブスク内 (Pro/Business)、CLI から token / cost 取得不可 (Plan §F-14 で「N/A」明記済み)
