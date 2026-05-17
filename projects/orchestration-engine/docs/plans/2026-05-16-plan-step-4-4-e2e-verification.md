@@ -56,7 +56,7 @@ tags: [orchestration, mvp, step-4-4, plan, e2e-verification, real-agent, cli-dis
    - Phase D: DI-2 + DI-7 (検証フェーズ E2E + 構造的判定)
    - Phase E: DI-5 + DI-6 + DI-8 (`tests/e2e_real_agent/` 整備 + Episode 記録)
 2. **物理前提の実機確認 Step**: Phase A の Step 1 として配置。「`cursor-agent` / `claude -p ... --model` の正しい invocation 仕様確認」と「composer-2 の Bash + Markdown 実力確認」を Phase A の冒頭 obligation 化 (Discussion §「未解決の細部」)
-3. **DI-1 具体タスクの選定**: Plan §Phase C Step 6 で 1 つに絞る。KickOff §DI-1 の候補 3 つから推奨デフォルトを **`OE_VERIFY_REVIEWER_SESSION_IDS` 追跡** (派生 [#93](https://github.com/stlwolf/ai-development-hub/issues/93) 前半の取り込み) に設定。理由は (a) #93 の半分を消化、(b) 検証 agent が「kill 動作」を assertion 経由で判定しやすい、(c) Step 4-5 で残り半分 (nonce マーカー) の判断材料になる、の 3 点
+3. **DI-1 具体タスクの選定**: Plan §Phase C Step 9 で 1 つに絞る (F-5 で Phase A 新 Step 5 を挿入し後続 Step 番号を +1 シフトしたため旧 Step 8 → 9)。KickOff §DI-1 の候補 3 つから推奨デフォルトを **`OE_VERIFY_REVIEWER_SESSION_IDS` 追跡** (派生 [#93](https://github.com/stlwolf/ai-development-hub/issues/93) 前半の取り込み) に設定。理由は (a) #93 の半分を消化、(b) 検証 agent が「kill 動作」を assertion 経由で判定しやすい、(c) Step 4-5 で残り半分 (nonce マーカー) の判断材料になる、の 3 点
 4. **GATE 配置**: 各 Phase 末尾に GATE を配置 (Step 4-3 と同じパターン)。Phase E 完了後に STOP を 1 件配置 (user 報告 + PR 作成判断)
 5. **物理前提が揃わない開発者環境への配慮**: Phase A〜Phase D の Step は mock テストで完走確認できるように設計。Phase E (実 agent E2E) のみ「物理前提が揃わない環境ではスキップ可」と Plan で明示
 6. **so-compare 2 段階体制の踏襲**: Plan 段階 (本ドキュメント完成後) と実装段階 (Phase E 完了後) でそれぞれ so-compare を実行する想定。Plan 段階の指摘は本 Plan 内に F-* として、実装段階の指摘は別途 Phase A〜E 修正コミットに F-SO-* として反映する
@@ -71,7 +71,7 @@ tags: [orchestration, mvp, step-4-4, plan, e2e-verification, real-agent, cli-dis
 
 ### 前提 (KickOff + Discussion で確定済み)
 
-- Step 4-3 [PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で検証ゲート v1 (mock 経由 299 assertions PASS) が動作する状態
+- Step 4-3 [PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で検証ゲート v1 (mock 経由 293 assertions PASS) が動作する状態
 - Step 4-4 [Discussion](../discussions/2026-05-16-discussion-step-4-4-e2e-verification.md) で 8 Q (Q1〜Q8) を user との 1 問ずつの対話で合意済み
 - **DI-2: CLI + モデル明示指定**: target = `cursor-agent` / `composer-2` (サブスク内)、検証 = `claude -p` / `claude-sonnet-4-6` (~$0.045/サイクル)
 - **DI-7: 構造的判定**: `verify_result` の値 (pass/fail/warn) は assertion 対象外、engine の動作 4 点 (marker emit / KVS / audit / notify) のみを判定
@@ -83,7 +83,7 @@ tags: [orchestration, mvp, step-4-4, plan, e2e-verification, real-agent, cli-dis
 | `cursor-agent` | Cursor Pro/Business サブスク + login | `composer-2` | バイナリ名揺れ (`cursor-agent` / `cursor agent`) の確定、composer-2 の Bash 実力確認 + 退避基準 |
 | `claude -p` (or `claude-safe -p`) | `ANTHROPIC_API_KEY` 環境変数 or `claude login` + `claude-sonnet-4-6` アクセス権 | `claude-sonnet-4-6` | `-w "$(pwd)"` workspace 制約での `canonical/skills/...` 読み取り可否、API key 最小通電確認、claude-safe 経由 vs 直接呼び出し判断 |
 
-Phase E は両方の物理前提が揃った開発者環境でのみ実施可 (full-complete 判定)。揃わない場合は Phase A〜D の mock テストまで進められる (limited-complete 判定、最終検証 §「(7)(8) full-complete / limited-complete 2 段階判定」参照)。
+Phase E は両方の物理前提が揃った開発者環境でのみ実施可 (full-complete 判定)。揃わない場合の limited-complete 経路は **Phase A の完了 (mock テスト回帰なし) + Phase B〜E のスクリプト・ドキュメント整備のみ**を境界とする (Phase B〜E の実 agent 通電 = probe / smoke / verify は環境が揃ったときに別ステップで実施)。最終検証 §「(7)(8) full-complete / limited-complete 2 段階判定」参照。
 
 ### 設計入力
 
@@ -100,7 +100,7 @@ Phase E は両方の物理前提が揃った開発者環境でのみ実施可 (f
 | `lib/verify.sh` | `oe_verify_run_phase` / `oe_verify_spawn` | **Phase A で `OE_VERIFY_AI_MODEL` env var 対応** + `oe_verify_spawn` がディスパッチャ経由で送信するように改修 |
 | `bin/oe` | `oe_main` | **Phase A で `OE_TARGET_AI_CLI` / `OE_TARGET_AI_MODEL` env var を読む** ように改修 |
 | `lib/constants.sh` | (`OE_VERIFY_AI_CLI` 既実装) | **Phase A で `OE_VERIFY_AI_MODEL` 追加 + デフォルト値設定** |
-| `tests/test_*.sh` | 8 スイート 299 assertions | **Phase A 〜 D で回帰なしを維持** |
+| `tests/test_*.sh` | 8 スイート 293 assertions | **Phase A 〜 D で回帰なしを維持** |
 | `schemas/envelope.schema.json` | envelope の形 | **変更なし** (envelope への `task.ai_cli` / `task.ai_model` 追加は Step 4-5 候補) |
 | `canonical/skills/adversarial-review/SKILL.md` | Compliance Review 規約 | **検証 agent が `use_skills` 経由で参照、本 Step では skill 側に変更なし** |
 
@@ -108,7 +108,7 @@ Phase E は両方の物理前提が揃った開発者環境でのみ実施可 (f
 
 - [#19](https://github.com/stlwolf/ai-development-hub/issues/19) — Epic 親、Phase 4 ステップ管理
 - [#89](https://github.com/stlwolf/ai-development-hub/issues/89) — Step 4-3 サブ Issue (closed、[PR #94](https://github.com/stlwolf/ai-development-hub/pull/94))
-- [#91](https://github.com/stlwolf/ai-development-hub/issues/91) — AI CLI 起動オプション修正 (本 Plan Phase A に組み込み、本 PR で同時 closed 予定)
+- [#91](https://github.com/stlwolf/ai-development-hub/issues/91) — AI CLI 起動オプション修正 (本 Plan Phase A に組み込み、**本 Step の実装 PR で `Closes #91` を含めて同時 closed する想定**。本 docs PR では Refs のみで #91 を closed しない)
 - [#92](https://github.com/stlwolf/ai-development-hub/issues/92) — 変更ファイル検出 per-pane / 完了報告充実 (Step 4-5 候補、本 Step スコープ外)
 - [#93](https://github.com/stlwolf/ai-development-hub/issues/93) — 一時ファイル掃除 / nonce マーカー (前半を Phase C で取り込み予定、後半は MVP 後拡張)
 - [#95](https://github.com/stlwolf/ai-development-hub/issues/95) — Step 4-4 サブ Issue (本 Plan の観測層)
@@ -164,7 +164,7 @@ KickOff §スコープ外 + Discussion §派生課題:
     - (c) 2 回目も失敗 → **gpt-4.1 への退避を確定**、KickOff §DI-2 の表中 `composer-2` 行を `composer-2 → gpt-4.1 (実機判断、Step 1 で退避)` に更新するコミットを本 Plan 修正と同時に実施
     - (d) `task.description` を **明らかに誤解** (例: 別ファイルを作成、shellcheck エラーを残す) → 同様にリトライ + 失敗で退避
   - 判定者は人間 (本 Step 実施者) が判断、retry log を Plan §「物理前提の実機確認結果」に記録
-- [ ] **物理前提が揃わない開発者環境**で本 Plan を進める場合、Phase E スキップ条件を `tests/e2e_real_agent/README.md` に明示 (limited-complete 判定経路)
+- [ ] **物理前提が揃わない開発者環境**で本 Plan を進める場合、limited-complete 経路 (Phase A 完了 + Phase B〜E スクリプト整備のみ) を `tests/e2e_real_agent/README.md` に明示 (Phase B〜E の実 agent 通電は環境準備後に別ステップで実施)
 
 ### Step 2: `lib/spawn.sh` に CLI ディスパッチャ `_oe_spawn_build_cli_command` を追加
 
@@ -218,13 +218,13 @@ KickOff §スコープ外 + Discussion §派生課題:
   - または assertion 側を `${OE_VERIFY_AI_CLI:-claude}` 等で追従させる
   - 方針はどちらかを選択し本 Step 内で実装
 - [ ] `tests/test_e2e_smoke.sh` / `tests/test_verify.sh` の wez モック (send.log) で **ディスパッチャ展開後の cli_command** を assertion 可能にする (Step 2 の動作確認に流用、F-15 mock/real 共通 lib 同期と整合)
-- [ ] **完了基準**: 全 8 スイート PASS、299 assertions 維持 (回帰なし)
+- [ ] **完了基準**: 全 8 スイート PASS、293 assertions 維持 (回帰なし)
 
 ### GATE: Phase A 完了確認
 
 - [ ] Step 1〜6 完了
 - [ ] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh ./scripts/*.sh` クリーン
-- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` 全 PASS (299 assertions)
+- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` 全 PASS (293 assertions)
 - [ ] 物理前提 (cursor-agent + claude CLI) が揃った環境で `_oe_spawn_build_cli_command cursor-agent composer-2 /tmp/dummy-envelope.json` を実行し、出力されたコマンドが実 CLI に解釈可能であることを確認 (構文 OK レベルで、実行はしない)
 - [ ] **F-15 反映**: `lib/spawn.sh` / `lib/verify.sh` を変更した際に mock テストと実 agent テストの両方をチェックする運用を Phase A GATE のセルフチェック項目に追加:
   - 変更コミット前に `bash tests/test_*.sh` (mock) を実行
@@ -291,7 +291,7 @@ KickOff §スコープ外 + Discussion §派生課題:
     3. `lib/cleanup.sh` の既存スタブ `for reviewer_pane in "${OE_VERIFY_MANAGED_PANES[@]}"; do : "$reviewer_pane" ; done` (line 47-55) を、`OE_VERIFY_REVIEWER_SESSION_IDS` をループして `/tmp/oe-{rsid}-verify-envelope.json` と `/tmp/oe-{rsid}-verify-inputs.md` を `rm -f` する実装に置き換え
   - **完了条件 (target が完了報告に含めること)**:
     - `shellcheck ./lib/constants.sh ./lib/verify.sh ./lib/cleanup.sh` の stdout 全文 (or "no warnings") を完了報告に含めること
-    - 既存 mock テスト全 8 スイート 299 assertions が PASS することを `bash tests/test_*.sh` 実行ログで示すこと
+    - 既存 mock テスト全 8 スイート 293 assertions が PASS することを `bash tests/test_*.sh` 実行ログで示すこと
     - `tests/test_cleanup.sh` に新規 assertion を追加し、`OE_VERIFY_REVIEWER_SESSION_IDS` に 2 つのダミー ULID を append → `oe_cleanup` 実行 → 該当 `/tmp/oe-{rsid}-verify-*` が削除されることを確認 (mock fs 不要、実 /tmp で touch + rm 確認)
   - **スコープ制約**:
     - `OE_VERIFY_MARKER_RE` (`lib/constants.sh:12`) **変更禁止** (派生 [#93](https://github.com/stlwolf/ai-development-hub/issues/93) 後半 nonce マーカーは MVP 後拡張)
@@ -307,13 +307,15 @@ KickOff §スコープ外 + Discussion §派生課題:
 
 - [ ] `tests/e2e_real_agent/smoke_cursor_composer_claude_sonnet.sh` を新規作成 (Phase C / D 共通の E2E スクリプト):
   - 環境変数 `OE_TARGET_AI_CLI=cursor-agent`, `OE_TARGET_AI_MODEL=composer-2`, `OE_VERIFY_AI_CLI=claude`, `OE_VERIFY_AI_MODEL=claude-sonnet-4-6` を明示セット
+  - `OE_MOCK_LOG_DIR=tmp/log/<timestamp>` を明示セット + **F-SO 反映**: `mkdir -p "${OE_MOCK_LOG_DIR}"` を `bin/oe` 起動前に実行 (`tests/e2e_real_agent/bin/wez` shim が notify.log を書く先のディレクトリを保証)
   - **F-5 連携**: `bin/oe --task-file tests/e2e_real_agent/task_description_dogfood_cleanup.md` で起動 (旧 `bin/oe "$(cat ...)"` 形式から変更、Markdown shell expansion 破綻を回避)
-  - target session_id をログに記録
+  - target session_id + target pane_id をログに記録
+- [ ] **F-H 反映 (target stdout 保存)**: `bin/oe` 起動後に **wez pane capture で target pane の stdout を `--lines 500` 取得し** `tests/e2e_real_agent/.tmp_target_stdout_<session_id>.log` に保存する処理を smoke スクリプトに含める (target 完了 = `@@OE_EXIT` 検出後に取得)。これにより target が完了報告に含めた shellcheck stdout / mock テスト PASS ログを後段で grep できる
 - [ ] **本 Step (Phase C) の完了基準**: target が `@@OE_EXIT:0` を emit、`state/{session_id}.state.json` に `state: success` が記録される
 - [ ] 完了基準を満たすか `tests/e2e_real_agent/check_phase_c.sh` で確認 (補助スクリプト):
   - `state.session_id` と `state.state == "success"` を `jq` で検査
   - audit log に `state_change` (state=success) と `session_end` が記録されているか確認
-  - target の完了報告に shellcheck stdout + mock テスト PASS ログが含まれているか確認 (F-11 義務化)
+  - **F-H 反映**: `.tmp_target_stdout_<sid>.log` (上記で保存した target pane capture) を `grep` し、target の完了報告に shellcheck の結果と mock テスト PASS ログ (例: `PASS=` や `Results: PASS=N FAIL=0`) が含まれているか確認 (F-11 義務化、engine の KVS / audit ではなく pane stdout 経由で検証)
 - [ ] Phase D に進む前に target の変更内容 (実際の constants.sh / verify.sh / cleanup.sh 編集差分) を `git diff` で確認
 
 ### GATE: Phase C 完了確認
@@ -346,7 +348,7 @@ KickOff §スコープ外 + Discussion §派生課題:
 ### Step 12: 構造的判定 4 点の assertion (`check_cycle_complete.sh`、F-6 + F-10 で具体化)
 
 - [ ] `tests/e2e_real_agent/check_cycle_complete.sh` を新規作成
-- [ ] 引数: `target_session_id` (Phase C 起動時のログから渡す)
+- [ ] 引数: `target_session_id target_pane_id` (両方を Phase C 起動時のログから渡す)。KVS の `verification[$TARGET_PANE_ID]` indexing と audit log の `session_end` 検索で両者を使う
 - [ ] **F-6 反映: 構造的判定 4 点を `jq` クエリレベルまで具体化**:
 
   **(1) target の `@@OE_EXIT:0` 検出 — F-2 反映で代理指標化**:
@@ -601,10 +603,23 @@ iter1 と iter2 の **時系列分離**: Phase E iter1 (実 agent 観察) → Pl
 |----|------|--------|
 | M2 | `tests/e2e_real_agent/.gitignore` で `.tmp_*` パターン追加 | Phase E Step 13 |
 
-### M1 (PR 作成時対応) / M3 (派生 Issue 候補) は本 Plan に取り込まず、別途処理
+### M1 (PR description 対応) / M3 (派生 Issue 候補)
 
-- M1: `Closes #91` を PR description に追記 (本 PR 作成時対応)
+- **M1 (Plan iter2 修正で明確化)**: `Closes #91` は **本 Step の実装 PR description** に追記する (本 docs PR では Refs のみ、#91 を closed しない)。Plan §Context 観測層 Issue / KickOff §DI-3 も「実装 PR で同時 closed」と明示
 - M3: capture --lines 200 の env 可変化 → 派生 Issue 候補 (本 Plan スコープ外、Step 4-5 で判断)
+
+### Plan iter2 修正履歴 (PR #96 Copilot レビュー対応、2026-05-17)
+
+PR #96 docs PR の Copilot レビュー 21 件 (A-H 全カテゴリ) を本 Plan / KickOff / Discussion に反映 (本コミット)。代表的な構造変更:
+
+- **A (数値整合)**: Step 4-3 baseline を **293 assertions** (Episode 記録準拠) に統一 (旧 299 は誤、`test_e2e_smoke` 旧 43 → 40 も修正)
+- **B (#91 closing)**: docs PR では `Refs #91` のみ、**実装 PR で `Closes #91`** と明示。KickOff §DI-3 / Plan §Context も同期
+- **C (limited-complete 経路)**: 旧「Phase A〜D の mock テスト」は誤 (Phase B〜D は実 agent 必須)。limited-complete を **Phase A 完了 + Phase B〜E スクリプト整備のみ**に境界変更
+- **D (`check_cycle_complete.sh` 引数)**: `target_session_id` のみ → `target_session_id target_pane_id` の 2 つに変更
+- **E (`verification_protocol_error`)**: 「主要 7 イベント」を **必須 6 + optional `verification_protocol_error` (protocol 違反時のみ emit)** に書き直し
+- **F (shim `notify.log` mkdir)**: smoke スクリプトで `mkdir -p "${OE_MOCK_LOG_DIR}"` を `bin/oe` 起動前に明示実行
+- **G (cross-ref / 表記揺れ)**: Plan §59 cross-ref Step 6 → 9、KickOff §192 `bin/oe "<task>"` → `--task-file`、#93 前半取り込みを KickOff / Discussion で明示、Discussion §進め方 Phase 配置を finalized 版に同期
+- **H (`check_phase_c.sh` target 完了報告検証経路)**: engine は KVS / audit のみ保存し target stdout を保存しない問題 → **smoke スクリプトで `wez pane capture --lines 500` で target pane stdout を保存し** `.tmp_target_stdout_<sid>.log` 経由で shellcheck / mock テストログを `grep` 検証する経路に変更
 
 ### F-16: 完全性チェック表で STOP / ADR を「拡張ルール」と注記
 

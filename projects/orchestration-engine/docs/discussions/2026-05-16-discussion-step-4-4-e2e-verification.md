@@ -37,7 +37,7 @@ tags: [orchestration, mvp, step-4-4, question-driven-design, e2e-verification, r
 
 # Step 4-4 E2E 検証 (実 agent で 1 サイクル完走) の設計判断（質問駆動設計）
 
-> Step 4-3 ([PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) マージ済み) で検証ゲート v1 が **wez mock 経由で 299 assertions PASS** の状態。本 Step は **実 agent で 1 サイクル完走** することを目的とする。
+> Step 4-3 ([PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) マージ済み) で検証ゲート v1 が **wez mock 経由で 293 assertions PASS** の状態 (Step 4-3 Episode 記録準拠)。本 Step は **実 agent で 1 サイクル完走** することを目的とする。
 >
 > 本 Discussion は **draft 状態で起草**し、各 Q について **推奨案を提示**した上で user との 1 問ずつの対話で確定する。全 Q 合意後に status: closed にし、KickOff の仮置きセクションを確定版に反映する。
 
@@ -61,7 +61,7 @@ tags: [orchestration, mvp, step-4-4, question-driven-design, e2e-verification, r
 
 - [#91](https://github.com/stlwolf/ai-development-hub/issues/91) **本 Step 必須**: `${ai_cli} --prompt` が実 CLI (`claude -p` / `codex -p`) と不整合
 - [#92](https://github.com/stlwolf/ai-development-hub/issues/92) Step 4-5 候補: 変更ファイル検出 per-pane 化 / 完了報告内容の充実
-- [#93](https://github.com/stlwolf/ai-development-hub/issues/93) MVP 後拡張: 一時ファイル掃除 / nonce 付きマーカー偽陽性対策
+- [#93](https://github.com/stlwolf/ai-development-hub/issues/93): **前半** (reviewer 一時ファイル掃除 = `OE_VERIFY_REVIEWER_SESSION_IDS` 追跡) は **Phase C で dogfood task として取り込み** (KickOff §DI-1 / Plan Phase C Step 9 で確定)。**後半** (nonce 付きマーカー偽陽性対策) は MVP 後拡張
 
 ### Step 4-3 so-compare レビューで認識された設計上の限界
 
@@ -243,7 +243,7 @@ Q2 で「cross (cursor-agent/composer-2 target + claude -p/sonnet-4-6 検証)」
 
 **status**: closed
 
-**質問**: 既存 wez mock E2E (`tests/test_e2e_smoke.sh` の 43 assertions) と実 agent E2E をどう併存させるか?
+**質問**: 既存 wez mock E2E (`tests/test_e2e_smoke.sh` の 40 assertions、Step 4-3 Episode 記録準拠) と実 agent E2E をどう併存させるか?
 
 | 案 | 内容 | トレードオフ |
 |----|------|-------------|
@@ -298,7 +298,7 @@ Q7 の「構造的判定」を採用するなら、判定項目は engine 出力
 |---|---------|---------|
 | (1) | `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass\|fail\|warn}` (reviewer) が両方 emit される | audit log + KVS から確認 |
 | (2) | `state/{session_id}.state.json` に `state: success` と `verification[].result` が記録 | `validate-session-state.sh` で validation |
-| (3) | `audit/{session_id}.jsonl` に主要 7 イベント (`session_start`, `state_change`, `session_end`, `verification_started`, `verification_completed`, `cleanup`, [optional `verification_protocol_error`]) が記録 | `jq` でイベント件数確認 |
+| (3) | `audit/{session_id}.jsonl` に必須 6 イベント (`session_start`, `state_change`, `session_end`, `verification_started`, `verification_completed`, `cleanup`) が記録 + optional `verification_protocol_error` は protocol 違反時のみ emit (正常完了時は 0 件) | `jq` でイベント件数確認 |
 | (4) | `wez notify` が呼ばれ、本文に `pass={} fail={} warn={} fail_rate={} protocol_errors={} timeouts={}` が展開される | notify log 確認 |
 | (5) | shellcheck クリーン + 既存 299 mock assertions 回帰なし | `shellcheck` + `bash tests/test_*.sh` |
 | (6) | [#91](https://github.com/stlwolf/ai-development-hub/issues/91) の CLI ディスパッチャが少なくとも 2 CLI (`cursor-agent` + `claude -p`) で動作 | `_oe_spawn_build_cli_command` 動作確認 + 既存 mock テスト通過 |
@@ -341,6 +341,6 @@ Q8 の (1)〜(8) を完了条件として KickOff §「完了条件」に転記�
 2. ✅ 合意 Q ごとに `status: closed` + 決定内容を追記
 3. ✅ 本 Discussion 全体を `status: closed` に
 4. → KickOff の「仮置き」セクションを Discussion 結果で確定 (次タスク、起草予定)
-5. → `kickoff-to-plan` skill で Plan に変換 (Step 4-3 と同じ 5 Phase 構成想定: A=[#91](https://github.com/stlwolf/ai-development-hub/issues/91) 修正 + env var 拡張、B=実 agent spawn dispatcher、C=検証フェーズ E2E、D=tests/e2e_real_agent/ 整備、E=Episode + 統合テスト)
+5. → `kickoff-to-plan` skill で Plan に変換 (Step 4-3 と同じ 5 Phase 構成、確定版は KickOff / Plan 参照): **A**=[#91](https://github.com/stlwolf/ai-development-hub/issues/91) 修正 + env var 拡張 + `bin/oe --task-file`、**B**=実 agent spawn 通電確認 (probe_target / probe_verify + skill load)、**C**=DI-1 target task 完遂 (orchestration-engine 小機能追加、`OE_VERIFY_REVIEWER_SESSION_IDS` 追跡 = #93 前半取り込み)、**D**=検証フェーズ E2E + 構造的判定 4 点、**E**=`tests/e2e_real_agent/` 整備 + 1 回完走実証 + Episode + ADR
 6. → Plan 段階で so-compare (iter1) → 反映 → docs PR
 7. → 実装 PR (Phase A〜E + so-compare iter2 + Episode + ADR)

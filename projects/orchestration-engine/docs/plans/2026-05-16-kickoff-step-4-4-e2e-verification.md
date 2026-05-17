@@ -45,7 +45,7 @@ tags: [orchestration, mvp, step-4-4, kickoff, e2e-verification, real-agent, dogf
 ## 背景
 
 - [Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) Phase 4 MVP 実装の Step 4-4
-- Step 4-3 で `bin/oe` + `lib/*.sh` 8 ファイル + 検証ゲート v1 (mock 経由 299 assertions PASS) が動作する状態
+- Step 4-3 で `bin/oe` + `lib/*.sh` 8 ファイル + 検証ゲート v1 (mock 経由 293 assertions PASS) が動作する状態
 - 本 Step の主題: **実 agent (cursor-agent + claude -p) で 1 サイクル完走することの実証**
 - Step 4-3 の so-compare 2 段階レビューで「mock では動くが実 agent では動かない」失敗モードが複数指摘されており、その解消が本 Step の核心
 
@@ -86,7 +86,7 @@ projects/orchestration-engine/
 │   └── cleanup.sh            # 両ペイン kill + wez notify
 ├── schemas/                  # 5 ファイル (verification + summary 拡張済み)
 ├── scripts/                  # validate-envelope.sh + validate-session-state.sh
-├── tests/                    # mock E2E 含む 8 スイート 299 assertions
+├── tests/                    # mock E2E 含む 8 スイート 293 assertions
 ├── audit/.gitkeep
 └── state/.gitkeep
 ```
@@ -115,7 +115,7 @@ Step 4-4 の Plan に入る前に、前 Step の陳腐化を解消し物理前�
 - [ ] Issue [#89](https://github.com/stlwolf/ai-development-hub/issues/89) (Step 4-3) が CLOSED 済みであることを確認 (PR #94 マージ後、housekeeping コメントで close 済み)
 - [ ] Epic [#19](https://github.com/stlwolf/ai-development-hub/issues/19) の checkbox `4-3` が `[x]` になっていることを確認
 - [ ] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh ./scripts/*.sh` がクリーン
-- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` が全 PASS (299 assertions)
+- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` が全 PASS (293 assertions)
 - [ ] 物理前提の確認: `cursor-agent --version` (or `cursor --version`) と `claude --version` が両方実行可能であることを開発者環境で確認
   - **NOTE**: 物理前提が揃わない開発者環境では Phase A 完了までは進められるが、Phase E (E2E 完走) は実施不可
 
@@ -123,7 +123,7 @@ Step 4-4 の Plan に入る前に、前 Step の陳腐化を解消し物理前�
 
 ### Step 4-4 の主題
 
-**E2E 検証 (実 agent で 1 サイクル完走)**: 検証ゲート v1 ([PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で mock 経由 299 assertions PASS) を **実 agent (cursor-agent / composer-2 target + claude -p / claude-sonnet-4-6 検証)** で 1 サイクル動かし、engine の対外境界 (実 CLI 接続性) を構造的に検証する。
+**E2E 検証 (実 agent で 1 サイクル完走)**: 検証ゲート v1 ([PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で mock 経由 293 assertions PASS) を **実 agent (cursor-agent / composer-2 target + claude -p / claude-sonnet-4-6 検証)** で 1 サイクル動かし、engine の対外境界 (実 CLI 接続性) を構造的に検証する。
 
 ### 確定 DI (8 項目 — Discussion Q1〜Q8 から変換)
 
@@ -132,14 +132,14 @@ Step 4-4 の Plan に入る前に、前 Step の陳腐化を解消し物理前�
   - target: `cursor-agent` + `composer-2` (Cursor 自社モデル、サブスク内コスト)
   - 検証: `claude -p` + `claude-sonnet-4-6` (Compliance Review の推論力 + Opus の 1/5 コスト ~$0.045/サイクル)
   - **`auto` ではなく明示指定**: 検証としての再現性 + 結果の比較可能性
-- **DI-3: [#91](https://github.com/stlwolf/ai-development-hub/issues/91) 組み込み** = 本 Step Plan の **Phase A** として組み込み (本 Step PR で同時マージ)。`lib/spawn.sh` に CLI ディスパッチャ `_oe_spawn_build_cli_command` を追加し、cursor-agent / claude -p / codex -p (スタブ) の 3 種に対応
+- **DI-3: [#91](https://github.com/stlwolf/ai-development-hub/issues/91) 組み込み** = 本 Step Plan の **Phase A** として組み込み (本 Step の **実装 PR** で `Closes #91` を含めて同時マージ、本 docs PR は #91 を closed しない)。`lib/spawn.sh` に CLI ディスパッチャ `_oe_spawn_build_cli_command` を追加し、cursor-agent / claude -p / codex -p (スタブ) の 3 種に対応
 - **DI-4: target / 検証 CLI 関係** = 別 CLI + 別モデル固定 + env var 化。新規 env var:
   - `OE_TARGET_AI_CLI` (デフォルト `cursor-agent`)
   - `OE_TARGET_AI_MODEL` (デフォルト `composer-2`)
   - `OE_VERIFY_AI_MODEL` (デフォルト `claude-sonnet-4-6`)
   - 既存 `OE_VERIFY_AI_CLI` (Step 4-3 F-SO-6、デフォルトは Step 4-4 で `claude` に変更)
 - **DI-5: 自動化境界** = 半自動 (`tests/e2e_real_agent/` ディレクトリに分離、開発者が手元で実行 + 人間承認)。完全 CI 自動化は Step 4-5 以降
-- **DI-6: mock テスト併存** = 別ディレクトリで併存 (CI=mock / 開発者=real)。既存 `tests/test_*.sh` 299 assertions は維持
+- **DI-6: mock テスト併存** = 別ディレクトリで併存 (CI=mock / 開発者=real)。既存 `tests/test_*.sh` 293 assertions は維持
 - **DI-7: non-determinism 対処** = 構造的判定 (マーカー emit / KVS / audit / notify の 4 点を「成功」と定義)。`verify_result` の値 (pass/fail/warn) は assertion 対象外、Episode に観察記録
 - **DI-8: 完了条件** = 後述 §「完了条件」の 8 項目 (Q8 全項)
 
@@ -153,7 +153,7 @@ Discussion §「派生課題」と整合:
 - 3 CLI 全対応 (現状 `codex -p` は CLI ディスパッチャにスタブとして残すが動作確認は cursor + claude のみ)
 - 検証 agent 自体の品質評価 (Step 4-5 候補)
 - 派生 Issue [#92](https://github.com/stlwolf/ai-development-hub/issues/92) (per-pane 変更ファイル検出 / 完了報告充実) の本格実装 — 必要性が運用で確認された場合のみ Step 4-5 で取り込み
-- 派生 Issue [#93](https://github.com/stlwolf/ai-development-hub/issues/93) (一時ファイル掃除 / nonce マーカー) — MVP 後拡張
+- 派生 Issue [#93](https://github.com/stlwolf/ai-development-hub/issues/93): **前半** (reviewer 一時ファイル掃除 = `OE_VERIFY_REVIEWER_SESSION_IDS` 追跡) は **Phase C の DI-1 target task** として本 Step に取り込み済み (Plan Phase C Step 9 / 推奨デフォルト)。**後半** (nonce 付きマーカー偽陽性対策) は MVP 後拡張
 
 ## 完了条件 (確定 — Discussion §Q8 から転記)
 
@@ -161,8 +161,8 @@ Discussion §「派生課題」と整合:
   - 検証方法: audit log + KVS から確認
 - [ ] **(2)** `state/{session_id}.state.json` に `state: success` と `verification[].result` が記録される
   - 検証方法: `validate-session-state.sh` で validation
-- [ ] **(3)** `audit/{session_id}.jsonl` に主要 7 イベント (`session_start`, `state_change`, `session_end`, `verification_started`, `verification_completed`, `cleanup`, [optional `verification_protocol_error`]) が記録される
-  - 検証方法: `jq` でイベント件数確認
+- [ ] **(3)** `audit/{session_id}.jsonl` に必須 6 イベント (`session_start`, `state_change`, `session_end`, `verification_started`, `verification_completed`, `cleanup`) が記録される + optional `verification_protocol_error` は protocol 違反時のみ emit (正常完了時は 0 件)
+  - 検証方法: `jq` でイベント件数確認 (必須 6 は 1 件以上、`circuit_breaker_triggered` は 0 件、`verification_protocol_error` は 0 件以上)
 - [ ] **(4)** `wez notify` が呼ばれ、本文に `pass={} fail={} warn={} fail_rate={} protocol_errors={} timeouts={}` が展開される
   - 検証方法: notify log 確認
 - [ ] **(5)** shellcheck クリーン + 既存 299 mock assertions 回帰なし
@@ -183,13 +183,13 @@ Discussion §「派生課題」と整合:
   - `bin/oe` の `oe_main` で `OE_TARGET_AI_CLI` / `OE_TARGET_AI_MODEL` env var を読む
   - `OE_VERIFY_AI_MODEL` env var を新設 (既存 `OE_VERIFY_AI_CLI` と並行)
   - `oe_spawn_send` / `oe_verify_spawn` がディスパッチャ経由で送信するように改修
-  - 既存 mock テスト 299 assertions に回帰なし
+  - 既存 mock テスト 293 assertions に回帰なし
   - **Phase A 冒頭で物理前提の実機確認**: `cursor-agent` の正しい invocation 仕様、`claude -p ... --model claude-sonnet-4-6` の指定方法、composer-2 の Bash + Markdown 実力 (簡単な Bash 関数追加で動作確認、不安定なら gpt-4.1 退避案を Plan に明示)
 - **Phase B: 実 agent spawn 経路の通電確認 (DI-2)**
   - 既存 mock テストを `OE_TARGET_AI_CLI=cursor-agent` / `OE_VERIFY_AI_CLI=claude` 環境下でも通るよう、必要なら mock を拡張
   - 単純 echo 系の最小プロンプトで cursor-agent / claude -p をそれぞれ単独起動し、`@@OE_EXIT` emit までを確認
 - **Phase C: target 側のタスク実行確認 (DI-1)**
-  - DI-1 で確定したタスク (Plan で 1 つに絞る) を `bin/oe "<task description>"` で起動
+  - DI-1 で確定したタスク (Plan で 1 つに絞る) を `bin/oe --task-file <path>` で起動 (Plan Phase A Step 5 で `--task-file` オプションを実装、Markdown を shell expansion 経由で渡す破綻を回避)
   - cursor-agent が envelope を読んでタスクを完遂、`@@OE_EXIT:0` を emit するまでを確認
   - KVS に `state: success` が書かれることを確認
 - **Phase D: 検証フェーズ E2E (DI-2 + DI-7)**
