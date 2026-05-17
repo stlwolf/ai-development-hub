@@ -43,3 +43,14 @@ OE_VERIFY_DONE_PANES=()
 
 # Step 4-3 Phase E: 検証フェーズ完走フラグ (cleanup の wez notify 発火条件、CB 発動時は未設定のまま)
 OE_VERIFY_PHASE_COMPLETED=0
+
+# Step 4-4 Phase A: target / 検証 agent の AI CLI + モデル選択 (DI-4 + #91)
+# Phase A Step 1 物理前提実機確認で確定したデフォルト値:
+#   - target = cursor-agent (composer-2)
+#   - 検証   = claude (claude-sonnet-4-6)
+# env var で override 可能。CLI ディスパッチャ (_oe_spawn_build_cli_command in spawn.sh) は
+# "cursor-agent" / "cursor" / "claude" / "claude-safe" / "codex" を解釈する。
+OE_TARGET_AI_CLI="${OE_TARGET_AI_CLI:-cursor-agent}"
+OE_TARGET_AI_MODEL="${OE_TARGET_AI_MODEL:-composer-2}"
+OE_VERIFY_AI_CLI="${OE_VERIFY_AI_CLI:-claude}"
+OE_VERIFY_AI_MODEL="${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}"

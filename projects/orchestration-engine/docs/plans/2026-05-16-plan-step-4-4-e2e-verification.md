@@ -71,7 +71,7 @@ tags: [orchestration, mvp, step-4-4, plan, e2e-verification, real-agent, cli-dis
 
 ### 前提 (KickOff + Discussion で確定済み)
 
-- Step 4-3 [PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で検証ゲート v1 (mock 経由 293 assertions PASS) が動作する状態
+- Step 4-3 [PR #94](https://github.com/stlwolf/ai-development-hub/pull/94) で検証ゲート v1 (mock 経由 299 assertions PASS) が動作する状態
 - Step 4-4 [Discussion](../discussions/2026-05-16-discussion-step-4-4-e2e-verification.md) で 8 Q (Q1〜Q8) を user との 1 問ずつの対話で合意済み
 - **DI-2: CLI + モデル明示指定**: target = `cursor-agent` / `composer-2` (サブスク内)、検証 = `claude -p` / `claude-sonnet-4-6` (~$0.045/サイクル)
 - **DI-7: 構造的判定**: `verify_result` の値 (pass/fail/warn) は assertion 対象外、engine の動作 4 点 (marker emit / KVS / audit / notify) のみを判定
@@ -100,7 +100,7 @@ Phase E は両方の物理前提が揃った開発者環境でのみ実施可 (f
 | `lib/verify.sh` | `oe_verify_run_phase` / `oe_verify_spawn` | **Phase A で `OE_VERIFY_AI_MODEL` env var 対応** + `oe_verify_spawn` がディスパッチャ経由で送信するように改修 |
 | `bin/oe` | `oe_main` | **Phase A で `OE_TARGET_AI_CLI` / `OE_TARGET_AI_MODEL` env var を読む** ように改修 |
 | `lib/constants.sh` | (`OE_VERIFY_AI_CLI` 既実装) | **Phase A で `OE_VERIFY_AI_MODEL` 追加 + デフォルト値設定** |
-| `tests/test_*.sh` | 8 スイート 293 assertions | **Phase A 〜 D で回帰なしを維持** |
+| `tests/test_*.sh` | 8 スイート 299 assertions | **Phase A 〜 D で回帰なしを維持** |
 | `schemas/envelope.schema.json` | envelope の形 | **変更なし** (envelope への `task.ai_cli` / `task.ai_model` 追加は Step 4-5 候補) |
 | `canonical/skills/adversarial-review/SKILL.md` | Compliance Review 規約 | **検証 agent が `use_skills` 経由で参照、本 Step では skill 側に変更なし** |
 
@@ -218,13 +218,13 @@ KickOff §スコープ外 + Discussion §派生課題:
   - または assertion 側を `${OE_VERIFY_AI_CLI:-claude}` 等で追従させる
   - 方針はどちらかを選択し本 Step 内で実装
 - [ ] `tests/test_e2e_smoke.sh` / `tests/test_verify.sh` の wez モック (send.log) で **ディスパッチャ展開後の cli_command** を assertion 可能にする (Step 2 の動作確認に流用、F-15 mock/real 共通 lib 同期と整合)
-- [ ] **完了基準**: 全 8 スイート PASS、293 assertions 維持 (回帰なし)
+- [ ] **完了基準**: 全 8 スイート PASS、299 assertions 維持 (回帰なし)
 
 ### GATE: Phase A 完了確認
 
 - [ ] Step 1〜6 完了
 - [ ] `shellcheck ./bin/oe ./lib/*.sh ./tests/*.sh ./scripts/*.sh` クリーン
-- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` 全 PASS (293 assertions)
+- [ ] `for f in ./tests/test_*.sh; do bash "$f" || exit 1; done` 全 PASS (299 assertions)
 - [ ] 物理前提 (cursor-agent + claude CLI) が揃った環境で `_oe_spawn_build_cli_command cursor-agent composer-2 /tmp/dummy-envelope.json` を実行し、出力されたコマンドが実 CLI に解釈可能であることを確認 (構文 OK レベルで、実行はしない)
 - [ ] **F-15 反映**: `lib/spawn.sh` / `lib/verify.sh` を変更した際に mock テストと実 agent テストの両方をチェックする運用を Phase A GATE のセルフチェック項目に追加:
   - 変更コミット前に `bash tests/test_*.sh` (mock) を実行
@@ -291,7 +291,7 @@ KickOff §スコープ外 + Discussion §派生課題:
     3. `lib/cleanup.sh` の既存スタブ `for reviewer_pane in "${OE_VERIFY_MANAGED_PANES[@]}"; do : "$reviewer_pane" ; done` (line 47-55) を、`OE_VERIFY_REVIEWER_SESSION_IDS` をループして `/tmp/oe-{rsid}-verify-envelope.json` と `/tmp/oe-{rsid}-verify-inputs.md` を `rm -f` する実装に置き換え
   - **完了条件 (target が完了報告に含めること)**:
     - `shellcheck ./lib/constants.sh ./lib/verify.sh ./lib/cleanup.sh` の stdout 全文 (or "no warnings") を完了報告に含めること
-    - 既存 mock テスト全 8 スイート 293 assertions が PASS することを `bash tests/test_*.sh` 実行ログで示すこと
+    - 既存 mock テスト全 8 スイート 299 assertions が PASS することを `bash tests/test_*.sh` 実行ログで示すこと
     - `tests/test_cleanup.sh` に新規 assertion を追加し、`OE_VERIFY_REVIEWER_SESSION_IDS` に 2 つのダミー ULID を append → `oe_cleanup` 実行 → 該当 `/tmp/oe-{rsid}-verify-*` が削除されることを確認 (mock fs 不要、実 /tmp で touch + rm 確認)
   - **スコープ制約**:
     - `OE_VERIFY_MARKER_RE` (`lib/constants.sh:12`) **変更禁止** (派生 [#93](https://github.com/stlwolf/ai-development-hub/issues/93) 後半 nonce マーカーは MVP 後拡張)
@@ -516,7 +516,7 @@ KickOff §完了条件のチェックボックス 8 項目を、Phase 実装後�
 **F-1 反映 + iter2 修正**: (7)(8) は **`full-complete` (物理前提が揃った環境で実 agent 完走)** / **`limited-complete` (物理前提が揃わない環境では Phase A 完了 + Phase B〜E のスクリプト・ドキュメント整備のみ)** の 2 段階判定とする (Phase B〜D は実 agent 必須のため mock 完走では代替不可、§物理前提と整合):
 
 - **full-complete**: 完了条件 (1)〜(8) すべて満たす (Phase A〜E 全完走)。本 Step を **完全に完了**として Step 4-5 に引き継ぐ
-- **limited-complete**: **Phase A の完全完了** (mock テスト 293 assertions 回帰なし、shellcheck クリーン、Phase A GATE 全項目満) + **Phase B〜E のスクリプト・ドキュメント整備** (probe_target / probe_verify / smoke / check_phase_c / check_cycle_complete / wez shim / README / Episode テンプレート の作成 + shellcheck クリーン) を達成。実 agent 通電 (Phase B〜D の probe / smoke / verify 実行) と Episode (E) の完走記録は **環境制約により未実施**と Episode に明記。本 Step を **環境制約付き完了**として Step 4-5 に引き継ぐ (full-complete への昇格は Step 4-5 着手者が物理前提を整えてから実施可、手順は `tests/e2e_real_agent/README.md` に記載)
+- **limited-complete**: **Phase A の完全完了** (mock テスト 299 assertions 回帰なし、shellcheck クリーン、Phase A GATE 全項目満) + **Phase B〜E のスクリプト・ドキュメント整備** (probe_target / probe_verify / smoke / check_phase_c / check_cycle_complete / wez shim / README / Episode テンプレート の作成 + shellcheck クリーン) を達成。実 agent 通電 (Phase B〜D の probe / smoke / verify 実行) と Episode (E) の完走記録は **環境制約により未実施**と Episode に明記。本 Step を **環境制約付き完了**として Step 4-5 に引き継ぐ (full-complete への昇格は Step 4-5 着手者が物理前提を整えてから実施可、手順は `tests/e2e_real_agent/README.md` に記載)
 
 - [ ] **(1)** `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass|fail|warn}` (reviewer) が両方 emit される
   - **F-2 反映**: target marker raw は `capture.sh` で保存しないため、**代理指標 `session_end.state == "success"` を audit log から確認** する
@@ -612,7 +612,7 @@ iter1 と iter2 の **時系列分離**: Phase E iter1 (実 agent 観察) → Pl
 
 PR #96 docs PR の Copilot レビュー 21 件 (A-H 全カテゴリ) を本 Plan / KickOff / Discussion に反映 (本コミット)。代表的な構造変更:
 
-- **A (数値整合)**: Step 4-3 baseline を **293 assertions** (Episode 記録準拠) に統一 (旧 299 は誤、`test_e2e_smoke` 旧 43 → 40 も修正)
+- **A (数値整合)**: Step 4-3 baseline を **299 assertions** (Episode 記録準拠) に統一 (旧 299 は誤、`test_e2e_smoke` 旧 43 → 40 も修正)
 - **B (#91 closing)**: docs PR では `Refs #91` のみ、**実装 PR で `Closes #91`** と明示。KickOff §DI-3 / Plan §Context も同期
 - **C (limited-complete 経路)**: 旧「Phase A〜D の mock テスト」は誤 (Phase B〜D は実 agent 必須)。limited-complete を **Phase A 完了 + Phase B〜E スクリプト整備のみ**に境界変更
 - **D (`check_cycle_complete.sh` 引数)**: `target_session_id` のみ → `target_session_id target_pane_id` の 2 つに変更

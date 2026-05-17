@@ -218,18 +218,22 @@ oe_verify_prompt_build() {
 #   target_pane_id        被検証ペイン ID
 #   target_session_id     被検証セッション ID
 #   target_envelope_path  被検証ペインの envelope JSON のパス
-#   [ai_cli]              使用する AI CLI (デフォルト: "cursor")
+#   [ai_cli]              使用する AI CLI (デフォルト: ${OE_VERIFY_AI_CLI:-claude})
+#   [ai_model]            使用するモデル   (デフォルト: ${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6})
 #
 # 戻り値:
 #   OE_VERIFY_PANE_ID         検証 agent ペイン ID
 #   OE_VERIFY_ENVELOPE_PATH   検証用 envelope パス
 #   OE_VERIFY_PROMPT_PATH     構築されたプロンプト (3 入力) ファイルパス
+#
+# Step 4-4 Phase A 反映 (F-8): ai_model 引数追加 + ディスパッチャ (_oe_spawn_build_cli_command) 経由化
 oe_verify_spawn() {
   local reviewer_session_id="$1"
   local target_pane_id="$2"
   local target_session_id="$3"
   local target_envelope_path="$4"
-  local ai_cli="${5:-cursor}"
+  local ai_cli="${5:-${OE_VERIFY_AI_CLI:-claude}}"
+  local ai_model="${6:-${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}}"
 
   OE_VERIFY_PANE_ID=""
 
@@ -258,11 +262,13 @@ oe_verify_spawn() {
     "$target_envelope_path" \
     "$OE_VERIFY_PROMPT_PATH"
 
-  # 送信コマンド: ai_cli に envelope を読ませる + 末尾で shell が @@OE_EXIT を emit
+  # 送信コマンド: ai_cli ディスパッチャ経由で組み立て + 末尾で shell が @@OE_EXIT を emit。
   # 検証 agent 自身は task.description / skill の指示に従って @@OE_VERIFY:{result} を出力する。
   # 二値 (@@OE_VERIFY + @@OE_EXIT) の同時検出は Phase D F3 の二値保持で対応する。
+  local base_cli_command
+  base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$OE_VERIFY_ENVELOPE_PATH" "$PROJECT_DIR")"
   local cli_command
-  cli_command="${ai_cli} --prompt 'Read ${OE_VERIFY_ENVELOPE_PATH} and execute the task' ; printf '\\n@@OE_EXIT:%d\\n' \$?"
+  cli_command="${base_cli_command} ; printf '\\n@@OE_EXIT:%d\\n' \$?"
 
   wez pane send "$reviewer_pane_id" "$cli_command"
 
@@ -496,9 +502,10 @@ oe_verify_run_phase() {
   local target_session_id="$1"
   shift
 
-  # 末尾オプション: ai_cli (位置引数ではなく環境変数 OE_VERIFY_AI_CLI で渡す設計、
-  # 後方互換維持のため位置引数化はしない)
-  local ai_cli="${OE_VERIFY_AI_CLI:-cursor}"
+  # 末尾オプション: ai_cli / ai_model (位置引数ではなく環境変数で渡す設計、後方互換維持)
+  # Step 4-4 Phase A 反映: デフォルトを cursor → claude / sonnet-4-6 に変更
+  local ai_cli="${OE_VERIFY_AI_CLI:-claude}"
+  local ai_model="${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}"
 
   if [[ $# -eq 0 ]]; then
     return 0
@@ -520,7 +527,8 @@ oe_verify_run_phase() {
       "$target_pane_id" \
       "$target_session_id" \
       "$target_envelope_path" \
-      "$ai_cli"
+      "$ai_cli" \
+      "$ai_model"
 
     local reviewer_pane_id="$OE_VERIFY_PANE_ID"
     # 注: oe_verify_spawn は内部で OE_VERIFY_MANAGED_PANES に append 済み
