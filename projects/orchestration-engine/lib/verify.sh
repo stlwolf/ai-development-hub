@@ -521,6 +521,7 @@ oe_verify_run_phase() {
   for target_pane_id in "$@"; do
     local reviewer_session_id
     reviewer_session_id="$(_oe_verify_generate_session_id)"
+    OE_VERIFY_REVIEWER_SESSION_IDS+=("$reviewer_session_id")
 
     oe_verify_spawn \
       "$reviewer_session_id" \

@@ -54,3 +54,7 @@ OE_TARGET_AI_CLI="${OE_TARGET_AI_CLI:-cursor-agent}"
 OE_TARGET_AI_MODEL="${OE_TARGET_AI_MODEL:-composer-2}"
 OE_VERIFY_AI_CLI="${OE_VERIFY_AI_CLI:-claude}"
 OE_VERIFY_AI_MODEL="${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}"
+
+# Step 4-4 Phase C: reviewer 一時ファイル掃除用配列 (派生 Issue #93 前半)
+# oe_verify_run_phase で reviewer ULID 生成時に append、oe_cleanup で対応する /tmp/oe-{rsid}-verify-* を削除
+OE_VERIFY_REVIEWER_SESSION_IDS=()
