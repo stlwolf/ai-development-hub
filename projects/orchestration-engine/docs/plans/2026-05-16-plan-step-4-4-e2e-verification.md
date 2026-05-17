@@ -513,10 +513,10 @@ KickOff §スコープ外 + Discussion §派生課題:
 
 KickOff §完了条件のチェックボックス 8 項目を、Phase 実装後の最終検証 TODO として展開する。
 
-**F-1 反映**: (7)(8) は **`full-complete` (物理前提が揃った環境で実 agent 完走)** / **`limited-complete` (物理前提が揃わない環境で Phase A〜D mock 完走まで)** の 2 段階判定とする:
+**F-1 反映 + iter2 修正**: (7)(8) は **`full-complete` (物理前提が揃った環境で実 agent 完走)** / **`limited-complete` (物理前提が揃わない環境では Phase A 完了 + Phase B〜E のスクリプト・ドキュメント整備のみ)** の 2 段階判定とする (Phase B〜D は実 agent 必須のため mock 完走では代替不可、§物理前提と整合):
 
-- **full-complete**: 完了条件 (1)〜(8) すべて満たす (Phase E 含む)。本 Step を **完全に完了**として Step 4-5 に引き継ぐ
-- **limited-complete**: 完了条件 (1)〜(6) を満たし、(7)(8) は「`tests/e2e_real_agent/` スクリプトと Episode テンプレートが整備済み、実完走実証は環境制約で未実施」と Episode に明記。本 Step を **環境制約付き完了**として Step 4-5 に引き継ぐ (full-complete への昇格を Step 4-5 着手者が物理前提を整えてから実施可)
+- **full-complete**: 完了条件 (1)〜(8) すべて満たす (Phase A〜E 全完走)。本 Step を **完全に完了**として Step 4-5 に引き継ぐ
+- **limited-complete**: **Phase A の完全完了** (mock テスト 293 assertions 回帰なし、shellcheck クリーン、Phase A GATE 全項目満) + **Phase B〜E のスクリプト・ドキュメント整備** (probe_target / probe_verify / smoke / check_phase_c / check_cycle_complete / wez shim / README / Episode テンプレート の作成 + shellcheck クリーン) を達成。実 agent 通電 (Phase B〜D の probe / smoke / verify 実行) と Episode (E) の完走記録は **環境制約により未実施**と Episode に明記。本 Step を **環境制約付き完了**として Step 4-5 に引き継ぐ (full-complete への昇格は Step 4-5 着手者が物理前提を整えてから実施可、手順は `tests/e2e_real_agent/README.md` に記載)
 
 - [ ] **(1)** `@@OE_EXIT:0` (target) と `@@OE_VERIFY:{pass|fail|warn}` (reviewer) が両方 emit される
   - **F-2 反映**: target marker raw は `capture.sh` で保存しないため、**代理指標 `session_end.state == "success"` を audit log から確認** する
