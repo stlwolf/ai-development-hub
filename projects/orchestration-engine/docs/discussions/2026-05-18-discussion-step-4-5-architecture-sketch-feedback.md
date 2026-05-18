@@ -58,7 +58,7 @@ tags: [orchestration, mvp, step-4-5, question-driven-design, architecture-sketch
 - **Episode 15+ 件** (`projects/orchestration-engine/docs/episodes/`): 各 Step の経緯・観察記録
 - **Plan + KickOff + Discussion 各 Step** (`projects/orchestration-engine/docs/plans/` および `docs/discussions/`): 設計過程の正本
 - **engine 実装本体** (`lib/*.sh`, `bin/oe`, `schemas/*.json`, `scripts/validate-*.sh`): Phase 4 で実際に組み上がった構造
-- **派生 Issue 8 件** (open): #92 / #93 / #98〜#102 — MVP 後拡張候補
+- **派生 Issue 7 件** (open): #92 / #93 / #98〜#102 — MVP 後拡張候補
 
 ---
 
@@ -132,7 +132,7 @@ tags: [orchestration, mvp, step-4-5, question-driven-design, architecture-sketch
 
 **根拠**:
 - Epic #19 のタスクは Step 4-5 まで明示されている、Phase 5 は別 Epic として扱うのが自然
-- 派生 Issue 8 件 (open) が MVP 後拡張の backlog として機能している、新 Phase で枠を作らなくても進行可能
+- 派生 Issue 7 件 (open) が MVP 後拡張の backlog として機能している、新 Phase で枠を作らなくても進行可能
 
 ---
 

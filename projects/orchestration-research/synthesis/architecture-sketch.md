@@ -2,9 +2,9 @@
 
 > Q&A 形式の設計議論（Issue #18）を経て、確定した判断・未決定事項・MVP 構成を1枚にまとめる。
 
-> **文書ステータス (2026-05 更新)**
+> **文書ステータス (2026-05-18 更新)**
 >
-> 本文書は Phase 3 Synthesis 完了時点の素案 (§1〜§10) に、Phase 4 MVP 完了報告 (§11、2026-05) を加えた **2 層構造の frozen 文書**。以降の orchestration-engine の設計判断は [`projects/orchestration-engine/docs/decisions/`](../../orchestration-engine/docs/decisions/) 配下の ADR を正本とし、本文書には追記しない。
+> 本文書は Phase 3 Synthesis 完了時点の素案 (§1〜§10) に、Phase 4 MVP 完了報告 (§11、2026-05-18) を加えた **2 層構造の frozen 文書**。以降の orchestration-engine の設計判断は [`projects/orchestration-engine/docs/decisions/`](../../orchestration-engine/docs/decisions/) 配下の ADR を正本とし、本文書には追記しない。
 >
 > Phase 4 完了時点の engine の使い方 / 構成は [`projects/orchestration-engine/README.md`](../../orchestration-engine/README.md)、Step ごとの経緯は [`projects/orchestration-engine/docs/episodes/`](../../orchestration-engine/docs/episodes/) を参照。
 
@@ -82,7 +82,7 @@ context-foundation.md の議論から導出された基本ガードレール:
 - Arena = 上流（設計の発散）、Peer Review = ゲート（収束）、Adversarial Review = 検証（自己回帰）
 - adversarial review は**検証ゲート（MVP #5）の主要実装**として組み込む
 
-### Phase 4 確定事項 (2026-05 追記)
+### Phase 4 確定事項 (2026-05-18 追記)
 
 - **「ゲートが実行されたか」問題** (§8 で指摘) は Step 4-3 で `verification_completed` audit イベント + `verification_summary` 集計 + `circuit_breaker_triggered` の組み合わせで構造的に証明する形に確定 ([ADR: `2026-05-16-decision-verification-gate-design.md`](../../orchestration-engine/docs/decisions/2026-05-16-decision-verification-gate-design.md))
 - **検証 agent の出力経路** は Step 4-4 で `tee /tmp/oe-{rsid}-reviewer.log` への file redirect に確定 (wez pane capture が viewport-only でスクロールアウトする問題への対応、[ADR: `2026-05-18-decision-reviewer-output-file-redirect.md`](../../orchestration-engine/docs/decisions/2026-05-18-decision-reviewer-output-file-redirect.md))
@@ -115,7 +115,7 @@ canonical 正本（フル属性）
 
 正本には最大限のフィールドを持ち、sync スクリプトが Cursor / Claude Code / Codex それぞれに対応した形式で出力する。
 
-### Phase 4 確定事項 (2026-05 追記)
+### Phase 4 確定事項 (2026-05-18 追記)
 
 Phase 4 MVP 実装で確定したスキーマ成果物の場所:
 
@@ -164,7 +164,7 @@ Phase 4 MVP 実装で確定したスキーマ成果物の場所:
 - **対象**: ai-development-hub 内のツール改善タスク（例: Cursor スレッド出力ツール改善）
 - **選定基準**: 安全（壊しても被害小）、実務利用中、1サイクル完結
 - **検証すること**: 1サイクルが自律的 + 自己回帰的に回り、検証ループ含めて動作すること
-- **Phase 4 結果 (2026-05 追記)**: Step 4-4 で **target = cursor-agent (composer-2) + reviewer = claude (sonnet-4-6)** の組み合わせで実機 1 サイクル完走を実証 ([PR #97](https://github.com/stlwolf/ai-development-hub/pull/97)、実機 smoke 2 回目で `verification_completed` emit + `protocol_errors=0 / timeouts=0` 確認、`check_cycle_complete.sh` 構造判定 4+2 点全 PASS)
+- **Phase 4 結果 (2026-05-18 追記)**: Step 4-4 で **target = cursor-agent (composer-2) + reviewer = claude (sonnet-4-6)** の組み合わせで実機 1 サイクル完走を実証 ([PR #97](https://github.com/stlwolf/ai-development-hub/pull/97)、実機 smoke 2 回目で `verification_completed` emit + `protocol_errors=0 / timeouts=0` 確認、`check_cycle_complete.sh` 構造判定 4+2 点全 PASS)
 
 ## 6. 構造化の設計課題（状態管理・長期記憶）
 
@@ -273,17 +273,17 @@ architecture-sketch §3 で「親エージェントが fix-loop の結果に十�
 - [ ] 認知協調の設計文書 → 不要と判断。実装が先行しており、素描に統合済み
 - [ ] 正準エージェント定義の設計文書 → 不要と判断。MVP で経験的に固める
 
-### Phase 4: MVP 実装（完了、2026-05）
+### Phase 4: MVP 実装（完了、2026-05-18）
 
 | ステップ | 内容 | 成果物 | 状態 |
 |---------|------|--------|------|
-| 4-1 | エンベロープ + ディスパッチャの骨格 | `projects/orchestration-engine/` にスクリプト | ✅ 完了 (2026-05) |
-| 4-2 | 成果物パース + 状態管理 | JSON スキーマ + パーサー | ✅ 完了 (2026-05) |
-| 4-3 | 検証ゲート v1（adversarial review 相当） | 照合スクリプト + レビュープロンプト | ✅ 完了 (2026-05) |
-| 4-4 | スレッド出力ツール改善を通した E2E 検証 | 1サイクル完走の実証 | ✅ 完了 (2026-05、[PR #97](https://github.com/stlwolf/ai-development-hub/pull/97)) |
-| 4-5 | フィードバック → 設計修正 | architecture-sketch.md 更新 (本セクション + §11) | ✅ 完了 (2026-05、本 PR) |
+| 4-1 | エンベロープ + ディスパッチャの骨格 | `projects/orchestration-engine/` にスクリプト | ✅ 完了 (2026-05-18) |
+| 4-2 | 成果物パース + 状態管理 | JSON スキーマ + パーサー | ✅ 完了 (2026-05-18) |
+| 4-3 | 検証ゲート v1（adversarial review 相当） | 照合スクリプト + レビュープロンプト | ✅ 完了 (2026-05-18) |
+| 4-4 | スレッド出力ツール改善を通した E2E 検証 | 1サイクル完走の実証 | ✅ 完了 (2026-05-18、[PR #97](https://github.com/stlwolf/ai-development-hub/pull/97)) |
+| 4-5 | フィードバック → 設計修正 | architecture-sketch.md 更新 (本セクション + §11) | ✅ 完了 (2026-05-18、[PR #104](https://github.com/stlwolf/ai-development-hub/pull/104)) |
 
-### Phase 5 以降 (2026-05 追記)
+### Phase 5 以降 (2026-05-18 追記)
 
 Phase 5 (もしあれば) のスコープは本 Step (= Phase 4 完了時点) では未定。orchestration-engine の MVP 後拡張は派生 Issue 群 ([#92](https://github.com/stlwolf/ai-development-hub/issues/92) / [#93](https://github.com/stlwolf/ai-development-hub/issues/93) / [#98](https://github.com/stlwolf/ai-development-hub/issues/98)〜[#102](https://github.com/stlwolf/ai-development-hub/issues/102)、計 7 件) で個別管理。次の大きなフェーズが必要になった時点で別 Epic として起票する。
 
@@ -308,9 +308,9 @@ Phase 5 の方向感メモは [`projects/orchestration-engine/docs/plans/2026-05
 - `projects/poc/wezterm-ai-mode/README.md` — WezTerm AI Mode PoC
 - `.thread-exports/Agent向けCLI記事とideasの方向性検証_2026-03-29.md` — Agent 向け CLI 方向性検証
 
-## 11. Phase 4 完了報告 (2026-05)
+## 11. Phase 4 完了報告 (2026-05-18)
 
-> Step 4-5 で追記 ([PR #TBD](https://github.com/stlwolf/ai-development-hub/issues/103))。Phase 4 全 5 Step (4-1〜4-5) 完了時点での到達点・設計判断・観察事実・派生 Issue・文書ステータスを集約。本文書はここで frozen とする。
+> Step 4-5 で追記 ([PR #104](https://github.com/stlwolf/ai-development-hub/pull/104))。Phase 4 全 5 Step (4-1〜4-5) 完了時点での到達点・設計判断・観察事実・派生 Issue・文書ステータスを集約。本文書はここで frozen とする。
 
 ### 11.1 到達点
 

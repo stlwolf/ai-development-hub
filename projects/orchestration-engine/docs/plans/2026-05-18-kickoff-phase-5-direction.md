@@ -31,7 +31,7 @@ tags: [orchestration, post-phase-4, kickoff, direction-memo, draft, phase-5-prep
 
 # Phase 5 / 本実装移行の方向感 KickOff (現時点の方向感メモ)
 
-> **本 KickOff のステータス**: `status: draft` — Phase 5 着手時に正式 `confirmed` 化する前提の **方向感スナップショット**。Phase 4 完了直後 (2026-05-18) の現時点認識を捕捉し、後の Phase 5 正式 KickOff 起草時の入力資料として再利用する。本 doc は Step 4-5 PR ([#TBD]) で merge され、orchestration-engine の Phase 5 着手判断の起点として機能する。
+> **本 KickOff のステータス**: `status: draft` — Phase 5 着手時に正式 `confirmed` 化する前提の **方向感スナップショット**。Phase 4 完了直後 (2026-05-18) の現時点認識を捕捉し、後の Phase 5 正式 KickOff 起草時の入力資料として再利用する。本 doc は Step 4-5 [PR #104](https://github.com/stlwolf/ai-development-hub/pull/104) で merge され、orchestration-engine の Phase 5 着手判断の起点として機能する。
 
 ## 1. 背景・現状認識 (Phase 4 完了時点の engine 到達点と限界)
 
@@ -97,18 +97,9 @@ tags: [orchestration, post-phase-4, kickoff, direction-memo, draft, phase-5-prep
 
 **前提**: orchestration-engine の utility は現状 MVP のままで十分、他領域への投資の方が利益が大きいと判断。
 
-## 3. 各 Path の利益 / リスク / 必要工数の見積もり
+## 3. 各 Path の利益 / リスク / 必要工数の見積もり (user 確定、2026-05-18 時点)
 
-> ⚠️ **本セクションは現時点の主観**。確定値ではなく、Phase 5 正式 KickOff 起草時に再評価する。
-
-| 観点 | Path α (MVP 継続改良) | Path β (本実装移行) | Path γ (別 Epic 注力) |
-|---|---|---|---|
-| **利益** | _(user 入力 pending)_ | _(user 入力 pending)_ | _(user 入力 pending)_ |
-| **リスク** | _(user 入力 pending)_ | _(user 入力 pending)_ | _(user 入力 pending)_ |
-| **必要工数 (週単位の目安)** | _(user 入力 pending)_ | _(user 入力 pending)_ | _(user 入力 pending)_ |
-| **依存 (前提条件)** | _(user 入力 pending)_ | _(user 入力 pending)_ | _(user 入力 pending)_ |
-
-**user 確定 (2026-05-18、Step 4-5 Phase A Step 3 で入力)**:
+> ⚠️ **本セクションは現時点の主観**。確定値ではなく、Phase 5 正式 KickOff 起草時に再評価する。Copilot レビュー反映で「pending 表」を削除し確定リストに一本化 (2026-05-18)。
 
 - Path α 利益: 派生 Issue 消化で engine 自体が成熟、Phase 4 の dogfood サイクルを継続できる
 - Path α リスク: MVP の延命のみで対外価値 (= 他プロジェクトでの利用) を生み出さない、内向きの作業に閉じる可能性。**ゴール未確定の状態では純粋なブラッシュアップは空振りに終わる懸念**
