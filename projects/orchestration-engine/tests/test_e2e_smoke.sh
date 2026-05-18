@@ -63,6 +63,14 @@ if [[ "${1:-}" == "pane" && "${2:-}" == "send" ]]; then
   pane_id="${3:-}"
   payload="${4:-}"
   printf '%s|%s\n' "$pane_id" "$payload" >> "${log_dir}/send.log"
+
+  # Step 4-4 Phase C.5 反映: payload に `tee "/tmp/oe-RSID-reviewer.log"` が含まれていれば、
+  # 実シェルが tee 経由で log file に書く動作を mock として再現する。
+  # reviewer pane (888) 向け payload を検知して @@OE_VERIFY:pass + @@OE_EXIT:0 を log に書き込む。
+  if [[ "$pane_id" == "888" ]] && [[ "$payload" =~ tee[[:space:]]+\"([^\"]+-reviewer\.log)\" ]]; then
+    reviewer_log="${BASH_REMATCH[1]}"
+    printf 'review output\n@@OE_VERIFY:pass\n\n@@OE_EXIT:0\n' > "$reviewer_log"
+  fi
   exit 0
 fi
 
@@ -138,12 +146,20 @@ echo ""
 echo "=== Step 4-3 Phase E: 検証フェーズ完走 ==="
 
 # 検証 agent ペイン (888) が spawn された
-assert_eq "reviewer pane (888) split" "true" \
-  "$( [[ -f "${OE_MOCK_LOG_DIR}/capture_count_888" ]] && echo true || echo false )"
+# Step 4-4 Phase C.5 反映: reviewer は file 経路 (tee /tmp/oe-{rsid}-reviewer.log) で監視されるため、
+# wez pane capture は呼ばれない (旧 capture_count_888 assertion は廃止)。代わりに
+# send.log に reviewer 向け payload (pane=888) が記録されていることで spawn を確認する。
+assert_eq "reviewer pane (888) に send 実行" "true" \
+  "$(awk -F'|' '$1=="888"{found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 
 # 検証用 envelope/inputs が send.log に展開される (target=777, reviewer=888)
 assert_eq "reviewer pane に verify envelope を send" "true" \
   "$(awk -F'|' '$1=="888" && index($2, "verify-envelope.json"){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
+
+# Step 4-4 Phase C.5: reviewer payload に tee /tmp/oe-{rsid}-reviewer.log が含まれる (file redirect 経路)
+# 注: awk -F'|' は payload に含まれる `| tee` の `|` で field split されるため、$2 ではなく $0 全体で match
+assert_eq "reviewer payload に tee reviewer.log" "true" \
+  "$(awk -F'|' '$1=="888" && match($0, /tee[[:space:]]+"[^"]+-reviewer\.log"/){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 
 # verification_started イベントが emit される (target session の audit log)
 assert_eq "verification_started 1 件" "1" \

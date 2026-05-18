@@ -12,17 +12,89 @@ oe_spawn_prepare_pane() {
   OE_SPAWN_PANE_ID="$(wez pane split --bottom --percent 30 --wait-ready --timeout "$OE_SPAWN_WAIT_READY_SEC")"
 }
 
+# _oe_spawn_build_cli_command — AI CLI ごとに正しい invocation を組み立てる
+# (Step 4-4 Phase A #91 反映、Phase A Step 1 物理前提実機確認結果に従う)
+#
+# 引数:
+#   ai_cli         "cursor-agent" | "cursor" | "claude" | "claude-safe" | "codex"
+#   ai_model       モデル名 (例: "composer-2", "claude-sonnet-4-6")
+#   envelope_path  envelope JSON のパス (target / verify 両用)
+#   [workspace]    workspace ディレクトリ (cursor-agent --workspace 用、デフォルト = PROJECT_DIR)
+#
+# stdout に組み立てた CLI コマンド文字列を出力。未対応 CLI は exit 1。
+#
+# Phase A Step 1 で確認した invocation 仕様:
+# - cursor-agent: --print --model <model> --workspace <path> --force '<prompt>'
+# - claude: -p '<prompt>' --model <model> --add-dir <repo_root> --add-dir /tmp \
+#           --output-format text --no-session-persistence --max-budget-usd 1.0
+# - codex: スタブ (claude と同形式、本 Step では動作確認なし)
+#
+# 引数の値に関する前提 (caller 側で保証):
+#   envelope_path / workspace / repo_root のいずれにも **single quote `'` を含まない**ことを前提に、
+#   prompt を single quotes でラップして出力する。`'` が混入した場合、pane 内 shell が
+#   組み立てたコマンドを parse できず silent な `verification_protocol_error`
+#   (exit_without_verify_marker) に発展する可能性がある。
+#   MVP では envelope_path は `/tmp/oe-${session_id}-envelope.json`、workspace / repo_root は
+#   `cd ... && pwd` で得るリポジトリ作業ディレクトリのため、上記前提は自動的に満たされる。
+#   将来 user 指定パスを受け取るパス (例: `bin/oe --task-file <path>` の検証 envelope 化等) を
+#   足す場合は、本関数の caller でパス正常化 (or single quote escape) を行うこと。
+#   [Copilot PR #97 review 反映、2026-05-18]
+_oe_spawn_build_cli_command() {
+  local ai_cli="$1"
+  local ai_model="$2"
+  local envelope_path="$3"
+  local workspace="${4:-${PROJECT_DIR}}"
+
+  local prompt="Read ${envelope_path} and execute the task"
+
+  # repo_root は claude の --add-dir 用 (skill ファイル workspace 外アクセス)
+  local repo_root
+  repo_root="$(cd "${PROJECT_DIR}/../.." && pwd)"
+
+  case "$ai_cli" in
+    cursor-agent|cursor)
+      printf "cursor-agent --print --model %s --workspace %s --force '%s'" \
+        "$ai_model" "$workspace" "$prompt"
+      ;;
+    claude|claude-safe)
+      # claude 直接 (wez pane の独立 pty で TTY 競合なし、Step 4-4 Phase A Step 1 F-7 確認)
+      printf "claude -p '%s' --model %s --add-dir %s --add-dir /tmp --output-format text --no-session-persistence --max-budget-usd 1.0" \
+        "$prompt" "$ai_model" "$repo_root"
+      ;;
+    codex)
+      # Step 4-4 ではスタブ。動作確認は Step 4-5 以降で必要なら実施
+      printf "codex -p '%s' --model %s -w %s" \
+        "$prompt" "$ai_model" "$workspace"
+      ;;
+    *)
+      echo "_oe_spawn_build_cli_command: unsupported ai_cli '${ai_cli}' (supported: cursor-agent, cursor, claude, claude-safe, codex)" >&2
+      return 1
+      ;;
+  esac
+}
+
 # oe_spawn_send — 既存ペインに AI CLI コマンド + マーカー emit を送信
 #
-# 引数: session_id, pane_id, envelope_path, [ai_cli]（デフォルト: "cursor"）
+# 引数:
+#   session_id, pane_id, envelope_path,
+#   [ai_cli]    (デフォルト: ${OE_TARGET_AI_CLI:-cursor-agent})
+#   [ai_model]  (デフォルト: ${OE_TARGET_AI_MODEL:-composer-2})
+#   [workspace] (デフォルト: ${PROJECT_DIR})
+#
+# Step 4-4 Phase A 反映: ai_cli / ai_model の伝播 + ディスパッチャ経由化 (F-8)
 oe_spawn_send() {
   local session_id="$1"
   local pane_id="$2"
   local envelope_path="$3"
-  local ai_cli="${4:-cursor}"
+  local ai_cli="${4:-${OE_TARGET_AI_CLI:-cursor-agent}}"
+  local ai_model="${5:-${OE_TARGET_AI_MODEL:-composer-2}}"
+  local workspace="${6:-${PROJECT_DIR}}"
+
+  local base_cli_command
+  base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$envelope_path" "$workspace")"
 
   local cli_command
-  cli_command="${ai_cli} --prompt 'Read ${envelope_path} and execute the task' ; printf '\\n@@OE_EXIT:%d\\n' \$?"
+  cli_command="${base_cli_command} ; printf '\\n@@OE_EXIT:%d\\n' \$?"
 
   wez pane send "$pane_id" "$cli_command"
 
@@ -32,13 +104,18 @@ oe_spawn_send() {
 
 # oe_spawn — 後方互換ラッパー（prepare → send）
 #
-# 引数: session_id, envelope_path, [ai_cli]（デフォルト: "cursor"）
+# 引数: session_id, envelope_path,
+#       [ai_cli]    (デフォルト: ${OE_TARGET_AI_CLI:-cursor-agent})
+#       [ai_model]  (デフォルト: ${OE_TARGET_AI_MODEL:-composer-2})
 # 戻り値: OE_SPAWN_PANE_ID にペイン ID を設定
+#
+# Step 4-4 Phase A 反映 (F-8): ai_model 引数追加 + oe_spawn_send への伝播
 oe_spawn() {
   local session_id="$1"
   local envelope_path="$2"
-  local ai_cli="${3:-cursor}"
+  local ai_cli="${3:-${OE_TARGET_AI_CLI:-cursor-agent}}"
+  local ai_model="${4:-${OE_TARGET_AI_MODEL:-composer-2}}"
 
   oe_spawn_prepare_pane
-  oe_spawn_send "$session_id" "$OE_SPAWN_PANE_ID" "$envelope_path" "$ai_cli"
+  oe_spawn_send "$session_id" "$OE_SPAWN_PANE_ID" "$envelope_path" "$ai_cli" "$ai_model"
 }

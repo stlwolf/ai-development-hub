@@ -51,13 +51,30 @@ oe_main() {
   OE_CURRENT_SESSION_ID="$(oe_generate_session_id)"
 
   # E2E タスク説明（未指定時は既定値）
-  local task_description="${*:-Run orchestration task}"
+  # Step 4-4 Phase A 反映 (F-5): --task-file <path> オプションを受け付け、ファイル内容を読み込む。
+  # Markdown を shell expansion 経由で渡す破綻 (改行 / 特殊文字) を回避。
+  # 後方互換: bin/oe "<text>" 形式も引き続き動作。
+  local task_description
+  if [[ "${1:-}" == "--task-file" ]]; then
+    if [[ -z "${2:-}" ]]; then
+      echo "oe: --task-file requires a path argument" >&2
+      return 2
+    fi
+    if [[ ! -f "$2" ]]; then
+      echo "oe: --task-file: file not found: $2" >&2
+      return 2
+    fi
+    task_description="$(cat "$2")"
+    shift 2
+  fi
+  task_description="${task_description:-${*:-Run orchestration task}}"
   local pane_id
 
   # 5) spawn 準備 → envelope 生成 → send
   oe_spawn_prepare_pane
   pane_id="$OE_SPAWN_PANE_ID"
   oe_envelope_create "$OE_CURRENT_SESSION_ID" "$pane_id" "$task_description" "$PROJECT_DIR" "$OE_CB_TIMEOUT"
+  # Step 4-4 Phase A 反映: env var OE_TARGET_AI_CLI / OE_TARGET_AI_MODEL は oe_spawn_send 内のデフォルトで参照される
   oe_spawn_send "$OE_CURRENT_SESSION_ID" "$pane_id" "$OE_ENVELOPE_PATH"
 
   # 6) monitor loop

@@ -1,0 +1,2 @@
+# Step 4-4 Phase E Step 13 反映 (M2): probe / smoke の一時ログを git 追跡対象外に
+.tmp_*

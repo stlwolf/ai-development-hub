@@ -101,6 +101,36 @@ assert_eq "double run guard kill unchanged" "2" "${#_MOCK_KILL_CALLS[@]}"
 assert_eq "double run guard audit unchanged" "1" "$_MOCK_AUDIT_CALLS"
 
 echo ""
+
+# ---- Step 4-4 Phase C: OE_VERIFY_REVIEWER_SESSION_IDS 経由の reviewer 一時ファイル削除 ----
+_MOCK_KILL_CALLS=()
+_MOCK_AUDIT_CALLS=0
+_MOCK_LAST_CLEANUP_PAYLOAD=""
+
+OE_MANAGED_PANES=("701" "702")
+OE_CURRENT_SESSION_ID="TESTRVRCLEAN"
+OE_CLEANUP_DONE=""
+
+# ダミー reviewer 一時ファイルを作成 (Phase C.5 反映: .log も削除対象)
+rsid_a="01TESTRSIDA0000000000000A0"
+rsid_b="01TESTRSIDB0000000000000B0"
+OE_VERIFY_REVIEWER_SESSION_IDS=("$rsid_a" "$rsid_b")
+touch "/tmp/oe-${rsid_a}-verify-envelope.json"
+touch "/tmp/oe-${rsid_a}-verify-inputs.md"
+touch "/tmp/oe-${rsid_a}-reviewer.log"
+touch "/tmp/oe-${rsid_b}-verify-envelope.json"
+touch "/tmp/oe-${rsid_b}-verify-inputs.md"
+touch "/tmp/oe-${rsid_b}-reviewer.log"
+
+oe_cleanup
+
+assert_eq "reviewer rsid_a envelope removed" "false" "$( [[ -e "/tmp/oe-${rsid_a}-verify-envelope.json" ]] && echo true || echo false )"
+assert_eq "reviewer rsid_a inputs removed"   "false" "$( [[ -e "/tmp/oe-${rsid_a}-verify-inputs.md" ]] && echo true || echo false )"
+assert_eq "reviewer rsid_a log removed"      "false" "$( [[ -e "/tmp/oe-${rsid_a}-reviewer.log" ]] && echo true || echo false )"
+assert_eq "reviewer rsid_b envelope removed" "false" "$( [[ -e "/tmp/oe-${rsid_b}-verify-envelope.json" ]] && echo true || echo false )"
+assert_eq "reviewer rsid_b inputs removed"   "false" "$( [[ -e "/tmp/oe-${rsid_b}-verify-inputs.md" ]] && echo true || echo false )"
+assert_eq "reviewer rsid_b log removed"      "false" "$( [[ -e "/tmp/oe-${rsid_b}-reviewer.log" ]] && echo true || echo false )"
+
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then
   exit 1
