@@ -28,6 +28,17 @@ oe_spawn_prepare_pane() {
 # - claude: -p '<prompt>' --model <model> --add-dir <repo_root> --add-dir /tmp \
 #           --output-format text --no-session-persistence --max-budget-usd 1.0
 # - codex: スタブ (claude と同形式、本 Step では動作確認なし)
+#
+# 引数の値に関する前提 (caller 側で保証):
+#   envelope_path / workspace / repo_root のいずれにも **single quote `'` を含まない**ことを前提に、
+#   prompt を single quotes でラップして出力する。`'` が混入した場合、pane 内 shell が
+#   組み立てたコマンドを parse できず silent な `verification_protocol_error`
+#   (exit_without_verify_marker) に発展する可能性がある。
+#   MVP では envelope_path は `/tmp/oe-${session_id}-envelope.json`、workspace / repo_root は
+#   `cd ... && pwd` で得るリポジトリ作業ディレクトリのため、上記前提は自動的に満たされる。
+#   将来 user 指定パスを受け取るパス (例: `bin/oe --task-file <path>` の検証 envelope 化等) を
+#   足す場合は、本関数の caller でパス正常化 (or single quote escape) を行うこと。
+#   [Copilot PR #97 review 反映、2026-05-18]
 _oe_spawn_build_cli_command() {
   local ai_cli="$1"
   local ai_model="$2"

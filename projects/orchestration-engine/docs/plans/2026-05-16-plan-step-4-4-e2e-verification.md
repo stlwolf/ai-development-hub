@@ -672,7 +672,7 @@ iter1 と iter2 の **時系列分離**: Phase E iter1 (実 agent 観察) → Pl
 
 PR #96 docs PR の Copilot レビュー 21 件 (A-H 全カテゴリ) を本 Plan / KickOff / Discussion に反映 (本コミット)。代表的な構造変更:
 
-- **A (数値整合)**: Step 4-3 baseline を **299 assertions** (Episode 記録準拠) に統一 (旧 299 は誤、`test_e2e_smoke` 旧 43 → 40 も修正)
+- **A (数値整合)**: Step 4-3 baseline を **299 assertions** (Episode 記録準拠) に統一 (旧 293 は誤、`test_e2e_smoke` 旧 43 → 40 も修正)
 - **B (#91 closing)**: docs PR では `Refs #91` のみ、**実装 PR で `Closes #91`** と明示。KickOff §DI-3 / Plan §Context も同期
 - **C (limited-complete 経路)**: 旧「Phase A〜D の mock テスト」は誤 (Phase B〜D は実 agent 必須)。limited-complete を **Phase A 完了 + Phase B〜E スクリプト整備のみ**に境界変更
 - **D (`check_cycle_complete.sh` 引数)**: `target_session_id` のみ → `target_session_id target_pane_id` の 2 つに変更
