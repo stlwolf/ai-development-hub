@@ -41,6 +41,9 @@ export OE_CB_TIMEOUT="${OE_CB_TIMEOUT:-1800}"
 # F-SO 反映 (Plan iter2): wez shim の notify.log 書き込み先を保証
 mkdir -p "${OE_MOCK_LOG_DIR}"
 
+# Phase E Step 13 / F-10: wez shim (notify を notify.log に記録、他は実 wez に exec) を PATH 先頭に
+export PATH="${SCRIPT_DIR}/bin:${PATH}"
+
 TASK_FILE="${SCRIPT_DIR}/task_description_dogfood_cleanup.md"
 if [[ ! -f "$TASK_FILE" ]]; then
   echo "[smoke] FAIL: task file not found: $TASK_FILE" >&2

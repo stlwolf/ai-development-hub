@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# wez shim — Step 4-4 Phase E Step 13 / Plan F-10
+#
+# 目的:
+#   `wez notify` 呼び出しを ${OE_MOCK_LOG_DIR}/notify.log に記録する (check_cycle_complete.sh の
+#   (4) wez notify 判定のため)。`notify` 以外のサブコマンド (pane split/send/capture/kill 等) は
+#   実 wez にそのまま exec する。
+#
+# 使い方:
+#   smoke スクリプトで `export PATH="$(dirname "$0")/bin:$PATH"` を実行し、本 shim を PATH 先頭に置く。
+#   これにより engine からの `wez ...` 呼び出しが本 shim を経由する。
+#
+# 注意:
+#   - 実 wez のフルパスは Phase A Step 1 物理前提確認で固定値とする。本 shim は `/Users/eddy/bin/wez`
+#     と `/opt/homebrew/bin/wez` の順で探索 (環境依存を最小化)。`OE_REAL_WEZ` 環境変数で override 可能
+#   - `notify` サブコマンドは notify.log に title|body を 1 行で記録 (区切り = '|')。`--json` 等の
+#     追加フラグは記録に含まず後ろの 2 引数 (title, body) を採用 (実 wez の引数規約に整合)
+
+LOG_DIR="${OE_MOCK_LOG_DIR:-}"
+
+if [[ "${1:-}" == "notify" ]]; then
+  if [[ -z "$LOG_DIR" ]]; then
+    echo "wez (shim): OE_MOCK_LOG_DIR が未設定、notify をスキップ" >&2
+    exit 0
+  fi
+  shift
+  # 残り引数から title と body を抽出 (フラグを除外)
+  title=""
+  body=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json|--*) shift ;;
+      *)
+        if [[ -z "$title" ]]; then title="$1"
+        elif [[ -z "$body" ]]; then body="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+  mkdir -p "$LOG_DIR"
+  printf '%s|%s\n' "$title" "$body" >> "${LOG_DIR}/notify.log"
+  exit 0
+fi
+
+# notify 以外は実 wez に exec
+REAL_WEZ="${OE_REAL_WEZ:-}"
+if [[ -z "$REAL_WEZ" ]]; then
+  for candidate in /Users/eddy/bin/wez /opt/homebrew/bin/wez /usr/local/bin/wez; do
+    if [[ -x "$candidate" ]]; then
+      REAL_WEZ="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$REAL_WEZ" || ! -x "$REAL_WEZ" ]]; then
+  echo "wez (shim): real wez not found (set OE_REAL_WEZ to override)" >&2
+  exit 127
+fi
+
+exec "$REAL_WEZ" "$@"
