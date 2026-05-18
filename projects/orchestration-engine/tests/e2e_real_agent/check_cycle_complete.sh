@@ -120,7 +120,27 @@ else
   if [[ "$pe_count" -eq 0 ]]; then
     pass "verification_protocol_error = 0 件"
   else
-    warn "verification_protocol_error emitted (${pe_count} 件) — Phase C.5 修正後は 0 が期待値"
+    fail "verification_protocol_error emitted (${pe_count} 件) — Phase C.5 修正後の期待値は 0、so-compare iter2 反映で WARN→FAIL に厳密化"
+  fi
+fi
+
+# ---- (3.5) verification_summary.protocol_errors / timeouts == 0 (so-compare iter2 反映) ----
+echo ""
+echo "--- (3.5) verification_summary の protocol_errors / timeouts == 0 直接検証 ---"
+if [[ ! -f "$STATE_FILE" ]]; then
+  fail "state file not found (re): $STATE_FILE"
+else
+  summary_pe=$(jq -r '.verification_summary.protocol_errors // "missing"' "$STATE_FILE")
+  summary_to=$(jq -r '.verification_summary.timeouts // "missing"' "$STATE_FILE")
+  if [[ "$summary_pe" == "0" ]]; then
+    pass "verification_summary.protocol_errors == 0"
+  else
+    fail "verification_summary.protocol_errors = '${summary_pe}' (expected '0')"
+  fi
+  if [[ "$summary_to" == "0" ]]; then
+    pass "verification_summary.timeouts == 0"
+  else
+    fail "verification_summary.timeouts = '${summary_to}' (expected '0')"
   fi
 fi
 

@@ -310,12 +310,12 @@ KickOff §スコープ外 + Discussion §派生課題:
   - `OE_MOCK_LOG_DIR=tmp/log/<timestamp>` を明示セット + **F-SO 反映**: `mkdir -p "${OE_MOCK_LOG_DIR}"` を `bin/oe` 起動前に実行 (`tests/e2e_real_agent/bin/wez` shim が notify.log を書く先のディレクトリを保証)
   - **F-5 連携**: `bin/oe --task-file tests/e2e_real_agent/task_description_dogfood_cleanup.md` で起動 (旧 `bin/oe "$(cat ...)"` 形式から変更、Markdown shell expansion 破綻を回避)
   - target session_id + target pane_id をログに記録
-- [ ] **F-H 反映 (target stdout 保存)**: `bin/oe` 起動後に **wez pane capture で target pane の stdout を `--lines 500` 取得し** `tests/e2e_real_agent/.tmp_target_stdout_<session_id>.log` に保存する処理を smoke スクリプトに含める (target 完了 = `@@OE_EXIT` 検出後に取得)。これにより target が完了報告に含めた shellcheck stdout / mock テスト PASS ログを後段で grep できる
+- [ ] **F-H (target stdout 保存) — MVP では best-effort、Phase D check_cycle で代替**: 当初は `bin/oe` 起動後に `wez pane capture --lines 500` で target pane の stdout を `tests/e2e_real_agent/.tmp_target_stdout_<session_id>.log` に保存して shellcheck / mock テスト PASS ログを grep する想定だったが、Phase D で導入した `check_cycle_complete.sh` (KVS/audit ベースの構造判定 4 点) が「engine の責務」を構造的に証明するため、F-H の人手検証拡張は **MVP では best-effort 扱い**に格下げする。smoke 実装には capture 保存処理を入れず、`check_phase_c.sh` 側で stdout file が無ければ WARN レベルで通過させる現状動作で整合。target が実装した変更内容の人手確認は GATE で `git diff` + `bash tests/test_*.sh` 再走の方で担保する
 - [ ] **本 Step (Phase C) の完了基準**: target が `@@OE_EXIT:0` を emit、`state/{session_id}.state.json` に `state: success` が記録される
 - [ ] 完了基準を満たすか `tests/e2e_real_agent/check_phase_c.sh` で確認 (補助スクリプト):
   - `state.session_id` と `state.state == "success"` を `jq` で検査
   - audit log に `state_change` (state=success) と `session_end` が記録されているか確認
-  - **F-H 反映**: `.tmp_target_stdout_<sid>.log` (上記で保存した target pane capture) を `grep` し、target の完了報告に shellcheck の結果と mock テスト PASS ログ (例: `PASS=` や `Results: PASS=N FAIL=0`) が含まれているか確認 (F-11 義務化、engine の KVS / audit ではなく pane stdout 経由で検証)
+  - **F-H (best-effort)**: 上記 F-H 格下げに伴い、`.tmp_target_stdout_<sid>.log` が存在すれば `grep` で `PASS=` / `Results: PASS=N FAIL=0` を確認、不在なら WARN レベルでスキップ (現状の `check_phase_c.sh:88` 実装と整合)。target 実装の正当性は GATE で人手 (`git diff` + `bash tests/test_*.sh`) で担保
 - [ ] Phase D に進む前に target の変更内容 (実際の constants.sh / verify.sh / cleanup.sh 編集差分) を `git diff` で確認
 
 ### GATE: Phase C 完了確認
