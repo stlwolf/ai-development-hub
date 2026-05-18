@@ -328,6 +328,66 @@ KickOff §スコープ外 + Discussion §派生課題:
 
 ---
 
+## Phase C.5: reviewer marker scan を file redirect 経路に切替 (Phase C 実機 smoke で発覚した engine bug 対応)
+
+> 初回実機 smoke (.tmp_smoke_20260517-184129) で `verification_protocol_error` (`exit_without_verify_marker`) が発生。
+> so-compare (codex) で確定: `wez pane capture --lines N` は wezterm cli get-text の **viewport-only** 出力に
+> tail -n N を適用する実装 (`projects/wezterm-ai-mode/docs/decisions/ADR-004-pane-design-decisions.md:65`、
+> `projects/wezterm-ai-mode/lib/pane.sh:416,430`)。claude の長文 review markdown では `@@OE_VERIFY` 行が
+> viewport 外に押し出されて engine が拾えない (claude one-shot repro では strict regex で marker 検出成功、
+> つまり claude 自体は正常動作)。Phase D 着手前に engine 側を file redirect 経路に切替。
+
+### Step 10.5: reviewer 送信コマンドを `( cmd ; printf @@OE_EXIT ) | tee log` 形に変更
+
+- [ ] `lib/verify.sh:oe_verify_spawn` の reviewer 送信コマンド組み立てを下記に変更 (so-compare codex+claude 両者推奨):
+  ```bash
+  local log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
+  cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\""
+  ```
+  - サブシェル内の `$?` で claude/cursor の exit code を反映 (PIPESTATUS 依存なし、zsh/busybox tee でも動作)
+  - `@@OE_EXIT` も tee 経由で log に記録 (so-compare で発覚した Critical: 元案の `; printf` は tee の外で
+    @@OE_EXIT が log に書かれず二値同時検出が永久に成立しないバグだった)
+  - pane TTY 経路には引き続き tee で出力、人間可視性は維持
+
+### Step 10.6: 新関数 `_oe_verify_scan_log_file` を追加し polling 経路を切替
+
+- [ ] `lib/verify.sh` に `_oe_verify_scan_log_file(log_path, [lines])` を新規追加:
+  - `tail -n 5000 log_path` (claude review は markdown + diff 引用で千行になり得るため 200 では不足)
+  - ANSI 除去後、既存 `_oe_capture_scan_parse` (capture.sh) に流して二値 (`OE_SCAN_EXIT_CODE` / `OE_SCAN_VERIFY_RESULT`) を設定
+  - file 不在時は OE_SCAN_* を空のまま return 0 (cleanup と race しても無害に継続)
+- [ ] `oe_verify_run_phase` のポーリングを `oe_capture_scan $reviewer_pane_id 200` から
+  `_oe_verify_scan_log_file $reviewer_log_path` に切替
+- [ ] target pane (monitor.sh 経由) は引き続き `oe_capture_scan` を使う (target は `@@OE_EXIT` 1 種類だけで
+  visible 範囲に収まるため現状動作 OK、scope を verify 側に閉じる)
+
+### Step 10.7: cleanup + テスト追加
+
+- [ ] `lib/cleanup.sh` の `OE_VERIFY_REVIEWER_SESSION_IDS` ループに `.log` 削除を追加
+- [ ] `tests/test_cleanup.sh` に reviewer rsid_a/b の `.log` 削除 assertion を 2 件追加 (17 → 19 PASS)
+- [ ] `tests/test_e2e_smoke.sh` の wez mock 更新:
+  - `pane send` で payload に `tee "/tmp/oe-{rsid}-reviewer.log"` が含まれていれば、実シェルが tee で
+    書く挙動を mock 再現 (reviewer log に `@@OE_VERIFY:pass` + `@@OE_EXIT:0` を書く)
+  - 旧 `capture_count_888` assertion を廃止 (reviewer は capture を呼ばなくなる)、代わりに send.log の
+    `pane=888` エントリで spawn を確認
+  - 新 assertion: reviewer payload に `tee "..."-reviewer.log"` が含まれる
+  - awk `-F'|'` は payload 内の `| tee` の `|` で field split されるため `$2` ではなく `$0` で match
+
+### Step 10.8: 実機 smoke 再実行で end-to-end 検証
+
+- [ ] `bash tests/e2e_real_agent/smoke_cursor_composer_claude_sonnet.sh` を再実行
+- [ ] audit log に `verification_completed` が emit され (`verification_protocol_error` ではない) こと、
+  `state.verification.{target_pane_id}.result` と `marker_raw` が記録されていること、
+  `verification_summary.protocol_errors=0` + `timeouts=0` を確認
+
+### GATE: Phase C.5 完了確認
+
+- [ ] Step 10.5〜10.8 完了
+- [ ] 実機 smoke で `verification_completed` audit + `verification.{pid}` KVS エントリ + `protocol_errors=0` を確認
+- [ ] shellcheck クリーン + 既存 mock テスト 8 suite 全 PASS (合計 306 = 299 + Phase C 4 + Phase C.5 3)
+- [ ] user に Phase C.5 完了報告
+
+---
+
 ## Phase D: 検証フェーズ E2E + 構造的判定 (DI-2 + DI-7)
 
 > Phase C 完走後、engine が `oe_verify_run_phase` を呼んで claude -p (claude-sonnet-4-6) を起動する。検証 agent が adversarial-review skill の Compliance Review を実行し `@@OE_VERIFY:{result}` を emit、engine が二値検出 + write_kvs + verification_completed audit emit を行う。構造的判定の 4 点を assertion。

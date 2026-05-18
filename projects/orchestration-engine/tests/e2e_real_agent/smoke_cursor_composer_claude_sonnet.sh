@@ -105,23 +105,30 @@ fi
 
 echo ""
 echo "=== running check_phase_c.sh ==="
+set +e
 bash "${SCRIPT_DIR}/check_phase_c.sh" "${SID}" "${OE_DATA_DIR}"
 PHASE_C_EXIT=$?
+set -e
 
-# (Phase D check_cycle_complete.sh は Plan Step 12 で実装、本コミット時点では不在のためスキップ)
+# Phase D Step 12: check_cycle_complete.sh で構造的判定 4 点を assertion
+PHASE_D_EXIT=0
 if [[ -f "${SCRIPT_DIR}/check_cycle_complete.sh" ]]; then
   echo ""
   echo "=== running check_cycle_complete.sh ==="
+  set +e
   bash "${SCRIPT_DIR}/check_cycle_complete.sh" "${SID}" "${TARGET_PANE_ID}" "${OE_DATA_DIR}"
+  PHASE_D_EXIT=$?
+  set -e
 fi
 
 echo ""
 echo "=== smoke summary ==="
 echo "engine_exit : ${ENGINE_EXIT}"
 echo "phase_c_exit: ${PHASE_C_EXIT}"
+echo "phase_d_exit: ${PHASE_D_EXIT}"
 echo ""
-if [[ "$PHASE_C_EXIT" -eq 0 ]]; then
-  echo "[smoke] PASS (構造判定)"
+if [[ "$PHASE_C_EXIT" -eq 0 && "$PHASE_D_EXIT" -eq 0 ]]; then
+  echo "[smoke] PASS (Phase C + D 構造判定)"
   exit 0
 fi
 echo "[smoke] FAIL"
