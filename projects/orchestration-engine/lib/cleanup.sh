@@ -57,13 +57,15 @@ oe_cleanup() {
     oe_audit_emit "cleanup" "$session_id" 0 "" "$payload_json" || true
 
     # Step 4-4 Phase C: reviewer 一時ファイル削除 (派生 #93 前半)
-    # OE_VERIFY_REVIEWER_SESSION_IDS の各 ID について /tmp/oe-{rsid}-verify-* を削除
+    # OE_VERIFY_REVIEWER_SESSION_IDS の各 ID について /tmp/oe-{rsid}-verify-* と
+    # /tmp/oe-{rsid}-reviewer.log (Phase C.5 file-redirect 経路) を削除
     declare -p OE_VERIFY_REVIEWER_SESSION_IDS >/dev/null 2>&1 || OE_VERIFY_REVIEWER_SESSION_IDS=()
     local rsid
     for rsid in "${OE_VERIFY_REVIEWER_SESSION_IDS[@]}"; do
       [[ -n "$rsid" ]] || continue
       rm -f "/tmp/oe-${rsid}-verify-envelope.json" 2>/dev/null || true
       rm -f "/tmp/oe-${rsid}-verify-inputs.md" 2>/dev/null || true
+      rm -f "/tmp/oe-${rsid}-reviewer.log" 2>/dev/null || true
     done
 
     # DI-6: 検証フェーズが走った場合は wez notify で完了通知

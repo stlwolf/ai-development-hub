@@ -262,13 +262,19 @@ oe_verify_spawn() {
     "$target_envelope_path" \
     "$OE_VERIFY_PROMPT_PATH"
 
-  # 送信コマンド: ai_cli ディスパッチャ経由で組み立て + 末尾で shell が @@OE_EXIT を emit。
-  # 検証 agent 自身は task.description / skill の指示に従って @@OE_VERIFY:{result} を出力する。
-  # 二値 (@@OE_VERIFY + @@OE_EXIT) の同時検出は Phase D F3 の二値保持で対応する。
+  # 送信コマンド: ai_cli ディスパッチャ経由で組み立て + サブシェルで @@OE_EXIT 付与 + tee で file 出力。
+  # Step 4-4 Phase C.5 反映: wez pane capture 経路 (viewport-only + tail 後処理) では
+  # 長文 review markdown 中の @@OE_VERIFY 行が scrollback に押し出されて拾えない。
+  # `( cmd 2>&1 ; printf @@OE_EXIT ) | tee log_path` の形にすることで:
+  #   - claude/cursor の stdout/stderr と @@OE_EXIT の両方を 1 つの log file に同順序で記録
+  #   - pane (TTY) には引き続き出力されるので人間可視性は維持
+  #   - bash の PIPESTATUS 依存を回避 (sub-shell 内の $? で claude exit code を反映)
+  # scan は file 経路 (_oe_verify_scan_log_file) に切替済み。
+  local log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
   local base_cli_command
   base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$OE_VERIFY_ENVELOPE_PATH" "$PROJECT_DIR")"
   local cli_command
-  cli_command="${base_cli_command} ; printf '\\n@@OE_EXIT:%d\\n' \$?"
+  cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\""
 
   wez pane send "$reviewer_pane_id" "$cli_command"
 
@@ -454,6 +460,42 @@ oe_verify_emit_completed() {
   oe_audit_emit "verification_completed" "$target_session_id" "$target_pane_id" "" "$payload"
 }
 
+# _oe_verify_scan_log_file — Step 4-4 Phase C.5: reviewer の出力 log file を tail で走査し
+# 既存の _oe_capture_scan_parse に流して二値 (OE_SCAN_EXIT_CODE / OE_SCAN_VERIFY_RESULT) を設定する。
+#
+# 引数:
+#   log_path   reviewer の stdout+stderr+@@OE_EXIT が書かれる file path
+#   [lines]    末尾何行を読むか (デフォルト 5000、claude review は markdown + diff 引用で千行になり得るため大きめ)
+#
+# 戻り値: OE_SCAN_* 変数群を設定 (_oe_capture_scan_parse と同じインターフェース)
+#         file 不在時は OE_SCAN_* を空のまま return 0 (cleanup と race しても無害に継続)
+#
+# 設計背景:
+#   wez pane capture --lines N は wezterm cli get-text の viewport-only 出力に tail -n N を
+#   適用する実装 (wezterm-ai-mode ADR-004:65)。長文 markdown では @@OE_VERIFY が viewport 外に
+#   押し出されて拾えない。reviewer 送信側で `( cmd ; printf @@OE_EXIT ) | tee log_path` に
+#   切替えており、本関数は log file 経路で同じ parse を行う。
+_oe_verify_scan_log_file() {
+  local log_path="$1"
+  local lines="${2:-5000}"
+
+  OE_SCAN_MARKER_TYPE=""
+  OE_SCAN_VALUE=""
+  OE_SCAN_BLOCKED="false"
+  OE_SCAN_EXIT_CODE=""
+  OE_SCAN_VERIFY_RESULT=""
+
+  [[ -f "$log_path" ]] || return 0
+
+  local captured
+  captured="$(tail -n "$lines" "$log_path" 2>/dev/null)" || return 0
+
+  local normalized
+  normalized="$(printf '%s' "$captured" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g')"
+
+  _oe_capture_scan_parse "$normalized"
+}
+
 # _oe_verify_generate_session_id — 検証 agent 用の ULID 形式セッション ID を生成
 # (bin/oe の oe_generate_session_id と同フォーマット: 14 桁数字 + 12 桁 Crockford base32)
 #
@@ -535,12 +577,17 @@ oe_verify_run_phase() {
     # 注: oe_verify_spawn は内部で OE_VERIFY_MANAGED_PANES に append 済み
     # (Copilot #5 反映: prepare_pane 直後に登録、途中失敗時の cleanup 取り逃しを防ぐ)
 
-    # 独立ポーリングループ (検証ペインは verbose 出力対策で lines=200)
+    # Step 4-4 Phase C.5: reviewer 出力は file redirect (tee) で /tmp に書かれる。
+    # wez pane capture (viewport-only + tail 後処理) では scrollback に押し出された
+    # @@OE_VERIFY 行を拾えないため、file 経路で走査する。
+    local reviewer_log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
+
+    # 独立ポーリングループ
     local start_seconds=$SECONDS
     local resolved=0
     while true; do
       sleep "$OE_POLL_INTERVAL"
-      oe_capture_scan "$reviewer_pane_id" 200
+      _oe_verify_scan_log_file "$reviewer_log_path"
 
       # Codex P2: @@OE_VERIFY と @@OE_EXIT の **両方** が見えるまで待つ
       # 片方しか見えていない状態で記録すると、agent が後で非 0 終了した場合に
