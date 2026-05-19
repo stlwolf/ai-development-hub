@@ -485,6 +485,140 @@ flowchart TD
 - [ ] target case の設計ドキュメントは ai-development-hub / サービスリポのどちらに初期配置するか
 - [ ] コンテキストチェーン（related を辿る再構築）の実装粒度 — 全文読み込み vs サマリ抽出
 
+## 10. Step 分解 proposal (Phase 5 着手時の sub-issue 化候補)
+
+> Epic [#105](https://github.com/stlwolf/ai-development-hub/issues/105) のチェックリスト 8 項目 + 検証戦略 3 段階 (§4) を Step 5-X に粒度化した提案。Phase 5 着手時に再評価する想定 (本 Discussion の closed 化に合わせて確定)。
+>
+> 進め方は Phase 4 と同じく **Step 単位で駆動層 doc サイクル** (Discussion → KickOff → Plan → Episode → ADR) を回す。
+
+### 10.1 Step 分解案 (順序付き、段階 1 = ドキュメント生成スコープに絞り込み)
+
+| Step | 内容 | 関連機能 (Epic #105 §「Phase 5 で追加する主要機能」) | 想定サイズ |
+|---|---|---|---|
+| **Step 5-0 (Prerequisite)** | open questions (§11) のうち blocking なものを closed 化 + `bin/oe` 互換性方針確定 (§12) | 全機能の前提 | 小 (Phase 5 着手前 doc only) |
+| **Step 5-1** | Phase 4 既存資産の整理 + サブコマンド体系 (`oe discuss / kickoff / plan / implement / record / decide / status`) 設計 + skill 参照パス拡張 (`canonical/` → `<workspace>/` → user `~/.cursor/`) | 機能 6 (スキル参照パス) + 機能 8 前段 (bin/oe 吸収) | 中 |
+| **Step 5-2** | ドキュメント生成サブコマンド v1 (`oe discuss / kickoff / plan` の最小実装、frontmatter 自動生成 + 必須セクション骨格生成) | 機能 7 (上流ドキュメント生成) + 機能 1 一部 (ステージ管理) | 中 |
+| **Step 5-3** | 制御ループ v1 (状態判定 + リトライ + エスカレーション) + 品質評価 (機械判定可能な範囲: frontmatter 不正 / 必須セクション欠落) | 機能 3 (制御ループ) | 中〜大 |
+| **Step 5-4** | HitL ゲート + resume + state 永続化拡張 (audit log + KVS から「どこまで終わったか」復元) | 機能 2 (HitL + resume) + 機能 1 完成 | 大 |
+| **Step 5-5** | コンテキスト再構築 (related チェーン辿り、途中参加エージェントへの文脈提供) | 機能 4 (コンテキスト再構築) | 中 |
+| **Step 5-6** | 外部 workspace 対応 (`--workspace <path>` で外部リポジトリの docs / state / audit を操作)、target case の準備 | 機能 5 (外部ワークスペース) | 中 |
+| **Step 5-7** | Phase 4 `bin/oe` の吸収完了 + Episode/ADR 生成サブコマンド (`oe record / decide`) | 機能 8 (bin/oe 吸収) 完成 | 中 |
+| **Step 5-8** | **段階 1 完了 E2E 検証**: ドキュメント生成パイプライン全段 (Discussion → KickOff → Plan → Implementation → Episode → ADR) の自律実行を実機で実証 | Phase 4 Step 4-4 相当の段階 1 版 | 大 |
+| (段階 2 以降) | インフラコード生成 (CDK synth/deploy 検証含む) + target case (ECS 化) 着手は Step 5-8 完了後に **別 sub-Epic として判断** | 検証戦略 §4.2 (機能拡張ではなく評価基準追加) | (Phase 5.2 として別途) |
+
+### 10.2 Step ごとの駆動層 doc サイクル想定
+
+Phase 4 と同じく:
+
+```
+各 Step 着手:
+  1. Discussion (status: draft → closed): QDD で論点を closed 化
+  2. KickOff (status: confirmed): DI 確定
+  3. Plan (status: ready): Phase / Step に展開
+  4. 実装 (PR): Phase 構造に沿って commit + push
+  5. Episode (status: stable): 経緯記録
+  6. ADR (status: accepted、必要に応じて): 設計判断の蒸留
+```
+
+ただし Phase 4 と異なり Phase 5 では:
+
+- **HitL ゲートが Step 内にも存在**: 制御ループの実装上、Step 内で人間承認が要件
+- **段階 1 (ドキュメント生成) と段階 2 (インフラコード) の境界**: 段階 1 完了時点で **「Phase 5.1 完了 + 段階 2 = Phase 5.2 を別 sub-Epic として起票」する判断**を挟む
+
+### 10.3 Step 分解の不確実性
+
+- Step 5-3 (制御ループ) と Step 5-4 (HitL + resume) の **依存関係** は実装で確定する想定 (制御ループが HitL ゲートをトリガするので 5-3 → 5-4 順だが、resume 設計が 5-3 を圧迫する可能性あり)
+- Step 5-5 (コンテキスト再構築) は Step 5-4 までで必要十分なら **後ろ倒し or skip 可**
+- Step 5-6 (外部 workspace) を Step 5-2 直後に持ってきて **target case を早く触る**選択肢もある (= dogfood しながら engine 拡張、retrospective §4 推奨経路)
+
+→ **Step 分解の確定は Phase 5 着手時に再評価**、本節は現時点の輪郭。
+
+---
+
+## 11. open questions §9 の整理 (依存関係 + closed 化順序)
+
+> §9 の 6 件を Phase 5 着手 blocking 度 + 依存関係で整理。本節は closed 化計画であり、Q 自体の closed 化は別 session (Phase 5 Discussion 段階) で個別 QDD する。
+
+### 11.1 整理表
+
+| Q | 内容 | Phase 5 着手 blocking? | 依存 | closed 化タイミング推奨 |
+|---|---|---|---|---|
+| **Q9.1** | `bin/oe` サブコマンド体系をどこまで事前設計 vs 必要に応じて追加 | **高** | §12 `bin/oe` 互換性方針と密接 | **Step 5-0 (Prerequisite) で必須 closed** |
+| Q9.2 | KVS を bash + ファイル維持 vs SQLite 等に移行 | 低 | 段階 2 (インフラコード生成) 以降で実害化 | Step 5-3 (制御ループ) or Step 5-4 (resume) で判断 |
+| Q9.3 | `arena-compare` の自己回帰ループ化を独立 PJ か engine に統合 | 中 | 制御ループ設計 (Step 5-3) と関連 | Step 5-3 と並行で判断、別 PJ として切り出す可能性あり |
+| **Q9.4** | `arena-compare --resume-from` のハング問題は Phase 5 prerequisite か別件か | **中〜高** | resume 機能 (Step 5-4) の前提 | **Step 5-0 (Prerequisite) で要否確定**、別件なら派生 Issue 化 |
+| Q9.5 | target case の設計 doc を ai-development-hub / サービスリポのどちらに初期配置 | 中 | 2 リポジトリ分離方針 (§3.3) と関連 | Step 5-6 (外部 workspace 対応) 着手前 |
+| Q9.6 | コンテキストチェーンの実装粒度 (全文読み込み vs サマリ抽出) | 低 | Step 5-5 (コンテキスト再構築) の設計判断 | Step 5-5 着手時 |
+
+### 11.2 Phase 5 着手前 (Step 5-0) で必須 closed 化
+
+- **Q9.1**: サブコマンド体系を「事前完全設計 (Phase 4 oe の置換含む全 design)」「最小骨格 (Step 5-2 だけ事前設計、残りは Step 着手時)」「逐次追加 (各 Step で追加するサブコマンドを Step 内で設計)」のどれにするか
+- **Q9.4**: `arena-compare --resume-from` ハングは
+  - (a) Phase 5 prerequisite として engine に統合前に修正
+  - (b) 別件 PJ として切り出し、engine 側は独自 resume 実装
+  - (c) 当面回避策 (ハング時は手動 kill + restart) で進める
+
+これらは Step 5-1 着手前に Discussion で詰めることで、Step 5-1 以降の設計の前提が固まる。
+
+### 11.3 Step 着手時 closed 化 (4 件)
+
+- **Q9.2**: Step 5-3 (制御ループ) or Step 5-4 (resume) — bash+file の限界が顕在化するタイミング
+- **Q9.3**: Step 5-3 と並行 — `arena-compare` 統合判断は制御ループ設計の射程に依存
+- **Q9.5**: Step 5-6 (外部 workspace) — 2 リポジトリ分離が実装で具体化するタイミング
+- **Q9.6**: Step 5-5 (コンテキスト再構築) — 実装方針の選択
+
+---
+
+## 12. `bin/oe` 互換性方針 (Phase 5 で吸収する際の選択肢)
+
+> Phase 4 で完成した `bin/oe` (= 1 サイクル E2E 実証済み) を Phase 5 の新サブコマンド体系にどう統合するか。Step 5-0 (Prerequisite) で Q9.1 と合わせて確定する想定の選択肢メモ。
+
+### 12.1 選択肢比較
+
+| 案 | 概要 | 利点 | 欠点 | 評価 |
+|---|---|---|---|---|
+| **A** | Phase 4 `bin/oe` を **frozen 保持**、Phase 5 oe (新サブコマンド体系) は別 binary (例: `bin/oe-v5` or `bin/oe2`) | Phase 4 互換性 100%、既存 PR / Episode への参照リンク維持、ロールバック容易 | binary 2 つの保守コスト、user 側の使い分けが必要、deprecation 議論が後で発生 | △ |
+| **B (推奨)** | **同一 binary でサブコマンド拡張**、旧呼び出し (`bin/oe "<task>"` or `--task-file`) は **alias / shim** として維持 | 連続性確保、外部参照 (Episode / PR / ADR / architecture-sketch §11) が破壊されない、user 視点で 1 binary | alias の管理、旧呼び出し経路と新呼び出し経路の挙動差が混在 | ◯ 推奨 |
+| C | Phase 4 `bin/oe` を **deprecate**、新 binary に完全移行 (旧呼び出しは消去) | binary 1 つで clean、技術負債なし | 過去 PR / Episode への参照リンク破壊、re-run 不可、frozen 文書 (architecture-sketch §11) との整合性問題 | ✗ |
+
+### 12.2 推奨 = B
+
+理由:
+
+- Phase 4 の audit log + KVS は **「過去サイクルの再現性」を担保**する設計だった (architecture-sketch §11.3 「Reproducibility」)。binary を変えると過去 KVS が再 run 不可になり、設計思想と矛盾
+- Episode / ADR / PR description で `bin/oe --task-file ...` を引用している箇所が複数ある (Step 4-4 Episode、Step 4-5 PR #104 等)。これらが死ぬのは documentation hygiene 上 NG
+- alias / shim の保守コストは小さい (= `bin/oe "$@"` の冒頭で旧呼び出しパターンを検出して新サブコマンドに dispatch するだけ)
+
+### 12.3 案 B の実装イメージ (Step 5-0 / Step 5-1 で詰める)
+
+```bash
+# bin/oe (Phase 5 後)
+#
+# 新呼び出し:
+#   bin/oe discuss --topic "<...>"
+#   bin/oe kickoff <discussion_path>
+#   bin/oe plan <kickoff_path>
+#   bin/oe implement --task-file <path>   # = Phase 4 互換、alias
+#   bin/oe record --session <sid>
+#   bin/oe decide --episode <path>
+#   bin/oe status [--workspace <path>]
+#   bin/oe run --from <stage> --to <stage>
+#
+# 旧呼び出し (Phase 4 互換、alias):
+#   bin/oe "<task>"              → bin/oe implement --task "<task>"
+#   bin/oe --task-file <path>    → bin/oe implement --task-file <path>
+```
+
+旧呼び出し検出は `$1` が予約サブコマンド (`discuss / kickoff / plan / implement / record / decide / status / run`) に一致しない場合に implement に dispatch する形で実現可能。
+
+### 12.4 残論点 (Step 5-0 で決定)
+
+- alias / shim の deprecation スケジュール (= Phase 5 安定後にいつ Phase 4 互換 alias を消すか) — 現時点では「**当面維持、Phase 6 以降で議論**」が妥当
+- 新サブコマンドの命名規約 (`discuss / kickoff / plan / implement / record / decide` の動詞統一感は OK か、それとも別命名 `gen-discussion / gen-kickoff` 等にするか) — Step 5-1 で確定
+- `oe run --from <stage> --to <stage>` の引数仕様 — Step 5-2 (パイプライン結合段階) で確定
+
+---
+
 ## 関連リンク
 
 - Epic: [#105](https://github.com/stlwolf/ai-development-hub/issues/105)（本 Discussion の追跡先）
