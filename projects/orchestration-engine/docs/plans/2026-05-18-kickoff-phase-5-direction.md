@@ -26,12 +26,29 @@ related:
   - type: design_context
     ref: "https://github.com/stlwolf/ai-development-hub/issues/37"
     reason: "Path γ 候補: Harness Engineering 基盤整備 Epic"
-tags: [orchestration, post-phase-4, kickoff, direction-memo, draft, phase-5-prep]
+  - type: superseded_by
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/105"
+    reason: "Phase 5 方針は Epic #105 (パイプライン駆動 + ECS target case) で再構成、本 KickOff は履歴アーカイブ"
+  - type: superseded_by
+    ref: "projects/orchestration-engine/docs/discussions/2026-05-19-discussion-phase-5-pipeline-driven-ecs-target.md"
+    reason: "Phase 5 方針の正本 Discussion (本 KickOff の Path α'/β/γ 軸からの離脱を明示、target case 中心に転換)"
+tags: [orchestration, post-phase-4, kickoff, direction-memo, draft, phase-5-prep, archived]
 ---
 
 # Phase 5 / 本実装移行の方向感 KickOff (現時点の方向感メモ)
 
+> **文書ステータス (2026-05-19 更新): 履歴アーカイブ**
+>
+> 本 KickOff (`status: draft`) は Phase 4 完了直後 (2026-05-18) のスナップショット。その後の議論 (2026-05-19) で方針が ECS target case 中心に再構成されたため、本 KickOff は **履歴アーカイブとして据え置き**、確定方針は以下を正本とする:
+>
+> - **Epic [#105](https://github.com/stlwolf/ai-development-hub/issues/105)**: 自前オーケストレーション Phase 5 — パイプライン駆動 + ECS target case
+> - **Discussion** ([`2026-05-19-discussion-phase-5-pipeline-driven-ecs-target.md`](../discussions/2026-05-19-discussion-phase-5-pipeline-driven-ecs-target.md)): Phase 5 方針の正本 (status: draft、QDD 9 open questions あり)
+>
+> 本 KickOff の §6 (ゴール / 用途の具体化、想定ゴール候補 5 案) は新 Discussion §2 (根本的な方向転換) と §5 (Target case) で具体化された target case (= EC2 → ECS + IaC 化) に統合済み。Path α'/β/γ の 3 軸枠組みは新 Discussion §2.1 で「ツール完成度を軸にしていた」と明示的に離脱された。
+
 > **本 KickOff のステータス**: `status: draft` — Phase 5 着手時に正式 `confirmed` 化する前提の **方向感スナップショット**。Phase 4 完了直後 (2026-05-18) の現時点認識を捕捉し、後の Phase 5 正式 KickOff 起草時の入力資料として再利用する。本 doc は Step 4-5 [PR #104](https://github.com/stlwolf/ai-development-hub/pull/104) で merge され、orchestration-engine の Phase 5 着手判断の起点として機能する。
+>
+> ※ 上記「文書ステータス (2026-05-19 更新)」のとおり、本 KickOff は履歴アーカイブとして据え置きとなりました。以降は新 Discussion + Epic #105 を参照してください。
 
 ## 1. 背景・現状認識 (Phase 4 完了時点の engine 到達点と限界)
 
