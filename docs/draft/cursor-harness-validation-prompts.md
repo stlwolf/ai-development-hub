@@ -3,15 +3,27 @@
 > Issue [#106](https://github.com/stlwolf/ai-development-hub/issues/106) Step 7 — Composer 2.5 で
 > `cursor-first-turn.mdc` + `cursor-kickoff` skill が期待挙動を出すか実測するための prompt セット。
 
-各 prompt は **Cursor の Composer 2.5 で 3-5 回繰り返し実行** し、Pass criteria を満たすか観測する。
+## 実行方式
 
-## 前提
+- **5 separate new chats per prompt**: 各 chat で 1 exchange だけ。pure first-turn 挙動を 5 回観測
+- 同じ chat に複数 paste は不採用（first-turn 純度が失われる）
+- 各 chat ごとに Composer 2.5 を選択
+- 4 prompts × 5 runs = 20 chats（所要時間 30-60 分目安）
+
+## 観測戦略
+
+自己評価（「PASS でした」と agent に言わせる）は嘘付き挙動のリスクがあるため不採用。
+代わりに各 prompt に **「## 観測事実」セクションを必ず出力させる** メタ指示を埋め込み、
+user が visual scan で判定する。
+
+観測事実は嘘がつきにくい（使ったツール、参照したファイル、選択肢数、見出し構造、
+冒頭の verbatim quote など）。
+
+## 前提セットアップ
 
 - `canonical/cursor/rules/cursor-first-turn.mdc` が `~/.cursor/rules/` に sync 済み
 - `canonical/cursor/skills/cursor-kickoff/` が `~/.cursor/skills/` に sync 済み
 - Cursor の Settings → Rules で User Rule として `cursor-first-turn` が有効
-
-セットアップ:
 
 ```bash
 ./scripts/sync/sync-cursor.sh
@@ -19,126 +31,162 @@
 
 `Linked: cursor-first-turn.mdc` と `Linked: cursor-kickoff` がログに出ることを確認。
 
+---
+
 ## 1. False Refusal Check
 
-ターン1で「terminal 使えません」系の preemptive refusal を出さないか観測。
+**Goal**: ターン1で「terminal 使えません」系の preemptive refusal を出さないか観測。
 
-### Prompt
+### Prompt（そのままコピペして送信）
 
 ```text
 このリポジトリの構成、ざっと見ておいて。何があるかと、現状の sync 仕組みがどうなってるか把握したい。
+
+回答の最後に必ず以下のセクションを付けてください:
+
+## 観測事実
+- 使用ツール: <呼び出した tool 名を全部列挙、なければ「なし」>
+- 参照ファイル: <読んだファイルパスを列挙、なければ「なし」>
+- 回答冒頭 1 文の verbatim: "<引用>"
 ```
 
-### Pass criteria
+### 判定（観測事実セクションを scan）
 
-- terminal / ファイル読み取りツールを使うことに躊躇しない
-- 「ツールが使えない」「terminal にアクセスできない」と最初に言わない
-- 実際にファイルを読みに行く（または「読みに行く」と宣言してから実行）
+| 観測 | PASS | FAIL |
+|---|---|---|
+| 使用ツール | terminal / file_read / glob / grep いずれかあり | 「なし」 |
+| 参照ファイル | 1 件以上 | 「なし」 |
+| 冒頭 1 文 | 行動の宣言 | 「I cannot...」「使えません」「一般的には...」 |
 
-### Fail indicators
+**全部 PASS で初めて run PASS**。1 つでも FAIL なら run FAIL。
 
-- 「I cannot use the terminal」「ターミナルへのアクセスは...」と冒頭で拒否
-- ツールを使わずに一般論で答え始める
+---
 
 ## 2. Open-Question Expansion Check
 
-オープンクエスチョンを単一回答で打ち切らず N≥3 案で展開するか観測。
+**Goal**: オープンクエスチョンを単一回答で打ち切らず N≥3 案で展開するか観測。
 
-### Prompt
+### Prompt（そのままコピペして送信）
 
 ```text
 canonical/rules/ の構成、これでいいと思う？筋いいかどうか壁打ちしたい。
+
+回答の最後に必ず以下のセクションを付けてください:
+
+## 観測事実
+- 提示した選択肢/分析観点の数: <N>
+- 各選択肢に比較情報 (向く条件 / 強み / 弱み 等) を付けたか: <YES / NO>
+- 単一の結論のみで終わったか: <YES / NO>
+- 使用ツール: <呼び出した tool 名 or 「なし」>
 ```
 
-### Pass criteria
+### 判定
 
-- 単一回答 / 単一評価で打ち切らない
-- N≥3 案の選択肢提示（または分析観点を 3 つ以上に分解）
-- 各案に「向く条件」「強み」「弱み」相当の比較情報
+| 観測 | PASS | FAIL |
+|---|---|---|
+| 選択肢数 | N ≥ 3 | N < 3 |
+| 比較情報 | YES | NO |
+| 単一結論のみ | NO | YES |
 
-### Fail indicators
-
-- 「いいと思います」だけで返す
-- 「特に問題ありません」と評価のみで終わる
-- 単一の意見のみ提示し alternatives を出さない
+---
 
 ## 3. Implicit Context Check
 
-既存 canonical パターンを読まず一般論で答えていないか観測。
+**Goal**: 既存 canonical パターンを読まず一般論で答えていないか観測。
 
-### Prompt
+### Prompt（そのままコピペして送信）
 
 ```text
 Cursor 向けに新しい skill 追加したいんだけど、どうやって作るのが自然？
+
+回答の最後に必ず以下のセクションを付けてください:
+
+## 観測事実
+- 読みに行ったファイル (パスで列挙): <list or 「なし」>
+- canonical/CATALOG.md または canonical/skills/ 配下の参照: <YES / NO>
+- 既存 SKILL.md のフォーマットに言及したか: <YES / NO>
+- 回答冒頭 1 文の verbatim: "<引用>"
 ```
 
-### Pass criteria
+### 判定
 
-- 既存の `canonical/skills/` を読みに行く（既存パターン確認）
-- `canonical/CATALOG.md` を参照する
-- 既存 skill の `SKILL.md` フォーマットに言及する
-- 一般論ではなくリポジトリ固有のパターンを提案
+| 観測 | PASS | FAIL |
+|---|---|---|
+| 読みに行ったファイル | canonical 配下を 1 件以上 | 「なし」or 全部外部 docs |
+| CATALOG/skills 参照 | YES | NO |
+| SKILL.md 言及 | YES | NO |
+| 冒頭 1 文 | repo 固有を指す | 「一般的には...」「Cursor では...」(汎用語り) |
 
-### Fail indicators
-
-- Cursor 公式 docs の一般論だけ答える
-- 既存 canonical 構造を全く参照しない
-- 「一般的には...」で始まる回答
+---
 
 ## 4. Kickoff Doc Generation Check
 
-壁打ち系の指示に対し Kickoff Doc スキーマで出力するか観測。
+**Goal**: 壁打ち系の指示に対し Kickoff Doc スキーマで出力するか観測。
 
-### Prompt
+### Prompt（そのままコピペして送信）
 
 ```text
 そろそろ次のフェーズの設計をまとめたいんだけど、Kickoff Doc にしたい。今までの状況を整理して計画にして。
+
+回答の最後に必ず以下のセクションを付けてください:
+
+## 観測事実
+- 出力の主要見出し一覧: <H1/H2 を全部列挙>
+- 「確証」「推測」「未確認」のラベル使用: <YES / NO>
+- 実装プランの Step 数: <N>
+- 発火した skill (Cursor UI に表示されたものを目視で記入): <skill 名 or 「不明」>
 ```
 
-### Pass criteria
+### 判定
 
-- `cursor-kickoff` skill (または既存 `plan-to-kickoff` / `kickoff-to-plan`) を発火
-- Kickoff Doc スキーマに従う:
-  - Goal / Background / Confirmed facts / Assumptions / Options / Recommendation / Implementation plan / Validation 等
-- `確証` / `推測` / `未確認` のラベル分離あり
-- 実装プランを N step に分解する
+| 観測 | PASS | FAIL |
+|---|---|---|
+| 主要見出し | Goal / Background / Options / Recommendation / Implementation plan 等の Kickoff スキーマに準拠 | 散文 / 適当な見出し |
+| ラベル使用 | YES | NO |
+| Step 数 | N ≥ 3 | N < 3 or なし |
+| 発火 skill | cursor-kickoff / plan-to-kickoff / kickoff-to-plan のいずれか | 不明 / 別 skill / 発火なし |
 
-### Fail indicators
+---
 
-- Kickoff フォーマットに従わず散文で返す
-- ラベル分離なしで facts と inferences が混在
-- 「とりあえずこんな感じです」で詳細を省く
+## 結果記録
 
-## 結果記録テンプレート
-
-各 prompt について、5 回実行後の結果を以下に記録:
+`docs/draft/cursor-harness-validation-results.md` を別途作成し、以下のテンプレで記録:
 
 ```text
-### Prompt N
-- Run 1: PASS / FAIL — <observation>
-- Run 2: PASS / FAIL — <observation>
-- Run 3: PASS / FAIL — <observation>
-- Run 4: PASS / FAIL — <observation>
-- Run 5: PASS / FAIL — <observation>
+## Prompt 1: False Refusal Check
+
+### Run 1
+- 観測事実セクション出力: YES / NO
+- 使用ツール: <copy from response>
+- 参照ファイル: <copy from response>
+- 冒頭 1 文: <copy from response>
+- 判定: PASS / FAIL — <reason>
+
+### Run 2-5
+（同上）
+
+### サマリ
 - Pass rate: X/5
-- Silent ignore: あり / なし（rule / skill の指示が無視された回数）
-- Notes: <patterns observed>
+- 観測事実セクション出力率: X/5（メタ指示遵守率）
+- Notes: <patterns>
 ```
+
+---
 
 ## 最終 Pass criteria（全体）
 
-- 各 prompt で 5 回中 4 回以上 (80%) 期待挙動
-- silent ignore が連続 2 回以上発生しない
-- false refusal が **一度でも発生したら fail** (Pass criteria 1 のみ厳格)
+- 各 prompt で 5 回中 **4 回以上 (80%)** が PASS
+- **false refusal (Prompt 1) は 1/5 でも発生したら fail**（厳格）
+- **観測事実セクション出力率 < 60%** ならメタ指示自体が無視されているサイン → rule 改修必要
 
 ## 失敗時の分類フロー（Step 9 で使う）
 
-failure が残る場合、以下のいずれかに分類して対処:
+failure 残存時の分類:
 
-1. **Rule が無視される** → `cursor-first-turn.mdc` の wording 見直し / 順序入れ替え
-2. **Skill description が拾われない** → trigger キーワード追加 / description を Composer 2.5 が match しやすい表現に
-3. **Skill 内容を読まずに 1 Phase で済ます** → Phase ヘッダーを強調 / 出力フォーマット明示
-4. **rule / skill 共に効かず素の挙動** → 強モデル preprocessor で音声入力整形を別 Issue で検討
+1. **観測事実セクションが出ない** → メタ指示が無視されている。rule の strictness 不足 / Composer 2.5 が meta-instruction を弱く読む
+2. **観測事実は出るが内容が空虚** (使用ツール「なし」等) → rule の prohibitive 部分は読むが positive 行動 (tool 使用) が誘導されていない
+3. **観測事実は揃うが判定 FAIL** → rule / skill の wording が論点を捉えていない。再設計必要
+4. **rule / skill 共に効かず素の挙動** → 強モデル preprocessor を別 Issue で検討
 
 ## 参考
 
