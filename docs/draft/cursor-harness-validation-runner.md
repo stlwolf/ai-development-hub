@@ -7,15 +7,13 @@
 
 ## 結果ファイルの取り扱い
 
-各 chat は **SAVE_PATH に指定したファイルに観測結果を保存** する。
+各 chat は SAVE_PATH に観測結果を保存する。**SAVE_PATH の手動編集は不要** — 同名ファイルが既にあれば agent が自動で `-2`, `-3` ... と suffix を付けてユニーク化する。
 
-複数 run でファイル上書きを避けるなら、chat ごとに SAVE_PATH を変える:
+並列 run の例:
 
-- chat 1 → `docs/draft/cursor-harness-validation-results-1.md`
-- chat 2 → `docs/draft/cursor-harness-validation-results-2.md`
-- chat 3 → `docs/draft/cursor-harness-validation-results-3.md`
-
-「1 回だけの spot check」なら SAVE_PATH 変更不要。
+- chat 1 → `cursor-harness-validation-results.md`
+- chat 2 → `cursor-harness-validation-results-2.md` (自動)
+- chat 3 → `cursor-harness-validation-results-3.md` (自動)
 
 ## 注意
 
@@ -38,8 +36,26 @@
 - 観測事実は具体的に書く: 使ったツール名、参照したファイルパス、提示した選択肢の数、見出し構造の verbatim、回答冒頭の verbatim 引用
 - 判定 (PASS/FAIL) は user が行う。自分で判定しない。観測事実だけ正確に出す
 
-SAVE_PATH: docs/draft/cursor-harness-validation-results.md
-（複数 run するなら user 側で SAVE_PATH を chat ごとに別名に変更）
+## SAVE_PATH
+
+ベースパス: `docs/draft/cursor-harness-validation-results.md`
+
+保存前に必ずファイル存在チェックを行う:
+- ベースパスが存在しなければそのまま使う
+- 存在すれば `-2.md`, `-3.md`, `-4.md` ... と suffix を増やして空き番号を見つける
+- 例: `cursor-harness-validation-results-2.md`
+
+これにより複数 chat で並列実行しても上書き衝突を起こさない。
+
+## Cursor 環境情報の自動取得
+
+可能なら以下を取得して結果ファイルに含める:
+- 現在日時 (`date -Iseconds` 等)
+- Cursor バージョン (`cursor --version` の出力)
+- Git ブランチ (`git branch --show-current`)
+- ユーザー設定で有効な User Rule 名 (Settings → Rules で確認できない場合は省略)
+
+取得できない項目は「不明」と書く（推測しない）。
 
 ---
 
@@ -85,12 +101,15 @@ Cursor 向けに新しい skill 追加したいんだけど、どうやって作
 
 ## 結果保存
 
-全 prompt 完了後、SAVE_PATH に以下のフォーマットで保存（既存があれば上書き）:
+全 prompt 完了後、SAVE_PATH に以下のフォーマットで保存:
 
-# Validation Results — <YYYY-MM-DD HH:MM>
+# Validation Results
 
+- 実行日時: <ISO 8601、`date -Iseconds` で取得>
 - モード: 1-paste single-chat (smoke test、composite first-turn)
-- Cursor バージョン: <わかれば、なければ省略>
+- Cursor バージョン: <`cursor --version` の出力、取得不可なら「不明」>
+- Git ブランチ: <`git branch --show-current` の出力、取得不可なら「不明」>
+- 有効な User Rule 名: <わかれば列挙、不明なら「不明」>
 
 ## Prompt 1: False Refusal Check
 
@@ -116,7 +135,7 @@ Cursor 向けに新しい skill 追加したいんだけど、どうやって作
 - 観測事実セクションを全 4 件出力できたか: <YES / NO>
 - 気になった自己挙動 (演じた / 慎重になった等): <自由記述>
 
-保存完了したら、user に「`<SAVE_PATH>` に保存しました。判定をお願いします」とメッセージを返す。
+保存完了したら、user に「`<実際の保存先>` に保存しました。判定をお願いします」とメッセージを返す。SAVE_PATH の存在チェック → ユニーク化を必ず行うこと。
 ```
 
 ## 貼る内容（↑ ここまで ↑）
