@@ -83,8 +83,14 @@ fi
 # Default model per CLI
 case "$CLI" in
     cursor) : "${MODEL:=composer-2.5}";;
-    claude) : "${MODEL:=sonnet}";;
-    codex)  : "${MODEL:=gpt-5.3-codex}";;
+    claude)
+        echo "Error: --cli claude is not yet implemented (dispatch only supports 'cursor')" >&2
+        exit 2
+        ;;
+    codex)
+        echo "Error: --cli codex is not yet implemented (dispatch only supports 'cursor')" >&2
+        exit 2
+        ;;
     *) echo "Error: unknown CLI: $CLI (expected: cursor | claude | codex)" >&2; exit 1;;
 esac
 
@@ -185,3 +191,8 @@ done
 echo ""
 echo "Results saved to: $OUT_DIR"
 echo "Total: $TOTAL, Failed: $FAILED"
+
+# 1 件でも失敗していれば exit 非0
+if [[ "$FAILED" -gt 0 ]]; then
+    exit 1
+fi
