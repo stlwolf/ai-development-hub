@@ -93,6 +93,6 @@ canonical/ 内のツール固有レイヤー。各ディレクトリの README �
 
 | ディレクトリ | 対象ツール | 内容 |
 |-------------|-----------|------|
-| `cursor/` | Cursor | Cursor 固有コマンド（`command/thread/archive-title.md`） |
+| `cursor/` | Cursor | Cursor 固有コマンド (`command/`)、User Rule (`rules/cursor-first-turn.mdc`)、Agent Skill (`skills/cursor-kickoff/`) |
 | `codex/` | Codex | Codex 固有 AGENTS.md、commands-registry |
 | `mcp/` | Cursor, Claude Code | MCP サーバー設定（`cursor.json`, `claude.json`） |

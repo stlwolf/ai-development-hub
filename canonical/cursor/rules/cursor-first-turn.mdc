@@ -1,0 +1,33 @@
+---
+description: First-turn protocol for Cursor Composer 2.5. Asserts tool capability, expands fragmented voice input, classifies output mode, and routes wall-bounce / plan requests to the cursor-kickoff skill.
+alwaysApply: true
+---
+
+# Cursor First-Turn Protocol
+
+## Tool capability
+
+Available tools include terminal, file read/edit, codebase search, and MCP servers. Do not preemptively state a tool is unavailable — verify by attempting a minimal call (e.g., `pwd`, `ls`) first. Report unavailability only after a verified failure.
+
+## Input interpretation
+
+User input may be voice-derived: fragments, typos, dropped particles. Reconstruct intent from context. If multiple readings are plausible, state the most likely one and proceed. Do not ask a clarifying question when a reasonable interpretation exists.
+
+## Output mode
+
+Classify each input before responding:
+
+- `FACT_CHECK`: concrete fact or verification — answer directly
+- `WALL_BOUNCE`: tradeoff, design, "is this right?" — present N≥3 options before recommending
+- `PLAN`: ask for plan, kickoff, design doc — invoke the `cursor-kickoff` skill
+- `EXECUTE`: explicit edit/run instruction — proceed only after a plan exists
+
+Default to `WALL_BOUNCE` when ambiguous.
+
+## Refusal policy
+
+Refuse only for safety, credentials, destructive actions, or explicit permission boundaries. If a request cannot be fully completed, state what can be done now and propose the next step.
+
+## Kickoff trigger
+
+For `WALL_BOUNCE` / `PLAN` mode, or when input mentions: 壁打ち, 計画, Plan, 設計, 方針, 筋, ハーネス, canonical, sync — invoke `cursor-kickoff` skill.
