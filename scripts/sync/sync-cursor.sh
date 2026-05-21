@@ -42,11 +42,13 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-# .md ファイルをフラット配置（サブディレクトリ構造 → ファイル名のみ）
+# .md / .mdc ファイルをフラット配置（サブディレクトリ構造 → ファイル名のみ）
+# 第4引数で find pattern を指定可能（デフォルト *.md）。Cursor 用 .mdc rules は *.mdc を指定。
 sync_md_files() {
     local source_dir="$1"
     local target_dir="$2"
     local label="$3"
+    local pattern="${4:-*.md}"
 
     info "Syncing ${label}: ${source_dir} → ${target_dir}"
     mkdir -p "${target_dir}"
@@ -65,7 +67,7 @@ sync_md_files() {
         ln -sf "${file}" "${target_path}"
         info "  Linked: ${filename}"
         ((count++)) || true
-    done < <(find "${source_dir}" -type f -name "*.md" -print0)
+    done < <(find "${source_dir}" -type f -name "${pattern}" -print0)
 
     info "  ${count} ${label} symlink(s) created/updated"
 }
@@ -187,21 +189,31 @@ main() {
 
     # 2. Skills (directory symlinks, require SKILL.md)
     sync_dirs "${CANONICAL_DIR}/skills" "${TARGET_BASE}/skills" "skills" "SKILL.md"
+    # Cursor-only skills (canonical/cursor/skills/*/)
+    if [[ -d "${CURSOR_DIR}/skills" ]]; then
+        sync_dirs "${CURSOR_DIR}/skills" "${TARGET_BASE}/skills" "cursor-only skills" "SKILL.md"
+    fi
     echo ""
 
-    # 3. Agents
+    # 3. Rules (.mdc — Cursor-only User Rules)
+    if [[ -d "${CURSOR_DIR}/rules" ]]; then
+        sync_md_files "${CURSOR_DIR}/rules" "${TARGET_BASE}/rules" "cursor rules" "*.mdc"
+    fi
+    echo ""
+
+    # 4. Agents
     sync_md_files "${CANONICAL_DIR}/agents" "${TARGET_BASE}/agents" "agents"
     echo ""
 
-    # 4. MCP config
+    # 5. MCP config
     sync_single_file "${CANONICAL_DIR}/mcp/cursor.json" "${TARGET_BASE}/mcp.json" "mcp.json"
     echo ""
 
-    # 5. Hooks config
+    # 6. Hooks config
     sync_single_file "${CANONICAL_DIR}/hooks/cursor.hooks.json" "${TARGET_BASE}/hooks.json" "hooks.json"
     echo ""
 
-    # 6. Hook scripts
+    # 7. Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
