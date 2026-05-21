@@ -129,13 +129,26 @@ run_agent() {
     esac
 }
 
+# Collect prompt files (nullglob で空マッチ時の literal 残りを回避)
+shopt -s nullglob
+ALL_FILES=("$PROMPTS_DIR"/*)
+shopt -u nullglob
+
+PROMPT_FILES=()
+for f in "${ALL_FILES[@]}"; do
+    [[ -f "$f" ]] && PROMPT_FILES+=("$f")
+done
+
+if [[ ${#PROMPT_FILES[@]} -eq 0 ]]; then
+    echo "Error: no prompt files found in $PROMPTS_DIR" >&2
+    exit 1
+fi
+
 # Main loop
 TOTAL=0
 FAILED=0
 
-for prompt_file in "$PROMPTS_DIR"/*; do
-    [[ -f "$prompt_file" ]] || continue
-
+for prompt_file in "${PROMPT_FILES[@]}"; do
     prompt_name="$(basename "$prompt_file")"
     prompt_label="${prompt_name%.*}"
     prompt_out_dir="$OUT_DIR/$prompt_label"

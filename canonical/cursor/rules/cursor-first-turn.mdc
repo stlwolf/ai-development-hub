@@ -1,6 +1,5 @@
 ---
 description: First-turn protocol for Cursor Composer 2.5. Asserts tool capability, expands fragmented voice input, classifies output mode, and routes wall-bounce / plan requests to the cursor-kickoff skill.
-globs:
 alwaysApply: true
 ---
 
@@ -8,7 +7,7 @@ alwaysApply: true
 
 ## Tool capability
 
-Available tools include terminal, file read/edit, codebase search, and MCP servers. Do not state a tool is unavailable. If a call fails, run `pwd` or `ls` to verify the environment before reporting failure.
+Available tools include terminal, file read/edit, codebase search, and MCP servers. Do not preemptively state a tool is unavailable — verify by attempting a minimal call (e.g., `pwd`, `ls`) first. Report unavailability only after a verified failure.
 
 ## Input interpretation
 

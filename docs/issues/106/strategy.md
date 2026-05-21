@@ -25,15 +25,15 @@ Cursor 用ハーネスを構造的に強化し、Composer 2.5 でも壁打ち〜
 
 ## 2. Composer 2.5 の特性（一次情報ベース）
 
-| 項目 | 値 / 状態 |
-|---|---|
-| ベース | Moonshot Kimi K2.5 (open-weight) |
-| 訓練 | Cursor 側で RL fine-tune (85% of compute) |
-| API id | `kimi-k2p5-rl-0317-s515-fast` |
-| 価格 | $0.50/M input, $2.50/M output (Standard) |
-| Opus 4.7 比 | 入力 10x / 出力 30x 安い |
-| Context | 物理 256K, 効果は MECW 128K-256K |
-| Training feedback | 「Reminder: Available tools...」形式の targeted textual feedback を学習に使用（[公式 blog](https://cursor.com/blog/composer-2-5/)） |
+| 項目 | 値 / 状態 | 出典 |
+|---|---|---|
+| ベース | Moonshot Kimi K2.5 (open-weight) | [Cursor blog](https://cursor.com/blog/composer-2-5/), API id decode から [HN 議論](https://news.ycombinator.com/item?id=47444346)（推測検証） |
+| 訓練 | Cursor 側で RL fine-tune (85% of compute) | [Cursor blog](https://cursor.com/blog/composer-2-5/) |
+| API id | `kimi-k2p5-rl-0317-s515-fast` | [HN: Cursor backend response decoded](https://news.ycombinator.com/item?id=47444346)（外部観測） |
+| 価格 | $0.50/M input, $2.50/M output (Standard) | [Cursor Models & Pricing](https://cursor.com/docs/models-and-pricing) |
+| Opus 4.7 比 | 入力 10x / 出力 30x 安い | 上記価格と Opus 4.7 公式価格からの計算（派生値） |
+| Context | 物理 256K, 効果は MECW 128K-256K | [Cursor docs Models](https://cursor.com/docs/models) (256K), MECW 範囲は[Composer 2 technical post](https://cursor.com/blog/composer-2-5/) からの推測 |
+| Training feedback | 「Reminder: Available tools...」形式の targeted textual feedback を学習に使用 | [Cursor blog](https://cursor.com/blog/composer-2-5/) |
 
 **重要**: training に "Reminder: Available tools..." が使われている事実は、「**ターン1での自己能力宣言が効く直接根拠**」となる。同じ表現プロトコルを runtime で使えば挙動が予測しやすい。
 
