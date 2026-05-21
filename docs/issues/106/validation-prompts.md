@@ -150,7 +150,7 @@ Cursor 向けに新しい skill 追加したいんだけど、どうやって作
 
 ## 結果記録
 
-`docs/draft/cursor-harness-validation-results.md` を別途作成し、以下のテンプレで記録:
+`docs/issues/106/results.md` を別途作成し、以下のテンプレで記録:
 
 ```text
 ## Prompt 1: False Refusal Check
@@ -190,7 +190,7 @@ failure 残存時の分類:
 
 ## 参考
 
-- 戦略文書: `docs/draft/cursor-harness-strategy.md`
+- 戦略文書: `docs/issues/106/strategy.md`
 - Rule: `canonical/cursor/rules/cursor-first-turn.mdc`
 - Skill: `canonical/cursor/skills/cursor-kickoff/SKILL.md`
 - [Cursor Composer 2.5 blog](https://cursor.com/blog/composer-2-5/) — training feedback 仕様

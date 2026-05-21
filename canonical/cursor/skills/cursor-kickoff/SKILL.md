@@ -257,4 +257,4 @@ Plan が成立したら `adversarial-review` skill で漏れ・矛盾・曖昧�
 - [Cursor Composer 2.5 公式 blog](https://cursor.com/blog/composer-2-5/) — training に "Reminder: Available tools..." 形式 feedback を使用
 - [arXiv:2503.00902 — Instruct-of-Reflection](https://arxiv.org/abs/2503.00902) — static reflection は性能劣化、観測可能 protocol が必要
 - [NLAH (arXiv:2603.25723)](https://arxiv.org/abs/2603.25723) — State Semantics / Failure Taxonomy 概念
-- 戦略文書: `docs/draft/cursor-harness-strategy.md`
+- 戦略文書: `docs/issues/106/strategy.md`

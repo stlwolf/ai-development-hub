@@ -11,14 +11,14 @@
 
 並列 run の例:
 
-- chat 1 → `cursor-harness-validation-results.md`
-- chat 2 → `cursor-harness-validation-results-2.md` (自動)
-- chat 3 → `cursor-harness-validation-results-3.md` (自動)
+- chat 1 → `results.md`
+- chat 2 → `results-2.md` (自動)
+- chat 3 → `results-3.md` (自動)
 
 ## 注意
 
 - 4 prompt は同一 chat 内で 1 first-turn として処理されるため、prompt 2-4 は厳密には first-turn ではない（chat 内では「初回ターン」だが、composite task）。
-- 気になる失敗があれば `cursor-harness-validation-prompts.md` の **per-prompt fresh chats** 方式（4 × 5 = 20 chats）で個別に再検証する。
+- 気になる失敗があれば `validation-prompts.md` の **per-prompt fresh chats** 方式（4 × 5 = 20 chats）で個別に再検証する。
 
 ---
 
@@ -38,12 +38,12 @@
 
 ## SAVE_PATH
 
-ベースパス: `docs/draft/cursor-harness-validation-results.md`
+ベースパス: `docs/issues/106/results.md`
 
 保存前に必ずファイル存在チェックを行う:
 - ベースパスが存在しなければそのまま使う
 - 存在すれば `-2.md`, `-3.md`, `-4.md` ... と suffix を増やして空き番号を見つける
-- 例: `cursor-harness-validation-results-2.md`
+- 例: `results-2.md`
 
 これにより複数 chat で並列実行しても上書き衝突を起こさない。
 
@@ -144,13 +144,13 @@ Cursor 向けに新しい skill 追加したいんだけど、どうやって作
 
 1. Composer 2.5 が SAVE_PATH に結果を生成
 2. User がそのファイルを開く
-3. `cursor-harness-validation-prompts.md` の判定表と照合
+3. `validation-prompts.md` の判定表と照合
 4. PASS / FAIL を user 側で判定
 5. 結果次第で Step 9（failure 分類 / 別 Issue 化）
 
 ## 参考
 
-- 仕様（判定基準・厳密モード）: `docs/draft/cursor-harness-validation-prompts.md`
-- 戦略文書: `docs/draft/cursor-harness-strategy.md`
+- 仕様（判定基準・厳密モード）: `docs/issues/106/validation-prompts.md`
+- 戦略文書: `docs/issues/106/strategy.md`
 - Rule: `canonical/cursor/rules/cursor-first-turn.mdc`
 - Skill: `canonical/cursor/skills/cursor-kickoff/SKILL.md`
