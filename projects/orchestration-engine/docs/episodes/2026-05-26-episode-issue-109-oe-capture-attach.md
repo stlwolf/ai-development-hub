@@ -23,7 +23,7 @@ tags: [orchestration, phase-5, issue-109, episode, oe-capture, attach, capture-g
 
 `bin/oe` の spawn 専用フローとは独立した、**既存（対話中）ペインに attach して終端マーカーを読み取る**
 最小入口 `bin/oe-capture` を実装した（#105 Phase 5 dogfood の Slice A）。既存 capture/classify/KVS は無改変、
-mock suite は 306 → 335 assertions に増加し全 GREEN。実 wez 自己検証も PASS。
+mock suite は 306 → 337 assertions に増加し全 GREEN。実 wez 自己検証も PASS。
 
 ## 何を作ったか
 
@@ -33,7 +33,7 @@ mock suite は 306 → 335 assertions に増加し全 GREEN。実 wez 自己検�
 | `bin/oe` | 改修 | ローカル定義を削除し `source lib/session.sh` に置換（挙動不変） |
 | `lib/attach.sh` | 新規 | `oe_capture_attach()` グルー: scan→（EXIT検出時）classify→`session_end` audit→write_kvs |
 | `bin/oe-capture` | 新規 | 読み取り専用入口。引数解析 + バリデーション + `oe_capture_attach` 呼び出し。末尾ガードで source 可能 |
-| `tests/test_attach.sh` | 新規 | mock hermetic テスト（29 assertions）。グルー + 入口バリデーション |
+| `tests/test_attach.sh` | 新規 | mock hermetic テスト（31 assertions）。グルー + 入口バリデーション |
 | `tests/e2e_real_agent/self_verify_attach.sh` | 新規 | 実 wez 自己検証（local-only） |
 
 ## 設計判断（確定）
@@ -80,8 +80,8 @@ mock suite GREEN でも見つからなかった実引数エッジを SO ゲー�
 | ゲート | 内容 | 結果 |
 |---|---|---|
 | G1 | `bash tests/test_e2e_smoke.sh`（bin/oe 抽出の回帰） | PASS=44 / FAIL=0 |
-| G2 | `bash tests/test_attach.sh`（新規） | PASS=29 / FAIL=0 |
-| G3 | 全 mock suite（`for f in ./tests/test_*.sh`） | TOTAL PASS=335 / FAIL=0（既存 306 維持 + 新規 29） |
+| G2 | `bash tests/test_attach.sh`（新規） | PASS=31 / FAIL=0 |
+| G3 | 全 mock suite（`for f in ./tests/test_*.sh`） | TOTAL PASS=337 / FAIL=0（既存 306 維持 + 新規 31） |
 | G4 | `shellcheck bin/oe-capture bin/oe lib/session.sh lib/attach.sh tests/test_attach.sh` | ALL CLEAN |
 | G5 | `self_verify_attach.sh`（実 wez） | PASS（state=success / KVS / audit(session_end, source=attach)） |
 | G6 | `so-compare`（実装 diff）→ shift バグ修正 → 再検証 | `shift 2` バグ検出・修正、G2 31 / G3 337 / FAIL=0 |
