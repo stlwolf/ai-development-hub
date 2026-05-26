@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# oe-capture — 既存（対話中）ペインに attach して終端マーカーを読み取り、KVS/audit に記録
+#
+# usage: oe-capture <pane_id> [--session-id <id>] [--lines <N>]
+#
+# bin/oe の spawn フローとは独立した読み取り専用入口（Issue #109 / Slice A）。
+# ペインの kill / cleanup は行わない（対話中ペインを壊さない）ため spawn/monitor/cleanup は source しない。
+#
+# viewport-only 制約: 読めるのは対象 pane の viewport 末尾 N 行（既定 50）のみ。
+# @@OE_EXIT マーカーは末尾近傍の単独行である必要がある。スクロールアウトしたマーカーは
+# --lines を増やしても回収不能（incomplete = exit 1）。
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LIB_DIR="${PROJECT_DIR}/lib"
+export PROJECT_DIR
+
+# 必要な lib のみ source（spawn/monitor/verify/cleanup は不要）
+# shellcheck source=../lib/constants.sh
+source "${LIB_DIR}/constants.sh"
+# shellcheck source=../lib/session.sh
+source "${LIB_DIR}/session.sh"
+# shellcheck source=../lib/capture.sh
+source "${LIB_DIR}/capture.sh"
+# shellcheck source=../lib/audit.sh
+source "${LIB_DIR}/audit.sh"
+# shellcheck source=../lib/attach.sh
+source "${LIB_DIR}/attach.sh"
+
+oe_capture_usage() {
+  cat >&2 <<'USAGE'
+usage: oe-capture <pane_id> [--session-id <id>] [--lines <N>]
+  <pane_id>      WezTerm ペイン ID（非負整数、必須）
+  --session-id   KVS/audit のセッション ID（26 文字 ULID。省略時は自動生成）
+  --lines        capture する末尾行数（既定 50。viewport-only 制約: マーカーは末尾単独行）
+USAGE
+}
+
+oe_capture_cli() {
+  local pane_id="" session_id="" lines=50 session_id_supplied=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --session-id) session_id="${2:-}"; session_id_supplied=1; shift 2 ;;
+      --lines)      lines="${2:-}"; shift 2 ;;
+      -h|--help)    oe_capture_usage; return 0 ;;
+      -*)           echo "oe-capture: unknown option: $1" >&2; oe_capture_usage; return 2 ;;
+      *)
+        if [[ -z "$pane_id" ]]; then
+          pane_id="$1"; shift
+        else
+          echo "oe-capture: unexpected argument: $1" >&2; return 2
+        fi
+        ;;
+    esac
+  done
+
+  # wez 不在は環境エラー（exit 2）として「未完了 (exit 1)」と区別する
+  if ! command -v wez >/dev/null 2>&1; then
+    echo "oe-capture: 'wez' not found in PATH (required to capture pane output)" >&2
+    return 2
+  fi
+
+  if [[ -z "$pane_id" ]]; then
+    echo "oe-capture: pane_id is required" >&2
+    oe_capture_usage
+    return 2
+  fi
+  # pane_id は jq --argjson の数値リテラル制約（先頭ゼロ不可・RFC 8259）+ schema minimum:0 を満たす整数のみ
+  if [[ ! "$pane_id" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "oe-capture: pane_id must be a non-negative integer without leading zeros (got: '${pane_id}')" >&2
+    return 2
+  fi
+  if [[ ! "$lines" =~ ^[1-9][0-9]*$ ]]; then
+    echo "oe-capture: --lines must be a positive integer (got: '${lines}')" >&2
+    return 2
+  fi
+
+  # user 指定 session_id は ULID 形式必須（downstream の validate-session-state.sh と整合）
+  if [[ "$session_id_supplied" -eq 1 && ! "$session_id" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
+    echo "oe-capture: --session-id must be a 26-char ULID (Crockford base32, excl. I/L/O/U)" >&2
+    return 2
+  fi
+
+  mkdir -p "${OE_STATE_DIR}" "${OE_AUDIT_DIR}"
+
+  session_id="${session_id:-$(oe_generate_session_id)}"
+
+  # 衝突拒否: 既存 state があると oe_capture_write_kvs の mv -f が verification map を黙って破壊するため拒否
+  if [[ "$session_id_supplied" -eq 1 && -e "${OE_STATE_DIR}/${session_id}.state.json" ]]; then
+    echo "oe-capture: state file already exists for session-id '${session_id}' (refusing to overwrite); use a fresh id" >&2
+    return 2
+  fi
+
+  if oe_capture_attach "$session_id" "$pane_id" "$lines"; then
+    printf 'session_id=%s pane_id=%s state=%s\n' "$session_id" "$pane_id" "$OE_ATTACH_STATE"
+    printf 'kvs=%s\n'   "${OE_STATE_DIR}/${session_id}.state.json"
+    printf 'audit=%s\n' "${OE_AUDIT_DIR}/${session_id}.jsonl"
+    return 0
+  else
+    echo "oe-capture: no @@OE_EXIT marker in last ${lines} lines of pane ${pane_id} (not finished, or marker scrolled out of viewport)" >&2
+    return 1
+  fi
+}
+
+# 直接実行時のみ CLI を起動（test から source した場合は自動実行しない）
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  oe_capture_cli "$@"
+fi
