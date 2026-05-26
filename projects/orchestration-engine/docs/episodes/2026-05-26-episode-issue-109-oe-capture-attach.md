@@ -62,6 +62,19 @@ mock suite は 306 → 335 assertions に増加し全 GREEN。実 wez 自己検�
 - **wez 不在チェック / PROJECT_DIR・mkdir 前提**: `set -u` 下で `${PROJECT_DIR}` ネスト展開が unbound だと abort する点を明記反映
 - 実装完了後にも diff へ so-compare を当てる SO ゲート（G6）を Plan に追加
 
+### G6 SO ゲート（実装 diff）で検出・修正したバグ
+
+実装完了後に diff を `so-compare`（`tmp/so-20260526-111125`）にかけたところ、両者一致で **`shift 2` バグ**（Medium）を検出:
+
+- `bin/oe-capture` の `--session-id` / `--lines` が値なしで末尾に来ると（例 `oe-capture 42 --lines`）`$#==1` で `shift 2` が失敗。
+  - 実 CLI（`set -e`）: while body 末尾コマンドの失敗で**無言の exit 1**（=「未完了」と誤認）。
+  - `set -e` 無効文脈（テストの `|| rc=$?`）: shift が何も消費せず**無限ループ（ハング）**。
+- 修正: `[[ $# -ge 2 ]]` ガードを追加し、値欠落時は exit 2 + メッセージ。
+- 回帰テスト: `test_attach.sh` に末尾値欠落 2 ケースを追加（29→31 assertions、全 suite 337）。
+
+mock suite GREEN でも見つからなかった実引数エッジを SO ゲートが捕捉した（Plan の SO ゲート追加が機能した実例）。
+その他の指摘（自動生成 session_id の衝突チェック無し・SKIP の exit code・wez 不在分岐の mock 不能）は軽微 or 設計通りでスコープ外とした。
+
 ## ゲート結果
 
 | ゲート | 内容 | 結果 |
@@ -71,6 +84,7 @@ mock suite は 306 → 335 assertions に増加し全 GREEN。実 wez 自己検�
 | G3 | 全 mock suite（`for f in ./tests/test_*.sh`） | TOTAL PASS=335 / FAIL=0（既存 306 維持 + 新規 29） |
 | G4 | `shellcheck bin/oe-capture bin/oe lib/session.sh lib/attach.sh tests/test_attach.sh` | ALL CLEAN |
 | G5 | `self_verify_attach.sh`（実 wez） | PASS（state=success / KVS / audit(session_end, source=attach)） |
+| G6 | `so-compare`（実装 diff）→ shift バグ修正 → 再検証 | `shift 2` バグ検出・修正、G2 31 / G3 337 / FAIL=0 |
 
 ### G5 実機実行の所見（stale socket gotcha）
 

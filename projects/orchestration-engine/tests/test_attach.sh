@@ -114,6 +114,14 @@ echo "-- --session-id 非 ULID → exit 2 --"
 rc=0; oe_capture_cli 42 --session-id not-a-ulid >/dev/null 2>&1 || rc=$?
 assert_eq "rc" "2" "$rc"
 
+echo "-- --session-id 値欠落 (末尾) → exit 2 (shift 2 ガード, SO検出バグ回帰) --"
+rc=0; oe_capture_cli 42 --session-id >/dev/null 2>&1 || rc=$?
+assert_eq "rc" "2" "$rc"
+
+echo "-- --lines 値欠落 (末尾) → exit 2 (shift 2 ガード, SO検出バグ回帰) --"
+rc=0; oe_capture_cli 42 --lines >/dev/null 2>&1 || rc=$?
+assert_eq "rc" "2" "$rc"
+
 echo "-- 未知オプション → exit 2 --"
 rc=0; oe_capture_cli 42 --bogus >/dev/null 2>&1 || rc=$?
 assert_eq "rc" "2" "$rc"

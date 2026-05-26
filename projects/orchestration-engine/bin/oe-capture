@@ -42,8 +42,12 @@ oe_capture_cli() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --session-id) session_id="${2:-}"; session_id_supplied=1; shift 2 ;;
-      --lines)      lines="${2:-}"; shift 2 ;;
+      --session-id)
+        [[ $# -ge 2 ]] || { echo "oe-capture: --session-id requires a value" >&2; return 2; }
+        session_id="$2"; session_id_supplied=1; shift 2 ;;
+      --lines)
+        [[ $# -ge 2 ]] || { echo "oe-capture: --lines requires a value" >&2; return 2; }
+        lines="$2"; shift 2 ;;
       -h|--help)    oe_capture_usage; return 0 ;;
       -*)           echo "oe-capture: unknown option: $1" >&2; oe_capture_usage; return 2 ;;
       *)
