@@ -10,14 +10,14 @@ set -euo pipefail
 # リポジトリの state/・audit/ は汚さない。
 #
 # 実行: bash projects/orchestration-engine/tests/e2e_real_agent/self_verify_attach.sh
-# Exit: 0=PASS, 1=FAIL
+# Exit: 0=PASS, 1=FAIL, 77=SKIP（wez 不在）
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 if ! command -v wez >/dev/null 2>&1; then
   echo "[self_verify_attach] SKIP: 'wez' not found in PATH (real-wez only)" >&2
-  exit 1
+  exit 77
 fi
 
 TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
