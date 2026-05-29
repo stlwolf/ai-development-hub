@@ -1,27 +1,31 @@
 ---
-title: "AI バグ探索の機能単位アプローチ + AutoTTS 探索環境設計: 2記事のクロス分析"
+title: "AI バグ探索 + AutoTTS 探索環境設計 + ドメイン特化 PR レビュー: 3記事のクロス分析"
 date: 2026-05-28
 status: research-complete
-tags: [research-intake, bug-detection, test-time-scaling, exploration-space, second-opinion, context-design]
+tags: [research-intake, bug-detection, test-time-scaling, exploration-space, second-opinion, context-design, pr-review, negative-knowledge, confidence-scoring]
 sources:
   - https://zenn.dev/headwaters/articles/4bb85a2a1b93ea
   - https://xenospectrum.com/autotts-ai-algorithm-discovery-tts-token-reduction/
+  - https://techblog.zozo.com/entry/domain-specific-pr-review-with-claude-skills
 related_ideas:
   - ideas/connections.md（セカンドオピニオンと複数AIの理解収束）
   - ideas/connections.md（決定性の境界設計と制御ループ）
-related_issues: [35, 49, 75, 76, 77, 78]
+related_issues: [35, 49, 60, 62, 75, 76, 77, 78, 92, 113]
 next_step:
-  trigger: "Issue #77（確定前ゼロベース探索の構造化）または #78（仮説外部化メカニズム）の着手時"
+  trigger: "Issue #77（確定前ゼロベース探索）/ #78（仮説外部化）/ #62（Negative Knowledge）/ #113（episode-retrospective）の着手時"
   actions:
-    - "#77 の収束条件設計時に、カウントベースと EMA トレンドベースの比較検討を実施（本ノートのパターン B3 セクション参照）"
-    - "#77 の deterministic orchestrator パターン実装時に、AutoTTS の3層構造（探索者×リプレイ環境×評価関数）を参考設計として参照"
+    - "#77 の収束条件設計時に、カウントベースと EMA トレンドベースの比較検討を実施（パターン B3 参照）"
+    - "#77 の deterministic orchestrator パターン実装時に、AutoTTS の3層構造を参考設計として参照"
     - "#76 の選択肢拡張テンプレート設計時に、数量非指定プロンプトの原則（パターン A3）を組み込み"
-  referenced_by: "Epic #35（so-compare 改善）の探索空間設計、Epic #37（ハーネス基盤整備）のテスト戦略層"
+    - "#62 の蓄積フォーマット設計時に、NG/OK ペア形式（パターン C1）を候補として検討"
+    - "#113 のテンプレ検証時に、KPT vs NG/OK ペア（Pattern/Anti-pattern）の比較軸を追加（パターン C1 参照）"
+    - "#92 の検証 agent 入力設計時に、Confidence スコアリング + Severity 別閾値（パターン C4）を参照"
+  referenced_by: "Epic #35（so-compare 改善）の探索空間設計、Epic #37（ハーネス基盤整備）のテスト戦略層、#62（Negative Knowledge）の蓄積フォーマット、#113（episode-retrospective）のテンプレ選定"
 ---
 
-# AI バグ探索の機能単位アプローチ + AutoTTS 探索環境設計
+# AI バグ探索 + AutoTTS 探索環境設計 + ドメイン特化 PR レビュー
 
-2記事はスケールが異なる（コードレビュー vs アルゴリズム探索）が、**「人間の仕事が成果物の直接生産からAIの探索環境の設計にシフトする」**というメタパターンを共有している。
+3記事はスケールが異なる（コードレビュー / アルゴリズム探索 / CI レビュー基盤）が、**「人間の仕事が成果物の直接生産からAIの探索環境の設計にシフトする」**というメタパターンを共有している。
 
 ---
 
@@ -151,14 +155,97 @@ TTS の制御軸を「幅（並列ブランチ数）」と「深さ（1ブラン
 
 ---
 
+## 記事C: ドメイン特化 PR 自動レビュー基盤
+
+### 記事情報
+
+- **タイトル**: Claude Code Skills × Bedrockで実現するドメイン特化のPR自動レビュー
+- **URL**: [techblog.zozo.com/entry/domain-specific-pr-review-with-claude-skills](https://techblog.zozo.com/entry/domain-specific-pr-review-with-claude-skills)
+- **著者/組織**: 池上 寛登 / ZOZO（FBZブロック）
+- **公開日**: 2026-05-29
+- **種別**: ブログ記事
+- **要約**: FBZ のドメイン知識（暗黙知）を NG/OK ペア形式のレイヤー別ガイドラインに形式知化し、Claude Code Skills + Amazon Bedrock で PR 自動レビュー基盤を構築。変更パスから参照すべきガイドラインを動的にロードし、2段レビュー（Reviewer Pass: 網羅的 → Validator Pass: 批判的再検証）+ Confidence スコアリングで誤検知を抑制。月次でガイドライン自動更新提案を起票する閉ループまで含む CI レベルの基盤。
+
+### 本質的パターン
+
+| # | パターン名 | 本質（1-2行） | 種別 |
+|---|-----------|-------------|------|
+| C1 | NG/OK ペアによる暗黙知の形式知化 | レビューコメントから繰り返し出現するアンチパターンを収集し、NG/OK ペアで構造化。LLM がルールの境界を判定しやすくなる | 設計原則 |
+| C2 | 変更パス→ガイドライン動的ロード | 変更ファイルのパスから対応表で参照すべきガイドラインのみを選択的にロード。コンテキスト肥大化を防ぎ精度を保つ | 実装パターン |
+| C3 | 2段レビュー（Reviewer + Validator） | 網羅的に拾うペルソナと批判的に再検証するペルソナを分離。役割分離により誤検知を抑制 | ワークフロー |
+| C4 | Confidence スコアリング + Severity ラベル | 各指摘にチェック項目の採点合計で確信度を算出し、Severity（Important/Pre-existing/Nit）ごとに投稿閾値を設定 | 評価手法 |
+| C5 | ガイドライン自動更新提案 | 直近のレビューコメントと既存ガイドラインを月次で照合し、追加・修正・削除を含む更新提案を自動起票。ルールの陳腐化を防ぐ閉ループ | ワークフロー |
+| C6 | PRサイズ別モデル選択 | PR の差分行数×変更ファイル数で Haiku/Sonnet を動的切替。Opus はコスト対効果が合わず不採用 | 実装パターン |
+
+### パターン詳細
+
+#### C1: NG/OK ペアによる暗黙知の形式知化
+
+PRレビューコメントから「同種の指摘が繰り返し発生」「既存ドキュメントでカバーされていない」「チーム全体で共有すべき設計判断」に該当する指摘をルール化。形式を統一することで LLM がルールの境界を判定しやすくなる。
+
+Issue #62（Negative Knowledge）の蓄積フォーマット設計にそのまま使える具体形。また Issue #113（episode-retrospective）の「AI 駆動向け: Pattern / Anti-pattern」テンプレ候補の参考実装。KPT と比較して、NG/OK は対比構造が明確で LLM の自己回帰生成との相性が良い可能性がある。
+
+#### C2: 変更パス→ガイドライン動的ロード
+
+SKILL.md に対応表を記述し、変更ファイル一覧と照合して該当する章だけを動的にロード:
+
+```yaml
+'app/service/**': layer-rules/layer-responsibility.md
+'app/dataaccess/**': layer-rules/data-integrity.md
+'tests/**': layer-rules/test-and-coding.md
+```
+
+記事A の A1（機能単位コンテキスト投入）と同じ「適切なコンテキストだけを渡す」設計思想の CI 適用版。canonical アーキテクチャの CATALOG.md + skill-first-operations ルールと構造的に同型。
+
+#### C3: 2段レビュー（Reviewer + Validator）
+
+単一セッション内でペルソナを切り替える2段構成:
+
+1. **Reviewer Pass**（網羅的に拾う）: 候補を出し切る
+2. **Validator Pass**（批判的に再検証）: 根拠を再確認し、Confidence スコアを付与
+
+adversarial-review スキルの Plan Review（網羅的チェック）+ Compliance Review（仕様照合）と同型構造。Issue #77（確定前ゼロベース探索）の「生成と反証の分離」の PR レビュー適用でもある。
+
+#### C4: Confidence スコアリング + Severity ラベル
+
+Validator Pass のチェック項目:
+
+- 根拠コードを再読み込みしたか
+- PR説明文を踏まえているか
+- 影響範囲を確認したか
+
+合計値が Severity 別の閾値を超えた場合のみ投稿。Important は厳しめ、Nit は緩めの閾値。
+
+Issue #92（検証ゲート v2）の「検証 agent への完了報告内容の充実」が目指す方向の具体解。入力（完了報告）だけでなく出力（指摘の信頼度制御）にも構造を持たせることで検証ゲート全体の精度が上がる。
+
+#### C5: ガイドライン自動更新提案
+
+月次ワークフロー:
+
+```
+直近のレビューコメント × 既存ガイドライン → 差分抽出 → 更新提案を自動起票
+```
+
+メタガイドライン（追記場所・文体・重複チェック手順）を別ファイルで用意し、ガイドラインの一貫性を保つ。
+
+Issue #62（Negative Knowledge）が Phase A（蓄積）→ Phase B（注入）で留まるのに対し、「蓄積 → 注入 → 既存ルールへの還元」までの閉ループ。Issue #113 がスコープ外にしている「振り返り内容を engine の学習ループへ自動投入する仕組み」の具体例でもある。
+
+---
+
 ## 記事間の関連性
 
-両記事は「**コンテキスト設計 > 実行そのもの**」というメタパターンを共有:
+3記事は「**コンテキスト設計 > 実行そのもの**」というメタパターンを共有:
 
 - 記事A: 「機能コンテキストを設計して渡す」ことで AI のバグ検出精度が上がる
 - 記事B: 「探索環境を設計する」ことで AI のアルゴリズム発見が可能になる
+- 記事C: 「ガイドラインを設計して動的にロードする」ことで AI のレビュー精度が上がる
 
-人間の仕事が「成果物の直接生産」から「AI の探索環境の設計」にシフトするという方向性は同一。
+人間の仕事が「成果物の直接生産」から「AI の探索環境の設計」にシフトするという方向性は共通。
+
+さらに記事C は記事A/B に対して「閉ループ」を追加する:
+
+- 記事A/B: コンテキスト設計 → AI 実行 → 結果
+- 記事C: コンテキスト設計 → AI 実行 → 結果 → **結果からコンテキストを更新**（ガイドライン自動更新）
 
 ---
 
@@ -168,23 +255,30 @@ TTS の制御軸を「幅（並列ブランチ数）」と「深さ（1ブラン
 
 | パターン | 接続先 | 接続の性質 | ギャップ/新規知見 |
 |---------|--------|-----------|-----------------|
-| A1 機能単位コンテキスト投入 | Issue #49（テスト戦略）, command: peer-ai-review, Issue #78（仮説外部化） | 補強 | peer-ai-review の前段に「機能単位バグ探索」フェーズを挿入する可能性 |
-| A2 バグ発見→テスト生成の順序制御 | Issue #49（テスト戦略） | 拡張 | テスト戦略に「AI推論レビュー→テスト生成」の順序制約を追加 |
-| A3 数量非指定プロンプト | Issue #76（so-compare 選択肢拡張テンプレート） | 補強 | 「知らない選択肢を生成させる」プロンプト設計の補強エビデンス |
-| A4 発見→Issue化の即時チェーン | skill: issue-conventions | 補強 | 既存規約とスムーズに統合可能 |
-| A5 テスト層の中間位置づけ | Issue #49, docs/research/2026-04-10-swebench-harness-and-framework-first.md | 補強 | ハーネスの「エージェント間相互テスト」と AI 推論レビューの位置関係整理 |
-| B1 オフラインリプレイ評価 | Issue #77（確定前ゼロベース探索） | 補強 | 「生成と反証の物理的分離」の論文レベル実証例 |
-| B2 環境設計への責務シフト | Issue #77, Issue #76, Issue #105（Phase 5） | 補強 | deterministic orchestrator パターンの外部エビデンス |
-| B3 EMAトレンドベース停止 | Issue #77（収束条件）, Issue #78（介入条件）, Issue #35（多周制御の終了条件） | 拡張 | カウントベースに加えトレンドベースの収束条件という選択肢 |
-| B4 $40再現性のコスト構造 | skill: arena-compare | 補強 | 低コスト多角検証の参考事例 |
-| B5 幅×深さの2次元制御空間 | Issue #77, Issue #35 | 補強 | 探索プロセスの設計変数としての概念的フレームワーク |
-| A5+B2 メタパターン | Issue #75（Exhaustion Before Conclusion） | 補強 | 「網羅してから結論を出す」の外部エビデンス |
+| A1 機能単位コンテキスト投入 | Issue #49, peer-ai-review, Issue #78 | 補強 | peer-ai-review の前段に機能単位バグ探索フェーズの挿入可能性 |
+| A2 バグ発見→テスト生成の順序制御 | Issue #49 | 拡張 | テスト戦略に順序制約を追加 |
+| A3 数量非指定プロンプト | Issue #76 | 補強 | コメント追加済み |
+| A4 発見→Issue化の即時チェーン | skill: issue-conventions | 補強 | 既存規約でカバー可能 |
+| A5 テスト層の中間位置づけ | Issue #49, swebench リサーチ | 補強 | テスト層の位置関係整理 |
+| B1 オフラインリプレイ評価 | Issue #77 | 補強 | コメント追加済み |
+| B2 環境設計への責務シフト | Issue #77, #76, #105 | 補強 | コメント追加済み |
+| B3 EMAトレンドベース停止 | Issue #77, #78, #35 | 拡張 | コメント追加済み |
+| B4 $40再現性のコスト構造 | arena-compare | 補強 | 低コスト多角検証の参考 |
+| B5 幅×深さの2次元制御空間 | Issue #77, #35 | 補強 | 探索プロセスの設計変数 |
+| A5+B2 メタパターン | Issue #75 | 補強 | 外部エビデンス |
+| C1 NG/OK ペア形式知化 | Issue #62, Issue #113, pr-review-checklist | 直接補強 | コメント追加済み |
+| C2 変更パス→動的ロード | canonical アーキテクチャ（CATALOG.md） | 補強 | skill-first-operations の CI 適用版 |
+| C3 2段レビュー | adversarial-review, Issue #77 | 直接補強 | CI 自動化版の参考実装 |
+| C4 Confidence スコアリング | Issue #92, Issue #60 | 直接補強 | コメント追加済み |
+| C5 ガイドライン自動更新 | Issue #62, Issue #113, Issue #24 | 拡張 | コメント追加済み |
+| C6 PRサイズ別モデル選択 | orchestration-engine | 補強 | タスク複雑度→リソース動的配分 |
 
 ### トラックB: 新規導入候補
 
 | パターン | 既存対応物 | 導入形態 | 実現可能性メモ |
 |---------|-----------|---------|-------------|
-| A1+A4 機能単位バグ探索コマンド | peer-ai-review が類似だが焦点が異なる | 新規コマンド or peer-ai-review 拡張 | 将来的に機能単位バグ探索を定型化する可能性 |
+| A1+A4 機能単位バグ探索コマンド | peer-ai-review が類似だが焦点が異なる | 新規コマンド or 拡張 | 将来的に定型化する可能性 |
+| C2 パスベース動的ロード | CATALOG.md の depends | 既存スキルへの原則追記 or 新規フック | CI 上でのスキル自動選択の実装パターン |
 
 ---
 
@@ -192,16 +286,22 @@ TTS の制御軸を「幅（並列ブランチ数）」と「深さ（1ブラン
 
 | パターン | アクション | 理由 |
 |---------|-----------|------|
-| A1 | archive-note | 複数 Issue (#49, #78) に跨る知見 |
+| A1 | archive-note | 複数 Issue に跨る知見 |
 | A2 | archive-note | #49 の枠組みでの将来参照 |
-| A3 | enrich-existing | #76 に直接接続 → コメント追加済み |
+| A3 | enrich-existing | #76 に接続 → コメント追加済み |
 | A4 | archive-note | 既存 conventions でカバー可能 |
 | A5 | archive-note | 複数資産に跨る知見 |
-| B1 | enrich-existing | #77 に直接接続 → コメント追加済み |
+| B1 | enrich-existing | #77 に接続 → コメント追加済み |
 | B2 | enrich-existing | #77, #76 に接続 → コメント追加済み |
 | B3 | enrich-existing | #77, #78 に接続 → コメント追加済み |
 | B4 | archive-note | 参考情報 |
 | B5 | archive-note | 概念的フレームワーク |
+| C1 | enrich-existing | #62, #113 に接続 → コメント追加済み |
+| C2 | archive-note | 将来参照用 |
+| C3 | archive-note | adversarial-review の CI 展開時に参照 |
+| C4 | enrich-existing | #92 に接続 → コメント追加済み |
+| C5 | enrich-existing | #62, #113 に接続 → コメント追加済み |
+| C6 | archive-note | 参考情報 |
 
 ---
 
