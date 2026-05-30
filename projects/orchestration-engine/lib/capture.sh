@@ -60,7 +60,8 @@ _oe_capture_scan_parse() {
 
   local line
   while IFS= read -r line; do
-    if [[ "$line" =~ ^@@OE_BLOCKED($|:.*$) ]]; then
+    # #112: TUI 字下げ対応で先頭空白を許容（理由テキストの後置は従来どおり許容）
+    if [[ "$line" =~ ^[[:space:]]*@@OE_BLOCKED($|:.*$) ]]; then
       OE_SCAN_BLOCKED="true"
     fi
 

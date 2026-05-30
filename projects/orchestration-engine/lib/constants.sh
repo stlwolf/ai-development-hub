@@ -5,11 +5,13 @@
 # マーカープレフィックス
 OE_MARKER_PREFIX="@@OE_"
 
-# EXIT マーカー正規表現（行頭・行末アンカー付き）
-OE_EXIT_MARKER_RE='^@@OE_EXIT:([0-9]{1,3})$'
+# EXIT マーカー正規表現（先頭/末尾空白を許容、行末アンカーは維持）
+# #112: 対話 Claude Code TUI が応答本文を字下げするため `  @@OE_EXIT:0` を拾えるよう先頭空白を許容。
+# 行末アンカー維持で「マーカー後にテキストが続く行＝プロンプトのエコー」を除外する。
+OE_EXIT_MARKER_RE='^[[:space:]]*@@OE_EXIT:([0-9]{1,3})[[:space:]]*$'
 
-# VERIFY マーカー正規表現 (Step 4-3 検証ゲート v1、行頭・行末アンカー付き)
-OE_VERIFY_MARKER_RE='^@@OE_VERIFY:(pass|fail|warn)$'
+# VERIFY マーカー正規表現 (Step 4-3 検証ゲート v1、先頭/末尾空白を許容、行末アンカーは維持)
+OE_VERIFY_MARKER_RE='^[[:space:]]*@@OE_VERIFY:(pass|fail|warn)[[:space:]]*$'
 
 # 将来マーカー種別の予約（MVP では未使用）:
 #   @@OE_STATUS:{state}  — 進捗状態の報告

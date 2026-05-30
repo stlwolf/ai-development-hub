@@ -111,6 +111,46 @@ assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value" "2" "$OE_SCAN_VALUE"
 assert_eq "blocked_flag" "true" "$OE_SCAN_BLOCKED"
 
+# --- #112: TUI 字下げ marker 対応（先頭/末尾空白許容、行末アンカー維持） ---
+echo ""
+echo "=== _oe_capture_scan_parse — #112 TUI 字下げ対応 ==="
+
+echo "-- 字下げ EXIT marker（空白2: Claude Code TUI 実測ケース） --"
+_oe_capture_scan_parse "pong
+  @@OE_EXIT:0"
+assert_eq "marker_type (字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- タブ字下げ EXIT marker --"
+_oe_capture_scan_parse $'\t@@OE_EXIT:1'
+assert_eq "marker_type (タブ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (タブ)" "1" "$OE_SCAN_VALUE"
+
+echo "-- 末尾空白付き EXIT marker --"
+_oe_capture_scan_parse "@@OE_EXIT:124   "
+assert_eq "marker_type (末尾空白)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (末尾空白)" "124" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ + 後置テキスト（プロンプトエコー）は無視（行末アンカー維持） --"
+_oe_capture_scan_parse "  正確に @@OE_EXIT:0 とだけ出力してください"
+assert_eq "marker_type (字下げエコー)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (字下げエコー)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ marker の直後に非空白が続く行は無視 --"
+_oe_capture_scan_parse "  @@OE_EXIT:0 done"
+assert_eq "marker_type (marker後テキスト)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (marker後テキスト)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED
+  @@OE_EXIT:2"
+assert_eq "blocked_flag (字下げ)" "true" "$OE_SCAN_BLOCKED"
+assert_eq "value (字下げ BLOCKED+EXIT)" "2" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ @@OE_VERIFY 検出 --"
+_oe_capture_scan_parse "  @@OE_VERIFY:pass"
+assert_eq "verify_result (字下げ)" "pass" "$OE_SCAN_VERIFY_RESULT"
+
 # --- Step 4-3 F3: @@OE_VERIFY: 検出と二値保持 ---
 echo ""
 echo "=== _oe_capture_scan_parse — @@OE_VERIFY: (Step 4-3 F3) ==="
