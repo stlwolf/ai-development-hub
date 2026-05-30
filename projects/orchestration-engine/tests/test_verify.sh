@@ -594,6 +594,23 @@ assert_eq "F-SO-4: lines=200 を渡せる" "200" "$(tail -1 "$_F_SO_4_log")"
 
 unset -f wez
 
+# ---- #112: log-file 経路でも字下げ marker を正規化して検出する (Copilot 指摘) ----
+echo ""
+echo "=== #112: _oe_verify_scan_log_file の字下げ marker 正規化 ==="
+
+# capture 経路と verify(log-file)経路で正規化が共通ヘルパー化されたことの回帰。
+# 全角空白(U+3000)字下げの @@OE_VERIFY / @@OE_EXIT がログ経路でもロケール非依存で拾えること。
+_VERIFY_NORM_LOG="${_TMP_DIR}/verify_norm_indent.log"
+printf '%s\n' "reviewer output" $'\xE3\x80\x80@@OE_VERIFY:pass' $'\xE3\x80\x80@@OE_EXIT:0' > "$_VERIFY_NORM_LOG"
+_oe_verify_scan_log_file "$_VERIFY_NORM_LOG"
+assert_eq "log経路 U+3000字下げ VERIFY" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "log経路 U+3000字下げ EXIT" "0" "$OE_SCAN_EXIT_CODE"
+
+# 字下げなし marker は従来どおり検出 (回帰)
+printf '%s\n' "@@OE_VERIFY:fail" > "$_VERIFY_NORM_LOG"
+_oe_verify_scan_log_file "$_VERIFY_NORM_LOG"
+assert_eq "log経路 字下げなし VERIFY (回帰)" "fail" "$OE_SCAN_VERIFY_RESULT"
+
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then

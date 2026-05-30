@@ -302,6 +302,14 @@ oe_capture_scan "42"
 assert_eq "marker_type (NBSP字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value (NBSP字下げ)" "1" "$OE_SCAN_VALUE"
 
+# --- #112: 共通正規化ヘルパー（capture/verify 両経路から呼ぶ）---
+echo ""
+echo "=== _oe_normalize_capture_output (#112 共通ヘルパー) ==="
+assert_eq "U+3000→ASCII空白" " @@OE_EXIT:0" "$(_oe_normalize_capture_output $'\xE3\x80\x80@@OE_EXIT:0')"
+assert_eq "NBSP→ASCII空白" " @@OE_EXIT:0" "$(_oe_normalize_capture_output $'\xC2\xA0@@OE_EXIT:0')"
+assert_eq "CR 除去" "@@OE_EXIT:0" "$(_oe_normalize_capture_output $'@@OE_EXIT:0\r')"
+assert_eq "ANSI 除去" "@@OE_EXIT:1" "$(_oe_normalize_capture_output $'\033[32m@@OE_EXIT:1\033[0m')"
+
 # --- oe_capture_classify テスト ---
 echo ""
 echo "=== oe_capture_classify ==="
