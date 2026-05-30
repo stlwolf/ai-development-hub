@@ -147,9 +147,30 @@ _oe_capture_scan_parse "  @@OE_BLOCKED
 assert_eq "blocked_flag (字下げ)" "true" "$OE_SCAN_BLOCKED"
 assert_eq "value (字下げ BLOCKED+EXIT)" "2" "$OE_SCAN_VALUE"
 
+echo "-- 末尾空白のみ @@OE_BLOCKED 検出（EXIT/VERIFY と対称化, SO 指摘） --"
+_oe_capture_scan_parse "@@OE_BLOCKED   "
+assert_eq "blocked_flag (末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- 字下げ + 末尾空白 @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED   "
+assert_eq "blocked_flag (字下げ+末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- 字下げ + 理由 + 末尾空白 @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED:needs-human   "
+assert_eq "blocked_flag (字下げ+理由+末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- @@OE_BLOCKED に英字が続く行は無視（誤検知回避） --"
+_oe_capture_scan_parse "@@OE_BLOCKEDX"
+assert_eq "blocked_flag (後続英字)" "false" "$OE_SCAN_BLOCKED"
+
 echo "-- 字下げ @@OE_VERIFY 検出 --"
 _oe_capture_scan_parse "  @@OE_VERIFY:pass"
 assert_eq "verify_result (字下げ)" "pass" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- ボックス装飾は非マッチ（scrape 本質限界の境界、#114 領域） --"
+_oe_capture_scan_parse "│ @@OE_EXIT:0 │"
+assert_eq "marker_type (ボックス装飾)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (ボックス装飾)" "" "$OE_SCAN_VALUE"
 
 # --- Step 4-3 F3: @@OE_VERIFY: 検出と二値保持 ---
 echo ""

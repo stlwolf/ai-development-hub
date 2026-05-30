@@ -60,8 +60,9 @@ _oe_capture_scan_parse() {
 
   local line
   while IFS= read -r line; do
-    # #112: TUI 字下げ対応で先頭空白を許容（理由テキストの後置は従来どおり許容）
-    if [[ "$line" =~ ^[[:space:]]*@@OE_BLOCKED($|:.*$) ]]; then
+    # #112: TUI 字下げ対応で先頭/末尾空白を許容（EXIT/VERIFY と対称化）。
+    # 理由なし `@@OE_BLOCKED` は末尾空白のみ許容、理由付き `@@OE_BLOCKED:reason` は従来どおり後置自由。
+    if [[ "$line" =~ ^[[:space:]]*@@OE_BLOCKED([[:space:]]*$|:.*$) ]]; then
       OE_SCAN_BLOCKED="true"
     fi
 
