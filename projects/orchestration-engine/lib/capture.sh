@@ -15,6 +15,20 @@ OE_SCAN_VERIFY_RESULT=""
 # グローバル変数: oe_capture_classify() の戻り値
 OE_CLASSIFY_STATE=""
 
+# _oe_normalize_capture_output — marker 走査前に capture/log 出力を正規化する共通ヘルパー
+#
+# CR 除去・ANSI エスケープ除去に加え、全角空白(U+3000)/NBSP(U+00A0) を ASCII 空白へ畳む。
+# `[[:space:]]` のマルチバイト空白判定はロケール依存（ja_JP.UTF-8 では U+3000 が真、
+# LC_ALL=C では偽）で marker 検知が割れるため、parse 前にここで環境差を消す。
+# capture 経路 (oe_capture_scan) と verify 経路 (verify.sh:_oe_verify_scan_log_file) の
+# 両方から呼ぶ。正規化を1箇所に集約し、経路間の差異（=ロケール依存の取り残し）を防ぐ。
+#
+# 引数: 生の capture 文字列
+# 出力: 正規化済み文字列を stdout へ
+_oe_normalize_capture_output() {
+  printf '%s' "$1" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g; s/\xE3\x80\x80/ /g; s/\xC2\xA0/ /g'
+}
+
 # oe_capture_scan — pane 出力からマーカーをスキャンし種別と値を返す
 #
 # 引数: pane_id（WezTerm ペイン ID）
@@ -34,7 +48,7 @@ oe_capture_scan() {
   captured="$(wez pane capture "$pane_id" --lines "$lines" 2>/dev/null)" || return 0
 
   local normalized
-  normalized="$(printf '%s' "$captured" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g')"
+  normalized="$(_oe_normalize_capture_output "$captured")"
 
   _oe_capture_scan_parse "$normalized"
 }
@@ -60,7 +74,11 @@ _oe_capture_scan_parse() {
 
   local line
   while IFS= read -r line; do
-    if [[ "$line" =~ ^@@OE_BLOCKED($|:.*$) ]]; then
+    # #112: TUI 字下げ対応で先頭空白を許容。
+    # 理由なし `@@OE_BLOCKED` は末尾空白のみ許容し EXIT/VERIFY と対称。
+    # 理由付き `@@OE_BLOCKED:reason` は後置自由（行末アンカーなし）＝エコー保護がない点に注意。
+    # ただし blocked は exit_code==2 のときのみ昇格する fail-safe 設計（oe_capture_classify 参照）。
+    if [[ "$line" =~ ^[[:space:]]*@@OE_BLOCKED([[:space:]]*$|:.*$) ]]; then
       OE_SCAN_BLOCKED="true"
     fi
 

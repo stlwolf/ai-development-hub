@@ -111,6 +111,88 @@ assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value" "2" "$OE_SCAN_VALUE"
 assert_eq "blocked_flag" "true" "$OE_SCAN_BLOCKED"
 
+# --- #112: TUI 字下げ marker 対応（先頭/末尾空白許容、行末アンカー維持） ---
+echo ""
+echo "=== _oe_capture_scan_parse — #112 TUI 字下げ対応 ==="
+
+echo "-- 字下げ EXIT marker（空白2: Claude Code TUI 実測ケース） --"
+_oe_capture_scan_parse "pong
+  @@OE_EXIT:0"
+assert_eq "marker_type (字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- タブ字下げ EXIT marker --"
+_oe_capture_scan_parse $'\t@@OE_EXIT:1'
+assert_eq "marker_type (タブ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (タブ)" "1" "$OE_SCAN_VALUE"
+
+echo "-- 末尾空白付き EXIT marker --"
+_oe_capture_scan_parse "@@OE_EXIT:124   "
+assert_eq "marker_type (末尾空白)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (末尾空白)" "124" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ + 後置テキスト（プロンプトエコー）は無視（行末アンカー維持） --"
+_oe_capture_scan_parse "  正確に @@OE_EXIT:0 とだけ出力してください"
+assert_eq "marker_type (字下げエコー)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (字下げエコー)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ marker の直後に非空白が続く行は無視 --"
+_oe_capture_scan_parse "  @@OE_EXIT:0 done"
+assert_eq "marker_type (marker後テキスト)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (marker後テキスト)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED
+  @@OE_EXIT:2"
+assert_eq "blocked_flag (字下げ)" "true" "$OE_SCAN_BLOCKED"
+assert_eq "value (字下げ BLOCKED+EXIT)" "2" "$OE_SCAN_VALUE"
+
+echo "-- 末尾空白のみ @@OE_BLOCKED 検出（EXIT/VERIFY と対称化, SO 指摘） --"
+_oe_capture_scan_parse "@@OE_BLOCKED   "
+assert_eq "blocked_flag (末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- 字下げ + 末尾空白 @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED   "
+assert_eq "blocked_flag (字下げ+末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- 字下げ + 理由 + 末尾空白 @@OE_BLOCKED 検出 --"
+_oe_capture_scan_parse "  @@OE_BLOCKED:needs-human   "
+assert_eq "blocked_flag (字下げ+理由+末尾空白)" "true" "$OE_SCAN_BLOCKED"
+
+echo "-- @@OE_BLOCKED に英字が続く行は無視（誤検知回避） --"
+_oe_capture_scan_parse "@@OE_BLOCKEDX"
+assert_eq "blocked_flag (後続英字)" "false" "$OE_SCAN_BLOCKED"
+
+echo "-- 字下げ @@OE_VERIFY 検出 --"
+_oe_capture_scan_parse "  @@OE_VERIFY:pass"
+assert_eq "verify_result (字下げ)" "pass" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- ボックス装飾は非マッチ（scrape 本質限界の境界、#114 領域） --"
+_oe_capture_scan_parse "│ @@OE_EXIT:0 │"
+assert_eq "marker_type (ボックス装飾)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (ボックス装飾)" "" "$OE_SCAN_VALUE"
+
+echo "-- 引用/リスト glyph プレフィックスは非マッチ（#114 領域） --"
+_oe_capture_scan_parse "> @@OE_EXIT:0"
+assert_eq "marker_type (引用glyph)" "" "$OE_SCAN_MARKER_TYPE"
+_oe_capture_scan_parse "- @@OE_EXIT:0"
+assert_eq "marker_type (リストglyph)" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- コロン直後スペースは非マッチ（内部空白は救わない境界） --"
+_oe_capture_scan_parse "@@OE_EXIT: 0"
+assert_eq "marker_type (コロン直後スペース)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (コロン直後スペース)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ + 後置テキスト VERIFY はエコーとして非マッチ（EXIT と同じ行末アンカー） --"
+_oe_capture_scan_parse "  @@OE_VERIFY:pass など出力してください"
+assert_eq "verify_result (VERIFYエコー)" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- 単独行エコーは本物の marker と区別不能（scrape 本質限界、#114 領域）--"
+# プロンプトが `@@OE_EXIT:0` 単独行を復唱すると本物と同形になりマッチする。
+# regex では救えないトレードオフを負例ではなく「既知の限界」として固定する。
+_oe_capture_scan_parse "@@OE_EXIT:0"
+assert_eq "marker_type (単独行エコー=本物と同形)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+
 # --- Step 4-3 F3: @@OE_VERIFY: 検出と二値保持 ---
 echo ""
 echo "=== _oe_capture_scan_parse — @@OE_VERIFY: (Step 4-3 F3) ==="
@@ -201,6 +283,32 @@ _MOCK_WEZ_OUTPUT=$'\033[32m@@OE_EXIT:1\033[0m'
 oe_capture_scan "42"
 assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value" "1" "$OE_SCAN_VALUE"
+
+echo "-- #112: CR + 字下げ併用をフルパイプ（oe_capture_scan 経由）で検出 --"
+_MOCK_WEZ_OUTPUT=$'pong\r\n  @@OE_EXIT:0\r\n'
+oe_capture_scan "42"
+assert_eq "marker_type (CR+字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (CR+字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- #112: 全角空白(U+3000)字下げを正規化して検出（ロケール非依存）--"
+_MOCK_WEZ_OUTPUT=$'\xE3\x80\x80@@OE_EXIT:0'
+oe_capture_scan "42"
+assert_eq "marker_type (U+3000字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (U+3000字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- #112: NBSP(U+00A0)字下げを正規化して検出 --"
+_MOCK_WEZ_OUTPUT=$'\xC2\xA0@@OE_EXIT:1'
+oe_capture_scan "42"
+assert_eq "marker_type (NBSP字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (NBSP字下げ)" "1" "$OE_SCAN_VALUE"
+
+# --- #112: 共通正規化ヘルパー（capture/verify 両経路から呼ぶ）---
+echo ""
+echo "=== _oe_normalize_capture_output (#112 共通ヘルパー) ==="
+assert_eq "U+3000→ASCII空白" " @@OE_EXIT:0" "$(_oe_normalize_capture_output $'\xE3\x80\x80@@OE_EXIT:0')"
+assert_eq "NBSP→ASCII空白" " @@OE_EXIT:0" "$(_oe_normalize_capture_output $'\xC2\xA0@@OE_EXIT:0')"
+assert_eq "CR 除去" "@@OE_EXIT:0" "$(_oe_normalize_capture_output $'@@OE_EXIT:0\r')"
+assert_eq "ANSI 除去" "@@OE_EXIT:1" "$(_oe_normalize_capture_output $'\033[32m@@OE_EXIT:1\033[0m')"
 
 # --- oe_capture_classify テスト ---
 echo ""
