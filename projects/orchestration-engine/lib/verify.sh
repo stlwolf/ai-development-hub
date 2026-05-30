@@ -490,8 +490,10 @@ _oe_verify_scan_log_file() {
   local captured
   captured="$(tail -n "$lines" "$log_path" 2>/dev/null)" || return 0
 
+  # #112: capture 経路と同じ正規化（U+3000/NBSP 畳み込み含む）を共通ヘルパーで適用し、
+  # log-file 経路だけ字下げ marker がロケール依存で残る取りこぼしを防ぐ（Copilot 指摘）。
   local normalized
-  normalized="$(printf '%s' "$captured" | sed -E $'s/\r//g; s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g')"
+  normalized="$(_oe_normalize_capture_output "$captured")"
 
   _oe_capture_scan_parse "$normalized"
 }

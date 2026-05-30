@@ -5,17 +5,19 @@
 # マーカープレフィックス
 OE_MARKER_PREFIX="@@OE_"
 
-# EXIT マーカー正規表現（行頭・行末アンカー付き）
-OE_EXIT_MARKER_RE='^@@OE_EXIT:([0-9]{1,3})$'
+# EXIT マーカー正規表現（先頭/末尾空白を許容、行末アンカーは維持）
+# #112: 対話 Claude Code TUI が応答本文を字下げするため `  @@OE_EXIT:0` を拾えるよう先頭空白を許容。
+# 行末アンカー維持で「マーカー後にテキストが続く行＝プロンプトのエコー」を除外する。
+OE_EXIT_MARKER_RE='^[[:space:]]*@@OE_EXIT:([0-9]{1,3})[[:space:]]*$'
 
-# VERIFY マーカー正規表現 (Step 4-3 検証ゲート v1、行頭・行末アンカー付き)
-OE_VERIFY_MARKER_RE='^@@OE_VERIFY:(pass|fail|warn)$'
+# VERIFY マーカー正規表現 (Step 4-3 検証ゲート v1、先頭/末尾空白を許容、行末アンカーは維持)
+OE_VERIFY_MARKER_RE='^[[:space:]]*@@OE_VERIFY:(pass|fail|warn)[[:space:]]*$'
 
+# @@OE_BLOCKED / @@OE_BLOCKED:{reason} は実装済み（capture.sh の _oe_capture_scan_parse で検出）。
 # 将来マーカー種別の予約（MVP では未使用）:
 #   @@OE_STATUS:{state}  — 進捗状態の報告
 #   @@OE_READY           — サブエージェント準備完了
 #   @@OE_OUTPUT:{path}   — 成果物パスの通知
-#   @@OE_BLOCKED:{reason} — ブロック理由の報告
 
 # サーキットブレーカー閾値
 # Step 4-4 Phase C 発見: 実 agent (cursor-agent/composer-2) では mock 想定の MAX_TURNS=10 (=20s @ 2s poll) が短すぎる。
