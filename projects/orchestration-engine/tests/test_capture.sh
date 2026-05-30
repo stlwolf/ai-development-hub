@@ -172,6 +172,27 @@ _oe_capture_scan_parse "│ @@OE_EXIT:0 │"
 assert_eq "marker_type (ボックス装飾)" "" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value (ボックス装飾)" "" "$OE_SCAN_VALUE"
 
+echo "-- 引用/リスト glyph プレフィックスは非マッチ（#114 領域） --"
+_oe_capture_scan_parse "> @@OE_EXIT:0"
+assert_eq "marker_type (引用glyph)" "" "$OE_SCAN_MARKER_TYPE"
+_oe_capture_scan_parse "- @@OE_EXIT:0"
+assert_eq "marker_type (リストglyph)" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- コロン直後スペースは非マッチ（内部空白は救わない境界） --"
+_oe_capture_scan_parse "@@OE_EXIT: 0"
+assert_eq "marker_type (コロン直後スペース)" "" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (コロン直後スペース)" "" "$OE_SCAN_VALUE"
+
+echo "-- 字下げ + 後置テキスト VERIFY はエコーとして非マッチ（EXIT と同じ行末アンカー） --"
+_oe_capture_scan_parse "  @@OE_VERIFY:pass など出力してください"
+assert_eq "verify_result (VERIFYエコー)" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- 単独行エコーは本物の marker と区別不能（scrape 本質限界、#114 領域）--"
+# プロンプトが `@@OE_EXIT:0` 単独行を復唱すると本物と同形になりマッチする。
+# regex では救えないトレードオフを負例ではなく「既知の限界」として固定する。
+_oe_capture_scan_parse "@@OE_EXIT:0"
+assert_eq "marker_type (単独行エコー=本物と同形)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+
 # --- Step 4-3 F3: @@OE_VERIFY: 検出と二値保持 ---
 echo ""
 echo "=== _oe_capture_scan_parse — @@OE_VERIFY: (Step 4-3 F3) ==="
@@ -262,6 +283,24 @@ _MOCK_WEZ_OUTPUT=$'\033[32m@@OE_EXIT:1\033[0m'
 oe_capture_scan "42"
 assert_eq "marker_type" "EXIT" "$OE_SCAN_MARKER_TYPE"
 assert_eq "value" "1" "$OE_SCAN_VALUE"
+
+echo "-- #112: CR + 字下げ併用をフルパイプ（oe_capture_scan 経由）で検出 --"
+_MOCK_WEZ_OUTPUT=$'pong\r\n  @@OE_EXIT:0\r\n'
+oe_capture_scan "42"
+assert_eq "marker_type (CR+字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (CR+字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- #112: 全角空白(U+3000)字下げを正規化して検出（ロケール非依存）--"
+_MOCK_WEZ_OUTPUT=$'\xE3\x80\x80@@OE_EXIT:0'
+oe_capture_scan "42"
+assert_eq "marker_type (U+3000字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (U+3000字下げ)" "0" "$OE_SCAN_VALUE"
+
+echo "-- #112: NBSP(U+00A0)字下げを正規化して検出 --"
+_MOCK_WEZ_OUTPUT=$'\xC2\xA0@@OE_EXIT:1'
+oe_capture_scan "42"
+assert_eq "marker_type (NBSP字下げ)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "value (NBSP字下げ)" "1" "$OE_SCAN_VALUE"
 
 # --- oe_capture_classify テスト ---
 echo ""
