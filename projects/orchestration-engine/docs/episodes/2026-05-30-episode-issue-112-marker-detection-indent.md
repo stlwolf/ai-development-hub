@@ -27,22 +27,33 @@ tags: [orchestration, phase-5, issue-112, episode, oe-capture, marker, regex, tu
 
 | ファイル | 種別 | 内容 |
 |---|---|---|
-| `lib/constants.sh` | 改修 | `OE_EXIT_MARKER_RE` / `OE_VERIFY_MARKER_RE` を `^[[:space:]]*…[[:space:]]*$` に緩和（先頭/末尾空白許容、行末アンカー維持） |
-| `lib/capture.sh` | 改修 | `@@OE_BLOCKED` インライン regex を `^[[:space:]]*@@OE_BLOCKED($\|:.*$)` に緩和（理由テキストの後置は従来どおり許容） |
-| `tests/test_capture.sh` | 改修 | #112 セクション追加（字下げ EXIT / タブ字下げ / 末尾空白 / 字下げ BLOCKED+EXIT / 字下げ VERIFY のマッチ、字下げエコー・marker 後テキストの非マッチ） |
+| `lib/constants.sh` | 改修 | `OE_EXIT_MARKER_RE` / `OE_VERIFY_MARKER_RE` を `^[[:space:]]*…[[:space:]]*$` に緩和（先頭/末尾空白許容、行末アンカー維持）。`@@OE_BLOCKED` の stale コメント訂正 |
+| `lib/capture.sh` | 改修 | `@@OE_BLOCKED` regex を `^[[:space:]]*@@OE_BLOCKED([[:space:]]*$\|:.*$)` に緩和（末尾空白許容で EXIT/VERIFY と対称化、SO 指摘）。正規化(sed)に U+3000/NBSP→ASCII 空白の畳み込みを追加（ロケール依存解消、SO 指摘） |
+| `tests/test_capture.sh` | 改修 | #112 セクション追加。マッチ: 字下げ/タブ/末尾空白 EXIT・字下げ BLOCKED+EXIT・字下げ VERIFY・末尾空白 BLOCKED・CR+字下げフルパイプ・U+3000/NBSP 正規化。非マッチ: 字下げエコー・marker 後テキスト・引用/リスト glyph・ボックス装飾・コロン直後スペース・VERIFY エコー・後続英字 BLOCKED |
 
 ## 設計判断（確定）
 
 - **行末アンカーを維持して誤検知を防ぐ**: 同じペインにはプロンプト文中のマーカー文字列もエコーされる（例「正確に `@@OE_EXIT:0` とだけ出力…」）。`[[:space:]]*$` で末尾は空白のみ許容＝「マーカー後に非空白テキストが続く行」は非マッチとなり、エコー行を除外できる。既存テスト「行途中のマーカーは無視」の延長で担保。
 - **先頭は空白のみ許容（任意文字の prefix は許容しない）**: `^[[:space:]]*` に限定。`prefix @@OE_EXIT:0` のような行途中マーカーは引き続き非マッチ。観測された TUI 字下げ（空白・タブ）のみを救済する最小緩和。
 - **regex 緩和は scrape 経路の小パッチという位置づけ**: ボックス装飾（`│ @@OE_EXIT:0 │`）・行折返し・viewport-only など screen-scrape の本質的脆さはこの緩和では救えない。根治は #114（クリーン出力チャネル）に委ねる。
+- **全角空白 U+3000 / NBSP はロケール依存のため正規化で根治（SO 指摘）**: `[[:space:]]` のマルチバイト空白判定は環境依存（実機で `ja_JP.UTF-8`=MATCH / `LC_ALL=C`=NOMATCH を再現）。regex 側でなく `oe_capture_scan` の正規化(sed)で U+3000/NBSP を ASCII 空白へ畳み、parse 前に環境差を消す。CR・ANSI 除去と同じ層に置く設計。
+- **単独行マーカーのエコーは regex で区別不能（既知限界、トレードオフ明記）**: プロンプトが `@@OE_EXIT:0` を単独行で復唱すると本物と同形になりマッチする。先頭緩和でこの露出が「列0」→「字下げ込み」にわずかに拡大した。行末アンカーで「marker 後に非空白が続くインラインエコー」は除外できるが、単独行エコーは原理的に scrape では識別不能で #114（プロトコル側: 署名 / sentinel block / 直近N行限定等）の領域。
 
 ## ゲート結果
 
 | ゲート | 内容 | 結果 |
 |---|---|---|
 | G1 | `shellcheck lib/constants.sh lib/capture.sh` | CLEAN |
-| G2 | `bash tests/test_capture.sh`（#112 新規ケース + 既存回帰） | PASS=80 / FAIL=0 |
+| G2 | `bash tests/test_capture.sh`（#112 新規ケース + 既存回帰） | PASS=98 / FAIL=0 |
+| G3 | ロケール非依存確認 `LC_ALL=C bash tests/test_capture.sh` | PASS=98 / FAIL=0 |
+| G4 | SO ゲート `so-compare`（Codex + Claude）→ 指摘反映・再検証 | BLOCKED 末尾空白取りこぼし修正 / U+3000 ロケール依存を正規化で根治 / コメント訂正 / 負例追加 |
+
+### G4 SO ゲートで検出・修正した穴（2者）
+
+- **Codex**: `@@OE_BLOCKED   `（末尾空白のみ）が `($\|:.*$)` で取りこぼし＝EXIT/VERIFY と非対称。bash で再現確認し `([[:space:]]*$\|:.*$)` に修正。
+- **Claude**: 全角空白 U+3000 字下げが `[[:space:]]` のロケール依存で割れる未定義動作。「スコープ外でなく #112 で定義を確定すべき」との指摘を受け、正規化で根治（上記設計判断）。あわせて「確実に除外」表現の過大さ（単独行エコー）・`capture.sh`/`constants.sh` の stale コメント・テスト負例不足を指摘。
+- 反映済み: 上記2件の修正 + コメント正確化 + 負例テスト（glyph/引用・コロン直後スペース・VERIFY エコー・CR+字下げ・U+3000/NBSP）。
+- #114 へ委譲（regex で解けない）: 単独行エコーの識別、glyph/引用/box プレフィックス、行折返し分断。
 
 ## スコープ外（本 Issue では未対応 → #114）
 
