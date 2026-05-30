@@ -28,7 +28,8 @@ tags: [orchestration, phase-5, issue-112, episode, oe-capture, marker, regex, tu
 | ファイル | 種別 | 内容 |
 |---|---|---|
 | `lib/constants.sh` | 改修 | `OE_EXIT_MARKER_RE` / `OE_VERIFY_MARKER_RE` を `^[[:space:]]*…[[:space:]]*$` に緩和（先頭/末尾空白許容、行末アンカー維持）。`@@OE_BLOCKED` の stale コメント訂正 |
-| `lib/capture.sh` | 改修 | `@@OE_BLOCKED` regex を `^[[:space:]]*@@OE_BLOCKED([[:space:]]*$\|:.*$)` に緩和（末尾空白許容で EXIT/VERIFY と対称化、SO 指摘）。正規化(sed)に U+3000/NBSP→ASCII 空白の畳み込みを追加（ロケール依存解消、SO 指摘） |
+| `lib/capture.sh` | 改修 | `@@OE_BLOCKED` regex を `^[[:space:]]*@@OE_BLOCKED([[:space:]]*$\|:.*$)` に緩和（末尾空白許容で EXIT/VERIFY と対称化、SO 指摘）。正規化を `_oe_normalize_capture_output()` に抽出し U+3000/NBSP→ASCII 空白の畳み込みを追加（ロケール依存解消、SO 指摘） |
+| `lib/verify.sh` | 改修 | `_oe_verify_scan_log_file` の正規化を共通ヘルパー呼び出しに変更。log-file 経路だけ字下げ marker がロケール依存で残る取りこぼしを解消（Copilot 指摘） |
 | `tests/test_capture.sh` | 改修 | #112 セクション追加。マッチ: 字下げ/タブ/末尾空白 EXIT・字下げ BLOCKED+EXIT・字下げ VERIFY・末尾空白 BLOCKED・CR+字下げフルパイプ・U+3000/NBSP 正規化。非マッチ: 字下げエコー・marker 後テキスト・引用/リスト glyph・ボックス装飾・コロン直後スペース・VERIFY エコー・後続英字 BLOCKED |
 
 ## 設計判断（確定）
@@ -36,17 +37,19 @@ tags: [orchestration, phase-5, issue-112, episode, oe-capture, marker, regex, tu
 - **行末アンカーを維持して誤検知を防ぐ**: 同じペインにはプロンプト文中のマーカー文字列もエコーされる（例「正確に `@@OE_EXIT:0` とだけ出力…」）。`[[:space:]]*$` で末尾は空白のみ許容＝「マーカー後に非空白テキストが続く行」は非マッチとなり、エコー行を除外できる。既存テスト「行途中のマーカーは無視」の延長で担保。
 - **先頭は空白のみ許容（任意文字の prefix は許容しない）**: `^[[:space:]]*` に限定。`prefix @@OE_EXIT:0` のような行途中マーカーは引き続き非マッチ。観測された TUI 字下げ（空白・タブ）のみを救済する最小緩和。
 - **regex 緩和は scrape 経路の小パッチという位置づけ**: ボックス装飾（`│ @@OE_EXIT:0 │`）・行折返し・viewport-only など screen-scrape の本質的脆さはこの緩和では救えない。根治は #114（クリーン出力チャネル）に委ねる。
-- **全角空白 U+3000 / NBSP はロケール依存のため正規化で根治（SO 指摘）**: `[[:space:]]` のマルチバイト空白判定は環境依存（実機で `ja_JP.UTF-8`=MATCH / `LC_ALL=C`=NOMATCH を再現）。regex 側でなく `oe_capture_scan` の正規化(sed)で U+3000/NBSP を ASCII 空白へ畳み、parse 前に環境差を消す。CR・ANSI 除去と同じ層に置く設計。
+- **全角空白 U+3000 / NBSP はロケール依存のため正規化で根治（SO 指摘）**: `[[:space:]]` のマルチバイト空白判定は環境依存（実機で `ja_JP.UTF-8`=MATCH / `LC_ALL=C`=NOMATCH を再現）。regex 側でなく正規化(sed)で U+3000/NBSP を ASCII 空白へ畳み、parse 前に環境差を消す。CR・ANSI 除去と同じ層に置く設計。
+- **正規化を共通ヘルパー `_oe_normalize_capture_output()` に集約（Copilot 指摘）**: 正規化 sed が `oe_capture_scan`（capture 経路）と `_oe_verify_scan_log_file`（verify の log-file 経路）に複製されており、capture 側だけ U+3000/NBSP 畳みを足すと verify 経路に取り残しが残る。複製が今回のバグの根本原因のため、ヘルパーに集約して両経路から呼び、経路間ドリフトを防ぐ。
 - **単独行マーカーのエコーは regex で区別不能（既知限界、トレードオフ明記）**: プロンプトが `@@OE_EXIT:0` を単独行で復唱すると本物と同形になりマッチする。先頭緩和でこの露出が「列0」→「字下げ込み」にわずかに拡大した。行末アンカーで「marker 後に非空白が続くインラインエコー」は除外できるが、単独行エコーは原理的に scrape では識別不能で #114（プロトコル側: 署名 / sentinel block / 直近N行限定等）の領域。
 
 ## ゲート結果
 
 | ゲート | 内容 | 結果 |
 |---|---|---|
-| G1 | `shellcheck lib/constants.sh lib/capture.sh` | CLEAN |
-| G2 | `bash tests/test_capture.sh`（#112 新規ケース + 既存回帰） | PASS=98 / FAIL=0 |
-| G3 | ロケール非依存確認 `LC_ALL=C bash tests/test_capture.sh` | PASS=98 / FAIL=0 |
+| G1 | `shellcheck lib/constants.sh lib/capture.sh lib/verify.sh` | CLEAN |
+| G2 | 全 mock suite（`tests/test_*.sh`） | ALL GREEN（capture=102 / verify=104 ほか FAIL=0） |
+| G3 | ロケール非依存確認 `LC_ALL=C` で capture / verify | PASS 一致 / FAIL=0 |
 | G4 | SO ゲート `so-compare`（Codex + Claude）→ 指摘反映・再検証 | BLOCKED 末尾空白取りこぼし修正 / U+3000 ロケール依存を正規化で根治 / コメント訂正 / 負例追加 |
+| G5 | Copilot レビュー反映 | verify log-file 経路の正規化漏れを共通ヘルパー集約で根治（コミット 1ffb673） |
 
 ### G4 SO ゲートで検出・修正した穴（2者）
 
