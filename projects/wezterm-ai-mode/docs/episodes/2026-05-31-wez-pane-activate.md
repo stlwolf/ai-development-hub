@@ -110,3 +110,34 @@ Step 0 で `wezterm cli activate-pane --pane-id 999999`（存在しない）を�
 - **有効**: 「finding → 振り返り手法(KPT) → target」の3列が観測を改善アクションへ機械的に橋渡しできた
 - **冗長**: timestamp 列。handoff-gate の通し番号 + 名前で順序は追える
 - **追加採用**: 「発見者」列（自分/Codex/Claude/ユーザー）を本試用で足した。SO の価値・カバレッジギャップが定量化でき有用（gate 5 で Codex のみ help 漏れを発見、等）→ #113 の正式テンプレに推奨
+
+### 別フォーマット試用: YWT 版（比較参照用）
+
+#113 のテンプレ選定の材料として、同じ7 findings を KPT 以外の代表フォーマット **YWT（やったこと / わかったこと / つぎやること）** でも framing する。同一データを2フォーマットで並べることで、どちらが何を拾いやすいかを比較できる。
+
+- **Y（やったこと）**:
+  - 方向確認で `activate` を選定（一次情報を実測して分岐確定）
+  - plan を MD 化し、二段の peer-ai-review（plan gate + 実装後コードレビュー gate）を通した
+  - 薄ラッパーを既存 `kill` の 1:1 模倣で実装、shellcheck + 非 focus E2E を実施
+  - PR #117 作成 + Copilot レビュー依頼、振り返りを episode クロージャに追記
+- **W（わかったこと）**:
+  - `wez split-pane` に `--no-focus` native flag は無く（実測）、`activate` 合成が正解だった
+  - gate は機械的に実欠陥を拾う: plan gate=Step 順序矛盾、code gate=`bin/wez` help 漏れ（Codex のみ発見）
+  - ADR 昇格フローの定義が緩く毎回その場判断になる／plan mode 中は project plan MD を直接編集できず二重管理になる／Copilot レビュー依頼の CLI 手順が未文書
+  - focus を奪う E2E は稼働中の作業セッションと相性が悪く、隔離が要る
+- **T（つぎやること）**:
+  - Copilot 依頼手順を skill 化（`gh api .../requested_reviewers` + bot slug）
+  - help 二重チェック（サブ + トップレベル）を pane 系変更の項目に
+  - dogfood は専用 window/workspace で分離（#111 回避策を常設化）
+  - ADR 昇格の粒度ガイドを #113 で具体化、#113 テンプレに timestamp 列削除 / 発見者列追加を提案
+
+### KPT vs YWT 比較メモ（#113 向け）
+
+| 観点 | KPT | YWT |
+|------|-----|-----|
+| 強み | Keep/Problem の善し悪し分離が明示的で、**変えるべき対象（target）への接続**が速い | **W（わかったこと＝学び・事実）**を独立した箱で保持でき、知見が散らばらない |
+| 弱み | 学び（例: `--no-focus` native 不在、gate が欠陥を拾う価値）が Keep と Problem に分散する | Y/W/T は「良かった/悪かった」の価値判断を持たないため、**続けるべき good practice の強調が弱い** |
+| 本データでの差 | gate の有効性が Keep に、フロー不備が Problem に分かれて記録 | 同じ gate の有効性・不備が W に**事実として一括**で入り、次アクションは T に集約 |
+| 所見 | アクション志向（何を変えるか） | 知見志向（何を学んだか） |
+
+**#113 への提案**: 両者は排他でなく、**YWT の W（学び）+ KPT の Keep/Problem/Try** のハイブリッドが本データには最も収まりが良かった。KPT 単体だと「学び」の置き場が弱く、YWT 単体だと「続けるべき good practice」の強調が弱い。構造化 FB 表（finding→手法→target）はどちらの締めとも併用可能。
