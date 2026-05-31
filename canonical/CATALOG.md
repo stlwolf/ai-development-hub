@@ -73,7 +73,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
 | output-format-rule | Conclusion → evidence → steps → risks → links output structure | `rules/output-format-rule.md` |
 | skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
-| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new-thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
+| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
 | workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
 
 ## Hooks
