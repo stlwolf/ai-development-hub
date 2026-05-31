@@ -33,7 +33,7 @@ Usage: wez <command> [options]
 
 Commands:
   discover    Auto-detect WezTerm socket and verify connection
-  pane        Manage WezTerm panes (list, split, send, capture, kill)
+  pane        Manage WezTerm panes (list, split, send, capture, kill, activate)
   notify      Send a notification via user-var (OSC 1337)
   help        Show this help message
   version     Show version
