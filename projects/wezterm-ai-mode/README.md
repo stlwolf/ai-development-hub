@@ -25,6 +25,7 @@ WEZTERM_UNIX_SOCKET=$(./projects/wezterm-ai-mode/bin/wez discover --quiet)
 # ペイン操作
 ./projects/wezterm-ai-mode/bin/wez pane list
 ./projects/wezterm-ai-mode/bin/wez pane split --right --percent 30
+./projects/wezterm-ai-mode/bin/wez pane activate <source-pane-id>   # split 後に元ペインへフォーカスを戻す
 ./projects/wezterm-ai-mode/bin/wez pane send <pane-id> "echo hello"
 ./projects/wezterm-ai-mode/bin/wez pane capture <pane-id> --lines 5
 ./projects/wezterm-ai-mode/bin/wez pane kill <pane-id>
@@ -80,6 +81,7 @@ Subcommands:
   send      Send text to a pane
   capture   Capture text output from a pane
   kill      Kill (close) a pane
+  activate  Activate (focus) a pane
 ```
 
 #### `wez pane list`
@@ -141,6 +143,17 @@ Options:
 ```
 
 確認プロンプトなしで即座にペインを閉じる。
+
+#### `wez pane activate`
+
+```
+Usage: wez pane activate (<pane-id> | --pane-id <ID>) [options]
+
+Options:
+  --json           Output result as JSON
+```
+
+指定ペインにフォーカスを移す（`wezterm cli activate-pane` 相当）。`split` はデフォルトで新ペインにフォーカスを奪うため、オーケストレータが作業ウィンドウのフォーカスを維持したい場合は `split` 直後に元ペイン id を `activate` してフォーカスを戻す。成功時は標準出力なし（`--json` 指定時のみ `{"pane_id":N,"status":"activated"}`）。
 
 ### `wez notify`
 
@@ -213,7 +226,7 @@ projects/wezterm-ai-mode/
 ├── lib/
 │   ├── common.sh        # 共通: カラー、ログ関数、exit code 定数
 │   ├── discover.sh      # wez discover の実装
-│   ├── pane.sh          # wez pane の実装（list/split/send/capture/kill）
+│   ├── pane.sh          # wez pane の実装（list/split/send/capture/kill/activate）
 │   └── notify.sh        # wez notify の実装（TTY direct write + fallback）
 ├── docs/
 │   ├── VERIFICATION_MATRIX.md

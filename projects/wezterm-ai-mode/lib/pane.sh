@@ -505,6 +505,82 @@ EOF
   fi
 }
 
+# --- Subcommand: activate ---
+
+_wez_pane_activate() {
+  local opt_pane_id=""
+  local opt_json=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pane-id)
+        if [[ -z "${2:-}" ]]; then
+          wez_error "pane activate: --pane-id requires a value"
+          return "${WEZ_EXIT_USAGE}"
+        fi
+        opt_pane_id="$2"; shift
+        ;;
+      --json)  opt_json=true ;;
+      --help|-h)
+        cat <<'EOF'
+Usage: wez pane activate (<pane-id> | --pane-id <ID>) [options]
+
+Activate (focus) a pane. Useful after 'split' to restore focus to the
+source pane, e.g.: wez pane split; wez pane activate <source-id>.
+
+Provide the target as the positional argument or via --pane-id.
+On success nothing is printed unless --json is given.
+
+Options:
+  --pane-id <ID>   Target pane (alternative to positional argument)
+  --json           Output result as JSON
+  -h, --help       Show this help
+EOF
+        return 0
+        ;;
+      -*)
+        wez_error "pane activate: unknown option: $1"
+        return "${WEZ_EXIT_USAGE}"
+        ;;
+      *)
+        if [[ -z "$opt_pane_id" ]]; then
+          opt_pane_id="$1"
+        else
+          wez_error "pane activate: too many arguments"
+          return "${WEZ_EXIT_USAGE}"
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$opt_pane_id" ]]; then
+    wez_error "pane activate: pane-id is required"
+    return "${WEZ_EXIT_USAGE}"
+  fi
+  if ! [[ "$opt_pane_id" =~ ^[0-9]+$ ]]; then
+    wez_error "pane activate: invalid pane-id: $opt_pane_id"
+    return "${WEZ_EXIT_USAGE}"
+  fi
+
+  if ! wezterm cli activate-pane --pane-id "$opt_pane_id" 2>/dev/null; then
+    if ! _wez_pane_exists "$opt_pane_id"; then
+      wez_error "pane activate: pane ${opt_pane_id} not found"
+      return "${WEZ_EXIT_PANE_NOT_FOUND}"
+    fi
+    wez_error "pane activate: failed to activate pane ${opt_pane_id}"
+    return "${WEZ_EXIT_PANE_OP_FAILED}"
+  fi
+
+  if [[ "$opt_json" == true ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      jq -n --arg pane_id "$opt_pane_id" '{"pane_id": ($pane_id | tonumber), "status": "activated"}'
+    else
+      printf '{"pane_id":%s,"status":"activated"}\n' "$opt_pane_id"
+    fi
+  fi
+}
+
 # --- Dispatcher ---
 
 _wez_pane_help() {
@@ -519,6 +595,7 @@ Subcommands:
   send      Send text to a pane
   capture   Capture text output from a pane
   kill      Kill (close) a pane
+  activate  Activate (focus) a pane
 
 Options (before subcommand):
   --socket <path>  Use specific socket path (skip auto-detection)
@@ -612,11 +689,12 @@ wez_cmd_pane() {
 
   # Stage 2: dispatch to subcommand
   case "$subcmd" in
-    list)    _wez_pane_list "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
-    split)   _wez_pane_split "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
-    send)    _wez_pane_send "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
-    capture) _wez_pane_capture "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
-    kill)    _wez_pane_kill "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    list)     _wez_pane_list "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    split)    _wez_pane_split "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    send)     _wez_pane_send "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    capture)  _wez_pane_capture "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    kill)     _wez_pane_kill "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
+    activate) _wez_pane_activate "${subcmd_args[@]+"${subcmd_args[@]}"}" ;;
     *)
       wez_error "pane: unknown subcommand: ${subcmd}"
       printf '%s\n' "Run 'wez pane --help' for usage information." >&2
