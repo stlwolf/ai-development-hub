@@ -45,6 +45,9 @@ superpowers ([obra/superpowers](https://github.com/obra/superpowers), MIT) の I
 **Self-review findings:**
 - [self-review で発見した事項。なければ「Issues: None」]
 
+**Out-of-scope findings (optional):**
+- [スコープ外で気づいた問題・follow-up 候補。実装はせず報告のみ。タスク完了判断・レビューに影響するもの（materiality）に限る。なければ省略]
+
 **Concerns (DONE_WITH_CONCERNS の場合):**
 - [具体的な懸念事項]
 
@@ -55,7 +58,7 @@ superpowers ([obra/superpowers](https://github.com/obra/superpowers), MIT) の I
 - [上位に求める決定: 何をどう決めてほしいか]
 ````
 
-該当しないセクション（Concerns, Blocked on）は省略する。
+該当しないセクション（Out-of-scope findings, Concerns, Blocked on）は省略する。
 
 「What I implemented」に要件との対応（要件X → 実装箇所Y）を含めることで、Compliance Review での照合コストを下げる。対応が自明な場合は省略可。
 
@@ -155,6 +158,7 @@ Task tool でサブエージェントに注入する完成形テンプレート�
 - 計画にないファイル分割・再構成をしない。必要だと感じたら報告する
 - 既存コードのパターン・命名規則に従う
 - ファイルが計画以上に肥大化したら、分割せず DONE_WITH_CONCERNS で報告する
+- スコープ外で気づいた問題・follow-up は実装せず報告する（完了判断・レビューに影響するもののみ）
 
 ## テスト
 
@@ -203,6 +207,9 @@ Task tool でサブエージェントに注入する完成形テンプレート�
 
 **Self-review findings:**
 - [self-review で発見した事項。なければ「Issues: None」]
+
+**Out-of-scope findings (optional):**
+- [スコープ外で気づいた問題・follow-up。実装はしない。完了判断・レビューに影響するもののみ。なければ省略]
 
 **Concerns (DONE_WITH_CONCERNS の場合):**
 - [具体的な懸念事項]
