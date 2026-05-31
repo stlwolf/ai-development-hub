@@ -67,17 +67,17 @@ Step 0 で `wezterm cli activate-pane --pane-id 999999`（存在しない）を�
 
 - `shellcheck lib/pane.sh bin/wez`: CLEAN（exit 0）
 - 非 focus E2E（実機・live socket `gui-sock-38784`）: `wez pane --help`/`activate --help` 表示 ✓、非存在 id → `exit 3` ✓、`--socket` 経由（2段パース）→ `exit 3` ✓、pane-id 必須/too many args/invalid id → `exit 64` ✓
-- **未実施（明示スキップ）**: split→activate の**フォーカス復帰の実機目視**、`--json` 成功出力、非 json 成功時の空 stdout。理由: 作業セッション中にライブ GUI のフォーカスを奪う操作を避けるため、ユーザー判断でスキップ。コアの focus 復帰は native `wezterm cli activate-pane` に委譲する薄いラッパーであり、成功パスのコードは `kill`（検証済み）と同一構造。残るリスクは VERIFICATION_MATRIX A-2-8 に PARTIAL として記録。
+- **実機 focus 復帰 E2E（マージ後 2026-05-31 に実施・PASSED）**: 当初は作業セッション中のフォーカス奪取を避けてスキップしたが、ユーザー判断でマージ後に実機検証。live socket `gui-sock-38784` で `is_active` を判定: 初期 active=`0` → `split` で active=`5`（#111 のフォーカス奪取を再現）→ `activate 0` で active=`0`（**フォーカス復帰確認**, exit 0）→ test pane kill。`--json` 成功出力 `{"pane_id":0,"status":"activated"}`、非 json 成功時 stdout 空も確認。VERIFICATION_MATRIX A-2-8 を PASSED に更新。
 
 ## 成功基準の突合（プラン）
 
 | 成功基準 | 状態 |
 |---------|------|
-| `activate <pane-id>` がフォーカスを移す | コードは native 委譲・error path 検証済み（成功 path の実機 focus 目視は未実施） |
+| `activate <pane-id>` がフォーカスを移す | ✓ 実機確認（`is_active` で判定） |
 | `--pane-id <ID>` でも同動作 | ✓（引数パーサ共通） |
 | 存在しない id → exit 3 | ✓ 実測 |
-| `--json` 出力 | コード確認済み（実機成功出力は未実施） |
-| split→activate でフォーカス復帰 | 未実機検証（スキップ・上記理由） |
+| `--json` 出力 | ✓ 実機確認（`{"pane_id":N,"status":"activated"}`）|
+| split→activate でフォーカス復帰 | ✓ 実機確認（active 5→0、マージ後 2026-05-31）|
 | shellcheck 通過 | ✓ |
 | `--help` に activate 表示 | ✓ |
 | README 記載 | ✓ |
