@@ -56,7 +56,7 @@ use_when:
 | B-3 | Stage 3: episode + ADR + 本ファイル更新 + キックオフ突合 | スキップ | - | 同上 |
 | B-4 | plan と episode の分離が運用で守られたか | 実施済み | PARTIAL | plans/ と episodes/ の分離は維持。ただし Stage 順序の厳格運用ではない |
 | B-5 | 実装後 `so-compare.sh` gate + `shellcheck` 前提のレビュー | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md) §3。Codex+Claude 2者合意、medium 2件修正済み |
-| B-6 | Stage 1〜3 + plan/実装の二段 peer-ai-review を1サイクル通す（#113 構造化振り返り検証） | 実施済み | PASSED | Issue #111, [retro](episodes/2026-05-31-retro-wez-pane-activate.md)。plan gate が Step 順序矛盾、code gate が help 漏れを各々検出。KPT + 構造化FB表を試用し #113 へ申し送り |
+| B-6 | Stage 1〜3 + plan/実装の二段 peer-ai-review を1サイクル通す（#113 構造化振り返り検証） | 実施済み | PASSED | Issue #111, [episode クロージャ振り返り](episodes/2026-05-31-wez-pane-activate.md)。plan gate が Step 順序矛盾、code gate が help 漏れを各々検出。KPT + 構造化FB表を試用し #113 へ申し送り |
 
 ---
 

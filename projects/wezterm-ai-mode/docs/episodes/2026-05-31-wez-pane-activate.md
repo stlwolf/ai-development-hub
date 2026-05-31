@@ -14,6 +14,9 @@ related:
   - type: evidence_for
     ref: "https://github.com/stlwolf/ai-development-hub/issues/111"
     reason: "#111 の解決実装"
+  - type: evidence_for
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/113"
+    reason: "クロージャ振り返り（KPT + 構造化FB表）が構造化振り返りテンプレの検証ケース"
 tags: [wez, cli, pane, activate, focus, bash, episode]
 keywords: [wezterm, activate-pane, no-focus, split-pane, WEZTERM_PANE]
 use_when:
@@ -78,3 +81,32 @@ Step 0 で `wezterm cli activate-pane --pane-id 999999`（存在しない）を�
 | shellcheck 通過 | ✓ |
 | `--help` に activate 表示 | ✓ |
 | README 記載 | ✓ |
+
+## クロージャ振り返り（#113 構造化振り返りテンプレの検証）
+
+本サイクル（Stage 1〜3 + plan/実装の二段 peer-ai-review）を、[#113](https://github.com/stlwolf/ai-development-hub/issues/113) 提案の構造化振り返りテンプレ（KPT + 構造化フィードバック表）で締める。これは B-1〜B-3 が Phase 1 でスキップだったプロセス検証の初の実適用でもある（VERIFICATION_MATRIX B-6）。
+
+### 構造化フィードバック表（#113 提案フォーマットの試用）
+
+| # | handoff-gate（受け渡し点） | finding（観測） | 発見者 | 振り返り手法 | target（改善対象） |
+|---|---------------------------|----------------|--------|------------|------------------|
+| 1 | 方向確認（A activate vs B --no-focus） | 一次情報（`wezterm cli --help` 実測）で B が native 非対応と判明し選択が事実上確定 | 自分 | Keep | 設計分岐前の primary-source 確認 |
+| 2 | ADR 粒度のユーザー指摘 | 「2択比較=ADR」を機械適用しかけたが、既存 ADR-003/006 と粒度比較しエピソード完結が妥当と判断 | ユーザー | Problem→Try | ADR 昇格基準の粒度判定 |
+| 3 | plan MD レビュー（branch/PR/copilot/retro 後出し） | MD 化後に process step 追加。plan mode 中は MD 直接編集不可で harness plan と二重管理 | ユーザー | Problem | plan mode と project plan MD の二重管理 |
+| 4 | プラン peer-ai-review gate | 「Step 3 gate 条件の手元 E2E pass が Step 4(E2E) より前」の順序矛盾を検出 | Codex+Claude | Keep | gate 条件の前後整合 |
+| 5 | 実装後コードレビュー gate | `bin/wez` トップレベル help の activate 漏れを発見（自分/Claude は pane.sh help のみ確認し見落とし）。help 文言の過剰約束も指摘 | Codex（漏れ）/ Claude（文言） | Keep→Try | help は2箇所（サブ+トップレベル）をチェックリスト化 |
+| 6 | focus E2E の実行判断 | ライブ GUI のフォーカスを奪う E2E をスキップ。成功パスは検証済み kill と同一構造のため PARTIAL で受容 | ユーザー | Try | dogfood 用隔離ウィンドウ/workspace の標準化 |
+| 7 | Copilot レビュー依頼 | `gh pr edit --add-reviewer Copilot` は失敗、`gh api .../requested_reviewers` + bot slug で成功 | 自分 | Problem→Try | Copilot レビュー依頼手順の skill 化 |
+
+### KPT
+
+- **Keep**: 設計分岐前の一次情報実測（1）。gate を独立 TODO 化し、両 gate が別々の実欠陥を検出（4 順序矛盾 / 5 help 漏れ）。薄いラッパーを既存 `kill` の 1:1 模倣で実装しレビューも差分比較に集中
+- **Problem**: ADR 昇格フロー定義が緩く毎回その場判断（2）。plan mode 中の plan MD 二重管理（3）。Copilot 依頼の CLI 手順が未文書（7）
+- **Try**: Copilot 依頼手順を `pr-conventions`/`copilot-review-response` skill に追記。help 二重チェックを pane 系変更の項目に。dogfood は専用 window/workspace で分離（#111 回避策の常設化）。ADR 昇格の粒度ガイドを #113 で具体化
+- **Open Questions**: #113 テンプレの timestamp 列は冗長（handoff-gate の通し番号で順序追跡可）。plan mode と project plan MD の二重管理は運用ルール（先に MD 確定→plan mode は参照のみ）で回避すべきか
+
+### #113 への申し送り（テンプレ検証結果）
+
+- **有効**: 「finding → 振り返り手法(KPT) → target」の3列が観測を改善アクションへ機械的に橋渡しできた
+- **冗長**: timestamp 列。handoff-gate の通し番号 + 名前で順序は追える
+- **追加採用**: 「発見者」列（自分/Codex/Claude/ユーザー）を本試用で足した。SO の価値・カバレッジギャップが定量化でき有用（gate 5 で Codex のみ help 漏れを発見、等）→ #113 の正式テンプレに推奨
