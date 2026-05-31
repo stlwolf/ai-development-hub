@@ -43,6 +43,7 @@ use_when:
 | A-2-5 | 新ペイン tmux auto-attach 後のコマンド送信（ポーリング等） | 実施済み | PASSED（--wait-ready） | ADR-003: ポーリング方式採用。E2E で send → capture 正常動作確認 |
 | A-2-6 | 3ツール横断 7ステップ統合フロー（discover→kill） | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md), #20 コメント群（Cursor/CC/Codex 全成功） |
 | A-2-7 | 空 title バリデーション（課題 E 修正） | 実施済み | PASSED | Issue #31, `fix(wez): reject empty title` |
+| A-2-8 | `wez pane activate`（split 後のフォーカス復帰） | 実施済み | PARTIAL（shellcheck + 非focus E2E + so-compare PASSED。split→activate の実機 focus 復帰目視は未実施） | Issue #111, [episode](episodes/2026-05-31-wez-pane-activate.md) |
 
 ---
 
