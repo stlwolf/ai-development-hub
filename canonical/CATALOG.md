@@ -16,7 +16,7 @@
 | branch-finish | ブランチ完了判定フロー（検証→4択→実行→クリーンアップ） | `skills/branch-finish/SKILL.md` | skill: worktrunk-worktrees, skill: pr-conventions, skill: conventional-commits |
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
-| implementer-contract | サブエージェントへの実装委譲時の返却契約 | `skills/implementer-contract/SKILL.md` | — |
+| implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | kickoff-to-plan | Kickoff Documentを実行可能なプランに忠実変換する | `skills/kickoff-to-plan/SKILL.md` | skill: adversarial-review |
 | markdown-conventions | Markdown記法の規約を適用する | `skills/markdown-conventions/SKILL.md` | — |
@@ -73,7 +73,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
 | output-format-rule | Conclusion → evidence → steps → risks → links output structure | `rules/output-format-rule.md` |
 | skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
-| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract | `rules/subagent-strategy-rule.md` |
+| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
 | workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
 
 ## Hooks
