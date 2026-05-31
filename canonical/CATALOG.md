@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (19)
+## Skills (20)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -15,6 +15,7 @@
 | arena-compare | arena-compare.shで複数モデルに同一プロンプトを並列投入し、回答を比較する | `skills/arena-compare/SKILL.md` | cli: arena-compare |
 | branch-finish | ブランチ完了判定フロー（検証→4択→実行→クリーンアップ） | `skills/branch-finish/SKILL.md` | skill: worktrunk-worktrees, skill: pr-conventions, skill: conventional-commits |
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
+| c4-architecture | 構造化データからC4アーキテクチャ図（Mermaid）を生成する記述スキル（4レベル視点・graph TD/classDef・AS-IS/TO-BE・サニタイズ指針） | `skills/c4-architecture/SKILL.md` | — |
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
