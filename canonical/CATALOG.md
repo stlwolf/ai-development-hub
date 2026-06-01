@@ -87,6 +87,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | force push ブロック | `hooks/scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | CC 形式チェック | `hooks/scripts/cc-lint.sh` | `git commit -m` の Conventional Commits 形式を検証（3ツール共通） |
 | コミットゲート | `hooks/scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（Claude Code のみ） |
+| 通知 | `hooks/scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory、並走時のポーリング解消） |
 
 ## ツール固有拡張
 

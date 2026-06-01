@@ -5,7 +5,8 @@
 ## 前提条件
 
 - `jq` が必要（Homebrew で管理: `etc/init/assets/brew/Brewfile`）
-- Codex は `config.toml` に `codex_hooks = true` が必要（実験的機能）
+- Codex は hooks 機能が必要（実験的機能）。`config.toml` の `[features].hooks = true`。旧名 `codex_hooks` は現行版（v0.135 で確認）では `hooks` の legacy alias として扱われ、`codex_hooks = true` のままでも有効（ただし非推奨警告が出るため `hooks` への移行が推奨）
+- 通知フック（`notify.sh`）は macOS ネイティブ通知を使う。`terminal-notifier`（あれば優先）または `osascript`（標準。フォールバック）
 
 ## フック一覧
 
@@ -15,6 +16,7 @@
 | force push ブロック | `scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
+| 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
 
 ## ツール別カバレッジ
 
@@ -24,6 +26,10 @@
 | force push ブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | コミットゲート | — | `TaskCompleted` | — |
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
+| 通知: 完了 | — | `Stop` | `Stop` ※ |
+| 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） | `PermissionRequest` ※ |
+
+※ Codex のライフサイクル hook（`Stop` / `PermissionRequest`）は対話 TUI 想定。非対話 `codex exec` では発火しないことを確認済み（v0.135）。実 emit は対話セッションで要検証であり、現状は best-effort（発火しない場合は Codex 側は無通知に縮退するのみで、エージェント動作には影響しない）。Cursor は既存の通知機構があるため対象外。
 
 ## block-destructive.sh
 
@@ -116,6 +122,36 @@ Claude Code のみ。Cursor / Codex は `TaskCompleted` 相当のイベントを
 ### deny 時の出力
 
 フォーマット例と型リストを含むメッセージを出力する。
+
+## notify.sh
+
+エージェントの「完了」「入力待ち」を macOS 通知し、複数セッション並走時のポーリング（まだ動いてる？の見に行き）をやめるための advisory フック。
+
+### 配線（意図は引数で明示渡し）
+
+どのイベントに配線したかは hooks.json 側で既知なので、stdin からイベント種別を推論せず**第1引数 `done`/`wait`** で意図を渡す。
+
+| ツール | 完了 → `notify.sh done` | 入力待ち → `notify.sh wait` |
+|--------|------------------------|---------------------------|
+| Claude Code | `Stop` | `Notification`（matcher `permission_prompt\|idle_prompt`） |
+| Codex | `Stop`（matcher なし） | `PermissionRequest`（matcher `*`） |
+
+- `done`（完了）: タイトル `✅ {repo} 完了` / 本文 `{branch}` のみ・**無音** + `terminal-notifier` 時 `-group {session_id}` で集約（`Stop` は毎ターン発火するためノイズを抑制）
+- `wait`（入力待ち）: タイトル `⌨️ {repo} 入力待ち` / 本文 `{branch} — {message を80字 truncate}`・**音あり（Glass）**
+- 完了通知に assistant メッセージ本文は載せない（画面共有・録画時の漏えい防止）
+
+### 完了イベントの選択
+
+完了通知は `Stop`（ターン完了）を使う。`TaskCompleted`（タスク項目完了、commit-gate が使用）とは粒度が異なる。
+
+### advisory 安全性
+
+- `set -e` を使わず、非ゼロ exit を出さない（エージェントを止めない）
+- 非 macOS / `jq` 不在は no-op、外部呼び出しは全て `|| true`、**通知発火は background**（Codex `PermissionRequest` は承認パスに同期的に入るため遅延させない）、**stdout 無出力**（制御 JSON 誤返却の副作用回避）、末尾は無条件 `exit 0`
+
+### デバッグ
+
+`NOTIFY_DEBUG=1` または `~/.notify-hook-debug` が存在すると `/tmp/notify-hook.log` に記録する。Codex の対話セッションで `Stop` / `PermissionRequest` の emit を検証する際に使う。
 
 ## 設定ファイル
 

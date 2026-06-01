@@ -4,6 +4,14 @@
 - 関連 Issue: [#10](https://github.com/stlwolf/ai-development-hub/issues/10), [#17](https://github.com/stlwolf/ai-development-hub/issues/17)
 - 出典: [Cursor Hooks Docs](https://cursor.com/docs/hooks), [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks), [Codex Hooks Docs](https://developers.openai.com/codex/hooks)
 
+## 2026-06-01 追記（[#119](https://github.com/stlwolf/ai-development-hub/issues/119) 通知フック実装時の実機検証）
+
+本調査は 2026-03-30 時点のスナップショット。Codex hooks は experimental で変化が速く、v0.135 実機検証で以下の差分を確認した（下記の歴史的な表は当時のまま保持）。
+
+- **Codex の有効化フラグ**: 旧 `codex_hooks` は `hooks` の **legacy alias**（`codex doctor` で `legacy alias codex_hooks -> hooks` と表示）。`codex_hooks = true` のままでも機能するが非推奨警告が出る → `[features].hooks = true` 推奨。
+- **Codex のイベント拡張**: 現行公式 docs では `Stop` / `PermissionRequest` 等が記載され、当時の「5 イベントのみ」より増えている。ただし **`codex exec`（非対話）では `Stop` フックが発火しないことを実機確認**。ライフサイクル hook は対話 TUI 想定の可能性が高く、`PermissionRequest` の実 emit は対話セッションで要検証。
+- **shell_snapshot**: `codex exec` 実行時に `Shell snapshot validation failed`（ユーザーシェル環境スナップショットの構文エラー）が出る環境がある。command 系 hook 実行への影響可能性があり別途要調査（本 Issue の通知フックとは独立）。
+
 ## 要約
 
 3ツールとも hooks は **JSON stdin/stdout + exit code** プロトコルを共有し、Claude Code の hooks フォーマットが事実上の共通語になりつつある（Cursor は Claude Code hooks の読み込みに対応、Codex も同構造を採用）。ただしイベント名の casing（Cursor: camelCase / Claude Code・Codex: PascalCase）、設定ファイルパス、対応イベント数に差がある。
