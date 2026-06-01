@@ -60,11 +60,17 @@ pt=""
 loc=""
 if [[ -n "${TMUX:-}" ]]; then
   pane="${TMUX_PANE:-}"
-  tmux_target=()
-  [[ -n "$pane" ]] && tmux_target=(-t "$pane")
-  pt="$(tmux display-message "${tmux_target[@]}" -p '#{pane_tty}' 2>/dev/null || true)"
-  # 居場所: session名:window.pane（並走時の識別。番号移動は window 番号）
-  loc="$(tmux display-message "${tmux_target[@]}" -p '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null || true)"
+  if [[ -n "$pane" ]]; then
+    # 発火元ペインが特定できる場合のみ TTY と loc を取る
+    pt="$(tmux display-message -t "$pane" -p '#{pane_tty}' 2>/dev/null || true)"
+    # 居場所: session名:window.pane（並走時の識別。番号移動は window 番号）
+    loc="$(tmux display-message -t "$pane" -p '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null || true)"
+  else
+    # $TMUX_PANE 不在: 配信はアクティブペイン TTY 経由（通知は window レベルで表示される）。
+    # ただし loc はアクティブペインを指すと別ペインの通知に誤った番号が付くため省略する。
+    pt="$(tmux display-message -p '#{pane_tty}' 2>/dev/null || true)"
+    loc=""
+  fi
 fi
 
 # title / body
