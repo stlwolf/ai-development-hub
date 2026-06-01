@@ -41,7 +41,8 @@ else
   # hooks: argv[1]=mode, argv[2]=tool(任意), stdin に JSON（underscore キー）
   mode="${arg1:-done}"
   [[ -n "${2:-}" ]] && tool="$2"
-  input="$(cat 2>/dev/null || true)"
+  # stdin が TTY（手動実行等）なら EOF 待ちでブロックしないよう空入力扱い
+  if [[ -t 0 ]]; then input=""; else input="$(cat 2>/dev/null || true)"; fi
   cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null || true)"
   message="$(printf '%s' "$input" | jq -r '.message // .last_assistant_message // ""' 2>/dev/null || true)"
 fi

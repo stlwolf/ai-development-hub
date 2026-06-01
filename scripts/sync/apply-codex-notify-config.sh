@@ -42,7 +42,11 @@ if [[ ! -f "$CONFIG" ]]; then
 fi
 
 backup="${CONFIG}.bak.$(date +%Y%m%d-%H%M%S 2>/dev/null || echo manual)"
-cp "$CONFIG" "$backup"
+# backup を作れない場合（権限/容量/read-only FS 等）は config を一切変更せず安全に抜ける
+if ! cp "$CONFIG" "$backup" 2>/dev/null; then
+  warn "backup を作成できないため変更しません: ${CONFIG}"
+  exit 0
+fi
 changed=0
 
 # 1) notify (top-level key) → 無ければ先頭に挿入（最初のテーブルより前である必要があるため）

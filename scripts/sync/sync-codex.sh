@@ -295,9 +295,10 @@ main() {
     echo ""
 
     # Codex 通知設定（config.toml への冪等 apply。symlink 不可な状態ファイルのためキー単位で適用）
-    if [[ -x "${SCRIPT_DIR}/apply-codex-notify-config.sh" ]]; then
+    if [[ -f "${SCRIPT_DIR}/apply-codex-notify-config.sh" ]]; then
         info "Applying Codex notify config: ${TARGET_BASE}/config.toml"
-        CODEX_HOOKS_DIR="${TARGET_BASE}/hooks" "${SCRIPT_DIR}/apply-codex-notify-config.sh" "${TARGET_BASE}/config.toml" || warn "apply-codex-notify-config 失敗（非致命）"
+        # 実行ビットに依存せず bash で起動（+x が落ちた環境でも skip しない）
+        CODEX_HOOKS_DIR="${TARGET_BASE}/hooks" bash "${SCRIPT_DIR}/apply-codex-notify-config.sh" "${TARGET_BASE}/config.toml" || warn "apply-codex-notify-config 失敗（非致命）"
         echo ""
     fi
 
