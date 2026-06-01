@@ -63,7 +63,8 @@ if [[ -n "${TMUX:-}" ]]; then
   tmux_target=()
   [[ -n "$pane" ]] && tmux_target=(-t "$pane")
   pt="$(tmux display-message "${tmux_target[@]}" -p '#{pane_tty}' 2>/dev/null || true)"
-  loc="$(tmux display-message "${tmux_target[@]}" -p '#{window_index}.#{pane_index}' 2>/dev/null || true)"
+  # 居場所: session名:window.pane（並走時の識別。番号移動は window 番号）
+  loc="$(tmux display-message "${tmux_target[@]}" -p '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null || true)"
 fi
 
 # title / body
@@ -79,7 +80,7 @@ case "$mode" in
 esac
 title="${tool} ${emoji} ${label}"
 body="${branch}"
-[[ -n "$loc" ]] && body="${body:+$body · }win${loc}"
+[[ -n "$loc" ]] && body="${body:+$body · }${loc}"
 [[ -n "$msg" ]] && body="${body:+$body — }$msg"
 [[ -z "$body" ]] && body="$mode"
 

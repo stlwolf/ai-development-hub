@@ -151,7 +151,7 @@ CLI/フック文脈からは macOS 通知 API（osascript/terminal-notifier）�
 ### 通知フォーマット
 
 - title: `{tool} {✅ / ⌨️} {repo}`（✅=完了 / ⌨️=入力待ち）
-- body: `{branch} · win{window.pane}`（入力待ちは ` — {message を80字 truncate}` を追加）
+- body: `{branch} · {session}:{window}.{pane}`（tmux の居場所。入力待ちは ` — {message を80字 truncate}` を追加）
 - 完了通知に assistant メッセージ本文は載せない（画面共有・録画時の漏えい防止）
 - 制限: OSC 777 はサウンド指定不可のため完了/入力待ちで通知音の出し分けはできない（区別は絵文字）
 
