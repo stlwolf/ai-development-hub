@@ -5,7 +5,9 @@
 ## 前提条件
 
 - `jq` が必要（Homebrew で管理: `etc/init/assets/brew/Brewfile`）
-- Codex は `config.toml` に `codex_hooks = true` が必要（実験的機能）
+- Codex は hooks 機能が必要（実験的機能）。`config.toml` の `[features].hooks = true`。旧名 `codex_hooks` は現行版（v0.135 で確認）では `hooks` の legacy alias として扱われ、`codex_hooks = true` のままでも有効（ただし非推奨警告が出るため `hooks` への移行が推奨）
+- 通知フック（`notify.sh`）の配信は **WezTerm の OSC 777 通知**を主とする（tmux 内は DCS passthrough で `#{pane_tty}` へ直書き、非 tmux は `/dev/tty`）。**前提: tmux は `set -g allow-passthrough on`（3.3+, dotfiles の `tmux.conf`）、WezTerm.app に macOS 通知許可**。非 WezTerm / headless 環境では `terminal-notifier`（dotfiles の Brewfile で管理）→ `osascript` にフォールバックする
+  - 背景: macOS では CLI/フック文脈から `osascript`/`terminal-notifier` を叩いても通知が表示されないことがある（GUI 権限を持つアプリが出す必要がある）。WezTerm は GUI アプリなので OSC を受けて通知を出せる。詳細は `docs/research/2026-03-30-ai-tool-hooks-specification-survey.md` の追記参照
 
 ## フック一覧
 
@@ -15,6 +17,7 @@
 | force push ブロック | `scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
+| 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
 
 ## ツール別カバレッジ
 
@@ -24,6 +27,12 @@
 | force push ブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | コミットゲート | — | `TaskCompleted` | — |
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
+| 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
+| 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） → notify.sh | `[tui] notifications=["approval-requested"]` + `notification_method="osc9"`（ネイティブ）※ |
+
+※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は対話で承認プロンプトが出ても**発火しないことを実機確認**）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）で出る。入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"]`(osc9) を設定するが、**Codex は OSC を tmux passthrough で包まないため tmux 環境では通知が出ない（実機確認＝既知ギャップ）**。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。
+
+**Codex まとめ**: 完了通知は動作。入力待ち通知は tmux 環境では出ない（best-effort・既知ギャップ。tmux 外なら `[tui] osc9` が機能）。Cursor は既存の通知機構があるため対象外。
 
 ## block-destructive.sh
 
@@ -117,13 +126,55 @@ Claude Code のみ。Cursor / Codex は `TaskCompleted` 相当のイベントを
 
 フォーマット例と型リストを含むメッセージを出力する。
 
+## notify.sh
+
+エージェントの「完了」「入力待ち」を macOS 通知し、複数セッション並走時のポーリング（まだ動いてる？の見に行き）をやめるための advisory フック。
+
+### 配信経路（WezTerm OSC 777）
+
+CLI/フック文脈からは macOS 通知 API（osascript/terminal-notifier）が表示されないことがあるため、**WezTerm（GUI アプリ）に OSC 777 通知を出させる**:
+
+- tmux 内: DCS passthrough（`\ePtmux;\e\e]777;notify;…\a\e\\`）で包み、`tmux display-message -t "$TMUX_PANE" -p '#{pane_tty}'` で得たペイン TTY へ直接書く（フックは controlling TTY を持たないため `/dev/tty` 不可）
+- 非 tmux: `/dev/tty` へ OSC 777
+- どちらも不可: `terminal-notifier` → `osascript` にフォールバック（非 WezTerm / headless 用）
+
+前提: tmux `set -g allow-passthrough on`、WezTerm.app の macOS 通知許可。
+
+### 呼ばれ方（意図は引数で明示渡し）
+
+- Claude Code hooks: 第1引数 `done`/`wait`（任意 第2引数 tool 名）+ stdin JSON（underscore キー）
+- Codex notify: 第1引数が JSON 文字列（hyphen キー, agent-turn-complete=完了）→ tool=Codex
+
+| ツール | 完了 | 入力待ち |
+|--------|------|----------|
+| Claude Code | `Stop` hook → `notify.sh done` | `Notification`(matcher `permission_prompt\|idle_prompt`) → `notify.sh wait` |
+| Codex | `notify`(config.toml) → `notify.sh`（JSON 判定で done） | `[tui] notifications`(osc9 ネイティブ・notify.sh 経由せず) |
+
+### 通知フォーマット
+
+- title: `{tool} {✅ / ⌨️} {repo}`（✅=完了 / ⌨️=入力待ち）
+- body: `{branch} · {window}:{window名} [{pane}]`（tmux ステータスバーの `#I:#W` + status-left `[#P]` と一致させ、番号で移動しやすく。入力待ちは ` — {message を80字 truncate}` を追加）
+  - 居場所は `$TMUX_PANE` が取れる発火元のみ表示。取れない場合（一部フック環境）はアクティブペインを誤って指さないよう省略する
+- 完了通知に assistant メッセージ本文は載せない（画面共有・録画時の漏えい防止）
+- 制限: OSC 777 はサウンド指定不可のため完了/入力待ちで通知音の出し分けはできない（区別は絵文字）
+
+### advisory 安全性
+
+- `set -e` を使わず非ゼロ exit を出さない（エージェントを止めない）
+- `jq` 不在は no-op、外部呼び出しは全て `|| true`、**stdout 無出力**（制御 JSON 誤返却の副作用回避）、末尾は無条件 `exit 0`
+
+### デバッグ
+
+`NOTIFY_DEBUG=1` または `~/.notify-hook-debug` で `/tmp/notify-hook.log` に記録（tool / mode / repo / branch / loc / tmux）。
+
 ## 設定ファイル
 
 | ファイル | 形式 | 配布先 |
 |---------|------|--------|
 | `cursor.hooks.json` | Cursor native (version: 1) | `~/.cursor/hooks.json` |
 | `claude.hooks.json` | Claude Code (hooks セクション) | `~/.claude/settings.json` の `hooks` キーにマージ |
-| `codex.hooks.json` | Codex | `~/.codex/hooks.json` |
+| `codex.hooks.json` | Codex | `~/.codex/hooks.json`（block 系のみ。通知は config.toml 経由） |
+| Codex 通知設定 | `config.toml` キー（`notify` / `[tui]`） | `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用 |
 
 ## 設計判断
 
