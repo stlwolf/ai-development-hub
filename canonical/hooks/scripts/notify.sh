@@ -13,7 +13,7 @@
 #   Codex notify      : 第1引数 = JSON 文字列（hyphen キー, type=agent-turn-complete）→ tool=Codex
 #
 # 通知フォーマット:
-#   title: "{tool} {✅|⌨️} {repo}"   body: "{branch} · win{window.pane} — {message}"
+#   title: "{tool} {✅|⌨️} {repo}"   body: "{branch} · {window_index}:{window_name} [{pane_index}] — {message}"
 #
 # advisory 契約: 非ゼロ exit を出さない / stdout 無出力 / 末尾は無条件 exit 0。
 # デバッグ: NOTIFY_DEBUG=1 または ~/.notify-hook-debug で /tmp/notify-hook.log に記録。

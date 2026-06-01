@@ -53,12 +53,13 @@ changed=0
 if grep -qE '^[[:space:]]*notify[[:space:]]*=' "$CONFIG"; then
   info "notify already present (skip)"
 else
-  tmp="$(mktemp)"
+  # tmp は CONFIG と同じディレクトリに作る（同一 FS で mv が atomic rename になり cross-device 失敗を避ける）
+  tmp="$(mktemp "${CONFIG}.tmp.XXXXXX" 2>/dev/null)" || { rm -f "$backup"; warn "tmp 作成失敗のため変更しません"; exit 0; }
   {
     printf '%s\n%s\n%s\n\n' "$NOTIFY_BEGIN" "$NOTIFY_LINE" "$NOTIFY_END"
     cat "$CONFIG"
   } > "$tmp"
-  mv "$tmp" "$CONFIG"
+  mv "$tmp" "$CONFIG" || { rm -f "$tmp" "$backup"; warn "config 置換に失敗したため変更しません"; exit 0; }
   changed=1
   info "Inserted notify at top"
 fi
