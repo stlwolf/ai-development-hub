@@ -6,7 +6,7 @@
 
 - `jq` が必要（Homebrew で管理: `etc/init/assets/brew/Brewfile`）
 - Codex は hooks 機能が必要（実験的機能）。`config.toml` の `[features].hooks = true`。旧名 `codex_hooks` は現行版（v0.135 で確認）では `hooks` の legacy alias として扱われ、`codex_hooks = true` のままでも有効（ただし非推奨警告が出るため `hooks` への移行が推奨）
-- 通知フック（`notify.sh`）は macOS ネイティブ通知を使う。`terminal-notifier`（あれば優先）または `osascript`（標準。フォールバック）
+- 通知フック（`notify.sh`）は macOS ネイティブ通知を使う。**`terminal-notifier` 推奨**（dotfiles の Brewfile で管理。クリックで該当アプリ前面化・セッション別 group 集約・確実な表示が得られる）。未導入時は `osascript` にフォールバックするが、「スクリプトエディタ」名義のため見落としやすい
 
 ## フック一覧
 
