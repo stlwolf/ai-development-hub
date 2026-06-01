@@ -12,7 +12,10 @@
 - **Codex のイベント拡張**: 現行公式 docs では `Stop` / `PermissionRequest` 等が記載され、当時の「5 イベントのみ」より増えている。ただし **`codex exec`（非対話）では `Stop` フックが発火しないことを実機確認**。ライフサイクル hook は対話 TUI 想定の可能性が高く、`PermissionRequest` の実 emit は対話セッションで要検証。
 - **shell_snapshot**: `codex exec` 実行時に `Shell snapshot validation failed`（ユーザーシェル環境スナップショットの構文エラー）が出る環境がある。command 系 hook 実行への影響可能性があり別途要調査（本 Issue の通知フックとは独立）。
 - **macOS 通知の配信経路（最重要）**: CLI/フック文脈から `osascript`（スクリプトエディタ名義・通知一覧に出ず許可不可）や `terminal-notifier`（2.0.0 は Sequoia で表示不発）を叩いても**通知が表示されない**ことを実機確認（Cursor 等 GUI アプリは出る＝macOS 通知自体は正常）。**GUI 権限を持つアプリが出す必要がある**。WezTerm ユーザーでは **OSC 777 を WezTerm に出させる**のが解。tmux 内はフックが controlling TTY を持たないため、`tmux display-message -t "$TMUX_PANE" -p '#{pane_tty}'` で得たペイン TTY に **DCS passthrough** で包んで書く（`set -g allow-passthrough on` 前提、tmux 3.3+）。実機で OSC 9 / OSC 777 の表示・pane_tty 直書きを確認済み。
-- **Codex 通知の最終方針**: hooks は通知に使わない（`Stop` 対話非発火 [openai/codex#17532]、`PermissionRequest` observability only）。完了は `config.toml` の `notify`→共有 notify.sh（OSC、Claude と統一フォーマット）、入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"] notification_method="osc9"`。`notify` は `agent-turn-complete` のみで入力待ちを拾えないため `[tui]` 併用。
+- **Codex 通知の最終方針（実機確認込み）**: hooks は通知に使わない。完了は `config.toml` の `notify`→共有 notify.sh（OSC、Claude と統一フォーマット）で**動作確認済み**。入力待ちは:
+  - `PermissionRequest` hook → **対話で承認プロンプトが出ても発火しないことを実機確認**（`Stop` 非発火 [openai/codex#17532] と同様、observability only で通知に使えない）。
+  - Codex ネイティブ `[tui] notifications=["approval-requested"] notification_method="osc9"` → **Codex は OSC を tmux passthrough で包まないため tmux 内で通知が出ないことを実機確認**（bare OSC を tmux が遮断）。
+  - → **Codex 入力待ち通知は tmux 環境では出せない既知ギャップ**。`notify` は `agent-turn-complete` のみで入力待ちを拾えない。完了通知は動くため best-effort として許容。tmux 外なら `[tui] osc9` が機能する見込み。
 
 ## 要約
 

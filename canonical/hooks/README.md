@@ -30,7 +30,9 @@
 | 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
 | 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） → notify.sh | `[tui] notifications=["approval-requested"]` + `notification_method="osc9"`（ネイティブ）※ |
 
-※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は observability only で実 emit 不確実）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）、入力待ちは Codex ネイティブ `[tui] notifications`(osc9) で出す。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。Codex 入力待ち osc9 の tmux 越えは対話セッションで要検証（best-effort）。Cursor は既存の通知機構があるため対象外。
+※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は対話で承認プロンプトが出ても**発火しないことを実機確認**）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）で出る。入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"]`(osc9) を設定するが、**Codex は OSC を tmux passthrough で包まないため tmux 環境では通知が出ない（実機確認＝既知ギャップ）**。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。
+
+**Codex まとめ**: 完了通知は動作。入力待ち通知は tmux 環境では出ない（best-effort・既知ギャップ。tmux 外なら `[tui] osc9` が機能）。Cursor は既存の通知機構があるため対象外。
 
 ## block-destructive.sh
 
