@@ -1,36 +1,52 @@
 #!/usr/bin/env bash
-# notify.sh — エージェントの完了 / 入力待ちを macOS 通知する advisory フック
+# notify.sh — エージェントの完了 / 入力待ちを通知する advisory フック
 #
-# Claude Code / Codex の hooks から呼ばれる共有ハンドラ。
-#   完了    : Claude `Stop` / Codex `Stop`            → 第1引数 done（無音 + group 集約）
-#   入力待ち: Claude `Notification` / Codex `PermissionRequest` → 第1引数 wait（音あり）
+# 配信は WezTerm の OSC 777 通知を主とする。tmux 内では DCS passthrough で包んで
+# ペイン TTY (#{pane_tty}) に直接書く（フックは controlling TTY を持たないため
+# /dev/tty は使えない）。非 tmux は /dev/tty。どちらも不可なら terminal-notifier →
+# osascript にフォールバック（非 WezTerm / headless 環境用）。
 #
-# 意図(done/wait)は hook 設定側の引数で明示渡しする（stdin からのイベント推論より堅い）。
-# stdin の JSON からは cwd / message / session_id のみ読む。
+# 前提: tmux は `set -g allow-passthrough on`（3.3+）、WezTerm に macOS 通知許可。
 #
-# advisory 契約: エージェントを絶対に止めない。
-#   - `set -e` は使わない（非ゼロ exit を出さない）
-#   - 非 macOS / jq 不在は no-op
-#   - 外部呼び出しは全て `|| true`、発火は background、末尾は無条件 exit 0
-#   - stdout には何も出さない（Codex Stop で制御 JSON を返すと副作用）
+# 呼ばれ方:
+#   Claude Code hooks : 第1引数 = done|wait（任意 第2引数 = tool 名）、stdin に JSON（underscore キー）
+#   Codex notify      : 第1引数 = JSON 文字列（hyphen キー, type=agent-turn-complete）→ tool=Codex
 #
-# デバッグ: NOTIFY_DEBUG=1 または ~/.notify-hook-debug があれば /tmp/notify-hook.log に記録。
+# 通知フォーマット:
+#   title: "{tool} {✅|⌨️} {repo}"   body: "{branch} · win{window.pane} — {message}"
+#
+# advisory 契約: 非ゼロ exit を出さない / stdout 無出力 / 末尾は無条件 exit 0。
+# デバッグ: NOTIFY_DEBUG=1 または ~/.notify-hook-debug で /tmp/notify-hook.log に記録。
+#
+# 制限: OSC 777 にはサウンド指定が無いため、完了/入力待ちで通知音は出し分けられない
+# （WezTerm の通知設定に従う）。区別はタイトルの絵文字（✅ / ⌨️）で行う。
 
 set -uo pipefail
 
-# 非 macOS / jq 不在は no-op
-[[ "$(uname 2>/dev/null || echo)" == "Darwin" ]] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
-mode="${1:-done}"
+arg1="${1:-}"
+mode="done"
+cwd=""
+message=""
+tool="Claude"
 
-input="$(cat 2>/dev/null || true)"
-cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null || true)"
-message="$(printf '%s' "$input" | jq -r '.message // ""' 2>/dev/null || true)"
-session_id="$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || true)"
-event="$(printf '%s' "$input" | jq -r '.hook_event_name // ""' 2>/dev/null || true)"
+if [[ "$arg1" == "{"* ]]; then
+  # Codex notify: argv[1] が JSON（hyphen キー、完了のみ）
+  tool="Codex"
+  cwd="$(printf '%s' "$arg1" | jq -r '.cwd // ""' 2>/dev/null || true)"
+  message="$(printf '%s' "$arg1" | jq -r '."last-assistant-message" // ""' 2>/dev/null || true)"
+  mode="done"
+else
+  # hooks: argv[1]=mode, argv[2]=tool(任意), stdin に JSON（underscore キー）
+  mode="${arg1:-done}"
+  [[ -n "${2:-}" ]] && tool="$2"
+  input="$(cat 2>/dev/null || true)"
+  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null || true)"
+  message="$(printf '%s' "$input" | jq -r '.message // .last_assistant_message // ""' 2>/dev/null || true)"
+fi
 
-# cwd → repo / branch（並走時の識別用）
+# cwd → repo / branch
 repo=""
 branch=""
 if [[ -n "$cwd" && "$cwd" != "null" ]] && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -39,60 +55,66 @@ if [[ -n "$cwd" && "$cwd" != "null" ]] && git -C "$cwd" rev-parse --is-inside-wo
 fi
 label="${repo:-agent}"
 
-# デバッグログ
+# tmux: ペイン TTY と 居場所(window.pane) を取得
+pt=""
+loc=""
+if [[ -n "${TMUX:-}" ]]; then
+  pane="${TMUX_PANE:-}"
+  tmux_target=()
+  [[ -n "$pane" ]] && tmux_target=(-t "$pane")
+  pt="$(tmux display-message "${tmux_target[@]}" -p '#{pane_tty}' 2>/dev/null || true)"
+  loc="$(tmux display-message "${tmux_target[@]}" -p '#{window_index}.#{pane_index}' 2>/dev/null || true)"
+fi
+
+# title / body
+case "$mode" in
+  wait)
+    emoji="⌨️"
+    msg="$(printf '%s' "$message" | tr -d '\033\007' | tr '\n\r' '  ' | cut -c1-80)"
+    ;;
+  *)
+    emoji="✅"
+    msg=""
+    ;;
+esac
+title="${tool} ${emoji} ${label}"
+body="${branch}"
+[[ -n "$loc" ]] && body="${body:+$body · }win${loc}"
+[[ -n "$msg" ]] && body="${body:+$body — }$msg"
+[[ -z "$body" ]] && body="$mode"
+
+# サニタイズ（OSC を壊す制御文字・改行を除去。title は区切りの ; も除去）
+title="$(printf '%s' "$title" | tr -d '\033\007;' | tr '\n\r' '  ')"
+body="$(printf '%s' "$body" | tr -d '\033\007' | tr '\n\r' '  ')"
+
 if [[ -n "${NOTIFY_DEBUG:-}" || -f "$HOME/.notify-hook-debug" ]]; then
-  printf '%s mode=%s event=%s repo=%s branch=%s msg=%.40s\n' \
-    "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$mode" "$event" "$repo" "$branch" "$message" \
+  printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
+    "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
     >> /tmp/notify-hook.log 2>/dev/null || true
 fi
 
-# モード → 表示内容
-case "$mode" in
-  wait)
-    title="⌨️ ${label} 入力待ち"
-    msg_clean="$(printf '%s' "$message" | tr '\n' ' ' | cut -c1-80)"
-    body="${branch}"
-    [[ -n "$msg_clean" ]] && body="${body:+${body} — }${msg_clean}"
-    [[ -z "$body" ]] && body="入力を待っています"
-    sound="Glass"
-    ;;
-  done|*)
-    # 完了: 機微情報を載せない（repo/branch のみ）。無音 + group 集約でノイズ抑制
-    title="✅ ${label} 完了"
-    body="${branch:-${label}}"
-    sound=""
-    ;;
-esac
+# --- 配信 ---
+delivered=0
 
-# terminal-notifier の -message が "-" 始まりだとフラグ誤認するため回避
-[[ "$body" == -* ]] && body="• ${body#-}"
+if [[ -n "${TMUX:-}" && -n "$pt" && -w "$pt" ]]; then
+  # tmux: ペイン TTY へ DCS passthrough（内側 ESC を二重化、終端は ESC + \134=backslash）
+  printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" > "$pt" 2>/dev/null && delivered=1
+elif [[ -z "${TMUX:-}" && -w /dev/tty ]]; then
+  printf '\033]777;notify;%s;%s\007' "$title" "$body" > /dev/tty 2>/dev/null && delivered=1
+fi
 
-dispatch() {
+# フォールバック（非 WezTerm / 非 tmux / headless 用）
+if [[ "$delivered" -eq 0 ]]; then
   if command -v terminal-notifier >/dev/null 2>&1; then
-    local args=(-title "$title" -message "$body")
-    [[ -n "$session_id" ]] && args+=(-group "$session_id")
-    if [[ -n "$sound" ]]; then
-      args+=(-sound "$sound")
-    else
-      args+=(-sound none)
-    fi
-    terminal-notifier "${args[@]}" >/dev/null 2>&1 || true
-  elif [[ -n "$sound" ]]; then
-    osascript - "$title" "$body" "$sound" >/dev/null 2>&1 <<'OSA' || true
-on run argv
-  display notification (item 2 of argv) with title (item 1 of argv) sound name (item 3 of argv)
-end run
-OSA
-  else
-    osascript - "$title" "$body" >/dev/null 2>&1 <<'OSA' || true
+    ( terminal-notifier -title "$title" -message "${body:-notify}" >/dev/null 2>&1 ) &
+  elif command -v osascript >/dev/null 2>&1; then
+    ( osascript - "$title" "${body:-notify}" >/dev/null 2>&1 <<'OSA'
 on run argv
   display notification (item 2 of argv) with title (item 1 of argv)
 end run
 OSA
+    ) &
   fi
-}
-
-# 承認パスを遅延させないため background で発火し、即 return
-( dispatch ) >/dev/null 2>&1 &
+fi
 
 exit 0

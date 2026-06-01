@@ -294,6 +294,13 @@ main() {
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
+    # Codex 通知設定（config.toml への冪等 apply。symlink 不可な状態ファイルのためキー単位で適用）
+    if [[ -x "${SCRIPT_DIR}/apply-codex-notify-config.sh" ]]; then
+        info "Applying Codex notify config: ${TARGET_BASE}/config.toml"
+        CODEX_HOOKS_DIR="${TARGET_BASE}/hooks" "${SCRIPT_DIR}/apply-codex-notify-config.sh" "${TARGET_BASE}/config.toml" || warn "apply-codex-notify-config 失敗（非致命）"
+        echo ""
+    fi
+
     info "=== sync-codex complete ==="
 }
 
