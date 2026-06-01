@@ -92,7 +92,7 @@ body="${branch}"
 
 # サニタイズ（OSC を壊す制御文字・改行を除去。title は区切りの ; も除去）
 title="$(printf '%s' "$title" | tr -d '\033\007;' | tr '\n\r' '  ')"
-body="$(printf '%s' "$body" | tr -d '\033\007' | tr '\n\r' '  ')"
+body="$(printf '%s' "$body" | tr -d '\033\007;' | tr '\n\r' '  ')"
 
 if [[ -n "${NOTIFY_DEBUG:-}" || -f "$HOME/.notify-hook-debug" ]]; then
   printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
