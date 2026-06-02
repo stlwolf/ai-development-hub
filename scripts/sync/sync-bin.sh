@@ -42,11 +42,12 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-CMD_NAMES=("so-compare" "arena-compare" "wez")
+CMD_NAMES=("so-compare" "arena-compare" "wez" "wt-pane-issue")
 CMD_SOURCES=(
     "${REPO_ROOT}/scripts/so-compare.sh"
     "${REPO_ROOT}/projects/arena-compare/arena-compare.sh"
     "${REPO_ROOT}/projects/wezterm-ai-mode/bin/wez"
+    "${REPO_ROOT}/scripts/wt/wt-pane-issue.sh"
 )
 
 main() {

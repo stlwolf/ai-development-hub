@@ -50,6 +50,12 @@ wt list
 - `wt list` に新しい worktree が見えているのに `pwd` が想定外なら、「作成は成功したが現在位置だけがずれている」状態として扱う
 - この状態で `wt switch --create` を再実行しない。まず既存 worktree を再利用する
 
+#### Claude Code での挙動（cwd は追従しない）
+
+Claude Code セッションでは、`wt switch` してもセッションの cwd は worktree に**移らない**（シェルの `cd` が親プロセス＝Claude に消費されないため。`!pwd` はリポジトリルートのまま）。これは異常ではなく、ファイル操作は**絶対パス**で行われるため編集は正しく worktree に落ちる（cwd は表示上の話）。worktrunk 本来の「セッション re-root」は `EnterWorktree`（`/wt-switch-create`）経由のときだけ起きる。
+
+cwd が追従しない結果、cwd ベースでは「今どの worktree か」を識別できない。並列セッションの識別は **セッション命名フック**（`canonical/hooks/`、Issue #124）が担う: `wt switch` のたびに `post-switch` hook が `#<issue> <slug>` を記録し、セッション名（→ tmux pane title）へ反映する。設定は `canonical/hooks/README.md` の「session-name.sh」節を参照。
+
 ### 既存 worktree の再利用
 
 作成後に現在位置がずれていた場合や、fallback で別の worktree 進入手段を使いたい場合は、先に既存 worktree の有無を確認する。
