@@ -46,7 +46,7 @@
 
 ### 仕組み（3 パート）
 
-- `scripts/wt/wt-pane-issue.sh`（worktrunk post-switch hook、`scripts/sync/sync-bin.sh` で `~/bin/wt-pane-issue` へ配備）: `{{ branch }}` から `#<issue> <slug>` を導出し `~/.claude/state/pane-issue/<TMUX_PANE>` に記録（非 issue ブランチは clear）。`wt switch` のたびに発火（エージェント/人間どちらも）。worktrunk が `{{ branch }}` をシェルクォートするため自前のクォートは付けない。
+- `scripts/wt/wt-pane-issue.sh`（worktrunk post-switch hook、`scripts/sync/sync-bin.sh` で `~/bin/wt-pane-issue` へ配備）: `{{ branch }}` から `#<issue> <slug>` を導出し `~/.claude/state/pane-issue/<tmux server PID>_<pane>` に記録（非 issue ブランチは clear）。`wt switch` のたびに発火（エージェント/人間どちらも）。worktrunk が `{{ branch }}` をシェルクォートするため自前のクォートは付けない。キーに tmux server PID を含めるのは、`tmux kill-server`/再起動で pane id（`%N`）が再採番されても旧 server の stale state と衝突させないため（誤命名防止）。24h 触れられない marker は GC。
 - `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
 - `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）: 同じ `$TMUX_PANE` の state を読み `sessionTitle` を出力 → セッション名＝`#<issue> <slug>`（tmux pane title にも伝播）。`pending` を消費するので 1 switch につき 1 回だけ（以後の手動 `/rename` を尊重）。state が無いセッション（他リポ・master・research 等）は無反応で Claude の自動命名のまま。
 
