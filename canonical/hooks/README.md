@@ -38,7 +38,7 @@
 
 ## session-name.sh + wt-pane-issue.sh（セッション命名）
 
-並列セッションを識別するため、セッション名を自動設定する（Claude Code のみ）。(1) `wt switch` で入った worktree のセッションは Issue 番号＝`#<issue> <slug>`。(2) それ以外の無名セッションは初回プロンプト（空ならリポ名）から簡易命名し、常に名前が付いている状態にする。plan-accept / 手動 `/rename` は尊重。
+並列セッションを識別するため、セッション名を自動設定する（Claude Code のみ）。(1) `wt switch` で入った worktree のセッションは Issue 番号＝`#<issue> <slug>`。(2) それ以外の無名セッションは**リポ名**（payload `cwd` 由来）で命名し、常に名前が付いている状態にする。plan-accept / 手動 `/rename` は尊重。
 
 ### 背景
 
@@ -50,12 +50,12 @@
 - `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
 - `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）:
   - **Path1（issue）**: 同じ `$TMUX_PANE` の state があれば `sessionTitle`＝`#<issue> <slug>` を出力（tmux pane title にも伝播）。`pending` 消費で 1 switch 1 回（手動 `/rename` を尊重）。**issue pane は早期 return**し Path2 に落ちない（#issue 名を保護）。
-  - **Path2（フォールバック）**: state 無し＆無名（payload `session_title` 空）＆非 plan のセッションは、初回プロンプト先頭〜80byte（マルチバイト保持・UTF-8 境界 truncate、空なら payload `cwd` のリポ名）から簡易命名。**session_id キーのマーカー**で set-once（往復非依存・非 tmux でも可）。命名済 / plan-accept / スラッシュコマンド始まりは命名しない。
+  - **Path2（フォールバック）**: state 無し＆無名（payload `session_title` 空）＆非 plan のセッションは、**payload `cwd` のリポ名**で命名。prompt 文字列は**使わない**（pane title / 通知に伝播するため、秘密混入の漏洩チャネルを避ける）。**session_id キーのマーカー**（専用 dir `state/session-named/`、pane-issue の GC 対象外）で set-once（往復非依存・非 tmux でも可）。命名済 / plan-accept / スラッシュコマンド始まりは命名しない。
 
 ### 注意
 
 - `UserPromptSubmit` の stdout は**モデル文脈に注入される**ため、`jq` で構築した sessionTitle JSON 以外を stdout に出さない（診断は出さない）。
-- グローバル設定ゆえ全セッション・全リポで発火する。issue worktree は `#issue`、それ以外の無名セッションは初回プロンプト由来名で命名する（命名済・plan-accept・手動 `/rename` は不変。スラッシュコマンド始まりは命名源にしない）。
+- グローバル設定ゆえ全セッション・全リポで発火する。issue worktree は `#issue`、それ以外の無名セッションは**リポ名**で命名する（prompt 文字列は出さない＝秘密漏洩を避ける。命名済・plan-accept・手動 `/rename` は不変）。
 - `jq` / `tmux` が前提。無い場合は no-op（advisory・非ゼロ終了しない）。
 
 ## block-destructive.sh

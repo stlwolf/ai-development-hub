@@ -11,11 +11,12 @@
 #      switch (the "pending" flag is consumed). An issue pane is handled here
 #      and NEVER falls through to the fallback below (which would clobber it).
 #   2. Fallback (unnamed, non-issue): Claude's built-in auto-naming only fires
-#      on plan-accept or `/rename`, so a plain session can stay nameless. If the
-#      session has no name yet and is not in plan mode, name it from the first
-#      prompt (or, if that's empty, the repository directory name). A per-session
-#      marker makes this set-once regardless of whether the hook-set title shows
-#      up in a later payload, and works with or without tmux.
+#      on plan-accept or `/rename`, so a plain session can stay nameless. Name
+#      it after the repository directory (payload cwd) — NOT the prompt text:
+#      the title propagates to the tmux pane title and OS notifications, so
+#      prompt content (which may contain secrets) must not leak there. A
+#      per-session marker in a dedicated dir (not touched by wt-pane-issue.sh's
+#      pane-issue GC) makes this set-once.
 #
 # `sessionTitle` is a documented hookSpecificOutput field for UserPromptSubmit
 # (Claude Code hooks reference), verified live. UserPromptSubmit stdout is
@@ -32,9 +33,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 state_dir="${home}/.claude/state/pane-issue"
 
 # Emit a sessionTitle and exit. Nothing but this JSON reaches stdout; on jq
-# failure emit nothing. The prompt is already control-char-stripped and kept
-# valid UTF-8 (iconv), and jq --arg JSON-escapes it. With a marker path ($2),
-# touch it only on a successful emit so the fallback stays set-once.
+# failure emit nothing. jq --arg JSON-escapes the title. With a marker path
+# ($2), touch it only on a successful emit so the fallback stays set-once.
 emit_title() {
   local out
   out="$(jq -cn --arg t "$1" \
@@ -67,36 +67,33 @@ if [ -n "$pane" ]; then
   fi
 fi
 
-# --- 2) Fallback: name an unnamed, non-issue session on its first prompt ---
+# --- 2) Fallback: name an unnamed, non-issue session after its repository ---
 # Respect an existing name (manual /rename, plan-accept) and plan mode.
 [ -z "$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)" ] || exit 0
 [ "$(printf '%s' "$payload" | jq -r '.permission_mode // ""' 2>/dev/null || true)" != "plan" ] || exit 0
 
-# Set-once via a per-session marker (session_id keyed) — independent of payload
-# round-trip, and works without tmux.
+# Don't preempt a manual /rename: skip when the prompt is a slash command. (We
+# only inspect the first character; the prompt text is never used as the name.)
+case "$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)" in /*) exit 0 ;; esac
+
+# Set-once via a per-session marker (session_id keyed) in a DEDICATED dir so the
+# pane-issue GC in wt-pane-issue.sh can't delete it. A long-window GC here bounds
+# growth without clobbering live sessions.
 sid="$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null || true)"
 [ -n "$sid" ] || exit 0
-mkdir -p "$state_dir" 2>/dev/null || exit 0
-marker="${state_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').named"
+named_dir="${home}/.claude/state/session-named"
+mkdir -p "$named_dir" 2>/dev/null || exit 0
+find "$named_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
+marker="${named_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').named"
 [ -f "$marker" ] && exit 0
 
-prompt="$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)"
-# Don't name a session after a slash command (e.g. /rename, /clear).
-case "$prompt" in /*) exit 0 ;; esac
-
-# Prefer the first prompt: drop control chars, collapse whitespace, keep
-# multibyte as-is (no ASCII slugging — it would erase Japanese), truncate to
-# ~80 bytes on a UTF-8 boundary (iconv -c trims a clipped trailing char).
-fallback="$(printf '%s' "$prompt" | tr '\n\r\t' '   ' | tr -d '\000-\037' | sed 's/  */ /g; s/^ *//; s/ *$//' 2>/dev/null || true)"
-fallback="$(printf '%s' "$fallback" | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
-fallback="$(printf '%s' "$fallback" | sed 's/ *$//' 2>/dev/null || true)"
-
-# If the prompt yielded nothing usable, fall back to the repo directory name
-# (payload cwd is the launch repo root; stable identifier — dotfiles#17 finding).
-if [ -z "$fallback" ]; then
-  cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"
-  [ -n "$cwd" ] && fallback="$(basename "$cwd" 2>/dev/null || true)"
-fi
+# Name = repository directory (payload cwd is the launch repo root). Using the
+# repo name — not prompt text — keeps secrets out of the pane title / OS
+# notifications. Strip control chars and keep it short / valid UTF-8.
+cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"
+[ -n "$cwd" ] || exit 0
+fallback="$(basename "$cwd" 2>/dev/null || true)"
+fallback="$(printf '%s' "$fallback" | tr -d '\000-\037' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
 [ -n "$fallback" ] || exit 0
 
 emit_title "$fallback" "$marker"
