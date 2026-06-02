@@ -82,9 +82,9 @@ case "$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)" in 
 sid="$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null || true)"
 [ -n "$sid" ] || exit 0
 named_dir="${home}/.claude/state/session-named"
-mkdir -p "$named_dir" 2>/dev/null || exit 0
-find "$named_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
 marker="${named_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').named"
+# Already fallback-named this session → short-circuit before any dir scan
+# (repeat turns when session_title keeps coming through empty hit this).
 [ -f "$marker" ] && exit 0
 
 # Name = repository directory (payload cwd is the launch repo root). Using the
@@ -96,4 +96,8 @@ fallback="$(basename "$cwd" 2>/dev/null || true)"
 fallback="$(printf '%s' "$fallback" | tr -d '\000-\037' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
 [ -n "$fallback" ] || exit 0
 
+# About to create a marker — run the opportunistic stale-marker GC now (not on
+# every prompt; the marker check above already short-circuited repeat turns).
+mkdir -p "$named_dir" 2>/dev/null || exit 0
+find "$named_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
 emit_title "$fallback" "$marker"
