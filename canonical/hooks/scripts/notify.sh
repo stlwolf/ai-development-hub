@@ -66,10 +66,11 @@ if [[ -n "${TMUX:-}" ]]; then
     pt="$(tmux display-message -t "$pane" -p '#{pane_tty}' 2>/dev/null || true)"
     # 居場所: window番号:window名 [セッション名]（#126: 旧 [#{pane_index}] を pane_title=
     # セッション名に差し替え。window 番号ナビは #{window_index} を維持。
-    # - 非空判定は #{!=:#{pane_title},} で明示（#{?str,} は条件を数値解釈し得るため）
-    # - 空（未命名/非Claudeペイン）なら #{pane_index} にフォールバックして [] を避ける
     # - 先頭の Claude 状態グリフ（"⠐ " 等＝1文字+空白）は #{s/^. //} で除去
-    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{?#{!=:#{pane_title},},#{s/^. //:pane_title},#{pane_index}}]' 2>/dev/null || true)"
+    # - 非空判定は「除去後」の値に対して #{!=:...,} で行う（グリフのみのタイトルが
+    #   除去後に空になるケースで [] になるのを防ぐ）
+    # - 空（未命名/非Claudeペイン/グリフのみ）なら #{pane_index} にフォールバック
+    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{?#{!=:#{s/^. //:pane_title},},#{s/^. //:pane_title},#{pane_index}}]' 2>/dev/null || true)"
   else
     # $TMUX_PANE 不在: 配信はアクティブペイン TTY 経由（通知は window レベルで表示される）。
     # ただし loc はアクティブペインを指すと別ペインの通知に誤った番号が付くため省略する。
