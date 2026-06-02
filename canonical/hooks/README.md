@@ -18,6 +18,7 @@
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
 | 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
+| セッション命名 | `scripts/session-name.sh` ＋ `scripts/wt/wt-pane-issue.sh` | `wt switch` で worktree(#issue)に移動時、セッション名を `#<issue> <slug>` に自動設定し並列セッションを識別（Claude のみ・advisory） |
 
 ## ツール別カバレッジ
 
@@ -28,11 +29,32 @@
 | コミットゲート | — | `TaskCompleted` | — |
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
+| セッション命名 | — | `UserPromptSubmit` → session-name.sh | — |
 | 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） → notify.sh | `[tui] notifications=["approval-requested"]` + `notification_method="osc9"`（ネイティブ）※ |
 
 ※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は対話で承認プロンプトが出ても**発火しないことを実機確認**）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）で出る。入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"]`(osc9) を設定するが、**Codex は OSC を tmux passthrough で包まないため tmux 環境では通知が出ない（実機確認＝既知ギャップ）**。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。
 
 **Codex まとめ**: 完了通知は動作。入力待ち通知は tmux 環境では出ない（best-effort・既知ギャップ。tmux 外なら `[tui] osc9` が機能）。Cursor は既存の通知機構があるため対象外。
+
+## session-name.sh + wt-pane-issue.sh（セッション命名）
+
+並列セッション（複数 worktree）を識別するため、`wt switch` で入った worktree の Issue 番号をセッション名（`#<issue> <slug>`）に自動設定する。Claude Code のみ。
+
+### 背景
+
+`wt switch` は Claude セッションの cwd を worktree に移さない（シェルの `cd` は親プロセス＝Claude に伝わらず、`!pwd` はリポジトリルートのまま）。よって cwd からは active worktree を知れない。代わりに `$TMUX_PANE` を共有キーに、worktrunk の post-switch hook と Claude の `UserPromptSubmit` hook を繋ぐ。
+
+### 仕組み（3 パート）
+
+- `scripts/wt/wt-pane-issue.sh`（worktrunk post-switch hook、`scripts/sync/sync-bin.sh` で `~/bin/wt-pane-issue` へ配備）: `{{ branch }}` から `#<issue> <slug>` を導出し `~/.claude/state/pane-issue/<TMUX_PANE>` に記録（非 issue ブランチは clear）。`wt switch` のたびに発火（エージェント/人間どちらも）。worktrunk が `{{ branch }}` をシェルクォートするため自前のクォートは付けない。
+- `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
+- `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）: 同じ `$TMUX_PANE` の state を読み `sessionTitle` を出力 → セッション名＝`#<issue> <slug>`（tmux pane title にも伝播）。`pending` を消費するので 1 switch につき 1 回だけ（以後の手動 `/rename` を尊重）。state が無いセッション（他リポ・master・research 等）は無反応で Claude の自動命名のまま。
+
+### 注意
+
+- `UserPromptSubmit` の stdout は**モデル文脈に注入される**ため、`jq` で構築した sessionTitle JSON 以外を stdout に出さない（診断は出さない）。
+- グローバル設定ゆえ全セッションで発火するが、**pane state がある時だけ命名する条件付き**設計（他セッションを汚さない）。
+- `jq` / `tmux` が前提。無い場合は no-op（advisory・非ゼロ終了しない）。
 
 ## block-destructive.sh
 
