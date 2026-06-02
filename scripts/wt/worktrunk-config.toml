@@ -1,0 +1,20 @@
+# worktrunk user config — Claude Code session-naming integration (#124).
+#
+# Install into worktrunk's USER config so it applies across ALL repositories
+# (a project .config/wt.toml would only cover one repo):
+#
+#   mkdir -p ~/.config/worktrunk
+#   # merge the [post-switch] block below into ~/.config/worktrunk/config.toml
+#
+# Requires `wt-pane-issue` on PATH (scripts/sync/sync-bin.sh → ~/bin/wt-pane-issue).
+#
+# On every `wt switch`, worktrunk runs this post-switch hook with the resolved
+# branch. wt-pane-issue records "#<issue> <slug>" for the current tmux pane;
+# the Claude Code UserPromptSubmit hook (canonical/hooks/scripts/session-name.sh)
+# then titles the session accordingly. cwd-independent and fires for both agent
+# and human `wt switch`.
+#
+# NOTE: worktrunk shell-quotes {{ branch }} on substitution (it expands to
+# '<branch>'), so do NOT add your own quotes around it.
+[post-switch]
+claude-session-name = 'wt-pane-issue {{ branch }}'

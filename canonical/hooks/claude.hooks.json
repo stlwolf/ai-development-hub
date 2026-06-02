@@ -50,6 +50,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/session-name.sh"
+          }
+        ]
+      }
     ]
   }
 }
