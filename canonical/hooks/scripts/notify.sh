@@ -66,8 +66,9 @@ if [[ -n "${TMUX:-}" ]]; then
     pt="$(tmux display-message -t "$pane" -p '#{pane_tty}' 2>/dev/null || true)"
     # 居場所: window番号:window名 [セッション名]（#126: 旧 [#{pane_index}] を pane_title=
     # セッション名に差し替え、どのセッションかを名前で識別できるようにした。window 番号
-    # ナビは #{window_index} を維持。pane_title は Claude が状態グリフ付きで設定する）
-    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{pane_title}]' 2>/dev/null || true)"
+    # ナビは #{window_index} を維持。pane_title が空（未命名/非Claudeペイン）の時は
+    # pane_index にフォールバックして [] にしない。pane_title は Claude が状態グリフ付きで設定）
+    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{?#{pane_title},#{pane_title},#{pane_index}}]' 2>/dev/null || true)"
   else
     # $TMUX_PANE 不在: 配信はアクティブペイン TTY 経由（通知は window レベルで表示される）。
     # ただし loc はアクティブペインを指すと別ペインの通知に誤った番号が付くため省略する。
