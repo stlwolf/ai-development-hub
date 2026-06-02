@@ -38,7 +38,7 @@
 
 ## session-name.sh + wt-pane-issue.sh（セッション命名）
 
-並列セッション（複数 worktree）を識別するため、`wt switch` で入った worktree の Issue 番号をセッション名（`#<issue> <slug>`）に自動設定する。Claude Code のみ。
+並列セッションを識別するため、セッション名を自動設定する（Claude Code のみ）。(1) `wt switch` で入った worktree のセッションは Issue 番号＝`#<issue> <slug>`。(2) それ以外の無名セッションは**リポ名**（payload `cwd` 由来）で命名し、常に名前が付いている状態にする。plan-accept / 手動 `/rename` は尊重。
 
 ### 背景
 
@@ -48,12 +48,14 @@
 
 - `scripts/wt/wt-pane-issue.sh`（worktrunk post-switch hook、`scripts/sync/sync-bin.sh` で `~/bin/wt-pane-issue` へ配備）: `{{ branch }}` から `#<issue> <slug>` を導出し `~/.claude/state/pane-issue/<tmux server PID>_<pane>` に記録（非 issue ブランチは clear）。`wt switch` のたびに発火（エージェント/人間どちらも）。worktrunk が `{{ branch }}` をシェルクォートするため自前のクォートは付けない。キーに tmux server PID を含めるのは、`tmux kill-server`/再起動で pane id（`%N`）が再採番されても旧 server の stale state と衝突させないため（誤命名防止）。24h 触れられない marker は GC。
 - `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
-- `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）: 同じ `$TMUX_PANE` の state を読み `sessionTitle` を出力 → セッション名＝`#<issue> <slug>`（tmux pane title にも伝播）。`pending` を消費するので 1 switch につき 1 回だけ（以後の手動 `/rename` を尊重）。state が無いセッション（他リポ・master・research 等）は無反応で Claude の自動命名のまま。
+- `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）:
+  - **Path1（issue）**: 同じ `$TMUX_PANE` の state があれば `sessionTitle`＝`#<issue> <slug>` を出力（tmux pane title にも伝播）。`pending` 消費で 1 switch 1 回（手動 `/rename` を尊重）。**issue pane は早期 return**し Path2 に落ちない（#issue 名を保護）。
+  - **Path2（フォールバック）**: state 無し＆無名（payload `session_title` 空）＆非 plan のセッションは、**payload `cwd` のリポ名**で命名。prompt 文字列は**使わない**（pane title / 通知に伝播するため、秘密混入の漏洩チャネルを避ける）。**session_id キーのマーカー**（専用 dir `state/session-named/`、pane-issue の GC 対象外）で set-once（往復非依存・非 tmux でも可）。命名済 / plan-accept / スラッシュコマンド始まりは命名しない。
 
 ### 注意
 
 - `UserPromptSubmit` の stdout は**モデル文脈に注入される**ため、`jq` で構築した sessionTitle JSON 以外を stdout に出さない（診断は出さない）。
-- グローバル設定ゆえ全セッションで発火するが、**pane state がある時だけ命名する条件付き**設計（他セッションを汚さない）。
+- グローバル設定ゆえ全セッション・全リポで発火する。issue worktree は `#issue`、それ以外の無名セッションは**リポ名**で命名する（prompt 文字列は出さない＝秘密漏洩を避ける。命名済・plan-accept・手動 `/rename` は不変）。
 - `jq` / `tmux` が前提。無い場合は no-op（advisory・非ゼロ終了しない）。
 
 ## block-destructive.sh
