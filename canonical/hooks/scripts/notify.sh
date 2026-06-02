@@ -13,7 +13,7 @@
 #   Codex notify      : 第1引数 = JSON 文字列（hyphen キー, type=agent-turn-complete）→ tool=Codex
 #
 # 通知フォーマット:
-#   title: "{tool} {✅|⌨️} {repo}"   body: "{branch} · {window_index}:{window_name} [{pane_index}] — {message}"
+#   title: "{tool} {✅|⌨️} {repo}"   body: "{branch} · {window_index}:{window_name} [{session_name}] — {message}"
 #
 # advisory 契約: 非ゼロ exit を出さない / stdout 無出力 / 末尾は無条件 exit 0。
 # デバッグ: NOTIFY_DEBUG=1 または ~/.notify-hook-debug で /tmp/notify-hook.log に記録。
@@ -64,8 +64,10 @@ if [[ -n "${TMUX:-}" ]]; then
   if [[ -n "$pane" ]]; then
     # 発火元ペインが特定できる場合のみ TTY と loc を取る
     pt="$(tmux display-message -t "$pane" -p '#{pane_tty}' 2>/dev/null || true)"
-    # 居場所: window番号:window名 [pane]（tmux ステータスバーの #I:#W と status-left [#P] に一致。番号移動は window 番号）
-    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{pane_index}]' 2>/dev/null || true)"
+    # 居場所: window番号:window名 [セッション名]（#126: 旧 [#{pane_index}] を pane_title=
+    # セッション名に差し替え、どのセッションかを名前で識別できるようにした。window 番号
+    # ナビは #{window_index} を維持。pane_title は Claude が状態グリフ付きで設定する）
+    loc="$(tmux display-message -t "$pane" -p '#{window_index}:#{window_name} [#{pane_title}]' 2>/dev/null || true)"
   else
     # $TMUX_PANE 不在: 配信はアクティブペイン TTY 経由（通知は window レベルで表示される）。
     # ただし loc はアクティブペインを指すと別ペインの通知に誤った番号が付くため省略する。

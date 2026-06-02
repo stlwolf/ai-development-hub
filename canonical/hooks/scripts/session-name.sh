@@ -2,27 +2,30 @@
 #
 # session-name.sh — Claude Code UserPromptSubmit hook.
 #
-# Titles the session "#<issue> <slug>" using the active worktree recorded by
-# wt-pane-issue.sh for this tmux pane. The session name is what Claude Code
-# shows in its UI and writes to the terminal (tmux pane) title, so this is how
-# parallel sessions become identifiable.
+# Gives every session an identifiable name (shown in Claude's UI and written to
+# the tmux pane title), so parallel sessions — and the notifications built from
+# the pane title (notify.sh) — can be told apart. Two behaviors, in priority:
 #
-# Emits the title once per worktree switch (the "pending" flag is consumed), so
-# a manual /rename afterwards is preserved. Emits nothing when there is no pane
-# marker — so sessions not on an issue worktree (other repos, master, plain
-# research) keep Claude's automatic naming untouched. This conditional emit is
-# essential: the hook is registered globally and fires for every session.
+#   1. Active issue worktree: when wt-pane-issue.sh recorded "#<issue> <slug>"
+#      for this tmux pane (on `wt switch`), title the session with it. Emitted
+#      once per switch (the "pending" flag is consumed) so a later manual
+#      /rename is preserved.
+#   2. Fallback (unnamed, non-issue): Claude's built-in auto-naming only fires
+#      on plan-accept or `/rename`, so a plain session can stay nameless. If the
+#      session has no name yet (payload `session_title` empty) and is not in
+#      plan mode, derive a simple name from the first prompt. Once named, the
+#      payload's session_title is non-empty on later prompts, so this is a
+#      natural set-once that respects plan-accept / manual renames.
 #
 # `sessionTitle` is a documented hookSpecificOutput field for UserPromptSubmit
-# (Claude Code hooks reference) and was verified live (session + tmux pane title
-# rename on submit). UserPromptSubmit stdout is injected into the model context,
-# so this emits ONLY a single hookSpecificOutput JSON object (built with jq), or
-# nothing at all. Diagnostics never go to stdout.
+# (Claude Code hooks reference) and was verified live. UserPromptSubmit stdout
+# is injected into the model context, so this emits ONLY a single
+# hookSpecificOutput JSON object (built with jq), or nothing. No diagnostics to
+# stdout.
 #
 set -uo pipefail
 
-# Drain the hook payload on stdin (unused here).
-cat >/dev/null 2>&1 || true
+payload="$(cat 2>/dev/null || true)"
 
 pane="${TMUX_PANE:-}"
 home="${HOME:-}"
@@ -30,33 +33,47 @@ home="${HOME:-}"
 [ -n "$home" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
-# Same key as wt-pane-issue.sh: tmux server PID + pane id (restart-safe).
+# Emit a sessionTitle and exit. Nothing but this JSON ever reaches stdout; if jq
+# fails (e.g. invalid UTF-8 after truncation) emit nothing.
+emit_title() {
+  local out
+  out="$(jq -cn --arg t "$1" \
+    '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",sessionTitle:$t}}' 2>/dev/null)" || exit 0
+  [ -n "$out" ] && printf '%s' "$out"
+  exit 0
+}
+
+# --- 1) Active issue worktree (recorded by wt-pane-issue.sh) ---
+# Key by tmux server PID + pane id (restart-safe), identical to wt-pane-issue.sh.
 server="${TMUX:-}"; server="${server#*,}"; server="${server%%,*}"
-key="${server}_${pane}"
-key="${key//[^A-Za-z0-9]/_}"
+key="${server}_${pane}"; key="${key//[^A-Za-z0-9]/_}"
 state_file="${home}/.claude/state/pane-issue/${key}"
-[ -f "$state_file" ] || exit 0
 
-# Only act on a freshly recorded switch (pending). Otherwise leave the title
-# alone, so a manual /rename is respected.
-[ "$(jq -r '.pending // false' "$state_file" 2>/dev/null)" = "true" ] || exit 0
-
-name="$(jq -r '.name // empty' "$state_file" 2>/dev/null)"
-[ -n "$name" ] || exit 0
-
-# Consume the pending flag (one-shot), then emit. Ordering note: a concurrent
-# `wt switch` between read and write could roll a fresh marker back to
-# pending:false (a rare lost-update), and a crash between consume and emit drops
-# this turn's rename. Both windows are tiny and self-correct on the next
-# switch/prompt. Re-emitting the same title is benign EXCEPT if `mv` permanently
-# fails (e.g. disk full) it could re-assert over a manual /rename — accepted
-# given the rarity.
-tmp="${state_file}.tmp.$$"
-if jq -c '.pending=false' "$state_file" >"$tmp" 2>/dev/null; then
-  mv -f "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+if [ -f "$state_file" ] && [ "$(jq -r '.pending // false' "$state_file" 2>/dev/null)" = "true" ]; then
+  name="$(jq -r '.name // empty' "$state_file" 2>/dev/null)"
+  if [ -n "$name" ]; then
+    # Consume pending (one-shot per switch). A concurrent `wt switch` between
+    # read and write is a rare lost-update; re-emit of the same title is benign.
+    tmp="${state_file}.tmp.$$"
+    if jq -c '.pending=false' "$state_file" >"$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    fi
+    emit_title "$name"
+  fi
 fi
 
-# Emit the session title (and nothing else on stdout).
-jq -cn --arg t "$name" \
-  '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",sessionTitle:$t}}'
-exit 0
+# --- 2) Fallback: name an unnamed, non-issue session from its first prompt ---
+# Skip when already named (session_title present) or in plan mode (let
+# plan-accept name it from the plan).
+[ -z "$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)" ] || exit 0
+[ "$(printf '%s' "$payload" | jq -r '.permission_mode // ""' 2>/dev/null || true)" != "plan" ] || exit 0
+
+prompt="$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)"
+# Drop control chars, collapse whitespace; keep multibyte as-is (no ASCII
+# slugging — it would erase Japanese prompts). Truncate to ~80 bytes at a valid
+# UTF-8 boundary (iconv -c drops a clipped trailing multibyte char).
+fallback="$(printf '%s' "$prompt" | tr '\n\r\t' '   ' | tr -d '\000-\037' | sed 's/  */ /g; s/^ *//; s/ *$//')"
+fallback="$(printf '%s' "$fallback" | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
+fallback="$(printf '%s' "$fallback" | sed 's/ *$//')"
+[ -n "$fallback" ] || exit 0
+emit_title "$fallback"
