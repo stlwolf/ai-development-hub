@@ -12,6 +12,7 @@
 #   notify                  完了(agent-turn-complete)で notify.sh を起動（Claude と統一フォーマットの OSC 通知）
 #   tui.notifications        入力待ち(approval-requested)を Codex ネイティブ OSC9 で通知
 #   tui.notification_method  osc9（WezTerm が描画。notify は完了のみで入力待ちを拾えないため tui 併用）
+#   features.hooks           Codex hooks 有効化フラグ。旧 codex_hooks を hooks へ移行（v0.135+ で codex_hooks は非推奨 alias）
 #
 # notify は top-level key のため最初のテーブルより前に置く。tui.* は super-table として末尾に追加。
 #
@@ -80,7 +81,35 @@ else
   info "Appended [tui] notifications at bottom"
 fi
 
-# 3) TOML 検証（python3 tomllib があれば）。壊れていたら復元
+# 3) [features].hooks = true（Codex hooks 有効化フラグ）。旧 codex_hooks は v0.135+ で
+#    hooks の legacy alias = 非推奨警告が出るため hooks へ移行する。
+if grep -qE '^[[:space:]]*codex_hooks[[:space:]]*=' "$CONFIG"; then
+  tmp="$(mktemp "${CONFIG}.tmp.XXXXXX" 2>/dev/null)" || { rm -f "$backup"; warn "tmp 作成失敗のため変更しません"; exit 0; }
+  if sed 's/^\([[:space:]]*\)codex_hooks\([[:space:]]*=\)/\1hooks\2/' "$CONFIG" > "$tmp"; then
+    mv "$tmp" "$CONFIG" || { rm -f "$tmp" "$backup"; warn "config 置換に失敗したため変更しません"; exit 0; }
+    changed=1
+    info "Migrated [features].codex_hooks -> hooks"
+  else
+    rm -f "$tmp"; warn "codex_hooks の移行に失敗（skip）"
+  fi
+elif grep -qE '^[[:space:]]*hooks[[:space:]]*=' "$CONFIG"; then
+  info "[features].hooks already present (skip)"
+elif grep -qE '^[[:space:]]*\[features\][[:space:]]*$' "$CONFIG"; then
+  tmp="$(mktemp "${CONFIG}.tmp.XXXXXX" 2>/dev/null)" || { rm -f "$backup"; warn "tmp 作成失敗のため変更しません"; exit 0; }
+  if awk '{print} /^[[:space:]]*\[features\][[:space:]]*$/ && !ins {print "hooks = true"; ins=1}' "$CONFIG" > "$tmp"; then
+    mv "$tmp" "$CONFIG" || { rm -f "$tmp" "$backup"; warn "config 置換に失敗したため変更しません"; exit 0; }
+    changed=1
+    info "Inserted hooks = true into [features]"
+  else
+    rm -f "$tmp"; warn "[features].hooks の追記に失敗（skip）"
+  fi
+else
+  printf '\n[features]\nhooks = true\n' >> "$CONFIG"
+  changed=1
+  info "Appended [features] with hooks = true"
+fi
+
+# 4) TOML 検証（python3 tomllib があれば）。壊れていたら復元
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import tomllib' >/dev/null 2>&1; then
   if python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$CONFIG" 2>/dev/null; then
     info "TOML parse OK"
