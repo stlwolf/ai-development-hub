@@ -80,3 +80,14 @@ next_step:
 | 実装パターン | コードレベルで再利用可能な構造 |
 | ツール | CLIツール、ライブラリ、フレームワークの利用パターン |
 | 評価手法 | 測定方法、ベンチマーク、品質基準 |
+
+---
+
+## 検証規律（evidence-verification-rule）
+
+`docs/research/` の成果（research-intake ノート / oss-sessions レポート）は [`canonical/rules/evidence-verification-rule.md`](../../canonical/rules/evidence-verification-rule.md) に従う。
+
+- 各非自明な主張は **検証ステータス**（`verified` 一次確認済み / `unverified-summary` AI要約のみ / `speculation` 推測）と **根拠**（URL or `file:line`）を持つ
+- `verified` は外部ソース実体への照合が要件。AI の自己申告・要約だけで `verified` としない
+- 数値・性能・事実主張は特に厳密に。未確認は `unverified-summary` のまま残す
+- 消費側（親エージェント / レビュア）はリスク比例で spot-check する（`oss-research-session` の親チェックリスト参照）
