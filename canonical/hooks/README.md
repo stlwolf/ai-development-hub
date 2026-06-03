@@ -18,7 +18,7 @@
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
 | 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
-| セッション命名 | `scripts/session-name.sh` ＋ `scripts/wt/wt-pane-issue.sh` | `wt switch` で worktree(#issue)に移動時、セッション名を `#<issue> <slug>` に自動設定し並列セッションを識別（Claude のみ・advisory） |
+| セッション命名 | `scripts/session-name.sh` ＋ `scripts/wt/wt-pane-issue.sh` | セッション名を自動設定し並列セッションを識別（Claude のみ・advisory）。`wt switch` の worktree は `#<issue> <slug>`、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト→リポ名）でブランチ変化に追従 |
 
 ## ツール別カバレッジ
 
@@ -38,7 +38,7 @@
 
 ## session-name.sh + wt-pane-issue.sh（セッション命名）
 
-並列セッションを識別するため、セッション名を自動設定する（Claude Code のみ）。(1) `wt switch` で入った worktree のセッションは Issue 番号＝`#<issue> <slug>`。(2) それ以外の無名セッションは**リポ名**（payload `cwd` 由来）で命名し、常に名前が付いている状態にする。plan-accept / 手動 `/rename` は尊重。
+並列セッションを識別するため、セッション名を自動設定する（Claude Code のみ）。(1) `wt switch` で入った worktree のセッションは Issue 番号＝`#<issue> <slug>`。(2) それ以外のセッションは **`cwd` の現在 git ブランチ**で命名（issue規約→`#<issue> <slug>` / デフォルト・非git→リポ名 / その他→ブランチ名）し、**ブランチ変化で再命名**する（wt 同等）。同一ブランチ内の手動 `/rename` は次のブランチ変化まで尊重、plan-accept も尊重。
 
 ### 背景
 
@@ -50,12 +50,12 @@
 - `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
 - `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）:
   - **Path1（issue）**: 同じ `$TMUX_PANE` の state があれば `sessionTitle`＝`#<issue> <slug>` を出力（tmux pane title にも伝播）。`pending` 消費で 1 switch 1 回（手動 `/rename` を尊重）。**issue pane は早期 return**し Path2 に落ちない（#issue 名を保護）。
-  - **Path2（フォールバック）**: state 無し＆無名（payload `session_title` 空）＆非 plan のセッションは、**payload `cwd` のリポ名**で命名。prompt 文字列は**使わない**（pane title / 通知に伝播するため、秘密混入の漏洩チャネルを避ける）。**session_id キーのマーカー**（専用 dir `state/session-named/`、pane-issue の GC 対象外）で set-once（往復非依存・非 tmux でも可）。命名済 / plan-accept / スラッシュコマンド始まりは命名しない。
+  - **Path2（ブランチ認識）**: state 無しの非 plan セッションは、`git -C "$cwd" symbolic-ref --short HEAD` の現在ブランチで命名する — issue規約 `^[a-z]+/#([0-9]+)_(.+)$`→`#<issue> <slug>`、`master`/`main`/空(非git・detached)→**リポ名**、その他→**ブランチ名**。prompt 文字列は**使わない**（pane title / 通知に伝播するため秘密混入を避ける）。**session_id キーの state**（専用 dir `state/session-branch/<sid>.json`、`last_branch`/`last_emitted` を保持、pane-issue の GC 対象外）を使い、**ブランチ変化時に再命名**する（wt の per-switch rename と同等。命名済みセッションへの sessionTitle 再emitが効くことは実機検証済み）。冪等（既に出す名前なら no-op）＆同一ブランチ内の手動 `/rename` は尊重。plan-accept / スラッシュコマンド始まりは命名しない。30日触れられない state は GC。
 
 ### 注意
 
 - `UserPromptSubmit` の stdout は**モデル文脈に注入される**ため、`jq` で構築した sessionTitle JSON 以外を stdout に出さない（診断は出さない）。
-- グローバル設定ゆえ全セッション・全リポで発火する。issue worktree は `#issue`、それ以外の無名セッションは**リポ名**で命名する（prompt 文字列は出さない＝秘密漏洩を避ける。命名済・plan-accept・手動 `/rename` は不変）。
+- グローバル設定ゆえ全セッション・全リポで発火する。issue worktree は `#issue`、それ以外は**現在ブランチ名**（デフォルト/非gitはリポ名）で命名し**ブランチ変化で再命名**する（prompt 文字列は出さない＝秘密漏洩を避ける）。**ブランチ名そのものが Claude UI / tmux pane title / OS 通知に表示される**点に留意（顧客名・内部識別子をブランチ名に含める運用では露出面が増える）。
 - `jq` / `tmux` が前提。無い場合は no-op（advisory・非ゼロ終了しない）。
 
 ## block-destructive.sh

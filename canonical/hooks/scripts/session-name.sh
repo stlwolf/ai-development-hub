@@ -10,13 +10,20 @@
 #      for this tmux pane (on `wt switch`), title the session with it, once per
 #      switch (the "pending" flag is consumed). An issue pane is handled here
 #      and NEVER falls through to the fallback below (which would clobber it).
-#   2. Fallback (unnamed, non-issue): Claude's built-in auto-naming only fires
-#      on plan-accept or `/rename`, so a plain session can stay nameless. Name
-#      it after the repository directory (payload cwd) — NOT the prompt text:
-#      the title propagates to the tmux pane title and OS notifications, so
-#      prompt content (which may contain secrets) must not leak there. A
-#      per-session marker in a dedicated dir (not touched by wt-pane-issue.sh's
-#      pane-issue GC) makes this set-once.
+#   2. Branch-aware (non-wt sessions): Claude's built-in auto-naming only fires
+#      on plan-accept or `/rename`, so a plain session can stay nameless. Name it
+#      after the current git branch of the launch dir (payload cwd): an issue
+#      branch "{prefix}/#<issue>_<desc>" becomes "#<issue> <slug>" (mirroring
+#      wt-pane-issue.sh), the default branch / non-git / detached HEAD falls back
+#      to the repository directory name, and any other branch uses the branch
+#      name. When the branch CHANGES the session is RE-NAMED — wt-equivalent: it
+#      matches the per-switch rename wt-pane-issue.sh drives, and overwrites even
+#      a manual /rename (a same-branch manual /rename is respected until the next
+#      branch change). Names come from the branch / repo dir — NEVER the prompt
+#      text, which propagates to the pane title + OS notifications and may carry
+#      secrets. Per-session state (session_id keyed, dedicated dir) holds the last
+#      branch + last emitted name. When `wt switch` IS used the cwd stays at the
+#      repo root, so issue worktrees are named by Path 1, not here.
 #
 # `sessionTitle` is a documented hookSpecificOutput field for UserPromptSubmit
 # (Claude Code hooks reference), verified live. UserPromptSubmit stdout is
@@ -33,14 +40,12 @@ command -v jq >/dev/null 2>&1 || exit 0
 state_dir="${home}/.claude/state/pane-issue"
 
 # Emit a sessionTitle and exit. Nothing but this JSON reaches stdout; on jq
-# failure emit nothing. jq --arg JSON-escapes the title. With a marker path
-# ($2), touch it only on a successful emit so the fallback stays set-once.
+# failure emit nothing. jq --arg JSON-escapes the title.
 emit_title() {
   local out
   out="$(jq -cn --arg t "$1" \
     '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",sessionTitle:$t}}' 2>/dev/null)" || exit 0
   [ -n "$out" ] || exit 0
-  if [ -n "${2:-}" ]; then : > "$2" 2>/dev/null || true; fi
   printf '%s' "$out"
   exit 0
 }
@@ -67,37 +72,65 @@ if [ -n "$pane" ]; then
   fi
 fi
 
-# --- 2) Fallback: name an unnamed, non-issue session after its repository ---
-# Respect an existing name (manual /rename, plan-accept) and plan mode.
-[ -z "$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)" ] || exit 0
+# --- 2) Branch-aware naming for non-wt sessions (issue worktrees handled above) ---
+# Respect plan mode and a manual /rename in progress (slash-prefixed prompt). The
+# prompt's first char is all we inspect; the prompt text is never used as a name.
 [ "$(printf '%s' "$payload" | jq -r '.permission_mode // ""' 2>/dev/null || true)" != "plan" ] || exit 0
-
-# Don't preempt a manual /rename: skip when the prompt is a slash command. (We
-# only inspect the first character; the prompt text is never used as the name.)
 case "$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)" in /*) exit 0 ;; esac
 
-# Set-once via a per-session marker (session_id keyed) in a DEDICATED dir so the
-# pane-issue GC in wt-pane-issue.sh can't delete it. A long-window GC here bounds
-# growth without clobbering live sessions.
 sid="$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null || true)"
 [ -n "$sid" ] || exit 0
-named_dir="${home}/.claude/state/session-named"
-marker="${named_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').named"
-# Already fallback-named this session → short-circuit before any dir scan
-# (repeat turns when session_title keeps coming through empty hit this).
-[ -f "$marker" ] && exit 0
-
-# Name = repository directory (payload cwd is the launch repo root). Using the
-# repo name — not prompt text — keeps secrets out of the pane title / OS
-# notifications. Strip control chars and keep it short / valid UTF-8.
 cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"
 [ -n "$cwd" ] || exit 0
-fallback="$(basename "$cwd" 2>/dev/null || true)"
-fallback="$(printf '%s' "$fallback" | tr -d '\000-\037' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
-[ -n "$fallback" ] || exit 0
 
-# About to create a marker — run the opportunistic stale-marker GC now (not on
-# every prompt; the marker check above already short-circuited repeat turns).
-mkdir -p "$named_dir" 2>/dev/null || exit 0
-find "$named_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
-emit_title "$fallback" "$marker"
+# Current branch of the launch dir; empty for a non-git dir or detached HEAD.
+branch="$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null || true)"
+
+# Desired name from the branch (see header): issue branch -> "#<issue> <slug>"
+# (mirror wt-pane-issue.sh), default/non-git -> repo dir name, else branch name.
+if [[ "$branch" =~ ^[a-z]+/#([0-9]+)_(.+)$ ]]; then
+  slug="${BASH_REMATCH[2]//_/-}"
+  desired="#${BASH_REMATCH[1]} ${slug:0:48}"
+elif [ -z "$branch" ] || [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
+  desired="$(basename "$cwd" 2>/dev/null || true)"
+else
+  desired="$branch"
+fi
+# Strip control chars, cap length, keep valid UTF-8 (title -> pane title / notifications).
+desired="$(printf '%s' "$desired" | tr -d '\000-\037' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
+[ -n "$desired" ] || exit 0
+
+# Per-session state (session_id keyed) in a DEDICATED dir, separate from the
+# pane-issue dir. Holds the last branch seen and last name emitted, so we can
+# re-name on branch change and tell our own name apart from a manual /rename.
+branch_dir="${home}/.claude/state/session-branch"
+sfile="${branch_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').json"
+last_branch=""
+if [ -f "$sfile" ]; then
+  last_branch="$(jq -r '.last_branch // ""' "$sfile" 2>/dev/null || true)"
+fi
+session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
+
+# Idempotent: if the session already shows the name we'd emit, there is nothing
+# to do. This also prevents a re-emit-every-prompt loop when the state file can't
+# be persisted (quota/read-only/NFS): emit_title still set the name, so the next
+# prompt short-circuits here even though last_branch was never written.
+[ "$session_title" = "$desired" ] && exit 0
+
+# (Re)name when the branch changed (wt-equivalent: overwrites even a manual
+# /rename, like wt re-naming on every switch) or when the session is unnamed.
+# Otherwise leave it (a same-branch manual /rename — non-empty and, per the guard
+# above, different from our name).
+if [ "$branch" = "$last_branch" ] && [ -n "$session_title" ]; then
+  exit 0
+fi
+
+# About to (re)name — run the opportunistic stale-state GC now (only on a naming
+# event, not every prompt). Long window bounds growth without clobbering sessions.
+mkdir -p "$branch_dir" 2>/dev/null || exit 0
+find "$branch_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
+tmp="${sfile}.tmp.$$"
+if jq -cn --arg b "$branch" --arg e "$desired" '{last_branch:$b,last_emitted:$e}' >"$tmp" 2>/dev/null; then
+  mv -f "$tmp" "$sfile" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+fi
+emit_title "$desired"
