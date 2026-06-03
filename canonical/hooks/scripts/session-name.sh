@@ -22,8 +22,8 @@
 #      branch change). Names come from the branch / repo dir — NEVER the prompt
 #      text, which propagates to the pane title + OS notifications and may carry
 #      secrets. Per-session state (session_id keyed, dedicated dir) holds the last
-#      branch + last emitted name. When `wt switch` IS used the cwd stays at the
-#      repo root, so issue worktrees are named by Path 1, not here.
+#      branch seen. When `wt switch` IS used the cwd stays at the repo root, so
+#      issue worktrees are named by Path 1, not here.
 #
 # `sessionTitle` is a documented hookSpecificOutput field for UserPromptSubmit
 # (Claude Code hooks reference), verified live. UserPromptSubmit stdout is
@@ -101,8 +101,9 @@ desired="$(printf '%s' "$desired" | tr -d '\000-\037' | head -c 80 | { iconv -f 
 [ -n "$desired" ] || exit 0
 
 # Per-session state (session_id keyed) in a DEDICATED dir, separate from the
-# pane-issue dir. Holds the last branch seen and last name emitted, so we can
-# re-name on branch change and tell our own name apart from a manual /rename.
+# pane-issue dir. Holds the last branch seen, so we can re-name on branch change.
+# (Our name vs a same-branch manual /rename is told apart by the idempotency
+# check below — session_title == desired — so no "last emitted" field is needed.)
 branch_dir="${home}/.claude/state/session-branch"
 sfile="${branch_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').json"
 last_branch=""
@@ -130,7 +131,7 @@ fi
 mkdir -p "$branch_dir" 2>/dev/null || exit 0
 find "$branch_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
 tmp="${sfile}.tmp.$$"
-if jq -cn --arg b "$branch" --arg e "$desired" '{last_branch:$b,last_emitted:$e}' >"$tmp" 2>/dev/null; then
+if jq -cn --arg b "$branch" '{last_branch:$b}' >"$tmp" 2>/dev/null; then
   mv -f "$tmp" "$sfile" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 fi
 emit_title "$desired"

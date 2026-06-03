@@ -18,7 +18,7 @@
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
 | 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
-| セッション命名 | `scripts/session-name.sh` ＋ `scripts/wt/wt-pane-issue.sh` | セッション名を自動設定し並列セッションを識別（Claude のみ・advisory）。`wt switch` の worktree は `#<issue> <slug>`、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト→リポ名）でブランチ変化に追従 |
+| セッション命名 | `scripts/session-name.sh` ＋ リポジトリルートの `scripts/wt/wt-pane-issue.sh` | セッション名を自動設定し並列セッションを識別（Claude のみ・advisory）。`wt switch` の worktree は `#<issue> <slug>`、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト→リポ名）でブランチ変化に追従 |
 
 ## ツール別カバレッジ
 
@@ -50,7 +50,7 @@
 - `~/.config/worktrunk/config.toml`（worktrunk user config、テンプレートは `scripts/wt/worktrunk-config.toml`）: 上記を post-switch hook として登録。**hub の sync 対象外領域**（手動セットアップ。全リポ横断のため user config）。
 - `scripts/session-name.sh`（Claude `UserPromptSubmit` hook）:
   - **Path1（issue）**: 同じ `$TMUX_PANE` の state があれば `sessionTitle`＝`#<issue> <slug>` を出力（tmux pane title にも伝播）。`pending` 消費で 1 switch 1 回（手動 `/rename` を尊重）。**issue pane は早期 return**し Path2 に落ちない（#issue 名を保護）。
-  - **Path2（ブランチ認識）**: state 無しの非 plan セッションは、`git -C "$cwd" symbolic-ref --short HEAD` の現在ブランチで命名する — issue規約 `^[a-z]+/#([0-9]+)_(.+)$`→`#<issue> <slug>`、`master`/`main`/空(非git・detached)→**リポ名**、その他→**ブランチ名**。prompt 文字列は**使わない**（pane title / 通知に伝播するため秘密混入を避ける）。**session_id キーの state**（専用 dir `state/session-branch/<sid>.json`、`last_branch`/`last_emitted` を保持、pane-issue の GC 対象外）を使い、**ブランチ変化時に再命名**する（wt の per-switch rename と同等。命名済みセッションへの sessionTitle 再emitが効くことは実機検証済み）。冪等（既に出す名前なら no-op）＆同一ブランチ内の手動 `/rename` は尊重。plan-accept / スラッシュコマンド始まりは命名しない。30日触れられない state は GC。
+  - **Path2（ブランチ認識）**: state 無しの非 plan セッションは、`git -C "$cwd" symbolic-ref --short HEAD` の現在ブランチで命名する — issue規約 `^[a-z]+/#([0-9]+)_(.+)$`→`#<issue> <slug>`、`master`/`main`/空(非git・detached)→**リポ名**、その他→**ブランチ名**。prompt 文字列は**使わない**（pane title / 通知に伝播するため秘密混入を避ける）。**session_id キーの state**（専用 dir `~/.claude/state/session-branch/<sid>.json`、`last_branch` を保持、pane-issue の GC 対象外）を使い、**ブランチ変化時に再命名**する（wt の per-switch rename と同等。命名済みセッションへの sessionTitle 再emitが効くことは実機検証済み）。冪等（既に出す名前なら no-op）＆同一ブランチ内の手動 `/rename` は尊重。plan-accept / スラッシュコマンド始まりは命名しない。30日触れられない state は GC。
 
 ### 注意
 
