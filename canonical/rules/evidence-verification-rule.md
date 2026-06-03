@@ -11,7 +11,7 @@ Annotate each non-trivial claim with one status. Default to the weakest status t
 | Status | Meaning | Requirement |
 |--------|---------|-------------|
 | `verified` | The cited source directly supports the claim (entailment holds) | MUST be backed by a source entity (URL or `file:line`) the author actually inspected — independent of the generated text, never self-evaluation (§2) |
-| `unverified-summary` | A source is cited but entailment is unconfirmed, or the claim is a model paraphrase | DEFAULT for AI-generated summaries |
+| `unverified-summary` | A source is cited but its entailment is unconfirmed (e.g. a paraphrase of that source, not a verified quote) | DEFAULT for AI-generated summaries. Still carries its source — only the entailment is unverified |
 | `speculation` | No supporting source | No source required (give a brief reason if useful). Value is `speculation`; inline `Speculation:` prefix is an accepted shorthand |
 
 - Bind status at the **statement level** (per claim / sentence), not per paragraph.
