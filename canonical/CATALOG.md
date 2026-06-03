@@ -61,13 +61,14 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (11)
+## Rules (12)
 
 | Name | Description | Path |
 |------|-------------|------|
 | behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns | `rules/behavioral-rule.md` |
 | careful-operations-rule | Destructive command guardrails — three-tier pattern table (blocked / requires confirmation / exceptions) | `rules/careful-operations-rule.md` |
 | decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
+| evidence-verification-rule | Concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
 | execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
 | implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
 | implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
