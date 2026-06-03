@@ -131,6 +131,8 @@ Deliver findings in the following format. Note: section headers are in Japanese 
 [This subagent does NOT perform deep reading — delegate to vendor-inspector or similar]
 ```
 
+**Verification status (`evidence-verification-rule`):** Annotate each non-trivial claim with a status value so a consumer can spot-check mechanically — `verified` when confirmed against a source entity (`file:line` / official doc URL) you actually inspected, `unverified-summary` for paraphrases of repo descriptions or secondary sources, `speculation` for unconfirmed inference (the inline `Speculation:` prefix is the shorthand for this value). `verified` / `unverified-summary` carry their source; `speculation` carries none. This makes Core Principle 3 checkable downstream.
+
 ## Investigation Techniques
 
 ### GitHub Repository Analysis

@@ -74,12 +74,16 @@ skill: oss-research-session
 
 - 調査の完成形は **指定された `OUTPUT_FILE` のみ** とする
 - ツールでファイルに書けない環境のときは、その旨をチャットで明示し、**ユーザーが手動で `OUTPUT_FILE` に保存できるよう全文を一度だけ** 出す
+- 各非自明な主張に `evidence-verification-rule` の検証ステータス（`verified` / `unverified-summary` / `speculation`）を付す。根拠（`file:line` / URL）は `verified` / `unverified-summary` に必須、`speculation` は根拠なし（必要なら理由）。一次ソース実体を確認していない主張を `verified` としない
 
 ## 親エージェントのチェックリスト
 
 1. `$REPO/docs/research/oss-sessions/` を決め、`OUTPUT_FILE` のフルパスをテンプレに埋める（衝突時は `_2` 等）
 2. 上記 **統合プロンプト** で `oss-researcher`（または注入した同等サブ）を起動する
-3. 完了後、`Read` で `OUTPUT_FILE` の先頭（フロントマター）と末尾が期待どおりかざっと確認する
+3. **成果の spot-check**（`evidence-verification-rule` §3）— 体裁確認だけで終わらせない:
+   - `Read` でフロントマター・構造が期待どおりかを確認した上で、主張のうち**重要・高不確実なものを優先して数件**、ソース実体（`file:line` / URL）に直接当てて裏取りする
+   - 配分はリスク比例（固定件数ではない。重要主張は必ず、未確認を優先）。最終確認はソース実体に当て、LLM の自己申告・要約だけで `verified` としない
+   - 根拠リンクが欠けた主張・ソースと矛盾する記述を見つけたら、サブに差し戻すかユーザーに `unverified-summary` として明示する
 4. ユーザーに **ファイルパス** を返す
 
 ## 関連リソース
@@ -89,3 +93,4 @@ skill: oss-research-session
 | 調査エージェント定義 | `canonical/agents/oss-researcher.md` |
 | カタログ | `canonical/CATALOG.md` |
 | サブエージェント方針 | `canonical/rules/subagent-strategy-rule.md` |
+| 検証ディシプリン | `canonical/rules/evidence-verification-rule.md` |
