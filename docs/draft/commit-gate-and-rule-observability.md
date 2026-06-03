@@ -56,6 +56,18 @@
 - **ステップ完了→コミット接続の担保** → 機械的ゲート（観測可能、スキップ理由を構造化）
 - **コミットメッセージ形式** → 機械的ゲート（`commit-msg` hook）
 
+## 第3の層: 偽陽性許容バンド（Stop Hook 差し戻し）
+
+「ルール vs 機械的ゲート」の二分法に対し、[臭うコード検出器の記事](https://zenn.dev/manalink_dev/articles/coding-agent-with-syntax-tree-analyze) は中間層を示す。仕分け軸を「観測可能性」だけでなく「検出可能性 × 偽陽性率」の2次元に拡張する。
+
+| 層 | 検出可能性 | 偽陽性率 | 経路 |
+|----|-----------|---------|------|
+| 機械的ゲート(CI) | 静的に明確検出可 | 低 | CI で落とす |
+| Stop Hook 差し戻し | 静的検出可だが偽陽性多 | 中 | CI に混ぜず、エージェント自身に差し戻して自己修正させる |
+| ルール(CLAUDE.md/Skill) | 静的検出不可 | — | 事前教示 |
+
+中間層の本質は「ブロックするほどではないが、もう一度見たい」**中間確信度バンド**。これは深掘り（`persistent-exploration` / [#77](https://github.com/stlwolf/ai-development-hub/issues/77)）・セカンドオピニオン（[#76](https://github.com/stlwolf/ai-development-hub/issues/76)）が働く領域と同型。詳細は `docs/research/2026-06-03-code-smell-stop-hook-and-confidence-band.md`。
+
 ## コミットメッセージ本文の充実度: ルールが適する領域
 
 ### 背景調査
