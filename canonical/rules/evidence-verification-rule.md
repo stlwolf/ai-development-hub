@@ -8,11 +8,11 @@ Applies to consumed deliverables: research-intake notes, OSS research reports, i
 
 Annotate each non-trivial claim with one status. Default to the weakest status that honestly applies — never inflate.
 
-| Status | 和名 | Meaning | Requirement |
-|--------|------|---------|-------------|
-| `verified` | 一次確認済み | The cited source directly supports the claim (entailment holds) | MUST be backed by a source entity (URL or `file:line`) the author actually inspected — independent of the generated text, never self-evaluation (§2) |
-| `unverified-summary` | AI要約のみ | A source is cited but entailment is unconfirmed, or the claim is a model paraphrase | DEFAULT for AI-generated summaries |
-| `speculation` | 推測 | No supporting source | No source required (give a brief reason if useful). Value is `speculation`; inline `Speculation:` prefix is an accepted shorthand |
+| Status | Meaning | Requirement |
+|--------|---------|-------------|
+| `verified` | The cited source directly supports the claim (entailment holds) | MUST be backed by a source entity (URL or `file:line`) the author actually inspected — independent of the generated text, never self-evaluation (§2) |
+| `unverified-summary` | A source is cited but entailment is unconfirmed, or the claim is a model paraphrase | DEFAULT for AI-generated summaries |
+| `speculation` | No supporting source | No source required (give a brief reason if useful). Value is `speculation`; inline `Speculation:` prefix is an accepted shorthand |
 
 - Bind status at the **statement level** (per claim / sentence), not per paragraph.
 - Each `verified` / `unverified-summary` claim carries its source as a URL or `file:line`. `speculation` carries no source (a brief reason is optional).
