@@ -74,7 +74,7 @@ skill: oss-research-session
 
 - 調査の完成形は **指定された `OUTPUT_FILE` のみ** とする
 - ツールでファイルに書けない環境のときは、その旨をチャットで明示し、**ユーザーが手動で `OUTPUT_FILE` に保存できるよう全文を一度だけ** 出す
-- 各非自明な主張は `evidence-verification-rule` に従い、根拠（`file:line` / URL）と検証ステータス（`verified` / `unverified-summary` / `speculation`）を持たせる。一次ソース未確認の主張を `verified` としない
+- 各非自明な主張に `evidence-verification-rule` の検証ステータス（`verified` / `unverified-summary` / `speculation`）を付す。根拠（`file:line` / URL）は `verified` / `unverified-summary` に必須、`speculation` は根拠なし（必要なら理由）。一次ソース実体を確認していない主張を `verified` としない
 
 ## 親エージェントのチェックリスト
 

@@ -81,14 +81,14 @@ Read ~/.cursor/skills/oss-research-session/SKILL.md
 
 ### 出力形式（固定、記事ごとに1枚）
 
-各主張は `evidence-verification-rule` に従い検証ステータスと根拠を持たせる。記事を読んで直接確認したものは `verified`、要約・言い換えは `unverified-summary`（デフォルト）、記事にない自分の推論は `speculation` と明示する。数値・性能・事実主張は特に厳密に。
+各主張は `evidence-verification-rule` に従い検証ステータスを付す。`verified` / `unverified-summary` は根拠（URL/該当箇所）必須、`speculation` は根拠なし（必要なら理由）。**`verified` は「記事がそう述べている」だけでは不十分** — 記事自体が一次ソースである主張、または別の一次ソースで裏取りした主張に限る（記事の二次的言及や言い換えは `unverified-summary`）。記事にない自分の推論は `speculation`。数値・性能・事実主張は特に厳密に。
 
 ```markdown
 ### 本質的パターン
 
 | # | パターン名 | 本質（1-2行） | 種別 | 検証/根拠 |
 |---|-----------|-------------|------|----------|
-| 1 | [name]    | [essence]   | 設計原則 / ワークフロー / 実装パターン / ツール / 評価手法 | verified / unverified-summary / speculation + 記事の該当箇所 |
+| 1 | [name]    | [essence]   | 設計原則 / ワークフロー / 実装パターン / ツール / 評価手法 | 状態 + 根拠（`verified`/`unverified-summary` は該当箇所/URL、`speculation` は根拠なし） |
 ```
 
 ### 種別の定義
@@ -251,7 +251,7 @@ research-intake でドキュメントが作られる時点で Gate A/B を通過
 リサーチノートは「後から振り返るとき元ソースを読み直さなくても文脈が分かる」ことを目的とする。以下の各ステップの出力を転記する。記述の深さは記事の内容量や具体例の量に応じて自然に決める。
 
 1. **記事情報と要約**（Step 1 出力）: 各記事の情報カード。要約は元記事を再読しなくても内容が把握できる程度に
-2. **本質的パターンと詳細**（Step 2 出力）: パターンテーブルに加え、各パターンの具体的内容（設計判断の根拠、実装例、適用条件等）。パターン名だけのラベルにせず、そのパターンが「なぜ有効か」「どう使うか」が伝わる粒度で記述する。各主張は Step 2 の検証ステータス+根拠を保持する（`evidence-verification-rule`）。特に数値・事実主張は `verified` の根拠リンクを明示し、未確認は `unverified-summary` のまま残す（勝手に `verified` へ昇格させない）
+2. **本質的パターンと詳細**（Step 2 出力）: パターンテーブルに加え、各パターンの具体的内容（設計判断の根拠、実装例、適用条件等）。パターン名だけのラベルにせず、そのパターンが「なぜ有効か」「どう使うか」が伝わる粒度で記述する。各主張は Step 2 の検証ステータス（`verified`/`unverified-summary` は根拠も）を保持する（`evidence-verification-rule`）。特に数値・事実主張は `verified` の根拠リンクを明示し、未確認は `unverified-summary` のまま残す（勝手に `verified` へ昇格させない）
 3. **実装参照候補**（Step 2 出力、該当時）: ライセンス情報を含む
 4. **資産マッピング結果**（Step 3 出力）: トラック A/B テーブル
 5. **アクション判定**（Step 4 出力）: 各パターンのアクション種別と理由
@@ -263,4 +263,4 @@ research-intake でドキュメントが作られる時点で Gate A/B を通過
 - Issue 作成（`create-issue` / `create-component`）は内容提示 + ユーザー承認
 - Gate A / Gate B を省略して実行に進まない
 - `copyleft` / `unknown` ライセンスの実装参照を直接取り込む場合はユーザーに互換性確認を求める
-- リサーチノートの各主張は `evidence-verification-rule` の検証ステータス+根拠を持つ。未確認の重要主張は Gate A で明示する（`verified` への暗黙昇格は禁止）
+- リサーチノートの各主張は `evidence-verification-rule` の検証ステータスを持つ（`verified`/`unverified-summary` は根拠必須、`speculation` は根拠なし）。未確認の重要主張は Gate A で明示する（`verified` への暗黙昇格は禁止）

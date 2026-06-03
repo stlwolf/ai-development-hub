@@ -87,7 +87,7 @@ next_step:
 
 `docs/research/` の成果（research-intake ノート / oss-sessions レポート）は [`canonical/rules/evidence-verification-rule.md`](../../canonical/rules/evidence-verification-rule.md) に従う。
 
-- 各非自明な主張は **検証ステータス**（`verified` 一次確認済み / `unverified-summary` AI要約のみ / `speculation` 推測）と **根拠**（URL or `file:line`）を持つ
-- `verified` は外部ソース実体への照合が要件。AI の自己申告・要約だけで `verified` としない
+- 各非自明な主張は **検証ステータス**（`verified` 一次確認済み / `unverified-summary` AI要約のみ / `speculation` 推測）を持つ。**根拠**（URL or `file:line`）は `verified` / `unverified-summary` に必須、`speculation` は根拠なし（必要なら理由）
+- `verified` は生成物から独立したソース実体（URL / `file:line`）への照合が要件。AI の自己申告・要約だけで `verified` としない
 - 数値・性能・事実主張は特に厳密に。未確認は `unverified-summary` のまま残す
 - 消費側（親エージェント / レビュア）はリスク比例で spot-check する（`oss-research-session` の親チェックリスト参照）
