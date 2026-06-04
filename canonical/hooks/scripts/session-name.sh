@@ -106,11 +106,26 @@ desired="$(printf '%s' "$desired" | tr -d '\000-\037\177' | head -c 80 | { iconv
 # check below — session_title == desired — so no "last emitted" field is needed.)
 branch_dir="${home}/.claude/state/session-branch"
 sfile="${branch_dir}/$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_').json"
-last_branch=""
+last_branch=""; state_exists=0
 if [ -f "$sfile" ]; then
+  state_exists=1
   last_branch="$(jq -r '.last_branch // ""' "$sfile" 2>/dev/null || true)"
 fi
 session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
+
+# First time we see an ALREADY-NAMED session (no state file yet): the title
+# predates our state (a manual /rename, plan-accept, or a session from before this
+# mechanism). Record the current branch as the baseline and KEEP the title — only
+# a later real branch change should re-name. Without this, last_branch="" would
+# look like a branch change and clobber the existing title on the very first prompt.
+if [ "$state_exists" = 0 ] && [ -n "$session_title" ]; then
+  mkdir -p "$branch_dir" 2>/dev/null && {
+    tmp="${sfile}.tmp.$$"
+    jq -cn --arg b "$branch" '{last_branch:$b}' >"$tmp" 2>/dev/null \
+      && { mv -f "$tmp" "$sfile" 2>/dev/null || rm -f "$tmp" 2>/dev/null; }
+  }
+  exit 0
+fi
 
 # No-op when the session already shows the name we'd emit (idempotent — also
 # prevents a re-emit loop if the state file can't be persisted: emit_title set the
