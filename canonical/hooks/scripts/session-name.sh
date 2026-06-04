@@ -96,8 +96,8 @@ elif [ -z "$branch" ] || [ "$branch" = "master" ] || [ "$branch" = "main" ]; the
 else
   desired="$branch"
 fi
-# Strip control chars, cap length, keep valid UTF-8 (title -> pane title / notifications).
-desired="$(printf '%s' "$desired" | tr -d '\000-\037' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
+# Strip control chars (incl. DEL 0x7F), cap length, keep valid UTF-8 (title -> pane title / notifications).
+desired="$(printf '%s' "$desired" | tr -d '\000-\037\177' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
 [ -n "$desired" ] || exit 0
 
 # Per-session state (session_id keyed) in a DEDICATED dir, separate from the
@@ -112,19 +112,20 @@ if [ -f "$sfile" ]; then
 fi
 session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
 
-# Idempotent: if the session already shows the name we'd emit, there is nothing
-# to do. This also prevents a re-emit-every-prompt loop when the state file can't
-# be persisted (quota/read-only/NFS): emit_title still set the name, so the next
-# prompt short-circuits here even though last_branch was never written.
-[ "$session_title" = "$desired" ] && exit 0
-
-# (Re)name when the branch changed (wt-equivalent: overwrites even a manual
-# /rename, like wt re-naming on every switch) or when the session is unnamed.
-# Otherwise leave it (a same-branch manual /rename — non-empty and, per the guard
-# above, different from our name).
-if [ "$branch" = "$last_branch" ] && [ -n "$session_title" ]; then
+# No-op when the session already shows the name we'd emit (idempotent — also
+# prevents a re-emit loop if the state file can't be persisted: emit_title set the
+# name, so we short-circuit here next time), OR when it's the same branch with a
+# different, manual /rename title (respected until the branch changes). Touch the
+# state file on no-op so a long-lived same-branch session isn't GC'd out from under
+# us — losing it would reset last_branch and let the next prompt look like a branch
+# change and clobber the manual title.
+if [ "$session_title" = "$desired" ] || { [ "$branch" = "$last_branch" ] && [ -n "$session_title" ]; }; then
+  [ -f "$sfile" ] && touch -- "$sfile" 2>/dev/null
   exit 0
 fi
+
+# Branch changed (wt-equivalent re-name — overwrites even a manual /rename, like wt
+# on every switch) or the session is unnamed: (re)name it.
 
 # About to (re)name — run the opportunistic stale-state GC now (only on a naming
 # event, not every prompt). Long window bounds growth without clobbering sessions.
