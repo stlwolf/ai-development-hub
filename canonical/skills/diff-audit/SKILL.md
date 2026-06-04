@@ -11,9 +11,9 @@ GitHub Copilot PR レビューの代替。「PR diff 内で完結するパター
 
 | スキル | 対象 | 特徴 |
 |--------|------|------|
-| `/code-review` | 単一ファイル/変更 | ドメイン知識込みのコード品質 |
-| `/security-review` | ファイル単位のセキュリティ | 脅威モデルに基づく深掘り |
-| `/diff-audit` | PR diff 全体 | diff 内横断チェック、Copilot 代替 |
+| `/code-review` | 単一ファイル/変更 | ドメイン知識込みのコード品質（システム組み込み） |
+| `/security-review` | ファイル単位のセキュリティ | 脅威モデルに基づく深掘り（システム組み込み） |
+| `/diff-audit` | PR diff 全体 | diff 内横断チェック、Copilot 代替（このリポジトリで定義） |
 
 ## 呼び出し方法
 
@@ -84,7 +84,7 @@ diff に `.sh` ファイル、`run:` ブロック（GitHub Actions）、heredoc 
 | B7 | `trap` のクォーティングバグ（シングル/ダブルの意図しない混在）| WARNING |
 | B8 | `jq` に `-e` フラグがない — `null`/`false` を正常値として扱い、後続処理が誤動作する | WARNING |
 | B9 | `curl` にタイムアウト指定がない（`--max-time`/`--connect-timeout` が未設定）| WARNING |
-| B10 | `mktemp` + `mv` の cross-device rename — `set -e` がないと失敗検出されない | WARNING |
+| B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp -p "$(dirname "$target")"`）か、`cp` + `rm` でフォールバックする | WARNING |
 | B11 | exit code のセマンティクスミス（「SKIP」と表示して `exit 1` 等、コメントと乖離）| WARNING |
 | B12 | `\|\| echo "..."` でエラーを握りつぶして後続処理へ進む | WARNING |
 | B13 | `read` に `-r` がない — バックスラッシュが解釈され、ファイルパスやデータが壊れる | WARNING |
