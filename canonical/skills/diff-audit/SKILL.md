@@ -95,14 +95,14 @@ diff に `.sh` ファイル、`run:` ブロック（GitHub Actions）、heredoc�
 | B2 | unquoted variables: `$VAR` → `"$VAR"` | WARNING |
 | B3 | `for f in $FILES` — スペース入りファイル名で壊れる。`git diff --name-only -z` + `while IFS= read -r -d ''` を使う | CRITICAL |
 | B4 | `xargs cmd` — `-` 始まりファイル名が引数と混同される。`xargs cmd --` にする | WARNING |
-| B5 | `echo "$var" \| cmd` — `-` 始まり文字列や OS 依存エスケープで壊れる。`printf '%s\n' "$var" \| cmd` にする（`printf '%s'` だと改行が消えてパイプ先が誤動作する）| WARNING |
+| B5 | `echo "$var" | cmd` — `-` 始まり文字列や OS 依存エスケープで壊れる。`printf '%s\n' "$var" | cmd` にする（`printf '%s'` だと改行が消えてパイプ先が誤動作する）| WARNING |
 | B6 | Bash 特殊変数の上書き: `SECONDS=0`、`IFS=` 等をグローバルで変更している | WARNING |
 | B7 | `trap` のクォーティングバグ（シングル/ダブルの意図しない混在）| WARNING |
 | B8 | `jq` に `-e` フラグがない — `null`/`false` を正常値として扱い、後続処理が誤動作する | WARNING |
 | B9 | `curl` にタイムアウト指定がない（`--max-time`/`--connect-timeout` が未設定）| WARNING |
 | B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp "$(dirname "$target")/tmp.XXXXXX"`。POSIX 準拠の直接パス形式を推奨）か、`cp` + `rm` でフォールバックする | WARNING |
 | B11 | exit code のセマンティクスミス（「SKIP」と表示して `exit 1` 等、コメントと乖離）| WARNING |
-| B12 | `\|\| echo "..."` でエラーを握りつぶして後続処理へ進む | WARNING |
+| B12 | `|| echo "..."` でエラーを握りつぶして後続処理へ進む | WARNING |
 | B13 | `read` に `-r` がない — バックスラッシュが解釈され、ファイルパスやデータが壊れる | WARNING |
 | B14 | `$SHELL` でシェル種別を判定している（ログインシェルと実行シェルが異なる場合に効かない）。`$BASH_VERSION`/`$ZSH_VERSION` で判定する | SUGGESTION |
 | B15 | `aws ssm ... --value "${SECRET}"` — プロセス引数経由でシークレットが `ps` に露出する。`--value file://...` にする | CRITICAL |
