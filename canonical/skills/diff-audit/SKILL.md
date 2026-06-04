@@ -85,7 +85,7 @@ diff に `.sh` ファイル、`run:` ブロック（GitHub Actions）、heredoc 
 | B7 | `trap` のクォーティングバグ（シングル/ダブルの意図しない混在）| WARNING |
 | B8 | `jq` に `-e` フラグがない — `null`/`false` を正常値として扱い、後続処理が誤動作する | WARNING |
 | B9 | `curl` にタイムアウト指定がない（`--max-time`/`--connect-timeout` が未設定）| WARNING |
-| B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp -p "$(dirname "$target")"`）か、`cp` + `rm` でフォールバックする | WARNING |
+| B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp "$(dirname "$target")/tmp.XXXXXX"`。`-p` は GNU 専用で macOS 非対応）か、`cp` + `rm` でフォールバックする | WARNING |
 | B11 | exit code のセマンティクスミス（「SKIP」と表示して `exit 1` 等、コメントと乖離）| WARNING |
 | B12 | `\|\| echo "..."` でエラーを握りつぶして後続処理へ進む | WARNING |
 | B13 | `read` に `-r` がない — バックスラッシュが解釈され、ファイルパスやデータが壊れる | WARNING |
@@ -131,7 +131,7 @@ diff 内の複数ファイル間を横断してチェックする。
 
 ### --cdk: CDK/IaC
 
-diff に `cdk/`、`infra/`、`cdk.json`、`template.yaml`（CloudFormation）が含まれる場合に有効化。`*.ts` のみでは判定しない（TypeScript 全般にマッチしてしまうため）。
+`--cdk` 指定時に適用。diff に `cdk/`、`infra/`、`cdk.json`、`template.yaml`（CloudFormation）が含まれない場合は N/A。`*.ts` のみでは判定しない（TypeScript 全般にマッチしてしまうため）。
 
 | # | チェック項目 | 重大度 |
 |---|------------|--------|
@@ -145,7 +145,7 @@ diff に `cdk/`、`infra/`、`cdk.json`、`template.yaml`（CloudFormation）が
 
 ### --php: PHP 特化
 
-diff に `*.php` が含まれる場合に有効化。
+`--php` 指定時に適用。diff に `*.php` が含まれない場合は N/A。
 
 | # | チェック項目 | 重大度 |
 |---|------------|--------|
@@ -156,7 +156,7 @@ diff に `*.php` が含まれる場合に有効化。
 
 ### --python: Python 特化
 
-diff に `*.py` が含まれる場合に有効化。
+`--python` 指定時に適用。diff に `*.py` が含まれない場合は N/A。
 
 | # | チェック項目 | 重大度 |
 |---|------------|--------|
