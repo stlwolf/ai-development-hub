@@ -7,9 +7,12 @@
 # the pane title (notify.sh) — can be told apart. Two behaviors, in priority:
 #
 #   1. Active issue worktree: when wt-pane-issue.sh recorded "#<issue> <slug>"
-#      for this tmux pane (on `wt switch`), title the session with it, once per
-#      switch (the "pending" flag is consumed). An issue pane is handled here
-#      and NEVER falls through to the fallback below (which would clobber it).
+#      for this tmux pane (on `wt switch`), title the session with it and KEEP it
+#      there — STICKY: re-assert on every prompt whenever the title has drifted
+#      (repo name, built-in auto-naming, a manual /rename). `wt switch` keeps cwd
+#      at the repo root, so the branch (Path 2) can't see the worktree; the
+#      pane-issue is the only meaningful name, so it must win. An issue pane is
+#      handled here and NEVER falls through to the fallback below.
 #   2. Branch-aware (non-wt sessions): Claude's built-in auto-naming only fires
 #      on plan-accept or `/rename`, so a plain session can stay nameless. Name it
 #      after the current git branch of the launch dir (payload cwd): an issue
@@ -58,15 +61,18 @@ if [ -n "$pane" ]; then
   state_file="${state_dir}/${key}"
   if [ -f "$state_file" ]; then
     # Issue pane: Path 1 owns naming and must not fall through to the fallback.
-    if [ "$(jq -r '.pending // false' "$state_file" 2>/dev/null)" = "true" ]; then
-      name="$(jq -r '.name // empty' "$state_file" 2>/dev/null)"
-      if [ -n "$name" ]; then
-        tmp="${state_file}.tmp.$$"
-        if jq -c '.pending=false' "$state_file" >"$tmp" 2>/dev/null; then
-          mv -f "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-        fi
-        emit_title "$name"
-      fi
+    # STICKY — re-assert the issue name whenever the session title has drifted
+    # (repo name / built-in auto-naming / manual /rename). Re-emitting works on an
+    # already-named session, so the issue name wins back the title each prompt.
+    # Idempotent: if the title already equals the issue name, do nothing.
+    name="$(jq -r '.name // empty' "$state_file" 2>/dev/null)"
+    if [ -n "$name" ]; then
+      # Refresh the marker mtime: it is now the sticky source of truth, so keep an
+      # active issue pane alive against wt-pane-issue.sh's 24h GC. (An idle pane
+      # untouched >24h is still reaped — fine, it then falls back to Path 2.)
+      touch -- "$state_file" 2>/dev/null || true
+      session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
+      [ "$session_title" = "$name" ] || emit_title "$name"
     fi
     exit 0
   fi
