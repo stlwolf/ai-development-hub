@@ -54,8 +54,9 @@ fi
 
 mkdir -p "$state_dir" 2>/dev/null || exit 0
 
-# Opportunistic GC: markers untouched for >24h are orphans (consumed long ago,
-# or left by a now-dead server). Bounds unbounded growth. Runs before we write.
+# Opportunistic GC: markers untouched for >24h (idle/abandoned pane, or left by a
+# now-dead server). session-name.sh touches the marker each prompt, so an active
+# issue pane stays fresh; only truly idle ones are reaped. Bounds growth.
 find "$state_dir" -maxdepth 1 -type f -mmin +1440 -delete 2>/dev/null || true
 
 # Non-issue branch (master, `wt switch ^`, pr:, etc.) → clear the marker.
@@ -64,10 +65,11 @@ if [ -z "$name" ]; then
   exit 0
 fi
 
-# Record {name, pending:true} atomically. `pending` drives a one-shot rename
-# on the next UserPromptSubmit, after which a manual /rename is respected.
+# Record {name} atomically. session-name.sh (Path 1) reads .name and re-asserts
+# it as the sticky session title on every prompt — there is no longer a one-shot
+# "pending" flag.
 tmp="${state_file}.tmp.$$"
-if jq -cn --arg n "$name" '{name:$n, pending:true}' >"$tmp" 2>/dev/null; then
+if jq -cn --arg n "$name" '{name:$n}' >"$tmp" 2>/dev/null; then
   mv -f "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 fi
 exit 0
