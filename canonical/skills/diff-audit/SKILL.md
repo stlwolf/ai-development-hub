@@ -48,7 +48,7 @@ diff が大きい場合（目安: 500行超）は `gh pr diff | head -n 500` で
 ## diff-audit 結果  CRITICAL 1件 / WARNING 1件 / SUGGESTION 1件
 
 ### CRITICAL（マージ前に必ず対処）
-- `path/to/file.sh:42` — [Bash/B3] `for f in $FILES` — スペース入りファイル名で壊れる。`git diff -z` + `while IFS= read -r -d ''` を使うこと
+- `path/to/file.sh:42` — [Bash/B3] `for f in $FILES` — スペース入りファイル名で壊れる。`git diff --name-only -z` + `while IFS= read -r -d ''` を使うこと
 
 ### WARNING（対処推奨）
 - `path/to/file.sh:10` — [Bash/B1] `set -euo pipefail` がない。スクリプト先頭に追加すること
@@ -92,9 +92,9 @@ diff に `.sh` ファイル、`run:` ブロック（GitHub Actions）、heredoc 
 |---|------------|--------|
 | B1 | `set -euo pipefail`（または `set -e` + `set -o pipefail`）の欠如 | WARNING |
 | B2 | unquoted variables: `$VAR` → `"$VAR"` | WARNING |
-| B3 | `for f in $FILES` — スペース入りファイル名で壊れる。`git diff -z` + `while IFS= read -r -d ''` を使う | CRITICAL |
+| B3 | `for f in $FILES` — スペース入りファイル名で壊れる。`git diff --name-only -z` + `while IFS= read -r -d ''` を使う | CRITICAL |
 | B4 | `xargs cmd` — `-` 始まりファイル名が引数と混同される。`xargs cmd --` にする | WARNING |
-| B5 | `echo "$var" \| cmd` — `-` 始まり文字列や OS 依存エスケープで壊れる。`printf '%s' "$var" \| cmd` にする | WARNING |
+| B5 | `echo "$var" \| cmd` — `-` 始まり文字列や OS 依存エスケープで壊れる。`printf '%s\n' "$var" \| cmd` にする（`printf '%s'` だと改行が消えてパイプ先が誤動作する）| WARNING |
 | B6 | Bash 特殊変数の上書き: `SECONDS=0`、`IFS=` 等をグローバルで変更している | WARNING |
 | B7 | `trap` のクォーティングバグ（シングル/ダブルの意図しない混在）| WARNING |
 | B8 | `jq` に `-e` フラグがない — `null`/`false` を正常値として扱い、後続処理が誤動作する | WARNING |
