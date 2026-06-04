@@ -13,7 +13,7 @@ description: PR diff全体を原則ベースでレビューする。4つの問�
 ## 実行手順
 
 1. `gh pr diff` を Bash で実行して diff 全体を取得する
-2. 以下の **4つの問い** を diff 全体に適用する。各問いのヒントは「想起補助」として使う
+2. 以下の **4つの問い** を diff 全体に適用する。**diff に該当ファイル・パターンが含まれる場合、対応するヒントを必ずスキャンする**（任意参照ではない）
 3. セキュリティ・IaC の深掘りが必要なら `/security-review` へ誘導する
 4. フォローアップフローに従い処理する
 
@@ -32,28 +32,24 @@ diff 内のすべてのコマンド・コード・設定値を読み、以下の
 - **環境差**: OS・シェル・ランタイム・FS が違ったら動作が変わる箇所はないか？
 - **副作用**: 意図しない副作用（グローバル変数汚染・リソースリーク・状態変化）を起こさないか？
 
-<details>
-<summary>ヒント — Bash（.sh / run: / ```bash ブロック）</summary>
+**ヒント — .sh / `run:` ブロック / ` ```bash ` ブロックが diff に含まれる場合、以下を必ずスキャン:**
 
-`set -euo pipefail` 欠如 / unquoted `$VAR` / `for f in $FILES`（NUL区切り未使用） /
+`set -euo pipefail` 欠如 / unquoted `$VAR` /
+`for f in $FILES`（スペース入りファイル名で壊れる → `git diff --name-only -z` + `while IFS= read -r -d ''` を使う） /
 `xargs cmd`（`xargs cmd --` にする） / `echo "$var" | cmd`（`printf '%s\n'` にする） /
 `printf "$var"`（フォーマット文字列インジェクション → `printf '%s'`） /
 Bash特殊変数の上書き（`SECONDS=0` 等） / `trap` クォーティングバグ /
-`jq` に `-e` なし / `curl` タイムアウト未指定 / `mktemp`+`mv` cross-device rename /
+`jq` に `-e` なし / `curl` タイムアウト未指定 /
+`mktemp`+`mv` cross-device rename（`mktemp -p <dir>` または直接パス形式で同一 FS に作成） /
 exit code セマンティクスミス / `|| echo` で失敗握りつぶし / `read` に `-r` なし /
 `aws ssm --value "$SECRET"`（ps でシークレット露出） / `$SHELL` でシェル判定
 
-</details>
-
-<details>
-<summary>ヒント — サイレント失敗・例外ハンドリング（任意の言語）</summary>
+**ヒント — 任意の言語のコードが diff に含まれる場合、以下を必ずスキャン:**
 
 バリデーション抜け（空文字・空白・null・不正 IP） / `.trim()`/`.strip()` 漏れ /
 trim 後の正規化を書き戻していない / 失敗時に exit せず後続へ進む /
 タイムアウト・失敗を成功として扱う / `except Exception`/`catch (\Throwable)` で隠蔽 /
 `HTTPException` を 500 に変換 / catch→別例外変換で `previous`/`__cause__` なし
-
-</details>
 
 ---
 
@@ -87,33 +83,24 @@ diff 内の構造化テキスト（Markdown・YAML・JSON・設定ファイル�
 - 認証・認可の判定に抜けがないか？
 - 外部入力がサニタイズされずにコマンド・クエリ・テンプレートに渡っていないか？
 
-<details>
-<summary>ヒント — CDK/IaC（cdk/ infra/ cdk.json template.yaml を含む diff）</summary>
+**ヒント — `cdk/` `infra/` `cdk.json` `template.yaml` が diff に含まれる場合、以下を必ずスキャン:**
 
 `RemovalPolicy.RETAIN` 漏れ（VPC・EIP・IAM Role・Route） / `DependsOn` 漏れ /
 SSM/KMS ARN ハードコード（`Stack.formatArn()` 推奨） /
 `kms:ViaService` に `amazonaws.com` ハードコード / `InstanceType` 変更の置換リスク /
 `StringParameter` への placeholder 値 / `CfnOutput.exportName` 固定値
 
-</details>
-
-<details>
-<summary>ヒント — PHP（*.php を含む diff）</summary>
+**ヒント — `*.php` が diff に含まれる場合、以下を必ずスキャン:**
 
 `report($e)` + `Log::error($e)` 併用（Sentry 二重送信） /
 `catch (\Throwable)` → `FooException` 変換で 500 系が Sentry 未達 /
 Repository interface の `?object` 戻り値
 
-</details>
-
-<details>
-<summary>ヒント — Python（*.py を含む diff）</summary>
+**ヒント — `*.py` が diff に含まれる場合、以下を必ずスキャン:**
 
 `os.environ.get(key)` に `.strip()` なし / trim 後の正規化を書き戻していない /
 `if not value` で空白のみが通る / `StrictHostKeyChecking=accept-new` /
 in-memory レートリミット（マルチワーカー環境で無効）
-
-</details>
 
 深掘りが必要と判断した場合: `→ /security-review を推奨` と明示する。
 
