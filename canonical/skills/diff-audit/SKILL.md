@@ -36,13 +36,13 @@ diff 内のすべてのコマンド・コード・設定値を読み、以下の
 
 `set -euo pipefail` 欠如 / unquoted `$VAR` /
 `for f in $FILES`（スペース入りファイル名で壊れる → `git diff --name-only -z` + `while IFS= read -r -d ''` を使う） /
-`xargs cmd`（`xargs cmd --` にする） / `echo "$var" | cmd`（`printf '%s\n'` にする） /
-`printf "$var"`（フォーマット文字列インジェクション → `printf '%s'`） /
+`xargs cmd`（`xargs cmd --` にする） / `echo "$var" | cmd`（`printf '%s\n' "$var" | cmd` にする） /
+`printf "$var"`（フォーマット文字列インジェクション → `printf '%s' "$var"`） /
 Bash特殊変数の上書き（`SECONDS=0` 等） / `trap` クォーティングバグ /
 `jq` に `-e` なし / `curl` タイムアウト未指定 /
 `mktemp`+`mv` cross-device rename（`mktemp -p <dir>` または直接パス形式で同一 FS に作成） /
 exit code セマンティクスミス / `|| echo` で失敗握りつぶし / `read` に `-r` なし /
-`aws ssm --value "$SECRET"`（ps でシークレット露出） / `$SHELL` でシェル判定
+`aws ssm put-parameter --value "$SECRET"`（ps でシークレット露出 → `--value file://...` にする） / `$SHELL` でシェル判定
 
 **ヒント — 任意の言語のコードが diff に含まれる場合、以下を必ずスキャン:**
 
