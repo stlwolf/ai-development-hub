@@ -19,7 +19,7 @@ GitHub Copilot PR レビューの代替。「PR diff 内で完結するパター
 
 `/diff-audit` は Claude Code のスキルであり、Unix コマンドとしてシェルで直接実行できるわけではない。以下の形式で呼び出す:
 
-```
+```text
 # 基本（Claude Code のチャットで入力）
 /diff-audit
 
@@ -44,17 +44,18 @@ diff が大きい場合（目安: 500行超）は `gh pr diff | head -n 500` で
 
 ## 出力形式
 
-```
-## diff-audit 結果  CRITICAL 1件 / WARNING 1件 / SUGGESTION 1件
+```markdown
+## diff-audit 結果  CRITICAL 1件 / WARNING 2件 / SUGGESTION 0件
 
 ### CRITICAL（マージ前に必ず対処）
 - `path/to/file.sh:42` — [Bash/B3] `for f in $FILES` — スペース入りファイル名で壊れる。`git diff --name-only -z` + `while IFS= read -r -d ''` を使うこと
 
 ### WARNING（対処推奨）
 - `path/to/file.sh:10` — [Bash/B1] `set -euo pipefail` がない。スクリプト先頭に追加すること
+- `docs/plan.md:5` — [Doc/D1] 「29件」と記載があるが実装ファイルの件数は31件。要確認
 
 ### SUGGESTION（任意対応）
-- `docs/plan.md:5` — [Doc/D1] 「29件」と記載があるが実装ファイルの件数は31件。要確認
+なし
 
 ### 適用結果
 - [Bash] B1〜B16 確認済み（B3 CRITICAL、B1 WARNING）
@@ -70,10 +71,10 @@ verdict: 🚫 CRITICAL対応後マージ
 - path/to/file.sh:10 — B1: set -euo pipefail をスクリプト先頭に追加
 
 確認が必要（提示）:
-- （なし）
+- docs/plan.md:5 — D1: 「29件」と「31件」の不一致。どちらが正しいか確認
 
 Issue化推奨（今PRでは修正しない）:
-- docs/plan.md — D1: 数値の不一致。別途確認・修正を推奨
+- （なし）
 ```
 
 - **N/A**: diff に対象ファイル・パターンが存在しないためレンズ未適用
