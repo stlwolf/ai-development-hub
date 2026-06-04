@@ -100,7 +100,7 @@ diff に `.sh` ファイル、`run:` ブロック（GitHub Actions）、heredoc�
 | B7 | `trap` のクォーティングバグ（シングル/ダブルの意図しない混在）| WARNING |
 | B8 | `jq` に `-e` フラグがない — `null`/`false` を正常値として扱い、後続処理が誤動作する | WARNING |
 | B9 | `curl` にタイムアウト指定がない（`--max-time`/`--connect-timeout` が未設定）| WARNING |
-| B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp "$(dirname "$target")/tmp.XXXXXX"`。`-p` は GNU 専用で macOS 非対応）か、`cp` + `rm` でフォールバックする | WARNING |
+| B10 | `mktemp` + `mv` の cross-device rename — 異なる FS だと `mv` が `EXDEV` で失敗する。`mktemp` はターゲットと同一ディレクトリ配下に作る（例: `mktemp "$(dirname "$target")/tmp.XXXXXX"`。POSIX 準拠の直接パス形式を推奨）か、`cp` + `rm` でフォールバックする | WARNING |
 | B11 | exit code のセマンティクスミス（「SKIP」と表示して `exit 1` 等、コメントと乖離）| WARNING |
 | B12 | `\|\| echo "..."` でエラーを握りつぶして後続処理へ進む | WARNING |
 | B13 | `read` に `-r` がない — バックスラッシュが解釈され、ファイルパスやデータが壊れる | WARNING |
@@ -191,7 +191,7 @@ diff 内の複数ファイル間を横断してチェックする。
 
 | 判定 | 条件 | 処理 |
 |------|------|------|
-| **自動修正** | CRITICAL全般 / WARNINGで修正が1行以内かつ設計判断不要 | 確認なしで Edit 適用 → 修正内容を報告 |
+| **自動修正** | 機械的修正可能な CRITICAL / WARNINGで修正が1行以内かつ設計判断不要 | 確認なしで Edit 適用 → 修正内容を報告 |
 | **確認提示** | WARNINGで選択肢が複数、または修正に意図確認が必要 | 具体的な修正案を提示して判断を仰ぐ |
 | **Issue化推奨** | SUGGESTION全般 | 今PRでは修正しない。別Issue化 or 見送りを申し送り |
 
