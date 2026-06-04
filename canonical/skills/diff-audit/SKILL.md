@@ -13,7 +13,7 @@ description: PR diff全体を原則ベースでレビューする。4つの問�
 ## 実行手順
 
 1. `gh pr diff` を Bash で実行して diff 全体を取得する
-2. 以下の **4つの問い** を diff 全体に適用する。**diff に該当ファイル・パターンが含まれる場合、対応するヒントを必ずスキャンする**（任意参照ではない）
+2. 以下の **4つの問い** を diff 全体に適用する。ヒントのスキャン方針: **Bash・サイレント失敗・例外ハンドリングの各ヒントは該当ファイルが diff にあれば常時スキャン**。CDK/PHP/Python ヒントは **`--cdk`/`--php`/`--python` フラグ指定時かつ対象ファイルが diff に含まれる場合のみスキャン**（フラグなし = N/A）
 3. セキュリティ・IaC の深掘りが必要なら `/security-review` へ誘導する
 4. フォローアップフローに従い処理する
 
@@ -32,7 +32,7 @@ diff 内のすべてのコマンド・コード・設定値を読み、以下の
 - **環境差**: OS・シェル・ランタイム・FS が違ったら動作が変わる箇所はないか？
 - **副作用**: 意図しない副作用（グローバル変数汚染・リソースリーク・状態変化）を起こさないか？
 
-**ヒント — .sh / `run:` ブロック / ` ```bash ` ブロックが diff に含まれる場合、以下を必ずスキャン:**
+**ヒント — .sh / `run:` ブロック / `` ```bash `` ブロックが diff に含まれる場合、以下を必ずスキャン:**
 
 `set -euo pipefail` 欠如 / unquoted `$VAR` /
 `for f in $FILES`（スペース入りファイル名で壊れる → `git diff --name-only -z` + `while IFS= read -r -d ''` を使う） /
@@ -83,20 +83,20 @@ diff 内の構造化テキスト（Markdown・YAML・JSON・設定ファイル�
 - 認証・認可の判定に抜けがないか？
 - 外部入力がサニタイズされずにコマンド・クエリ・テンプレートに渡っていないか？
 
-**ヒント — `cdk/` `infra/` `cdk.json` `template.yaml` が diff に含まれる場合、以下を必ずスキャン:**
+**ヒント — `--cdk` 指定時、かつ `cdk/` `infra/` `cdk.json` `template.yaml` が diff に含まれる場合、以下をスキャン:**
 
 `RemovalPolicy.RETAIN` 漏れ（VPC・EIP・IAM Role・Route） / `DependsOn` 漏れ /
 SSM/KMS ARN ハードコード（`Stack.formatArn()` 推奨） /
 `kms:ViaService` に `amazonaws.com` ハードコード / `InstanceType` 変更の置換リスク /
 `StringParameter` への placeholder 値 / `CfnOutput.exportName` 固定値
 
-**ヒント — `*.php` が diff に含まれる場合、以下を必ずスキャン:**
+**ヒント — `--php` 指定時、かつ `*.php` が diff に含まれる場合、以下をスキャン:**
 
 `report($e)` + `Log::error($e)` 併用（Sentry 二重送信） /
 `catch (\Throwable)` → `FooException` 変換で 500 系が Sentry 未達 /
 Repository interface の `?object` 戻り値
 
-**ヒント — `*.py` が diff に含まれる場合、以下を必ずスキャン:**
+**ヒント — `--python` 指定時、かつ `*.py` が diff に含まれる場合、以下をスキャン:**
 
 `os.environ.get(key)` に `.strip()` なし / trim 後の正規化を書き戻していない /
 `if not value` で空白のみが通る / `StrictHostKeyChecking=accept-new` /
