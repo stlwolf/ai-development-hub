@@ -13,6 +13,10 @@
     "Notion-Personal": {
       "url": "https://mcp.notion.com/mcp",
       "headers": {}
+    },
+    "Slack": {
+      "url": "https://mcp.slack.com/mcp",
+      "headers": {}
     }
   }
 }
