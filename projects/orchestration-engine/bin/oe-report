@@ -62,4 +62,5 @@ else
   PREFIX="申し送り"
 fi
 
-tmux send-keys -t "$PARENT_PANE" "${PREFIX}: ${MESSAGE}" Enter
+tmux send-keys -l -t "$PARENT_PANE" "${PREFIX}: ${MESSAGE}"
+tmux send-keys -t "$PARENT_PANE" Enter

@@ -3,8 +3,8 @@
 #
 # usage: oe-delegate [-w WORKSPACE] <task>
 #
-# 親ペイン ID ($TMUX_PANE) を /tmp/oe-parent-{child_pane_id} に書き出し、
-# oe-report が子セッション内から自動検出できるようにする。
+# 親ペイン ID を PARENT_TMUX_PANE 環境変数として子プロセスに渡す（優先）。
+# /tmp/oe-parent-{child_pane_id} への書き出しは手動利用向けのフォールバック。
 # Phase 5 HitL 統合はスコープ外（Issue #138）。
 
 set -euo pipefail
@@ -22,6 +22,7 @@ usage: oe-delegate [-w WORKSPACE] <task>
 環境変数:
   OE_DELEGATE_WAIT_SEC  claude 起動待ちの秒数（デフォルト: 4）
   TMUX_PANE             tmux 内で自動設定される親ペイン ID（必須）
+  PARENT_TMUX_PANE      子プロセスへ自動で渡される（設定不要）
 
 子セッション内での申し送り:
   oe-report "サマリー"           # 申し送り: ...
@@ -51,12 +52,11 @@ PARENT_PANE="${TMUX_PANE:-}"
   exit 1
 }
 
-# 子ペインを作成し claude を起動
-CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "claude")"
+# 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
+CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=$PARENT_PANE claude")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
-# 親ペイン ID を tmp ファイルへ書き出し（oe-report が自動検出するため）
-# ファイル名は子ペイン ID から % を除去したもの
+# 親ペイン ID を tmp ファイルへ書き出し（手動利用向けフォールバック）
 PARENT_FILE="/tmp/oe-parent-${CHILD_PANE#%}"
 printf '%s\n' "$PARENT_PANE" > "$PARENT_FILE"
 
@@ -64,8 +64,15 @@ printf '%s\n' "$PARENT_PANE" > "$PARENT_FILE"
 WAIT_SEC="${OE_DELEGATE_WAIT_SEC:-4}"
 sleep "$WAIT_SEC"
 
+# 子ペインの生存確認
+tmux list-panes -a -F "#{pane_id}" | grep -qF "$CHILD_PANE" || {
+  echo "oe-delegate: child pane $CHILD_PANE exited during startup" >&2
+  exit 1
+}
+
 # タスクを注入（oe-report の場所を末尾に付記）
 INJECT="${TASK}. 完了後は ${BIN_DIR}/oe-report \"サマリー\" を実行して申し送りを送ること。レビュー依頼は ${BIN_DIR}/oe-report --review \"サマリー\"。"
-tmux send-keys -t "$CHILD_PANE" "$INJECT" Enter
+tmux send-keys -l -t "$CHILD_PANE" "$INJECT"
+tmux send-keys -t "$CHILD_PANE" Enter
 
 echo "oe-delegate: task injected to ${CHILD_PANE}" >&2
