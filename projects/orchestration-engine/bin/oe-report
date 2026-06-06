@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# oe-report — 親 Claude セッションへ申し送り / レビュー依頼を送る
+#
+# usage: oe-report [--review] <message>
+#
+# 親ペイン ID の解決順:
+#   1. 環境変数 PARENT_TMUX_PANE
+#   2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（oe-delegate が書き出す）
+# どちらもなければエラー終了（exit 1）。
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-report [--review] <message>
+
+  <message>   1行の申し送りテキスト（必須）
+  --review    レビュー依頼として送る（プレフィックスが "レビュー依頼:" になる）
+  -h, --help  このヘルプを表示
+
+親ペイン ID の解決:
+  1. 環境変数 PARENT_TMUX_PANE
+  2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（oe-delegate が書き出す）
+EOF
+  exit 1
+}
+
+REVIEW=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --review) REVIEW=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "oe-report: unknown option: $1" >&2; usage ;;
+  esac
+done
+
+MESSAGE="${1:-}"
+[[ -n "$MESSAGE" ]] || { echo "oe-report: message argument is required" >&2; usage; }
+
+# 親ペイン ID を解決
+PARENT_PANE="${PARENT_TMUX_PANE:-}"
+
+if [[ -z "$PARENT_PANE" ]]; then
+  SELF_PANE="${TMUX_PANE:-}"
+  if [[ -n "$SELF_PANE" ]]; then
+    PARENT_FILE="/tmp/oe-parent-${SELF_PANE#%}"
+    if [[ -f "$PARENT_FILE" ]]; then
+      PARENT_PANE="$(cat "$PARENT_FILE")"
+    fi
+  fi
+fi
+
+[[ -n "$PARENT_PANE" ]] || {
+  echo "oe-report: parent pane not found — set PARENT_TMUX_PANE or run via oe-delegate" >&2
+  exit 1
+}
+
+# メッセージを組み立てて送信
+if [[ "$REVIEW" -eq 1 ]]; then
+  PREFIX="レビュー依頼"
+else
+  PREFIX="申し送り"
+fi
+
+tmux send-keys -l -t "$PARENT_PANE" "${PREFIX}: ${MESSAGE}"
+tmux send-keys -t "$PARENT_PANE" Enter
