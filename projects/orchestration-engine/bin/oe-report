@@ -30,6 +30,7 @@ while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --review) REVIEW=1; shift ;;
     -h|--help) usage ;;
+    --) shift; break ;;
     *) echo "oe-report: unknown option: $1" >&2; usage ;;
   esac
 done
