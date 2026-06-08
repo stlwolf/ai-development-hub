@@ -8,13 +8,15 @@
 # 別系統。こちらは対話セッションへ tmux send-keys で注入する transport。
 # bin/oe-send / bin/oe-delegate が使う。将来 bin/oe-report も無改修で乗れるよう独立。
 
-# oe_send_line <pane_id> <text>
+# oe_send_line <pane_id> <text> [send_enter]
 #   <text> に改行（LF / CR）が含まれていれば送信せず非 0 で失敗する（途中送信の根本封じ）。
 #   対象ペインが存在しなければ非 0 で失敗する（死んだペインへの無言送信を防ぐ）。
-#   成功時は tmux send-keys -l でリテラル注入し、続けて Enter を発火する。
+#   send_enter（既定 "1"）が "0" のときは Enter を発火せずテキスト投入のみ（ステージ）。
+#   成功時は tmux send-keys -l でリテラル注入し、既定では続けて Enter を発火する。
 oe_send_line() {
   local pane="${1:-}"
   local text="${2:-}"
+  local send_enter="${3:-1}"
 
   if [[ -z "$pane" ]]; then
     echo "oe_send_line: pane_id is required" >&2
@@ -31,7 +33,9 @@ oe_send_line() {
     echo "oe_send_line: target pane not found: ${pane}" >&2
     return 1
   fi
-  # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火。
+  # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
   tmux send-keys -l -t "$pane" -- "$text"
-  tmux send-keys -t "$pane" Enter
+  if [[ "$send_enter" != "0" ]]; then
+    tmux send-keys -t "$pane" Enter
+  fi
 }

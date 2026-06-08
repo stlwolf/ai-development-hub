@@ -25,6 +25,7 @@ usage: oe-send [--kickoff <path>] [--] <target> [ad-hoc...]
                       ラベルは registry で解決（候補は oe-list で確認）
   ad-hoc...           1 行の追加指示（複数語は空白連結、改行は不可）
   --kickoff <path>    "<path> を読んで進めて。" を payload 先頭に付ける
+  --no-enter          テキスト投入のみで Enter を発火しない（投入＝送信をしない／ステージ）
   -h, --help          このヘルプを表示
 
 payload は「--kickoff のパス指示」＋「ad-hoc テキスト」を 1 行に連結して送る。
@@ -34,11 +35,13 @@ EOF
 }
 
 KICKOFF=""
+SEND_ENTER=1
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --kickoff)
       [[ $# -ge 2 ]] || { echo "oe-send: --kickoff requires a value" >&2; exit 2; }
       KICKOFF="$2"; shift 2 ;;
+    --no-enter) SEND_ENTER=0; shift ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-send: unknown option: $1" >&2; usage ;;
@@ -68,5 +71,5 @@ if [[ -n "$ADHOC" ]]; then
 fi
 [[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --kickoff and/or ad-hoc text)" >&2; usage; }
 
-oe_send_line "$PANE" "$payload"
+oe_send_line "$PANE" "$payload" "$SEND_ENTER"
 echo "oe-send: sent to ${PANE}" >&2
