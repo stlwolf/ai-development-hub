@@ -28,7 +28,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 | `oe-delegate` | 親 → 子 | 子ペインを起動（spawn）し、最初のキックを送る。registry に登録 |
 | `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / キックオフを送る汎用入口。宛先はラベル or `%N` |
 | `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
-| `oe-report` | 子 → 親 | 子から親への申し送り / レビュー依頼（**現状維持・スコープ外**） |
+| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは oe-send に一本化**（論点E で整理） |
 
 `oe-delegate` = spawn + `oe-send`（キック）の合成。送信の実体は `oe-send` に集約されている。
 
@@ -71,9 +71,11 @@ BIN="$REPO/projects/orchestration-engine/bin"
 - タスク引数・ad-hoc に **改行バイトを含めない**（`oe_send_line` が改行を検出すると送信を拒否する）。複数文は句点・セミコロンで区切る
 - 改行が必要な長文は **issue/plan のパスや番号を渡して子に取得させる**か、`--kickoff` でパス渡しする
 
-### 自動付記（スキル側での追記は不要）
+### delegate は report を内包しない
 
-`oe-delegate` はキック末尾に oe-report の使い方を自動付記する（delegate 固有責務。`oe-send` 単体では付かない）。
+`oe-delegate` は spawn + キックに専念し、戻し（report）を一切焼き付けない（Unix 哲学・単機能）。
+子に報告させたいなら、その指示は **task / kickoff の本文に自分で書く**。戻しの送信自体は子が
+汎用の `oe-send "$PARENT_TMUX_PANE" "..."` で行う（下記「戻し」）。
 
 ---
 
@@ -90,6 +92,9 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 # キックオフ doc を既存ペインに読ませる
 "$BIN/oe-send" --kickoff "$REPO/path/to/kickoff.md" "#142" "前提が変わったので読み直して"
+
+# Enter を撃たずに投入だけ（人間が読んでから送る／セッションを汚さない）
+"$BIN/oe-send" --no-enter "%37" "確認してほしい下書き"
 ```
 
 ### 誤送信を防ぐ
@@ -109,27 +114,24 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ---
 
-## report（子 → 親の報告）
+## 戻し（子 → 親）
 
-**子セッション専用・現状維持（今回の再設計のスコープ外）。** 親 Claude Code プロンプトへテキストを注入する。
-
-```bash
-"$BIN/oe-report" "<1行サマリー>"            # 親に「申し送り: ...」
-"$BIN/oe-report" --review "<確認内容>"      # 親に「レビュー依頼: ...」
-```
-
-親ペイン ID は `PARENT_TMUX_PANE` env、無ければ `/tmp/oe-parent-{pane}` で解決する（`oe-delegate` が両方を残す）。
-
-### エラー時のリカバリー
-
-`parent pane not found` で失敗した場合（セッション切断・再アタッチ後など）は手動送信:
+delegate は report を内包しないので、**戻しは汎用の `oe-send` で行う**。子に渡っている
+`PARENT_TMUX_PANE`（親ペイン ID）へ送るだけ:
 
 ```bash
-tmux send-keys -l -t '<親ペインID>' '申し送り: <メッセージ>'
-tmux send-keys -t '<親ペインID>' Enter
+"$BIN/oe-send" "$PARENT_TMUX_PANE" "実装完了。PR #150 を作成した"
+"$BIN/oe-send" --no-enter "$PARENT_TMUX_PANE" "親が読んでから送りたい下書き"
 ```
 
-親ペイン ID が不明なら `tmux list-panes -a` で確認する。
+`PARENT_TMUX_PANE` が未設定（手動委譲・再アタッチ後など）なら、親ペインを `oe-list` で確認して
+`%N` を直接指定する。
+
+### oe-report（legacy）
+
+`oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。delegate された子では
+`PARENT_TMUX_PANE` env から親を解決して一応動くが、**戻しは上記 oe-send に一本化**する方針
+（oe-report 自体の整理＝薄い alias 化／廃止は論点E）。
 
 ---
 
@@ -158,7 +160,7 @@ tmux send-keys -t '<親ペインID>' Enter
 - `projects/orchestration-engine/bin/oe-delegate` — 子ペイン起動 + キック（spawn + send）
 - `projects/orchestration-engine/bin/oe-send` — 既存ペインへの汎用送信
 - `projects/orchestration-engine/bin/oe-list` — 宛先候補の一覧
-- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（現状維持）
+- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは oe-send に一本化）
 - `projects/orchestration-engine/lib/delegate-send.sh` — 改行拒否の 1 行 safe-send
 - `projects/orchestration-engine/lib/delegate-registry.sh` — アドレッシング（record/resolve/list/gc）
 - `implementer-contract` スキル — 実装委譲時に kick プロンプトへ組み込む契約定義
