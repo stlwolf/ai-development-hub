@@ -28,6 +28,12 @@ oe_send_line() {
     echo "oe_send_line: refusing to send multi-line text (contains newline) to ${pane}" >&2
     return 2
   fi
+  # tmux 不在は環境エラー（exit 2）として「ペイン無し (exit 1)」と区別する。
+  # これが無いと list-panes の失敗が握りつぶされ「target pane not found」と誤表示する。
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "oe_send_line: tmux not found in PATH (required to send to a pane)" >&2
+    return 2
+  fi
   # 対象ペインの生存確認。
   if ! tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF "$pane"; then
     echo "oe_send_line: target pane not found: ${pane}" >&2
