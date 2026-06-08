@@ -34,8 +34,15 @@ oe_send_line() {
     echo "oe_send_line: tmux not found in PATH (required to send to a pane)" >&2
     return 2
   fi
-  # 対象ペインの生存確認。
-  if ! tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF "$pane"; then
+  # 対象ペインの生存確認。list-panes 自体の失敗（サーバ未起動/接続不可）は
+  # 「ペイン無し (exit 1)」と区別し、環境エラー (exit 2) で落とす（原因調査のため）。
+  local live rc
+  live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "oe_send_line: tmux list-panes failed (rc=${rc}): ${live}" >&2
+    return 2
+  fi
+  if ! printf '%s\n' "$live" | grep -qxF "$pane"; then
     echo "oe_send_line: target pane not found: ${pane}" >&2
     return 1
   fi

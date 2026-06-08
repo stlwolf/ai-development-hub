@@ -79,6 +79,13 @@ oe_reg_resolve() {
   command -v jq   >/dev/null 2>&1 || { echo "oe_reg_resolve: jq is required" >&2; return 2; }
 
   local self="${TMUX_PANE:-}"
+  # list-panes 自体の失敗（サーバ未起動/接続不可）は「該当なし (1)」と区別し環境エラー (2)。
+  local live rc
+  live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "oe_reg_resolve: tmux list-panes failed (rc=${rc}): ${live}" >&2
+    return 2
+  fi
   local matched=()
   local p key piname plabel pparent
   while IFS= read -r p; do
@@ -100,7 +107,7 @@ oe_reg_resolve() {
         matched+=("$p")
       fi
     fi
-  done < <(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)
+  done <<< "$live"
 
   if [[ ${#matched[@]} -eq 0 ]]; then
     echo "oe_reg_resolve: no live target matches '${target}' (try: oe-list)" >&2
@@ -118,6 +125,12 @@ oe_reg_list() {
   command -v tmux >/dev/null 2>&1 || { echo "oe_reg_list: tmux is required" >&2; return 2; }
   command -v jq   >/dev/null 2>&1 || { echo "oe_reg_list: jq is required" >&2; return 2; }
   local self="${TMUX_PANE:-}"
+  local live rc
+  live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "oe_reg_list: tmux list-panes failed (rc=${rc}): ${live}" >&2
+    return 2
+  fi
   printf '%-8s %-14s %s\n' "PANE" "SOURCE" "LABEL"
   local p key label source plabel pparent
   while IFS= read -r p; do
@@ -140,20 +153,21 @@ oe_reg_list() {
       source="pane-title"
     fi
     printf '%-8s %-14s %s\n' "$p" "$source" "$label"
-  done < <(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)
+  done <<< "$live"
 }
 
 # oe_reg_gc — 生存ペインに無い or 別サーバ pid の spawn レジストリ entry を掃除
 oe_reg_gc() {
   [[ -d "$OE_DELEGATE_STATE_DIR" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
-  local pid live_keys p f base
+  local pid panes live_keys p f base rc
   pid="$(_oe_reg_server_pid)"
-  live_keys="$(
-    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r p; do
-      [[ -n "$p" ]] && printf '%s\n' "$(_oe_reg_key "$p")"
-    done
-  )"
+  panes="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; rc=$?
+  # list-panes 失敗 or 空（サーバ未起動/接続不可）時は GC をスキップ（全 entry 誤削除を防ぐ）
+  [[ "$rc" -eq 0 && -n "$panes" ]] || return 0
+  live_keys="$(printf '%s\n' "$panes" | while IFS= read -r p; do
+    [[ -n "$p" ]] && printf '%s\n' "$(_oe_reg_key "$p")"
+  done)"
   for f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f" .json)"

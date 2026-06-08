@@ -24,6 +24,7 @@ MOCK_LIVE_PANES=""
 tmux() {
   case "${1:-} ${2:-}" in
     "list-panes -a"|"list-panes"*)
+      if [[ -n "${MOCK_TMUX_FAIL:-}" ]]; then echo "no server running on socket" >&2; return 1; fi
       # shellcheck disable=SC2086
       printf '%s\n' $MOCK_LIVE_PANES ;;
     "display-message"*) echo "mock-pane-title" ;;
@@ -86,6 +87,17 @@ echo "[7] gc: 死んだペインの entry を掃除"
 MOCK_LIVE_PANES="%5"   # %7 が消えた
 oe_reg_gc
 ck "dead %7 entry removed" "no" "$( [[ -e "${OE_DELEGATE_STATE_DIR}/${keyB}.json" ]] && echo yes || echo no)"
+
+echo "[8] tmux list-panes 失敗時: resolve=環境エラー(2) / gc は誤削除しない"
+MOCK_LIVE_PANES="%5 %7"
+oe_reg_record "%7" "guard-task" "/ws" "%1"   # 内部 gc は %7 live なので保持
+ck "事前: %7 entry 存在" "yes" "$( [[ -e "${OE_DELEGATE_STATE_DIR}/${keyB}.json" ]] && echo yes || echo no)"
+MOCK_TMUX_FAIL=1
+rrc=0; oe_reg_resolve 'guard-task' >/dev/null 2>&1 || rrc=$?
+ck "list-panes 失敗 → resolve rc=2 (環境エラー)" "2" "$rrc"
+oe_reg_gc 2>/dev/null
+ck "list-panes 失敗 → gc が entry を残す(誤削除なし)" "yes" "$( [[ -e "${OE_DELEGATE_STATE_DIR}/${keyB}.json" ]] && echo yes || echo no)"
+unset MOCK_TMUX_FAIL
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]
