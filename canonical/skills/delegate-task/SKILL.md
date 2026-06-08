@@ -97,6 +97,10 @@ BIN="$REPO/projects/orchestration-engine/bin"
 "$BIN/oe-send" --no-enter "%37" "確認してほしい下書き"
 ```
 
+> `--kickoff` のパスは **対象ペインの可読ルート内**（cwd / `--add-dir` 済みの場所）に置く。
+> 稼働中ペインには後付けで `--add-dir` できないため、ルート外だと子が権限プロンプトで止まる。
+> （`oe-delegate --kickoff` は起動時に doc dir を `--add-dir` 開示するので問題ない）
+
 ### 誤送信を防ぐ
 
 宛先を間違えやすいときは、まず `oe-list` で候補を確認してからラベル / `%N` を選ぶ。
@@ -110,7 +114,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 ```
 
 - 同じラベルが複数ペインに一致する場合、`oe-send` は曖昧エラーで止まる → `%N` で明示する
-- ラベルは現在の親（`$TMUX_PANE`）が起動した子にスコープされる。別の親の子には誤って届かない
+- **custom ラベル（任意名）**は現在の親（`$TMUX_PANE`）が起動した子にスコープされ、別親の同名には届かない。一方 **`#N` は issue の大域同定**（pane-issue 由来）で親スコープ外 — 同一サーバの別親が起動した `#N` 子にも解決されうる
 
 ---
 
@@ -146,7 +150,7 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 
 - `#N` 解決は **`wt switch` 経由が前提**。素の `git checkout` で issue ブランチに入った子は pane-issue が無いので、`--label` の仮ラベルか `%N` で指す
 - 関連の薄い側道会話用ペイン（`master` / リポ名命名）は `#N` を持たない → `%N` で指す
-- 同一ペインに spawn ラベルと pane-issue の両方があれば **pane-issue（現在の #N）を優先**
+- 同一ペインに spawn ラベルと pane-issue の両方があれば **pane-issue（現在の #N）を優先**（子が `wt switch` すると元の custom ラベルは以後解決されなくなる＝ドリフト吸収の帰結。以後は `#N` で指す）
 
 ### 2 系統の send を混同しない
 
