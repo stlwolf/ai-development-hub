@@ -103,7 +103,7 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 - **論点E**: `oe-report` のコード整理（薄い alias 化 / 廃止）。戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化済み。alias 化すると `申し送り:`/`レビュー依頼:` プレフィックスの扱いが論点
 - **pane-id 2系統の統一（→ #114）**: `oe-capture`（wez 整数前提）が tmux 子（`%N`）を取得できない。クリーン出力チャネルの tmux 統一が未達。dogfood で顕在化（詳細は末尾「追記」）
-- **`--no-enter` の mid-session 受け手での不達**: fresh/settled な claude では動くが、auto-mode + plan-wait の mid-session claude にはステージが残らない（dogfood で顕在化）。Enter 有無 / fresh-vs-mid の差分分離と、必要なら bracketed-paste 等の対策検討（詳細は末尾「追記」）
+- **[重要] send-keys → Claude TUI ingestion の不安定さ**（dogfood で顕在化・詳細は末尾「追記」）。2症状: ①mid-session(auto-mode/plan-wait)で stage しない ②idle でも Enter が吸収され未 submit（間欠）。候補対策＝oe_send_line でリテラル送信と Enter の間に小休止（`OE_SEND_ENTER_DELAY`）。受け手 TUI 依存ゆえ根治には bracketed-paste/入力モード調査が要る
 - 本リポを workspace に使う際の `.oe/` 一時 kickoff dir の gitignore（必要時）
 - 実地未検証: 親からの `oe-send "#N"` 追送（解決は検証済み）／子からの戻し `oe-send "$PARENT_TMUX_PANE"`／`--kickoff` の既存ペインへの送信
 
@@ -151,7 +151,23 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 **含意**: コア経路（fresh 子への kick・fresh/settled ペインへの送信・戻し）は全て動く。ギャップは「**稼働中(mid-session)の claude に未送信でステージする**」という狭い use case。provenance を inline で front-load する設計（人間直接でないと認識させる）は有効だった＝エージェント間メッセージの出所明示の価値を実証。
 
-### 未検証（次サイクル候補）
+### 2026-06-08 [重要] send-keys → Claude TUI ingestion の不安定さ（2症状）
+
+再送（%144→%88）で**新症状を確認**: oe-send（Enter 付き）が **submit されずメッセージが %88 の入力欄にステージされたまま**（処理インジケータ無し）。手動で `tmux send-keys -t %88 Enter` を撃つと submit された＝**最初の Enter が吸収されていた**。前回 %88 は submit 成功 → **間欠的**。
+
+- これは %88 のトークナイザ/tool-call 整形崩れ（モデル側）とは**別レイヤー＝送信機構の問題**
+- 根本仮説 [speculation]: Claude TUI の paste 検知で、`send-keys -l` のリテラル burst 直後の `send-keys Enter` が「paste 内の改行」として吸収され submit にならない（wez 版が `--no-paste` を使う動機と同型）
+
+**共通の根**: `tmux send-keys` → Claude Code TUI への入力 ingestion が **状態/タイミング依存で不安定**。2症状:
+1. **mid-session で stage しない**（%162・auto-mode/plan-wait）— テキストすら入力欄に残らない
+2. **Enter 吸収で未 submit**（%88・idle）— テキストは入るが Enter が効かずステージのまま
+
+ツール（oe-send/oe_send_line）は tmux レベルでは正しい（send-keys 実行・EXIT=0）が、受け手 TUI の取り込みが弱点。#137 PoC は「届く」を確認したが、dogfood で**エッジの不安定さ**が顕在化。
+
+**候補対策**: oe_send_line で リテラル送信と Enter の間に小休止（`sleep` / `OE_SEND_ENTER_DELAY`）を入れ paste 検知窓を閉じてから Enter。mid-session stage 不達は別途要調査（bracketed-paste / 入力モード）。
+
+### 未検証 / 次サイクル候補
+- 上記 Enter-race の delay 緩和が間欠失敗を消すか（間欠ゆえ計測が難しい）
 - 追送 `oe-send "#N" "<指示>"` の **Enter 付き** inject（mid-session %162 に Enter 付きなら届くか＝差分要因の分離）
 - `--no-enter` の mid-session 挙動の再現（plan-wait 状態の throwaway claude で確証）
 - 並行2子 kick（registry 多重）／issue 番号のみ kick（`--kickoff` 無し）／不正 workspace エラー処理
