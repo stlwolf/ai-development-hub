@@ -42,6 +42,10 @@ oe_send_line() {
   # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
   tmux send-keys -l -t "$pane" -- "$text"
   if [[ "$send_enter" != "0" ]]; then
+    # リテラル送信の直後に Enter を撃つと、Claude Code TUI の paste 検知で Enter が
+    # 「paste 内の改行」として吸収され submit されないことがある（dogfood で間欠確認）。
+    # 小休止で paste 検知窓を閉じてから Enter を撃つ。OE_SEND_ENTER_DELAY で上書き可。
+    sleep "${OE_SEND_ENTER_DELAY:-0.3}"
     tmux send-keys -t "$pane" Enter
   fi
 }
