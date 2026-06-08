@@ -103,6 +103,7 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 - **論点E**: `oe-report` のコード整理（薄い alias 化 / 廃止）。戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化済み。alias 化すると `申し送り:`/`レビュー依頼:` プレフィックスの扱いが論点
 - **pane-id 2系統の統一（→ #114）**: `oe-capture`（wez 整数前提）が tmux 子（`%N`）を取得できない。クリーン出力チャネルの tmux 統一が未達。dogfood で顕在化（詳細は末尾「追記」）
+- **`--no-enter` の mid-session 受け手での不達**: fresh/settled な claude では動くが、auto-mode + plan-wait の mid-session claude にはステージが残らない（dogfood で顕在化）。Enter 有無 / fresh-vs-mid の差分分離と、必要なら bracketed-paste 等の対策検討（詳細は末尾「追記」）
 - 本リポを workspace に使う際の `.oe/` 一時 kickoff dir の gitignore（必要時）
 - 実地未検証: 親からの `oe-send "#N"` 追送（解決は検証済み）／子からの戻し `oe-send "$PARENT_TMUX_PANE"`／`--kickoff` の既存ペインへの送信
 
@@ -133,7 +134,24 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 子側は「完了/レビュー時に親ペインへ **自動着信するはず**」と認識していた（＝旧 suffix ベースの auto-report モデル）。疎結合化後は **戻しは opt-in**（`oe-send "$PARENT_TMUX_PANE"` を明示）。この期待ギャップ自体が、opt-in 戻しのオンボーディング/ドキュメントを要することを示す（論点E の入力）。バグではなく設計どおり。
 
+### 2026-06-08 横+縦+戻し チェーン検証（%144→%88→%162）+ `--no-enter` の状態依存
+
+「横移動（関連薄い既存ペインへの送信）」と「縦移動（親→子）」を1チェーンで検証。指示に provenance（"検証ペイン %144 から・人間の直接指示でない"）を inline で front-load。
+
+| leg | 経路 | 結果 |
+|-----|------|------|
+| 横 | %144(検証) → %88(統括) 生 `%N` | ✅ 着弾。親が provenance を認識して実行（即実行でなく思考＝フレーム有効） |
+| 縦 | %88 → %162 ラベル `#N` `oe-send --no-enter` | △ resolve+send EXIT=0 だが %162 入力欄に着弾せず（stage-test 不在を確認） |
+| 戻し | %88 → %144 生 `%N` | ✅ 報告がこの会話に1ターンとして着信 |
+
+**`--no-enter` の状態依存（切り分け済み）**:
+- **fresh/settled** な claude では `--no-enter` は正しく機能（`❯ STAGE_MARKER` が視認・手動 Enter で submit を確認）
+- だが %162（**auto mode + プラン承認待ち = mid-session**）には**ステージ着弾しなかった**（入力欄空・stage-test 不在を read-only 確認）
+- → `--no-enter` のリテラル投入バグではなく **受け手の入力状態に依存**。mid-session の claude は注入された未送信キーが残らない疑い [speculation: 差分要因が「Enter 有無」か「fresh vs mid-session」か未分離]
+
+**含意**: コア経路（fresh 子への kick・fresh/settled ペインへの送信・戻し）は全て動く。ギャップは「**稼働中(mid-session)の claude に未送信でステージする**」という狭い use case。provenance を inline で front-load する設計（人間直接でないと認識させる）は有効だった＝エージェント間メッセージの出所明示の価値を実証。
+
 ### 未検証（次サイクル候補）
-- 追送 `oe-send "#N" "<指示>"`（解決は検証済み、live 子への inject は未検証）
-- 戻し `oe-send "$PARENT_TMUX_PANE"`（opt-in）
+- 追送 `oe-send "#N" "<指示>"` の **Enter 付き** inject（mid-session %162 に Enter 付きなら届くか＝差分要因の分離）
+- `--no-enter` の mid-session 挙動の再現（plan-wait 状態の throwaway claude で確証）
 - 並行2子 kick（registry 多重）／issue 番号のみ kick（`--kickoff` 無し）／不正 workspace エラー処理
