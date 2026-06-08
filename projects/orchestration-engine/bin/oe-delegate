@@ -63,6 +63,12 @@ if [[ -z "$TASK" && -z "$KICKOFF" ]]; then
   echo "oe-delegate: task argument is required (or pass --kickoff)" >&2
   usage
 fi
+# task は 1 行。改行を含むなら spawn 前に弾く（送信は oe_send_line が拒否するため、
+# spawn 後に気づくと無キックの孤児ペインが残る。preflight で防ぐ）。
+if [[ "$TASK" == *$'\n'* || "$TASK" == *$'\r'* ]]; then
+  echo "oe-delegate: task must be a single line (no newline); 長文は --kickoff <path> で渡す" >&2
+  exit 2
+fi
 
 # tmux 内でのみ実行可能
 PARENT_PANE="${TMUX_PANE:-}"
