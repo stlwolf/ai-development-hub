@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # oe-delegate — 子 Claude セッションを起動し、タスクをキックする
 #
-# usage: oe-delegate [-w WORKSPACE] <task>
+# usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--] <task>
 #
-# 親ペイン ID を PARENT_TMUX_PANE 環境変数として子プロセスに渡す（優先）。
-# /tmp/oe-parent-{child_pane_id} への書き出しは手動利用向けのフォールバック。
+# 子ペインを tmux split-window で起動し、キックは bin/oe-send 経由で注入する
+# （spawn + send の合成）。親ペイン ID を PARENT_TMUX_PANE 環境変数として子へ渡す（優先）。
+# /tmp/oe-parent-{child_pane_id} への書き出しは oe-report の手動フォールバック。
 # Phase 5 HitL 統合はスコープ外（Issue #138）。
 
 set -euo pipefail
@@ -13,10 +14,13 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] <task>
+usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--] <task>
 
-  <task>              子 Claude セッションへ送るタスク（1行テキスト）
+  <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
+                      --kickoff があれば省略可
   -w, --workspace DIR 子セッションの作業ディレクトリ（デフォルト: カレントディレクトリ）
+  --kickoff <path>    キックオフ doc を子に読ませる（"<path> を読んで進めて。" を付加）。
+                      子から読めるよう doc のディレクトリを --add-dir で開示する
   -h, --help          このヘルプを表示
 
 環境変数:
@@ -24,7 +28,7 @@ usage: oe-delegate [-w WORKSPACE] <task>
   TMUX_PANE             tmux 内で自動設定される親ペイン ID（必須）
   PARENT_TMUX_PANE      子プロセスへ自動で渡される（設定不要）
 
-子セッション内での申し送り:
+子セッション内での申し送り（キック末尾に自動で案内が付く）:
   oe-report "サマリー"           # 申し送り: ...
   oe-report --review "サマリー"  # レビュー依頼: ...
 EOF
@@ -32,11 +36,15 @@ EOF
 }
 
 WORKSPACE="$(pwd)"
+KICKOFF=""
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -w|--workspace)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --workspace requires a value" >&2; exit 2; }
       WORKSPACE="$2"; shift 2 ;;
+    --kickoff)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --kickoff requires a value" >&2; exit 2; }
+      KICKOFF="$2"; shift 2 ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
@@ -44,7 +52,11 @@ while [[ "${1:-}" == -* ]]; do
 done
 
 TASK="${1:-}"
-[[ -n "$TASK" ]] || { echo "oe-delegate: task argument is required" >&2; usage; }
+# task は --kickoff があれば省略可。どちらも無ければエラー。
+if [[ -z "$TASK" && -z "$KICKOFF" ]]; then
+  echo "oe-delegate: task argument is required (or pass --kickoff)" >&2
+  usage
+fi
 
 # tmux 内でのみ実行可能
 PARENT_PANE="${TMUX_PANE:-}"
@@ -53,11 +65,26 @@ PARENT_PANE="${TMUX_PANE:-}"
   exit 1
 }
 
+# --kickoff を絶対パス化し、子（対話型 claude）が読めるよう doc のディレクトリを
+# --add-dir で開示する。spawn.sh の envelope は claude -p + --add-dir /tmp で読ませているが、
+# こちらは素の対話型 claude のため明示開示が要る（so 指摘）。
+KICKOFF_ABS=""
+ADD_DIR_OPT=""
+if [[ -n "$KICKOFF" ]]; then
+  [[ -f "$KICKOFF" ]] || { echo "oe-delegate: --kickoff file not found: ${KICKOFF}" >&2; exit 2; }
+  case "$KICKOFF" in
+    *\'*) echo "oe-delegate: --kickoff path must not contain a single quote" >&2; exit 2 ;;
+  esac
+  kdir="$(cd "$(dirname "$KICKOFF")" && pwd)"
+  KICKOFF_ABS="${kdir}/$(basename "$KICKOFF")"
+  ADD_DIR_OPT=" --add-dir '${kdir}'"
+fi
+
 # 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
-CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=$PARENT_PANE claude")"
+CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=${PARENT_PANE} claude${ADD_DIR_OPT}")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
-# 親ペイン ID を tmp ファイルへ書き出し（手動利用向けフォールバック）
+# 親ペイン ID を tmp ファイルへ書き出し（oe-report の手動フォールバック・互換維持）
 PARENT_FILE="/tmp/oe-parent-${CHILD_PANE#%}"
 printf '%s\n' "$PARENT_PANE" > "$PARENT_FILE"
 
@@ -65,15 +92,25 @@ printf '%s\n' "$PARENT_PANE" > "$PARENT_FILE"
 WAIT_SEC="${OE_DELEGATE_WAIT_SEC:-4}"
 sleep "$WAIT_SEC"
 
-# 子ペインの生存確認
-tmux list-panes -a -F "#{pane_id}" | grep -qF "$CHILD_PANE" || {
+# 子ペインの生存確認（-x で完全一致。%1 が %12 に部分一致する誤検知を防ぐ）
+tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
   echo "oe-delegate: child pane $CHILD_PANE exited during startup" >&2
   exit 1
 }
 
-# タスクを注入（oe-report の場所を末尾に付記）
-INJECT="${TASK}. 完了後は ${BIN_DIR}/oe-report \"サマリー\" を実行して申し送りを送ること。レビュー依頼は ${BIN_DIR}/oe-report --review \"サマリー\"。"
-tmux send-keys -l -t "$CHILD_PANE" "$INJECT"
-tmux send-keys -t "$CHILD_PANE" Enter
+# キック payload を組み立てて oe-send で注入する。
+# 後方互換: oe-report の使い方案内は delegate 固有責務としてここで付ける（oe-send には載せない）。
+REPORT_SUFFIX="完了後は ${BIN_DIR}/oe-report \"サマリー\" を実行して申し送りを送ること。レビュー依頼は ${BIN_DIR}/oe-report --review \"サマリー\"。"
+if [[ -n "$TASK" ]]; then
+  ADHOC="${TASK}. ${REPORT_SUFFIX}"
+else
+  ADHOC="${REPORT_SUFFIX}"
+fi
+
+if [[ -n "$KICKOFF_ABS" ]]; then
+  "${BIN_DIR}/oe-send" --kickoff "$KICKOFF_ABS" -- "$CHILD_PANE" "$ADHOC"
+else
+  "${BIN_DIR}/oe-send" -- "$CHILD_PANE" "$ADHOC"
+fi
 
 echo "oe-delegate: task injected to ${CHILD_PANE}" >&2
