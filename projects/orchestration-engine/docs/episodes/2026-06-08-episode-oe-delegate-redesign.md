@@ -103,7 +103,7 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 - **論点E**: `oe-report` のコード整理（薄い alias 化 / 廃止）。戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化済み。alias 化すると `申し送り:`/`レビュー依頼:` プレフィックスの扱いが論点
 - **pane-id 2系統の統一（→ #114）**: `oe-capture`（wez 整数前提）が tmux 子（`%N`）を取得できない。クリーン出力チャネルの tmux 統一が未達。dogfood で顕在化（詳細は末尾「追記」）
-- **[重要] send-keys → Claude TUI ingestion の不安定さ**（dogfood で顕在化・詳細は末尾「追記」）。2症状: ①mid-session(auto-mode/plan-wait)で stage しない ②idle でも Enter が吸収され未 submit（間欠）。候補対策＝oe_send_line でリテラル送信と Enter の間に小休止（`OE_SEND_ENTER_DELAY`）。受け手 TUI 依存ゆえ根治には bracketed-paste/入力モード調査が要る
+- **[重要] send-keys → Claude TUI ingestion の transient flakiness**（dogfood で顕在化・詳細は末尾「追記」）。間欠で①stage 不達 ②Enter 吸収で未 submit。**対策A（Enter 前小休止 `OE_SEND_ENTER_DELAY`）適用済み**で緩和。clean 再実行では正常着弾＝transient と判明。根治（bracketed-paste 等で ingestion を堅く）は follow-up・#114 の tmux/TUI 境界テーマへ集約候補
 - 本リポを workspace に使う際の `.oe/` 一時 kickoff dir の gitignore（必要時）
 - 実地未検証: 親からの `oe-send "#N"` 追送（解決は検証済み）／子からの戻し `oe-send "$PARENT_TMUX_PANE"`／`--kickoff` の既存ペインへの送信
 
@@ -166,8 +166,15 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 
 **候補対策**: oe_send_line で リテラル送信と Enter の間に小休止（`sleep` / `OE_SEND_ENTER_DELAY`）を入れ paste 検知窓を閉じてから Enter。mid-session stage 不達は別途要調査（bracketed-paste / 入力モード）。
 
+### 2026-06-08 更新: finding「mid-session 不達」は transient と判明 + 対策A適用
+
+親 %88 の **clean 再実行**（整形崩れの無いセッション）で `oe-send --no-enter #N → %162` は **正常に staged 着弾（PASS・grep 一致）**。→ 前回の未着弾は **transient**（%88 の整形崩れセッション中の一過性）であり、**「mid-session で deterministic に stage しない」という先の結論は訂正**。実体は **send-keys ingestion の transient なタイミング flakiness**（stage 不達も Enter 吸収も同じ根の間欠現象）。さらに **戻し(%88→%144) も Enter 吸収でステージ**され人間の手動 Enter で submit ＝ Enter-race の再現。
+
+**対策A 適用済み**: `oe_send_line` で Enter 前に小休止（`OE_SEND_ENTER_DELAY` 既定 0.3s）。throwaway claude で submit 3/3 確認（間欠ゆえ完全消去は証明不可・緩和の位置づけ）。
+
 ### 未検証 / 次サイクル候補
-- 上記 Enter-race の delay 緩和が間欠失敗を消すか（間欠ゆえ計測が難しい）
+- 対策A後も Enter-race / stage 不達が間欠で残るか（間欠ゆえ計測が難しい・長期観察）
+- 根治: bracketed-paste 等で ingestion 自体を堅くする（#114 の tmux/TUI 境界テーマに集約候補）
 - 追送 `oe-send "#N" "<指示>"` の **Enter 付き** inject（mid-session %162 に Enter 付きなら届くか＝差分要因の分離）
 - `--no-enter` の mid-session 挙動の再現（plan-wait 状態の throwaway claude で確証）
 - 並行2子 kick（registry 多重）／issue 番号のみ kick（`--kickoff` 無し）／不正 workspace エラー処理
