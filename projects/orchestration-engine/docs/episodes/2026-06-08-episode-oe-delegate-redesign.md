@@ -119,7 +119,7 @@ Enter 発火の是非は **スキル（自然言語層）でなくコマンド�
 |------|------|
 | 子ペイン spawn（cwd=workspace） | ✅ `%162` 起動・parent `%88` 記録 |
 | registry ラベル | ✅ `oe-list` で `%162 = #N`（source spawn-registry） |
-| kickoff doc 読込 + task 注入 + Enter | ✅ 子が doc を読み `#N`/Epic `#18`/`関連 issue` を正しく参照したプラン生成（**`--add-dir` 可読化が実機で機能**・kickoff 整合性 OK） |
+| kickoff doc 読込 + task 注入 + Enter | ✅ 子が doc を読み 関連 issue 群を正しく参照したプラン生成（**`--add-dir` 可読化が実機で機能**・kickoff 整合性 OK） |
 | 子の状態 | ✅ プラン提示 → オーナー承認待ち（❯ auto mode・Crunched 4m15s） |
 
 `oe-delegate` の stdout（child started / task injected）、`oe-list` のラベル表示も実用的との所見。addressing 記録・解決・親スコープ誤送信防止は read-only でも裏取り済み（上記「初期検証スコープ」）。
