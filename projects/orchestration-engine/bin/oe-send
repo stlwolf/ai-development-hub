@@ -6,20 +6,23 @@
 # 親→子の追加指示、子→親の戻し、関連の薄い側道会話など「既存ペインへの送信」を
 # 一手に担う。payload は delegate-send.sh の oe_send_line で 1 行保証して注入する。
 #
-# <target> は現状 生のペインID（%N）のみ対応。ラベル（#N / 名前）解決は後続ステップで
-# registry を接続する。
+# <target> は 生のペインID（%N、素通し）か、ラベル（#N / 任意名）。ラベルは
+# delegate-registry.sh が親所有 spawn レジストリ + pane-issue state の union で解決する。
 
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-send.sh
 source "${BIN_DIR}/../lib/delegate-send.sh"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 usage() {
   cat >&2 <<'EOF'
 usage: oe-send [--kickoff <path>] [--] <target> [ad-hoc...]
 
-  <target>            送信先ペイン。現状 生のペインID（例: %5）のみ対応
+  <target>            送信先。生のペインID（例: %5）か ラベル（#142 / 任意名）。
+                      ラベルは registry で解決（候補は oe-list で確認）
   ad-hoc...           1 行の追加指示（複数語は空白連結、改行は不可）
   --kickoff <path>    "<path> を読んで進めて。" を payload 先頭に付ける
   -h, --help          このヘルプを表示
@@ -47,12 +50,8 @@ TARGET="${1:-}"
 shift
 ADHOC="$*"
 
-# target 解決（現状 %N のみ。ラベル解決は後続ステップで registry を接続）
-if [[ ! "$TARGET" =~ ^%[0-9]+$ ]]; then
-  echo "oe-send: only raw pane ids (%N) are supported for now (got: '${TARGET}')" >&2
-  exit 2
-fi
-PANE="$TARGET"
+# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決）
+PANE="$(oe_reg_resolve "$TARGET")" || exit
 
 # payload 組立
 payload=""

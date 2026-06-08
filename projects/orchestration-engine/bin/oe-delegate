@@ -11,16 +11,20 @@
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--] <task>
+usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--] <task>
 
   <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
                       --kickoff があれば省略可
   -w, --workspace DIR 子セッションの作業ディレクトリ（デフォルト: カレントディレクトリ）
   --kickoff <path>    キックオフ doc を子に読ませる（"<path> を読んで進めて。" を付加）。
                       子から読めるよう doc のディレクトリを --add-dir で開示する
+  --label <#N|name>   子を registry に登録する際のラベル（後で oe-send <label> で指す）。
+                      省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
   -h, --help          このヘルプを表示
 
 環境変数:
@@ -37,6 +41,7 @@ EOF
 
 WORKSPACE="$(pwd)"
 KICKOFF=""
+LABEL=""
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -w|--workspace)
@@ -45,6 +50,9 @@ while [[ "${1:-}" == -* ]]; do
     --kickoff)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --kickoff requires a value" >&2; exit 2; }
       KICKOFF="$2"; shift 2 ;;
+    --label)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --label requires a value" >&2; exit 2; }
+      LABEL="$2"; shift 2 ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
@@ -97,6 +105,9 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
   echo "oe-delegate: child pane $CHILD_PANE exited during startup" >&2
   exit 1
 }
+
+# spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
+oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
 
 # キック payload を組み立てて oe-send で注入する。
 # 後方互換: oe-report の使い方案内は delegate 固有責務としてここで付ける（oe-send には載せない）。
