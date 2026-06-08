@@ -44,7 +44,7 @@ tags: [orchestration, delegate, oe-delegate, oe-send, addressing, cli-redesign, 
   - `lib/delegate-send.sh` — 改行拒否の1行 safe-send（transport）。oe-report が将来無改修で乗れるよう先出し
   - `lib/delegate-registry.sh` — record/resolve/list/gc（addressing）
   - 既存 `lib/spawn.sh` の `oe_spawn_send`（wez・`claude -p`・非対話）とは別系統。統合しない旨を docs/skill に明記
-- **D（レジストリ）**: `~/.claude/state/oe-delegate/` に per-child `${server}_${pane}.json`（`{label, workspace, parent_pane, role, created}`）。resolve/list は `parent_pane == $TMUX_PANE` で親スコープ絞り。GC は `pane 不在 or key の pid ≠ 現 server pid` で削除（server 再起動の pane 番号再利用による誤着弾・リーク防止）
+- **D（レジストリ）**: `~/.claude/state/oe-delegate/` に per-child `${server}_${pane}.json`（`{pane, label, workspace, parent_pane, role}`）。resolve/list は `parent_pane == $TMUX_PANE` で親スコープ絞り。GC は `pane 不在 or key の pid ≠ 現 server pid` で削除（server 再起動の pane 番号再利用による誤着弾・リーク防止）
 - **E（戻し / oe-report 統合）**: 戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化。oe-report のコード整理（薄い alias 化／廃止）は今回スコープ外・別 Issue 候補
 
 ## アドレッシング解決の確定仕様
@@ -58,7 +58,7 @@ tags: [orchestration, delegate, oe-delegate, oe-send, addressing, cli-redesign, 
   ```
   生存確認・現server scope・名前解決が一手に揃い、孤児/別serverの stale を踏まない
 - `#N` は **トークン境界の完全一致**（`^#<n>($| )`）。前方一致は使わない（`#1`→`#10`/`#142` 誤マッチ防止）
-- 任意名は exact 優先（prefix は補助のみ）
+- 任意名は exact 一致のみ（誤送信防止のため prefix 一致は使わない）
 - union（spawn registry + pane-issue）は **pane_id で dedup してから件数判定**。0件→エラー+`oe-list`誘導、複数件→曖昧エラー
 - 同一 pane に両ソースのラベルがある場合は **pane-issue（現在の #N）を優先**（子が issue 乗換しても古い spawn ラベルが勝たない）
 - `%N` 直指定は registry を介さず素通し（escape hatch、parent scope 対象外）
