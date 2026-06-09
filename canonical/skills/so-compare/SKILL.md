@@ -35,6 +35,9 @@ so-compare [OPTIONS] "プロンプト"
 | `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
 | `--cursor-only` | Cursor のみ実行 | 両方実行 |
 | `--cursor-model MODEL` | Cursor で使用するモデル | `auto` |
+| `--claude-model MODEL` | Claude で使用するモデル（エイリアス `opus`/`sonnet`/`haiku` 可） | CLI 既定 |
+| `--codex-model MODEL` | Codex で使用するモデル | CLI 既定 |
+| `--claude-effort LEVEL` | Claude のエフォート（`low`/`medium`/`high`/`xhigh`/`max`） | CLI 既定 |
 | `--prev DIR` | 前回出力を追記（イテレーション用） | なし |
 
 ### 環境変数
@@ -44,6 +47,9 @@ so-compare [OPTIONS] "プロンプト"
 | `SO_TIMEOUT` | 各ツールのタイムアウト秒数 | `240` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
 | `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `auto` |
+| `SO_CLAUDE_MODEL` | Claude のデフォルトモデル（`--claude-model` で上書き可） | CLI 既定 |
+| `SO_CODEX_MODEL` | Codex のデフォルトモデル（`--codex-model` で上書き可） | CLI 既定 |
+| `SO_CLAUDE_EFFORT` | Claude のデフォルトエフォート（`--claude-effort` で上書き可） | CLI 既定 |
 
 ### 基本パターン
 
@@ -68,7 +74,29 @@ so-compare --cursor --cursor-model composer-1.5 -w "$(pwd)" "プロンプト"
 
 # Cursor のみ
 so-compare --cursor-only -w "$(pwd)" "プロンプト"
+
+# Claude を上位モデル + 高エフォートで（設計判断など重い SO）
+so-compare --claude-model opus --claude-effort high -w "$(pwd)" "この設計方針を検証してください"
+
+# Codex のモデル指定
+so-compare --codex-model gpt-5.5 -w "$(pwd)" "プロンプト"
 ```
+
+## モデル / エフォート選択ガイド
+
+セカンドオピニオンを投げるエージェント向けの選択指針。**動的なモデル一覧コマンドが実在するのは Cursor のみ**（`agent models`）。Claude / Codex は以下を目安にする。
+
+- **Claude**: エイリアス `opus` / `sonnet` / `haiku` で指定する。**エイリアスはそのティアの最新を指す**ため、バージョン ID（`claude-opus-4-8` 等）を追いかける必要はない（フル ID も透過で渡せる）。エフォートは `--claude-effort` に `low`/`medium`/`high`/`xhigh`/`max`
+- **Codex**: 既定モデルは `~/.codex/config.toml` の `model`。任意のモデル名はそのまま透過で渡る
+- **Cursor**: `agent models` で「アカウントで使えるモデル一覧」を取得できる。`--cursor-model` に渡す
+
+### 使い分けの目安
+
+- 設計判断・反証など重い SO → Claude を `--claude-model opus --claude-effort high`（必要なら `max`）に上げる
+- 軽い確認 → 既定モデルのまま（フラグ未指定＝従来挙動）
+- 指定したモデル名が無効・未契約の場合、そのレーンはエラー（`error` / `error_partial`）として結果サマリに現れる
+
+未指定なら各 CLI の既定モデルで動作し、従来と挙動は変わらない。
 
 ## 出力ディレクトリ構成
 
@@ -77,13 +105,13 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, exit_code, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（tool, model_requested, exit_code, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-stderr.txt   # Claude の stderr
-├── claude-meta.txt     # メタデータ
+├── claude-meta.txt     # メタデータ（model_requested, effort_requested を含む）
 ├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
 ├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
-└── cursor-meta.txt     # メタデータ（--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（model_requested 含む。--cursor 時のみ）
 ```
 
 ## 結果読み込み手順
