@@ -33,9 +33,14 @@
 ```
 projects/orchestration-engine/
 ├── README.md                  # このファイル
-├── bin/
-│   └── oe                     # エントリポイント（`bash bin/oe "タスク記述"` または `bash bin/oe --task-file <path>`）
-├── lib/                       # Bash 関数ライブラリ
+├── bin/                       # 実行可能エントリ（各スクリプトの簡易説明は bin/README.md）
+│   ├── oe                     # 本体エンジン: 1 サイクル自律オーケストレーション（envelope→spawn→capture→verify→monitor）
+│   ├── oe-capture             # 既存ペインに attach して終端マーカーを capture→分類→KVS/audit
+│   ├── oe-delegate            # 子 Claude セッションを起動しタスクをキック（親子委譲: spawn + kick）
+│   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
+│   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
+│   └── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化）
+├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
 │   ├── envelope.sh            # JSON エンベロープ生成
 │   ├── spawn.sh               # wez pane split + send + CLI ディスパッチャ（cursor-agent / claude / codex）
@@ -43,15 +48,19 @@ projects/orchestration-engine/
 │   ├── verify.sh              # 検証ゲート v1（reviewer spawn + file redirect 経路 scan + KVS 書き込み）
 │   ├── monitor.sh             # ポーリングループ + サーキットブレーカー
 │   ├── audit.sh               # JSONL 監査ログ追記
-│   └── cleanup.sh             # trap EXIT 用ペイン kill + tmp 削除 + wez notify
+│   ├── cleanup.sh             # trap EXIT 用ペイン kill + tmp 削除 + wez notify
+│   ├── attach.sh              # 既存ペインに attach して capture→分類→audit/KVS（oe-capture が使用）
+│   ├── session.sh             # セッション ID 生成
+│   ├── delegate-registry.sh   # 親子委譲の宛先アドレッシング（spawn registry + pane-issue の union 解決）
+│   └── delegate-send.sh       # 1 行 safe-send（改行 fail-fast）+ 観測ベース finalize（Enter 吸収の回復・#144）
 ├── schemas/                   # JSON Schema 5 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy）
-├── tests/                     # mock テスト 8 suite 合計 306 assertions
+├── tests/                     # mock テスト suite（delegate registry / send 等の単体を含む）
 │   └── e2e_real_agent/        # 実 agent (cursor-agent + claude) で 1 サイクル E2E 検証（Step 4-4 で新設）
 ├── scripts/
 │   ├── validate-envelope.sh   # エンベロープ JSON 検証
-│   └── validate-session-state.sh  # KVS 状態 JSON 検証（Step 4-3 で追加、verification map 含む）
+│   └── validate-session-state.sh  # KVS 状態 JSON 検証（verification map 含む）
 ├── audit/                     # 監査ログ JSONL 出力先（runtime）
-├── state/                     # セッション状態 KVS 出力先（runtime）
+├── state/                     # セッション状態 KVS 出力先（runtime。委譲レジストリは ~/.claude/state/ 配下）
 └── docs/
     ├── discussions/           # 探索・ブレスト・調査メモ
     ├── plans/                 # KickOff / Plan（実行可能粒度）
@@ -60,6 +69,33 @@ projects/orchestration-engine/
 ```
 
 docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の構造を踏襲し、`spec-card` スキルの蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision/ADR）に準拠する。
+
+## 2 系統: 本体エンジン と 親子委譲 CLI
+
+本プロジェクトには目的の異なる 2 系統がある。
+
+| 系統 | 入口 | 性質 |
+|------|------|------|
+| **本体エンジン** | `bin/oe` | 非対話・wez + `claude -p` の自律オーケストレーションループ（Phase 4 MVP）。envelope→spawn→capture→verify→monitor を1サイクル回す |
+| **親子委譲 CLI（delegate-task 系）** | `bin/oe-delegate` / `bin/oe-send` / `bin/oe-list` | 対話セッション間の軽量な委譲プリミティブ。tmux `send-keys` の1行注入で、統括スレッド（親）→ 子 Claude N 個のスター型委譲を行う |
+
+### 親子委譲 CLI（delegate-task 系）
+
+統括スレッドから子セッションへタスク・事前情報を渡す痛点（コピペ・誤送信）を解消する単機能コマンド群。自然言語層の `delegate-task` スキルから駆動する。
+
+- `oe-delegate` — 子を `tmux split-window` で起動し、タスク（または `--kickoff <doc>`）をキック（spawn + send の合成）
+- `oe-send` — 既存ペインへ 1 行を汎用送信。親→子の追送、子→親の戻し（`oe-send "$PARENT_TMUX_PANE" ...`）、関連の薄い側道会話を一手に担う。`%N`/ラベル解決・`--kickoff`・`--no-enter`（投入のみ＝ステージ）
+- `oe-list` — 宛先候補を source 列付きで一覧
+- `oe-report` — legacy（戻しは `oe-send` に一本化済み）
+
+設計上のポイント:
+
+- **疎結合**: `oe-delegate` は spawn + kick に純化し report を内包しない（戻しは汎用 `oe-send`）。「ワンラリーに焼き付けると Claude 組み込み subagent の劣化版になる」ため
+- **アドレッシング**: 親所有 spawn レジストリ（`~/.claude/state/oe-delegate/`）と `wt switch` 由来の pane-issue（`~/.claude/state/pane-issue/`）を **union 解決**。`#N` はトークン境界の完全一致（`#14`≠`#142`）、spawn は親スコープで誤着弾を防止
+- **1 行保証**: `lib/delegate-send.sh` が改行（LF/CR）を含む payload を fail-fast で拒否（プロンプト途中送信の根本封じ）
+- **送信信頼化**: 自動 Enter が間欠的に「吸収」され submit されない問題に対し、送信後に観測ベースの finalize（入力欄に staged のまま残る吸収を settle 窓終端まで観測し Enter を1回だけ再送）。受け手依存ゆえ best-effort・保守的で、transport の rc は変えない。`OE_SEND_FINALIZE=0` で無効化可（[#144](https://github.com/stlwolf/ai-development-hub/issues/144)）
+
+経緯: [PR #143](https://github.com/stlwolf/ai-development-hub/pull/143)（再設計）/ `docs/episodes/2026-06-08-episode-oe-delegate-redesign.md`、送信信頼化は [#144](https://github.com/stlwolf/ai-development-hub/issues/144) / `docs/episodes/2026-06-09-episode-oe-send-finalize-ingestion.md`。各スクリプトの引数は `bin/README.md` 参照。
 
 ## 観測層と駆動層の分離
 
@@ -95,6 +131,13 @@ orchestration-engine の MVP は「閉セッション間のリアルタイム双
 | 4-3 | 検証ゲート v1（adversarial review 相当） | ✅ 完了（[#89](https://github.com/stlwolf/ai-development-hub/issues/89) / [PR #94](https://github.com/stlwolf/ai-development-hub/pull/94)） |
 | 4-4 | E2E 検証（実 agent で 1 サイクル完走） | ✅ 完了（[#95](https://github.com/stlwolf/ai-development-hub/issues/95) / [PR #97](https://github.com/stlwolf/ai-development-hub/pull/97)） |
 | 4-5 | フィードバック → architecture-sketch.md 更新 + frozen 化 | ✅ 完了（[#103](https://github.com/stlwolf/ai-development-hub/issues/103) / [PR #104](https://github.com/stlwolf/ai-development-hub/pull/104)） |
+
+### Phase 4 後の追加（post-MVP）
+
+MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した拡張（上記「親子委譲 CLI」系統）:
+
+- `oe-capture` — 既存ペインの終端マーカー capture（[#109](https://github.com/stlwolf/ai-development-hub/issues/109)）
+- 親子委譲 CLI（`oe-delegate` / `oe-send` / `oe-list`）— [#138](https://github.com/stlwolf/ai-development-hub/issues/138) 設計 → [PR #143](https://github.com/stlwolf/ai-development-hub/pull/143) 再設計（疎結合化・アドレッシング）→ [#144](https://github.com/stlwolf/ai-development-hub/issues/144) 送信信頼化（観測ベース finalize）
 
 ### Phase 4 完了報告と Phase 5 方向感
 
