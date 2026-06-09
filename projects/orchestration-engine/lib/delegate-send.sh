@@ -21,7 +21,8 @@
 #   capture-pane の出力から入力欄行（最下部の `❯` 行）を1行返す。
 #   送信済みメッセージの echo も `❯` で始まるが画面上方に出るため tail -1 が入力欄。
 _oe_send_inputline() {
-  printf '%s\n' "$1" | grep '❯' | tail -n 1
+  # 入力欄プロンプトは行頭（先頭空白許容）の `❯`。行中に現れる `❯` を誤って拾わない（Copilot 指摘）。
+  printf '%s\n' "$1" | grep '^[[:space:]]*❯' | tail -n 1
 }
 
 # _oe_send_has_content <input-line>
@@ -78,20 +79,24 @@ _oe_send_finalize() {
     sleep "$interval"
   done
 
-  # 窓終端の最終判定（再 capture）
+  # 窓終端の最終判定（再 capture）。終端 capture も stable 連鎖に含める＝終端で入力欄が
+  # 変化していたら「終端安定」とみなさない（直前まで stable でも staged_idle 発火しない・Copilot 指摘）。
   cap="$(tmux capture-pane -p -t "$pane" 2>/dev/null)" || return 0
   input="$(_oe_send_inputline "$cap")"
   if printf '%s\n' "$cap" | tail -n 3 | grep -qF -- "$marker"; then proc=1; else proc=0; fi
   if printf '%s' "$input" | grep -qF -- "$payload"; then staged=1; else staged=0; fi
   [[ "$staged" == "1" ]] && saw_staged=1
+  norm="$(printf '%s' "$input" | sed 's/[[:space:]]*$//')"
+  if [[ "$norm" == "$prev" ]]; then stable=$((stable+1)); else stable=1; fi
 
   # staged_idle: 窓終端までなお staged・processing でない・baseline idle・終端安定 → 1回撃つ
   if [[ "$staged" == "1" && "$proc" == "0" && "$base_proc" == "0" && "$stable" -ge "$stable_need" ]]; then
     tmux send-keys -t "$pane" Enter
     return 0
   fi
-  # stage_miss_suspect: 一度も staged 観測せず空 → warn のみ（観測補助・rc は変えない）
-  if [[ "$saw_staged" == "0" && "$staged" == "0" ]]; then
+  # stage_miss_suspect: 一度も staged 観測せず、入力欄が空のとき → warn のみ（観測補助・rc は変えない）。
+  # 入力欄に内容が残る（折返し/省略で payload と完全一致しない）ケースは unknown 扱いで warn しない（Copilot 指摘）。
+  if [[ "$saw_staged" == "0" && "$staged" == "0" ]] && ! _oe_send_has_content "$input"; then
     echo "oe_send_line: finalize: payload not observed staged or submitted on ${pane} (possible stage miss / fast submit)" >&2
     return 0
   fi
@@ -145,11 +150,16 @@ oe_send_line() {
   local fin_on=0 base_proc=0 base_staged=0
   if [[ "$send_enter" != "0" && "${OE_SEND_FINALIZE:-1}" != "0" ]]; then
     fin_on=1
-    local bcap binput bmarker="${OE_SEND_PROC_MARKER:-esc to interrupt}"
-    bcap="$(tmux capture-pane -p -t "$pane" 2>/dev/null)" || bcap=""
-    if printf '%s\n' "$bcap" | tail -n 3 | grep -qF -- "$bmarker"; then base_proc=1; fi
-    binput="$(_oe_send_inputline "$bcap")"
-    if _oe_send_has_content "$binput"; then base_staged=1; fi
+    local bcap binput brc bmarker="${OE_SEND_PROC_MARKER:-esc to interrupt}"
+    bcap="$(tmux capture-pane -p -t "$pane" 2>/dev/null)"; brc=$?
+    if [[ "$brc" -ne 0 ]]; then
+      # baseline が取れない＝送信前状態が不明 → finalize 無効化（idle と誤認して撃つのを防ぐ・Copilot 指摘）。
+      fin_on=0
+    else
+      if printf '%s\n' "$bcap" | tail -n 3 | grep -qF -- "$bmarker"; then base_proc=1; fi
+      binput="$(_oe_send_inputline "$bcap")"
+      if _oe_send_has_content "$binput"; then base_staged=1; fi
+    fi
   fi
 
   # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
