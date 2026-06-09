@@ -17,7 +17,7 @@
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
 | c4-architecture | 構造化データからC4アーキテクチャ図（Mermaid）を生成する記述スキル（4レベル視点・graph TD/classDef・AS-IS/TO-BE・サニタイズ指針） | `skills/c4-architecture/SKILL.md` | — |
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
-| delegate-task | 親子 Claude Code セッション間の委譲操作（kick / report）を自然言語から判断して実行する。tmux 環境前提 | `skills/delegate-task/SKILL.md` | — |
+| delegate-task | 親子 Claude Code セッション間の委譲操作（delegate / send / list / report）を自然言語から判断して実行する。tmux 環境前提 | `skills/delegate-task/SKILL.md` | — |
 | diff-audit | PR diff全体を原則ベースでレビューする。4つの問いを軸に、チェックリスト外の問題も含めて拾う。既知パターンは各問いのヒントとして残す | `skills/diff-audit/SKILL.md` | — |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |

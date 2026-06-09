@@ -4,9 +4,10 @@
 # usage: oe-report [--review] <message>
 #
 # 親ペイン ID の解決順:
-#   1. 環境変数 PARENT_TMUX_PANE
-#   2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（oe-delegate が書き出す）
+#   1. 環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す。これが主経路）
+#   2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（手動設定時のみ。oe-delegate は書き出さない）
 # どちらもなければエラー終了（exit 1）。
+# 注: 戻しは汎用 oe-send への一本化が方針。本コマンドは legacy（整理は #142 論点E）。
 
 set -euo pipefail
 
@@ -19,8 +20,10 @@ usage: oe-report [--review] <message>
   -h, --help  このヘルプを表示
 
 親ペイン ID の解決:
-  1. 環境変数 PARENT_TMUX_PANE
-  2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（oe-delegate が書き出す）
+  1. 環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す）
+  2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（手動設定時のみ。oe-delegate は書き出さない）
+
+注: 戻しは oe-send に一本化が方針。本コマンドは legacy。
 EOF
   exit 1
 }

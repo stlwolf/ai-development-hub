@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# oe-list — 委譲の宛先候補を一覧する
+#
+# usage: oe-list
+#
+# 現サーバの生存ペインを source 列（pane-issue / spawn-registry / pane-title）付きで
+# 表示する。oe-send <target> に渡すラベル / ペインID を確認するための入口。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+case "${1:-}" in
+  -h|--help) echo "usage: oe-list" >&2; exit 0 ;;
+  "" ) : ;;
+  * ) echo "oe-list: unexpected argument: $1" >&2; echo "usage: oe-list" >&2; exit 2 ;;
+esac
+
+oe_reg_list
