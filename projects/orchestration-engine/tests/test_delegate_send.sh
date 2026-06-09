@@ -193,5 +193,14 @@ MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'PAY18')" )
 oe_send_line "%5" "PAY18" >/dev/null 2>&1
 ck "finalize 追加 Enter は1回（計2回）" "2" "$(enter_count)"
 
+echo "[19] finalize: max_iter は ceil（floor で総待機が TIMEOUT 未満にならない・Copilot 指摘）"
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'PAY19')" )
+# TIMEOUT=1/INTERVAL=0.3 → ceil=4（floor なら3）。baseline(1)+poll(4)+最終(1)=6 capture。
+OE_SEND_FINALIZE_TIMEOUT=1 OE_SEND_FINALIZE_INTERVAL=0.3 OE_SEND_FINALIZE_STABLE=2 \
+  oe_send_line "%5" "PAY19" >/dev/null 2>&1
+ck "ceil で capture 回数 = baseline+4+final = 6（floor なら5）" "6" "$(cap_calls)"
+ck "staged_idle で再送（計2回）" "2" "$(enter_count)"
+
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

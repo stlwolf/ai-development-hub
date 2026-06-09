@@ -57,8 +57,10 @@ _oe_send_finalize() {
   # 既存条件で finalize では防げない）。finalize による「追加の」誤 submit を足さないため撃たない。
   [[ "$base_staged" == "1" ]] && return 0
 
+  # ceil(timeout/interval)。floor だと割り切れない時に総待機が TIMEOUT 未満になり安全窓を
+  # 満たさない（例 timeout=1/interval=0.3 → 0.9s）。最低 TIMEOUT は待つ（Copilot 指摘）。
   local max_iter
-  max_iter="$(awk -v t="$timeout" -v i="$interval" 'BEGIN{ if(i+0<=0) i=0.3; n=int((t+0)/(i+0)); if(n<1)n=1; print n }')"
+  max_iter="$(awk -v t="$timeout" -v i="$interval" 'BEGIN{ if(i+0<=0) i=0.3; n=int((t+0)/(i+0)); if(n*(i+0) < (t+0)) n++; if(n<1)n=1; print n }')"
 
   local i cap input proc staged norm prev="" stable=0 saw_staged=0
   for ((i=0; i<max_iter; i++)); do
