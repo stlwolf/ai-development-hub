@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# oe-send — 既存セッション（ペイン）へ 1 行を送る汎用入口
+#
+# usage: oe-send [--kickoff <path>] [--] <target> [ad-hoc...]
+#
+# 親→子の追加指示、子→親の戻し、関連の薄い側道会話など「既存ペインへの送信」を
+# 一手に担う。payload は delegate-send.sh の oe_send_line で 1 行保証して注入する。
+#
+# <target> は 生のペインID（%N、素通し）か、ラベル（#N / 任意名）。ラベルは
+# delegate-registry.sh が親所有 spawn レジストリ + pane-issue state の union で解決する。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-send.sh
+source "${BIN_DIR}/../lib/delegate-send.sh"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-send [--kickoff <path>] [--] <target> [ad-hoc...]
+
+  <target>            送信先。生のペインID（例: %5）か ラベル（#142 / 任意名）。
+                      ラベルは registry で解決（候補は oe-list で確認）
+  ad-hoc...           1 行の追加指示（複数語は空白連結、改行は不可）
+  --kickoff <path>    "<path> を読んで進めて。" を payload 先頭に付ける
+  --no-enter          テキスト投入のみで Enter を発火しない（投入＝送信をしない／ステージ）
+  -h, --help          このヘルプを表示
+
+payload は「--kickoff のパス指示」＋「ad-hoc テキスト」を 1 行に連結して送る。
+どちらか一方は必須。改行を含む場合は送信せず失敗する（途中送信の防止）。
+EOF
+  exit 1
+}
+
+KICKOFF=""
+SEND_ENTER=1
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --kickoff)
+      [[ $# -ge 2 ]] || { echo "oe-send: --kickoff requires a value" >&2; exit 2; }
+      KICKOFF="$2"; shift 2 ;;
+    --no-enter) SEND_ENTER=0; shift ;;
+    -h|--help) usage ;;
+    --) shift; break ;;
+    *) echo "oe-send: unknown option: $1" >&2; usage ;;
+  esac
+done
+
+TARGET="${1:-}"
+[[ -n "$TARGET" ]] || { echo "oe-send: target is required" >&2; usage; }
+shift
+ADHOC="$*"
+
+# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決）
+PANE="$(oe_reg_resolve "$TARGET")" || exit
+
+# payload 組立
+payload=""
+if [[ -n "$KICKOFF" ]]; then
+  [[ -e "$KICKOFF" ]] || echo "oe-send: warning: kickoff path not found locally: ${KICKOFF} (child may resolve it in its workspace)" >&2
+  payload="${KICKOFF} を読んで進めて。"
+fi
+if [[ -n "$ADHOC" ]]; then
+  if [[ -n "$payload" ]]; then
+    payload="${payload} ${ADHOC}"
+  else
+    payload="$ADHOC"
+  fi
+fi
+[[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --kickoff and/or ad-hoc text)" >&2; usage; }
+
+oe_send_line "$PANE" "$payload" "$SEND_ENTER"
+echo "oe-send: sent to ${PANE}" >&2

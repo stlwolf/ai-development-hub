@@ -1,42 +1,56 @@
 #!/usr/bin/env bash
 # oe-delegate — 子 Claude セッションを起動し、タスクをキックする
 #
-# usage: oe-delegate [-w WORKSPACE] <task>
+# usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--] <task>
 #
-# 親ペイン ID を PARENT_TMUX_PANE 環境変数として子プロセスに渡す（優先）。
-# /tmp/oe-parent-{child_pane_id} への書き出しは手動利用向けのフォールバック。
+# 子ペインを tmux split-window で起動し、キックは bin/oe-send 経由で注入する
+# （spawn + send の合成）。delegate は委譲（起動とキック）に専念し、戻し（report）の処理は
+# 持たない（Unix 哲学・単機能）。子が親へ返したいときは汎用の oe-send を使う。親ペインは
+# PARENT_TMUX_PANE 環境変数として子へ渡してあるので oe-send "$PARENT_TMUX_PANE" で返せる。
 # Phase 5 HitL 統合はスコープ外（Issue #138）。
 
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] <task>
+usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--] <task>
 
-  <task>              子 Claude セッションへ送るタスク（1行テキスト）
+  <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
+                      --kickoff があれば省略可
   -w, --workspace DIR 子セッションの作業ディレクトリ（デフォルト: カレントディレクトリ）
+  --kickoff <path>    キックオフ doc を子に読ませる（"<path> を読んで進めて。" を付加）。
+                      子から読めるよう doc のディレクトリを --add-dir で開示する
+  --label <#N|name>   子を registry に登録する際のラベル（後で oe-send <label> で指す）。
+                      省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
   -h, --help          このヘルプを表示
 
 環境変数:
   OE_DELEGATE_WAIT_SEC  claude 起動待ちの秒数（デフォルト: 4）
   TMUX_PANE             tmux 内で自動設定される親ペイン ID（必須）
-  PARENT_TMUX_PANE      子プロセスへ自動で渡される（設定不要）
-
-子セッション内での申し送り:
-  oe-report "サマリー"           # 申し送り: ...
-  oe-report --review "サマリー"  # レビュー依頼: ...
+  PARENT_TMUX_PANE      子へ自動で渡る「親ペイン」コンテキスト（設定不要）。
+                        子が親へ返したいときは oe-send "$PARENT_TMUX_PANE" "..." を使う
 EOF
   exit 1
 }
 
 WORKSPACE="$(pwd)"
+KICKOFF=""
+LABEL=""
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -w|--workspace)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --workspace requires a value" >&2; exit 2; }
       WORKSPACE="$2"; shift 2 ;;
+    --kickoff)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --kickoff requires a value" >&2; exit 2; }
+      KICKOFF="$2"; shift 2 ;;
+    --label)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --label requires a value" >&2; exit 2; }
+      LABEL="$2"; shift 2 ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
@@ -44,7 +58,17 @@ while [[ "${1:-}" == -* ]]; do
 done
 
 TASK="${1:-}"
-[[ -n "$TASK" ]] || { echo "oe-delegate: task argument is required" >&2; usage; }
+# task は --kickoff があれば省略可。どちらも無ければエラー。
+if [[ -z "$TASK" && -z "$KICKOFF" ]]; then
+  echo "oe-delegate: task argument is required (or pass --kickoff)" >&2
+  usage
+fi
+# task は 1 行。改行を含むなら spawn 前に弾く（送信は oe_send_line が拒否するため、
+# spawn 後に気づくと無キックの孤児ペインが残る。preflight で防ぐ）。
+if [[ "$TASK" == *$'\n'* || "$TASK" == *$'\r'* ]]; then
+  echo "oe-delegate: task must be a single line (no newline); 長文は --kickoff <path> で渡す" >&2
+  exit 2
+fi
 
 # tmux 内でのみ実行可能
 PARENT_PANE="${TMUX_PANE:-}"
@@ -53,27 +77,43 @@ PARENT_PANE="${TMUX_PANE:-}"
   exit 1
 }
 
-# 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
-CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=$PARENT_PANE claude")"
-echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
+# --kickoff を絶対パス化し、子（対話型 claude）が読めるよう doc のディレクトリを
+# --add-dir で開示する。spawn.sh の envelope は claude -p + --add-dir /tmp で読ませているが、
+# こちらは素の対話型 claude のため明示開示が要る（so 指摘）。
+KICKOFF_ABS=""
+ADD_DIR_OPT=""
+if [[ -n "$KICKOFF" ]]; then
+  [[ -f "$KICKOFF" ]] || { echo "oe-delegate: --kickoff file not found: ${KICKOFF}" >&2; exit 2; }
+  case "$KICKOFF" in
+    *\'*) echo "oe-delegate: --kickoff path must not contain a single quote" >&2; exit 2 ;;
+  esac
+  kdir="$(cd "$(dirname "$KICKOFF")" && pwd)"
+  KICKOFF_ABS="${kdir}/$(basename "$KICKOFF")"
+  ADD_DIR_OPT=" --add-dir '${kdir}'"
+fi
 
-# 親ペイン ID を tmp ファイルへ書き出し（手動利用向けフォールバック）
-PARENT_FILE="/tmp/oe-parent-${CHILD_PANE#%}"
-printf '%s\n' "$PARENT_PANE" > "$PARENT_FILE"
+# 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
+CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=${PARENT_PANE} claude${ADD_DIR_OPT}")"
+echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
 # claude 起動待ち
 WAIT_SEC="${OE_DELEGATE_WAIT_SEC:-4}"
 sleep "$WAIT_SEC"
 
-# 子ペインの生存確認
-tmux list-panes -a -F "#{pane_id}" | grep -qF "$CHILD_PANE" || {
+# 子ペインの生存確認（-x で完全一致。%1 が %12 に部分一致する誤検知を防ぐ）
+tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
   echo "oe-delegate: child pane $CHILD_PANE exited during startup" >&2
   exit 1
 }
 
-# タスクを注入（oe-report の場所を末尾に付記）
-INJECT="${TASK}. 完了後は ${BIN_DIR}/oe-report \"サマリー\" を実行して申し送りを送ること。レビュー依頼は ${BIN_DIR}/oe-report --review \"サマリー\"。"
-tmux send-keys -l -t "$CHILD_PANE" "$INJECT"
-tmux send-keys -t "$CHILD_PANE" Enter
+# spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
+oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
+
+# キックを oe-send で注入する。delegate は report を内包しない（戻しは子が oe-send で行う）。
+SEND_ARGS=()
+if [[ -n "$KICKOFF_ABS" ]]; then SEND_ARGS+=(--kickoff "$KICKOFF_ABS"); fi
+SEND_ARGS+=(-- "$CHILD_PANE")
+if [[ -n "$TASK" ]]; then SEND_ARGS+=("$TASK"); fi
+"${BIN_DIR}/oe-send" "${SEND_ARGS[@]}"
 
 echo "oe-delegate: task injected to ${CHILD_PANE}" >&2

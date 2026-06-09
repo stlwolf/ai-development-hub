@@ -1,152 +1,172 @@
 ---
 name: delegate-task
-description: 親子 Claude Code セッション間の委譲操作を行う。kick（子を起動してタスクを渡す）と report（子→親への申し送り・レビュー依頼・完了報告）を自然言語の意図から判断して実行する。tmux 環境前提。
+description: 親子 Claude Code セッション間の委譲操作を行う。delegate（子を起動してキック）、send（既存ペインへ1行/キックオフ送信・誤送信防止つき）、list（宛先確認）、report（子→親の申し送り）を自然言語の意図から判断して実行する。tmux 環境前提。
 ---
 
 # delegate-task — 親子スレッド委譲操作
 
 ## いつ使うか
 
-- 別 Claude Code セッション（子）に作業を委譲したいとき
-- 子セッションから親セッションへ申し送り・レビュー依頼・完了報告を送るとき
+- 別 Claude Code セッション（子）に作業を委譲したいとき（**delegate**）
+- 既に動いている別ペインへ追加指示・キックオフ・関連の薄い会話を投げたいとき（**send**）
+- どのペインに何を任せているか宛先候補を確認したいとき（**list**）
+- 子セッションから親へ申し送り・レビュー依頼・完了報告を送るとき（**report**）
 
 ## 前提
 
 - tmux 環境（`$TMUX_PANE` が設定されていること）
-- `projects/orchestration-engine/bin/oe-delegate` と `oe-report` が実行可能なこと
+- `projects/orchestration-engine/bin/` の `oe-delegate` / `oe-send` / `oe-list` / `oe-report` が実行可能なこと
+- `jq` が PATH にあること（アドレッシング解決に使用）
 - スクリプトは絶対パスで呼ぶ（`~/work/repos/.../projects/orchestration-engine/bin/oe-delegate`）か、PATH に入っていること
 
 ---
 
-## 実行コンテキストの確認（最初に判断する）
+## コマンド全体像
 
-このスキルを呼んだのが **親セッション** か **子セッション** かによって操作が変わる。
+| コマンド | 方向 | 役割 |
+|---------|------|------|
+| `oe-delegate` | 親 → 子 | 子ペインを起動（spawn）し、最初のキックを送る。registry に登録 |
+| `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / キックオフを送る汎用入口。宛先はラベル or `%N` |
+| `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
+| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは oe-send に一本化**（論点E で整理） |
 
-| 現在地 | 可能な操作 |
-|--------|-----------|
-| **親セッション**（ユーザーが直接操作しているセッション） | **kick のみ**。子を起動してタスクを渡す |
-| **子セッション**（oe-delegate で起動されたセッション） | **report のみ**。親へ申し送り・レビュー依頼・完了報告を送る |
-
-判断できない場合は「現在のセッションは親ですか、子ですか？」と確認する。
-
----
-
-## 意図の判断
-
-コンテキスト確認後、自然言語から操作を推定する。
-
-| 意図のキーワード | 操作 |
-|----------------|------|
-| 「委譲して」「任せて」「子に渡して」「#N を進めて」「別ペインで」| **kick**（親セッションのみ） |
-| 「完了した」「申し送りして」「報告して」「進捗を伝えて」 | **report 通常**（子セッションのみ） |
-| 「レビューしてほしい」「確認依頼」「レビュー依頼」 | **report --review**（子セッションのみ） |
-
-**曖昧なケースは確認する:**
-- 「レビューして」→ 親が子にレビュー作業を **kick** するのか、子が親に **report --review** するのか
-- 「#N を進めて」と言ったのがユーザー（親）なら kick、Claude 自身（子）が言っているなら文脈エラー
-- 「報告して」と言ったのが子 Claude なら report、親ユーザーなら kick（子に作業完了後の報告を促す kick）
+`oe-delegate` = spawn + `oe-send`（キック）の合成。送信の実体は `oe-send` に集約されている。
 
 ---
 
-## kick（親 → 子の委譲）
+## delegate（親 → 子の委譲）
 
-子 Claude Code セッションを起動し、タスクをキックする。
+子 Claude Code セッションを起動し、最初のタスクをキックする。
 
-### kick パターン一覧
-
-| パターン | 使いどころ |
-|---------|-----------|
-| **issue 番号あり** | issue が存在し、子に調べさせる | 
-| **issue 番号あり + implementer-contract** | 実装タスクを委譲する場合（推奨） |
-| **調査・レビュー委譲** | ファイル・PR・コードを調べてほしい場合 |
-| **issue なし（タスク直渡し）** | 軽量な指示や issue 化不要のタスク |
+```bash
+REPO="$(pwd)"
+BIN="$REPO/projects/orchestration-engine/bin"
+```
 
 ### パターン別コマンド例
 
-**issue 番号あり（基本）**
+**issue 番号あり（基本）** — `--label` で後から `oe-send #N` で指せるようにする
 
 ```bash
-REPO="$(pwd)"
-BIN="$REPO/projects/orchestration-engine/bin"
-"$BIN/oe-delegate" -w "$REPO" "Issue #N の内容を gh issue view N で確認して作業を進めて。リポジトリ: $REPO"
+"$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で確認して作業を進めて。リポジトリ: $REPO"
 ```
 
-**issue 番号あり + implementer-contract（実装委譲時の推奨）**
+**キックオフ doc を渡す（4層ドキュメント方式 / リッチな事前情報）**
 
 ```bash
-REPO="$(pwd)"
-BIN="$REPO/projects/orchestration-engine/bin"
-"$BIN/oe-delegate" -w "$REPO" "Issue #N の内容を gh issue view N で確認して実装を進めて。リポジトリ: $REPO。実装規律は $REPO/canonical/skills/implementer-contract/SKILL.md を読んで従うこと"
+"$BIN/oe-delegate" -w "$REPO" --label "#N" --kickoff "$REPO/path/to/kickoff.md" "補足の要望があればここに1行で"
 ```
 
-**調査・レビュー委譲**
+- `--kickoff <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する
+- doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/kickoff-*.md`）に書いてから `--kickoff` で渡す（`/tmp` は対話型 claude が読めないので避ける）
+
+**実装委譲（implementer-contract 併用）**
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" "以下の調査をして結果を申し送りして。<調査内容を1行で>"
-
-# PR レビュー委譲
-"$BIN/oe-delegate" -w "$REPO" "PR #N を gh pr diff N で確認してレビュー結果を申し送りして。リポジトリ: $REPO"
-```
-
-**issue なし（タスク直渡し）**
-
-```bash
-"$BIN/oe-delegate" -w "$REPO" "<タスク内容を1行・改行なしで>"
+"$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N を実装して。リポジトリ: $REPO。実装規律は $REPO/canonical/skills/implementer-contract/SKILL.md を読んで従うこと"
 ```
 
 ### 改行制約
 
-- `oe-delegate` のタスク引数に **改行バイトを含めない**。`tmux send-keys -l` が改行をそのまま端末に送り、Claude Code プロンプトが途中で送信される
-- 制約は「1文」ではなく「**1行・1引数（改行を含まない複数文は可）**」。句点・セミコロンで区切れば複数文を渡せる
-- 改行が必要な長文は **issue/plan のパスや番号を渡して子に取得させる**（直接文字列で渡さない）
+- タスク引数・ad-hoc に **改行バイトを含めない**（`oe_send_line` が改行を検出すると送信を拒否する）。複数文は句点・セミコロンで区切る
+- 改行が必要な長文は **issue/plan のパスや番号を渡して子に取得させる**か、`--kickoff` でパス渡しする
 
-### 自動付記（スキル側での追記は不要）
+### delegate は report を内包しない
 
-`oe-delegate` は以下をプロンプト末尾に自動で付記する:
-
-```
-完了後は <path>/oe-report "サマリー" を実行して申し送りを送ること。レビュー依頼は <path>/oe-report --review "サマリー"。
-```
+`oe-delegate` は spawn + キックに専念し、戻し（report）を一切焼き付けない（Unix 哲学・単機能）。
+子に報告させたいなら、その指示は **task / kickoff の本文に自分で書く**。戻しの送信自体は子が
+汎用の `oe-send "$PARENT_TMUX_PANE" "..."` で行う（下記「戻し」）。
 
 ---
 
-## report（子 → 親への報告）
+## send（既存ペインへの送信）
 
-**子セッション専用。** 親 Claude Code プロンプトへテキストを注入する。
-
-### 通常報告（完了・中間申し送り）
+`oe-delegate` で起動した子に限らず、**既に動いているペイン**へ 1 行やキックオフを送る。親→子の追加指示、関連の薄い側道会話、（必要なら）子→親の返しにも使える汎用入口。
 
 ```bash
-BIN="$REPO/projects/orchestration-engine/bin"
-"$BIN/oe-report" "<1行サマリー>"
+# ラベルで送る（registry / pane-issue で解決）
+"$BIN/oe-send" "#142" "テストは pytest で。失敗ケースも足して"
+
+# 生のペインIDで送る（ラベルが無いペイン・側道会話）
+"$BIN/oe-send" "%37" "さっきの設計の続きだけど、TTL は 24h で合ってる？"
+
+# キックオフ doc を既存ペインに読ませる
+"$BIN/oe-send" --kickoff "$REPO/path/to/kickoff.md" "#142" "前提が変わったので読み直して"
+
+# Enter を撃たずに投入だけ（人間が読んでから送る／セッションを汚さない）
+"$BIN/oe-send" --no-enter "%37" "確認してほしい下書き"
 ```
 
-親プロンプトに `申し送り: <サマリー>` が届き、Enter が発火する。
+> `--kickoff` のパスは **対象ペインの可読ルート内**（cwd / `--add-dir` 済みの場所）に置く。
+> 稼働中ペインには後付けで `--add-dir` できないため、ルート外だと子が権限プロンプトで止まる。
+> （`oe-delegate --kickoff` は起動時に doc dir を `--add-dir` 開示するので問題ない）
 
-### レビュー依頼
+### 誤送信を防ぐ
+
+宛先を間違えやすいときは、まず `oe-list` で候補を確認してからラベル / `%N` を選ぶ。
 
 ```bash
-"$BIN/oe-report" --review "<確認してほしい内容を1行で>"
+"$BIN/oe-list"
+# PANE     SOURCE         LABEL
+# %37      pane-issue     #142 oe-delegate redesign
+# %41      spawn-registry my-task
+# %44      pane-title     ai-development-hub
 ```
 
-親プロンプトに `レビュー依頼: <内容>` が届く。
+- 同じラベルが複数ペインに一致する場合、`oe-send` は曖昧エラーで止まる → `%N` で明示する
+- **custom ラベル（任意名）**は現在の親（`$TMUX_PANE`）が起動した子にスコープされ、別親の同名には届かない。一方 **`#N` は issue の大域同定**（pane-issue 由来）で親スコープ外 — 同一サーバの別親が起動した `#N` 子にも解決されうる
 
-### エラー時のリカバリー
+---
 
-`oe-report` が `parent pane not found` で失敗した場合（セッション切断・再アタッチ後など）、手動で送信する:
+## 戻し（子 → 親）
+
+delegate は report を内包しないので、**戻しは汎用の `oe-send` で行う**。子に渡っている
+`PARENT_TMUX_PANE`（親ペイン ID）へ送るだけ:
 
 ```bash
-tmux send-keys -l -t '<親ペインID>' '申し送り: <メッセージ>'
-tmux send-keys -t '<親ペインID>' Enter
+"$BIN/oe-send" "$PARENT_TMUX_PANE" "実装完了。PR #150 を作成した"
+"$BIN/oe-send" --no-enter "$PARENT_TMUX_PANE" "親が読んでから送りたい下書き"
 ```
 
-親ペイン ID が不明な場合は `tmux list-panes -a` で確認する。
+`PARENT_TMUX_PANE` が未設定（手動委譲・再アタッチ後など）なら、親ペインを `oe-list` で確認して
+`%N` を直接指定する。
+
+### oe-report（legacy）
+
+`oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。delegate された子では
+`PARENT_TMUX_PANE` env から親を解決して一応動くが、**戻しは上記 oe-send に一本化**する方針
+（oe-report 自体の整理＝薄い alias 化／廃止は論点E）。
+
+---
+
+## アドレッシングの仕組み（参考）
+
+`oe-send` / `oe-list` のラベル解決は 2 ソースの union:
+
+- **spawn レジストリ**（`~/.claude/state/oe-delegate/`）— `oe-delegate` が登録した子。`--label` の値で指す。ゼロベース調査期の仮ラベルもここ
+- **pane-issue state**（`~/.claude/state/pane-issue/`）— `wt switch` 済みペインの `#N`。`scripts/wt/wt-pane-issue.sh` が書く
+
+注意点:
+
+- `#N` 解決は **`wt switch` 経由が前提**。素の `git checkout` で issue ブランチに入った子は pane-issue が無いので、`--label` の仮ラベルか `%N` で指す
+- 関連の薄い側道会話用ペイン（`master` / リポ名命名）は `#N` を持たない → `%N` で指す
+- 同一ペインに spawn ラベルと pane-issue の両方があれば **pane-issue（現在の #N）を優先**（子が `wt switch` すると元の custom ラベルは以後解決されなくなる＝ドリフト吸収の帰結。以後は `#N` で指す）
+
+### 2 系統の send を混同しない
+
+- `oe-send`（本スキル）= **対話セッション**へ `tmux send-keys` で注入する transport（`lib/delegate-send.sh`）
+- `lib/spawn.sh` の `oe_spawn_send` = engine の **非対話** `claude -p`・wez・envelope 系。別サブシステムであり、統合しない
 
 ---
 
 ## 関連
 
-- `projects/orchestration-engine/bin/oe-delegate` — 子ペイン起動 + キック実装
-- `projects/orchestration-engine/bin/oe-report` — 親への報告実装（`OE_DELEGATE_WAIT_SEC` で起動待ち秒数を上書き可）
+- `projects/orchestration-engine/bin/oe-delegate` — 子ペイン起動 + キック（spawn + send）
+- `projects/orchestration-engine/bin/oe-send` — 既存ペインへの汎用送信
+- `projects/orchestration-engine/bin/oe-list` — 宛先候補の一覧
+- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは oe-send に一本化）
+- `projects/orchestration-engine/lib/delegate-send.sh` — 改行拒否の 1 行 safe-send
+- `projects/orchestration-engine/lib/delegate-registry.sh` — アドレッシング（record/resolve/list/gc）
 - `implementer-contract` スキル — 実装委譲時に kick プロンプトへ組み込む契約定義
-- #137（PoC）/ #138（実装）— 背景と設計決定
+- `projects/orchestration-engine/docs/plans/2026-06-08-plan-oe-delegate-redesign.md` — 本再設計の plan doc
+- #137（PoC）/ #138（旧設計）/ #142（本再設計）— 背景と設計決定
