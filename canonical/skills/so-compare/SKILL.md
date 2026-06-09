@@ -38,6 +38,7 @@ so-compare [OPTIONS] "プロンプト"
 | `--claude-model MODEL` | Claude で使用するモデル（エイリアス `opus`/`sonnet`/`haiku` 可） | CLI 既定 |
 | `--codex-model MODEL` | Codex で使用するモデル | CLI 既定 |
 | `--claude-effort LEVEL` | Claude のエフォート（`low`/`medium`/`high`/`xhigh`/`max`） | CLI 既定 |
+| `--claude-web` | Claude Code に WebFetch を許可（`-p` で外部URL参照を要するタスク用） | 無効 |
 | `--prev DIR` | 前回出力を追記（イテレーション用） | なし |
 
 ### 環境変数
@@ -105,7 +106,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, model_requested, exit_code, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（tool, model_requested, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-stderr.txt   # Claude の stderr
 ├── claude-meta.txt     # メタデータ（model_requested, effort_requested を含む）
