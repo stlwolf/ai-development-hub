@@ -1,6 +1,6 @@
 ---
 name: copilot-review-response
-description: 自分のPRに対するCopilotのレビューコメントを、未返信スレッドのみ対象に取得し、対応可否を検討・修正・「対応した／対応しない」の返信まで行う。
+description: 自分のPRに対するCopilotのレビューコメントを、未返信スレッドのみ対象に取得し、対応可否を検討・修正・「対応した／対応しない」の返信まで行う。明示的な指示があれば再レビューの再リクエスト（gh pr edit --add-reviewer @copilot）も行う。
 ---
 
 # Copilot Review Response
@@ -54,6 +54,10 @@ flowchart TD
     J -->|Yes| D
     J -->|No| K[コミットとプッシュ]
     K --> L["Step6: 各スレッドへ返信必須"]
+    L --> M{明示的な再リクエスト指示あり？}
+    M -->|なし| Z([終了])
+    M -->|あり| N["Step7（任意）: 再リクエスト @copilot"]
+    N --> B
 ```
 
 ## 前提条件確認
@@ -211,6 +215,30 @@ gh api repos/${REPO}/pulls/${PR_NUM}/comments \
 - 理由: Remi 導入後は `/usr/bin/php81` が利用できるため
 - 補足: alternatives はデフォルトの `/usr/bin/php` のみ切り替え対象で、バージョン固有バイナリには影響しない
 ```
+
+## Step 7（任意・既定では実行しない）: 再レビューの再リクエスト
+
+**既定はここに進まない。** Step 6 で評価対象スレッドに返信したらフローは完了。自動で再リクエストはせず、未返信 0 までの自動ポーリングもしない。「もう一回回すか／止めるか」の判断は人が持つ（指摘の価値が薄れてきたら止めてよい）。
+
+**実行条件**: ユーザーから **明示的な再リクエスト指示**があった場合のみ。例: 「もう一回（レビュー）回して」「再レビュー」「Copilot にもう一度」など、Copilot に再度レビューさせる意図が明確な指示。
+
+指示があったら、対応コミットを push 済みであることを確認のうえ、Copilot を再度レビュアーに追加して再レビューを起動する。
+
+```bash
+PR_NUM="<対象PR>"
+
+# 推奨（gh 2.88.0+。トークンは @copilot：小文字・@付き。bare な Copilot は不可）
+gh pr edit "$PR_NUM" --add-reviewer @copilot
+
+# フォールバック（gh が 2.88.0 未満、または上記が通らない場合。gh バージョン非依存）
+REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
+gh api -X POST "repos/${REPO}/pulls/${PR_NUM}/requested_reviewers" \
+  -f "reviewers[]=copilot-pull-request-reviewer[bot]"
+```
+
+再レビューは非同期で返る。コメントが付いたら **Step 1 から同じフロー**（未返信スレッドのみ対応 → 返信）を 1 ラウンド回し、**また Step 7 の手前で止まる**。続けるかは再度ユーザーの指示を待つ。
+
+**注**: 既にレビュー済みのレビュアーへの「再依頼」は公式 API/CLI で未対応との議論があるが、`--add-reviewer @copilot`（または bot slug の再 POST）で実運用上は新規レビューが起動する。`@copilot` 公式経路の実 PR での挙動は環境により要確認。
 
 ## 安全規律
 
