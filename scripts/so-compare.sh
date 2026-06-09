@@ -23,6 +23,9 @@ Options:
   --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
   --cursor-only  Cursor のみ実行
   --cursor-model MODEL  Cursor で使用するモデル（デフォルト: auto）
+  --claude-model MODEL  Claude で使用するモデル（エイリアス opus/sonnet/haiku 可。デフォルト: CLI 既定）
+  --codex-model MODEL   Codex で使用するモデル（デフォルト: CLI 既定）
+  --claude-effort LEVEL Claude のエフォート level（low/medium/high/xhigh/max。デフォルト: CLI 既定）
   --claude-web   Claude Code に WebFetch を許可（-p モードで外部URL参照を要するタスク用）
   --prev DIR     前回の so-compare 出力ディレクトリ
                  回答をプロンプトに追記（上限: PREV_MAX_BYTES, デフォルト4000）
@@ -32,6 +35,9 @@ Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
   SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
   SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
+  SO_CLAUDE_MODEL  Claude のデフォルトモデル（--claude-model で上書き可）
+  SO_CODEX_MODEL   Codex のデフォルトモデル（--codex-model で上書き可）
+  SO_CLAUDE_EFFORT Claude のデフォルトエフォート（--claude-effort で上書き可）
 
 Exit codes:
   0  全プロバイダ成功
@@ -55,6 +61,9 @@ RUN_CLAUDE=true
 RUN_CURSOR=false
 CLAUDE_WEB=false
 CURSOR_MODEL="${SO_CURSOR_MODEL:-auto}"
+CLAUDE_MODEL="${SO_CLAUDE_MODEL:-}"
+CODEX_MODEL="${SO_CODEX_MODEL:-}"
+CLAUDE_EFFORT="${SO_CLAUDE_EFFORT:-}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
 
@@ -128,6 +137,21 @@ while [[ $# -gt 0 ]]; do
         --cursor-model)
             require_arg "$1" "${2:-}"
             CURSOR_MODEL="$2"
+            shift 2
+            ;;
+        --claude-model)
+            require_arg "$1" "${2:-}"
+            CLAUDE_MODEL="$2"
+            shift 2
+            ;;
+        --codex-model)
+            require_arg "$1" "${2:-}"
+            CODEX_MODEL="$2"
+            shift 2
+            ;;
+        --claude-effort)
+            require_arg "$1" "${2:-}"
+            CLAUDE_EFFORT="$2"
             shift 2
             ;;
         --claude-web)
@@ -253,6 +277,12 @@ fi
 if $RUN_CURSOR; then
     echo "Cursor: enabled${CURSOR_MODEL:+ (model: $CURSOR_MODEL)}"
 fi
+if $RUN_CODEX && [[ -n "$CODEX_MODEL" ]]; then
+    echo "Codex: model=$CODEX_MODEL"
+fi
+if $RUN_CLAUDE && [[ -n "$CLAUDE_MODEL$CLAUDE_EFFORT" ]]; then
+    echo "Claude:${CLAUDE_MODEL:+ model=$CLAUDE_MODEL}${CLAUDE_EFFORT:+ effort=$CLAUDE_EFFORT}"
+fi
 echo "タイムアウト: ${SO_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
 echo ""
@@ -292,6 +322,9 @@ run_codex() {
     start=$(date +%s)
 
     local codex_args=("exec" "-s" "$SANDBOX_MODE")
+    if [[ -n "$CODEX_MODEL" ]]; then
+        codex_args+=("--model" "$CODEX_MODEL")
+    fi
     if [[ -n "$WORKSPACE" ]]; then
         codex_args+=("-C" "$WORKSPACE")
     fi
@@ -313,6 +346,7 @@ run_codex() {
 
     {
         echo "tool=codex"
+        echo "model_requested=${CODEX_MODEL:-default}"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -329,6 +363,12 @@ run_claude() {
     start=$(date +%s)
 
     local claude_args=("-p")
+    if [[ -n "$CLAUDE_MODEL" ]]; then
+        claude_args+=("--model" "$CLAUDE_MODEL")
+    fi
+    if [[ -n "$CLAUDE_EFFORT" ]]; then
+        claude_args+=("--effort" "$CLAUDE_EFFORT")
+    fi
     if [[ -n "$WORKSPACE" ]]; then
         claude_args+=("--add-dir" "$WORKSPACE")
     fi
@@ -355,6 +395,8 @@ run_claude() {
 
     {
         echo "tool=claude"
+        echo "model_requested=${CLAUDE_MODEL:-default}"
+        echo "effort_requested=${CLAUDE_EFFORT:-default}"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -395,6 +437,7 @@ run_cursor() {
 
     {
         echo "tool=cursor"
+        echo "model_requested=${CURSOR_MODEL:-default}"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
