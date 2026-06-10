@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # oe-delegate — 子 Claude セッションを起動し、タスクをキックする
 #
-# usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--] <task>
+# usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 #
 # 子ペインを tmux split-window で起動し、キックは bin/oe-send 経由で注入する
 # （spawn + send の合成）。delegate は委譲（起動とキック）に専念し、戻し（report）の処理は
@@ -17,7 +17,7 @@ source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--] <task>
+usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 
   <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
                       --kickoff があれば省略可
@@ -26,6 +26,8 @@ usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--] <t
                       子から読めるよう doc のディレクトリを --add-dir で開示する
   --label <#N|name>   子を registry に登録する際のラベル（後で oe-send <label> で指す）。
                       省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
+  --claude-arg <arg>  子 Claude 起動時に渡す追加引数（repeatable）。
+                      例: --claude-arg --permission-mode --claude-arg auto
   -h, --help          このヘルプを表示
 
 環境変数:
@@ -40,6 +42,7 @@ EOF
 WORKSPACE="$(pwd)"
 KICKOFF=""
 LABEL=""
+CLAUDE_ARGS=()
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -w|--workspace)
@@ -51,6 +54,13 @@ while [[ "${1:-}" == -* ]]; do
     --label)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --label requires a value" >&2; exit 2; }
       LABEL="$2"; shift 2 ;;
+    --claude-arg)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --claude-arg requires a value" >&2; exit 2; }
+      if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
+        echo "oe-delegate: --claude-arg value must be a single argument (no newline)" >&2
+        exit 2
+      fi
+      CLAUDE_ARGS+=("$2"); shift 2 ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
@@ -81,7 +91,6 @@ PARENT_PANE="${TMUX_PANE:-}"
 # --add-dir で開示する。spawn.sh の envelope は claude -p + --add-dir /tmp で読ませているが、
 # こちらは素の対話型 claude のため明示開示が要る（so 指摘）。
 KICKOFF_ABS=""
-ADD_DIR_OPT=""
 if [[ -n "$KICKOFF" ]]; then
   [[ -f "$KICKOFF" ]] || { echo "oe-delegate: --kickoff file not found: ${KICKOFF}" >&2; exit 2; }
   case "$KICKOFF" in
@@ -89,11 +98,30 @@ if [[ -n "$KICKOFF" ]]; then
   esac
   kdir="$(cd "$(dirname "$KICKOFF")" && pwd)"
   KICKOFF_ABS="${kdir}/$(basename "$KICKOFF")"
-  ADD_DIR_OPT=" --add-dir '${kdir}'"
 fi
 
+shell_quote() {
+  printf "'"
+  printf '%s' "$1" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+build_child_command() {
+  local cmd
+  cmd="PARENT_TMUX_PANE=$(shell_quote "$PARENT_PANE") claude"
+  local arg
+  for arg in "${CLAUDE_ARGS[@]}"; do
+    cmd="${cmd} $(shell_quote "$arg")"
+  done
+  if [[ -n "$KICKOFF" ]]; then
+    cmd="${cmd} --add-dir $(shell_quote "$kdir")"
+  fi
+  printf '%s\n' "$cmd"
+}
+
 # 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
-CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "PARENT_TMUX_PANE=${PARENT_PANE} claude${ADD_DIR_OPT}")"
+CHILD_COMMAND="$(build_child_command)"
+CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "$CHILD_COMMAND")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
 # claude 起動待ち
