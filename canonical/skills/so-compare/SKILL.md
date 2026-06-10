@@ -106,7 +106,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, model_requested, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-stderr.txt   # Claude の stderr
 ├── claude-meta.txt     # メタデータ（model_requested, effort_requested を含む）
