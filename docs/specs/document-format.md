@@ -257,7 +257,7 @@ tags: [tags]
 
 性質ガイド（本文の書き方指針）:
 
-> 各 Step の記録は、後から読んだ人がやりとりの流れを追跡できるように書く。特に問題発生→原因特定→対処の連鎖は省略しない。
+> 冒頭に「なぜこの作業が始まったか」を 1〜2 文で自己完結して書く（Context / なぜ。リンク先参照のみにしない）。各 Step の記録は、後から読んだ人がやりとりの流れを追跡できるように書く。特に問題発生→原因特定→対処の連鎖は省略しない。羅列で終わらせず、転用可能な知見・教訓があれば節を立てて残す。
 
 構造化 FB セクション（Episode 末尾、任意）:
 
@@ -266,7 +266,11 @@ tags: [tags]
 - 想定外だった点:
 - 規約遵守状況:
 - ADR 昇格候補:
+- 次の消費者（誰が / どのタスクで読むか）:
+- follow-up の行き先（Issue / ADR / 別doc / 追わない宣言）:
 ```
+
+うち「次の消費者」「follow-up の行き先」は closure 時の必須項目（他は該当時のみ。空欄の機械的穴埋めはしない）。closure（status 確定・振り返り）の手順は `episode-retrospective` skill を参照。
 
 ### Decision / ADR
 
@@ -318,7 +322,8 @@ YYYY-MM-DD-{type}-{topic}.md
 | プロジェクト横断の Decision | `docs/decisions/` |
 | プロジェクト固有の Decision | `projects/{name}/docs/decisions/` |
 | KickOff / Plan | `docs/plans/{issue-or-epic}/` |
-| Episode | プロジェクト固有ディレクトリ（規約は各プロジェクト） |
+| プロジェクト横断の Episode | `docs/episodes/` |
+| プロジェクト固有の Episode | プロジェクト固有ディレクトリ（規約は各プロジェクト） |
 | Discussion | `docs/draft/` または `ideas/` |
 
 ## 9. #19 MVP との接続
