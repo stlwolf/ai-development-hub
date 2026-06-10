@@ -51,6 +51,12 @@ BIN="$REPO/projects/orchestration-engine/bin"
 "$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で確認して作業を進めて。リポジトリ: $REPO"
 ```
 
+**子 Claude に起動オプションを渡す** — 自律調査で権限プロンプト停止を避けたい場合
+
+```bash
+"$BIN/oe-delegate" -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
+```
+
 **キックオフ doc を渡す（4層ドキュメント方式 / リッチな事前情報）**
 
 ```bash
@@ -58,7 +64,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 ```
 
 - `--kickoff <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する
-- doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/kickoff-*.md`）に書いてから `--kickoff` で渡す（`/tmp` は対話型 claude が読めないので避ける）
+- doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/kickoff-*.md`）に書いてから `--kickoff` で渡す（`/tmp` は対話型 claude が読めないので避ける）。`.oe/` はこのリポジトリでは gitignore 済み。
 
 **実装委譲（implementer-contract 併用）**
 
