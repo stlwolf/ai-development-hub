@@ -313,6 +313,43 @@ classify_result() {
     fi
 }
 
+resolve_codex_model() {
+    local requested="$1"
+    if [[ -n "$requested" ]]; then
+        printf '%s\n' "$requested"
+        return 0
+    fi
+
+    local config_path="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    local resolved=""
+    if [[ -f "$config_path" ]]; then
+        resolved="$(
+            awk '
+                /^[[:space:]]*\[/ { exit }
+                /^[[:space:]]*model[[:space:]]*=/ {
+                    sub(/^[[:space:]]*model[[:space:]]*=[[:space:]]*/, "")
+                    sub(/[[:space:]]*(#.*)?$/, "")
+                    if ($0 ~ /^".*"$/) {
+                        sub(/^"/, "")
+                        sub(/"$/, "")
+                    } else if ($0 ~ /^\047.*\047$/) {
+                        sub(/^\047/, "")
+                        sub(/\047$/, "")
+                    }
+                    print
+                    exit
+                }
+            ' "$config_path"
+        )"
+    fi
+
+    if [[ -n "$resolved" ]]; then
+        printf '%s\n' "$resolved"
+    else
+        printf 'unknown\n'
+    fi
+}
+
 # --- 実行関数 ---
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
@@ -341,12 +378,15 @@ run_codex() {
 
     local timeout_status
     timeout_status=$(classify_result "codex" "$exit_code")
+    local model_resolved
+    model_resolved="$(resolve_codex_model "$CODEX_MODEL")"
 
     echo "[Codex] 完了 (${elapsed}秒, exit=${exit_code}, status=${timeout_status})"
 
     {
         echo "tool=codex"
         echo "model_requested=${CODEX_MODEL:-default}"
+        echo "model_resolved=$model_resolved"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
