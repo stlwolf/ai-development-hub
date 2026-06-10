@@ -1,0 +1,129 @@
+---
+name: episode-retrospective
+description: Episode の closure 時に構造化振り返りを適用する。closure gate checklist（消費者明示・routing・status 確定）、出力型×消費チャネルの内容プロンプト、tier 判定（opt-out / standard / heavy）を含む。Episode を閉じるとき、Decision/ADR への昇格を検討するときに使用する。
+---
+
+# Episode Retrospective — closure 時の構造化振り返り
+
+## いつ使うか
+
+- Episode を closure する（作業を畳み、status を確定する）とき
+- Episode から Decision / ADR への昇格を検討するとき
+- branch-finish / PR 作成の直前で「episode を閉じたか」を確認するとき
+
+## いつ使わないか
+
+- Episode 本文（追記ログ）の書き方 — 本文はフリーフォーム + 性質ガイドのまま（`document-format.md` §7）。**本スキルは本文に構造を課さない**（書きアンカー保護、design-principles §5）
+- frontmatter / ULID / 命名規則 — `spec-card` が担う（本スキルは重複させない）
+- kickoff / plan / discussion の closure — 対象は episode のみ
+
+## 設計根拠（要約）
+
+episode 品質監査（52 件全数採点、`docs/research/2026-06-10-episode-quality-audit.md`）の主要結果:
+
+- 最大の穴は **closure 軸**（平均 1.12/2、満点率 19%）。振り返り枠組み（KPT/YWT）の選択は主要因ではない
+- **closure は「次の消費者」が存在するときだけ書かれる**（法則 L1）。明示ゲートで代替可能
+- 「後で追記」型の先送りは観測範囲で **100% 不履行**（法則 L4）
+- テンプレートは過去向き軸の床を上げるが、未来向き軸を作らない（法則 L2）。構造の足しすぎは蒸留を下げる
+
+よって本スキルの重心は「枠組みの精緻さ」ではなく **closure gate**（消費者明示 + routing + status 確定）に置く。セクションは感想カテゴリでなく「**何を出力し、誰が消費するか**」で定義する（Issue #113 オーナー設計判断、2026-06-10）。
+
+## Step 1: tier 判定
+
+closure 開始時にまず tier を判定する。判定は印象でなく下のトリガ列で行い、**heavy → opt-out → standard の順で評価する**（heavy トリガに 1 つでも該当すれば、失格条件や消費者の有無にかかわらず heavy。opt-out に到達するのは heavy トリガゼロのときだけ）。
+
+### heavy トリガ（1 つでも該当すれば heavy）
+
+- [ ] 実行中に失敗・撤回・方針転回があった
+- [ ] SO / peer-review / Copilot 等の外部レビューレーンを使った
+- [ ] 学習・調査・feasibility 検証が主成果（実装より知見が成果物）
+- [ ] 非自明な設計判断（選択肢を比較して棄却した）がある
+- [ ] Decision / skill / rule への昇格候補がありそう
+
+### opt-out 失格条件（1 つでも該当すれば opt-out 不可）
+
+- [ ] 行き先未定の follow-up が存在する
+- [ ] 実行ログ（会話・episode 追記）に失敗・指摘・撤回が残っている
+- [ ] 外部レビューを実施した
+- [ ] 昇格候補（Decision / skill / rule / negative knowledge)がある
+
+判定結果:
+
+| tier | 条件 | 要求 |
+|------|------|------|
+| heavy | heavy トリガ 1 つ以上 | Step 2 + Step 3 + Step 4（外部チェック） |
+| opt-out | heavy トリガなし + 失格条件ゼロ + 消費者なし | 下記の opt-out 定型 1 行のみ |
+| standard | 上記以外（失格条件への該当は opt-out を塞ぐだけで heavy にはしない） | Step 2 + Step 3（自己申告で可） |
+
+### opt-out 定型
+
+opt-out は「書かない」ではなく「消費者ゲート判断を明示した正当な closure」。次の 1 行を episode 末尾（episode 未作成なら PR 本文）に残し、status を確定する:
+
+```markdown
+振り返り不要: <理由> / 次の消費者: なし / follow-up: なし / status: <stable または deprecated>
+```
+
+## Step 2: closure gate checklist（standard / heavy で必須。opt-out は Step 1 の定型 1 行が本 checklist を代替）
+
+手段指示の構造化セクション（design-principles §4）。**4 項目 + 条件付き 2 項目**。これを満たさない closure は不完全。
+
+- [ ] **Context / なぜ**: episode 冒頭に「なぜこの作業が始まったか」が 1〜2 文で自己完結しているか（リンク先参照のみは不可。腐敗保険）
+- [ ] **次の消費者**: この episode を次に読むのは誰か / どのタスクか を明示。書けなければ「消費者なし」と明示（opt-out の線引きに使う）
+- [ ] **follow-up routing**: すべての残課題に行き先を付与 — Issue / ADR / 別 doc / 「追わない」宣言のいずれか。**行き先なしの箇条書きは禁止**。他文書で発見した欠陥も routing 対象（反映 or 前方参照 or 追わない理由 = back-propagation）
+- [ ] **status 確定**: frontmatter の status を draft → stable / deprecated へ。据え置く場合は理由を 1 行。達成度（達成 / 部分 / 未達）を 1 語添える
+- [ ] **（条件付き）evidence anchor**: 本文が `tmp/` 等の揮発パスや別リポの匿名化情報を参照している場合、要点（数値・結論・hash）を本文へ転記、または永続する代替アンカーを置いたか
+- [ ] **（条件付き）SO 証跡リンク**: 外部チェック（Step 4）を実施した場合、その出力パスまたは要約を episode にリンクしたか
+
+## Step 3: 内容セクション — 出力型 × 消費チャネル
+
+該当する出力型だけ書く（全部埋める義務はない。空欄の機械的穴埋めは蒸留を下げる — 監査 L2）。各型は「誰が消費するか」で定義されている。書く前に「この episode から何が出たか」を型に照らして確認する目的のチェックリストであり、空でも見出しを立てる必要はない。
+
+| 出力型 | 消費チャネル | 書く内容 |
+|--------|-------------|---------|
+| 事実・失敗 | 失敗分類・再発防止（→ #60） | 何が起き、何が失敗したか。実行ログに残る失敗を選択的に省略しない |
+| 決定と根拠 | 判断の再利用・Decision 昇格 | 選択肢・採否・**棄却した案と棄却理由**。コードや diff から復元できない「なぜ」 |
+| わかったこと（W） | ナレッジ・次タスク参照 | 検証で判明した事実・技術的知見 |
+| 原則（Pattern / Anti-pattern 対) | negative knowledge 注入（→ #62） | 転用可能な対構造。NG/OK ペア形式可 |
+| 行動変更 | hook / skill / チェックリスト化 | **トリガ・機構・着地先アーティファクト名を必須**。機構未確定の「検討する」は残課題（routing 対象）へ降格 |
+| 蒸留シグナル | 昇格パイプライン | 昇格候補の明示: Decision / skill / rule / #62 / **なし**（「なし」も明示する） |
+| 残課題 | routing（Step 2 で行き先付与） | 未解決・未検証。証明できなかったことは証明できなかったと書く（対称な honesty） |
+
+### 任意の皮: KPT / YWT
+
+人間レビュー用の読み物として、上記の内容を KPT（Keep / Problem / Try）+ Open Questions や YWT で**再構成してもよい**。皮は骨格の代替ではない — Keep に「わかったこと」を仮装させない、Problem の空欄/形骸化は皮では検知できない（自己検出率 0 の実証あり）ことに注意。
+
+## Step 4: heavy tier の外部チェック
+
+自己評価は甘い（別リポ実証: Problem 自己検出率 0、選択的省略あり）。heavy では外部チェックを最低 1 回入れる。
+
+- 既定: `so-compare` で振り返りの focused check。確認対象は **失敗セクションの選択的省略 / routing の網羅 / evidence anchor / back-propagation** のみに絞る（全文レビューにしない — 摩擦が高いと skip される）
+- 委譲採点 + spot-check は監査級の規模（多数 episode の横断評価）に限定
+- SO 出力パスを episode にリンクする（Step 2 の条件付き項目。証跡の有無が PR レビューで機械的に確認できる）
+
+### プロンプト例
+
+```bash
+so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) 実行ログにある失敗・撤回・指摘が事実・失敗セクションから選択的に省略されていないか (2) 全 follow-up に行き先があるか (3) 揮発パス参照が残っていないか (4) 他文書の欠陥への back-propagation 漏れはないか"
+```
+
+## 制約と既知の限界
+
+- **本スキルは助言であり同期ゲートではない**。「skill があっても closure を忘れる」問題（監査 R4）は branch-finish / PR フロー側の同期ゲートで対処する（別 Issue）。本スキルの遵守はトリガされたときのみ機能する
+- 実行ログマーカー（つまずき / 指摘 / 撤回）× 失敗セクションの機械突合は将来機構（書き込み時ガイドラインとセットで成立。#149 B 検証の defer 解除後）。現時点では Step 1 失格条件・Step 4 SO が代替
+- 後追い再構成の episode（リアルタイム追記でないもの）は冒頭に `reconstructed` と明示する。リアルタイム追記ログと同じ証拠価値を持たないため、形式比較のデータとして同列に扱わない
+
+## 効果測定（#113 完了条件のデータ取得経路）
+
+「KPT で十分か別形式か」は 2 事例 + オーナー判断（出力型×消費チャネル骨格の採用、KPT は皮へ）で回答済み。以後の測定経路:
+
+- 監査 rubric の軸5（closure）・軸3（証拠接続）で導入前後の episode を比較（before 値: 軸5 = 1.12 / 軸3 = 1.35）
+- opt-out 率を追跡（乱用の可視化。opt-out が多数派になったら失格条件を再設計）
+- 実適用 episode に**形式メモ**を 3〜4 行残す: チャネル骨格で拾えたもの / 拾えなかったもの / 皮（KPT/YWT）を使ったか / 摩擦
+
+## 既存スキル・ドキュメントとの関係
+
+- **`spec-card`**: frontmatter / ULID / 命名 / status enum の正本。本スキルは closure の中身を担い、形式は spec-card に従う
+- **`document-format.md` §7 Episode**: 本文フリーフォーム + 性質ガイドの定義。本スキルは末尾の構造化 FB セクションの実装
+- **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
+- **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
+- **Issue #60 / #62**: 出力型の消費チャネル先（失敗分類 / negative knowledge 注入）。注入側フォーマットは #62 で設計
