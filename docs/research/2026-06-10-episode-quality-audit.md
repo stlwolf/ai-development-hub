@@ -56,27 +56,27 @@ related:
 
 - 全数 52 件（サンプリングなし。「薄い episode リスト」は標本では作れないため。retrospective 名への偏りも構造的に回避）
 - 軸1〜5 はサブエージェント 7 バッチに委譲し、**各点数に逐語引用（根拠）を必須化**。軸6 は frontmatter 抽出データから機械判定
-- spot-check（evidence-verification-rule 準拠）: 負荷の高い主張 10 件を実ファイル照合し **10/10 一致** [verified]（クロスファイル整合 2 件・矛盾/プレースホルダ 6 件・無作為引用 2 件）
+- spot-check（evidence-verification-rule 準拠）: 負荷の高い主張 10 件を実ファイル照合し **10/10 一致** [verified]（照合先は §3・§5 に file:line で記載。クロスファイル整合 2 件・矛盾/プレースホルダ 6 件・無作為引用 2 件）
 - 採点者間信頼性: 親が事前に精読していた 6 件でサブエージェント採点と **30/30 軸一致**。ただし親はバッチ結果を見た後の照合であり、厳密な独立二重採点ではない（限界）
 
 ### 2.4 検証ステータス規約
 
-本ノートの非自明な主張には `[verified]`（一次ソースを直接照合済み）/ `[unverified-summary]`（ソースは明示するが含意未照合の要約・解釈）/ `[speculation]`（ソースなしの推測）/ `[owner-report]`（オーナー聞き取りの体感値 = unverified-summary 相当）を付す。
+本ノートの非自明な主張には `[verified]`（一次ソースを直接照合済み）/ `[unverified-summary]`（ソースは明示するが含意未照合の要約・解釈）/ `[speculation]`（ソースなしの推測）の 3 値（`docs/research/README.md:90-92` の語彙）を付す。`[verified]` の根拠は `file:line` または再実行可能なコマンド + 対象範囲で示す（コーパス集計値は後者）。オーナー聞き取り由来の情報は独自ステータスを設けず **`[unverified-summary]` とし、本文で「owner-report（聞き取りの体感値）」と注記**する。
 
 ## 3. コーパス棚卸し
 
-総数 **52 ファイル / 7 プロジェクト** [verified]（find 実行結果）。内訳: orchestration-engine 22 / second-opinion-verification 9 / arena-compare 6 / cursor-thread-tools 6 / wezterm-ai-mode 6 / ruler-agent-verification 2 / agent-verification-flow 1。
+総数 **52 ファイル / 7 プロジェクト** [verified]（`find . -path "*/docs/episodes/*" -name "*.md"` をリポジトリルートで実行、2026-06-10 時点）。内訳: orchestration-engine 22 / second-opinion-verification 9 / arena-compare 6 / cursor-thread-tools 6 / wezterm-ai-mode 6 / ruler-agent-verification 2 / agent-verification-flow 1。
 
-frontmatter: `type: episode` 41 / `type: report` 6 / なし 5 [verified]。ULID `id` と `status` は 2026-05 以降の世代のみ保有。
+frontmatter: `type: episode` 41 / `type: report` 6 / なし 5 [verified]（全 52 件の先頭 `---` ブロックを抽出し `type:` 行を集計。`grep -rl "^type: episode"` と突合）。ULID `id` と `status` は 2026-05 以降の世代のみ保有。
 
 ### 採点前から確定した衛生欠陥（すべて [verified]）
 
-- **完全重複**: `second-opinion-verification` の 2026-02-10 ペアは frontmatter 以外、空行 1 行差で同一（diff 確認）。正本指定なし
-- **空プレースホルダ**: `wezterm-ai-mode/.../2026-04-22-episode-wez-notify.md` 末尾「## 3. 振り返り（後で追記）」が HTML コメントのまま 1 ヶ月超未記入
-- **一括生成**: orchestration-engine の 2026-05-14 付 13 件は単一コミット `585fdeb` で同時追加
-- **write-once 文化**: 52 件中 49 件がコミット 1〜2 回。作成後の追記はほぼ存在しない（最多 5 回が 1 件）
-- **日付ドリフト**: ファイル名日付と git 初回コミット日の乖離が複数（事後一括コミットの痕跡）
-- **§8 配置ギャップ**: `docs/specs/document-format.md` §8 の配置表に Decision の「プロジェクト横断」行はあるが Episode の横断置き場がない
+- **完全重複**: `projects/second-opinion-verification/docs/episodes/2026-02-10-claude-safe-orchestration-verification.md` と同 `2026-02-10-verification-report.md` は frontmatter 以外、空行 1 行差で同一（`diff` で確認）。正本指定なし
+- **空プレースホルダ**: `projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md:267`「## 3. 振り返り（後で追記）」が HTML コメントのまま 1 ヶ月超未記入
+- **一括生成**: orchestration-engine の 2026-05-14 付 13 件は単一コミット `585fdeb` で同時追加（`git log --diff-filter=A -- "projects/orchestration-engine/docs/episodes/2026-05-14-*.md"` で確認）
+- **write-once 文化**: 52 件中 49 件がコミット 1〜2 回。作成後の追記はほぼ存在しない（最多 5 回が 1 件。`git log --follow --oneline` の全 52 件集計）
+- **日付ドリフト**: ファイル名日付と git 初回コミット日の乖離が複数（例: `projects/second-opinion-verification/docs/episodes/2026-02-09-summary.md` は初回コミット 2026-02-14。事後一括コミットの痕跡）
+- **§8 配置ギャップ**: `docs/specs/document-format.md:304`（§8 配置先表）に Decision の「プロジェクト横断」行はあるが Episode の横断置き場がない
 - 境界事例: `projects/poc/wezterm-ai-mode/docs/episodes.md`（単一ファイル・定義外）は除外して記録
 
 ## 4. 採点結果
@@ -174,18 +174,18 @@ avf 2/20 fw-upgrade                                   2/1/0/2/1 = 6
 
 ## 5. 劣化の法則（L1〜L8、先行仮説の読込前に確定）
 
-- **L1 未来向き接続の恒常的欠落**: 軸5 は全世代・全プロジェクトで最弱。closure は「書いた時点」では成立せず、**後続作業が拾ったときに遡及的に成立**する。決定的証拠: cursor-thread-tools の phase episode は次 Phase という確定消費者を持つ間は軸5 が高く（phase1/3/4 = 2）、**プロジェクト終端の phase5 だけ軸5=0**（「進行中」残置）— 消費者が消えた瞬間に closure が崩れた [verified]（スコア + grep 照合）
-- **L2 テンプレートは過去向き軸の床を上げるが、未来向き軸を作らない**: 5/14 一括生成 13 件は軸1=軸2=2.0 で均質だが軸4=1.08 / 軸5=1.0、status: draft 13/13 放置。「将来の拡張ポイント」は全件行き先なし [verified]
+- **L1 未来向き接続の恒常的欠落**: 軸5 は全世代・全プロジェクトで最弱。closure は「書いた時点」では成立せず、**後続作業が拾ったときに遡及的に成立**する。決定的証拠: cursor-thread-tools の phase episode は次 Phase という確定消費者を持つ間は軸5 が高く（phase1/3/4 = 2）、**プロジェクト終端の phase5 だけ軸5=0**（「進行中」残置）— 消費者が消えた瞬間に closure が崩れた [verified]（`projects/cursor-thread-tools/docs/episodes/2026-02-23-phase5-export-enhancements.md:33-34`、スコアは §4.5）
+- **L2 テンプレートは過去向き軸の床を上げるが、未来向き軸を作らない**: 5/14 一括生成 13 件は軸1=軸2=2.0 で均質だが軸4=1.08 / 軸5=1.0、status: draft 13/13 放置。「将来の拡張ポイント」は全件行き先なし [verified]（各ファイル frontmatter の `status:` 行 + 一括追加コミット `585fdeb`）
 - **L3 時系列は「劣化」ではない**: 軸1/2 は世代とともに改善（1.59 → 2.0）。軸4 蒸留は**2026-02 がピーク**（教訓サマリ/K 番号文化）で、教訓節を持たない決定記録テンプレが大量生成された 2026-05 に最低。軸5 は全世代 ~1.1 で不変。品質は時間でなく「書く時点で選んだ節構成」が決める [unverified-summary]（§4.2）
-- **L4 劣化の主経路は「未来の自分への先送り」**: 「後で追記」「Commit: (draft)」「進行中」「継続予定」型のプレースホルダは観測範囲で**一度も後から埋められていない** [verified]。逆に追記が実際に行われた稀な 2 例（wez-pane のレビューラウンド積層、oe-delegate の追記訂正）では**前方不整合**（見出し「5 ラウンド」vs 本文「9 ラウンド」、本文結論を末尾追記が訂正）が発生 [verified]
+- **L4 劣化の主経路は「未来の自分への先送り」**: 「後で追記」「Commit: (draft)」「進行中」「継続予定」型のプレースホルダは観測範囲で**一度も後から埋められていない** [verified]（`projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md:267` / `projects/second-opinion-verification/docs/episodes/2026-02-09-timeout-implementation-review.md:9` / `projects/cursor-thread-tools/docs/episodes/2026-02-23-phase5-export-enhancements.md:33-34` / `projects/orchestration-engine/docs/episodes/2026-05-18-episode-step-4-5-implementation.md:46`）。逆に追記が実際に行われた稀な 2 例（wez-pane のレビューラウンド積層、oe-delegate の追記訂正）では**前方不整合**（見出し「5 ラウンド」vs 本文「9 ラウンド」、本文結論を末尾追記が訂正）が発生 [verified]（`projects/wezterm-ai-mode/docs/episodes/2026-04-20-wez-pane.md:75,77`）
 - **L5 証拠の永続性欠陥**: 軸3 の痕跡が gitignore 対象 `tmp/` パスに集中（so-compare 証跡）し、書いた時点では検証可能・読む時点では消失。別リポ作業の匿名化は痕跡を全滅させる（avf 軸3=0）。匿名化と検証可能性を両立する代替アンカー規約が存在しない [unverified-summary]
-- **L6 修正の back-propagation 断絶**: so-compare レビュー episode（5/14）が同日 3 episode の設計欠陥を記録し「episode に 128+N セクションを追加」と修正方針を書いたが、当該 episode に追加されず前方参照もない [verified]（grep 照合）。単文書採点では捕捉できないコーパスレベルの整合性欠陥
+- **L6 修正の back-propagation 断絶**: so-compare レビュー episode（5/14）が同日 3 episode の設計欠陥を記録し「episode に 128+N セクションを追加」と修正方針を書いたが、当該 episode に追加されず前方参照もない [verified]（方針: `projects/orchestration-engine/docs/episodes/2026-05-14-episode-so-compare-step-4-1-design-review.md:58-62`。未実施: 同 `2026-05-14-episode-exit-code-mapping.md` 全文に `128` の出現なしを `grep` で確認）。単文書採点では捕捉できないコーパスレベルの整合性欠陥
 - **L7 WHY は冒頭 1〜2 文の問題文の有無で決まる**: 軸1=1 の主因は「Issue #N として実装」「kickoff の実装」開き。「Context / なぜ」節を持つ世代（oe 2026-06）と問題文から始まる文書は軸1=2 に張り付く。修正コストが最も低いギャップ [unverified-summary]
 - **L8 品質は書く時点の「節構成」でほぼ決まる**: 軸4 は知見/教訓節の有無が決定要因。family が軸プロファイルを決める（§4.3）。複数作業の束ね文書化は劣化と同時発生 [unverified-summary]
 
 ## 6. 先行仮説との突合（事前登録 → 封印解除）
 
-手続き: 自前の仮説 H1〜H5 と法則 L1〜L8 を確定した後、Issue #149/#113/#62 の 2026-06-10 付コメントを初めて読んだ。コメントはキックオフ記載の 3 件でなく **4 件**存在し（#149 に 04:02 の追加分）、4 件すべてを突合対象とした [verified]。
+手続き: 自前の仮説 H1〜H5 と法則 L1〜L8 を確定した後、Issue #149/#113/#62 の 2026-06-10 付コメントを初めて読んだ。コメントはキックオフ記載の 3 件でなく **4 件**存在し（#149 に 04:02 の追加分）、4 件すべてを突合対象とした [verified]（`gh issue view {149,113,62} --json comments` の `createdAt` 2026-06-10 フィルタ。追加分 = [#149 04:02 コメント](https://github.com/stlwolf/ai-development-hub/issues/149#issuecomment-4666359177)）。
 
 ### 一致（収束）
 
@@ -203,7 +203,7 @@ avf 2/20 fw-upgrade                                   2/1/0/2/1 = 6
 
 ## 7. 対照群（別リポ「再利用ループあり群」、owner-report）
 
-数値計測ではなくオーナー聞き取りの体感値。全項目 [owner-report]（unverified-summary 相当）。ドメイン情報は除去済み。
+数値計測ではなくオーナー聞き取りの体感値（owner-report）。全項目 [unverified-summary]（ソース: 2026-06-10 のオーナー聞き取り。一次計測なし）。ドメイン情報は除去済み。
 
 | 論点 | 結果 | 含意 |
 |---|---|---|
@@ -222,7 +222,7 @@ avf 2/20 fw-upgrade                                   2/1/0/2/1 = 6
 1. **次の消費者の明示**（誰が / どのタスクで読むか。書けなければ「消費者なし」と明示させ、構造化振り返り省略可の線引きに使う）
 2. **follow-up routing**（全 follow-up に行き先: Issue / ADR / 別doc /「追わない」宣言。行き先なしの箇条書き禁止）
 3. **status 確定**（closure 時に draft → stable/deprecated、据え置きは理由 1 行。stale draft 28 件の再発防止）
-4. 振り返り枠組み: **KPT + YWT ハイブリッド**（wez pane-activate の実測比較が既に支持 [verified]）
+4. 振り返り枠組み: **KPT + YWT ハイブリッド**（wez pane-activate の実測比較が既に支持 [verified]（`projects/wezterm-ai-mode/docs/episodes/2026-05-31-wez-pane-activate.md:143`））
 5. **back-propagation チェック**（他文書の欠陥を確定したら反映 or 前方参照。L6 対策）
 6. **evidence anchor チェック**（`tmp/` 等の揮発痕跡は要点を本文へ転記。匿名化時は数値・hash 等の代替アンカー。L5 対策）
 
@@ -252,7 +252,7 @@ L4 より事後リマインダは機能しない。branch-finish / PR フロー�
 
 「自己完結 > リンク経由」の採点は spec-card の related チェーン思想と矛盾しない:
 
-1. チェーンの脆さはコーパス内に実在する（`tmp/` 痕跡消失・「Commit: (draft)」未解決参照・日付ドリフト、すべて [verified]）
+1. チェーンの脆さはコーパス内に実在する（`tmp/` 痕跡依存・「Commit: (draft)」未解決参照・日付ドリフト、すべて [verified]: `projects/orchestration-engine/docs/episodes/2026-05-14-episode-so-compare-step-4-1-design-review.md` の `tmp/so-20260514-162654/` 参照、`projects/second-opinion-verification/docs/episodes/2026-02-09-timeout-implementation-review.md:9`、§3 日付ドリフト項）
 2. 1 点は「復元可能」を認めた上での減点であり、0 点（復元不能）と明確に区別している
 3. 軸1=2 の文書は related チェーン**も**完備しており、インライン 1〜2 文とチェーンは排他でなく相補。含意は「チェーンの上に最低限の自己完結（orientation + 腐敗保険）を足せ」であり R2 と一体
 
@@ -269,6 +269,6 @@ L4 より事後リマインダは機能しない。branch-finish / PR フロー�
 
 - 採点者間信頼性の照合は親がバッチ結果を見た後に行ったもので、厳密な独立二重採点ではない
 - 本リポは「プロジェクト ≒ 時期」が交絡しており、世代別比較（§4.2）はプロジェクト文化と分離できない
-- 対照群は数値計測でなく聞き取り（[owner-report]）。P5/L1 の機序の定量検定は未了
+- 対照群は数値計測でなく聞き取り（owner-report、ステータスとしては [unverified-summary]）。P5/L1 の機序の定量検定は未了
 - rubric の重み付け・合成点は operational heuristic であり、証拠に基づく閾値ではない
 - 委譲採点の根拠引用は spot-check 10 件 + 既読 6 件の範囲で照合済み。全 260 セルの逐一照合はしていない（リスク重み付き選択検証）
