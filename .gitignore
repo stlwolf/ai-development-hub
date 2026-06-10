@@ -38,3 +38,4 @@ tmp/
 .specstory/
 .playwright-mcp/
 .thread-exports/
+.oe/

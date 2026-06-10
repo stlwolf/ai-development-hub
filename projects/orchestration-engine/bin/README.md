@@ -37,11 +37,12 @@ oe-capture <pane_id> [--session-id <id>] [--lines <N>]
 子 Claude を `tmux split-window` で起動し、タスク（または kickoff doc）をキック（spawn + send の合成）。
 
 ```bash
-oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--] <task>
+oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 ```
 
 - `--kickoff <path>` … `"<path> を読んで進めて。"` を送り、doc のディレクトリを `--add-dir` で子に開示
 - `--label <#N|name>` … registry 登録ラベル（後で `oe-send <label>` で指す）
+- `--claude-arg <arg>` … 子 Claude 起動時に追加引数を渡す（repeatable）。例: `--claude-arg --permission-mode --claude-arg auto`
 - tmux 内必須（`TMUX_PANE` から親ペイン取得、`PARENT_TMUX_PANE` を子へ継承）
 
 関連 lib: `delegate-registry.sh`（キック注入は `oe-send` 経由）
