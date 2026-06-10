@@ -29,7 +29,7 @@ related:
 
 ## 1. 目的・スコープ
 
-- 対象: 本リポジトリの episode コーパス（`**/docs/episodes/**` ∪ `type: episode` frontmatter 保有分）。別リポジトリの episode は直接参照しない
+- 対象: 本リポジトリの episode コーパス = `projects/**/docs/episodes/**` ∪ `type: episode` frontmatter 保有分（2026-06-10 監査時点のスナップショット）。本ノートと同じ PR で新設する `docs/episodes/`（プロジェクト横断置き場とメタ実験 episode）は監査実施後の成果物であり**対象外**。別リポジトリの episode は直接参照しない
 - 問い: (1) 文脈復元性の実態 (2) 劣化の法則 (3) #113 を閉じる / rule 化 / spec-card 強化 / 書き忘れ対策のどれが妥当か
 - 本ノートは調査・提言まで。実装（skill/rule 化・hook 追加）は後続 Issue（#113 等）で扱う
 
@@ -65,7 +65,7 @@ related:
 
 ## 3. コーパス棚卸し
 
-総数 **52 ファイル / 7 プロジェクト** [verified]（`find . -path "*/docs/episodes/*" -name "*.md"` をリポジトリルートで実行、2026-06-10 時点）。内訳: orchestration-engine 22 / second-opinion-verification 9 / arena-compare 6 / cursor-thread-tools 6 / wezterm-ai-mode 6 / ruler-agent-verification 2 / agent-verification-flow 1。
+総数 **52 ファイル / 7 プロジェクト** [verified]（`find projects -path "*/docs/episodes/*" -name "*.md"` をリポジトリルートで実行、2026-06-10 時点。新設 `docs/episodes/` はスコープ外のため本 PR マージ後も同コマンドで 52 件が再現する）。内訳: orchestration-engine 22 / second-opinion-verification 9 / arena-compare 6 / cursor-thread-tools 6 / wezterm-ai-mode 6 / ruler-agent-verification 2 / agent-verification-flow 1。
 
 frontmatter: `type: episode` 41 / `type: report` 6 / なし 5 [verified]（全 52 件の先頭 `---` ブロックを抽出し `type:` 行を集計。`grep -rl "^type: episode"` と突合）。ULID `id` と `status` は 2026-05 以降の世代のみ保有。
 
@@ -76,7 +76,7 @@ frontmatter: `type: episode` 41 / `type: report` 6 / なし 5 [verified]（全 5
 - **一括生成**: orchestration-engine の 2026-05-14 付 13 件は単一コミット `585fdeb` で同時追加（`git log --diff-filter=A -- "projects/orchestration-engine/docs/episodes/2026-05-14-*.md"` で確認）
 - **write-once 文化**: 52 件中 49 件がコミット 1〜2 回。作成後の追記はほぼ存在しない（最多 5 回が 1 件。`git log --follow --oneline` の全 52 件集計）
 - **日付ドリフト**: ファイル名日付と git 初回コミット日の乖離が複数（例: `projects/second-opinion-verification/docs/episodes/2026-02-09-summary.md` は初回コミット 2026-02-14。事後一括コミットの痕跡）
-- **§8 配置ギャップ**: `docs/specs/document-format.md:304`（§8 配置先表）に Decision の「プロジェクト横断」行はあるが Episode の横断置き場がない
+- **§8 配置ギャップ**: `docs/specs/document-format.md:314-321`（§8 内の配置先表）に Decision の「プロジェクト横断」行（`:318`）はあるが、Episode は「プロジェクト固有ディレクトリ（規約は各プロジェクト）」のみ（`:321`）で横断置き場がない
 - 境界事例: `projects/poc/wezterm-ai-mode/docs/episodes.md`（単一ファイル・定義外）は除外して記録
 
 ## 4. 採点結果
@@ -178,10 +178,10 @@ avf 2/20 fw-upgrade                                   2/1/0/2/1 = 6
 - **L2 テンプレートは過去向き軸の床を上げるが、未来向き軸を作らない**: 5/14 一括生成 13 件は軸1=軸2=2.0 で均質だが軸4=1.08 / 軸5=1.0、status: draft 13/13 放置。「将来の拡張ポイント」は全件行き先なし [verified]（各ファイル frontmatter の `status:` 行 + 一括追加コミット `585fdeb`）
 - **L3 時系列は「劣化」ではない**: 軸1/2 は世代とともに改善（1.59 → 2.0）。軸4 蒸留は**2026-02 がピーク**（教訓サマリ/K 番号文化）で、教訓節を持たない決定記録テンプレが大量生成された 2026-05 に最低。軸5 は全世代 ~1.1 で不変。品質は時間でなく「書く時点で選んだ節構成」が決める [unverified-summary]（§4.2）
 - **L4 劣化の主経路は「未来の自分への先送り」**: 「後で追記」「Commit: (draft)」「進行中」「継続予定」型のプレースホルダは観測範囲で**一度も後から埋められていない** [verified]（`projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md:267` / `projects/second-opinion-verification/docs/episodes/2026-02-09-timeout-implementation-review.md:9` / `projects/cursor-thread-tools/docs/episodes/2026-02-23-phase5-export-enhancements.md:33-34` / `projects/orchestration-engine/docs/episodes/2026-05-18-episode-step-4-5-implementation.md:46`）。逆に追記が実際に行われた稀な 2 例（wez-pane のレビューラウンド積層、oe-delegate の追記訂正）では**前方不整合**（見出し「5 ラウンド」vs 本文「9 ラウンド」、本文結論を末尾追記が訂正）が発生 [verified]（`projects/wezterm-ai-mode/docs/episodes/2026-04-20-wez-pane.md:75,77`）
-- **L5 証拠の永続性欠陥**: 軸3 の痕跡が gitignore 対象 `tmp/` パスに集中（so-compare 証跡）し、書いた時点では検証可能・読む時点では消失。別リポ作業の匿名化は痕跡を全滅させる（avf 軸3=0）。匿名化と検証可能性を両立する代替アンカー規約が存在しない [unverified-summary]
+- **L5 証拠の永続性欠陥**: 軸3 の痕跡が gitignore 対象 `tmp/` パスに集中（so-compare 証跡）し、書いた時点では検証可能・読む時点では消失。別リポ作業の匿名化は痕跡を全滅させる（avf 軸3=0）。匿名化と検証可能性を両立する代替アンカー規約が存在しない [unverified-summary]（`tmp/` 参照の実例: `projects/orchestration-engine/docs/episodes/2026-05-14-episode-so-compare-step-4-1-design-review.md:95`（frontmatter `related` でも `:18`）。`tmp/` が追跡外である根拠: `.gitignore:36`。匿名化の実例: `projects/agent-verification-flow/docs/episodes/2026-02-20-fw-upgrade-multi-agent-retrospective.md` 全文に commit hash / PR 番号なし（grep 確認、スコアは §4.5）。「集中」の程度は委譲採点バッチ所見に基づく要約）
 - **L6 修正の back-propagation 断絶**: so-compare レビュー episode（5/14）が同日 3 episode の設計欠陥を記録し「episode に 128+N セクションを追加」と修正方針を書いたが、当該 episode に追加されず前方参照もない [verified]（方針: `projects/orchestration-engine/docs/episodes/2026-05-14-episode-so-compare-step-4-1-design-review.md:58-62`。未実施: 同 `2026-05-14-episode-exit-code-mapping.md` 全文に `128` の出現なしを `grep` で確認）。単文書採点では捕捉できないコーパスレベルの整合性欠陥
-- **L7 WHY は冒頭 1〜2 文の問題文の有無で決まる**: 軸1=1 の主因は「Issue #N として実装」「kickoff の実装」開き。「Context / なぜ」節を持つ世代（oe 2026-06）と問題文から始まる文書は軸1=2 に張り付く。修正コストが最も低いギャップ [unverified-summary]
-- **L8 品質は書く時点の「節構成」でほぼ決まる**: 軸4 は知見/教訓節の有無が決定要因。family が軸プロファイルを決める（§4.3）。複数作業の束ね文書化は劣化と同時発生 [unverified-summary]
+- **L7 WHY は冒頭 1〜2 文の問題文の有無で決まる**: 軸1=1 の主因は「Issue #N として実装」「kickoff の実装」開き。「Context / なぜ」節を持つ世代（oe 2026-06）と問題文から始まる文書は軸1=2 に張り付く。修正コストが最も低いギャップ [unverified-summary]（「Issue #N として実装」開きの例: `projects/wezterm-ai-mode/docs/episodes/2026-04-20-wez-pane.md:22`、同 `2026-04-22-episode-wez-notify.md:24`。対極の「## Context / なぜ」例: `projects/orchestration-engine/docs/episodes/2026-06-09-episode-oe-send-finalize-ingestion.md:30`。スコア対応は §4.5）
+- **L8 品質は書く時点の「節構成」でほぼ決まる**: 軸4 は知見/教訓節の有無が決定要因。family が軸プロファイルを決める（§4.3）。複数作業の束ね文書化は劣化と同時発生 [unverified-summary]（知見節ありの例: `projects/ruler-agent-verification/docs/episodes/2026-02-21-gemini-cli-initial-verification.md:137`「## ナレッジ（確立された知見）」、`projects/orchestration-engine/docs/episodes/2026-05-16-episode-step-4-3-implementation.md:215`「## 教訓 / 学び」。なしの例: `projects/arena-compare/docs/episodes/2026-03-04-exploration-mode-and-command-path.md`（知見/教訓節を持たず軸4=1、束ね文書の実例。スコアは §4.5））
 
 ## 6. 先行仮説との突合（事前登録 → 封印解除）
 
