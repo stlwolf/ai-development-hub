@@ -3,7 +3,7 @@ id: "01KRJKWHDY04T8RZ95J35YNEK1"
 title: "Schema-driven Boundaries 検証ツール + 差し戻し動作定義"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

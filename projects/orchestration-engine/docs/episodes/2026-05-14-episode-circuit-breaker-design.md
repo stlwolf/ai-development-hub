@@ -3,7 +3,7 @@ id: "01KRJM78XPQFXQKZY5DXY30HV5"
 title: "DI-7 + DI-12 Time Budgeting とサーキットブレーカー設計確定"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

@@ -3,7 +3,7 @@ id: "01KRH2GEPK857YKK64WRJWA30X"
 title: "依存関係表現の正本形式 — 暫定 Mermaid 採用 + 将来 JSON Schema 正本案の識別"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
