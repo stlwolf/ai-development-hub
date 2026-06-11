@@ -12,5 +12,9 @@
   "Notion-Personal": {
     "type": "http",
     "url": "https://mcp.notion.com/mcp"
+  },
+  "Linear": {
+    "type": "http",
+    "url": "https://mcp.linear.app/mcp"
   }
 }
