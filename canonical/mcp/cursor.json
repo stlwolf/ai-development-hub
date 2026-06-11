@@ -17,6 +17,10 @@
     "Slack": {
       "url": "https://mcp.slack.com/mcp",
       "headers": {}
+    },
+    "Linear": {
+      "url": "https://mcp.linear.app/mcp",
+      "headers": {}
     }
   }
 }
