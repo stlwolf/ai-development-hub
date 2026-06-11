@@ -3,7 +3,7 @@ id: "01KRJQMAXADWEKV1P84XCZ636M"
 title: "Step 4-1 設計全体の so-compare レビュー — 4 件の設計修正"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
@@ -61,6 +61,7 @@ Step 4-1 の全 5 フェーズ完了後、フェーズ境界での so-compare �
 - **影響先**: `docs/episodes/2026-05-14-episode-exit-code-mapping.md`
 - **修正方針**: episode に「128+N の扱い」セクションを追加。MVP ではディスパッチャ側で「直前に interrupt を送信した場合は exit 130 を `blocked` に再分類」する補助判定ルールを契約として明示
 - **根拠**: ディスパッチャは `wez pane send` の実行主体なので、「直前に interrupt を送った」という情報を保持できる
+- **反映済み（2026-06-11、#149 監査 L6 対応）**: [exit-code-mapping episode](2026-05-14-episode-exit-code-mapping.md) に「128+N（signal-killed）の扱い」節として追記
 
 ### 修正 3: ターン定義の不整合
 

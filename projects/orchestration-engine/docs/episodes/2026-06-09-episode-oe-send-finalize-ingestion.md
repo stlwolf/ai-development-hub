@@ -3,7 +3,7 @@ id: "01KTPB0D98JFNVHJAC9W9GZP50"
 title: "oe-send 送信信頼化 — Enter 吸収の観測ベース finalize 回復（#144 駆動層記録）"
 date: 2026-06-09
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/144"
@@ -82,3 +82,4 @@ tags: [orchestration, oe-send, delegate-send, tmux, ingestion, enter-absorption,
 - settle 窓 3s の長期 calibration（負荷時に伸ばす判断基準）。
 - ②/③ の deterministic 再現環境（「整形崩れセッション」の人工再現）は未達＝根本の機構特定は保留。
 - `oe-capture` の pane-id 2系統・出力チャネル統一 → #114。
+- #144 後も残る間欠的な無言失敗（未着でも rc=0 / not in a mode）→ #154 で継続調査。本サイクルは観測ベース finalize 回復までで closure（後続は別サイクル）。
