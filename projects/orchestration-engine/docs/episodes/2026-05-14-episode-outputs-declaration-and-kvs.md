@@ -3,7 +3,7 @@ id: "01KRJKWGD7G2HFAX5RTS7YY80S"
 title: "G3 outputs 宣言フォーマット + KVS 契約定義"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

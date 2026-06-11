@@ -3,7 +3,7 @@ id: "01KRJKWEC3FFHRMMP85220XBPT"
 title: "G4 Failure Taxonomy 6 値スキーマ定義"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

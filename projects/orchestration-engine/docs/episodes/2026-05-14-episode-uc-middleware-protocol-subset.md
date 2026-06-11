@@ -3,7 +3,7 @@ id: "01KRH830QHK3NWQR5R5C8GW4AS"
 title: "DI-3: UC 中間層プロトコル要件 — 3 UC 共通最小集合のみ Step 4-1 に含める"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

@@ -3,7 +3,7 @@ id: "01KRH830V72B46ETV5NXJNNM0J"
 title: "DI-8: 最小解析ラッパー — CLI ラッパー + 終了マーカースキャン"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

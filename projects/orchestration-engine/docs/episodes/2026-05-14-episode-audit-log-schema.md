@@ -3,7 +3,7 @@ id: "01KRJME485MH814XFZWHS2NQTP"
 title: "DI-11 監査ログ JSON Lines スキーマ定義"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"

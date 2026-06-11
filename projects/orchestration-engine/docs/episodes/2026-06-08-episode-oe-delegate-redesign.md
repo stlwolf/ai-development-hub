@@ -3,7 +3,7 @@ id: "01KTKE9YF0S16AABWEG23DNXAG"
 title: "親子委譲CLI(oe-delegate)の再設計 — 疎結合化とアドレッシングの設計経緯"
 date: 2026-06-08
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/142"

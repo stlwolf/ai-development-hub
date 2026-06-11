@@ -3,7 +3,7 @@ id: "01KRH830T0M0P2JQW2GH5BMCEZ"
 title: "DI-1: 中間層責務範囲 — CLI 起動 + envelope 注入 + 最小限中間層 API を薄いライブラリ層に統合"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
