@@ -3,7 +3,7 @@ id: "01KPT49WWP05M91AN9NRMGC4QS"
 title: "wez notify サブコマンド実装（Issue #30）"
 date: 2026-04-22
 type: episode
-status: draft
+status: stable
 related:
   - type: implements
     ref: ../plans/2026-04-22-kickoff-wez-notify.md
@@ -264,6 +264,6 @@ fallback の command string builder で `cmd=$(printf "printf '\\033]...\\007' .
 
 ---
 
-## 3. 振り返り（後で追記）
+## 3. 振り返り
 
-<!-- 実装完了後のレトロスペクティブをここに追記 -->
+振り返り不要: 実装は完了済みで、主要な教訓は本文「プロンプト設計の教訓」に記載済み。追加の構造化振り返りに足る転用知なし / 次の消費者: なし / follow-up: なし / status: stable（事後 closure、2026-06-11。#149 監査 §8 の空振り返りプレースホルダ解消）

@@ -3,7 +3,7 @@ id: "01KRJME2ZDVW26VWGQWDVQTGAC"
 title: "DI-9 Exit Code ↔ G4 6 値マッピング確定"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
@@ -102,6 +102,14 @@ DI-7+DI-12 でサーキットブレーカー設計が確定し、`timeout` コ�
 - DI-5（envelope の `exit_state`）にマッピング結果を書き込む
 - DI-11（監査ログ）の `session_end` イベントの `state` フィールドにも同じ値を記録
 - サブエージェント側は exit code 0/1/2 のみを意識すればよい（124 はディスパッチャの `timeout` コマンドが返す）
+
+## 128+N（signal-killed）の扱い
+
+> 2026-06-11 追記（#149 監査 L6 の back-propagation）。本節は [so-compare 設計レビュー episode](2026-05-14-episode-so-compare-step-4-1-design-review.md) の「修正 2」が本 episode への追記を指示したまま未反映だった欠陥（監査 L6 の実例）の解消。
+
+- **問題**: SIGINT (130) / SIGKILL (137) など 128+N（signal-killed）は素朴には `protocol_error` に落ちるが、UC-1 の意図的 interrupt（`wez pane send` による SIGINT 注入）と区別できない
+- **MVP の契約**: ディスパッチャは `wez pane send` の実行主体であり「直前に interrupt を送信した」情報を保持できる。**直前に interrupt を送った場合は exit 130 を `blocked` に再分類**する補助判定ルールを契約として明示する
+- それ以外の 128+N は `protocol_error` のまま扱う
 
 ## 将来の拡張ポイント
 

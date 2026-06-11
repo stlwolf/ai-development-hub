@@ -3,7 +3,7 @@ id: "01KRJM76QEF6VCJ706QBXAARCY"
 title: "DI-2 オープンループ自律サイクル最小 SLO 確定"
 date: 2026-05-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
