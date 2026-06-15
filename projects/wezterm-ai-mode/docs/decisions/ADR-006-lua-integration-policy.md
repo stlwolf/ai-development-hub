@@ -19,7 +19,7 @@ tags: [lua, wezterm, notification, phase2, architecture]
 
 ## ステータス
 
-Accepted（Phase 2 実装完了 — 2026-06-16, dotfiles PR #20）
+Accepted（Phase 2 実装済み — 2026-06-16, dotfiles PR #20）
 
 ## コンテキスト
 
@@ -49,12 +49,3 @@ Accepted（Phase 2 実装完了 — 2026-06-16, dotfiles PR #20）
 - Phase 1 の `wez notify` はユーザー観点で「無音」（user-var は送信されるが toast は出ない）
 - `--help` と README に「toast 表示には `.wezterm.lua` に Lua ハンドラが必要（Phase 2）」と明記
 - Phase 2 の scope: Lua ハンドラの dotfiles 統合、`gmatch` パーサ修正、`allow-passthrough` 対応
-
-### Phase 2 完了（2026-06-16）
-
-Issue #86 / [dotfiles PR #20](https://github.com/stlwolf/dotfiles/pull/20) で Phase 2 を実装・マージ。本 ADR の先送り判断（選択肢 C: dotfiles 統合）どおり実装した。
-
-- `.wezterm.lua`: `user-var-changed` ハンドラをインライン統合（既存ハンドラと同スタイル）。`gmatch('[^|]+')` の空セグメント問題（DJ-3）は `string.match('^([^|]*)|([^|]*)|([^|]*)$')` で修正し、match 失敗時は生値を title に使うフォールバックを追加。
-- `.bashrc`: AI IDE 検出時（`is_ai_ide()`）に `WEZTERM_UNIX_SOCKET` を自動 export（AI IDE 統合ターミナルへ socket が伝搬しない stale socket 問題＝課題A の緩和）。
-- `allow-passthrough`: dotfiles #16 で既に対応済のため #86 スコープ外。TTY direct write 採用（ADR-007 DJ-1）により原理上も不要。
-- 実機検証: live toast の発火・パースを GUI ログで確認し、VERIFICATION_MATRIX A-1-4 を PASSED に更新。詳細は [episode](../episodes/2026-06-16-phase2-dotfiles-lua-integration.md)。
