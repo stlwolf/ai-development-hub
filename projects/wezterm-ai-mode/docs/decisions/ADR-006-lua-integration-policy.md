@@ -19,7 +19,7 @@ tags: [lua, wezterm, notification, phase2, architecture]
 
 ## ステータス
 
-Accepted
+Accepted（Phase 2 実装済み — 2026-06-16, dotfiles PR #20）
 
 ## コンテキスト
 

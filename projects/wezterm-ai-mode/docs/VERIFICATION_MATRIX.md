@@ -30,7 +30,7 @@ use_when:
 | A-1-1 | ソケット自動検出（`gui-sock-*`） | PoC 完了 | PASSED | PoC-01 |
 | A-1-2 | ペイン操作（split / send / list / kill） | PoC 完了 | PASSED（タイミング制約あり） | PoC-02 |
 | A-1-3 | 出力キャプチャ（`get-text`、tmux 内） | PoC 完了 | PASSED | PoC-03 |
-| A-1-4 | 通知経路（user-var 送信 → Lua / toast） | PoC 部分 | PARTIAL（Lua 手動適用要） | PoC-04 |
+| A-1-4 | 通知経路（user-var 送信 → Lua / toast） | 実施済み | PASSED（Phase 2 #86: dotfiles に Lua ハンドラ統合。live toast を GUI ログで確認） | PoC-04, #86, [episode](episodes/2026-06-16-phase2-dotfiles-lua-integration.md), dotfiles PR #20 |
 
 ### A-2. 本プロジェクト（`wez` 統合 CLI・Phase 1）
 
@@ -38,7 +38,7 @@ use_when:
 |----|---------|------|------|------|
 | A-2-1 | `wez discover` 単体・全サブコマンド前提 | 実施済み | PASSED | Issue #28, E2E 9/9 パス |
 | A-2-2 | `wez pane`（list / split / send / capture / kill） | 実施済み | PASSED | Issue #29, E2E 12/12 パス |
-| A-2-3 | `wez notify`（user-var 送信 + Lua 統合方針 ADR） | 実施済み | PASSED（CLI 層。toast は Phase 2） | Issue #30, E2E 12/12 パス, ADR-006/007 |
+| A-2-3 | `wez notify`（user-var 送信 + Lua 統合方針 ADR） | 実施済み | PASSED（CLI 層 + Phase 2 #86 で toast 開通） | Issue #30, E2E 12/12 パス, ADR-006/007, #86 |
 | A-2-4 | 複数 WezTerm インスタンス時のソケット選択 | 設計済み | DESIGNED | ADR-002: mtime+verify ハイブリッド方式。単一インスタンスで E2E 検証済み |
 | A-2-5 | 新ペイン tmux auto-attach 後のコマンド送信（ポーリング等） | 実施済み | PASSED（--wait-ready） | ADR-003: ポーリング方式採用。E2E で send → capture 正常動作確認 |
 | A-2-6 | 3ツール横断 7ステップ統合フロー（discover→kill） | 実施済み | PASSED | Issue #31, [E2E エピソード](episodes/2026-05-13-phase1-e2e.md), #20 コメント群（Cursor/CC/Codex 全成功） |
