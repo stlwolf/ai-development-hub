@@ -64,7 +64,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (12)
+## Rules (13)
 
 | Name | Description | Path |
 |------|-------------|------|
@@ -73,6 +73,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
 | evidence-verification-rule | Concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
 | execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
+| exhaustion-before-conclusion-rule | Complements Evidence First with exploration breadth: do not conclude while reachable paths or options remain unexamined. Illustrated by design (option) / bug-investigation (code-path) cases; planned mechanisms #77/#78 + soft floor #161; includes a minimal high-stakes discipline | `rules/exhaustion-before-conclusion-rule.md` |
 | implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
 | implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
