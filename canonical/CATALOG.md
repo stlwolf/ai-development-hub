@@ -64,7 +64,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (13)
+## Rules (14)
 
 | Name | Description | Path |
 |------|-------------|------|
@@ -78,6 +78,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
 | output-format-rule | Conclusion → evidence → steps → risks → links output structure | `rules/output-format-rule.md` |
+| reframe-on-stall-rule | Always-on soft floor under exhaustion-before-conclusion: when exploration stalls (no material new information, lateral repetition), consider a zero-base rebuild before continuing. Qualitative trigger via observable signs (not a count); reconcile against discarded premises; low-risk carve-out; model-dependent (hard gate #77 backs high-stakes once it lands) | `rules/reframe-on-stall-rule.md` |
 | skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
 | subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
 | workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
