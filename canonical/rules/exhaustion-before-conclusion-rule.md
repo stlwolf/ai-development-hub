@@ -1,6 +1,6 @@
 # Exhaustion Before Conclusion
 
-Complements `behavioral-rule.md` §1 Evidence First. Evidence First governs the *quality* of grounding (prefer primary sources). This rule governs the *breadth* of exploration: do not conclude while reachable paths or options remain unexamined. (Claim-level verification is `evidence-verification-rule`; this rule is about exploration breadth, not source checking.)
+Complements `behavioral-rule.md` §1 Evidence First. Evidence First governs the *quality* of grounding (prefer primary sources). This rule governs the *breadth* of exploration: do not conclude while reachable paths or options remain unexamined. (Claim-level verification is `evidence-verification-rule.md`; this rule is about exploration breadth, not source checking.)
 
 ## Principle
 
@@ -50,6 +50,6 @@ This does not apply to small, low-risk decisions — avoid analysis paralysis (s
 
 - `behavioral-rule.md` §1 Evidence First — complemented principle (quality of grounding vs breadth of exploration)
 - `evidence-verification-rule.md` — sibling under Evidence First; claim-level verification status, orthogonal to this rule's exploration breadth
-- `docs/specs/2026-04-23-discussion-exploration-process-design.md` — canonical design discussion (§3.4 convergence is not the model's call; §6 "one name covers two problems" caveat)
+- `docs/specs/2026-04-23-discussion-exploration-process-design.md` — canonical design discussion (§3.4: convergence is not the model's call; §6 caveat that one principle name spans two distinct problems)
 - `docs/specs/2026-04-22-discussion-hypothesis-driven-exploration.md` — sibling discussion
 - `projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md` — worked design-decision example
