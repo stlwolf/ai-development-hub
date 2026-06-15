@@ -32,7 +32,7 @@ A rebuild is not a reset:
 ## Scope
 
 - Applies to costly, stuck exploration. It does not apply to small, low-risk work — a zero-base rebuild is expensive; do not reframe a two-line fix (consistent with `behavioral-rule.md` §4 Minimal Scope).
-- If a reframe changes scope, cost, or direction, surface it as an option rather than silently pivoting, unless autonomous exploration was requested (`decision-pacing-rule` / `implementation-gate-rule`).
+- If a reframe changes scope, cost, or direction, surface it as an option rather than silently pivoting, unless autonomous exploration was requested (`decision-pacing-rule.md` / `implementation-gate-rule.md`).
 
 ## Limits
 
