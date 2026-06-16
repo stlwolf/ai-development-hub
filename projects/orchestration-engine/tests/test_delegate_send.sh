@@ -44,6 +44,7 @@ tmux() {
       printf '%s\n' "${MOCK_CAP_SEQ[$use]}"
       echo $((idx+1)) > "$CAP_IDXFILE" ;;
     "send-keys"*) MOCK_SENDKEYS_LOG+="tmux $*"$'\n' ;;
+    "display"*) printf '%s\n' "${MOCK_PANE_IN_MODE:-0}" ;;  # display / display-message: #{pane_in_mode}
     *) return 0 ;;
   esac
 }
@@ -110,7 +111,8 @@ export OE_SEND_FINALIZE_STABLE=2
 # 各シナリオ: MOCK_CAP_SEQ[0]=送信前 baseline、以降=finalize の poll/最終 capture。
 enter_count() { printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'send-keys -t %5 Enter'; }
 cap_calls()   { cat "$CAP_CALLSFILE"; }
-reset_fin() { MOCK_SENDKEYS_LOG=""; echo 0 > "$CAP_IDXFILE"; echo 0 > "$CAP_CALLSFILE"; MOCK_CAP_FAIL=""; }
+cancel_fired() { printf '%s' "$MOCK_SENDKEYS_LOG" | grep -q -- '-X cancel' && echo yes || echo no; }
+reset_fin() { MOCK_SENDKEYS_LOG=""; echo 0 > "$CAP_IDXFILE"; echo 0 > "$CAP_CALLSFILE"; MOCK_CAP_FAIL=""; MOCK_PANE_IN_MODE=0; }
 
 echo "[7] finalize: staged_idle（窓終端までstaged・baseline idle）→ Enter を1回再送"
 reset_fin
@@ -201,6 +203,29 @@ OE_SEND_FINALIZE_TIMEOUT=1 OE_SEND_FINALIZE_INTERVAL=0.3 OE_SEND_FINALIZE_STABLE
   oe_send_line "%5" "PAY19" >/dev/null 2>&1
 ck "ceil で capture 回数 = baseline+4+final = 6（floor なら5）" "6" "$(cap_calls)"
 ck "staged_idle で再送（計2回）" "2" "$(enter_count)"
+
+# === Issue #154: copy-mode ガード + silent-failure signal（opt-in） ===
+
+echo "[20] copy-mode ガード: pane_in_mode=1 → 送信前に -X cancel で解除し transport は継続（#154）"
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'PAY20')" )
+MOCK_PANE_IN_MODE=1
+oe_send_line "%5" "PAY20" >/dev/null 2>&1
+ck "copy-mode 時は -X cancel を撃つ" "yes" "$(cancel_fired)"
+ck "copy-mode 解除後も literal を送信する" "yes" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -q 'PAY20' && echo yes || echo no)"
+
+echo "[21] copy-mode 非該当: pane_in_mode=0 → -X cancel を撃たない（not in a mode 回避・#154）"
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'PAY21')" )
+oe_send_line "%5" "PAY21" >/dev/null 2>&1
+ck "非 copy-mode 時は -X cancel を撃たない" "no" "$(cancel_fired)"
+
+echo "[22] silent-failure signal: OE_SEND_SIGNAL_MISS=1 + stage_miss → rc=4（既定 off は[12]・#154）"
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_empty)" )
+rc=0; OE_SEND_SIGNAL_MISS=1 oe_send_line "%5" "PAY22" >/dev/null 2>"$ERRFILE" || rc=$?
+ck "opt-in 時の確定未着は rc=4" "4" "$rc"
+ck "rc=4 でも追加 submit しない（transport の Enter 1回のみ）" "1" "$(enter_count)"
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

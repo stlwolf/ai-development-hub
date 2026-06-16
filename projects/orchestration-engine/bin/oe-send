@@ -71,5 +71,17 @@ if [[ -n "$ADHOC" ]]; then
 fi
 [[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --kickoff and/or ad-hoc text)" >&2; usage; }
 
-oe_send_line "$PANE" "$payload" "$SEND_ENTER"
+rc=0
+oe_send_line "$PANE" "$payload" "$SEND_ENTER" || rc=$?
+if [[ "$rc" -eq 4 ]]; then
+  # 確定的に未着（finalize の stage-miss signal・OE_SEND_SIGNAL_MISS=1 時のみ）。
+  # 手動フォールバックを案内して非0で抜ける（呼び出し側がリトライ判断できるように）。
+  cat >&2 <<EOF
+oe-send: ${PANE} に未着の可能性があります（stage miss）。手動フォールバック:
+  tmux send-keys -l -t ${PANE} -- '<message>'
+  tmux send-keys -t ${PANE} Enter
+EOF
+  exit "$rc"
+fi
+[[ "$rc" -eq 0 ]] || exit "$rc"
 echo "oe-send: sent to ${PANE}" >&2
