@@ -9,7 +9,7 @@ alwaysApply: false
 This file defines the behavioral guardrails applied to every Codex session.
 Purpose: lock in the minimal set of always-on principles while keeping heavy procedures out of the permanent context.
 
-The canonical source is `canonical/rules/*.md` (11 files). This file is a keyword-level summary.
+The canonical source is `canonical/rules/*.md` (14 files). This file is a keyword-level summary.
 For detailed rules (exception conditions, specific procedures), read the canonical source.
 Consistency check: `./scripts/check-codex-guardrails.sh`
 
@@ -33,6 +33,8 @@ Use `collaboration_mode: ask-for-direction` unless the user explicitly requests 
 11. Input Handling — Voice-input typos and fragments are common. Prioritize intent over surface polish.
 12. Skill-First Operations — Load and follow the corresponding skill before executing routine dev operations (branching, commits, PRs, issues). Do NOT skip skill loading.
 13. Subagent Strategy — Delegate investigation and parallel analysis to subagents. One task per subagent. Enforce `implementer-contract` skill for implementation delegation.
+14. Exhaustion Before Conclusion — Do not conclude while reachable paths or options remain unexamined. Complements Evidence First: exploration breadth vs grounding quality.
+15. Reframe on Stall — When exploration stalls (no material new information, only lateral repetition), consider a zero-base rebuild before continuing. The soft floor under Exhaustion Before Conclusion.
 
 ## Planning Phase
 
