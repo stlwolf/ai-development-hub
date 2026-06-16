@@ -44,7 +44,7 @@ _oe_send_has_content() {
 #   - settle 窓 = 中心安全パラメータ。遅延配送の Enter は窓内に着弾→submitted 判定で撃たない。
 #   - 受け手状態に依存する best-effort。二重 submit を「確実に」防ぐとは主張しない（窓 < 遅延の
 #     病的負荷下では残存）。原則 0 を返し transport の rc を変えない（誤再送→二重 submit 防止）。
-#     例外: 確定的な未着候補（stage miss）のときだけ rc=3 を返す。呼び出し側が opt-in
+#     例外: 未着候補（suspected miss / stage miss）のときだけ rc=3 を返す。呼び出し側が opt-in
 #     （OE_SEND_SIGNAL_MISS=1）のときだけ非0へ昇格する（既定は rc 不変・#154）。
 _oe_send_finalize() {
   local pane="$1" payload="$2" base_proc="$3" base_staged="$4"
@@ -98,8 +98,8 @@ _oe_send_finalize() {
     tmux send-keys -t "$pane" Enter
     return 0
   fi
-  # stage_miss_suspect: 一度も staged 観測せず、入力欄が空のとき → 確定的な未着候補。warn を出し
-  # rc=3（confirmed-miss sentinel）を返す。呼び出し側が OE_SEND_SIGNAL_MISS=1 のときだけ非0へ昇格
+  # stage_miss_suspect: 一度も staged 観測せず、入力欄が空のとき → 未着候補（suspected miss）。warn を出し
+  # rc=3（suspected-miss sentinel）を返す。呼び出し側が OE_SEND_SIGNAL_MISS=1 のときだけ非0へ昇格
   # する（既定は rc 不変・#154）。fast submit を未着と誤判定し得るため opt-in（二重 submit 回避）。
   # 入力欄に内容が残る（折返し/省略で payload と完全一致しない）ケースは unknown 扱いで warn しない（Copilot 指摘）。
   if [[ "$saw_staged" == "0" && "$staged" == "0" ]] && ! _oe_send_has_content "$input"; then
@@ -118,7 +118,7 @@ _oe_send_finalize() {
 #   成功時は tmux send-keys -l でリテラル注入し、既定では続けて Enter を発火する。
 #   自動送信時は送信後に観測ベース finalize（Enter 吸収の after-the-fact 回復）を走らせる
 #   （`OE_SEND_FINALIZE=0` で無効化可。finalize は既定では rc を変えない best-effort）。
-#   `OE_SEND_SIGNAL_MISS=1` のときのみ、finalize が確定的な未着候補（stage miss）を観測したら
+#   `OE_SEND_SIGNAL_MISS=1` のときのみ、finalize が未着候補（suspected miss / stage miss）を観測したら
 #   rc=4 を返す（呼び出し側のフォールバック/リトライ用。既定 off は二重 submit 回避のため・#154）。
 oe_send_line() {
   local pane="${1:-}"
@@ -160,7 +160,7 @@ oe_send_line() {
   # baseline capture より前に抜けることで baseline が settled な画面を反映する。
   # in_mode=0 で無条件に -X cancel を撃つと `not in a mode` が出るため、必ず条件付き（#154）。
   local in_mode
-  in_mode="$(tmux display -p -t "$pane" '#{pane_in_mode}' 2>/dev/null)" || in_mode=""
+  in_mode="$(tmux display-message -p -t "$pane" '#{pane_in_mode}' 2>/dev/null)" || in_mode=""
   if [[ "$in_mode" == "1" ]]; then
     tmux send-keys -t "$pane" -X cancel 2>/dev/null || true
   fi
@@ -200,7 +200,7 @@ oe_send_line() {
       return 2
     fi
     # 観測ベース finalize（best-effort）。Enter 吸収の after-the-fact 回復。
-    # finalize は確定的な未着候補（stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ
+    # finalize は未着候補（suspected miss / stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ
     # それを rc=4（suspected non-delivery / stage miss）へ昇格し、呼び出し側のフォールバック/
     # リトライを可能にする（既定は従来どおり rc を変えない・#154）。「confirmed」ではなく「suspected」
     # なのは fast-submit を未着と誤判定し得るため（SO 指摘）。

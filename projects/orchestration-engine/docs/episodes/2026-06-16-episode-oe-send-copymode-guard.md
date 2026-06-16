@@ -56,7 +56,7 @@ tags: [orchestration, oe-send, delegate-send, tmux, copy-mode, not-in-a-mode, si
 ## 確定した設計と、その射程
 
 - **A. copy-mode ガード**: transport（`send-keys -l`）の前に `#{pane_in_mode}` を確認し、`1` のときだけ `send-keys -X cancel`。baseline capture より前に抜けるので baseline が settled を反映。`in_mode==1` 限定＋`2>/dev/null || true` で、check→cancel 間に mode が抜ける **TOCTOU race でも `not in a mode` を出さず失敗もしない**。
-- **B. silent-failure signal（opt-in）**: finalize の `stage_miss_suspect`（一度も staged 観測せず・入力欄空＝確定的な未着候補）で `return 3`（sentinel）。`oe_send_line` は `OE_SEND_SIGNAL_MISS=1` のときだけ rc=4 へ昇格。**既定 off** は、fast submit を未着と誤判定したときの二重 submit を避けるため（#144 の「finalize は rc を変えない」設計を既定で温存）。
+- **B. silent-failure signal（opt-in）**: finalize の `stage_miss_suspect`（一度も staged 観測せず・入力欄空＝未着候補 / suspected miss）で `return 3`（sentinel）。`oe_send_line` は `OE_SEND_SIGNAL_MISS=1` のときだけ rc=4 へ昇格。**既定 off** は、fast submit を未着と誤判定したときの二重 submit を避けるため（#144 の「finalize は rc を変えない」設計を既定で温存）。
 - **C. フォールバック案内**: `oe-send` が rc=4 を受けたら手動 `send-keys -l + Enter` を stderr 案内して非0終了。
 - **D. transport 失敗の明示伝播（so-compare ゲートで追加）**: `oe-send` が `oe_send_line ... || rc=$?` で受けると関数内 `set -e` が無効化される（bash 仕様・クリーン repro で実証）。これにより transport の `send-keys` 失敗が握り潰され "sent" まで進む**新たな silent failure 経路**が生じていた（#154 と同じ穴を作る回帰）。`oe_send_line` 内で `send-keys -l`/`Enter` の失敗を明示チェックし rc=2 を返すよう修正（errexit に依存しない）。回帰ガード [23] を追加。
 
