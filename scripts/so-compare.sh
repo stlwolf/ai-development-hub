@@ -106,7 +106,7 @@ apply_providers() {
     local parts=()
     local raw p s
 
-    IFS=',' read -ra parts <<< "$PROVIDERS_RAW"
+    IFS=',' read -r -a parts <<< "$PROVIDERS_RAW"
     for raw in "${parts[@]}"; do
         p=$(trim_ws "$raw")
         if [[ -z "$p" ]]; then

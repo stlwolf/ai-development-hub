@@ -30,7 +30,7 @@ so-compare [OPTIONS] "プロンプト"
 | `-c FILE...` | コンテキストファイル添付（**非推奨**。`-w` を使うこと） | - |
 | `-o DIR` | 出力ディレクトリ指定 | `tmp/so-YYYYMMDD-HHMMSS` |
 | `-s MODE` | Codex sandbox モード | `read-only` |
-| `--with LIST` | 実行プロバイダを明示指定（`codex,claude,cursor` のカンマ区切り） | なし（未指定時は codex+claude） |
+| `--with LIST` | 実行プロバイダを明示指定（`codex,claude,cursor` のカンマ区切り）。`--codex-only` / `--claude-only` / `--cursor-only` / `--cursor` と併用不可 | なし（未指定時は codex+claude） |
 | `--codex-only` | Codex のみ実行 | 両方実行 |
 | `--claude-only` | Claude のみ実行 | 両方実行 |
 | `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
