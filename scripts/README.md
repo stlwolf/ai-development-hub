@@ -67,12 +67,17 @@ so-compare.sh --prev tmp/so-YYYYMMDD-HHMMSS -w "$(pwd)" "再評価してくだ�
 # Codex のみ / Claude のみ
 so-compare.sh -w "$(pwd)" "プロンプト" --codex-only
 so-compare.sh -w "$(pwd)" "プロンプト" --claude-only
+
+# 任意のプロバイダ組み合わせ（1〜3社）
+so-compare.sh --with codex,cursor -w "$(pwd)" "プロンプト"
+so-compare.sh --with claude,cursor -w "$(pwd)" "プロンプト"
 ```
 
 主要オプション:
 
 | オプション | 説明 |
 |-----------|------|
+| `--with LIST` | 実行プロバイダ明示（`codex,claude,cursor` のカンマ区切り。レガシー only/cursor フラグと併用不可） |
 | `-w PATH` | ワークスペースパス（推奨。codex に `-C`、claude に `--add-dir` として渡される） |
 | `-c FILE...` | コンテキストファイル添付（非推奨。プロンプト肥大化の原因） |
 | `-f FILE` | プロンプトをファイルから読み込み |
