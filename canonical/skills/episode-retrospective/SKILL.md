@@ -35,7 +35,7 @@ closure 開始時にまず tier を判定する。判定は印象でなく下の
 ### heavy トリガ（1 つでも該当すれば heavy）
 
 - [ ] 実行中に失敗・撤回・方針転回があった
-- [ ] SO / peer-review / Copilot 等の外部レビューレーンを使った
+- [ ] **意図的に起動した**外部レビューレーン（`so-compare` / `peer-ai-review` / `arena-compare` / `adversarial-review` 等、品質ゲート目的で明示的に走らせたもの）を使った。判定軸＝「品質ゲート目的で明示起動した」か「全 PR に自動で走る常設 bot か」。Copilot 等の自動 bot レビューは routine につき**単独では** heavy 化しない（実質指摘の扱いは下の opt-out 失格条件 materiality を見よ）
 - [ ] 学習・調査・feasibility 検証が主成果（実装より知見が成果物）
 - [ ] 非自明な設計判断（選択肢を比較して棄却した）がある
 - [ ] Decision / skill / rule への昇格候補がありそう
@@ -43,15 +43,15 @@ closure 開始時にまず tier を判定する。判定は印象でなく下の
 ### opt-out 失格条件（1 つでも該当すれば opt-out 不可）
 
 - [ ] 行き先未定の follow-up が存在する
-- [ ] 実行ログ（会話・episode 追記）に失敗・指摘・撤回が残っている
-- [ ] 外部レビューを実施した
-- [ ] 昇格候補（Decision / skill / rule / negative knowledge)がある
+- [ ] 実行ログ（会話・episode 追記・bot レビュー）に失敗・指摘・撤回がある。**routine bot（Copilot 等）でも、trivial でない（採用してコード変更を伴う）指摘があれば該当**（記録の有無を問わない。cosmetic / typo のみなら非該当）— materiality 層
+- [ ] **意図的に起動した**外部レビュー（`so-compare` / `peer-ai-review` / `arena-compare` / `adversarial-review` 等）を実施した（routine な自動 bot レビューは上の行で扱う）
+- [ ] 昇格候補（Decision / skill / rule / negative knowledge）がある
 
 判定結果:
 
 | tier | 条件 | 要求 |
 |------|------|------|
-| heavy | heavy トリガ 1 つ以上 | Step 2 + Step 3 + Step 4（外部チェック） |
+| heavy | heavy トリガ 1 つ以上 | Step 2 + Step 3 + Step 4（外部チェック・条件付き辞退可） |
 | opt-out | heavy トリガなし + 失格条件ゼロ + 消費者なし | 下記の opt-out 定型 1 行のみ |
 | standard | 上記以外（失格条件への該当は opt-out を塞ぐだけで heavy にはしない） | Step 2 + Step 3（自己申告で可） |
 
@@ -94,11 +94,16 @@ opt-out は「書かない」ではなく「消費者ゲート判断を明示し
 
 ## Step 4: heavy tier の外部チェック
 
-自己評価は甘い（別リポ実証: Problem 自己検出率 0、選択的省略あり）。heavy では外部チェックを最低 1 回入れる。
+自己評価は甘い（別リポ実証: Problem 自己検出率 0、選択的省略あり）。heavy では外部チェックを 1 回入れるのを既定とする（下記の客観条件を満たす場合のみ辞退可）。
 
 - 既定: `so-compare` で振り返りの focused check。確認対象は **失敗セクションの選択的省略 / routing の網羅 / evidence anchor / back-propagation** のみに絞る（全文レビューにしない — 摩擦が高いと skip される）
 - 委譲採点 + spot-check は監査級の規模（多数 episode の横断評価）に限定
 - SO 出力パスを episode にリンクする（Step 2 の条件付き項目。証跡の有無が PR レビューで機械的に確認できる）
+- **条件付き辞退（advisory）**: Step4 の確認対象は **closure 品質**（失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation）であり、**コードや設計の SO はこれを代替しない**（検証対象が別）。この 4 観点が既存レビューで既に覆われている、または低リスクで該当しないと示せる場合に限り辞退可。「追加価値が低い」だけでは辞退不可（= skip の別名になる）。辞退時は opt-out 同様、closure に定型を残す（機械確認可能にする）:
+
+  ```markdown
+  Step4 辞退: <理由> / 既存チェックで覆った観点: <routing / evidence anchor / 省略チェック / back-propagation のうち> / 未実施観点と判断: <なし or 理由>
+  ```
 
 ### プロンプト例
 
@@ -111,6 +116,7 @@ so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) �
 - **本スキルは助言であり同期ゲートではない**。「skill があっても closure を忘れる」問題（監査 R4）は branch-finish / PR フロー側の同期ゲートで対処する（別 Issue）。本スキルの遵守はトリガされたときのみ機能する
 - 実行ログマーカー（つまずき / 指摘 / 撤回）× 失敗セクションの機械突合は将来機構（書き込み時ガイドラインとセットで成立。#149 B 検証の defer 解除後）。現時点では Step 1 失格条件・Step 4 SO が代替
 - 後追い再構成の episode（リアルタイム追記でないもの）は冒頭に `reconstructed` と明示する。リアルタイム追記ログと同じ証拠価値を持たないため、形式比較のデータとして同列に扱わない
+- **本修正のスコープ外（別途検討）**: heavy トリガ `非自明な設計判断` が広く、選択肢比較を含む実装 episode の大半が heavy 化しうる → Step4 摩擦の主因になりうる（SO 指摘）。トリガ較正、または「episode 内で既に意図的 SO 済みなら Step4 をトリガ連動で免除」の重複排除ルールは別途。本修正は **Copilot 混載の是正＋Step4 辞退の客観化** に限定
 
 ## 効果測定（#113 完了条件のデータ取得経路）
 
@@ -118,6 +124,7 @@ so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) �
 
 - 監査 rubric の軸5（closure）・軸3（証拠接続）で導入前後の episode を比較（before 値: 軸5 = 1.12 / 軸3 = 1.35）
 - opt-out 率を追跡（乱用の可視化。opt-out が多数派になったら失格条件を再設計）
+- Step4 **実施率 / 辞退率**を追跡（辞退の濫用＝R4 再誘発の可視化）。tier 定義変更（本修正）以降は opt-out 率・closure 軸の before/after にベースライン汚染が入るため、変更時点を記録して比較する
 - 実適用 episode に**形式メモ**を 3〜4 行残す: チャネル骨格で拾えたもの / 拾えなかったもの / 皮（KPT/YWT）を使ったか / 摩擦
 
 ## 既存スキル・ドキュメントとの関係
