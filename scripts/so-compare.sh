@@ -109,13 +109,18 @@ apply_providers() {
     IFS=',' read -ra parts <<< "$PROVIDERS_RAW"
     for raw in "${parts[@]}"; do
         p=$(trim_ws "$raw")
-        [[ -n "$p" ]] || continue
-        for s in "${seen[@]}"; do
-            if [[ "$s" == "$p" ]]; then
-                echo "Error: プロバイダが重複しています: $p" >&2
-                exit 1
-            fi
-        done
+        if [[ -z "$p" ]]; then
+            echo "Error: --with のプロバイダリストに空要素があります" >&2
+            exit 1
+        fi
+        if [[ ${#seen[@]} -gt 0 ]]; then
+            for s in "${seen[@]}"; do
+                if [[ "$s" == "$p" ]]; then
+                    echo "Error: プロバイダが重複しています: $p" >&2
+                    exit 1
+                fi
+            done
+        fi
         seen+=("$p")
         case "$p" in
             codex)  RUN_CODEX=true ;;
