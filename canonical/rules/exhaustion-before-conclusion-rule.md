@@ -29,7 +29,7 @@ The reachable space splits in two, so the planned mechanisms split into two trac
 
 - Design-decision domain (unexplored options): a hard mechanism to force zero-base exploration before committing — design tracked in #77 (planned, not yet implemented).
 - Bug-investigation domain (unread code paths): a hard mechanism to externalize hypotheses and make spinning visible — design tracked in #78 (planned, not yet implemented).
-- An always-on soft floor (reframe / zero-base on detecting spin) — landed as `reframe-on-stall-rule.md` ([#161](https://github.com/stlwolf/ai-development-hub/issues/161)).
+- An always-on soft floor (reframe / zero-base on detecting spin) — landed as `reframe-on-stall-rule.md` (#161).
 
 ## Minimal discipline (until the hard mechanisms land)
 
