@@ -18,6 +18,9 @@ Options:
   -w PATH        ワークスペースパス（Codex/Claude にパス参照で渡す）
   -o DIR         出力ディレクトリを指定（デフォルト: tmp/so-YYYYMMDD-HHMMSS）
   -s MODE        Codex sandbox モード（デフォルト: read-only）
+  --with LIST    実行プロバイダを明示指定（カンマ区切り: codex,claude,cursor）
+                 例: --with codex,cursor / --with claude,cursor
+                 --codex-only 等のレガシーフラグとは併用不可
   --codex-only   Codex のみ実行
   --claude-only  Claude のみ実行
   --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
@@ -59,6 +62,9 @@ WORKSPACE=""
 RUN_CODEX=true
 RUN_CLAUDE=true
 RUN_CURSOR=false
+PROVIDERS_RAW=""
+WITH_SPECIFIED=false
+LEGACY_PROVIDER_FLAG=false
 CLAUDE_WEB=false
 CURSOR_MODEL="${SO_CURSOR_MODEL:-auto}"
 CLAUDE_MODEL="${SO_CLAUDE_MODEL:-}"
@@ -83,6 +89,57 @@ require_arg() {
         echo "Error: $1 にはアーギュメントが必要です" >&2
         exit 1
     fi
+}
+
+trim_ws() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+apply_providers() {
+    RUN_CODEX=false
+    RUN_CLAUDE=false
+    RUN_CURSOR=false
+    local seen=()
+    local parts=()
+    local raw p s
+
+    IFS=',' read -ra parts <<< "$PROVIDERS_RAW"
+    for raw in "${parts[@]}"; do
+        p=$(trim_ws "$raw")
+        [[ -n "$p" ]] || continue
+        for s in "${seen[@]}"; do
+            if [[ "$s" == "$p" ]]; then
+                echo "Error: プロバイダが重複しています: $p" >&2
+                exit 1
+            fi
+        done
+        seen+=("$p")
+        case "$p" in
+            codex)  RUN_CODEX=true ;;
+            claude) RUN_CLAUDE=true ;;
+            cursor) RUN_CURSOR=true ;;
+            *)
+                echo "Error: 未知のプロバイダ: ${p} (codex / claude / cursor を指定)" >&2
+                exit 1
+                ;;
+        esac
+    done
+    if [[ ${#seen[@]} -eq 0 ]]; then
+        echo "Error: --with に有効なプロバイダが指定されていません" >&2
+        exit 1
+    fi
+}
+
+providers_label() {
+    local labels=()
+    $RUN_CODEX && labels+=(codex)
+    $RUN_CLAUDE && labels+=(claude)
+    $RUN_CURSOR && labels+=(cursor)
+    local IFS=','
+    echo "${labels[*]}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -114,21 +171,31 @@ while [[ $# -gt 0 ]]; do
             SANDBOX_MODE="$2"
             shift 2
             ;;
+        --with)
+            require_arg "$1" "${2:-}"
+            PROVIDERS_RAW="$2"
+            WITH_SPECIFIED=true
+            shift 2
+            ;;
         --codex-only)
+            LEGACY_PROVIDER_FLAG=true
             RUN_CLAUDE=false
             RUN_CURSOR=false
             shift
             ;;
         --claude-only)
+            LEGACY_PROVIDER_FLAG=true
             RUN_CODEX=false
             RUN_CURSOR=false
             shift
             ;;
         --cursor)
+            LEGACY_PROVIDER_FLAG=true
             RUN_CURSOR=true
             shift
             ;;
         --cursor-only)
+            LEGACY_PROVIDER_FLAG=true
             RUN_CODEX=false
             RUN_CLAUDE=false
             RUN_CURSOR=true
@@ -188,6 +255,19 @@ if [[ -z "$PROMPT" ]]; then
     echo "" >&2
     usage >&2
     exit 1
+fi
+
+if $LEGACY_PROVIDER_FLAG && $WITH_SPECIFIED; then
+    echo "Error: --with は --codex-only / --claude-only / --cursor-only / --cursor と併用できません" >&2
+    exit 1
+fi
+
+if $WITH_SPECIFIED; then
+    if [[ -z "$PROVIDERS_RAW" ]]; then
+        echo "Error: --with にはプロバイダリストが必要です (例: codex,cursor)" >&2
+        exit 1
+    fi
+    apply_providers
 fi
 
 if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
@@ -274,6 +354,7 @@ echo "sandbox: $SANDBOX_MODE"
 if [[ -n "$WORKSPACE" ]]; then
     echo "ワークスペース: $WORKSPACE"
 fi
+echo "プロバイダ: $(providers_label)"
 if $RUN_CURSOR; then
     echo "Cursor: enabled${CURSOR_MODEL:+ (model: $CURSOR_MODEL)}"
 fi
