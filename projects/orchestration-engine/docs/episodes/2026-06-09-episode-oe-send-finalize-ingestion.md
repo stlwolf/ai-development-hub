@@ -83,3 +83,4 @@ tags: [orchestration, oe-send, delegate-send, tmux, ingestion, enter-absorption,
 - ②/③ の deterministic 再現環境（「整形崩れセッション」の人工再現）は未達＝根本の機構特定は保留。
 - `oe-capture` の pane-id 2系統・出力チャネル統一 → #114。
 - #144 後も残る間欠的な無言失敗（未着でも rc=0 / not in a mode）→ #154 で継続調査。本サイクルは観測ベース finalize 回復までで closure（後続は別サイクル）。
+  - back-prop（2026-06-16・#154 closure 時）: #154 で **copy-mode 吸収を主トリガ**として決定論的に再現・除去し、`not in a mode` 源（`send-keys -X` を mode 外に撃った場合）も特定。ここで断定保留した負荷下 Enter 原子性レース（②）は #154 でも未着手（別物）。詳細は `2026-06-16-episode-oe-send-copymode-guard.md`。

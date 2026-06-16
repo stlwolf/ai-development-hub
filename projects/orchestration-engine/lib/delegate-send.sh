@@ -43,7 +43,9 @@ _oe_send_has_content() {
 #   settle 窓終端まで観測し、なお staged なら Enter を1回だけ再送して回復する。
 #   - settle 窓 = 中心安全パラメータ。遅延配送の Enter は窓内に着弾→submitted 判定で撃たない。
 #   - 受け手状態に依存する best-effort。二重 submit を「確実に」防ぐとは主張しない（窓 < 遅延の
-#     病的負荷下では残存）。常に 0 を返し transport の rc を変えない（誤再送→二重 submit 防止）。
+#     病的負荷下では残存）。原則 0 を返し transport の rc を変えない（誤再送→二重 submit 防止）。
+#     例外: 未着候補（suspected miss / stage miss）のときだけ rc=3 を返す。呼び出し側が opt-in
+#     （OE_SEND_SIGNAL_MISS=1）のときだけ非0へ昇格する（既定は rc 不変・#154）。
 _oe_send_finalize() {
   local pane="$1" payload="$2" base_proc="$3" base_staged="$4"
   local interval="${OE_SEND_FINALIZE_INTERVAL:-0.3}"
@@ -96,11 +98,13 @@ _oe_send_finalize() {
     tmux send-keys -t "$pane" Enter
     return 0
   fi
-  # stage_miss_suspect: 一度も staged 観測せず、入力欄が空のとき → warn のみ（観測補助・rc は変えない）。
+  # stage_miss_suspect: 一度も staged 観測せず、入力欄が空のとき → 未着候補（suspected miss）。warn を出し
+  # rc=3（suspected-miss sentinel）を返す。呼び出し側が OE_SEND_SIGNAL_MISS=1 のときだけ非0へ昇格
+  # する（既定は rc 不変・#154）。fast submit を未着と誤判定し得るため opt-in（二重 submit 回避）。
   # 入力欄に内容が残る（折返し/省略で payload と完全一致しない）ケースは unknown 扱いで warn しない（Copilot 指摘）。
   if [[ "$saw_staged" == "0" && "$staged" == "0" ]] && ! _oe_send_has_content "$input"; then
     echo "oe_send_line: finalize: payload not observed staged or submitted on ${pane} (possible stage miss / fast submit)" >&2
-    return 0
+    return 3
   fi
   # それ以外（base_proc=1・非安定・折返し等）= unknown → 撃たない
   return 0
@@ -110,9 +114,12 @@ _oe_send_finalize() {
 #   <text> に改行（LF / CR）が含まれていれば送信せず非 0 で失敗する（途中送信の根本封じ）。
 #   対象ペインが存在しなければ非 0 で失敗する（死んだペインへの無言送信を防ぐ）。
 #   send_enter（既定 "1"）が "0" のときは Enter を発火せずテキスト投入のみ（ステージ）。
+#   送信前に受け手が copy-mode なら解除する（copy-mode 吸収による不達の防止・#154）。
 #   成功時は tmux send-keys -l でリテラル注入し、既定では続けて Enter を発火する。
 #   自動送信時は送信後に観測ベース finalize（Enter 吸収の after-the-fact 回復）を走らせる
-#   （`OE_SEND_FINALIZE=0` で無効化可。finalize は rc を変えない best-effort）。
+#   （`OE_SEND_FINALIZE=0` で無効化可。finalize は既定では rc を変えない best-effort）。
+#   `OE_SEND_SIGNAL_MISS=1` のときのみ、finalize が未着候補（suspected miss / stage miss）を観測したら
+#   rc=4 を返す（呼び出し側のフォールバック/リトライ用。既定 off は二重 submit 回避のため・#154）。
 oe_send_line() {
   local pane="${1:-}"
   local text="${2:-}"
@@ -147,6 +154,17 @@ oe_send_line() {
     return 1
   fi
 
+  # 受け手ペインが copy-mode（trackpad スクロール等で意図せず混入）だと、send-keys -l /
+  # Enter がコピーモードのキーテーブルで吸収されプロンプトに届かない（#154 の間欠不達の主因）。
+  # 送信前に #{pane_in_mode} を確認し、何らかの mode（主因は copy-mode）のときだけ解除する。
+  # baseline capture より前に抜けることで baseline が settled な画面を反映する。
+  # in_mode=0 で無条件に -X cancel を撃つと `not in a mode` が出るため、必ず条件付き（#154）。
+  local in_mode
+  in_mode="$(tmux display-message -p -t "$pane" '#{pane_in_mode}' 2>/dev/null)" || in_mode=""
+  if [[ "$in_mode" == "1" ]]; then
+    tmux send-keys -t "$pane" -X cancel 2>/dev/null || true
+  fi
+
   # finalize 用の送信前 baseline（自動送信 かつ finalize 有効時のみ）。
   # base_proc: 送信前から処理中か（子がビジー）／ base_staged: 入力欄に既存内容があるか。
   local fin_on=0 base_proc=0 base_staged=0
@@ -166,16 +184,33 @@ oe_send_line() {
 
   # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
   # transport は据え置き（#144: 機構未確定ゆえ送信経路は賭けない）。
-  tmux send-keys -l -t "$pane" -- "$text"
+  # 呼び出し側が `oe_send_line ... || rc=$?` で受けると関数内 set -e が無効化されるため、
+  # transport 失敗（送信中の pane 死など）は errexit に頼らず明示伝播する（silent 化防止・#154 SO 指摘）。
+  if ! tmux send-keys -l -t "$pane" -- "$text"; then
+    echo "oe_send_line: tmux send-keys (literal) failed on ${pane}" >&2
+    return 2
+  fi
   if [[ "$send_enter" != "0" ]]; then
     # リテラル送信の直後に Enter を撃つと、Claude Code TUI の paste 検知で Enter が
     # 「paste 内の改行」として吸収され submit されないことがある（dogfood で間欠確認）。
     # 小休止で paste 検知窓を閉じてから Enter を撃つ。OE_SEND_ENTER_DELAY で上書き可。
     sleep "${OE_SEND_ENTER_DELAY:-0.3}"
-    tmux send-keys -t "$pane" Enter
-    # 観測ベース finalize（best-effort・rc を変えない）。Enter 吸収の after-the-fact 回復。
+    if ! tmux send-keys -t "$pane" Enter; then
+      echo "oe_send_line: tmux send-keys Enter failed on ${pane}" >&2
+      return 2
+    fi
+    # 観測ベース finalize（best-effort）。Enter 吸収の after-the-fact 回復。
+    # finalize は未着候補（suspected miss / stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ
+    # それを rc=4（suspected non-delivery / stage miss）へ昇格し、呼び出し側のフォールバック/
+    # リトライを可能にする（既定は従来どおり rc を変えない・#154）。「confirmed」ではなく「suspected」
+    # なのは fast-submit を未着と誤判定し得るため（SO 指摘）。
     if [[ "$fin_on" == "1" ]]; then
-      _oe_send_finalize "$pane" "$text" "$base_proc" "$base_staged" || true
+      local fin_rc=0
+      _oe_send_finalize "$pane" "$text" "$base_proc" "$base_staged" || fin_rc=$?
+      if [[ "$fin_rc" == "3" && "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
+        echo "oe_send_line: signaling suspected non-delivery (stage miss) on ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
+        return 4
+      fi
     fi
   fi
 }
