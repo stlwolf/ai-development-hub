@@ -43,7 +43,7 @@ tmux() {
       local use="$idx"; [[ "$use" -ge "$n" ]] && use=$((n-1))
       printf '%s\n' "${MOCK_CAP_SEQ[$use]}"
       echo $((idx+1)) > "$CAP_IDXFILE" ;;
-    "send-keys"*) MOCK_SENDKEYS_LOG+="tmux $*"$'\n' ;;
+    "send-keys"*) MOCK_SENDKEYS_LOG+="tmux $*"$'\n'; [[ "${MOCK_SENDKEYS_FAIL:-}" == "1" ]] && return 1 || return 0 ;;
     "display"*) printf '%s\n' "${MOCK_PANE_IN_MODE:-0}" ;;  # display / display-message: #{pane_in_mode}
     *) return 0 ;;
   esac
@@ -112,7 +112,7 @@ export OE_SEND_FINALIZE_STABLE=2
 enter_count() { printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'send-keys -t %5 Enter'; }
 cap_calls()   { cat "$CAP_CALLSFILE"; }
 cancel_fired() { printf '%s' "$MOCK_SENDKEYS_LOG" | grep -q -- '-X cancel' && echo yes || echo no; }
-reset_fin() { MOCK_SENDKEYS_LOG=""; echo 0 > "$CAP_IDXFILE"; echo 0 > "$CAP_CALLSFILE"; MOCK_CAP_FAIL=""; MOCK_PANE_IN_MODE=0; }
+reset_fin() { MOCK_SENDKEYS_LOG=""; echo 0 > "$CAP_IDXFILE"; echo 0 > "$CAP_CALLSFILE"; MOCK_CAP_FAIL=""; MOCK_PANE_IN_MODE=0; MOCK_SENDKEYS_FAIL=""; }
 
 echo "[7] finalize: staged_idle（窓終端までstaged・baseline idle）→ Enter を1回再送"
 reset_fin
@@ -224,8 +224,14 @@ echo "[22] silent-failure signal: OE_SEND_SIGNAL_MISS=1 + stage_miss → rc=4（
 reset_fin
 MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_empty)" )
 rc=0; OE_SEND_SIGNAL_MISS=1 oe_send_line "%5" "PAY22" >/dev/null 2>"$ERRFILE" || rc=$?
-ck "opt-in 時の確定未着は rc=4" "4" "$rc"
+ck "opt-in 時の未着候補は rc=4" "4" "$rc"
 ck "rc=4 でも追加 submit しない（transport の Enter 1回のみ）" "1" "$(enter_count)"
+
+echo "[23] transport 失敗の明示伝播: send-keys 失敗 → rc=2（|| rc=\$? 文脈でも握り潰さない・#154 SO 指摘）"
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" )
+rc=0; MOCK_SENDKEYS_FAIL=1 oe_send_line "%5" "PAY23" >/dev/null 2>&1 || rc=$?
+ck "send-keys 失敗は rc=2 で伝播（errexit に頼らない）" "2" "$rc"
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

@@ -156,8 +156,8 @@ oe_send_line() {
 
   # 受け手ペインが copy-mode（trackpad スクロール等で意図せず混入）だと、send-keys -l /
   # Enter がコピーモードのキーテーブルで吸収されプロンプトに届かない（#154 の間欠不達の主因）。
-  # 送信前に #{pane_in_mode} を確認し、copy-mode のときだけ解除する。baseline capture より前に
-  # 抜けることで baseline が settled な画面を反映する。
+  # 送信前に #{pane_in_mode} を確認し、何らかの mode（主因は copy-mode）のときだけ解除する。
+  # baseline capture より前に抜けることで baseline が settled な画面を反映する。
   # in_mode=0 で無条件に -X cancel を撃つと `not in a mode` が出るため、必ず条件付き（#154）。
   local in_mode
   in_mode="$(tmux display -p -t "$pane" '#{pane_in_mode}' 2>/dev/null)" || in_mode=""
@@ -184,22 +184,31 @@ oe_send_line() {
 
   # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
   # transport は据え置き（#144: 機構未確定ゆえ送信経路は賭けない）。
-  tmux send-keys -l -t "$pane" -- "$text"
+  # 呼び出し側が `oe_send_line ... || rc=$?` で受けると関数内 set -e が無効化されるため、
+  # transport 失敗（送信中の pane 死など）は errexit に頼らず明示伝播する（silent 化防止・#154 SO 指摘）。
+  if ! tmux send-keys -l -t "$pane" -- "$text"; then
+    echo "oe_send_line: tmux send-keys (literal) failed on ${pane}" >&2
+    return 2
+  fi
   if [[ "$send_enter" != "0" ]]; then
     # リテラル送信の直後に Enter を撃つと、Claude Code TUI の paste 検知で Enter が
     # 「paste 内の改行」として吸収され submit されないことがある（dogfood で間欠確認）。
     # 小休止で paste 検知窓を閉じてから Enter を撃つ。OE_SEND_ENTER_DELAY で上書き可。
     sleep "${OE_SEND_ENTER_DELAY:-0.3}"
-    tmux send-keys -t "$pane" Enter
+    if ! tmux send-keys -t "$pane" Enter; then
+      echo "oe_send_line: tmux send-keys Enter failed on ${pane}" >&2
+      return 2
+    fi
     # 観測ベース finalize（best-effort）。Enter 吸収の after-the-fact 回復。
     # finalize は確定的な未着候補（stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ
-    # それを rc=4（confirmed non-delivery）へ昇格し、呼び出し側のフォールバック/リトライを可能に
-    # する（既定は従来どおり rc を変えない・#154）。
+    # それを rc=4（suspected non-delivery / stage miss）へ昇格し、呼び出し側のフォールバック/
+    # リトライを可能にする（既定は従来どおり rc を変えない・#154）。「confirmed」ではなく「suspected」
+    # なのは fast-submit を未着と誤判定し得るため（SO 指摘）。
     if [[ "$fin_on" == "1" ]]; then
       local fin_rc=0
       _oe_send_finalize "$pane" "$text" "$base_proc" "$base_staged" || fin_rc=$?
       if [[ "$fin_rc" == "3" && "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
-        echo "oe_send_line: signaling confirmed non-delivery to ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
+        echo "oe_send_line: signaling suspected non-delivery (stage miss) on ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
         return 4
       fi
     fi
