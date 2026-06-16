@@ -45,7 +45,7 @@ closure 開始時にまず tier を判定する。判定は印象でなく下の
 - [ ] 行き先未定の follow-up が存在する
 - [ ] 実行ログ（会話・episode 追記・bot レビュー）に失敗・指摘・撤回がある。**routine bot（Copilot 等）でも、trivial でない（採用してコード変更を伴う）指摘があれば該当**（記録の有無を問わない。cosmetic / typo のみなら非該当）— materiality 層
 - [ ] **意図的に起動した**外部レビュー（`so-compare` / `peer-ai-review` / `arena-compare` / `adversarial-review` 等）を実施した（routine な自動 bot レビューは上の行で扱う）
-- [ ] 昇格候補（Decision / skill / rule / negative knowledge)がある
+- [ ] 昇格候補（Decision / skill / rule / negative knowledge）がある
 
 判定結果:
 
@@ -101,9 +101,9 @@ opt-out は「書かない」ではなく「消費者ゲート判断を明示し
 - SO 出力パスを episode にリンクする（Step 2 の条件付き項目。証跡の有無が PR レビューで機械的に確認できる）
 - **条件付き辞退（advisory）**: Step4 の確認対象は **closure 品質**（失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation）であり、**コードや設計の SO はこれを代替しない**（検証対象が別）。この 4 観点が既存レビューで既に覆われている、または低リスクで該当しないと示せる場合に限り辞退可。「追加価値が低い」だけでは辞退不可（= skip の別名になる）。辞退時は opt-out 同様、closure に定型を残す（機械確認可能にする）:
 
-```markdown
-Step4 辞退: <理由> / 既存チェックで覆った観点: <routing / evidence anchor / 省略チェック / back-prop のうち> / 未実施観点と判断: <なし or 理由>
-```
+  ```markdown
+  Step4 辞退: <理由> / 既存チェックで覆った観点: <routing / evidence anchor / 省略チェック / back-propagation のうち> / 未実施観点と判断: <なし or 理由>
+  ```
 
 ### プロンプト例
 
