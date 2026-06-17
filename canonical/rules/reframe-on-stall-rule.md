@@ -37,11 +37,11 @@ A rebuild is not a reset:
 ## Limits
 
 - Adherence is model-dependent; there is no firing guarantee. This raises the floor — it does not close the gap. The trigger judgment itself ("was that material new information?") is partly self-evaluation and unreliable where no observable sign applies. Over-firing (reframing where grinding was right) and under-firing (missing the stall) both remain.
-- High-stakes or irreversible conclusions are not left to this soft reflex. A hard gate (count + script + human) is planned for the design-decision domain (#77) and is not yet implemented — until it lands, rely on `exhaustion-before-conclusion-rule.md`'s minimal discipline plus human confirmation for such conclusions.
+- High-stakes or irreversible conclusions are not left to this soft reflex. A hard gate (count + script + human) for the design-decision domain (#77) is still deferred — a soft forcing layer (`predecision-exploration`) has landed, but until the deterministic gate lands, rely on `exhaustion-before-conclusion-rule.md`'s minimal discipline plus human confirmation for such conclusions.
 
 ## Relationship
 
-- `exhaustion-before-conclusion-rule.md` — the umbrella. Its discipline is conclusion-time (may you commit while reachable paths or options are unexamined?); this rule is mid-exploration (what is the next move when the frame stalls?). They can co-fire — e.g. when you are about to jump to an external hypothesis while stuck. This rule is the permanent always-on floor; that rule's "Minimal discipline" is the interim floor until the hard mechanisms (#77 / #78) land.
+- `exhaustion-before-conclusion-rule.md` — the umbrella. Its discipline is conclusion-time (may you commit while reachable paths or options are unexamined?); this rule is mid-exploration (what is the next move when the frame stalls?). They can co-fire — e.g. when you are about to jump to an external hypothesis while stuck. This rule is the permanent always-on floor; that rule's "Minimal discipline" is the interim floor until the hard mechanisms (#77 hard gate / #78) land.
 - `persistent-exploration` (skill) — the related anti-give-up reflex (do not quit before trying alternatives). The two can both apply and chain: try other approaches; if those also stall, rebuild the frame.
 
 ## Example (illustrative)
