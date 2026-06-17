@@ -97,6 +97,27 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 
 経緯: [PR #143](https://github.com/stlwolf/ai-development-hub/pull/143)（再設計）/ `docs/episodes/2026-06-08-episode-oe-delegate-redesign.md`、送信信頼化は [#144](https://github.com/stlwolf/ai-development-hub/issues/144) / `docs/episodes/2026-06-09-episode-oe-send-finalize-ingestion.md`。各スクリプトの引数は `bin/README.md` 参照。
 
+## cockpit 本線（WezTerm + tmux を第一級の作業面とする）
+
+オーケストレーション・委譲・一覧・通知・人間介入の主戦場は **WezTerm 画面 + tmux**（CLI cockpit）に置く。Cursor は閲覧・軽い編集・補助であり、必須の司令塔ではない（[#169](https://github.com/stlwolf/ai-development-hub/issues/169) で方針確定）。
+
+| レイヤ | 配置 | 役割 |
+|--------|------|------|
+| 閲覧・軽編集 | Cursor（任意・補助） | コード閲覧・局所編集 |
+| 認知 cockpit | WezTerm 画面 + tmux | 盤面の俯瞰・TTY 直接介入・人間の追送 |
+| 機械オーケストレ | `bin/oe` + `wez` + `claude -p` / `cursor-agent -p` | 非対話の自律 1 サイクル |
+| 正本・ルール | `canonical/` + sync | ハーネス配備 |
+
+cockpit 本線を構成する運用コマンド:
+
+- `oe-delegate` / `oe-send` / `oe-list` — 対話セッション間の人間介入・追送・宛先解決（tmux `send-keys` 経路）
+- `oe-capture` — 既存ペインの終端マーカー回収（観測）
+- `wez`（`pane` / `notify` / `discover`）— 物理ペイン操作・通知・ソケット検出
+
+理由: エージェント作業を IDE の内側に閉じない可搬な「橋」はターミナル層（[#21](https://github.com/stlwolf/ai-development-hub/issues/21)）。Cursor のリッチ表示（一覧・ナビ・履歴）は合成 UI であり、fzf / peco / 自作 list として tmux 側へ移管できる。
+
+> 注: 「Cursor から `wez` を叩く」前提の旧文言が残る箇所は、本方針（primary cockpit = WezTerm + tmux、Cursor は補助）で上書きされる。
+
 ## 観測層と駆動層の分離
 
 本プロジェクトは **観測層** と **駆動層** を明示的に分離した運用を行う。これは MVP 完成前のドッグフード検証でもある（orchestration-engine が解決したい問題そのもの = 「スレッド/セッション間のコンテキスト引き継ぎを構造化ドキュメントで実現」）。
