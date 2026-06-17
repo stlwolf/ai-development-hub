@@ -82,6 +82,7 @@ Issue 内容から抽出したキーワード・関数名・エラーメッセ�
 
 ```
 Read ~/.cursor/skills/persistent-exploration/SKILL.md
+Read ~/.cursor/skills/code-path-exhaustion/SKILL.md
 ```
 
 ## Step 4: 原因分析
