@@ -81,8 +81,12 @@ make_fzf() {
   cat > "$_TMP_DIR/pathbin/fzf" <<'EOF'
 #!/usr/bin/env bash
 # stdin から候補を受け、$FZF_PICK_PANE（first-token 一致）の行を返す。
-# FZF_CANCEL=1 なら非 0 で抜ける（ESC 相当）。
+# FZF_CANCEL=1 なら rc 130 で抜ける（ESC/Ctrl-C 相当）。
+# FZF_FAIL=<n> なら rc <n> で抜ける（fzf 自体のエラー: 不正オプション等を模す）。
+# FZF_EMPTY=1 なら rc 0 + 空 stdout（選択ゼロ）を返す。
 if [[ -n "${FZF_CANCEL:-}" ]]; then exit 130; fi
+if [[ -n "${FZF_FAIL:-}" ]]; then exit "$FZF_FAIL"; fi
+if [[ -n "${FZF_EMPTY:-}" ]]; then exit 0; fi
 pick="${FZF_PICK_PANE:-}"
 while IFS= read -r line; do
   tok="$(printf '%s\n' "$line" | awk '{print $1}')"
@@ -274,6 +278,81 @@ ck "oe-send に --kickoff"  "yes" "$(printf '%s\n' "$log" | grep -qxF -- '--kick
 ck "oe-send に kickoff path" "yes" "$(printf '%s\n' "$log" | grep -qxF -- '/tmp/k.md' && echo yes || echo no)"
 ck "oe-send に %5"         "yes" "$(printf '%s\n' "$log" | grep -qxF -- '%5' && echo yes || echo no)"
 ck "oe-send に task text"  "yes" "$(printf '%s\n' "$log" | grep -qxF -- 'task text' && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+# [10] message 空入力（ad-hoc/kickoff なし）→ exit 130、oe-send は呼ばれない
+#      選択後の message read で空行（Enter のみ）を返した場合の cancel 契約。
+#      選択は fzf 経路で行う（番号 read で tty を消費しないため、message read だけが
+#      tty を読む。OE_SELECT_TTY は redirect で都度開き直すので 2 段 read は同一行を
+#      返してしまう — fzf 経路ならその衝突を避けられる）。
+#      tty には「空行 1 行」を入れる → read は成功し MESSAGE="" → 新ガードで 130。
+# ----------------------------------------------------------------------------
+echo "[10] message 空入力 → exit 130（oe-send 呼ばれない）"
+make_fzf
+export MOCK_LIVE_PANES="%5 %7"
+export TMUX_PANE="%9"
+export FZF_PICK_PANE="%5"
+reset_send_log
+printf '\n' > "$TTY_FILE"   # 空行（Enter のみ）→ read 成功 + MESSAGE 空
+rc=0; "$SEL" >/dev/null 2>&1 || rc=$?
+ck "message 空入力 → exit 130" "130" "$rc"
+ck "oe-send 呼ばれない（log なし）" "no" "$( [[ -e "$_TMP_DIR/logs/oe-send-args.log" ]] && echo yes || echo no )"
+
+# ----------------------------------------------------------------------------
+# [11] unknown option（--bogus）→ exit 2
+# ----------------------------------------------------------------------------
+echo "[11] unknown option → exit 2"
+make_fzf
+export MOCK_LIVE_PANES="%5 %7"
+export TMUX_PANE="%9"
+rc=0; "$SEL" --bogus >/dev/null 2>&1 || rc=$?
+ck "--bogus → exit 2" "2" "$rc"
+
+# ----------------------------------------------------------------------------
+# [12] --help → exit 0
+# ----------------------------------------------------------------------------
+echo "[12] --help → exit 0"
+rc=0; "$SEL" --help >/dev/null 2>&1 || rc=$?
+ck "--help → exit 0" "0" "$rc"
+
+# ----------------------------------------------------------------------------
+# [13] 番号フォールバックで範囲外の先頭ゼロ（候補数 < 8 のとき "08"）→ exit 2
+#      "08" を 8 進解釈してクラッシュ（rc1）させず、10 進化して範囲外 → exit 2。
+# ----------------------------------------------------------------------------
+echo "[13] 先頭ゼロの範囲外 '08'（候補2件）→ exit 2（クラッシュ/rc1 でなく）"
+rm_fzf
+export MOCK_LIVE_PANES="%5 %7"   # 候補 2 件（08=8 は範囲外）
+export TMUX_PANE="%9"
+feed_tty "08"; rc=0; "$SEL" "m" >/dev/null 2>&1 || rc=$?
+ck "先頭ゼロ範囲外 '08' → exit 2" "2" "$rc"
+
+# ----------------------------------------------------------------------------
+# [14] fzf エラー（mock fzf が rc 2 を返す）→ exit 2（cancel 130 と区別）
+# ----------------------------------------------------------------------------
+echo "[14] fzf エラー（rc 2）→ exit 2（cancel 130 と区別）"
+make_fzf
+export MOCK_LIVE_PANES="%5 %7"
+export TMUX_PANE="%9"
+reset_send_log
+export FZF_FAIL=2   # mock fzf が rc 2 で抜ける
+rc=0; "$SEL" "m" >/dev/null 2>&1 || rc=$?
+unset FZF_FAIL
+ck "fzf rc 2 → exit 2" "2" "$rc"
+ck "送信されない（oe-send log なし）" "no" "$( [[ -e "$_TMP_DIR/logs/oe-send-args.log" ]] && echo yes || echo no )"
+
+# ----------------------------------------------------------------------------
+# [15] fzf rc0 + 空 stdout（選択ゼロ）→ exit 130（cancel 扱い）、送信なし
+# ----------------------------------------------------------------------------
+echo "[15] fzf rc0 + 空 stdout → exit 130（cancel）"
+make_fzf
+export MOCK_LIVE_PANES="%5 %7"
+export TMUX_PANE="%9"
+reset_send_log
+export FZF_EMPTY=1   # mock fzf が rc 0 で空を返す
+rc=0; "$SEL" "m" >/dev/null 2>&1 || rc=$?
+unset FZF_EMPTY
+ck "fzf rc0+空 → exit 130" "130" "$rc"
+ck "送信されない（oe-send log なし）" "no" "$( [[ -e "$_TMP_DIR/logs/oe-send-args.log" ]] && echo yes || echo no )"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

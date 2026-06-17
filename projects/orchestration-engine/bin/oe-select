@@ -36,7 +36,6 @@ usage: oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [
 候補は oe-list と同一ソース（生存ペイン一覧）。fzf があれば fzf、無ければ番号 read で選ぶ。
 選択をキャンセル（ESC / Ctrl-C / 空入力）した場合は exit 130（送信も出力もしない）。
 EOF
-  exit 1
 }
 
 PRINT_ONLY=0
@@ -51,9 +50,9 @@ while [[ "${1:-}" == -* ]]; do
     --kickoff)
       [[ $# -ge 2 ]] || { echo "oe-select: --kickoff requires a value" >&2; exit 2; }
       KICKOFF="$2"; shift 2 ;;
-    -h|--help) usage ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; break ;;
-    *) echo "oe-select: unknown option: $1" >&2; usage ;;
+    *) echo "oe-select: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
@@ -98,14 +97,19 @@ fi
 # 選択。fzf があれば fzf、無ければ番号 read。
 SELECTED=""
 if command -v fzf >/dev/null 2>&1; then
-  # fzf が非 0（ESC / Ctrl-C / 未選択）なら cancel 扱い → exit 130。
+  # fzf の exit code を分岐する:
+  #   rc 130（Ctrl-C/SIGINT）/ rc 1（no match=未選択）→ cancel 扱い → exit 130
+  #   rc>=2（fzf 自体のエラー: 不正オプション等）→ exit 2（cancel と区別）
   rc=0
   SELECTED="$(printf '%s\n' "${CANDIDATES[@]}" | fzf \
     --prompt='target> ' \
     --preview 'tmux capture-pane -p -S -200 -t {1} 2>/dev/null || true' \
     --preview-window=right:50%)" || rc=$?
-  if [[ "$rc" -ne 0 ]]; then
+  if [[ "$rc" -eq 130 || "$rc" -eq 1 ]]; then
     exit 130
+  elif [[ "$rc" -ge 2 ]]; then
+    echo "oe-select: fzf failed (rc=${rc})" >&2
+    exit 2
   fi
 else
   # 番号フォールバック: 番号付き候補を stderr に出し、/dev/tty から番号を read。
@@ -128,13 +132,19 @@ else
     echo "oe-select: invalid selection" >&2
     exit 2
   fi
+  # 先頭ゼロ（08/09 等）は 8 進解釈で算術がクラッシュする（value too great for base）。
+  # 10# で明示的に 10 進化してから範囲チェック / インデックスする。
+  idx=$((10#$reply))
   # 範囲外。
-  if [[ "$reply" -lt 1 || "$reply" -gt ${#CANDIDATES[@]} ]]; then
+  if [[ "$idx" -lt 1 || "$idx" -gt ${#CANDIDATES[@]} ]]; then
     echo "oe-select: invalid selection" >&2
     exit 2
   fi
-  SELECTED="${CANDIDATES[$((reply - 1))]}"
+  SELECTED="${CANDIDATES[$((idx - 1))]}"
 fi
+
+# 空選択は cancel 扱い（fzf rc0 + 空 stdout など）。両経路を覆う位置に置く。
+[[ -n "$SELECTED" ]] || exit 130
 
 # 選択行から first-token のみで pane id 抽出（source/label 列はパースしない）。
 PANE="$(printf '%s\n' "$SELECTED" | awk '{print $1}')"
@@ -160,6 +170,10 @@ if [[ -z "$MESSAGE" && -z "$KICKOFF" ]]; then
     # EOF
     exit 130
   fi
+  # 空入力（Enter のみ）は cancel。空のまま oe-send へ渡すと nothing to send で
+  # rc1 になり契約（cancel=130）に反する。--kickoff 指定時は payload があるため
+  # この経路に入らない（上の条件で除外済み）。
+  [[ -n "$MESSAGE" ]] || exit 130
 fi
 
 # 隣接 oe-send を exec で呼ぶ。passthrough: --no-enter / --kickoff <path>。
