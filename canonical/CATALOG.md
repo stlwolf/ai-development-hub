@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (24)
+## Skills (25)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -16,6 +16,7 @@
 | branch-finish | ブランチ完了判定フロー（検証→4択→実行→クリーンアップ） | `skills/branch-finish/SKILL.md` | skill: worktrunk-worktrees, skill: pr-conventions, skill: conventional-commits |
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
 | c4-architecture | 構造化データからC4アーキテクチャ図（Mermaid）を生成する記述スキル（4レベル視点・graph TD/classDef・AS-IS/TO-BE・サニタイズ指針） | `skills/c4-architecture/SKILL.md` | — |
+| code-path-exhaustion | バグ調査で入力→出力のコードパスに未読がある限り外部要因の仮説に進まない。仮説を tmp/hypothesis-NNN.md に外部化し read-state を可視化（exhaustion-before-conclusion のバグ調査ドメイン層2・#77 の姉妹）。hypothesis-gate フックが N=3 で advisory 誘導 | `skills/code-path-exhaustion/SKILL.md` | skill: persistent-exploration, skill: episode-retrospective |
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
 | delegate-task | 親子 Claude Code セッション間の委譲操作（delegate / send / list / report）を自然言語から判断して実行する。tmux 環境前提 | `skills/delegate-task/SKILL.md` | — |
 | diff-audit | PR diff全体を原則ベースでレビューする。4つの問いを軸に、チェックリスト外の問題も含めて拾う。既知パターンは各問いのヒントとして残す | `skills/diff-audit/SKILL.md` | — |
@@ -94,6 +95,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | force push ブロック | `hooks/scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | CC 形式チェック | `hooks/scripts/cc-lint.sh` | `git commit -m` の Conventional Commits 形式を検証（3ツール共通） |
 | コミットゲート | `hooks/scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（Claude Code のみ） |
+| 仮説ゲート | `hooks/scripts/hypothesis-gate.sh` | バグ調査で `tmp/hypothesis-*.md` が N=3 に達したら外部要因の結論前にコードパス未読確認を advisory 通知（Claude Code PostToolUse・ブロックしない・#78 code-path-exhaustion） |
 | 通知 | `hooks/scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory、並走時のポーリング解消）。loc にセッション名を表示 |
 | セッション命名 | `hooks/scripts/session-name.sh` | セッション名を自動設定（Claude Code のみ・UserPromptSubmit）。worktree は `#<issue> <slug>`（`scripts/wt/wt-pane-issue.sh`＝worktrunk post-switch と連携）、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト・非git→リポ名）でブランチ変化に追従。並列セッション識別用 |
 

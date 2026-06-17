@@ -28,12 +28,12 @@ The same failure structure recurs across domains. The two cases below are illust
 The reachable space splits in two, so the planned mechanisms split into two tracks while the principle stays single:
 
 - Design-decision domain (unexplored options): a soft forcing layer — the `predecision-exploration` skill, which requires ≥1 zero-base alternative exploration with a confirm-time trace before confirming — has landed (#77). Its deterministic hard gate (script-layer convergence) is still deferred.
-- Bug-investigation domain (unread code paths): a hard mechanism to externalize hypotheses and make spinning visible — design tracked in #78 (planned, not yet implemented).
+- Bug-investigation domain (unread code paths): a soft layer — the `code-path-exhaustion` skill (externalize hypotheses to `tmp/hypothesis-NNN.md` + an advisory `hypothesis-gate` hook) — has landed (#78). Its deterministic hard gate (blocking + script-layer convergence) is still deferred.
 - An always-on soft floor (reframe / zero-base on detecting spin) — landed as `reframe-on-stall-rule.md` (#161).
 
 ## Minimal discipline (until the hard mechanisms land)
 
-The deterministic hard mechanisms (#77 / #78) do not exist yet (#77's soft forcing layer `predecision-exploration` has landed; the hard gates are deferred). At high-stakes conclusions — committing a design, asserting a root cause, or jumping to an external hypothesis — apply this floor directly:
+The deterministic hard mechanisms (#77 / #78) do not exist yet (#77's `predecision-exploration` and #78's `code-path-exhaustion` soft layers have landed; the hard gates are deferred). At high-stakes conclusions — committing a design, asserting a root cause, or jumping to an external hypothesis — apply this floor directly:
 
 - Do not self-declare "explored enough" without a stated reason. The model is biased to announce sufficiency; the design discussion is explicit that convergence must not be left to the model's own judgment.
 - Decide the stopping condition before exploring, not when you feel done.
