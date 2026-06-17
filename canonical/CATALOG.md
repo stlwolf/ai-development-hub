@@ -29,7 +29,7 @@
 | plan-to-kickoff | Cursor Plan / プランMDをKickoff Document形式に変換する | `skills/plan-to-kickoff/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, command: peer-ai-review |
 | playwright-browser | Playwright MCPでブラウザ操作・DOM調査・UI検証を行う | `skills/playwright-browser/SKILL.md` | — |
 | pr-conventions | PR作成の規約を適用する | `skills/pr-conventions/SKILL.md` | — |
-| predecision-exploration | 設計判断を確定する前にゼロベースで代替案を最低1回引き出し、探索木を確定前 artifact に残してから確定する（so-compare 選択肢拡張・確定前証跡・暫定停止条件）。exhaustion-before-conclusion-rule の設計ドメイン層2（soft forcing。hard 版は defer） | `skills/predecision-exploration/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, skill: episode-retrospective |
+| predecision-exploration | 設計判断を確定する前にゼロベースで代替案を最低1回引き出し、探索木を確定前 artifact に残してから確定する（so-compare 選択肢拡張・確定前証跡・暫定停止条件）。exhaustion-before-conclusion-rule の設計ドメイン層2（soft forcing。hard 版は defer） | `skills/predecision-exploration/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, skill: episode-retrospective, command: peer-ai-review |
 | question-driven-design | 実装前に設計ツリーを質問で網羅的に掘り下げ、暗黙の前提を明示化する | `skills/question-driven-design/SKILL.md` | — |
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する | `skills/so-compare/SKILL.md` | cli: so-compare |
