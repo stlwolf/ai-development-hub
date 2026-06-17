@@ -5,7 +5,7 @@ orchestration-engine の実行可能エントリの簡易リファレンス（AI
 scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-send` / `oe-list` / `oe-report`
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-send` / `oe-list` / `oe-select` / `oe-report`
 
 ---
 
@@ -71,6 +71,22 @@ oe-list
 ```
 
 関連 lib: `delegate-registry.sh`
+
+## oe-select — 宛先をインタラクティブに選んで送信
+
+`oe-list` と同一ソースの候補から fzf（無ければ番号 read）で 1 件選び、pane id を抽出して `oe-send` へ素通しする。既定で自ペインを候補から除外する。
+
+```bash
+oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [--] [ad-hoc...]
+```
+
+- `--print`, `-p` … 選んだ pane id を stdout に出して終了（送信しない）。`message` / `--no-enter` / `--kickoff` とは併用不可。例: `target="$(oe-select -p)" && oe-send "$target" "..."`
+- `--include-self` … 自ペイン（`$TMUX_PANE`）も候補に含める（既定は除外）
+- `--no-enter` / `--kickoff <path>` … `oe-send` へ素通し
+- `ad-hoc...` … 送信メッセージ（無ければ端末から 1 行 read）。`--kickoff` 指定時は省略可
+- 選択キャンセル（ESC / Ctrl-C / 空入力）は exit 130（送信も出力もしない）
+
+関連 lib: `delegate-registry.sh`（送信は `oe-send` 経由）
 
 ## oe-report — 親へ申し送り（legacy）
 

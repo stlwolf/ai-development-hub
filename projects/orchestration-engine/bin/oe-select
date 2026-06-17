@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# oe-select — cockpit ペイン宛先セレクタ（fzf / 番号フォールバック）
+#
+# usage: oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [--] [ad-hoc...]
+#
+# oe-list と同一ソース（delegate-registry.sh の oe_reg_list）から宛先候補を引き、
+# fzf（あれば）か番号 read で 1 件選ばせ、pane id を抽出して oe-send へ渡す。
+# 既定で自ペイン（$TMUX_PANE）を候補から除外する（--include-self で含める）。
+#
+# --print は pane id を stdout に出すだけ（送信しない）。pipe / コマンド置換で使う:
+#   target="$(oe-select --print)" && oe-send "$target" "..."
+# stdout は %N のみ。プロンプト / エラーは全て stderr へ流す。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+# 対話入力（番号 read / message read）は端末から直接読む。既定は /dev/tty。
+# OE_SELECT_TTY はテスト用のシーム（自動テストで端末を差し替えるため）。本番では未設定。
+OE_SELECT_TTY="${OE_SELECT_TTY:-/dev/tty}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [--] [ad-hoc...]
+
+  --print, -p         選んだ pane id を stdout に出力して終了（送信しない）。
+                      message / --no-enter / --kickoff とは併用不可
+  --no-enter          oe-send に素通し（投入のみで Enter を発火しない）
+  --include-self      自ペイン（$TMUX_PANE）も候補に含める（既定は除外）
+  --kickoff <path>    oe-send に素通し（"<path> を読んで進めて。" を payload に）
+  ad-hoc...           1 行の追加指示（複数語は空白連結）。oe-send へ素通し
+  -h, --help          このヘルプを表示
+
+候補は oe-list と同一ソース（生存ペイン一覧）。fzf があれば fzf、無ければ番号 read で選ぶ。
+選択をキャンセル（ESC / Ctrl-C / 空入力）した場合は exit 130（送信も出力もしない）。
+EOF
+  exit 1
+}
+
+PRINT_ONLY=0
+SEND_ENTER=1
+INCLUDE_SELF=0
+KICKOFF=""
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -p|--print) PRINT_ONLY=1; shift ;;
+    --no-enter) SEND_ENTER=0; shift ;;
+    --include-self) INCLUDE_SELF=1; shift ;;
+    --kickoff)
+      [[ $# -ge 2 ]] || { echo "oe-select: --kickoff requires a value" >&2; exit 2; }
+      KICKOFF="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --) shift; break ;;
+    *) echo "oe-select: unknown option: $1" >&2; usage ;;
+  esac
+done
+
+# 残りの位置引数（ad-hoc message）。空白連結。
+ADHOC="$*"
+
+# --print は送信系オプション / message と排他。
+if [[ "$PRINT_ONLY" -eq 1 ]]; then
+  if [[ -n "$ADHOC" || "$SEND_ENTER" -eq 0 || -n "$KICKOFF" ]]; then
+    echo "oe-select: --print cannot be combined with a message, --no-enter, or --kickoff" >&2
+    exit 2
+  fi
+fi
+
+# 候補一覧は oe_reg_list から。pipefail 下で fzf キャンセルと一覧失敗を混同しないよう
+# 先に変数へ取得する。
+LIST="$(oe_reg_list)" || { rc=$?; echo "oe-select: failed to list panes (rc=${rc})" >&2; exit "$rc"; }
+
+# ヘッダ行（1 行目）を除去し、空行を落とす。既定で自ペインを除外する。
+SELF="${TMUX_PANE:-}"
+CANDIDATES=()
+first=1
+while IFS= read -r line; do
+  if [[ "$first" -eq 1 ]]; then
+    first=0
+    continue
+  fi
+  [[ -n "$line" ]] || continue
+  if [[ "$INCLUDE_SELF" -eq 0 && -n "$SELF" ]]; then
+    # first-token（pane id）が自ペインなら除外。
+    paneid="$(printf '%s\n' "$line" | awk '{print $1}')"
+    [[ "$paneid" == "$SELF" ]] && continue
+  fi
+  CANDIDATES+=("$line")
+done <<< "$LIST"
+
+if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
+  echo "oe-select: no candidate panes (try: oe-list, or --include-self)" >&2
+  exit 1
+fi
+
+# 選択。fzf があれば fzf、無ければ番号 read。
+SELECTED=""
+if command -v fzf >/dev/null 2>&1; then
+  # fzf が非 0（ESC / Ctrl-C / 未選択）なら cancel 扱い → exit 130。
+  rc=0
+  SELECTED="$(printf '%s\n' "${CANDIDATES[@]}" | fzf \
+    --prompt='target> ' \
+    --preview 'tmux capture-pane -p -S -200 -t {1} 2>/dev/null || true' \
+    --preview-window=right:50%)" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    exit 130
+  fi
+else
+  # 番号フォールバック: 番号付き候補を stderr に出し、/dev/tty から番号を read。
+  echo "oe-select: select a target pane:" >&2
+  idx=1
+  for line in "${CANDIDATES[@]}"; do
+    printf '%3d) %s\n' "$idx" "$line" >&2
+    idx=$((idx + 1))
+  done
+  printf 'number> ' >&2
+  reply=""
+  if ! IFS= read -r reply <"$OE_SELECT_TTY"; then
+    # EOF
+    exit 130
+  fi
+  # 空入力は cancel。
+  [[ -n "$reply" ]] || exit 130
+  # 非数値は invalid。
+  if ! [[ "$reply" =~ ^[0-9]+$ ]]; then
+    echo "oe-select: invalid selection" >&2
+    exit 2
+  fi
+  # 範囲外。
+  if [[ "$reply" -lt 1 || "$reply" -gt ${#CANDIDATES[@]} ]]; then
+    echo "oe-select: invalid selection" >&2
+    exit 2
+  fi
+  SELECTED="${CANDIDATES[$((reply - 1))]}"
+fi
+
+# 選択行から first-token のみで pane id 抽出（source/label 列はパースしない）。
+PANE="$(printf '%s\n' "$SELECTED" | awk '{print $1}')"
+if ! [[ "$PANE" =~ ^%[0-9]+$ ]]; then
+  echo "oe-select: could not extract pane id from selection: ${SELECTED}" >&2
+  exit 1
+fi
+
+# --print: pane id を stdout に出して終了。
+if [[ "$PRINT_ONLY" -eq 1 ]]; then
+  printf '%s\n' "$PANE"
+  exit 0
+fi
+
+# 送信モード: message 確定。
+#  - ad-hoc があればそれを使う
+#  - 無く --kickoff があればメッセージ空でよい（kickoff が payload）
+#  - どちらも無ければ端末（/dev/tty）から 1 行 read
+MESSAGE="$ADHOC"
+if [[ -z "$MESSAGE" && -z "$KICKOFF" ]]; then
+  printf 'message to %s: ' "$PANE" >&2
+  if ! IFS= read -r MESSAGE <"$OE_SELECT_TTY"; then
+    # EOF
+    exit 130
+  fi
+fi
+
+# 隣接 oe-send を exec で呼ぶ。passthrough: --no-enter / --kickoff <path>。
+PASS=()
+[[ "$SEND_ENTER" -eq 0 ]] && PASS+=(--no-enter)
+[[ -n "$KICKOFF" ]] && PASS+=(--kickoff "$KICKOFF")
+
+if [[ -n "$MESSAGE" ]]; then
+  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$PANE" "$MESSAGE"
+else
+  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$PANE"
+fi
