@@ -16,6 +16,7 @@
 | 破壊コマンドブロック | `scripts/block-destructive.sh` | `rm -rf /`, `chmod -R 777 /`, `DROP TABLE` 等の破壊的コマンドをブロック |
 | force push ブロック | `scripts/block-force-push.sh` | `git push --force` をブロック（`--force-with-lease` は許可） |
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
+| 仮説ゲート | `scripts/hypothesis-gate.sh` | バグ調査で `tmp/hypothesis-*.md` が N=3 に初めて達したら、外部要因の結論前にコードパス未読確認を 1 回 advisory 通知（Claude のみ・ブロックしない・#78 code-path-exhaustion） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
 | 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
 | セッション命名 | `scripts/session-name.sh` ＋ リポジトリルートの `scripts/wt/wt-pane-issue.sh` | セッション名を自動設定し並列セッションを識別（Claude のみ・advisory）。`wt switch` の worktree は `#<issue> <slug>`、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト→リポ名）でブランチ変化に追従 |
@@ -27,6 +28,7 @@
 | 破壊コマンドブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | force push ブロック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | コミットゲート | — | `TaskCompleted` | — |
+| 仮説ゲート | — | `PostToolUse(Write\|Edit\|MultiEdit)` → hypothesis-gate.sh | — |
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
 | セッション命名 | — | `UserPromptSubmit` → session-name.sh | — |

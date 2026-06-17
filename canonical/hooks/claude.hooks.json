@@ -29,6 +29,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/hypothesis-gate.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
