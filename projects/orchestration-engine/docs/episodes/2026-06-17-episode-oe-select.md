@@ -43,7 +43,7 @@ tags: [orchestration, oe-select, cockpit, fzf, tmux, delegate, episode]
 
 - `bin/oe-select` 新規（既存 oe-* 流儀踏襲: コメントヘッダ / `usage()` / `while [[ "${1:-}" == -* ]]` / `oe-select:` プレフィックス / `BIN_DIR` / 隣接 `${BIN_DIR}/oe-send` を exec）。Bash 3.2 互換（`declare -A` 不使用、空配列は `${PASS[@]+"${PASS[@]}"}` でガード）。
 - `bin/README.md` に oe-select 節を追記。`oe-list`/`oe-send`/`delegate-registry.sh` は非破壊。
-- テスト `tests/test_oe_select.sh`（26/0）: 空白ラベル行 `#142 redesign` からの `%N` 抽出（fzf/番号 両経路）、`--print` の stdout 専用、自ペイン除外/`--include-self`、候補0=1、番号フォールバックの非数値/範囲外/空、fzf cancel=130（送信なし）、`--no-enter`/`--kickoff` の `oe-send` パススルー。テストシーム `OE_SELECT_TTY`（既定 `/dev/tty`、本番未設定）は既存 `OE_*_DIR` 規約と同型。番号フォールバックは system Bash 3.2 でも実行し互換確認。
+- テスト `tests/test_oe_select.sh`（35/0）: 空白ラベル行 `#142 redesign` からの `%N` 抽出（fzf/番号 両経路）、`--print` の stdout 専用、自ペイン除外/`--include-self`、候補0=1、番号フォールバックの非数値/範囲外/空、fzf cancel=130（送信なし）、`--no-enter`/`--kickoff` の `oe-send` パススルー。テストシーム `OE_SELECT_TTY`（既定 `/dev/tty`、本番未設定）は既存 `OE_*_DIR` 規約と同型。番号フォールバックは system Bash 3.2 でも実行し互換確認。
 - ゲート（親が独立検証）: `shellcheck` script+test clean、`bash tests/test_oe_select.sh` 35/0（実装 SO 指摘の修正後）、`test_delegate_registry.sh`/`test_oe_delegate.sh` 回帰 PASS。
 
 ## 実装 SO（欠陥検出・設計 SO と別観点）
@@ -70,7 +70,7 @@ tags: [orchestration, oe-select, cockpit, fzf, tmux, delegate, episode]
   - F（ステートフル宛先 `oe-target set` + `oe-send` target 省略）→ **defer**。同一子への連続追送が頻発したら別 enhancement として issue 化検討。
   - E（tmux popup）/ G（tmux bind）→ **追わない**（現行 shell 起動で足りる。狭ペイン UX が課題化したら再考）。
   - 実装 SO defer: 複数行 label/pane_title の候補行偽造 → **issue 化候補**（`oe_reg_list` 出力衛生 + `oe-delegate --label` 改行拒否。oe-list にも共通の cross-cutting）。`$TMUX_PANE` 未設定の self 除外無効 / fzf+非TTY → **明記のみ**（設計限界・対話専用ツール）。
-- **status**: stable（達成）。コード + README + ユニット 26/0 + 親レビュー + 設計 SO ゲート完了。
+- **status**: stable（達成）。コード + README + ユニット 35/0 + 親レビュー + 設計 SO + 実装 SO ゲート完了。
 - **SO ゲートの形**: 設計 SO（codex+cursor、A' 確定・選択肢拡張つき）と実装 SO（codex+cursor、実コード欠陥検出・option-expansion なし）の**両方を実施**。観点が違うので設計 SO だけで実装 SO を省略しない。実装 SO 指摘の契約違反4点を修正、cross-cutting/設計限界3点は defer（上記「実装 SO」表）。
 - **evidence anchor**: 設計 SO 出力 `tmp/so-20260617-222442/`、実装 SO 出力 `tmp/so-20260617-225419/`（いずれも codex/cursor stdout・gitignore 対象）。
 

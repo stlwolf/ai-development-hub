@@ -7,7 +7,7 @@ set -uo pipefail
 #   - tmux: PATH 先頭の mock。list-panes は $MOCK_LIVE_PANES を返す
 #   - jq:   PATH 先頭の mock（delegate-registry.sh が要求するため）。
 #           pane-issue / spawn-registry を使わず pane-title 経路に倒すため空を返す
-#   - fzf:  ある/無いをテストごとに切替（FZF_PRESENT）。あるときは固定行を返す
+#   - fzf:  make_fzf / rm_fzf で mock バイナリを作成・削除して有無をテストごとに切替。存在時は固定行を返す
 #   - oe-send: BIN_DIR 隣の stub（exec で呼ばれる）。引数を log に記録する
 #
 # oe-select は BIN_DIR="$(dirname "$0")" 隣の oe-send を exec する。実体ではなく
@@ -76,7 +76,7 @@ exit 0
 EOF
 chmod +x "$_TMP_DIR/pathbin/jq"
 
-# mock fzf: FZF_PRESENT=1 のときのみ存在。$FZF_PICK_PANE に一致する行を返す。
+# mock fzf: make_fzf で作成（rm_fzf で削除）。存在時に呼ばれ、$FZF_PICK_PANE に一致する行を返す。
 make_fzf() {
   cat > "$_TMP_DIR/pathbin/fzf" <<'EOF'
 #!/usr/bin/env bash
