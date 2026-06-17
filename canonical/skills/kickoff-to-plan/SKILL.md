@@ -61,6 +61,7 @@ Kickoffに含まれるgateの種類と変換方法（全プラットフォーム
 | `peer-ai-review 実施ポイント` | 独立TODO: 「REVIEW: peer-ai-review — [対象の説明]」 | `REVIEW:` |
 | ADR作成チェックリスト項目 | 独立TODO: 「ADR: [判断内容]を記録」（対応Stepの直後） | `ADR:` |
 | `← Stage N 完了後、ここで停止` | 独立TODO: 「STOP: Stage N完了 — ユーザーに報告し、Mode切替の指示を待つ」 | `STOP:` |
+| 設計判断 DJ-N（kickoff/ADR が DJ を含む） | 独立TODO: 「DJ-GATE: DJ-N 確定前に `predecision-exploration`（≥1 ゼロベース SO）を実施し、探索木パス・SO 出力パス・棄却理由を確定前 artifact に残す」（対応する確定 Step の直前） | `DJ-GATE:` |
 
 **プレフィックスは省略不可。** プラットフォームを問わず、gate系TODOはプレフィックスで視覚的に識別できるようにする。
 
@@ -108,6 +109,7 @@ Kickoff Documentを読み、以下のセクション存在チェックを行う�
 - [ ] リスクと対処
 - [ ] peer-ai-review 実施ポイント
 - [ ] ADR 作成チェックリスト
+- [ ] 設計判断（DJ-N。kickoff が DJ を含むか — DJ-GATE の対象）
 - [ ] Technical Details / 補足情報
 - [ ] 変更対象コード一覧（テーブル）
 - [ ] 調査結果（事前調査済み）
@@ -251,6 +253,7 @@ Step 1b: SQLite ライブラリ代替調査（条件: Step 0/1 で解明不十�
 - [ ] KickoffのHuman Gate数（N件）= プランのHG-N TODO数（N件）
 - [ ] KickoffのADRチェックリスト項目数（N件）= プランのADR TODO数（N件）
 - [ ] Kickoffのpeer-ai-review実施ポイント数（N件）= プランのREVIEW TODO数（N件）
+- [ ] Kickoffの設計判断 DJ-N数（N件）= プランのDJ-GATE TODO数（N件）
 - [ ] KickoffのPre-Implementation項目数（N件）= プランのPre-Implementation TODO数（N件）
 - [ ] Kickoffの必読ファイル数（N件）= プランのREAD TODO数（N件）
 - [ ] Kickoffのリスク表行数（N件）= プランのリスク反映箇所数（N件）

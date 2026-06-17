@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (23)
+## Skills (24)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -29,6 +29,7 @@
 | plan-to-kickoff | Cursor Plan / プランMDをKickoff Document形式に変換する | `skills/plan-to-kickoff/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, command: peer-ai-review |
 | playwright-browser | Playwright MCPでブラウザ操作・DOM調査・UI検証を行う | `skills/playwright-browser/SKILL.md` | — |
 | pr-conventions | PR作成の規約を適用する | `skills/pr-conventions/SKILL.md` | — |
+| predecision-exploration | 設計判断を確定する前にゼロベースで代替案を最低1回引き出し、探索木を確定前 artifact に残してから確定する（so-compare 選択肢拡張・確定前証跡・暫定停止条件）。exhaustion-before-conclusion-rule の設計ドメイン層2（soft forcing。hard 版は defer） | `skills/predecision-exploration/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, skill: episode-retrospective, command: peer-ai-review |
 | question-driven-design | 実装前に設計ツリーを質問で網羅的に掘り下げ、暗黙の前提を明示化する | `skills/question-driven-design/SKILL.md` | — |
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude）を取得し、結果を比較する | `skills/so-compare/SKILL.md` | cli: so-compare |
@@ -73,7 +74,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
 | evidence-verification-rule | Concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
 | execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
-| exhaustion-before-conclusion-rule | Complements Evidence First with exploration breadth: do not conclude while reachable paths or options remain unexamined. Illustrated by design (option) / bug-investigation (code-path) cases; planned hard mechanisms #77/#78; soft floor landed as reframe-on-stall-rule (#161); includes a minimal high-stakes discipline | `rules/exhaustion-before-conclusion-rule.md` |
+| exhaustion-before-conclusion-rule | Complements Evidence First with exploration breadth: do not conclude while reachable paths or options remain unexamined. Illustrated by design (option) / bug-investigation (code-path) cases; design-domain soft layer landed as predecision-exploration (#77) + soft floor reframe-on-stall-rule (#161); deterministic hard gates (#77/#78) deferred; includes a minimal high-stakes discipline | `rules/exhaustion-before-conclusion-rule.md` |
 | implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
 | implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
