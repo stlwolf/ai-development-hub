@@ -78,6 +78,8 @@ Issue 内容から抽出したキーワード・関数名・エラーメッセ�
 **難航時:**
 調査が難航した場合（再現できない、原因が特定できない）、`persistent-exploration` スキルの行動制約テンプレートをサブエージェントのプロンプトに注入する。
 
+外部要因（インフラ差異・環境等）の結論に傾く前は `code-path-exhaustion` を適用する（入力→出力のコードパスを読み切り、仮説を `tmp/hypothesis-NNN.md` に外部化してから外部要因へ。`hypothesis-gate` フックが N=3 で advisory 誘導）。
+
 ```
 Read ~/.cursor/skills/persistent-exploration/SKILL.md
 ```
