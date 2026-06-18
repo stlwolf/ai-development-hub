@@ -170,7 +170,7 @@ RUBRIC="exploration"
 if [[ -n "$FM_RUBRIC" ]]; then
   case "$FM_RUBRIC" in
     exploration|consensus) RUBRIC="$FM_RUBRIC" ;;
-    *) err "claim doc has invalid rubric '${FM_RUBRIC}', defaulting to exploration"; RUBRIC="exploration" ;;
+    *) err "claim doc has invalid rubric '${FM_RUBRIC}' (must be exploration or consensus)"; usage; exit 2 ;;
   esac
 fi
 [[ -z "$RUBRIC_OVERRIDE" ]] || RUBRIC="$RUBRIC_OVERRIDE"

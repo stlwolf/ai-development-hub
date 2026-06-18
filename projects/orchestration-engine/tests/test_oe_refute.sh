@@ -219,6 +219,18 @@ hypothesis 群と read-state...'
 out="$("$REFUTE" --claim "$DOC2" 2>/dev/null)"
 ck "rubric 既定 exploration" "exploration" "$(printf '%s' "$out" | jq -r '.rubric')"
 
+# frontmatter に不正 rubric 値 → exit 2（不在=既定 exploration / 不正値=fail-fast。--rubric と対称）
+echo "[7c] frontmatter rubric 不正値 → exit 2（peer review: 非対称解消）"
+DOC2B="$_TMP_DIR/docs/bad-rubric.md"
+write_doc "$DOC2B" '---
+claim: "X を確定する"
+rubric: consenssus
+---
+
+body...'
+rc=0; "$REFUTE" --claim "$DOC2B" >/dev/null 2>&1 || rc=$?
+ck "frontmatter rubric 不正 → exit 2" "2" "$rc"
+
 # ----------------------------------------------------------------------------
 # [8] --lanes 3 → codex,claude,cursor（3 レーン）
 # ----------------------------------------------------------------------------
