@@ -8,6 +8,11 @@
 
 ## インデックス
 
+### 2026-06-18
+
+- `remote-harness-cloud-substrate-extension.md`: remote ハーネス構想 — Claude Code (Opus 4.8) との壁打ち統合。ローカルに閉じたハーネスを Routines / Claude Code on the web のクラウド基板へ延ばす。ハーネスの4面分解（トリガ/実行/設定/ゲート）と5スロット座標系（Trigger/Driver/Work/Gate/State）、「強制力は Routine でなく branch protection から出る」核心補正、(A) 非機械的フローの強制 と (B) 持続ラフループ の2系統、remote で初めて可能な4フロー原型、「薄く大きく」原則、到達点の半径(i-iv)、要実機確認4点、SO投入用プロンプトを含む。20260414「制御ループの不在」への回答
+- `discussion-logs/`: マルチAIブレスト記録（Web Claude / ChatGPT クロスレビューを今後追加予定）
+
 ### 2026-04-14
 
 - `harness-architecture-layer-separation-control-loop.md`: ハーネスアーキテクチャの層分離と制御ループ設計 — Claude + ChatGPT のマルチAIブレスト統合。canonical 4層分離を「決定性の境界」で再整理、コマンド責務拡張の原則（機械的判断が連続する区間をcommandに吸収）、仮想環境隔離パターン（並列探索→破棄→直列再実行）、5本柱の設計原則、CLI for AI 評価フレーム
