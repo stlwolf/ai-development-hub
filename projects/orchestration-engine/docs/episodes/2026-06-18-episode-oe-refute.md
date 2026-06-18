@@ -63,6 +63,15 @@ tags: [orchestration, oe-refute, refutation, so-compare, cross-session, episode]
 - **provenance 保全（fix `08ab007`）**: クロスセッション・ラリーの verbatim ログ＋ load-bearing な claim-doc 契約を /tmp（揮発）から `docs/discussions/2026-06-18-rally-log-oe-refute-cross-session.md` へ救出。oe-refute コメントと本 episode の evidence anchor を repo パスへ修正。
 - **Copilot 査読**: 先方リクエストエラーのため今回スキップ（user 承認で締め）。
 
+## follow-up fix: output_dir drift（PR #184 マージ後・peer dogfood 由来）
+
+explore step2 が oe-refute を**自己適用（dogfood）**した際に実運用ドリフト2点が露見し、follow-up で修正（同じ work-item の post-start 継続として本 episode に追記）:
+
+- **output_dir が system temp だった**（`mktemp -d -t` → `/var/folders/..`）→ 契約どおり **repo 相対 `${WORKSPACE}/tmp/oe-refute-<ULID>/`** に修正。skill が evidence anchor に書く output_dir が揮発・repo 外だと壊れる（explore step2 が依存）問題を解消。output_dir 名と `audit_id` を**同一 ULID** に統一（traceability）。
+- engine の runtime 出力（`audit/*.jsonl` / `state/*.state.json`）を **`.gitignore`** に追加（衛生・#185 隣接）。`.gitkeep` は tracked 維持。
+- 検証: ユニット 64/0、shellcheck clean、回帰 PASS。**設計ゲート = peer dogfood**（oe-refute の自己適用 SO が drift を捕捉）のため、本 follow-up は別途 impl SO を省略（mechanical・テスト網羅）。
+- exit 3=refuted ドリフト指摘(#1)は契約どおりで非問題と確認。
+
 ## closure gate
 
 - **次の消費者**: #183 PR の査読（peer ＋ user＋Copilot で全体査読）。**探索クラスタ step2**（so-compare 呼び→`oe-refute --rubric exploration` 差し替え＋ verdict 書き戻し＝skill 側 PR、verb land 後）。
