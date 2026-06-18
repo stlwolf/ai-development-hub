@@ -30,6 +30,24 @@ oe-capture <pane_id> [--session-id <id>] [--lines <N>]
 
 関連 lib: `attach.sh` / `capture.sh` / `audit.sh` / `session.sh`
 
+## oe-refute — 確定前の同期反証 verb（#183 / Stage A）
+
+確定（設計判断・根拠断定・外部仮説ジャンプ）の前に、独立した反証レーンを N 体立てて claim を反証させ、共有 verdict エンベロープ `{verdict, reason}` を同期で返す。バックエンドは `so-compare`（codex/cursor/claude マルチプロバイダ並列）を wrap する薄いラッパー。
+
+```bash
+oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
+```
+
+- `--claim <doc>` … 反証対象の claim doc（markdown）。**必須**。先頭の YAML frontmatter（`---`〜`---`）から `claim`（必須・1 行）/ `rubric`（`exploration`|`consensus`）/ `domain`（任意・無視可）のみパース。閉じ `---` 以降の **body は不透明**に反証レーンへ素通し（ドメイン非依存）
+- `--lanes N` … 反証レーン数（既定 `2`）。`2`→`codex,cursor` / `3`→`codex,claude,cursor`。それ以外は exit 2
+- `--rubric R` … 評価レンズ。`exploration`（breadth=軸5 / grounding=軸3 を第一級）/ `consensus`（問題認識/方針/リスク）。指定時 frontmatter を上書き。どちらも無ければ `exploration`
+- 出力（stdout JSON）: `{verdict, reason, rubric, lanes, dissent:[{lane,verdict,note}], output_dir, audit_id}`。`output_dir` は so-compare 生出力のパス（確定時証跡のアンカー用）、`audit_id` は ULID
+- 集約は **conservative**: 1 レーンでも material に refuted → 全体 refuted。全レーン survived のときのみ survived。verdict を取れないレーンは survived 扱いにせず `error` とし、dissent に記録した上で survived 確定を阻む（保守側）
+- exit: `survived`→0 / `refuted`→3（**Stage A は advisory**・JSON が正本）
+- 最小 audit を `<OE_DATA_DIR|project>/audit/oe-refute.jsonl` に 1 行追記
+
+関連 lib: `session.sh`（`oe_generate_session_id`）。バックエンド: `so-compare`（`OE_REFUTE_SO_COMPARE` で実体を上書き可）
+
 ---
 
 ## oe-delegate — 子セッション起動 + キック（親子委譲）

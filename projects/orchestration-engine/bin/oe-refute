@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# oe-refute — 確定前の同期反証 verb（#183 / Stage A）
+#
+# usage: oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
+#
+# 確定（設計判断・根拠断定・外部仮説ジャンプ）の前に、独立した反証レーンを
+# N 体立てて claim を反証させ、共有 verdict エンベロープ {verdict, reason} を
+# 同期で返す薄いラッパー。バックエンドは so-compare（codex/cursor/claude の
+# マルチプロバイダ並列実行）を wrap する。
+#
+# 入力 claim doc は frontmatter（機械フィールド: claim / rubric / domain）＋
+# body（不透明コンテキスト）。verb は frontmatter のみパースし、body は丸ごと
+# 反証レーンへ素通しする（ドメイン非依存）。
+#
+# 出力（stdout JSON）:
+#   {verdict, reason, rubric, lanes, dissent:[{lane,verdict,note}], output_dir, audit_id}
+#
+# exit code: survived→0 / refuted→3（Stage A は advisory・JSON が正本）。
+#
+# 集約は conservative: 1 レーンでも material に refuted → 全体 refuted。
+# 全レーン survived のときのみ survived。verdict を取れないレーンは survived 扱い
+# にせず error/unknown とし、dissent に記録した上で「survived 確定を阻む」保守側に倒す。
+#
+# 契約: docs/discussions/2026-06-18-rally-log-oe-refute-cross-session.md の [log] explore-turn10（claim doc ↔ verb I/O）
+# 出自: docs/discussions/2026-06-18-discussion-exploration-hard-layer-on-engine.md（Stage A）
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${BIN_DIR}/.." && pwd)"
+# shellcheck source=../lib/session.sh
+source "${PROJECT_DIR}/lib/session.sh"
+
+# so-compare 実体。PATH 上の so-compare を既定で使い、テストは PATH 先頭スタブで差し替える。
+OE_REFUTE_SO_COMPARE="${OE_REFUTE_SO_COMPARE:-so-compare}"
+# audit ディレクトリ（既定はプロジェクトルート相対。OE_DATA_DIR で上書き可）。
+OE_AUDIT_DIR="${OE_AUDIT_DIR:-${OE_DATA_DIR:-${PROJECT_DIR}}/audit}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
+
+  --claim <doc>       反証対象の claim doc（markdown）。必須。
+                      先頭の YAML frontmatter（---〜---）から claim(必須・1行) /
+                      rubric(exploration|consensus) / domain(任意) のみパース。
+                      閉じ --- 以降の body は不透明に反証レーンへ渡す。
+  --lanes N           反証レーン数（既定 2）。2→codex,cursor / 3→codex,claude,cursor。
+  --rubric R          評価レンズ。exploration|consensus。指定時 frontmatter を上書き。
+                      どちらも無ければ exploration。
+  -h, --help          このヘルプを表示。
+
+出力: stdout に JSON {verdict, reason, rubric, lanes, dissent, output_dir, audit_id}。
+exit: survived→0 / refuted→3（advisory; JSON が正本）。
+EOF
+}
+
+err() { echo "oe-refute: $*" >&2; }
+
+# --- 引数解析 ---
+CLAIM_DOC=""
+LANES=2
+RUBRIC_OVERRIDE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --claim)
+      [[ $# -ge 2 ]] || { err "--claim requires a value"; usage; exit 2; }
+      CLAIM_DOC="$2"; shift 2 ;;
+    --lanes)
+      [[ $# -ge 2 ]] || { err "--lanes requires a value"; usage; exit 2; }
+      LANES="$2"; shift 2 ;;
+    --rubric)
+      [[ $# -ge 2 ]] || { err "--rubric requires a value"; usage; exit 2; }
+      RUBRIC_OVERRIDE="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) err "unknown option: $1"; usage; exit 2 ;;
+    *)  err "unexpected argument: $1"; usage; exit 2 ;;
+  esac
+done
+
+[[ -n "$CLAIM_DOC" ]] || { err "--claim <doc> is required"; usage; exit 2; }
+[[ -f "$CLAIM_DOC" ]] || { err "claim doc not found: ${CLAIM_DOC}"; exit 2; }
+
+# --lanes は 2 か 3 のみ（so-compare のプロバイダ数に対応）
+case "$LANES" in
+  2) PROVIDERS="codex,cursor" ;;
+  3) PROVIDERS="codex,claude,cursor" ;;
+  *) err "--lanes must be 2 or 3 (got: ${LANES})"; usage; exit 2 ;;
+esac
+
+# --rubric の値検証（指定時のみ）
+if [[ -n "$RUBRIC_OVERRIDE" ]]; then
+  case "$RUBRIC_OVERRIDE" in
+    exploration|consensus) : ;;
+    *) err "--rubric must be exploration or consensus (got: ${RUBRIC_OVERRIDE})"; usage; exit 2 ;;
+  esac
+fi
+
+command -v jq >/dev/null 2>&1 || { err "jq is required"; exit 2; }
+command -v "$OE_REFUTE_SO_COMPARE" >/dev/null 2>&1 \
+  || { err "so-compare not found: ${OE_REFUTE_SO_COMPARE}"; exit 2; }
+
+# --- frontmatter パース ---
+# 先頭行が --- のときのみ frontmatter として扱う。閉じ --- までを機械フィールドとし、
+# claim / rubric / domain の 3 キーのみ取り出す（context_refs 等は無視）。
+# body = 閉じ --- の次行以降を丸ごと（不透明）。
+FM_CLAIM=""
+FM_RUBRIC=""
+
+# 閉じ --- の有無を検証（Fix 2）。先頭行が --- なのに閉じ --- が無ければ
+# body が空のまま静かに劣化する（探索コンテキスト無しで反証してしまう）ため fail loud。
+# CR（CRLF の \r）を除去してから判定する（Fix 5）。
+fm_state="$(awk '
+  { line=$0; sub(/\r$/, "", line) }
+  NR==1 && line=="---" { has_open=1; next }
+  has_open && line=="---" { has_close=1; exit }
+  END { printf "%d %d", has_open, has_close }
+' "$CLAIM_DOC")"
+if [[ "$fm_state" == "1 0" ]]; then
+  err "claim doc frontmatter has no closing '---'"; exit 2
+fi
+
+# frontmatter ブロック（先頭 --- と次の --- の間）を抽出。
+# 先頭行が --- でなければ frontmatter 無しとして空を返す。
+# 各行の末尾 CR（CRLF の \r）を除去してから --- 判定する（Fix 5）。
+fm_block="$(awk '
+  { line=$0; sub(/\r$/, "", line) }
+  NR==1 && line=="---" { infm=1; next }
+  infm && line=="---"  { exit }
+  infm                 { print line }
+' "$CLAIM_DOC")"
+
+if [[ -n "$fm_block" ]]; then
+  # claim: 値（先頭の引用符を剥がす・1 行）
+  FM_CLAIM="$(printf '%s\n' "$fm_block" | awk '
+    /^[[:space:]]*claim[[:space:]]*:/ {
+      sub(/^[[:space:]]*claim[[:space:]]*:[[:space:]]*/, "")
+      print
+      exit
+    }')"
+  FM_RUBRIC="$(printf '%s\n' "$fm_block" | awk '
+    /^[[:space:]]*rubric[[:space:]]*:/ {
+      sub(/^[[:space:]]*rubric[[:space:]]*:[[:space:]]*/, "")
+      print
+      exit
+    }')"
+fi
+
+# 値の引用符 / 前後空白を剥がす
+strip_quotes() {
+  local s="$1"
+  # 前後空白
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  # 末尾コメントは扱わない（claim 内 # を尊重）。前後の "..." / '...' のみ剥がす。
+  if [[ "$s" == \"*\" && "${#s}" -ge 2 ]]; then
+    s="${s#\"}"; s="${s%\"}"
+  elif [[ "$s" == \'*\' && "${#s}" -ge 2 ]]; then
+    s="${s#\'}"; s="${s%\'}"
+  fi
+  printf '%s' "$s"
+}
+FM_CLAIM="$(strip_quotes "$FM_CLAIM")"
+FM_RUBRIC="$(strip_quotes "$FM_RUBRIC")"
+
+[[ -n "$FM_CLAIM" ]] || { err "claim doc has no 'claim' in frontmatter: ${CLAIM_DOC}"; exit 2; }
+
+# rubric 解決: --rubric 上書き > frontmatter > 既定 exploration
+RUBRIC="exploration"
+if [[ -n "$FM_RUBRIC" ]]; then
+  case "$FM_RUBRIC" in
+    exploration|consensus) RUBRIC="$FM_RUBRIC" ;;
+    *) err "claim doc has invalid rubric '${FM_RUBRIC}' (must be exploration or consensus)"; usage; exit 2 ;;
+  esac
+fi
+[[ -z "$RUBRIC_OVERRIDE" ]] || RUBRIC="$RUBRIC_OVERRIDE"
+
+# body = 閉じ frontmatter 以降を丸ごと（frontmatter 無しなら全文）。verb は不透明に扱う。
+# --- 判定は末尾 CR を除去してから行う（Fix 5）。body 本文は原文のまま出力する。
+if [[ -n "$fm_block" ]]; then
+  BODY="$(awk '
+    { line=$0; sub(/\r$/, "", line) }
+    NR==1 && line=="---" { infm=1; next }
+    infm && line=="---"  { infm=0; body=1; next }
+    body                 { print }
+  ' "$CLAIM_DOC")"
+else
+  BODY="$(cat "$CLAIM_DOC")"
+fi
+
+# --- rubric レンズ指示 ---
+if [[ "$RUBRIC" == "exploration" ]]; then
+  rubric_lens=$'反証レンズ（exploration プロファイル・2 軸を第一級に見よ）:\n- breadth（軸5）: 代替カテゴリ / 未探索ブランチ / 未読コードパスが残っていれば refute。\n- grounding（軸3）: 結論が一次情報・検証で地に足ついていない（speculation 依存）なら refute。'
+else
+  rubric_lens=$'反証レンズ（consensus プロファイル・so-compare 流用）:\n- 問題認識: claim の前提・問題の捉え方に欠落がないか。\n- 方針: 取ろうとしている方針が妥当か、より良い代替がないか。\n- リスク: 見落としているリスク・副作用がないか。これらで疑義があれば refute。'
+fi
+
+# --- 反証プロンプト生成 ---
+PROMPT_FILE="$(mktemp -t oe-refute-prompt.XXXXXX)"
+trap 'rm -f "$PROMPT_FILE"' EXIT
+{
+  printf '%s\n\n' 'あなたは独立した反証エージェント（adversarial verifier）です。以下の CLAIM が「確定するには早すぎる／不十分」であることを示す反証を試みてください。迷ったら refuted 寄りに倒してください（確定が早すぎるコストを避けるため）。'
+  printf '## CLAIM（確定しようとしているアサーション）\n%s\n\n' "$FM_CLAIM"
+  printf '## ここまでの探索コンテキスト（不透明・そのまま）\n%s\n\n' "$BODY"
+  printf '## %s\n\n' "$rubric_lens"
+  printf '%s\n' '## 出力フォーマット（厳守）'
+  printf '%s\n' '回答の最後に、VERDICT 行と REASON 行を1つずつだけ出力してください（前後に余計な装飾を付けない）:'
+  printf '%s\n' 'VERDICT: <refuted または survived のいずれか1つ>'
+  printf '%s\n' '  - refuted  = claim を確定するには不十分（反証が立つ）'
+  printf '%s\n' '  - survived = 反証を試みたが claim は持ちこたえた'
+  printf '%s\n' 'REASON: <1 行の総合判断（改行を含めない）>'
+} > "$PROMPT_FILE"
+
+# --- 出力ディレクトリ ---
+OUTPUT_DIR="$(mktemp -d -t oe-refute.XXXXXX)"
+
+# --- so-compare 実行（同期） ---
+# workspace（-w）は呼び出し時 cwd の git root を渡す（Fix 4）。body は repo-root 相対の
+# 参照パス（canonical/... / tmp/... 等）を含み得るため、claim doc の所在 dir では解決できない。
+# git repo でなければ claim_dir → PWD の順でフォールバックする。
+claim_dir="$(cd "$(dirname "$CLAIM_DOC")" && pwd)"
+if WORKSPACE="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "$WORKSPACE" ]]; then
+  : # git root
+elif [[ -n "$claim_dir" ]]; then
+  WORKSPACE="$claim_dir"
+else
+  WORKSPACE="$PWD"
+fi
+so_rc=0
+"$OE_REFUTE_SO_COMPARE" --with "$PROVIDERS" -w "$WORKSPACE" -f "$PROMPT_FILE" -o "$OUTPUT_DIR" \
+  >"${OUTPUT_DIR}/so-compare-stdout.txt" 2>"${OUTPUT_DIR}/so-compare-stderr.txt" || so_rc=$?
+# so-compare の exit（0 全成功 / 1 部分 / 2 全失敗）はレーン verdict 抽出で個別に判定するため
+# ここでは致命としない（全失敗でも各レーン error として保守側に倒す）。
+if [[ "$so_rc" -eq 2 ]]; then
+  err "warning: so-compare reported all-provider failure (rc=2); lanes will be treated as error"
+fi
+
+# --- per-lane verdict 抽出 ---
+# 各レーンの stdout 末尾の VERDICT: 行を拾う。取れなければ error/unknown。
+# IFS=',' でプロバイダ名（=レーン名）を回す。
+extract_verdict() {
+  local f="$1" line token
+  [[ -s "$f" ]] || { printf 'unknown'; return; }
+  # 末尾から最後の VERDICT: 行を拾う（直後の token が refuted|survived の行のみ対象）
+  line="$(grep -iE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then printf 'unknown'; return; fi
+  # VERDICT: の直後の token だけを判定する（Fix 1）。行全体への grep だと
+  # "VERDICT: survived (not refuted)" を refuted と誤分類するため、token を切り出す。
+  # 行末の付帯テキストは無視する。
+  token="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*VERDICT:[[:space:]]*([A-Za-z]+).*/\1/I')"
+  if printf '%s' "$token" | grep -qiE '^refuted$'; then printf 'refuted'; else printf 'survived'; fi
+}
+
+extract_reason() {
+  local f="$1" line
+  [[ -s "$f" ]] || { printf ''; return; }
+  line="$(grep -iE '^[[:space:]]*REASON:' "$f" | tail -n 1 || true)"
+  # REASON: ラベルを剥がす
+  printf '%s' "$line" | sed -E 's/^[[:space:]]*REASON:[[:space:]]*//I'
+}
+
+# レーン集約。Bash 3.2 互換: 連想配列を使わず並行配列で扱う。
+lane_names=()
+lane_verdicts=()
+lane_notes=()
+
+refuted_count=0
+survived_count=0
+error_count=0
+
+IFS=',' read -r -a _providers <<< "$PROVIDERS"
+for prov in ${_providers[@]+"${_providers[@]}"}; do
+  stdout_file="${OUTPUT_DIR}/${prov}-stdout.txt"
+  v="$(extract_verdict "$stdout_file")"
+  case "$v" in
+    refuted)  note="$(extract_reason "$stdout_file")"; refuted_count=$((refuted_count + 1)) ;;
+    survived) note="$(extract_reason "$stdout_file")"; survived_count=$((survived_count + 1)) ;;
+    *)        v="error"; note="VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"; error_count=$((error_count + 1)) ;;
+  esac
+  lane_names+=("$prov")
+  lane_verdicts+=("$v")
+  lane_notes+=("$note")
+done
+
+# --- conservative 集約 ---
+# exploration 既定: 1 レーンでも refuted → 全体 refuted。
+# survived は「全レーンが survived」のときのみ。error/unknown が 1 つでもあれば survived 確定不可
+# → conservative に refuted へ倒す（確定が早すぎるコストを避ける thesis 寄り）。
+total_lanes=${#lane_names[@]}
+if [[ "$refuted_count" -gt 0 ]]; then
+  VERDICT="refuted"
+  REASON="${refuted_count}/${total_lanes} レーンが material に反証（conservative 集約: 1 レーン refuted で全体 refuted）"
+elif [[ "$survived_count" -eq "$total_lanes" && "$total_lanes" -gt 0 ]]; then
+  VERDICT="survived"
+  REASON="全 ${total_lanes} レーンが反証を試みたが claim は持ちこたえた"
+else
+  VERDICT="refuted"
+  REASON="verdict 未確定のレーンあり（refuted=${refuted_count} survived=${survived_count} error=${error_count}）。survived を確定できないため conservative に refuted"
+fi
+
+# --- dissent JSON 配列組立 ---
+dissent_json="$(
+  # jq に並行配列を渡して dissent を組む
+  args=()
+  i=0
+  while [[ "$i" -lt "$total_lanes" ]]; do
+    args+=(--arg "lane${i}" "${lane_names[$i]}")
+    args+=(--arg "verdict${i}" "${lane_verdicts[$i]}")
+    args+=(--arg "note${i}" "${lane_notes[$i]}")
+    i=$((i + 1))
+  done
+  # jq プログラムを動的生成（n 個のオブジェクトを配列化）
+  jq_prog="["
+  i=0
+  while [[ "$i" -lt "$total_lanes" ]]; do
+    [[ "$i" -eq 0 ]] || jq_prog="${jq_prog},"
+    jq_prog="${jq_prog}{lane:\$lane${i},verdict:\$verdict${i},note:\$note${i}}"
+    i=$((i + 1))
+  done
+  jq_prog="${jq_prog}]"
+  jq -cn ${args[@]+"${args[@]}"} "$jq_prog"
+)"
+
+# --- audit_id（ULID 流用） ---
+AUDIT_ID="$(oe_generate_session_id)"
+
+# --- 出力 JSON（stdout） ---
+# Stage B のメトリクス superset になれるよう、フィールドは追加余地を残す（今は subset）。
+jq -cn \
+  --arg verdict "$VERDICT" \
+  --arg reason "$REASON" \
+  --arg rubric "$RUBRIC" \
+  --argjson lanes "$total_lanes" \
+  --argjson dissent "$dissent_json" \
+  --arg output_dir "$OUTPUT_DIR" \
+  --arg audit_id "$AUDIT_ID" \
+  '{verdict:$verdict, reason:$reason, rubric:$rubric, lanes:$lanes, dissent:$dissent, output_dir:$output_dir, audit_id:$audit_id}'
+
+# --- 最小 audit 記録（audit_id / verdict / output_dir の 1 行） ---
+if mkdir -p "$OE_AUDIT_DIR" 2>/dev/null; then
+  audit_ts="$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")"
+  jq -cn \
+    --arg ts "$audit_ts" \
+    --arg event_type "oe_refute" \
+    --arg audit_id "$AUDIT_ID" \
+    --arg verdict "$VERDICT" \
+    --arg rubric "$RUBRIC" \
+    --argjson lanes "$total_lanes" \
+    --arg output_dir "$OUTPUT_DIR" \
+    '{ts:$ts, event_type:$event_type, audit_id:$audit_id, verdict:$verdict, rubric:$rubric, lanes:$lanes, output_dir:$output_dir}' \
+    >> "${OE_AUDIT_DIR}/oe-refute.jsonl" 2>/dev/null || true
+fi
+
+# --- exit code（advisory） ---
+if [[ "$VERDICT" == "refuted" ]]; then
+  exit 3
+fi
+exit 0
