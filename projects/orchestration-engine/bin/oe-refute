@@ -211,10 +211,7 @@ trap 'rm -f "$PROMPT_FILE"' EXIT
   printf '%s\n' 'REASON: <1 行の総合判断（改行を含めない）>'
 } > "$PROMPT_FILE"
 
-# --- 出力ディレクトリ ---
-OUTPUT_DIR="$(mktemp -d -t oe-refute.XXXXXX)"
-
-# --- so-compare 実行（同期） ---
+# --- workspace 解決 ---
 # workspace（-w）は呼び出し時 cwd の git root を渡す（Fix 4）。body は repo-root 相対の
 # 参照パス（canonical/... / tmp/... 等）を含み得るため、claim doc の所在 dir では解決できない。
 # git repo でなければ claim_dir → PWD の順でフォールバックする。
@@ -226,6 +223,20 @@ elif [[ -n "$claim_dir" ]]; then
 else
   WORKSPACE="$PWD"
 fi
+
+# --- run ULID（output_dir 名と audit_id で共有・1 run を 1 ULID で辿る traceability） ---
+# 出力 dir 作成より前に 1 回だけ生成し、OUTPUT_DIR 名と AUDIT_ID の両方で使う。
+RUN_ID="$(oe_generate_session_id)"
+
+# --- 出力ディレクトリ ---
+# 契約（explore-turn10）どおり repo 相対 tmp/oe-refute-<ULID>/ に作る（so-compare の tmp/ と同型）。
+# tmp/ は gitignore 済なのでコミットされず、揮発せず安定した evidence anchor になる。
+# system temp（/var/folders/..）に作ると repo 外で揮発し、skill が書く evidence anchor が壊れる。
+# OUTPUT_DIR は削除しない（evidence anchor として返す）。
+OUTPUT_DIR="${WORKSPACE}/tmp/oe-refute-${RUN_ID}"
+mkdir -p "$OUTPUT_DIR"
+
+# --- so-compare 実行（同期） ---
 so_rc=0
 "$OE_REFUTE_SO_COMPARE" --with "$PROVIDERS" -w "$WORKSPACE" -f "$PROMPT_FILE" -o "$OUTPUT_DIR" \
   >"${OUTPUT_DIR}/so-compare-stdout.txt" 2>"${OUTPUT_DIR}/so-compare-stderr.txt" || so_rc=$?
@@ -321,8 +332,8 @@ dissent_json="$(
   jq -cn ${args[@]+"${args[@]}"} "$jq_prog"
 )"
 
-# --- audit_id（ULID 流用） ---
-AUDIT_ID="$(oe_generate_session_id)"
+# --- audit_id（output_dir 名と同じ run ULID を流用・traceability） ---
+AUDIT_ID="$RUN_ID"
 
 # --- 出力 JSON（stdout） ---
 # Stage B のメトリクス superset になれるよう、フィールドは追加余地を残す（今は subset）。
