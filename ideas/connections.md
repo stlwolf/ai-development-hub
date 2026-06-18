@@ -198,6 +198,7 @@ canonical 4層の責務を「抽象度」ではなく「決定性」で再整理
 - [20260224/orchestration-design-principles-bath-brainstorm.md](20260224/orchestration-design-principles-bath-brainstorm.md) — 3設計原則。直列プリミティブ合成が「決定論的な適用」の具体形
 - [20260218/hypothesis-inference-ratio-certainty-model.md](20260218/hypothesis-inference-ratio-certainty-model.md) — 推測比率の構造モデル。決定性の境界を明示することで推測比率を構造的に下げる手段の一つ
 - [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — determinism boundary architecture の命名と5本柱。閉ループ制御系（Policy/Planner/Actuator/Sensor/Controller）、コマンド責務拡張（transactional workflow segment）、semantic observability
+- [20260618/remote-harness-cloud-substrate-extension.md](20260618/remote-harness-cloud-substrate-extension.md) — 20260414が特定した「制御ループの不在」への回答。ラフループの駆動面を remote（Routines の cron/event 再fire + state-in-artifact）に外出しする。決定性の境界（強制力）が「ローカルの hook deny」から「GitHub の branch protection / required check」へ移設されるのが核心の補正
 
 ### CLI for AI — 判断粒度の圧縮と評価フレーム
 
@@ -224,3 +225,12 @@ ComposioHQ/agent-orchestrator の CLAUDE.md（実装向け）vs CLAUDE.orchestra
 - [20260222/oss-orchestrator-analysis-agent-orchestrator.md](20260222/oss-orchestrator-analysis-agent-orchestrator.md) — ルール分離パターンの分析
 - [20260221/document-format-design-principles.md](20260221/document-format-design-principles.md) — ルール分割時に「何を渡すか」の判断基準（write:read比率）
 - [projects/agent-rule-decomposition/](../projects/agent-rule-decomposition/) — 検証プロジェクト。分科会知見セクションに既に記録済み
+
+### ハーネスの版図拡張 — ローカルからクラウド基板へ（remote ハーネス）
+
+これまでの設計はすべて「ローカル（ラップトップ）で動くハーネス」を前提にしていた。Routines / Claude Code on the web の登場で、ハーネスの版図をクラウド基板まで延ばす新次元が加わる。重い部分（スケジューラ・サンドボックス・永続化）をマネージドクラウドに外出しすることで、リポジトリは markdown のまま「薄く大きく」reach を広げる。設計面の越境問題（`~/.claude` は cloud に行かない → 資産を repo にコミット/inline）が新たな制約軸。
+
+- [20260224/orchestration-design-principles-bath-brainstorm.md](20260224/orchestration-design-principles-bath-brainstorm.md) — 3設計原則（ベンダー非依存・直列プリミティブ合成・拡張可能）。「薄く大きく」の源流
+- [20260414/harness-architecture-layer-separation-control-loop.md](20260414/harness-architecture-layer-separation-control-loop.md) — ローカル前提のハーネス層分離。制御ループの駆動面が remote 化の主対象
+- [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — Decision Ledger を成果物に置く設計。remote の stateless fire をまたぐ state-in-artifact（repo/PR/commit status に状態を置く）の先行形
+- [20260618/remote-harness-cloud-substrate-extension.md](20260618/remote-harness-cloud-substrate-extension.md) — ハーネスの4面分解（トリガ/実行/設定/ゲート）と5スロット座標系。(A)非機械的フローの強制 と (B)持続ラフループ の2系統、remote で初めて可能な4フロー原型、到達点の半径(i-iv)
