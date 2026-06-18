@@ -34,7 +34,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
 
 1. 初期選択肢セットと暗黙の前提を明示的に列挙する。
 2. 最低1回、ゼロベース SO を**実際に回す**（インラインで「なぞる」だけにしない）。`so-compare` の「選択肢拡張（設計を確定する SO のとき）」テンプレを使い、初期案と異なるカテゴリ / 責務分界 / データフロー / 実行経路 / 運用前提の代替案を出させる。タイミングは「A/B 仮決定後・最終確定前」を含む（最終確定後ではない）。
-   - **engine 統合経路**（効果は未測定・#177 で観測予定＝so-compare 手動反証を engine 統合・再現可能にした段階。現状 so-compare と同列の選択肢）: 確定しようとする判断を claim doc 化し `oe-refute --claim <doc> --rubric exploration` を**同期で呼ぶ**（`so-compare` を wrap し、生成と物理分離した独立レーンが breadth(軸5)/grounding(軸3) レンズで反証）。返る `{verdict, reason, output_dir}` が `refuted` なら**確定を保留**する。`output_dir`（`oe-refute` が作る repo 相対 `tmp/oe-refute-<ULID>/`）は gitignore 対象で永続しないので verdict/reason の**内容**を確定時証跡へ転記する（パスだけに頼らない）。claim doc は frontmatter（`claim` 必須・`rubric` 任意＝省略時は既定 exploration だが明示を推奨）＋ body（探索木をそのまま不透明に渡す）。
+   - **engine 統合経路**（効果は未測定・#177 で観測予定＝so-compare 手動反証を engine 統合・再現可能にした段階。現状 so-compare と同列の選択肢）: 確定しようとする判断を claim doc 化し `oe-refute --claim <doc> --rubric exploration` を**同期で呼ぶ**（`so-compare` を wrap し、生成と物理分離した独立レーンが breadth(軸5)/grounding(軸3) レンズで反証）。返る `{verdict, reason, output_dir}` が `refuted` なら**確定を保留**する。`output_dir`（`oe-refute` が返す反証レーンの生出力先・永続しない）なので verdict/reason の**内容**を確定時証跡へ転記する（パスだけに頼らない）。claim doc は frontmatter（`claim` 必須・`rubric` 任意＝省略時は既定 exploration だが明示を推奨）＋ body（探索木をそのまま不透明に渡す）。
    - `so-compare` / `oe-refute` が使えない / timeout する場合は、確定を止めて人間承認を取る（黙って skip しない）。
 3. 出た代替案は「良さそう」で止めず、検証可能な条件で即検証する（検証不能な環境では検証条件を残して保留）。
 4. **確定前に証跡をその場で残す**: 探索木＋反証の出力パス（`so-compare` なら `tmp/so-*/`、`oe-refute` なら `verdict`/`reason`＋`output_dir`）＋採否を、確定と同一セッションで**確定前 artifact** に書く。置き場は手近なもの: `tmp/dj-N-tree.md` / ADR 草稿の「棄却案」節 / kickoff の DJ 節 / PR 本文 / peer-review ログ（`tmp/peer-review-*/review-log.md`）。**episode closure まで先送りしない**（「後で追記」は監査で 100% 不履行＝L4）。
