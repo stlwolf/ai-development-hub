@@ -239,8 +239,9 @@ odir="$(printf '%s' "$out" | jq -r '.output_dir')"
 audit_id="$(printf '%s' "$out" | jq -r '.audit_id')"
 ck "output_dir が repo の tmp/oe-refute- 配下" "yes" \
   "$( [[ "$odir" == "${expected_root}/tmp/oe-refute-"* ]] && echo yes || echo no )"
-ck "output_dir が system temp（/var/folders）でない" "yes" \
-  "$( [[ "$odir" != /var/folders/* && "$odir" != /tmp/* ]] && echo yes || echo no )"
+# （旧）system-temp 否定チェックは撤去（Copilot 指摘）: 上の positive 検証
+# 「output_dir == ${expected_root}/tmp/oe-refute-*」が system mktemp 出力を既に除外する。
+# `!= /tmp/*` は repo 自体が /tmp 配下（CI/一時 checkout）のとき false fail するため。
 ck "output_dir が実在（repo 相対）" "yes" "$( [[ -d "$odir" ]] && echo yes || echo no )"
 # traceability: output_dir 名末尾の ULID と audit_id が一致する（同じ run を 1 ULID で辿れる）
 odir_ulid="$(basename "$odir" | sed -E 's/^oe-refute-//')"
