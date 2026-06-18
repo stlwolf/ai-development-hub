@@ -27,7 +27,7 @@ tags: [orchestration, oe-refute, refutation, so-compare, cross-session, episode]
 
 ## 設計（rally が設計 SO を兼ねた）
 
-- **設計ゲート = ラリー自体**: peer（探索クラスタ）が 12 turn にわたり設計を反証・精緻化し、claim doc ↔ verb の I/O 契約（`explore-turn10-claim-contract.md`）を確定。単発の設計 SO より網羅的だったため、別途の設計 SO は省略（engine フロー: 設計=rally / 実装=impl SO）。
+- **設計ゲート = ラリー自体**: peer（探索クラスタ）が 12 turn にわたり設計を反証・精緻化し、claim doc ↔ verb の I/O 契約を確定（ログ＋契約は `docs/discussions/2026-06-18-rally-log-oe-refute-cross-session.md` の [log] explore-turn10 に保全）。単発の設計 SO より網羅的だったため、別途の設計 SO は省略（engine フロー: 設計=rally / 実装=impl SO）。
 - **backend = so-compare wrap**: 契約は backend を cockpit に委任（要件=独立・物理分離・exploration レンズ）。既存の枯れた so-compare レーン分離（codex/cursor）を wrap する最薄案を採用（discussion doc の「so-compare を engine 化」framing どおり）。
   - **out-of-scope finding（記録）**: discussion doc Stage A 行は backend を「既存 spawn+verify の薄ラッパー」と記述。実装は so-compare wrap で、engine の spawn.sh/verify.sh substrate は使っていない。契約が backend を委任していた範囲内の選択だが、将来 engine-spawn レーンに替える場合はレーン抽象（provider→verdict file）の差し替えが要る。
 - **契約**: frontmatter（claim/rubric/domain・機械パース）＋ body（不透明・refuter へ素通し＝domain 非依存）/ 出力 JSON `{verdict, reason, rubric, lanes, dissent[], output_dir, audit_id}` / exploration rubric=breadth(軸5)+grounding(軸3) / 集約 conservative / exit survived→0・refuted→3（advisory・JSON 正本）/ Stage B メトリクス superset。
@@ -60,7 +60,7 @@ tags: [orchestration, oe-refute, refutation, so-compare, cross-session, episode]
   - defer 3点（rubric required ドリフト / 複数行 claim / output_dir GC）→ 実需が出たら対応。rubric ドリフトは契約author（探索）に PR で共有。
   - Stage B（verify ゲート reject 条件＋探索メトリクス emit、JSON superset で拡張）/ #177 観測 / Stage C #24 → discussion doc のとおり #177 測定後に判断（保留）。
 - **status**: stable（達成）。コード + README + ユニット 57/0 + 親レビュー + 設計ゲート(rally) + 実装SO 完了。PR で締め。
-- **evidence anchor**: ラリー turn1-12（`/tmp/rally-explore-cockpit/`）、契約 `explore-turn10-claim-contract.md`、実装 SO 出力 `tmp/so-20260618-024341/`（codex/cursor stdout・gitignore 対象）。
+- **evidence anchor**: ラリー全 turn ＋ claim-doc 契約は `docs/discussions/2026-06-18-rally-log-oe-refute-cross-session.md` に保全（/tmp から救出）。実装 SO 出力 `tmp/so-20260618-024341/`（codex/cursor stdout・gitignore 対象・揮発）。
 
 ## 振り返り（出力型 × 消費チャネル）
 

@@ -21,7 +21,7 @@
 # 全レーン survived のときのみ survived。verdict を取れないレーンは survived 扱い
 # にせず error/unknown とし、dissent に記録した上で「survived 確定を阻む」保守側に倒す。
 #
-# 契約: /tmp/rally-explore-cockpit/explore-turn10-claim-contract.md（claim doc ↔ verb I/O）
+# 契約: docs/discussions/2026-06-18-rally-log-oe-refute-cross-session.md の [log] explore-turn10（claim doc ↔ verb I/O）
 # 出自: docs/discussions/2026-06-18-discussion-exploration-hard-layer-on-engine.md（Stage A）
 
 set -euo pipefail
