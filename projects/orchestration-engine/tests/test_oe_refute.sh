@@ -20,8 +20,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 _TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/pathbin" "$_TMP_DIR/docs" "$_TMP_DIR/audit"
+
+# Fix #2 で oe-refute は output_dir を repo 相対 tmp/oe-refute-<ULID>/ に作る（削除しない＝
+# evidence anchor）。テストはこの実 repo の tmp/ 配下に dir を作るため掃除が要る。
+# mock so-compare が受け取る -o（= oe-refute が作った実 output_dir）を 1 run 分すべて
+# OE_REFUTE_DIRS_LOG に追記し、EXIT でその dir のみを削除する（gitignore 済の throwaway 成果物。
+# 時刻ベースの -newer は秒粒度衝突で取りこぼすため、生成した実パスを正確に列挙して掃除する）。
+export OE_REFUTE_DIRS_LOG="$_TMP_DIR/created-output-dirs.txt"
+: > "$OE_REFUTE_DIRS_LOG"
+cleanup() {
+  if [[ -s "$OE_REFUTE_DIRS_LOG" ]]; then
+    while IFS= read -r d; do
+      # 安全策: tmp/oe-refute-* 配下のみ削除（想定外パスは触らない）
+      case "$d" in
+        */tmp/oe-refute-*) [[ -d "$d" ]] && rm -rf "$d" ;;
+      esac
+    done < "$OE_REFUTE_DIRS_LOG"
+  fi
+  rm -rf "$_TMP_DIR"
+}
+trap cleanup EXIT
 
 # --- mock so-compare（PATH 先頭スタブ） ---
 # 実 so-compare の I/F のうち本テストが使う部分だけ再現する: --with / -w / -f / -o。
@@ -43,6 +62,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 mkdir -p "$out_dir"
+# oe-refute が作った実 output_dir（-o）を掃除用ログに追記（EXIT で削除する）
+if [[ -n "${OE_REFUTE_DIRS_LOG:-}" && -n "$out_dir" ]]; then
+  printf '%s\n' "$out_dir" >> "$OE_REFUTE_DIRS_LOG"
+fi
 # プロンプト内容を検証用にコピー（body 不透明渡しテスト）
 if [[ -n "${SO_FAKE_PROMPT_COPY:-}" && -n "$prompt_file" ]]; then
   cp "$prompt_file" "$SO_FAKE_PROMPT_COPY"
@@ -50,6 +73,10 @@ fi
 # 受け取った -w 引数を検証用に書き出す（Fix 4・git root 検証）
 if [[ -n "${SO_FAKE_W_COPY:-}" ]]; then
   printf '%s\n' "$workspace" > "$SO_FAKE_W_COPY"
+fi
+# 受け取った -o 引数を検証用に書き出す（Fix #2・repo 相対 output_dir 検証）
+if [[ -n "${SO_FAKE_O_COPY:-}" ]]; then
+  printf '%s' "$out_dir" > "$SO_FAKE_O_COPY"
 fi
 IFS=',' read -r -a provs <<< "$providers"
 for p in "${provs[@]}"; do
@@ -200,6 +227,34 @@ odir="$(printf '%s' "$out" | jq -r '.output_dir')"
 ck "output_dir 非空" "yes" "$( [[ -n "$odir" ]] && echo yes || echo no )"
 ck "output_dir が実在" "yes" "$( [[ -d "$odir" ]] && echo yes || echo no )"
 ck "audit_id 26 文字" "26" "$(printf '%s' "$out" | jq -r '.audit_id' | awk '{print length}')"
+
+# ----------------------------------------------------------------------------
+# [6b] Fix #2: output_dir が repo 相対 tmp/oe-refute-<ULID>/（system temp でない）
+# ----------------------------------------------------------------------------
+echo "[6b] Fix #2: output_dir が repo 相対 tmp/oe-refute-<ULID>/（/var/folders でない）"
+# 呼び出し時 cwd の git root（=このリポジトリルート）配下 tmp/oe-refute-<ULID>/ に作られる。
+expected_root="$(cd "$PROJECT_DIR" && { git rev-parse --show-toplevel 2>/dev/null || true; })"
+out="$( cd "$PROJECT_DIR" && "$REFUTE" --claim "$DOC" 2>/dev/null )"
+odir="$(printf '%s' "$out" | jq -r '.output_dir')"
+audit_id="$(printf '%s' "$out" | jq -r '.audit_id')"
+ck "output_dir が repo の tmp/oe-refute- 配下" "yes" \
+  "$( [[ "$odir" == "${expected_root}/tmp/oe-refute-"* ]] && echo yes || echo no )"
+# （旧）system-temp 否定チェックは撤去（Copilot 指摘）: 上の positive 検証
+# 「output_dir == ${expected_root}/tmp/oe-refute-*」が system mktemp 出力を既に除外する。
+# `!= /tmp/*` は repo 自体が /tmp 配下（CI/一時 checkout）のとき false fail するため。
+ck "output_dir が実在（repo 相対）" "yes" "$( [[ -d "$odir" ]] && echo yes || echo no )"
+# traceability: output_dir 名末尾の ULID と audit_id が一致する（同じ run を 1 ULID で辿れる）
+odir_ulid="$(basename "$odir" | sed -E 's/^oe-refute-//')"
+ck "output_dir 名の ULID = audit_id（traceability）" "$audit_id" "$odir_ulid"
+# mock so-compare が -o で受けた dir = oe-refute が作った repo 相対 output_dir
+export SO_FAKE_O_COPY="$_TMP_DIR/captured-o.txt"
+out="$( cd "$PROJECT_DIR" && "$REFUTE" --claim "$DOC" 2>/dev/null )"
+odir="$(printf '%s' "$out" | jq -r '.output_dir')"
+captured_o="$(cat "$SO_FAKE_O_COPY" 2>/dev/null)"
+ck "so-compare -o = oe-refute の output_dir" "$odir" "$captured_o"
+ck "so-compare -o が repo の tmp/oe-refute- 配下" "yes" \
+  "$( [[ "$captured_o" == "${expected_root}/tmp/oe-refute-"* ]] && echo yes || echo no )"
+unset SO_FAKE_O_COPY
 
 # ----------------------------------------------------------------------------
 # [7] --rubric 上書き: frontmatter exploration を consensus で上書き
