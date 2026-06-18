@@ -34,6 +34,8 @@ depends:
 2. 仮説を立てるたびに `tmp/hypothesis-NNN.md` にその場で外部化する（下記フォーマット）。空転（同じ抽象度の横移動）を物理的に見えるようにする。
 3. `persistent-exploration` の突破口チェックリスト（API 直接・DB 状態・マイグレーション履歴等）でコード側の代替アプローチを尽くす。
 4. 入出力のコードパスに未読が無くなって初めて外部要因の仮説に進む。
+   - **engine 統合経路**（効果は未測定・#177 で観測予定＝so-compare 手動反証を engine 統合・再現可能にした段階）: 外部要因へ進む確定の前に、「コードパスは読了し原因は外部要因である」を `claim` とした claim doc（frontmatter ＋ body に `hypothesis-*.md` 群＋read-state を集約）を `oe-refute --claim <doc> --rubric exploration` で**同期反証**する。生成と物理分離した独立レーンが breadth(軸5＝未読パス/未試行が残らないか)/grounding(軸3＝根拠) レンズで反証し、`{verdict, reason, output_dir}` が `refuted` なら外部要因ジャンプを**保留**する。`output_dir` は揮発するので verdict/reason の**内容**を確定時証跡へ転記する（パスだけに頼らない）。
+   - `oe-refute` / `so-compare` が使えない / timeout する場合は、外部要因ジャンプの確定を止めて人間承認を取る（黙って skip しない）。
 
 ## hypothesis ファイルフォーマット
 
@@ -57,7 +59,7 @@ depends:
 
 ## 記録先
 
-hypothesis ファイル（確定時証跡）→ closure 時に `episode-retrospective` の「事実・失敗 / 決定と根拠」へ蒸留する。**`tmp/` は揮発（gitignore）**なので、読んだコードパス・棄却した仮説の要点は closure を待たず episode/PR 等の永続先へ転記する（tmp 参照だけで終えない＝`episode-retrospective` の evidence anchor と同義。「後で追記」は監査で 100% 不履行）。
+hypothesis ファイル（確定時証跡）→ closure 時に `episode-retrospective` の「事実・失敗 / 決定と根拠」へ蒸留する。**`tmp/` は揮発（gitignore）**なので、読んだコードパス・棄却した仮説の要点は closure を待たず episode/PR 等の永続先へ転記する（tmp 参照だけで終えない＝`episode-retrospective` の evidence anchor と同義。「後で追記」は監査で 100% 不履行）。`oe-refute` を使ったなら verdict/reason＋`output_dir` も同様に確定時証跡へ転記する。
 
 ## 境界（重なり回避）
 
@@ -70,7 +72,7 @@ hypothesis ファイル（確定時証跡）→ closure 時に `episode-retrospe
 
 ## 限界
 
-- compliance はモデル依存。hook は **advisory（ブロックしない）**。決定的な強制ブロック・スクリプト層の収束カウント（hard 化）は #24（フック軸）/ CLI cockpit の infra 強化待ちで defer。
+- compliance はモデル依存。hook は **advisory（ブロックしない）**。hard 版は段階導入に移行: 生成・反証の物理分離は **`oe-refute`（Stage A・engine 統合の同期反証 verb・PR #184）で着地**（独立レーンが生成と物理分離で反証）。決定的な強制ブロック・スクリプト層の収束カウント（hard 化）は engine verify ゲート拡張（Stage B）／ #24（フック軸・Stage C）／ CLI cockpit の infra 強化待ちで defer。
 - hook は現状 **Claude 側のみ**配線（codex / cursor は PostToolUse 未配線）。スキル本体は3者配信される。
 
 ## 参照
@@ -78,6 +80,8 @@ hypothesis ファイル（確定時証跡）→ closure 時に `episode-retrospe
 - `canonical/rules/exhaustion-before-conclusion-rule.md`（傘原則）
 - `canonical/skills/persistent-exploration/SKILL.md`（突破口チェックリスト・後段）
 - `canonical/skills/predecision-exploration/SKILL.md`（#77・姉妹パターン）
+- `projects/orchestration-engine/bin/oe-refute`（Stage A・確定前の同期反証 verb・so-compare wrap）
+- `projects/orchestration-engine/docs/discussions/2026-06-18-discussion-exploration-hard-layer-on-engine.md`（hard 層 × engine substrate の合流）
 - `canonical/hooks/scripts/hypothesis-gate.sh`（advisory hook）
 - `canonical/skills/episode-retrospective/SKILL.md`（蒸留先）
 - `docs/specs/2026-04-22-discussion-hypothesis-driven-exploration.md` §2（コードパス網羅原則・仮説ファイル）
