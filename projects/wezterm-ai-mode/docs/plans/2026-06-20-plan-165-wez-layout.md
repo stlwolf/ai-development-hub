@@ -31,10 +31,10 @@ wez layout list
 wez layout --help
 ```
 
-`apply <name>` の処理順（SO reconcile）:
+`apply <name>` の処理順（W1 修正後・実装/README に一致）:
 1. socket 解決 → `export WEZTERM_UNIX_SOCKET`（`wez_cmd_layout` が `wez_cmd_pane` と同型で1回だけ）。内部関数を呼ぶ（`wez pane split` を N subprocess で呼ばない）。
-2. `ROOT=$(_wez_resolve_self_pane)` を1回解決 + `_wez_pane_exists "$ROOT"`。不在→exit 3。
-3. preset 読込: `lib/layouts/<name>.json` を jq で。不在→exit 1、schema 不正/引数不正→exit 64。
+2. preset 読込・検証を **`ROOT` 解決より前**に行う（W1）: preset 名は `[A-Za-z0-9._-]+` のみ許可（`/`・`..`→exit 64）。`lib/layouts/<name>.json` 不在→exit 1、parse 不能/schema 不正/引数不正→exit 64、`jq` 未導入→exit 5（依存失敗）。preset を先に検証することで missing/invalid preset が root-not-found (3) に隠れない。
+3. `ROOT=$(_wez_resolve_self_pane)` を1回解決 + `_wez_pane_exists "$ROOT"`。不在/stale→exit 3。
 4. steps を順に: `wez pane split --pane-id "$ROOT" --<dir> --percent <p>`（explicit 固定・B3 default を踏まない）。新 pane_id を収集。
 5. split 失敗→ abort、作成済 pane を**逆順 kill（rollback）**、exit 5。`--json` 時 `{status:"partial", root_pane_id, created:[...], failed_step:k}`。
 6. 成功→ focus 復帰（既定 `$ROOT` / `--focus <target>`）。`--json` 時 `{status:"ok", root_pane_id, window_id, panes:[{id, pane_id, index}]}`。

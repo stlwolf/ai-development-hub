@@ -76,8 +76,9 @@ Exit codes:
   0    Success
   1    Preset not found
   3    Root pane (self) not found (WEZTERM_PANE unset/stale)
-  5    A split failed; created panes were rolled back (killed in reverse)
-  64   Usage error (bad argument, invalid preset name/schema, jq not installed)
+  5    Dependency failure (jq not installed) or a split failed
+       (created panes were rolled back, killed in reverse)
+  64   Usage error (bad argument, invalid preset name/schema)
 EOF
 }
 
@@ -122,9 +123,11 @@ _wez_layout_apply() {
   fi
 
   # jq is mandatory for layout (preset parsing + map output). (W6)
+  # Missing jq is a dependency failure (exit 5), consistent with ADR-004 DJ-9 /
+  # DJ-8 parent-window — NOT a usage error (64). (V3)
   if ! command -v jq >/dev/null 2>&1; then
     wez_error "layout apply: jq is required but not installed; install jq (e.g. brew install jq)"
-    return "${WEZ_EXIT_USAGE}"
+    return "${WEZ_EXIT_PANE_OP_FAILED}"
   fi
 
   # Reject preset names that could escape the layouts directory (C2). Only a
@@ -152,12 +155,13 @@ _wez_layout_apply() {
   fi
 
   # --- Validate schema (PoC constraints) ---
-  # version present, root == "self", steps is a non-empty array, each step has a
-  # non-empty string id that is NOT all-digits (W3: a numeric id collides with
-  # the numeric-pane-id meaning of --focus), from == "root", dir in
-  # {bottom,right,left,top}, percent an integer 1-99 (W2).
+  # version == 1 (fail-fast on unsupported versions: V1), root == "self", steps
+  # is a non-empty array, each step has a non-empty string id that is NOT
+  # all-digits (W3: a numeric id collides with the numeric-pane-id meaning of
+  # --focus), from == "root", dir in {bottom,right,left,top}, percent an integer
+  # 1-99 (W2).
   if ! jq -e '
-    (.version != null)
+    (.version == 1)
     and (.root == "self")
     and ((.steps | type) == "array")
     and ((.steps | length) > 0)
@@ -171,7 +175,7 @@ _wez_layout_apply() {
           and (.percent >= 1) and (.percent <= 99)
         ))
   ' "$preset_file" >/dev/null 2>&1; then
-    wez_error "layout apply: preset ${opt_name} has an invalid schema (expected {version, root:\"self\", steps:[{id (non-empty, not all-digits), from:\"root\", dir in bottom|right|left|top, percent integer 1-99}]}); PoC supports root/from=self/root only"
+    wez_error "layout apply: preset ${opt_name} has an invalid schema (expected {version:1, root:\"self\", steps:[{id (non-empty, not all-digits), from:\"root\", dir in bottom|right|left|top, percent integer 1-99}]}); PoC supports version 1, root/from=self/root only"
     return "${WEZ_EXIT_USAGE}"
   fi
 
@@ -363,7 +367,7 @@ Exit codes:
   1    Socket / preset not found
   2    Connection failed
   3    Root pane (self) not found
-  5    Split failed (created panes rolled back)
+  5    Dependency failure (jq not installed) or split failed (created panes rolled back)
   64   Usage error
   127  wezterm not installed
 EOF

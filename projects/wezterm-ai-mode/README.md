@@ -205,7 +205,7 @@ Options:
 処理順:
 
 1. ソケットを解決し `WEZTERM_UNIX_SOCKET` を export（`wez_cmd_layout` が1回だけ）。未知サブコマンドは discovery より前に exit 64（`WEZ_EXIT_USAGE`）。
-2. preset を **`ROOT` 解決より前**に読み・検証する。preset 名は `[A-Za-z0-9._-]+` のみ許可（`/`・`..` は exit 64）。不在は exit 1（`WEZ_EXIT_NOT_FOUND`）、schema・引数不正は exit 64（`WEZ_EXIT_USAGE`）。`jq` 未導入は exit 64。
+2. preset を **`ROOT` 解決より前**に読み・検証する。preset 名は `[A-Za-z0-9._-]+` のみ許可（`/`・`..` は exit 64）。不在は exit 1（`WEZ_EXIT_NOT_FOUND`）、schema・引数不正は exit 64（`WEZ_EXIT_USAGE`）。`jq` 未導入は依存失敗として exit 5（`WEZ_EXIT_PANE_OP_FAILED`、`parent-window` と一貫）。
 3. `ROOT`（self ペイン = `WEZTERM_PANE`）を1回解決し実在確認。解決不能・stale なら exit 3（`WEZ_EXIT_PANE_NOT_FOUND`）。
 4. focus 対象（既定 `$ROOT`、`--focus <target>`、preset の `focus`）を**分割前に検証**する。`"root"`・preset の step id・数値 pane id のいずれでもなければ split せず exit 64。
 5. 各 step を順に **explicit `--pane-id $ROOT`** で分割する（`wez pane split` の省略時 active-pane フォールバックを踏ませない）。これにより親が**別ウィンドウを active にした状態でも** self 起点で同一盤面を再現する。
@@ -353,7 +353,7 @@ projects/wezterm-ai-mode/
 
 - **Bash** 3.2+
 - **wezterm** CLI（`brew install --cask wezterm`）
-- **jq**（`discover` / `pane` は推奨。不在時は `grep -c` フォールバックで動作。`layout` は**必須**で、未導入時は exit 64 で明示エラー）
+- **jq**（`discover` / `pane` は推奨。不在時は `grep -c` フォールバックで動作。`layout` は**必須**で、未導入時は依存失敗として exit 5 で明示エラー）
 
 ## 開発方式（検証ケース）
 

@@ -225,6 +225,18 @@ cat > "$_LAYOUT_PRESET_DIR/numeric-id.json" <<'JSON'
 }
 JSON
 
+# schema 不正: version が非対応（V1: version==1 で fail-fast）
+cat > "$_LAYOUT_PRESET_DIR/bad-version.json" <<'JSON'
+{
+  "version": 2,
+  "root": "self",
+  "steps": [
+    {"id": "worker1", "from": "root", "dir": "bottom", "percent": 30}
+  ],
+  "focus": "root"
+}
+JSON
+
 # focus 不正: preset の focus が未知の step id（C3: split 前に 64 で弾く）
 cat > "$_LAYOUT_PRESET_DIR/bad-focus.json" <<'JSON'
 {
@@ -240,14 +252,22 @@ JSON
 # --- 実 Unix domain socket（wez_cmd_layout の discovery 経路テスト用） ---
 # discover.sh の `[[ -S "$socket" ]]` を満たす本物の socket ファイルを作る。
 # 接続検証 (wez_verify_connection) は mock `wezterm cli list` が応答するため通る。
+# socket 生成には python3 が要るが、project 要件は Bash/jq/wezterm のみ。python3 が
+# 無い環境では socket 依存ケース (11a/11d) を clean に skip する（冒頭 jq skip と同型）。
 TEST_SOCKET="$_TMP_DIR/gui-sock-test"
-python3 - "$TEST_SOCKET" <<'PY'
+HAVE_PYTHON3=false
+if command -v python3 >/dev/null 2>&1; then
+  HAVE_PYTHON3=true
+  python3 - "$TEST_SOCKET" <<'PY'
 import socket, sys
 p = sys.argv[1]
 s = socket.socket(socket.AF_UNIX)
 s.bind(p)
 s.close()
 PY
+else
+  printf 'SKIP: python3 not installed; skipping wez_cmd_layout socket-discovery cases (11a/11d)\n' >&2
+fi
 
 # --- Test harness ---
 PASS=0
@@ -585,6 +605,33 @@ _wez_layout_apply numeric-id >/dev/null 2>&1; rc=$?
 unset WEZTERM_PANE
 expect_rc 64 "$rc" "schema: numeric step id → exit 64 (W3)"
 
+# 10d2) 非対応 version → schema 段階で 64、split 無し（V1: version==1 で fail-fast）
+reset_logs
+export WEZTERM_PANE="1"
+_wez_layout_apply bad-version >/dev/null 2>&1; rc=$?
+unset WEZTERM_PANE
+seq="$(split_sequence)"
+if [[ "$rc" -eq 64 && -z "$seq" ]]; then
+  ok "schema: unsupported version (!=1) → exit 64 at schema stage, no split (V1)"
+else
+  fail "schema: expected 64/no-split for version!=1 (rc=$rc seq='$seq')"
+fi
+
+# 10d3) jq 未導入 → 依存失敗 exit 5、split 無し（V3: ADR-004 DJ-9 と一貫）
+#   jq 不在を再現するため、PATH を pathbin のみ（mock wezterm はあるが jq は無い）に
+#   差し替えた subshell で 1 回だけ呼ぶ。jq チェックは preset 読込より前なので即 5 を
+#   返す。subshell で隔離するので親シェルの PATH は汚さない。
+reset_logs
+export WEZTERM_PANE="1"
+( export PATH="$_TMP_DIR/pathbin"; _wez_layout_apply parent-children >/dev/null 2>&1 ); rc=$?
+unset WEZTERM_PANE
+seq="$(split_sequence)"
+if [[ "$rc" -eq 5 && -z "$seq" ]]; then
+  ok "deps: jq not installed → exit 5 (dependency failure), no split (V3)"
+else
+  fail "deps: expected 5/no-split for missing jq (rc=$rc seq='$seq')"
+fi
+
 # 10e) 不正 --focus（未知 step id）→ split せず 64（C3）
 reset_logs
 export WEZTERM_PANE="1"
@@ -667,18 +714,23 @@ fi
 # 11) wez_cmd_layout 経由（socket 1回解決+export / list discovery前 / unknown / --socket 位置）
 # ============================================================
 # 11a) apply 経由: socket 解決 → WEZTERM_UNIX_SOCKET export → split 列
-reset_logs
-unset WEZTERM_UNIX_SOCKET
-export WEZTERM_PANE="1"
-wez_cmd_layout --socket "$TEST_SOCKET" apply parent-children >/dev/null 2>&1; rc=$?
-unset WEZTERM_PANE
-seq="$(split_sequence)"
-if [[ "$rc" -eq 0 && "$seq" == "$expected" && "${WEZTERM_UNIX_SOCKET:-}" == "$TEST_SOCKET" ]]; then
-  ok "cmd: apply via wez_cmd_layout resolves+exports socket and splits"
+# 実 socket 生成に python3 が要るため、python3 不在時は skip（V4）。
+if [[ "$HAVE_PYTHON3" == true ]]; then
+  reset_logs
+  unset WEZTERM_UNIX_SOCKET
+  export WEZTERM_PANE="1"
+  wez_cmd_layout --socket "$TEST_SOCKET" apply parent-children >/dev/null 2>&1; rc=$?
+  unset WEZTERM_PANE
+  seq="$(split_sequence)"
+  if [[ "$rc" -eq 0 && "$seq" == "$expected" && "${WEZTERM_UNIX_SOCKET:-}" == "$TEST_SOCKET" ]]; then
+    ok "cmd: apply via wez_cmd_layout resolves+exports socket and splits"
+  else
+    fail "cmd: expected ok/exported-socket/split (rc=$rc sock='${WEZTERM_UNIX_SOCKET:-}' seq='$seq')"
+  fi
+  unset WEZTERM_UNIX_SOCKET
 else
-  fail "cmd: expected ok/exported-socket/split (rc=$rc sock='${WEZTERM_UNIX_SOCKET:-}' seq='$seq')"
+  printf 'skip: cmd apply socket-discovery (python3 absent)\n'
 fi
-unset WEZTERM_UNIX_SOCKET
 
 # 11b) list は discovery 前に処理される（bogus socket でも成功）
 reset_logs
@@ -699,12 +751,17 @@ unset WEZTERM_UNIX_SOCKET
 expect_rc 64 "$rc" "cmd: unknown subcommand → exit 64 before discovery (W5)"
 
 # 11d) --socket は subcommand より前でなければならない（後置は subcommand 扱い）
-reset_logs
-export WEZTERM_PANE="1"
-wez_cmd_layout apply parent-children --socket "$TEST_SOCKET" >/dev/null 2>&1; rc=$?
-unset WEZTERM_PANE
-# apply の --socket は _wez_layout_apply にとって未知オプション → 64
-expect_rc 64 "$rc" "cmd: --socket after subcommand is rejected (must precede)"
+# TEST_SOCKET を参照するため python3 不在時は skip（V4）。
+if [[ "$HAVE_PYTHON3" == true ]]; then
+  reset_logs
+  export WEZTERM_PANE="1"
+  wez_cmd_layout apply parent-children --socket "$TEST_SOCKET" >/dev/null 2>&1; rc=$?
+  unset WEZTERM_PANE
+  # apply の --socket は _wez_layout_apply にとって未知オプション → 64
+  expect_rc 64 "$rc" "cmd: --socket after subcommand is rejected (must precede)"
+else
+  printf 'skip: cmd --socket-position (python3 absent)\n'
+fi
 
 # 11e) unknown option（subcommand 前）→ 64
 reset_logs
