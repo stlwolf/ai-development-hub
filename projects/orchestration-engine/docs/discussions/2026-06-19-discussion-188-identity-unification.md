@@ -3,7 +3,7 @@ id: "01KVFGDQNXQ96TJCEDYB39KJ5B"
 title: "オーケストレーション2基盤の identity 統一（#188）— 設計探索"
 date: 2026-06-19
 type: discussion
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/188"
@@ -23,6 +23,12 @@ related:
   - type: source_material
     ref: "projects/orchestration-engine/lib/session.sh"
     reason: "session_id は pane 非依存生成（ULID 形式）"
+  - type: source_material
+    ref: "projects/orchestration-engine/docs/decisions/2026-06-19-decision-188-identity-unification.md"
+    reason: "本探索が帰結した設計判断（ADR・DJ-188-1..5）"
+  - type: source_material
+    ref: "projects/orchestration-engine/docs/episodes/2026-06-19-episode-188-identity-unification.md"
+    reason: "本探索の closure episode"
 tags: [orchestration, identity, cockpit, observation, wez, tmux, discussion]
 ---
 

@@ -20,12 +20,15 @@ related:
   - type: source_material
     ref: "projects/orchestration-engine/schemas/audit-log.schema.json"
     reason: "per-session audit jsonl のスキーマ（監査ログ閲覧の対象）"
+  - type: source_material
+    ref: "projects/orchestration-engine/docs/decisions/2026-06-19-decision-188-identity-unification.md"
+    reason: "#188 の確定（identity は基盤ごと・read 時相関）。本俯瞰の前提・§7 で back-propagation"
 tags: [orchestration, cockpit, oe-status, observation, audit, read-only, discussion]
 ---
 
 # cockpit 観測UI（oe-status）設計探索 — read-only 俯瞰 + 監査ログ閲覧
 
-> pre-plan の設計探索ログ。**当初プランは設計SO で中核欠陥が判明し撤回**（§6）。#177 俯瞰は identity 統一（#188）解決後に再設計する。
+> pre-plan の設計探索ログ。**当初プランは設計SO で中核欠陥が判明し撤回**（§6）。#177 俯瞰は identity 統一（#188）の確定後に再設計する → **#188 確定済み（§7・[decision-188](2026-06-19-decision-188-identity-unification.md)）: identity は基盤ごと・read 時相関・永続マップ無し。俯瞰の方式（query-side fusion or honest 2 ビュー）は #177 の判断**。
 > 探索は調査サブエージェント（一次情報＝code/schema/issue 直読）+ オーナーとの DJ 確定で実施。
 
 ## 1. Context
@@ -107,3 +110,16 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, discuss
 **無効化された DJ**: DJ-3（best-effort ジョイン）と DJ-2 の前提（KVS＝完了源で俯瞰が成立する）。一方 §2 資産マップ（事実）と DJ-1/4/5/6（UI 形態・oe-refute 対象外・tmux 既定・capture 導線）は #177 再開時も有効。
 
 **ピボット決定（オーナー）**: 2 基盤の identity 分裂を root-cause として先に解決する **#188（オーケストレーション2基盤の identity 統一）** を起票。**#177 俯瞰は #188 の解決/設計確定後に再設計**（session/audit-first か別建て観測かは #188 で決める）。当初 plan doc（`docs/plans/2026-06-19-plan-177-oe-status.md`）は撤回・削除済。
+
+## 7. #188 の確定（2026-06-19・#188 → #177 back-propagation）
+
+#188（identity 統一）が確定し、#177 を unblock した。決定の要点（正本は [decision-188](2026-06-19-decision-188-identity-unification.md)）:
+
+- identity は **pane 層で統一しない**。2基盤は別多重化レイヤの別物理エンティティで対応が存在しない（実機観測: tmux は単一 WezTerm pane 内・engine の wez split 子は tmux 不可視・delegate の tmux 子は wez 不可視）。engine の session-state/audit を delegate に拡張する案も棄却（category error + `pane_id:integer` 固定 schema の breaking change + #114 で陳腐化）。
+- identity は基盤ごとに保持し、相関が必要なら **read 時に行う（永続マップ無し）**。これは #177 の read-only 制約を満たす（issue 受入の「相関しないと明示決定」に該当）。
+- 永続横断観測が要るときは session-state 拡張でなく `session_id` 主キーの event bus（deferred・Stage-B）。
+
+**#177 への含意（#188 はロックしない・方向の申し送り）**:
+
+- §6 で無効化された DJ-3（pane_id ジョイン）は復活しない。俯瞰は「生存ペイン ↔ session 状態を pane で join」ではなく、**read 時に両ソース（engine: wez + state/audit／delegate: tmux + registry）を `kind`/`mux` 列付き1テーブルに投影（join しない・delegate 行は `timeline:none`）= query-side fusion**、または honest 2 ビュー。どちらを採るかは #177 再設計時に決める（設計SO の codex/cursor は query-side fusion に収束）。
+- 有効な DJ-1/4/5/6（UI 形態・oe-refute 対象外・tmux 既定・capture 導線）は引き続き使える。
