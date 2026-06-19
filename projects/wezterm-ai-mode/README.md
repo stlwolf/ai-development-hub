@@ -104,7 +104,8 @@ Options:
   --bottom         Split vertically, new pane on the bottom
   --left / --top   Other directions
   --percent <N>    Size of the new pane as percentage 1-100 (default: 50)
-  --pane-id <ID>   Specify the source pane to split
+  --pane-id <ID>   Specify the source pane to split (explicit target)
+  --target <T>     Targeting mode: self | parent-window | explicit
   --cwd <PATH>     Set working directory for the new pane
   --json           Output result as JSON
   --wait-ready     Wait until the new pane is ready for input
@@ -112,6 +113,24 @@ Options:
 ```
 
 `--wait-ready` はポーリングで新ペインの出力が安定するまで待機する（tmux auto-attach のタイミング問題を吸収）。
+
+##### ターゲティング規約（`--target`）
+
+分割元ペインの解決方法を選ぶ。優先順位は **明示（`--pane-id` または `--target explicit`） > `self` > `parent-window`**。
+
+- `self` — このコマンドが動作しているペイン（`WEZTERM_PANE` 環境変数から解決）を分割する。MVP では `WEZTERM_PANE` のみ対応（TTY 逆引きは将来）。明示 `--target self` で `WEZTERM_PANE` が数値でも実在しない（stale）場合は exit 3（`WEZ_EXIT_PANE_NOT_FOUND`）。
+- `parent-window` — `self` のペインの `window_id` を `wezterm cli list` から引き、同ウィンドウ内の active pane（`is_active==true`）を分割元にする。`self` が解決できなければ `parent-window` も解決不能。`pane_id` / `window_id` は JSON が数値型でも文字列型でも一致するよう比較する。
+- `explicit` — `--pane-id <ID>` を分割元にする。`--target explicit` 指定時は `--pane-id` が必須（無ければ usage error）。
+
+`self` / `parent-window` を**明示**して解決できない場合（例: `WEZTERM_PANE` 未設定）は、フォールバックせず即エラー終了する（`wez discover` の「明示指定の失敗＝即エラー」思想に倣う）。
+
+既知の限界: 同一 window に active pane が複数報告される場合は JSON 順の先頭を採る（通常 window あたり active 1 の前提）。`--target` を複数指定すると最後が勝つ。
+
+###### 省略時デフォルトと後方互換
+
+`--target` と `--pane-id` を**両方省略**した場合は `self` を試行し、解決できなければ `--pane-id` を省略して `wezterm cli split-pane` のネイティブ既定（`WEZTERM_PANE` が設定済みならそれ、未設定なら active pane）に委ね、`WARNING` を出す。
+
+> **後方互換に関する注記**: `wezterm cli split-pane` のネイティブ既定は「`--pane-id` 省略時に `WEZTERM_PANE` を使い、未設定なら active pane にフォールバック」である。本変更でデフォルトが **「常に native 既定」→「`self` を `--pane-id` で明示渡し（解決不能時のみ native 既定にフォールバック）」** に変わった。B3 は native が使うのと同じ `WEZTERM_PANE` を明示渡しするので、`WEZTERM_PANE` が設定された端末では従来 native が選んでいたペインと同一ペインを分割する。解決不能時は `--pane-id` を省略し native の既定（`WEZTERM_PANE`→active pane）に委ねる。`wez pane split --bottom --percent 30 --wait-ready --timeout N` のような `--pane-id`/`--target` なしの呼び出し（`orchestration-engine` の `spawn.sh` 等）は壊れない。明示 `--pane-id N` の挙動は不変。
 
 #### `wez pane send`
 
