@@ -13,7 +13,7 @@
     },
     "pane_id": {
       "type": "integer",
-      "description": "WezTerm ペイン ID",
+      "description": "WezTerm ペイン ID（wez 整数）。engine oe（wez pane split）専用。delegate 対話子（tmux %N）は別多重化レイヤで本 KVS の対象外 — identity 統一は pane 層で行わない（ADR projects/orchestration-engine/docs/decisions/2026-06-19-decision-188-identity-unification.md, DJ-188-1/DJ-188-2）。",
       "minimum": 0
     },
     "state": {
