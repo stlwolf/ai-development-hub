@@ -123,7 +123,7 @@ Issue タイトル「identity 統一（tmux %N ↔ wez pane_id）」は**2つの
 - **収束2**: **#177 受入は「単一俯瞰／単一 identity」を要求していない**（§3 の暗黙前提 A1 は偽）。受入＝稼働俯瞰 + blocked/timeout 識別／1セッション start→end 追跡／read-only。「1画面ジョイン」は受入文言に無い。破綻したのは #177 DJ-3 の **pane_id ジョイン (a)** であって、2表並置 (b) は topology 問題ではない。[verified — issue 受入文言 + cockpit doc §6]
 - **収束3**: **案F（engine session-state/audit を delegate に拡張）は二重に不可**:
   - (i) **category error** — 対話 delegate 子は success/blocked/timeout の完了 lifecycle を持たない。engine の `state` enum に押し込むと「見た目は統一・意味論は非対称」になる（嘘になる）。
-  - (ii) **schema breaking change の過小評価** — `schemas/session-state.schema.json:14` と `audit-log.schema.json` が `pane_id: integer`（WezTerm）で固定。`{mux,id}` 化は state + audit 両方の破壊変更。「registry に session_id+mux を足すだけ」では済まない。[verified — schema 直読]
+  - (ii) **schema breaking change の過小評価** — `schemas/session-state.schema.json:14` と `schemas/audit-log.schema.json` が `pane_id: integer`（WezTerm）で固定。`{mux,id}` 化は state + audit 両方の破壊変更。「registry に session_id+mux を足すだけ」では済まない。[verified — schema 直読]
 - **収束4**: **#114 が F の動機を弱める**。pane 非依存の `session_id` は #114（`claude -p` + file-redirect 化）後も残るが、`pane_id` 属性は engine の tmux 化／file-redirect 化で陳腐化。
 - **収束5**: read-only = 観測者拘束（仮定 A3 妥当）。spawn/delegate producer の書込は別レイヤで、#177 DJ-3(c) 棄却（観測UIが書く案）とは別。
 

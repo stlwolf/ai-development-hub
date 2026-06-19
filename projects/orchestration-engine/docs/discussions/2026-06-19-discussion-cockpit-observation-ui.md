@@ -28,7 +28,7 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, discuss
 
 # cockpit 観測UI（oe-status）設計探索 — read-only 俯瞰 + 監査ログ閲覧
 
-> pre-plan の設計探索ログ。**当初プランは設計SO で中核欠陥が判明し撤回**（§6）。#177 俯瞰は identity 統一（#188）の確定後に再設計する → **#188 確定済み（§7・[decision-188](2026-06-19-decision-188-identity-unification.md)）: identity は基盤ごと・read 時相関・永続マップ無し。俯瞰の方式（query-side fusion or honest 2 ビュー）は #177 の判断**。
+> pre-plan の設計探索ログ。**当初プランは設計SO で中核欠陥が判明し撤回**（§6）。#177 俯瞰は identity 統一（#188）の確定後に再設計する → **#188 確定済み（§7・[decision-188](../decisions/2026-06-19-decision-188-identity-unification.md)）: identity は基盤ごと・read 時相関・永続マップ無し。俯瞰の方式（query-side fusion or honest 2 ビュー）は #177 の判断**。
 > 探索は調査サブエージェント（一次情報＝code/schema/issue 直読）+ オーナーとの DJ 確定で実施。
 
 ## 1. Context
@@ -113,7 +113,7 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, discuss
 
 ## 7. #188 の確定（2026-06-19・#188 → #177 back-propagation）
 
-#188（identity 統一）が確定し、#177 を unblock した。決定の要点（正本は [decision-188](2026-06-19-decision-188-identity-unification.md)）:
+#188（identity 統一）が確定し、#177 を unblock した。決定の要点（正本は [decision-188](../decisions/2026-06-19-decision-188-identity-unification.md)）:
 
 - identity は **pane 層で統一しない**。2基盤は別多重化レイヤの別物理エンティティで対応が存在しない（実機観測: tmux は単一 WezTerm pane 内・engine の wez split 子は tmux 不可視・delegate の tmux 子は wez 不可視）。engine の session-state/audit を delegate に拡張する案も棄却（category error + `pane_id:integer` 固定 schema の breaking change + #114 で陳腐化）。
 - identity は基盤ごとに保持し、相関が必要なら **read 時に行う（永続マップ無し）**。これは #177 の read-only 制約を満たす（issue 受入の「相関しないと明示決定」に該当）。

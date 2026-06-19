@@ -46,7 +46,7 @@ tags: [orchestration, identity, cockpit, episode, decision, closure]
   - B/C = 物理的に不成立（engine 子は tmux 非所属で `%N` 無し／delegate 子は wez に個別表示されない）。
   - A = F に縮退（各 session は wez か tmux の片方の identity しか持たない）。
   - F = category error（対話子に完了 lifecycle が無く engine の `state` enum に押し込むと嘘）+ `pane_id: integer` 固定 schema の breaking change + ROI が Stage-B 繰延 + #114 で陳腐化。
-- 詳細は ADR `docs/decisions/2026-06-19-decision-188-identity-unification.md`。
+- 詳細は ADR `../decisions/2026-06-19-decision-188-identity-unification.md`。
 
 ## わかったこと（W）
 
