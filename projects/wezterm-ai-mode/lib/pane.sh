@@ -247,7 +247,9 @@ Options:
                    Priority: explicit (--pane-id or --target explicit)
                              > self > parent-window.
                    Omitting both --target and --pane-id tries self and
-                   falls back to WezTerm's active pane (with a warning).
+                   falls back to wezterm's native default with a warning
+                   (WEZTERM_PANE if set, else the active pane).
+                   Note: parent-window requires jq.
   --cwd <PATH>     Set working directory for the new pane
   --json           Output result as JSON
   --wait-ready     Wait until the new pane is ready for input
@@ -292,6 +294,14 @@ EOF
       return "${WEZ_EXIT_PANE_NOT_FOUND}"
     fi
   elif [[ "$opt_target" == "parent-window" ]]; then
+    # parent-window needs jq to query window_id / is_active from the list JSON.
+    # Detect jq absence first so the failure is a clear dependency error
+    # (OP_FAILED) rather than an opaque "pane not found". self (WEZTERM_PANE
+    # only) and the B3 default do not need jq and are unaffected.
+    if ! command -v jq >/dev/null 2>&1; then
+      wez_error "pane split: --target parent-window requires jq (not installed); install jq or use --target self / --pane-id"
+      return "${WEZ_EXIT_PANE_OP_FAILED}"
+    fi
     if ! resolved_pane_id=$(_wez_resolve_parent_window_pane); then
       wez_error "pane split: --target parent-window could not resolve the active pane (WEZTERM_PANE unset or window lookup failed)"
       return "${WEZ_EXIT_PANE_NOT_FOUND}"

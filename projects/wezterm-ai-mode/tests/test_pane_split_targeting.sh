@@ -214,6 +214,25 @@ WEZ_TEST_FIXTURE="$FIXTURE_DEFAULT"
 # 誤って null window の pane を採用しないことを確認する (既定 fixture を使用)。
 run_case "parent-window: self absent from list fails (no null-window pane)" 7 3 SKIP -- --target parent-window
 
+# F3: 明示 --target parent-window で jq 未導入 → jq 不在の専用エラーで exit 5 (OP_FAILED)。
+# PANE_NOT_FOUND(3) ではなく依存失敗系に寄せる (Copilot #190 指摘)。
+# jq を PATH から外すため、この 1 ケースだけ PATH を mock pathbin のみに絞る
+# (pathbin には wezterm のみ・jq は無い)。終了後に PATH を復元する。
+reset_log
+export WEZTERM_PANE="0"
+_saved_path="$PATH"
+export PATH="$_TMP_DIR/pathbin"
+f3_out=$(_wez_pane_split --target parent-window 2>&1 >/dev/null)
+f3_rc=$?
+export PATH="$_saved_path"
+unset WEZTERM_PANE
+f3_pane="$(split_pane_id_from_log)"
+if [[ "$f3_rc" -eq 5 && -z "$f3_pane" && "$f3_out" == *"jq"* ]]; then
+  ok "F3: parent-window without jq is an explicit OP_FAILED(5) error"
+else
+  fail "F3: expected exit 5 + jq-mentioning error + no split (rc=$f3_rc pane='$f3_pane' out=$f3_out)"
+fi
+
 # ============================================================
 # 4) 明示 self / parent-window で解決不能 → エラー終了 (フォールバックしない)
 # ============================================================

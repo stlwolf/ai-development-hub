@@ -119,7 +119,7 @@ Options:
 分割元ペインの解決方法を選ぶ。優先順位は **明示（`--pane-id` または `--target explicit`） > `self` > `parent-window`**。
 
 - `self` — このコマンドが動作しているペイン（`WEZTERM_PANE` 環境変数から解決）を分割する。MVP では `WEZTERM_PANE` のみ対応（TTY 逆引きは将来）。明示 `--target self` で `WEZTERM_PANE` が数値でも実在しない（stale）場合は exit 3（`WEZ_EXIT_PANE_NOT_FOUND`）。
-- `parent-window` — `self` のペインの `window_id` を `wezterm cli list` から引き、同ウィンドウ内の active pane（`is_active==true`）を分割元にする。`self` が解決できなければ `parent-window` も解決不能。`pane_id` / `window_id` は JSON が数値型でも文字列型でも一致するよう比較する。
+- `parent-window` — `self` のペインの `window_id` を `wezterm cli list` から引き、同ウィンドウ内の active pane（`is_active==true`）を分割元にする。`self` が解決できなければ `parent-window` も解決不能。`pane_id` / `window_id` は JSON が数値型でも文字列型でも一致するよう比較する。**`jq` 必須**（JSON から `window_id` / `is_active` を解決するため）。`jq` 未導入で明示 `--target parent-window` を指定した場合は `jq` 不在を示す明示エラーで exit 5（`WEZ_EXIT_PANE_OP_FAILED`）となる（`self`（`WEZTERM_PANE` のみ）と省略時デフォルトは `jq` 不要）。
 - `explicit` — `--pane-id <ID>` を分割元にする。`--target explicit` 指定時は `--pane-id` が必須（無ければ usage error）。
 
 `self` / `parent-window` を**明示**して解決できない場合（例: `WEZTERM_PANE` 未設定）は、フォールバックせず即エラー終了する（`wez discover` の「明示指定の失敗＝即エラー」思想に倣う）。
