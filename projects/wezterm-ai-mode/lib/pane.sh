@@ -45,6 +45,66 @@ _wez_strip_trailing_blank() {
 # _wez_strip_ansi: removed (was dormant and BSD sed incompatible).
 # Re-implement in awk when --raw post-processing is needed.
 
+# --- Split targeting resolution (DJ-8) ---
+
+# Resolve the "self" pane id from the WEZTERM_PANE environment variable (MVP).
+# TTY reverse-lookup is out of scope (future).
+# Outputs:
+#   stdout: numeric pane id on success
+# Returns:
+#   0 on success, 1 when WEZTERM_PANE is unset/empty/non-numeric
+_wez_resolve_self_pane() {
+  local self="${WEZTERM_PANE:-}"
+  if [[ -n "$self" ]] && [[ "$self" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$self"
+    return 0
+  fi
+  return 1
+}
+
+# Resolve the active pane within the same window as the "self" pane.
+# Looks up self's window_id from `wezterm cli list --format json`, then returns
+# the pane with is_active==true in that window. self must be resolvable first.
+# Outputs:
+#   stdout: numeric pane id on success
+# Returns:
+#   0 on success, 1 when self is unresolvable or no active pane is found
+_wez_resolve_parent_window_pane() {
+  local self_pane
+  if ! self_pane=$(_wez_resolve_self_pane); then
+    return 1
+  fi
+
+  local json
+  if ! json=$(wezterm cli list --format json 2>/dev/null); then
+    return 1
+  fi
+
+  command -v jq >/dev/null 2>&1 || return 1
+
+  # pane_id / window_id are compared as strings (tostring) to match whether
+  # WezTerm emits them as JSON numbers or strings (same approach as
+  # _wez_pane_exists). $win is required: if self's window_id is null/absent we
+  # fail explicitly rather than matching panes whose window_id is also null.
+  # D1 (known limit): if a window reports multiple is_active==true panes, the
+  # first in JSON order wins (WezTerm normally has one active pane per window).
+  local target
+  target=$(jq -r --arg self "$self_pane" '
+    (map(select((.pane_id | tostring) == $self)) | .[0].window_id) as $win
+    | if ($win == null) then empty
+      else
+        map(select((.window_id | tostring) == ($win | tostring) and .is_active == true))
+        | .[0].pane_id // empty
+      end
+  ' <<< "$json" 2>/dev/null) || return 1
+
+  if [[ -n "$target" ]] && [[ "$target" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$target"
+    return 0
+  fi
+  return 1
+}
+
 # --- Subcommand: list ---
 
 _wez_pane_list() {
@@ -101,6 +161,7 @@ _wez_pane_split() {
   local opt_direction="--right"
   local opt_percent=""
   local opt_pane_id=""
+  local opt_target=""
   local opt_json=false
   local opt_wait_ready=false
   local opt_timeout=10
@@ -129,6 +190,20 @@ _wez_pane_split() {
           return "${WEZ_EXIT_USAGE}"
         fi
         opt_pane_id="$2"; shift
+        ;;
+      --target)
+        if [[ -z "${2:-}" ]]; then
+          wez_error "pane split: --target requires a value (self|parent-window|explicit)"
+          return "${WEZ_EXIT_USAGE}"
+        fi
+        case "$2" in
+          self|parent-window|explicit) opt_target="$2" ;;
+          *)
+            wez_error "pane split: --target must be one of: self, parent-window, explicit (got: $2)"
+            return "${WEZ_EXIT_USAGE}"
+            ;;
+        esac
+        shift
         ;;
       --cwd)
         if [[ -z "${2:-}" ]]; then
@@ -163,7 +238,18 @@ Options:
   --left           Split horizontally, new pane on the left
   --top            Split vertically, new pane on the top
   --percent <N>    Size of the new pane as percentage (default: 50)
-  --pane-id <ID>   Specify the source pane to split
+  --pane-id <ID>   Specify the source pane to split (explicit target)
+  --target <T>     Targeting mode: self | parent-window | explicit
+                     self           Split the pane this command runs in
+                                    (resolved from WEZTERM_PANE)
+                     parent-window  Split the active pane in self's window
+                     explicit       Split --pane-id (which becomes required)
+                   Priority: explicit (--pane-id or --target explicit)
+                             > self > parent-window.
+                   Omitting both --target and --pane-id tries self and
+                   falls back to wezterm's native default with a warning
+                   (WEZTERM_PANE if set, else the active pane).
+                   Note: parent-window requires jq.
   --cwd <PATH>     Set working directory for the new pane
   --json           Output result as JSON
   --wait-ready     Wait until the new pane is ready for input
@@ -180,9 +266,58 @@ EOF
     shift
   done
 
+  # --- Resolve the source pane to split (DJ-8 targeting) ---
+  # Priority: explicit (--pane-id or --target explicit) > self > parent-window.
+  # The resolved id (if any) is appended as --pane-id; an empty resolution lets
+  # wezterm use its native default (WEZTERM_PANE if set, else the active pane).
+  local resolved_pane_id="$opt_pane_id"
+
+  if [[ "$opt_target" == "explicit" ]]; then
+    if [[ -z "$opt_pane_id" ]]; then
+      wez_error "pane split: --target explicit requires --pane-id"
+      return "${WEZ_EXIT_USAGE}"
+    fi
+    # explicit + --pane-id: id already in resolved_pane_id.
+  elif [[ -n "$opt_pane_id" ]]; then
+    # Explicit --pane-id (no/compatible --target): highest priority, use as-is.
+    resolved_pane_id="$opt_pane_id"
+  elif [[ "$opt_target" == "self" ]]; then
+    if ! resolved_pane_id=$(_wez_resolve_self_pane); then
+      wez_error "pane split: --target self could not resolve WEZTERM_PANE"
+      return "${WEZ_EXIT_PANE_NOT_FOUND}"
+    fi
+    # Explicit self: WEZTERM_PANE may be numeric but stale (pane gone). Verify
+    # existence for consistency with send/capture, returning NOT_FOUND(3)
+    # instead of letting the split fail later as OP_FAILED(5).
+    if ! _wez_pane_exists "$resolved_pane_id"; then
+      wez_error "pane split: --target self pane ${resolved_pane_id} not found"
+      return "${WEZ_EXIT_PANE_NOT_FOUND}"
+    fi
+  elif [[ "$opt_target" == "parent-window" ]]; then
+    # parent-window needs jq to query window_id / is_active from the list JSON.
+    # Detect jq absence first so the failure is a clear dependency error
+    # (OP_FAILED) rather than an opaque "pane not found". self (WEZTERM_PANE
+    # only) and the B3 default do not need jq and are unaffected.
+    if ! command -v jq >/dev/null 2>&1; then
+      wez_error "pane split: --target parent-window requires jq (not installed); install jq or use --target self / --pane-id"
+      return "${WEZ_EXIT_PANE_OP_FAILED}"
+    fi
+    if ! resolved_pane_id=$(_wez_resolve_parent_window_pane); then
+      wez_error "pane split: --target parent-window could not resolve the active pane (WEZTERM_PANE unset or window lookup failed)"
+      return "${WEZ_EXIT_PANE_NOT_FOUND}"
+    fi
+  else
+    # B3 default: no --target, no --pane-id. Try self; on failure omit --pane-id
+    # and let wezterm use its native default (WEZTERM_PANE if set, else active).
+    if ! resolved_pane_id=$(_wez_resolve_self_pane); then
+      wez_warn "pane split: WEZTERM_PANE unresolved; falling back to wezterm native default (WEZTERM_PANE if set, else active pane)"
+      resolved_pane_id=""
+    fi
+  fi
+
   local -a split_args=("$opt_direction")
   [[ -n "$opt_percent" ]] && split_args+=(--percent "$opt_percent")
-  [[ -n "$opt_pane_id" ]] && split_args+=(--pane-id "$opt_pane_id")
+  [[ -n "$resolved_pane_id" ]] && split_args+=(--pane-id "$resolved_pane_id")
   [[ -n "$opt_cwd" ]] && split_args+=(--cwd "$opt_cwd")
 
   local new_pane_id
