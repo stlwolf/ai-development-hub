@@ -5,7 +5,7 @@ orchestration-engine の実行可能エントリの簡易リファレンス（AI
 scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report`
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-jump`（通知→ペインへ focus）
 - **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰）
 
 ---
@@ -146,6 +146,27 @@ oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [--] [ad
 
 関連 lib: `delegate-registry.sh`（送信は `oe-send` 経由）
 
+## oe-jump — 通知/ラベルから対象 tmux ペインへ focus（#179）
+
+`wez notify` の通知から、入力待ちの子ペインへ**ワンアクションで focus（activate）**する導線。**tmux substrate 専用**（#188: engine=wez 整数 / delegate=tmux `%N` の identity 分裂に対応）。`oe_reg_resolve` は常に tmux `%N` を返すので focus も tmux 経路（`select-pane` 系）に固定し、tmux 子へ `wez pane activate` を投げる誤ターゲットを構造的に排除する。wez（engine）ペインの focus は既存の `wez pane activate <id>` を使う（oe-jump の責務外）。
+
+```bash
+oe-jump [--print|-p] [--] [<target>]   # focus（target 省略時は直近 --record を replay）
+oe-jump --record [--] <target>         # target を記録するだけ（通知連携・focus しない）
+```
+
+- `<target>` … tmux ペイン/ラベルを指す単一トークン:
+  - `%N` … tmux ペイン（素通し）→ `tmux switch-client`/`select-window`/`select-pane`（ID 系 target）
+  - `#N` / 任意名 … ラベル（`oe_reg_resolve` で tmux `%N` に解決。候補は `oe-list`）
+  - 裸の整数（例 `5`）や `wez:N` は wez（engine）ペイン指しとみなして**拒否**し、`%N`(tmux) か `wez pane activate N`(wez) を案内する（silent な誤 focus を出さない）
+- `--record <target>` … target を state（`~/.claude/state/oe-jump/last-target`・最後の1件・上書き）に記録。**通知連携規約（scope item 1）**の実装: 通知を撃つ側が記録し、人間は `oe-jump`（無引数）で直近の target へ飛ぶ＝真の 1 アクション。記録は token の**形だけ検証**し解決はしない（記録時に tmux/生存ペインを要求しない・解決は jump 時）。記録した token をそのまま解決するので「トースト表示文字列」と「解決契約」がズレない。
+- `--print`, `-p` … 解決した tmux pane id（`%N`）を stdout に出して終了（focus しない・dry-run/検査用）
+- exit: 0 成功 / 1 未解決・曖昧・ペイン無し・focus 失敗・replay 対象なし / 2 usage・環境エラー（tmux 不在）
+- 通知発火そのもの（誰が・いつ撃つか）は #179 スコープ外（状態検出による自動発火 = #P2/agent-deck）。`wez notify` は前提・不改変。WezTerm のトーストはクリックで url を開くのみ＝コマンド直接起動は不可のため、focus は本コマンド経由（issue の「コマンド経由フォールバック」）。
+- 既知制約: spawn-registry の任意名ラベルは spawn した親ペインからのみ解決可（`oe_reg_resolve` の parent スコープ）。pane-issue ラベル（`#N`）と `%N` 直接トークンはスコープ非依存。
+
+設計の正本: [`../docs/discussions/2026-06-21-discussion-179-notify-pane-jump.md`](../docs/discussions/2026-06-21-discussion-179-notify-pane-jump.md)。関連 lib: `delegate-registry.sh`（`oe_reg_resolve`）/ 関連: [`../docs/decisions/2026-06-19-decision-188-identity-unification.md`](../docs/decisions/2026-06-19-decision-188-identity-unification.md)。
+
 ## oe-report — 親へ申し送り（legacy）
 
 親ペインへ申し送り / レビュー依頼を送る。**legacy**: 戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化が方針。
@@ -190,5 +211,6 @@ oe-status -h | --help
 | `OE_SEND_FINALIZE_TIMEOUT` / `_INTERVAL` / `_STABLE` | finalize の settle 窓 / poll 間隔 / 終端安定回数 | `3` / `0.3` / `3` |
 | `OE_DELEGATE_WAIT_SEC` | oe-delegate: 子 claude 起動待ち（秒） | `4` |
 | `PARENT_TMUX_PANE` | oe-delegate が子へ渡す親ペイン（戻し用） | （自動） |
+| `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。

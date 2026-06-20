@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# oe-jump — 通知/ラベルから対象 tmux ペインへワンアクションで focus（activate）する入口
+#
+# usage: oe-jump [--print|-p] [--] [<target>]
+#        oe-jump --record [--] <target>
+#
+# <target> は tmux ペイン/ラベルを指す単一トークン:
+#   %N         tmux ペイン（素通し）              → tmux switch-client/select-window/select-pane
+#   #N / 名前  ラベル（registry で tmux %N に解決）→ 同上
+#
+# #188 の identity 分裂（engine=wez 整数 pane_id / delegate=tmux %N）への対応として、
+# oe-jump は **tmux substrate 専用**にする。`oe_reg_resolve` は常に tmux %N を返すため、
+# focus も tmux 経路（select-pane 系）に固定し、tmux 子へ `wez pane activate` を投げる
+# 誤ターゲット（整数部の取り違え）を構造的に排除する。wez（engine）ペインの focus は
+# 既存の `wez pane activate <id>` を使う（oe-jump の責務外）。
+#
+# 通知連携（scope item 1: 通知に target を紐づける規約）:
+#   通知を撃つ側が `oe-jump --record <target>` で対象を記録（state file・最後の1件）。
+#   人間は `oe-jump`（無引数）で直近記録の target へ飛ぶ＝真の 1 アクション。記録した token を
+#   そのまま解決するので「トースト表示文字列」と「解決契約」のズレが起きない。記録は token の
+#   形だけ検証し解決はしない（記録時に tmux/生存ペインを要求しない・解決は jump 時＝freshness）。
+#   通知発火そのもの（誰が・いつ）は #179 スコープ外（#P2 観測/agent-deck）。wez notify は前提・不改変。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+# 記録 target の state（最後の1件のみ・上書き）。テストは env で隔離する。
+OE_JUMP_STATE_DIR="${OE_JUMP_STATE_DIR:-${HOME}/.claude/state/oe-jump}"
+OE_JUMP_STATE_FILE="${OE_JUMP_STATE_DIR}/last-target"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-jump [--print|-p] [--] [<target>]
+       oe-jump --record [--] <target>
+
+  <target>       focus 先（tmux ペイン/ラベル）。単一トークン:
+                   %N        tmux ペイン（素通し）
+                   #N / 名前 ラベル（registry で tmux %N に解決。候補は oe-list）
+                 省略時は直近 --record した target を replay（真の 1 アクション）。
+  --record       <target> を state file に記録するだけ（focus しない）。通知連携用。
+  --print, -p    解決した tmux pane id（%N）を stdout に出して終了（focus しない）
+  -h, --help     このヘルプを表示
+
+note: oe-jump は tmux ペイン/ラベル専用。wez（engine）ペインの focus は
+      `wez pane activate <id>` を使う（裸の整数 / wez:N は受け付けず案内する）。
+
+exit:
+  0   focus 成功（--print/--record 時は成功）
+  1   ラベル未解決(0件) / 曖昧(複数件) / ペイン無し / focus 失敗 / replay 対象なし
+  2   usage エラー / 環境エラー（tmux 不在・接続不可）
+EOF
+}
+
+# _oe_jump_validate_shape <token> — token の構文のみ検証（解決はしない）。
+#   空 / 裸整数 / wez:N（wez ペイン指し）を usage エラー(2)で弾き、tmux substrate を案内する。
+#   %N / #N / 任意名ラベルは shape OK。--record はこれだけを使う（記録時に解決しない）。
+_oe_jump_validate_shape() {
+  local token="$1"
+  if [[ -z "$token" ]]; then
+    echo "oe-jump: empty target" >&2; return 2
+  fi
+  # 裸整数 / wez:N は wez（engine）ペインを指す可能性が高い。oe-jump は tmux 専用なので明示案内。
+  if [[ "$token" =~ ^[0-9]+$ || "$token" =~ ^wez:[0-9]+$ ]]; then
+    local n="${token#wez:}"
+    echo "oe-jump: '${token}' looks like a wez (engine) pane. oe-jump targets tmux panes/labels:" >&2
+    echo "  - for tmux pane ${n}: use %${n}" >&2
+    echo "  - for a wez (engine) pane: use 'wez pane activate ${n}'" >&2
+    return 2
+  fi
+  return 0
+}
+
+# _oe_jump_resolve <token> — token を tmux %N に解決して stdout へ。
+#   shape 検証 → oe_reg_resolve（%N 素通し / #N・名前ラベル → tmux %N）。jump/replay 時のみ呼ぶ。
+#   oe_reg_resolve の rc（0件/曖昧=1, 環境=2）はそのまま伝播。
+_oe_jump_resolve() {
+  local token="$1"
+  _oe_jump_validate_shape "$token" || return
+  oe_reg_resolve "$token"
+}
+
+# _oe_jump_tmux <pane> — tmux ペイン %N をクライアントへ寄せて focus する。
+#   session_id($N)/window_id(@N)/pane_id(%N) の ID 系のみで target を組む。
+#   セッション名に '#'/空白が混じる本環境（session-name hook）でも target 解釈が壊れない。
+#   同一 session/window のとき switch-client/select-window は no-op。select-pane を権威とする。
+#   経路は隔離 tmux サーバで実証（cross-window で active window/pane が対象へ遷移）。
+_oe_jump_tmux() {
+  local pane="$1"
+  # 対象ペインの生存確認。list-panes 自体の失敗（サーバ未起動/接続不可）は環境エラー(2)とし
+  # 「ペイン無し(1)」と区別する（oe-send / oe_reg_resolve と同方針）。
+  local live rc
+  live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "oe-jump: tmux list-panes failed (rc=${rc}): ${live}" >&2
+    return 2
+  fi
+  if ! printf '%s\n' "$live" | grep -qxF "$pane"; then
+    echo "oe-jump: target tmux pane not found: ${pane} (try: oe-list)" >&2
+    return 1
+  fi
+  local meta sid wid
+  meta="$(tmux display-message -p -t "$pane" '#{session_id} #{window_id}' 2>/dev/null)" || {
+    echo "oe-jump: failed to query tmux metadata for ${pane}" >&2
+    return 2
+  }
+  sid="${meta%% *}"
+  wid="${meta##* }"
+  # クライアントを対象セッションへ → そのセッションの active window を対象 window へ →
+  # window 内で対象ペインを focus。switch-client/select-window はクライアント不在時など
+  # best-effort（落ちても select-pane が active pane を確定させる）。select-pane を hard fail とする。
+  if [[ -n "$sid" ]]; then tmux switch-client -t "$sid" 2>/dev/null || true; fi
+  if [[ -n "$wid" ]]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
+  if ! tmux select-pane -t "$pane" 2>/dev/null; then
+    echo "oe-jump: tmux select-pane failed for ${pane}" >&2
+    return 1
+  fi
+}
+
+# _oe_jump_record <token> — target token を state file へ atomic 記録（最後の1件・上書き）。
+_oe_jump_record() {
+  local token="$1"
+  mkdir -p "$OE_JUMP_STATE_DIR" 2>/dev/null || {
+    echo "oe-jump: cannot create state dir ${OE_JUMP_STATE_DIR}" >&2; return 1; }
+  local tmp="${OE_JUMP_STATE_FILE}.tmp.$$"
+  if printf '%s\n' "$token" >"$tmp" 2>/dev/null && mv -f "$tmp" "$OE_JUMP_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null
+  echo "oe-jump: failed to record target to ${OE_JUMP_STATE_FILE}" >&2
+  return 1
+}
+
+PRINT_ONLY=0
+RECORD=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -p|--print) PRINT_ONLY=1; shift ;;
+    --record) RECORD=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) echo "oe-jump: unknown option: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+# 位置引数の「有無」を $# で判定する（明示的な空文字 "" を「省略」と取り違えて replay へ
+# 落とさない／空文字の後ろの余剰引数を黙って捨てない）。
+HAVE_ARG=0
+TARGET=""
+if [[ $# -gt 0 ]]; then
+  HAVE_ARG=1
+  TARGET="$1"; shift
+  if [[ $# -gt 0 ]]; then
+    echo "oe-jump: too many arguments (one target only): $*" >&2; usage; exit 2
+  fi
+fi
+
+# --record: target 明示必須・記録のみ（--print とは併用不可・解決はしない）。
+if [[ "$RECORD" -eq 1 ]]; then
+  if [[ "$PRINT_ONLY" -eq 1 ]]; then
+    echo "oe-jump: --record cannot be combined with --print" >&2; usage; exit 2
+  fi
+  if [[ "$HAVE_ARG" -eq 0 ]]; then
+    echo "oe-jump: --record requires a target" >&2; usage; exit 2
+  fi
+  _oe_jump_validate_shape "$TARGET" || exit   # 空文字 "" もここで usage エラーにする
+  _oe_jump_record "$TARGET" || exit
+  echo "oe-jump: recorded target '${TARGET}'" >&2
+  exit 0
+fi
+
+# 位置引数が「無い」ときだけ直近 --record を replay する。明示の空文字 target（HAVE_ARG=1）は
+# replay せず、下の _oe_jump_resolve（→ _oe_jump_validate_shape）で usage エラーにする。
+REPLAYED=0
+if [[ "$HAVE_ARG" -eq 0 ]]; then
+  if [[ -r "$OE_JUMP_STATE_FILE" ]]; then
+    TARGET="$(head -n 1 "$OE_JUMP_STATE_FILE" 2>/dev/null)"
+  fi
+  if [[ -z "$TARGET" ]]; then
+    echo "oe-jump: no target given and no recorded target to replay (pass %N / #N, or run 'oe-jump --record <target>' first)" >&2
+    exit 1
+  fi
+  REPLAYED=1
+fi
+
+# --- 解決（tmux %N） ---
+PANE="$(_oe_jump_resolve "$TARGET")" || exit
+
+# --- --print（解決のみ・focus しない） ---
+if [[ "$PRINT_ONLY" -eq 1 ]]; then
+  printf '%s\n' "$PANE"
+  exit 0
+fi
+
+# --- focus ---
+_oe_jump_tmux "$PANE" || exit
+
+if [[ "$REPLAYED" -eq 1 ]]; then
+  echo "oe-jump: focused tmux pane ${PANE} (replay of '${TARGET}')" >&2
+else
+  echo "oe-jump: focused tmux pane ${PANE}" >&2
+fi
