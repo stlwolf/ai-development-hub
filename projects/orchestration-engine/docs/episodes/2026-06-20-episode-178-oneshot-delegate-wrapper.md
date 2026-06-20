@@ -3,7 +3,7 @@ id: "01KVJQJG9XJ3RBBV5QZ11NYX4N"
 title: "#178 oe-kick — kickoff/issue 参照からのワンショット委譲ラッパー（tmux）実装"
 date: 2026-06-20
 type: episode
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/178"
@@ -72,7 +72,7 @@ DJ-5: tmux 前提の扱い
 - 証跡（揮発）: `tmp/oe-refute-202606201441234C6G4CH847AZ/`（codex-stdout / cursor-stdout）。audit_id=`202606201441234C6G4CH847AZ`。verdict/reason は本節へ転記済。
 - **生き残り（survived）**: verb `oe-kick` / `--claude-arg` passthrough / tmux 二段 preflight / hardening を delegate 入力 + registry 出力に置く大枠（いずれも一次情報で支持・棄却なし）。
 - **反証の織り込み（確定前に design を更新）**:
-  1. **DJ-2 第三分類**: `-f`→kickoff / `^#?[0-9]+$`→issue / **それ以外→明示エラー（usage + exit 2）**。壊れ symlink・`kickoff-178`(dir)・`abc`/`178a` は第三分類でエラー。`0178` は `10#` で先頭ゼロ正規化（label/コマンドの `#N` ドリフト回避）。file-first の tradeoff（`./178` が issue 意図を潰す可能性）は意図的・受入条件準拠で許容、help に明記。
+  1. **DJ-2 第三分類**: `-f`→kickoff / `^#?[0-9]+$`→issue / **それ以外→明示エラー（usage + exit 2）**。壊れ symlink・`kickoff-178`(dir)・`abc`/`178a` は第三分類でエラー。`0178` は先頭ゼロ正規化（label/コマンドの `#N` ドリフト回避）。**※ 設計時は `10#` 算術で正規化する案だったが、後述の実装SO R1 でこれが桁数無制限入力で silent overflow する欠陥と判明し、文字列操作 `strip_leading_zeros` へ改修した（「実装SO」節参照）。** file-first の tradeoff（`./178` が issue 意図を潰す可能性）は意図的・受入条件準拠で許容、help に明記。
   2. **oe-status も消費者**: sanitize を**消費者ごとでなく producer `oe_reg_list` の出力チョークポイント**に置くことで oe-list/oe-select/**oe-status**（`:174/:181/:247` awk）を一括防御（確認済）。
   3. **脅威モデル境界（過剰主張の訂正）**: CR/LF は消費者の `while read`/`awk RS=\n` のレコード境界＝**偽 `%N` 行注入の主経路**。U+2028/ANSI/TAB は consumer のレコード分割に影響せず `%N` 行を偽造**しない**（視覚偽装のみ・低リスク）→ #178 は CR/LF を断ち、視覚偽装は scope 外 follow-up と明記（「断つ」→「文書化された偽行注入経路を断つ」へ後退）。
   4. **書き込み側 hardening は #178 外**: `oe_reg_record`/`wt-pane-issue.sh`(branch 由来・git ref に改行不可)/`oe_reg_resolve`(出力は list-panes 由来の信頼 `%N` のみ・label を出さない＝偽造ベクタでない)。issue スコープ（delegate 入力 fail-fast + list 出力 sanitize）と oe-select episode の cross-cutting routing に従い follow-up。
@@ -88,12 +88,52 @@ DJ-5: tmux 前提の扱い
 - **hardening-2 `lib/delegate-registry.sh`**: `oe_reg_list` 出力チョークポイントで label の LF/CR を空白へ畳む（消費者 oe-list/oe-select/**oe-status** を producer 1点で一括防御）。
 - **付随修正（実機 3.2 検証で検出した既存バグ）**: `oe-delegate` の `build_child_command` が `for arg in "${CLAUDE_ARGS[@]}"`（空配列）で bash 3.2 + `set -u` 下 `unbound variable` 落ち。`oe-kick #N`（--claude-arg 無し）は CLAUDE_ARGS 空で必ずこの経路 → ADR-005 環境で feature が壊れる。`${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}` イディオム（oe-select 前例）で修正。**master にも存在する pre-existing バグ**で、本機能の 3.2 動作に直結するため #178 で吸収（PR で明示）。
 - **テスト**:
-  - `tests/test_oe_kick.sh`（新規・24 assert）: モック `oe-delegate`（`OE_DELEGATE_BIN`）への展開 argv を assert＝ref 判定 / `kickoff-<N>` 抽出 / 0178 正規化 / issue task 文 / ad-hoc 連結 / `--claude-arg` passthrough / workspace 既定 / 第三分類・178a・ref 省略・tmux 外・unknown option・file 優先 の各エラー経路（mock 未呼出含む）。
+  - `tests/test_oe_kick.sh`（新規・29 assert＝初版 24 + 実装SO 反映 5）: モック `oe-delegate`（`OE_DELEGATE_BIN`）への展開 argv を assert＝ref 判定 / `kickoff-<N>` 抽出 / 0178 正規化 / 巨大番号 overflow 非発生 / all-zeros→#0 / issue task 文 / ad-hoc 連結 / `--claude-arg` passthrough / workspace 既定 / 第三分類・178a・ref 省略・tmux 外・unknown option・file 優先 の各エラー経路（mock 未呼出含む）。
   - `tests/test_oe_delegate.sh`（+4 assert）: `--label` LF/CR 拒否（rc2・未 spawn）。
   - `tests/test_delegate_registry.sh`（+4 assert）: `oe_reg_list` sanitize（pane_title 由来 / pane-issue .name 由来の両経路で偽 `%N` 行非注入・本来 label 保持）。
 - **ドキュメント**: `bin/README.md`（oe-kick 節 + 索引）/ `README.md`（構成ツリー + delegate CLI リスト）。canonical `delegate-task` SKILL は更新せず（sibling 便利 verb の oe-select も未収録＝先例踏襲・Minimal Scope）。
-- **検証**: `shellcheck bin/oe-kick bin/oe-delegate lib/delegate-registry.sh tests/*` PASS。bash **5.x** で test_oe_kick 24 / test_oe_delegate 18 / test_delegate_registry 20 / **回帰 test_oe_select 35 / test_oe_status 27** 全 PASS。**/bin/bash 3.2.57（macOS・runner+inner 双方を 3.2 強制）でも 24/18/20 PASS**（ADR-005。付随修正前は test_oe_delegate が CLAUDE_ARGS[@] で fail＝修正を実証）。
+- **検証**: `shellcheck bin/oe-kick bin/oe-delegate lib/delegate-registry.sh tests/*` PASS。bash **5.x** で test_oe_kick 29 / test_oe_delegate 18 / test_delegate_registry 20 / **回帰 test_oe_select 35 / test_oe_status 27** 全 PASS。**/bin/bash 3.2.57（macOS・runner+inner 双方を 3.2 強制）でも 29/18/20 PASS**（ADR-005。付随修正前は test_oe_delegate が CLAUDE_ARGS[@] で fail＝修正を実証）。
 
-### 実装SO = `oe-review`（diff-bound・code-defect/到達可能性レンズ）
+### 実装SO = `oe-review`（diff-bound・code-defect/到達可能性レンズ・lanes 2）
 
-(commit 後に実行・verdict をここへ転記)
+- **R1（commit 334f670 / diff base master）= refuted**（1/2 material）。codex が到達可能な correctness 欠陥を検出: `oe-kick` の番号正規化が `$((10#N))` の **Bash 算術**で、桁数無制限の入力に固定幅整数を silently overflow させ別番号へ化ける（実証 `999…9`(39桁)→`6873995514006732799`）。誤 `#N` で `--label`/`gh issue view`/登録ラベルが作られ `oe-send #N` で誤ルーティングし得る。cursor は survived（material 欠陥なし）。証跡: `tmp/oe-review-20260620145855DCC6GRF4DZC6/`、audit_id 同名。
+- **修正（commit 2474c30）**: 算術を廃し先頭ゼロ除去を文字列操作（`strip_leading_zeros`）に変更＝巨大値も欠損なく保持し無効番号は下流 `gh issue view` で loud に失敗。`0178→178` 正規化意図は維持。`test_oe_kick` に overflow 境界 + 先頭ゼロ（all-zeros→#0）ケースを追加（+5 assert・計 29）。
+- **R2（commit 2474c30）= survived**（2/2・codex/cursor とも material 欠陥なし・exit 0）。証跡: `tmp/oe-review-20260620150347R2N0GPYJN3B6/`。**実装SO ゲート PASS → PR へ。**
+- 設計SO（exploration）と実装SO（impl）は別レンズ・別ステップ（#192/#175 の教訓どおり、設計SO だけでは impl 欠陥＝算術 overflow を捕捉できず、実装SO が捕捉した）。
+
+## Closure（episode-retrospective・tier=heavy）
+
+tier 判定 = **heavy**（heavy トリガ該当: ①実装SO で refuted→修正の方針転回 ②意図起動の外部レビュー oe-refute/oe-review ③非自明な設計判断 DJ-1..5）。
+
+### closure gate
+
+- **Context/なぜ**: 冒頭「ミッション」に自己完結（毎回フラグを手組みする手間を省く oe-delegate 薄ラッパー + oe-select 実装SO 由来の hardening 2点）。
+- **次の消費者**: cockpit 本線の人間運用者（`oe-kick #N` でワンショット委譲）/ 親 #169 cockpit イニシアチブ / delegate-task 系の今後の拡張者。
+- **follow-up routing**（全件行き先付与）:
+  - 視覚偽装 hardening（ANSI / U+2028 等）→ **追わない**（#178 scope 外・消費者の `read`/`awk` レコード境界にならず偽 `%N` 不可・低リスク。必要時に別 issue）。
+  - 書き込み側 hardening（`oe_reg_record` / `wt-pane-issue.sh` / `oe_reg_resolve`）→ **別 follow-up**（oe-select episode の cross-cutting routing 準拠・#178 外）。`resolve` は出力が list-panes 由来の信頼 `%N` のみで偽造ベクタでない旨を本文に記録（back-propagation）。issue 化要否は親 #169/#177 系の判断に委ねる（前方参照）。
+  - bin script の bash 3.2 検証が runner のみで spawned bin を覆っていなかった（test harness の穴・本作業で発覚し付随修正で実証）→ **harness 改善候補**（別 issue 候補・今回は追わない＝観測記録に留める）。
+  - canonical `delegate-task` SKILL に oe-kick/oe-select 未収録 → 先例踏襲で今回未対応。**追わない**（SKILL 拡張は low priority・別途）。
+- **status 確定**: `in-development` → **`stable`**（達成）。
+- **evidence anchor**: 設計SO/実装SO の verdict・reason・audit_id を本文へ転記済（`tmp/` 揮発パスに非依存）。
+- **SO 証跡リンク**: 設計SO `tmp/oe-refute-202606201441234C6G4CH847AZ/` / 実装SO R1 `tmp/oe-review-20260620145855DCC6GRF4DZC6/` ・R2 `tmp/oe-review-20260620150347R2N0GPYJN3B6/`（いずれも揮発・要点は本文転記済）。
+
+### 内容（出力型 × 消費チャネル）
+
+- **事実・失敗**: 設計SO R1 refuted（breadth/grounding gaps）→ design 更新。実装SO R1 refuted（番号正規化の算術 overflow＝到達可能 correctness 欠陥）→ 文字列化で修正→ R2 survived。実機 3.2 検証で `oe-delegate` の pre-existing `CLAUDE_ARGS[@]` unbound バグ検出→修正。
+- **決定と根拠**: DJ-1..5（設計探索木に棄却案・棄却理由）。追加で「番号正規化＝算術→文字列」（実装SO 由来の DJ）。
+- **わかったこと**: 設計SO（exploration レンズ）は実装SO（impl レンズ）を代替しない実証（算術 overflow は exploration で出ず impl で出た）。列出力 sanitize は producer 単一チョークポイントで複数消費者を一括防御できる。bash 3.2 の空配列 `set -u` footgun は spawned bin に潜伏し、runner のみの 3.2 検証では漏れる。
+- **原則（Pattern / Anti-pattern）**:
+  - Pattern: 表形式出力の sanitize は consumer 各所でなく **producer の出力点**に置く（防御の単一化）。
+  - Anti-pattern: 桁数無制限の外部入力を **Bash 算術で正規化**（固定幅 silent overflow）。OK: 文字列操作で正規化し巨大値は下流で loud に失敗。
+  - Pattern: 空になり得る配列は `${arr[@]+"${arr[@]}"}` で展開（bash 3.2 + `set -u`）。
+- **行動変更**: 機構確定の新規 hook/skill は無し。「bin script の 3.2 検証を spawned bin にも当てる」は機構未確定のため残課題（routing 済）へ降格。
+- **蒸留シグナル**: Decision/ADR 昇格 = **なし**（薄いラッパー・既存パターン踏襲で昇格価値の新規決定なし）。negative knowledge 候補（→ #62）= 「算術正規化の silent overflow」「bash 3.2 空配列 footgun」（前方参照・今回は非昇格）。
+- **残課題**: 上記 routing 済（視覚偽装 / 書込側 hardening / harness 3.2 穴 / SKILL 収録）。
+
+### Step 4（heavy 外部チェック・closure 品質）
+
+- `so-compare`（codex + claude・lanes 2）で closure 品質を focused チェック（証跡 `tmp/so-20260621-000952/`・揮発・要点は本節へ転記）。確認対象 = 失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation。
+- **結果**: 軸(1) 失敗省略なし=PASS（設計SO refuted / 実装SO R1 算術 overflow / pre-existing 3.2 バグ いずれも事実・失敗欄に明記）、軸(2) follow-up routing 4件全付与=PASS、軸(3) tmp/ 揮発要点の本文転記=PASS（両レーンが SO 証跡 dir の消失を実機確認した上で本文が非依存と判定）。
+- **指摘（修正済）**: 軸(4) back-propagation で claude レーンが 1 件検出 — 設計フェーズ記述（DJ-2）が撤回済みの `10#` 算術を現行設計のまま記述（自己矛盾）＋ `bin/oe-kick` kickoff 節コメントも `10#` で stale。→ 本コミットで episode DJ-2 に前方注記を追加し、コメントを `strip_leading_zeros` へ訂正（同根の stale 2 箇所を解消）。
+- 残りは Step4 欄自体の未転記（codex 指摘）＝本節の記入で解消。**closure 品質ゲート PASS。**

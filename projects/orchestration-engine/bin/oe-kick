@@ -97,7 +97,7 @@ fi
 if [[ -f "$REF" ]]; then
   # --- kickoff モード（既存ファイル優先） ---
   # ファイル名（basename）の kickoff-<N> から #N ラベルを導出。日付プレフィックス等に
-  # 引っかからないよう `kickoff-` にアンカーし、先頭ゼロは 10# で正規化する。
+  # 引っかからないよう `kickoff-` にアンカーし、先頭ゼロは strip_leading_zeros で正規化する。
   base="$(basename "$REF")"
   if [[ "$base" =~ kickoff-([0-9]+) ]]; then
     DELEGATE_ARGS+=(--label "#$(strip_leading_zeros "${BASH_REMATCH[1]}")")
