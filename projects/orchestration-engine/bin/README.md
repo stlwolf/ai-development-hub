@@ -6,6 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-send` / `oe-list` / `oe-select` / `oe-report`
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰）
 
 ---
 
@@ -137,6 +138,29 @@ oe-report [--review] <message>
 ```
 
 関連 lib: `delegate-send.sh`
+
+---
+
+## oe-status — cockpit 観測UI（read-only 俯瞰 + 監査ログ閲覧）(#177)
+
+2 つの identity 空間（#188: engine=wez 整数 / delegate=tmux `%N`）を **join せず read 時に投影**する単一コマンド・typed sections の観測ツール。`oe-status` 1 回で 2 区画を出す:
+
+- `=== ENGINE (wez · state/audit) ===`: engine session を **audit-terminal reducer** 由来の STATE 付きで一覧。STATE は `audit/{sid}.jsonl` の終端シグナルを **severity-max** で reduce する（末尾行ではない。`cleanup`/`verification_*` は除外）。**CB timeout は audit のみ・KVS 未書込のため audit から導く**（KVS だけだと取りこぼす）。state file があれば outputs/blockers を補足。
+- `=== DELEGATE (tmux · liveness) ===`: `oe_reg_list` の生存ペインを **liveness のみ**で一覧（state/audit を持たない＝timeline:none）。tmux 不在時は degrade（engine 区画は出す）。
+
+```bash
+oe-status                       # 俯瞰（typed sections・既定・プレーン）
+oe-status <session_id>          # 1 セッションの監査ログを時系列表示（start→end）
+oe-status -i | --interactive    # fzf で行を選び preview（ENGINE=timeline / DELEGATE=meta）
+oe-status -h | --help
+```
+
+- STATE 導出（precedence・severity-max worst 勝ち）: `circuit_breaker_triggered` reason=`timeout`/`verification_timeout`→`timeout`（verification_timeout は session 終端に寄与せず注記のみ） / reason=`max_turns`/`max_panes`→`blocked`（DI-4。`limit_type` フォールバックあり） / `session_end.state` / `interrupt`→`interrupted` / 終端無し+`session_start`→`running?` / それ以外→`?`。multi-pane でも blocked/timeout が success に隠れない。
+- **read-only / 非検出**: 触れるのは (1) state/audit ファイル (2) tmux/wez ペイン存在（mux query）のみ。**ペイン出力は読まない**（polling 常駐・capture マーカー走査＝検出をしない）。preview は ENGINE=audit timeline 表示 / DELEGATE=registry メタのみ。
+- DJ-4: `oe-refute.jsonl` / `oe-review.jsonl`（別スキーマ）は ULID 不一致で session 行に出ない（v1 対象外）。
+- データ源は `OE_DATA_DIR`（または `OE_AUDIT_DIR` / `OE_STATE_DIR`）で上書き可。
+
+設計の正本: [`../docs/discussions/2026-06-19-discussion-cockpit-observation-ui.md`](../docs/discussions/2026-06-19-discussion-cockpit-observation-ui.md) §8 / [`../docs/decisions/2026-06-19-decision-188-identity-unification.md`](../docs/decisions/2026-06-19-decision-188-identity-unification.md)。関連 lib: `delegate-registry.sh`（`oe_reg_list`）。
 
 ---
 
