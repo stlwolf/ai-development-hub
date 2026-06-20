@@ -33,7 +33,18 @@ OE_SLO_DETECT_SEC=5
 OE_POLL_INTERVAL=2
 
 # wez pane split --wait-ready のタイムアウト（秒）。ADR-003 に準拠。
+# pool 経路（oe_board_wait_ready）と fallback split（--wait-ready）の両方で readiness タイムアウトに使う。
 OE_SPAWN_WAIT_READY_SEC="${OE_SPAWN_WAIT_READY_SEC:-10}"
+
+# #175: 機械1サイクルの盤面構築を宣言化する wez layout preset 名（lib/layouts/<name>.json）。
+# 既定は #191 の PoC preset parent-children（worker1=bottom30% / worker2=right50% の2子）。
+# 空文字にすると board を構築せず従来の都度 split のみ（kill switch 兼）。
+# layout.sh は preset を wezterm-ai-mode/lib/layouts/ からのみ読むため、この env は同ディレクトリ内の
+# preset 選択に限定される（既知制約）。
+OE_BOARD_LAYOUT="${OE_BOARD_LAYOUT:-parent-children}"
+
+# #175: board pool が空のときの fallback split（oe_spawn_prepare_pane）の --percent。
+OE_SPAWN_PERCENT="${OE_SPAWN_PERCENT:-30}"
 
 # KVS パス（OE_DATA_DIR でオーバーライド可能、デフォルトはプロジェクトルート相対）
 OE_STATE_DIR="${OE_DATA_DIR:-${PROJECT_DIR}}/state"
@@ -44,6 +55,11 @@ OE_AUDIT_DIR="${OE_DATA_DIR:-${PROJECT_DIR}}/audit"
 # Step 4-3 Phase E: 検証ペイン管理用配列 (F2: 通常ペイン OE_MANAGED_PANES / OE_DONE_PANES と分離)
 OE_VERIFY_MANAGED_PANES=()
 OE_VERIFY_DONE_PANES=()
+
+# #175: board（wez layout apply）で構築した全ペインの cleanup 回収用配列。
+# oe_board_apply が登録し、cleanup.sh が OE_MANAGED_PANES / OE_VERIFY_MANAGED_PANES と
+# dedup union して kill する（消費済み／未消費を問わず orphan を残さない）。
+OE_BOARD_MANAGED_PANES=()
 
 # Step 4-3 Phase E: 検証フェーズ完走フラグ (cleanup の wez notify 発火条件、CB 発動時は未設定のまま)
 OE_VERIFY_PHASE_COMPLETED=0

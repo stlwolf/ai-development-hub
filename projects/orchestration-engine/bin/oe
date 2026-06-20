@@ -59,7 +59,10 @@ oe_main() {
   task_description="${task_description:-${*:-Run orchestration task}}"
   local pane_id
 
-  # 5) spawn 準備 → envelope 生成 → send
+  # 5) 盤面初期化（#175: wez layout で宣言的に board を構築）→ spawn 準備 → envelope 生成 → send
+  #    oe_board_apply は 1 サイクルで 1 回だけ。target は pool[0]、verify の reviewer は pool[1] を消費する
+  #    （盤面初期化と都度 spawn の責務分離）。board 無効/失敗時は従来の都度 split にフォールバックする。
+  oe_board_apply
   oe_spawn_prepare_pane
   pane_id="$OE_SPAWN_PANE_ID"
   oe_envelope_create "$OE_CURRENT_SESSION_ID" "$pane_id" "$task_description" "$PROJECT_DIR" "$OE_CB_TIMEOUT"

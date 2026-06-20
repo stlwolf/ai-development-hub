@@ -11,8 +11,10 @@ oe_cleanup() {
   # constants.sh を source せず cleanup.sh 単独で source されるケースに備える)
   declare -p OE_MANAGED_PANES >/dev/null 2>&1 || OE_MANAGED_PANES=()
   declare -p OE_VERIFY_MANAGED_PANES >/dev/null 2>&1 || OE_VERIFY_MANAGED_PANES=()
+  # #175: board（wez layout apply）で構築したペインも回収対象（消費済み／未消費を問わず orphan を残さない）
+  declare -p OE_BOARD_MANAGED_PANES >/dev/null 2>&1 || OE_BOARD_MANAGED_PANES=()
 
-  # 通常ペイン + 検証ペイン (OE_VERIFY_MANAGED_PANES) の両方を kill 対象に
+  # 通常ペイン + 検証ペイン + board ペインを kill 対象に集約
   local all_panes=()
   if [[ ${#OE_MANAGED_PANES[@]} -gt 0 ]]; then
     all_panes+=("${OE_MANAGED_PANES[@]}")
@@ -20,13 +22,24 @@ oe_cleanup() {
   if [[ ${#OE_VERIFY_MANAGED_PANES[@]} -gt 0 ]]; then
     all_panes+=("${OE_VERIFY_MANAGED_PANES[@]}")
   fi
+  if [[ ${#OE_BOARD_MANAGED_PANES[@]} -gt 0 ]]; then
+    all_panes+=("${OE_BOARD_MANAGED_PANES[@]}")
+  fi
 
+  # #175: 3 配列は重複し得る（target/reviewer が board pool と重なる）。先勝ち順で dedup し、
+  # kill と killed_pane_ids の両方を一意化する（重複 kill / 重複 audit を防ぎ、既存の
+  # killed_pane_ids 期待 [101,102] / [777,888] を維持する）。
   local killed_json='[]'
   if [[ ${#all_panes[@]} -gt 0 ]]; then
     local pane_id
+    local seen=$'\n'
     local ids_lines=""
     for pane_id in "${all_panes[@]}"; do
       [[ -n "$pane_id" ]] || continue
+      case "$seen" in
+        *$'\n'"${pane_id}"$'\n'*) continue ;;
+      esac
+      seen+="${pane_id}"$'\n'
       ids_lines+="${pane_id}"$'\n'
       wez pane kill "$pane_id" 2>/dev/null || true
     done
