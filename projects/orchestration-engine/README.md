@@ -36,10 +36,13 @@ projects/orchestration-engine/
 ├── bin/                       # 実行可能エントリ（各スクリプトの簡易説明は bin/README.md）
 │   ├── oe                     # 本体エンジン: 1 サイクル自律オーケストレーション（envelope→spawn→capture→verify→monitor）
 │   ├── oe-capture             # 既存ペインに attach して終端マーカーを capture→分類→KVS/audit
+│   ├── oe-refute              # 確定前の同期反証 verb（設計SO・so-compare wrap・exploration/consensus rubric・#183 Stage A）
+│   ├── oe-review              # 実装SO（コード欠陥レビュー）の reviewed-diff バインド独立 artifact verb（#195 / L2）
 │   ├── oe-delegate            # 子 Claude セッションを起動しタスクをキック（親子委譲: spawn + kick）
 │   ├── oe-kick                # #N / kickoff パスを 1 引数で受ける oe-delegate の薄いワンショットラッパー（#178）
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
+│   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
 │   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化）
 │   └── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
@@ -54,7 +57,8 @@ projects/orchestration-engine/
 │   ├── attach.sh              # 既存ペインに attach して capture→分類→audit/KVS（oe-capture が使用）
 │   ├── session.sh             # セッション ID 生成
 │   ├── delegate-registry.sh   # 親子委譲の宛先アドレッシング（spawn registry + pane-issue の union 解決）
-│   └── delegate-send.sh       # 1 行 safe-send（改行 fail-fast）+ 観測ベース finalize（Enter 吸収の回復・#144）
+│   ├── delegate-send.sh       # 1 行 safe-send（改行 fail-fast）+ 観測ベース finalize（Enter 吸収の回復・#144）
+│   └── so-verdict.sh          # SO の VERDICT 抽出/集約/dissent/exit（oe-refute / oe-review が共有・#197）
 ├── schemas/                   # JSON Schema 5 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy）
 ├── tests/                     # mock テスト suite（delegate registry / send 等の単体を含む）
 │   └── e2e_real_agent/        # 実 agent (cursor-agent + claude) で 1 サイクル E2E 検証（Step 4-4 で新設）
@@ -130,6 +134,8 @@ cockpit 本線を構成する運用コマンド:
 | **観測層** | GitHub Issue / コメント / PR | MVP **外** からのプロジェクト進捗の俯瞰、人間のスプリント管理、外部ステークホルダーへの可視化 |
 | **駆動層** | `docs/{discussions,plans,episodes,decisions}/` | エージェントが読み書きするコンテキスト引き継ぎ装置。開発サイクル自体はここで完結 |
 
+> 注: 本節の「観測層」は **project 管理の観測**（GitHub・人間のスプリント）。稼働中の子エージェント／pane を見る **runtime のセッション観測**（俯瞰・監査ログ閲覧）は別軸で `oe-status`（[#177](https://github.com/stlwolf/ai-development-hub/issues/177)）が担う。
+
 ### 運用ルール
 
 - **開発サイクルは駆動層で完結**: KickOff → Plan → Episode → ADR の蒸留パイプラインで進める
@@ -162,13 +168,18 @@ MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した�
 
 - `oe-capture` — 既存ペインの終端マーカー capture（[#109](https://github.com/stlwolf/ai-development-hub/issues/109)）
 - 親子委譲 CLI（`oe-delegate` / `oe-send` / `oe-list`）— [#138](https://github.com/stlwolf/ai-development-hub/issues/138) 設計 → [PR #143](https://github.com/stlwolf/ai-development-hub/pull/143) 再設計（疎結合化・アドレッシング）→ [#144](https://github.com/stlwolf/ai-development-hub/issues/144) 送信信頼化（観測ベース finalize）
+- `oe-kick` — `oe-delegate` の薄いワンショットラッパー（[#178](https://github.com/stlwolf/ai-development-hub/issues/178)）
+- **cockpit 直列スパイン**（[#169](https://github.com/stlwolf/ai-development-hub/issues/169)）: `wez pane split` targeting 規約（[#174](https://github.com/stlwolf/ai-development-hub/issues/174)）→ 宣言的盤面 `wez layout`（[#165](https://github.com/stlwolf/ai-development-hub/issues/165)）→ `spawn.sh` の `oe_board_apply` 化（[#175](https://github.com/stlwolf/ai-development-hub/issues/175)。`wez layout` の pane_id map を pool 消費・`OE_SPAWN_PANE_ID` 不変・空なら従来 split fallback）
+- **cockpit 観測UI** `oe-status`（ENGINE=audit-terminal state / DELEGATE=liveness の read-only 俯瞰 + 監査ログ閲覧・[#177](https://github.com/stlwolf/ai-development-hub/issues/177)）= runtime セッション観測の入口
+- **設計SO / 実装SO ゲート verb**: `oe-refute`（確定前の同期反証＝設計SO・[#183](https://github.com/stlwolf/ai-development-hub/issues/183) Stage A）/ `oe-review`（実装SO＝コード欠陥の reviewed-diff バインド独立 artifact・[#195](https://github.com/stlwolf/ai-development-hub/pull/195) L2）+ 共有 `lib/so-verdict.sh`（[#197](https://github.com/stlwolf/ai-development-hub/pull/197)）。実装SO は設計SO と**別レンズ・別 audit**で識別（[#192](https://github.com/stlwolf/ai-development-hub/pull/192) の false-pass 防止）。蒸留パイプラインの soft floor は `.claude/rules/episode-flow-discipline.md`（A1）
+- **2 基盤 identity 決定**（[#188](https://github.com/stlwolf/ai-development-hub/issues/188)）: engine（wez 整数 pane）と delegate（tmux `%N`）は**別多重化レイヤ**＝pane 層で統一せず、相関は **read 時**（query-side fusion）。ADR: `docs/decisions/2026-06-19-decision-188-identity-unification.md`
 
 ### Phase 4 完了報告と Phase 5 方向感
 
 - **Phase 4 完了報告**: [`projects/orchestration-research/synthesis/architecture-sketch.md`](../orchestration-research/synthesis/architecture-sketch.md) §11 (Step 4-5 で追記、frozen)
 - **Phase 5 方向感メモ** (Phase 5 着手時の入力資料): [`docs/plans/2026-05-18-kickoff-phase-5-direction.md`](./docs/plans/2026-05-18-kickoff-phase-5-direction.md) (`status: draft`)
-- **設計判断の正本**: [`docs/decisions/`](./docs/decisions/) 配下の ADR 5 件
-- **Step 別経緯**: [`docs/episodes/`](./docs/episodes/) 配下の Episode 17 件
+- **設計判断の正本**: [`docs/decisions/`](./docs/decisions/) 配下の ADR 群（ADR-001〜005 + identity 決定 `2026-06-19-decision-188` 等）
+- **Step 別経緯**: [`docs/episodes/`](./docs/episodes/) 配下の Episode 群（各 Step + cockpit / ゲート作業）
 
 ## 関連
 
