@@ -25,6 +25,15 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # oe-delegate 実体（既定=兄弟）。テストは OE_DELEGATE_BIN でモックに差し替える。
 OE_DELEGATE_BIN="${OE_DELEGATE_BIN:-${BIN_DIR}/oe-delegate}"
 
+# 番号の先頭ゼロを除去する（最低 1 桁は残す）。Bash 算術（$((10#N))）は固定幅整数で
+# 桁数無制限の巨大値を silently overflow させ別 issue/ラベルに化けるため使わない（実装SO 指摘）。
+# 文字列操作で正規化＝巨大値も欠損なく保持し、誤値は下流（gh issue view）で loud に失敗する。
+strip_leading_zeros() {
+  local n="$1"
+  while [[ "$n" == 0* && "${#n}" -gt 1 ]]; do n="${n#0}"; done
+  printf '%s' "$n"
+}
+
 usage() {
   cat >&2 <<'EOF'
 usage: oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
@@ -91,13 +100,13 @@ if [[ -f "$REF" ]]; then
   # 引っかからないよう `kickoff-` にアンカーし、先頭ゼロは 10# で正規化する。
   base="$(basename "$REF")"
   if [[ "$base" =~ kickoff-([0-9]+) ]]; then
-    DELEGATE_ARGS+=(--label "#$((10#${BASH_REMATCH[1]}))")
+    DELEGATE_ARGS+=(--label "#$(strip_leading_zeros "${BASH_REMATCH[1]}")")
   fi
   DELEGATE_ARGS+=(--kickoff "$REF" --)
   [[ -n "$ADHOC" ]] && DELEGATE_ARGS+=("$ADHOC")
 elif [[ "$REF" =~ ^#?([0-9]+)$ ]]; then
   # --- issue モード（#N / 素の番号） ---
-  num="$((10#${BASH_REMATCH[1]}))"
+  num="$(strip_leading_zeros "${BASH_REMATCH[1]}")"
   task="Issue #${num} の内容を gh issue view ${num} で確認して作業を進めて。リポジトリ: ${WORKSPACE}"
   [[ -n "$ADHOC" ]] && task="${task} ${ADHOC}"
   DELEGATE_ARGS+=(--label "#${num}" -- "$task")

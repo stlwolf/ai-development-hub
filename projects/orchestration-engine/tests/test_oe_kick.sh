@@ -148,5 +148,26 @@ rc=0; run_kick --bogus "#178" || rc=$?
 ck "unknown option rc=2" "2" "$rc"
 ck "unknown option did not call delegate" "no" "$(called)"
 
+echo "[17] 巨大番号: 算術 overflow による silent 別 issue 化を防ぐ（番号を欠損なく保持）"
+reset
+BIG="999999999999999999999999999999999999999"
+run_kick -w "$WS" "#$BIG"
+ck "issue huge label preserved (no overflow)" "#$BIG" "$(argv | sed -n '4p')"
+ck "issue huge task preserved" \
+  "Issue #$BIG の内容を gh issue view $BIG で確認して作業を進めて。リポジトリ: $WS" \
+  "$(argv | sed -n '6p')"
+reset
+KOBIG="$_TMP_DIR/kickoff-$BIG-x.md"; printf 'x\n' > "$KOBIG"
+run_kick -w "$WS" "$KOBIG"
+ck "kickoff huge label preserved (no overflow)" "#$BIG" "$(argv | sed -n '4p')"
+
+echo "[18] 先頭ゼロ正規化は文字列操作で（巨大でも崩れない）"
+reset
+run_kick -w "$WS" "#0000178"
+ck "0000178 -> #178" "#178" "$(argv | sed -n '4p')"
+reset
+run_kick -w "$WS" "#000"
+ck "all-zeros -> #0 (最低1桁)" "#0" "$(argv | sed -n '4p')"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
