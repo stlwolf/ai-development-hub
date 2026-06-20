@@ -53,6 +53,13 @@ while [[ "${1:-}" == -* ]]; do
       KICKOFF="$2"; shift 2 ;;
     --label)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --label requires a value" >&2; exit 2; }
+      # 改行（LF/CR）を含むラベルは registry 経由で oe_reg_list 出力を複数行化し、消費者
+      # （oe-list/oe-select/oe-status）の行パースに偽 %N 候補行を紛れ込ませ得る。
+      # --claude-arg と同様、書き込み前に fail-fast 拒否する（前例 lib/delegate-send.sh）。
+      if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
+        echo "oe-delegate: --label value must be a single line (no newline)" >&2
+        exit 2
+      fi
       LABEL="$2"; shift 2 ;;
     --claude-arg)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --claude-arg requires a value" >&2; exit 2; }
@@ -110,7 +117,10 @@ build_child_command() {
   local cmd
   cmd="PARENT_TMUX_PANE=$(shell_quote "$PARENT_PANE") claude"
   local arg
-  for arg in "${CLAUDE_ARGS[@]}"; do
+  # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
+  # （4.4+ は許容）。oe-kick 等が --claude-arg 無しで呼ぶと CLAUDE_ARGS は空のため、
+  # ${arr[@]+"${arr[@]}"} イディオムで空配列を安全に展開する（ADR-005・oe-select 前例）。
+  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
     cmd="${cmd} $(shell_quote "$arg")"
   done
   if [[ -n "$KICKOFF" ]]; then
