@@ -83,6 +83,7 @@ issue 受入が「観測ツール(#177)が相関できる、**または**『相�
 - **identity モデル**: コード変更なし。2-world topology を**アーキテクチャ不変条件**として本 ADR + schema 注記に明文化。
 - **schema**: 構造変更なし。`session-state.schema.json` の `pane_id` description に「WezTerm 整数・delegate(tmux) 子は本 KVS の対象外（DJ-188-2）」を追記し、将来の F 方向の誤改修を予防（受入3 の明文化のコード面ガード）。
 - **#177（消費者）**: identity モデルが「基盤ごと・read 時相関・永続マップ無し」と確定し **unblock**。俯瞰の再設計（query-side fusion 単一ビュー or honest 2 ビュー）は #177 の判断で、本 ADR はロックしない（推奨方向のみ申し送り）。#177 当初 DJ-1/4/5/6 は再開時も有効。
+  - **back-prop（2026-06-20・#177 実装時）**: #177 は本 ADR 上の推奨表現「`kind`/`mux` 列付き**1テーブル**に投影」を、設計SO（2 ラウンド）を経て **単一コマンド・typed sections**（ENGINE / DELEGATE を別区画・列融合しない）へ精緻化した（flat 1テーブルは engine/delegate の STATE/TIMELINE 列の意味を混同するため）。read 時投影・join しない・delegate は liveness のみ（timeline:none）という本 ADR の骨子は不変。詳細は [discussion #177 §8](../discussions/2026-06-19-discussion-cockpit-observation-ui.md)。
 - **#114 / Stage-B**: 永続横断観測が要るとき event bus（DJ-188-4）を採る方針を申し送り。F に投資しないことで #114 との衝突を回避。
 - **テスト**: なし（schema description 追記のみ・構造/バリデーション不変）。
 

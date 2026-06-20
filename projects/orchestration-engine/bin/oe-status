@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# oe-status — cockpit 観測UI（read-only 俯瞰 + 監査ログ閲覧）(#177)
+#
+# usage:
+#   oe-status                       俯瞰（typed sections・既定・プレーン）
+#   oe-status <session_id>          1 セッションの監査ログを時系列表示（start→end）
+#   oe-status -i | --interactive    fzf で行を選び preview（ENGINE=timeline / DELEGATE=meta）
+#   oe-status -h | --help
+#
+# 設計の正本: docs/discussions/2026-06-19-discussion-cockpit-observation-ui.md §8
+#            （DJ-2再/DJ-3再 = 単一コマンド typed sections・audit-terminal reducer）
+#            docs/decisions/2026-06-19-decision-188-identity-unification.md
+#            （identity は基盤ごと・read 時相関・永続マップ無し）
+#
+# 2 つの identity 空間（#188）を join せず read 時に投影する:
+#   - ENGINE 区画（wez · state/audit）: engine session を audit-terminal reducer で導いた
+#     STATE 付きで一覧。STATE は audit jsonl の終端シグナルを severity-max で reduce する
+#     （末尾行ではない。cleanup / verification_* は STATE 導出から除外）。
+#     CB timeout は audit のみ・KVS 未書込のため、KVS でなく audit から導くのが正（caveat1）。
+#   - DELEGATE 区画（tmux · liveness）: oe_reg_list の生存ペインを liveness のみで一覧
+#     （state/audit を持たない＝timeline:none）。
+#
+# read-only / 非検出: 触れるのは (1) state/audit ファイル (2) tmux/wez ペイン存在（mux query）
+#   のみ。ペイン出力は一切読まない（polling 常駐・capture マーカー走査＝検出はしない）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${BIN_DIR}/.." && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+# データ源（OE_DATA_DIR で上書き可。既定はプロジェクトルート相対。oe-refute/constants.sh と同規約）。
+OE_AUDIT_DIR="${OE_AUDIT_DIR:-${OE_DATA_DIR:-${PROJECT_DIR}}/audit}"
+OE_STATE_DIR="${OE_STATE_DIR:-${OE_DATA_DIR:-${PROJECT_DIR}}/state}"
+
+# session_id（ULID）パターン。audit/oe-refute.jsonl・oe-review.jsonl（別スキーマ・DJ-4）は
+# このパターンに合致しないため自動的に除外される。
+OE_STATUS_ULID_RE='^[0-9A-HJKMNP-TV-Z]{26}$'
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-status                     俯瞰（ENGINE / DELEGATE の typed sections・既定）
+  oe-status <session_id>        1 セッションの監査ログを時系列表示（start→end）
+  oe-status -i | --interactive  fzf で行を選び preview（ENGINE=timeline / DELEGATE=meta）
+  oe-status -h | --help         このヘルプ
+
+read-only: state/audit ファイルと tmux/wez のペイン存在のみを読む（検出・送信はしない）。
+EOF
+}
+
+err() { echo "oe-status: $*" >&2; }
+
+# --- audit-terminal reducer（engine session の STATE 導出） ---
+# 引数: <audit jsonl path>
+# 出力: 1 行 JSON {state, panes, last_ts, last_event, vto}
+#   state    : severity-max で導いた session-level STATE（running?/? を含む）
+#   panes    : session_end の数（multi-pane 把握用）
+#   last_ts  : 最終イベントの ts
+#   last_event: 最終イベントの event_type
+#   vto      : verification_timeout の発生数（注記用・STATE には寄与しない）
+_oe_status_reduce() {
+  local file="$1"
+  jq -s '
+    def sev:
+      {"protocol_error":0,"timeout":1,"blocked":2,"retryable_failure":3,
+       "partial":4,"interrupted":5,"success":6}[.] // 99;
+    ( [ .[]
+        | if .event_type=="session_end" and (.state != null) then .state
+          elif .event_type=="circuit_breaker_triggered" then
+            ( ((.payload.reason // .payload.limit_type) // "") as $r
+              | if $r=="timeout" then "timeout"
+                elif ($r=="max_turns" or $r=="max_panes") then "blocked"
+                else empty end )
+          elif .event_type=="interrupt" then "interrupted"
+          else empty end ] ) as $terms
+    | { state: ( if ($terms|length) > 0 then ($terms | min_by(sev))
+                 elif ([ .[] | select(.event_type=="session_start") ] | length) > 0 then "running?"
+                 else "?" end ),
+        panes:      ( [ .[] | select(.event_type=="session_end") ] | length ),
+        last_ts:    ( (.[-1] // {}).ts // "" ),
+        last_event: ( (.[-1] // {}).event_type // "" ),
+        vto:        ( [ .[] | select(.event_type=="circuit_breaker_triggered"
+                        and ((.payload.reason // .payload.limit_type) == "verification_timeout")) ] | length )
+      }
+  ' "$file"
+}
+
+# engine session id 一覧（audit ULID ファイル ∪ state ファイル）を改行区切りで（新しい順）
+_oe_status_engine_ids() {
+  local f base
+  {
+    if [[ -d "$OE_AUDIT_DIR" ]]; then
+      for f in "$OE_AUDIT_DIR"/*.jsonl; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f" .jsonl)"
+        [[ "$base" =~ $OE_STATUS_ULID_RE ]] && printf '%s\n' "$base"
+      done
+    fi
+    if [[ -d "$OE_STATE_DIR" ]]; then
+      for f in "$OE_STATE_DIR"/*.state.json; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f" .state.json)"
+        [[ "$base" =~ $OE_STATUS_ULID_RE ]] && printf '%s\n' "$base"
+      done
+    fi
+  } | sort -u -r
+}
+
+# ENGINE 区画を出力（plain=表 / fzf=候補行）
+#   $1: mode = plain | fzf
+_oe_status_engine_section() {
+  local mode="$1"
+  local ids sid audit_file state_file reduced state panes last_event note kvs_state
+  ids="$(_oe_status_engine_ids)"
+
+  if [[ "$mode" == "plain" ]]; then
+    printf '=== ENGINE (wez · state/audit) ===\n'
+    if [[ -z "$ids" ]]; then
+      printf '  (no engine sessions in %s)\n' "$OE_AUDIT_DIR"
+      return 0
+    fi
+    printf '%-26s  %-11s  %-5s  %-20s  %s\n' "SESSION" "STATE" "PANES" "LAST_EVENT" "NOTE"
+  fi
+
+  [[ -n "$ids" ]] || return 0
+  while IFS= read -r sid; do
+    [[ -n "$sid" ]] || continue
+    audit_file="${OE_AUDIT_DIR}/${sid}.jsonl"
+    state_file="${OE_STATE_DIR}/${sid}.state.json"
+    note=""
+    if [[ -f "$audit_file" ]]; then
+      reduced="$(_oe_status_reduce "$audit_file" 2>/dev/null)" || reduced='{}'
+      [[ -n "$reduced" ]] || reduced='{}'
+      state="$(printf '%s' "$reduced"  | jq -r '.state // "?"' 2>/dev/null)"
+      panes="$(printf '%s' "$reduced"  | jq -r '.panes // 0' 2>/dev/null)"
+      last_event="$(printf '%s' "$reduced" | jq -r '.last_event // "-"' 2>/dev/null)"
+      [[ "$(printf '%s' "$reduced" | jq -r '.vto // 0' 2>/dev/null)" != "0" ]] && note="verify-timeout"
+    else
+      # audit 不在で state file のみ → KVS の state を表示（kvs-only 注記）
+      kvs_state="$(jq -r '.state // "?"' "$state_file" 2>/dev/null)"
+      state="${kvs_state:-?}"; panes="-"; last_event="-"; note="kvs-only"
+    fi
+    [[ "${state:-}" == "" ]] && state="?"
+    # outputs/blockers の補足（state file があれば）
+    if [[ -f "$state_file" ]]; then
+      local nout nblk
+      nout="$(jq -r '(.outputs // []) | length' "$state_file" 2>/dev/null || echo 0)"
+      nblk="$(jq -r '(.blockers // []) | length' "$state_file" 2>/dev/null || echo 0)"
+      [[ "${nblk:-0}" -gt 0 ]] 2>/dev/null && note="${note:+${note} }blockers=${nblk}"
+      [[ "${nout:-0}" -gt 0 ]] 2>/dev/null && note="${note:+${note} }outputs=${nout}"
+    fi
+
+    if [[ "$mode" == "plain" ]]; then
+      printf '%-26s  %-11s  %-5s  %-20s  %s\n' "$sid" "${state}" "${panes}" "${last_event}" "${note}"
+    else
+      # fzf 候補行（first-token=session_id）
+      printf '%-26s  ENGINE    %-11s  %s\n' "$sid" "${state}" "${note}"
+    fi
+  done <<< "$ids"
+}
+
+# DELEGATE 区画を出力（plain=表 / fzf=候補行）。tmux 不在は degrade（engine だけは出す）。
+#   $1: mode = plain | fzf
+_oe_status_delegate_section() {
+  local mode="$1"
+  local list rc first pane source label
+  [[ "$mode" == "plain" ]] && printf '\n=== DELEGATE (tmux · liveness) ===\n'
+
+  # set -e 下で oe_reg_list の失敗（tmux 不在=rc2）が assignment を介して abort しないよう
+  # || rc=$? で受ける（degrade して engine 区画だけは出す）。
+  rc=0
+  list="$(oe_reg_list 2>/dev/null)" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    [[ "$mode" == "plain" ]] && printf '  (tmux unavailable — delegate liveness not shown)\n'
+    return 0
+  fi
+
+  if [[ "$mode" == "plain" ]]; then
+    # oe_reg_list の表（PANE/SOURCE/LABEL）をそのまま liveness ビューとして出す。
+    printf '%s\n' "$list"
+    return 0
+  fi
+
+  # fzf モード: ヘッダ行を落として候補行（first-token=%N）に整形。
+  first=1
+  while IFS= read -r line; do
+    if [[ "$first" -eq 1 ]]; then first=0; continue; fi
+    [[ -n "$line" ]] || continue
+    pane="$(printf '%s\n' "$line"   | awk '{print $1}')"
+    source="$(printf '%s\n' "$line" | awk '{print $2}')"
+    label="$(printf '%s\n' "$line"  | awk '{$1="";$2="";sub(/^  */,"");print}')"
+    printf '%-26s  DELEGATE  %-11s  %s\n' "$pane" "live(${source})" "$label"
+  done <<< "$list"
+}
+
+# 1 セッションの監査ログを時系列表示（受入2: start→end）
+_oe_status_timeline() {
+  local sid="$1"
+  local audit_file="${OE_AUDIT_DIR}/${sid}.jsonl"
+  local state_file="${OE_STATE_DIR}/${sid}.state.json"
+
+  if [[ ! -f "$audit_file" && ! -f "$state_file" ]]; then
+    err "no audit/state for session: ${sid} (in ${OE_AUDIT_DIR})"
+    return 1
+  fi
+
+  printf '=== session %s ===\n' "$sid"
+  if [[ -f "$audit_file" ]]; then
+    local reduced
+    reduced="$(_oe_status_reduce "$audit_file" 2>/dev/null)" || reduced=""
+    printf 'derived state: %s\n\n' "$(printf '%s' "$reduced" | jq -r '.state // "?"' 2>/dev/null)"
+    printf 'TIMELINE (%s):\n' "$audit_file"
+    # 時系列 1 行ずつ。state は [..]、payload は非空のとき末尾に JSON で添える。
+    jq -r '
+      "  " + .ts
+      + "  " + .event_type
+      + (if .state then "  [" + .state + "]" else "" end)
+      + (if (.payload // {} | length) > 0 then "  " + (.payload | tojson) else "" end)
+    ' "$audit_file" 2>/dev/null || {
+      err "failed to read audit jsonl: ${audit_file}"; return 1; }
+  else
+    printf '(no audit jsonl — KVS only)\n'
+  fi
+
+  if [[ -f "$state_file" ]]; then
+    printf '\nKVS (%s):\n' "$state_file"
+    jq -r '
+      "  state: " + (.state // "?")
+      + "  last_updated: " + (.last_updated // "-")
+      + (if (.outputs // [] | length) > 0 then "\n  outputs: " + (.outputs | join(", ")) else "" end)
+      + (if (.blockers // [] | length) > 0 then "\n  blockers: " + (.blockers | join("; ")) else "" end)
+      + (if .verification_summary then "\n  verification: " + (.verification_summary | tojson) else "" end)
+    ' "$state_file" 2>/dev/null || true
+  fi
+}
+
+# fzf preview ディスパッチ（内部用）。token=ULID→timeline / token=%N→delegate meta。
+_oe_status_preview() {
+  local token="$1"
+  if [[ "$token" =~ $OE_STATUS_ULID_RE ]]; then
+    _oe_status_timeline "$token"
+  elif [[ "$token" =~ ^%[0-9]+$ ]]; then
+    # DELEGATE: liveness のみ・timeline 無し。registry メタのみ表示（ペイン出力は読まない）。
+    printf '=== delegate pane %s (tmux · liveness only) ===\n' "$token"
+    oe_reg_list 2>/dev/null | awk -v p="$token" 'NR==1 || $1==p' || true
+    printf '\n(no audit timeline for delegate panes — timeline:none / #188)\n'
+  else
+    printf '(no preview for: %s)\n' "$token"
+  fi
+}
+
+# 俯瞰（plain・typed sections）
+_oe_status_overview() {
+  _oe_status_engine_section plain
+  _oe_status_delegate_section plain
+}
+
+# --interactive: fzf で 1 行選ぶ → 選択行の preview を stdout に出す（read-only 観測）。
+_oe_status_interactive() {
+  command -v jq >/dev/null 2>&1 || { err "jq is required"; return 2; }
+  if ! command -v fzf >/dev/null 2>&1; then
+    err "fzf not found — falling back to plain overview"
+    _oe_status_overview
+    return 0
+  fi
+  local candidates header selected rc token
+  header="$(printf '%-26s  %-8s  %-11s  %s' "ID" "KIND" "STATE" "NOTE/LABEL")"
+  candidates="$( { _oe_status_engine_section fzf; _oe_status_delegate_section fzf; } )"
+  if [[ -z "$candidates" ]]; then
+    err "no rows to show"
+    return 1
+  fi
+  rc=0
+  selected="$(printf '%s\n' "$candidates" | fzf \
+    --header="$header" \
+    --prompt='oe-status> ' \
+    --preview "${BIN_DIR}/oe-status --preview {1}" \
+    --preview-window=right:60%)" || rc=$?
+  if [[ "$rc" -eq 130 || "$rc" -eq 1 ]]; then
+    return 130
+  elif [[ "$rc" -ge 2 ]]; then
+    err "fzf failed (rc=${rc})"; return 2
+  fi
+  [[ -n "$selected" ]] || return 130
+  token="$(printf '%s\n' "$selected" | awk '{print $1}')"
+  _oe_status_preview "$token"
+}
+
+# --- arg 解析 / dispatch ---
+command -v jq >/dev/null 2>&1 || { err "jq is required"; exit 2; }
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  -i|--interactive)
+    [[ $# -eq 1 ]] || { err "unexpected argument after ${1}"; usage; exit 2; }
+    _oe_status_interactive; exit $? ;;
+  --preview)
+    [[ $# -eq 2 ]] || { err "--preview requires exactly one token"; exit 2; }
+    _oe_status_preview "$2"; exit 0 ;;
+  "" )
+    _oe_status_overview; exit 0 ;;
+  -*)
+    err "unknown option: $1"; usage; exit 2 ;;
+  *)
+    [[ $# -eq 1 ]] || { err "unexpected argument after ${1}"; usage; exit 2; }
+    if [[ "$1" =~ $OE_STATUS_ULID_RE ]]; then
+      _oe_status_timeline "$1"; exit $?
+    else
+      err "not a session_id (ULID): $1"; usage; exit 2
+    fi
+    ;;
+esac
