@@ -30,6 +30,9 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${BIN_DIR}/.." && pwd)"
 # shellcheck source=../lib/session.sh
 source "${PROJECT_DIR}/lib/session.sh"
+# VERDICT 抽出/集約/dissent/exit code は oe-review と共有（#196）。
+# shellcheck source=../lib/so-verdict.sh
+source "${PROJECT_DIR}/lib/so-verdict.sh"
 
 # so-compare 実体。PATH 上の so-compare を既定で使い、テストは PATH 先頭スタブで差し替える。
 OE_REFUTE_SO_COMPARE="${OE_REFUTE_SO_COMPARE:-so-compare}"
@@ -246,91 +249,18 @@ if [[ "$so_rc" -eq 2 ]]; then
   err "warning: so-compare reported all-provider failure (rc=2); lanes will be treated as error"
 fi
 
-# --- per-lane verdict 抽出 ---
-# 各レーンの stdout 末尾の VERDICT: 行を拾う。取れなければ error/unknown。
-# IFS=',' でプロバイダ名（=レーン名）を回す。
-extract_verdict() {
-  local f="$1" line token
-  [[ -s "$f" ]] || { printf 'unknown'; return; }
-  # 末尾から最後の VERDICT: 行を拾う（直後の token が refuted|survived の行のみ対象）
-  line="$(grep -iE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | tail -n 1 || true)"
-  if [[ -z "$line" ]]; then printf 'unknown'; return; fi
-  # VERDICT: の直後の token だけを判定する（Fix 1）。行全体への grep だと
-  # "VERDICT: survived (not refuted)" を refuted と誤分類するため、token を切り出す。
-  # 行末の付帯テキストは無視する。
-  token="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*VERDICT:[[:space:]]*([A-Za-z]+).*/\1/I')"
-  if printf '%s' "$token" | grep -qiE '^refuted$'; then printf 'refuted'; else printf 'survived'; fi
-}
-
-extract_reason() {
-  local f="$1" line
-  [[ -s "$f" ]] || { printf ''; return; }
-  line="$(grep -iE '^[[:space:]]*REASON:' "$f" | tail -n 1 || true)"
-  # REASON: ラベルを剥がす
-  printf '%s' "$line" | sed -E 's/^[[:space:]]*REASON:[[:space:]]*//I'
-}
-
-# レーン集約。Bash 3.2 互換: 連想配列を使わず並行配列で扱う。
-lane_names=()
-lane_verdicts=()
-lane_notes=()
-
-refuted_count=0
-survived_count=0
-error_count=0
-
-IFS=',' read -r -a _providers <<< "$PROVIDERS"
-for prov in ${_providers[@]+"${_providers[@]}"}; do
-  stdout_file="${OUTPUT_DIR}/${prov}-stdout.txt"
-  v="$(extract_verdict "$stdout_file")"
-  case "$v" in
-    refuted)  note="$(extract_reason "$stdout_file")"; refuted_count=$((refuted_count + 1)) ;;
-    survived) note="$(extract_reason "$stdout_file")"; survived_count=$((survived_count + 1)) ;;
-    *)        v="error"; note="VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"; error_count=$((error_count + 1)) ;;
-  esac
-  lane_names+=("$prov")
-  lane_verdicts+=("$v")
-  lane_notes+=("$note")
-done
-
-# --- conservative 集約 ---
-# exploration 既定: 1 レーンでも refuted → 全体 refuted。
-# survived は「全レーンが survived」のときのみ。error/unknown が 1 つでもあれば survived 確定不可
-# → conservative に refuted へ倒す（確定が早すぎるコストを避ける thesis 寄り）。
-total_lanes=${#lane_names[@]}
-if [[ "$refuted_count" -gt 0 ]]; then
-  VERDICT="refuted"
-  REASON="${refuted_count}/${total_lanes} レーンが material に反証（conservative 集約: 1 レーン refuted で全体 refuted）"
-elif [[ "$survived_count" -eq "$total_lanes" && "$total_lanes" -gt 0 ]]; then
-  VERDICT="survived"
-  REASON="全 ${total_lanes} レーンが反証を試みたが claim は持ちこたえた"
-else
-  VERDICT="refuted"
-  REASON="verdict 未確定のレーンあり（refuted=${refuted_count} survived=${survived_count} error=${error_count}）。survived を確定できないため conservative に refuted"
-fi
-
-# --- dissent JSON 配列組立 ---
-dissent_json="$(
-  # jq に並行配列を渡して dissent を組む
-  args=()
-  i=0
-  while [[ "$i" -lt "$total_lanes" ]]; do
-    args+=(--arg "lane${i}" "${lane_names[$i]}")
-    args+=(--arg "verdict${i}" "${lane_verdicts[$i]}")
-    args+=(--arg "note${i}" "${lane_notes[$i]}")
-    i=$((i + 1))
-  done
-  # jq プログラムを動的生成（n 個のオブジェクトを配列化）
-  jq_prog="["
-  i=0
-  while [[ "$i" -lt "$total_lanes" ]]; do
-    [[ "$i" -eq 0 ]] || jq_prog="${jq_prog},"
-    jq_prog="${jq_prog}{lane:\$lane${i},verdict:\$verdict${i},note:\$note${i}}"
-    i=$((i + 1))
-  done
-  jq_prog="${jq_prog}]"
-  jq -cn ${args[@]+"${args[@]}"} "$jq_prog"
-)"
+# --- per-lane verdict 抽出 + conservative 集約 + dissent 構築（共有 lib: lib/so-verdict.sh） ---
+# 抽出（#184 Fix 1 含む）/ レーン集約 / conservative 集約 / dissent 組立は oe-review と共有。
+# exploration 既定: 1 レーンでも refuted → 全体 refuted。survived は全レーン survived のとき
+# のみ。error/unknown が 1 つでもあれば survived 確定不可 → conservative に refuted へ倒す
+# （確定が早すぎるコストを避ける thesis 寄り）。verb 固有なのは REASON の文言（phrase 引数）。
+so_verdict_collect_lanes "$OUTPUT_DIR" "$PROVIDERS"
+so_verdict_aggregate "material に反証" "反証を試みたが claim は持ちこたえた"
+# 以降の出力/audit/exit 組立を不変に保つため、lib の global-return を verb ローカル名に束ねる。
+total_lanes="$SO_VERDICT_TOTAL_LANES"
+VERDICT="$SO_VERDICT_VERDICT"
+REASON="$SO_VERDICT_REASON"
+dissent_json="$(so_verdict_dissent_json)"
 
 # --- audit_id（output_dir 名と同じ run ULID を流用・traceability） ---
 AUDIT_ID="$RUN_ID"
@@ -362,8 +292,5 @@ if mkdir -p "$OE_AUDIT_DIR" 2>/dev/null; then
     >> "${OE_AUDIT_DIR}/oe-refute.jsonl" 2>/dev/null || true
 fi
 
-# --- exit code（advisory） ---
-if [[ "$VERDICT" == "refuted" ]]; then
-  exit 3
-fi
-exit 0
+# --- exit code（advisory・共有 lib: survived→0 / refuted→3） ---
+so_verdict_exit
