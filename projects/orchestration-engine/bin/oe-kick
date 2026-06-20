@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# oe-kick — kickoff/issue 参照からのワンショット委譲ラッパー（tmux）
+#
+# usage: oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
+#
+# bin/oe-delegate の薄いワンショットラッパー。`#N`（or 素の番号）か kickoff パスを
+# 1 引数で受け、oe-delegate の妥当なフラグ列へ展開する（毎回フラグを組み立てる手間を省く）。
+#
+#   - 既存ファイル        → kickoff doc として渡す（--kickoff <abs>）。ファイル名の
+#                           `kickoff-<N>` から `--label '#N'` を自動導出（不検出はラベル無し）。
+#   - `#N` / `N`（数字のみ）→ Issue 参照。`--label '#N'` を自動付与し、
+#                           "Issue #N を gh issue view N で確認して進めて" の task を組む。
+#   - それ以外            → 曖昧回避のため明示エラー（usage / exit 2）。
+#
+# 末尾の ad-hoc 1 行（任意）は issue 時は既定 task に連結、kickoff 時は oe-delegate の
+# task として渡す（改行は oe-delegate / oe_send_line が拒否する）。
+#
+# tmux 前提（TMUX_PANE）。tmux 外は明示エラー（oe-delegate を踏襲し、本ラッパーでも
+# task 組立前に fail-fast する）。実体の oe-delegate は OE_DELEGATE_BIN で差し替え可能
+# （既定は兄弟スクリプト。テストでモックに置換するためのシーム）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# oe-delegate 実体（既定=兄弟）。テストは OE_DELEGATE_BIN でモックに差し替える。
+OE_DELEGATE_BIN="${OE_DELEGATE_BIN:-${BIN_DIR}/oe-delegate}"
+
+# 番号の先頭ゼロを除去する（最低 1 桁は残す）。Bash 算術（$((10#N))）は固定幅整数で
+# 桁数無制限の巨大値を silently overflow させ別 issue/ラベルに化けるため使わない（実装SO 指摘）。
+# 文字列操作で正規化＝巨大値も欠損なく保持し、誤値は下流（gh issue view）で loud に失敗する。
+strip_leading_zeros() {
+  local n="$1"
+  while [[ "$n" == 0* && "${#n}" -gt 1 ]]; do n="${n#0}"; done
+  printf '%s' "$n"
+}
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
+
+  <#N|kickoff-path>   委譲対象を 1 引数で指定:
+                        - 既存ファイル → kickoff doc として渡す（--kickoff）。
+                          ファイル名の kickoff-<N> から --label '#N' を自動導出
+                        - #N / N（数字のみ） → Issue 参照。--label '#N' 自動付与 +
+                          "gh issue view N で確認して進めて" の task を組む
+                        - それ以外 → エラー（曖昧回避のため明示）
+  ad-hoc...           子へ渡す補足の 1 行（任意・複数語は空白連結・改行不可）。
+                        issue 時は既定 task に連結、kickoff 時は task として渡す
+  -w, --workspace DIR 子の作業ディレクトリ（既定: カレント）。task 文にも埋める
+  --claude-arg <arg>  子 claude へ渡す追加引数（repeatable）。oe-delegate へ素通し。
+                        例: --claude-arg --permission-mode --claude-arg auto
+  -h, --help          このヘルプを表示
+
+注意: 既存ファイルが番号名（例 ./178）だと file 優先で kickoff 扱いになる。
+      Issue を指すなら `#178`、または cwd にその名のファイルが無い状態で `178` を渡す。
+EOF
+}
+
+WORKSPACE="$(pwd)"
+CLAUDE_ARGS=()
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -w|--workspace)
+      [[ $# -ge 2 ]] || { echo "oe-kick: --workspace requires a value" >&2; exit 2; }
+      WORKSPACE="$2"; shift 2 ;;
+    --claude-arg)
+      [[ $# -ge 2 ]] || { echo "oe-kick: --claude-arg requires a value" >&2; exit 2; }
+      # 値の検証/quote は oe-delegate に委ねる（改行拒否含む）。ここでは素通し。
+      CLAUDE_ARGS+=(--claude-arg "$2"); shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) echo "oe-kick: unknown option: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+REF="${1:-}"
+if [[ -z "$REF" ]]; then
+  echo "oe-kick: a kickoff path or issue ref (#N) is required" >&2
+  usage; exit 2
+fi
+shift
+ADHOC="$*"
+
+# tmux 前提の preflight（受入条件: tmux 外は明示エラー）。oe-delegate も再検査するが、
+# gh task 文の組立前にここで fail-fast し、エラー主体を oe-kick として明示する。
+[[ -n "${TMUX_PANE:-}" ]] || {
+  echo "oe-kick: TMUX_PANE is not set — must run inside a tmux session" >&2
+  exit 1
+}
+
+# oe-delegate へ渡すフラグ列を組み立てる。
+DELEGATE_ARGS=(-w "$WORKSPACE")
+if [[ ${#CLAUDE_ARGS[@]} -gt 0 ]]; then
+  DELEGATE_ARGS+=("${CLAUDE_ARGS[@]}")
+fi
+
+if [[ -f "$REF" ]]; then
+  # --- kickoff モード（既存ファイル優先） ---
+  # ファイル名（basename）の kickoff-<N> から #N ラベルを導出。日付プレフィックス等に
+  # 引っかからないよう `kickoff-` にアンカーし、先頭ゼロは strip_leading_zeros で正規化する。
+  base="$(basename "$REF")"
+  if [[ "$base" =~ kickoff-([0-9]+) ]]; then
+    DELEGATE_ARGS+=(--label "#$(strip_leading_zeros "${BASH_REMATCH[1]}")")
+  fi
+  DELEGATE_ARGS+=(--kickoff "$REF" --)
+  [[ -n "$ADHOC" ]] && DELEGATE_ARGS+=("$ADHOC")
+elif [[ "$REF" =~ ^#?([0-9]+)$ ]]; then
+  # --- issue モード（#N / 素の番号） ---
+  num="$(strip_leading_zeros "${BASH_REMATCH[1]}")"
+  task="Issue #${num} の内容を gh issue view ${num} で確認して作業を進めて。リポジトリ: ${WORKSPACE}"
+  [[ -n "$ADHOC" ]] && task="${task} ${ADHOC}"
+  DELEGATE_ARGS+=(--label "#${num}" -- "$task")
+else
+  # --- 第三分類: 非ファイル・非数値 → 明示エラー（黙って誤ルーティングしない） ---
+  echo "oe-kick: '$REF' is neither an existing kickoff file nor an issue ref (#N)" >&2
+  usage; exit 2
+fi
+
+exec "$OE_DELEGATE_BIN" "${DELEGATE_ARGS[@]}"
