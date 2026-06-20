@@ -109,13 +109,16 @@ rc=0; "$OE_STATUS" "$RUN" extra >/dev/null 2>&1 || rc=$?; ck "余分な引数 rc
 rc=0; "$OE_STATUS" 202606209999999999999999ZZ >/dev/null 2>&1 || rc=$?; ck "存在しない session rc1" "1" "$rc"
 
 echo "[6] delegate degrade: tmux 不在でも ENGINE は出て exit 0"
-# jq を含む最小 PATH（tmux を含めない）を作る。oe_reg_list の command -v tmux が失敗 → degrade。
+# stub のみの PATH（tmux を含めない）を作り、oe-status が必要とするツールだけ symlink する。
+# Copilot #3446407858 反映: PATH に /usr/bin:/bin を残すと、その環境（Linux/CI 等）に
+# /usr/bin/tmux があると degrade せずテストが不安定になる。stub のみにして tmux を確実に隠す
+# （shebang の /usr/bin/env は絶対パスなので PATH の影響を受けない）。
 PATHBIN="$(mktemp -d)"
 for tool in jq awk sed sort basename dirname cat printf env bash grep; do
   p="$(command -v "$tool" 2>/dev/null || true)"
   if [[ -n "$p" ]]; then ln -sf "$p" "${PATHBIN}/${tool}" 2>/dev/null || true; fi
 done
-degrade_out="$(PATH="${PATHBIN}:/usr/bin:/bin" "$OE_STATUS" 2>/dev/null)"; drc=$?
+degrade_out="$(PATH="${PATHBIN}" "$OE_STATUS" 2>/dev/null)"; drc=$?
 ck "tmux 不在で exit 0" "0" "$drc"
 ck "ENGINE 区画は出る" "yes" "$(printf '%s\n' "$degrade_out" | grep -q "=== ENGINE" && echo yes || echo no)"
 ck "ENGINE 行（timeout）は出る" "yes" "$(printf '%s\n' "$degrade_out" | grep -E "^$TMO " | grep -q "timeout" && echo yes || echo no)"
