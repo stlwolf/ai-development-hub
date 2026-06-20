@@ -5,7 +5,7 @@ orchestration-engine の実行可能エントリの簡易リファレンス（AI
 scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-send` / `oe-list` / `oe-select` / `oe-report`
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report`
 - **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰）
 
 ---
@@ -87,6 +87,23 @@ oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg 
 - tmux 内必須（`TMUX_PANE` から親ペイン取得、`PARENT_TMUX_PANE` を子へ継承）
 
 関連 lib: `delegate-registry.sh`（キック注入は `oe-send` 経由）
+
+## oe-kick — kickoff/issue 参照からのワンショット委譲ラッパー（#178）
+
+`oe-delegate` の薄いワンショットラッパー。`#N`（or 素の番号）か kickoff パスを 1 引数で受け、妥当なフラグ列へ展開する（毎回フラグを組む手間を省く）。
+
+```bash
+oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
+```
+
+- 既存ファイル → `--kickoff <path>` で渡し、ファイル名の `kickoff-<N>` から `--label '#N'` を自動導出（不検出はラベル無し）
+- `#N` / `N`（数字のみ） → Issue 参照。`--label '#N'` 自動付与 + `"gh issue view N で確認して進めて"` の task を組む
+- それ以外（非ファイル・非数値） → 曖昧回避のため明示エラー（exit 2）
+- 末尾 ad-hoc（任意・1行） … issue 時は既定 task に連結、kickoff 時は task として渡す
+- `-w WORKSPACE` 既定はカレント。tmux 内必須（`TMUX_PANE` 未設定は明示エラー）
+- 注意: 番号名ファイル（例 `./178`）は file 優先で kickoff 扱い。Issue を指すなら `#178`
+
+関連: `oe-delegate`（実体。`OE_DELEGATE_BIN` で差し替え可＝テスト seam）
 
 ## oe-send — 既存ペインへ 1 行を汎用送信
 

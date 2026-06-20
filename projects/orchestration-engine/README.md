@@ -37,6 +37,7 @@ projects/orchestration-engine/
 │   ├── oe                     # 本体エンジン: 1 サイクル自律オーケストレーション（envelope→spawn→capture→verify→monitor）
 │   ├── oe-capture             # 既存ペインに attach して終端マーカーを capture→分類→KVS/audit
 │   ├── oe-delegate            # 子 Claude セッションを起動しタスクをキック（親子委譲: spawn + kick）
+│   ├── oe-kick                # #N / kickoff パスを 1 引数で受ける oe-delegate の薄いワンショットラッパー（#178）
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
 │   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化）
@@ -85,6 +86,7 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 統括スレッドから子セッションへタスク・事前情報を渡す痛点（コピペ・誤送信）を解消する単機能コマンド群。自然言語層の `delegate-task` スキルから駆動する。
 
 - `oe-delegate` — 子を `tmux split-window` で起動し、タスク（または `--kickoff <doc>`）をキック（spawn + send の合成）
+- `oe-kick` — `oe-delegate` の薄いワンショットラッパー。`#N` or kickoff パスを 1 引数で受け妥当なフラグ列へ展開（`--label` 自動付与・workspace 既定化）（[#178](https://github.com/stlwolf/ai-development-hub/issues/178)）
 - `oe-send` — 既存ペインへ 1 行を汎用送信。親→子の追送、子→親の戻し（`oe-send "$PARENT_TMUX_PANE" ...`）、関連の薄い側道会話を一手に担う。`%N`/ラベル解決・`--kickoff`・`--no-enter`（投入のみ＝ステージ）
 - `oe-list` — 宛先候補を source 列付きで一覧
 - `oe-report` — legacy（戻しは `oe-send` に一本化済み）

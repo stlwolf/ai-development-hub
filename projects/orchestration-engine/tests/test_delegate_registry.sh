@@ -27,7 +27,7 @@ tmux() {
       if [[ -n "${MOCK_TMUX_FAIL:-}" ]]; then echo "no server running on socket" >&2; return 1; fi
       # shellcheck disable=SC2086
       printf '%s\n' $MOCK_LIVE_PANES ;;
-    "display-message"*) echo "mock-pane-title" ;;
+    "display-message"*) printf '%s\n' "${MOCK_PANE_TITLE:-mock-pane-title}" ;;
     *) return 0 ;;
   esac
 }
@@ -98,6 +98,25 @@ ck "list-panes 失敗 → resolve rc=2 (環境エラー)" "2" "$rrc"
 oe_reg_gc 2>/dev/null
 ck "list-panes 失敗 → gc が entry を残す(誤削除なし)" "yes" "$( [[ -e "${OE_DELEGATE_STATE_DIR}/${keyB}.json" ]] && echo yes || echo no)"
 unset MOCK_TMUX_FAIL
+
+echo "[9] oe_reg_list: 改行混入ラベルを sanitize（偽 %N 行注入を断つ・#178 hardening-2）"
+# (a) pane_title 由来（tmux の untrusted ソース）: 改行 + 偽 %99 行を仕込む
+MOCK_LIVE_PANES="%8"
+MOCK_PANE_TITLE=$'safe\n%99 forged-injection'
+LIST="$(oe_reg_list 2>/dev/null)"
+ck "pane-title: 偽 %99 行が無い" "0" "$(printf '%s\n' "$LIST" | grep -c '^%99')"
+ck "pane-title: 改行を空白へ畳み 1 行化" "yes" \
+  "$(printf '%s\n' "$LIST" | grep -q '^%8 .*pane-title .*safe %99 forged-injection' && echo yes || echo no)"
+unset MOCK_PANE_TITLE
+# (b) pane-issue .name 由来（jq デコードで実改行になるデータ経路）
+MOCK_LIVE_PANES="%8"
+key8="$(_oe_reg_key '%8')"
+printf '{"name":"#142 redesign\\n%%99 evil"}\n' > "${OE_PANE_ISSUE_DIR}/${key8}"
+LIST="$(oe_reg_list 2>/dev/null)"
+ck "pane-issue: 偽 %99 行が無い" "0" "$(printf '%s\n' "$LIST" | grep -c '^%99')"
+ck "pane-issue: sanitize 後も #142 を保持" "yes" \
+  "$(printf '%s\n' "$LIST" | grep -q '^%8 .*pane-issue .*#142 redesign' && echo yes || echo no)"
+rm -f "${OE_PANE_ISSUE_DIR}/${key8}"
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

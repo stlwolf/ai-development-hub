@@ -152,6 +152,14 @@ oe_reg_list() {
       label="$(tmux display-message -p -t "$p" '#{pane_title}' 2>/dev/null)"
       source="pane-title"
     fi
+    # 出力チョークポイントでの sanitize（消費者 oe-list/oe-select/oe-status を一括防御）。
+    # label に改行（LF/CR）が混じると 1 行構成のこの表が複数行化し、消費側の行パース
+    # （`while read` / `awk '{print $1}'`）に偽の %N 候補行が紛れ込み別ペインへ誤送信し得る。
+    # 出力直前で改行を空白へ畳んで偽行注入経路を断つ（pane_title 由来の細工を含む）。
+    # 注: LF/CR のみ対象。U+2028 等 / ANSI / TAB は消費者のレコード境界にならず %N 行を
+    # 偽造しない（視覚偽装は別軸・scope 外）。書き込み側 hardening は #178 外（follow-up）。
+    label="${label//$'\n'/ }"
+    label="${label//$'\r'/ }"
     printf '%-8s %-14s %s\n' "$p" "$source" "$label"
   done <<< "$live"
 }
