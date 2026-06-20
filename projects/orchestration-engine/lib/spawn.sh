@@ -34,10 +34,14 @@ oe_board_apply() {
     return 0
   fi
 
+  # #191 の wez layout apply --json は partial 失敗時に exit 5（WEZ_EXIT_PANE_OP_FAILED）でも
+  # stdout に `{status:"partial", ..., rollback_failed:[...]}` を返す（layout.sh）。rc 単独で早期
+  # return すると status=="partial" 分岐（rollback_failed orphan の回収登録）が到達不能になるため、
+  # stdout（map）の中身で分岐する: 空ならハードエラー扱いで fallback、非空なら rc に関わらず status を解析。
   local map rc=0
   map="$(wez layout apply "$OE_BOARD_LAYOUT" --json 2>/dev/null)" || rc=$?
-  if [[ "$rc" -ne 0 || -z "$map" ]]; then
-    echo "oe_board_apply: wez layout apply '${OE_BOARD_LAYOUT}' failed (rc=${rc}); falling back to on-demand split" >&2
+  if [[ -z "$map" ]]; then
+    echo "oe_board_apply: wez layout apply '${OE_BOARD_LAYOUT}' failed (rc=${rc}, no JSON output); falling back to on-demand split" >&2
     return 0
   fi
 
@@ -45,6 +49,8 @@ oe_board_apply() {
   status="$(printf '%s' "$map" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)"
 
   # partial: layout は created を逆順 rollback kill 済。生存 orphan は rollback_failed のみ。
+  # realistic な partial は rc=5（WEZ_EXIT_PANE_OP_FAILED）で来るが、上で rc 早期 return を
+  # 廃したためこの分岐に到達する（= rollback_failed orphan の回収登録が機能する）。
   if [[ "$status" == "partial" ]]; then
     local rf_str rf
     rf_str="$(printf '%s' "$map" | jq -r '.rollback_failed[]?' 2>/dev/null || true)"
@@ -100,7 +106,14 @@ oe_board_apply() {
 # の最小ミラーを engine 側に持つ。timeout 時は warn + 続行（best-effort・split --wait-ready の挙動に整合）。
 oe_board_wait_ready() {
   local pane_id="$1"
-  local timeout="${2:-$OE_SPAWN_WAIT_READY_SEC}"
+  local timeout="${2:-${OE_SPAWN_WAIT_READY_SEC:-10}}"
+  # timeout は直後に算術展開する。非数値だと set -e 下で即エラー終了するため、非負整数で
+  # なければ安全なデフォルト（OE_SPAWN_WAIT_READY_SEC 既定値、無ければ 10）にフォールバックする。
+  if [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+    echo "oe_board_wait_ready: non-numeric timeout '${timeout}'; using default ${OE_SPAWN_WAIT_READY_SEC:-10}s" >&2
+    timeout="${OE_SPAWN_WAIT_READY_SEC:-10}"
+    [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=10
+  fi
   local interval_ms=500
   local timeout_ms=$(( timeout * 1000 ))
   local elapsed_ms=0
