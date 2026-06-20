@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (25)
+## Skills (26)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -25,6 +25,7 @@
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | kickoff-to-plan | Kickoff Documentを実行可能なプランに忠実変換する | `skills/kickoff-to-plan/SKILL.md` | skill: adversarial-review |
 | markdown-conventions | Markdown記法の規約を適用する | `skills/markdown-conventions/SKILL.md` | — |
+| orchestration-toolkit | oe-* オーケストレーションツール群（engine/委譲/SOゲート/選択・観測）と駆動層規律の統合概観。repo 走査でなく一貫理解する loadable パッケージ。詳細は bin/README へ routing | `skills/orchestration-toolkit/SKILL.md` | skill: delegate-task, skill: so-compare, skill: predecision-exploration, skill: episode-retrospective, skill: code-path-exhaustion |
 | oss-research-session | oss-researcher 調査セッションの起動・成果保存の標準化（パス規約・注入テンプレ・チェックリスト） | `skills/oss-research-session/SKILL.md` | — |
 | persistent-exploration | 原因探索の「諦めない」深掘り行動原則 | `skills/persistent-exploration/SKILL.md` | — |
 | plan-to-kickoff | Cursor Plan / プランMDをKickoff Document形式に変換する | `skills/plan-to-kickoff/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, command: peer-ai-review |
