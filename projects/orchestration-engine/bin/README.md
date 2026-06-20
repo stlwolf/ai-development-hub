@@ -48,6 +48,28 @@ oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
 
 関連 lib: `session.sh`（`oe_generate_session_id`）。バックエンド: `so-compare`（`OE_REFUTE_SO_COMPARE` で実体を上書き可）
 
+## oe-review — 実装SO（コード欠陥レビュー）の diff バインド artifact verb (#194 / L2)
+
+実装後・PR 前に、現ブランチの reviewed diff（`base...HEAD`）に対して独立レビューレーンを N 体立て、コード欠陥／品質／到達可能性を検出させる**実装SO** verb。設計SO（`oe-refute` の exploration/consensus）と**構造的に識別可能**・**reviewed diff にバインド**した独立アーティファクトを emit する（将来の PR-create hard gate=#24 の前提物）。
+
+```bash
+oe-review [--lanes N] [--base <ref>] [--context <doc>]
+```
+
+- `--lanes N` … レビューレーン数（既定 `2`）。`2`→`codex,cursor` / `3`→`codex,claude,cursor`。既定で実装者 Claude を抜き多様性担保（設計SO=`oe-refute` と同方針）
+- `--base <ref>` … diff の base ref（`base...HEAD` をレビュー対象に）。省略時は自動解決: `OE_REVIEW_BASE` > `origin/HEAD` > `master` > `main`。解決不能/不在/差分ゼロは exit 2
+- `--context <doc>` … 追加コンテキスト（issue 要件等）を反証プロンプトに inline するファイル
+- 出力（stdout JSON）: `{verdict, reason, lens:"impl", lanes, dissent:[{lane,verdict,note}], reviewed_sha, diff_base, diff_hash, changed_files_count, output_dir, audit_id}`
+- **diff バインド**: `reviewed_sha`(HEAD) / `diff_base` / `diff_hash`(=`base...HEAD` 内容の `git hash-object`) を JSON と audit に記録。将来ゲートが「**現 HEAD diff に対する**実装SO が在るか」を機械判定でき、stale-SO false-pass（古い版に実行済→その後コード変更）を防ぐ
+- **設計SO との識別**: 別 verb・別 audit stream（`oe-review.jsonl`）・`event_type=oe_review`・`lens=impl`・diff バインドの有無で構造的に識別可能（`oe-refute` の `oe_refute` / rubric とは別物）
+- **diff 注入**: reviewed diff を反証プロンプトに注入（`OE_REVIEW_DIFF_MAX_BYTES`=既定 30000 以内なら inline、超過時は changed-files＋base ref＋「`git diff <base>...HEAD` をレビューせよ」指示で workspace フォールバック）
+- 集約は **conservative**（`oe-refute` と同様）: 1 レーンでも material な欠陥検出→全体 refuted。verdict を取れないレーンは `error` とし survived 確定を阻む
+- exit: `survived`→0 / `refuted`→3（**advisory**・JSON が正本）
+- 最小 audit を `<OE_DATA_DIR|project>/audit/oe-review.jsonl` に 1 行追記
+- 限界: 「レーンが実 diff を読んだ」ことは機械検証できない（どの SO 経路でも同じ）。本 verb は stale 検知の binding を残すのが役割で、レビュー品質の保証は Copilot/人が担う
+
+関連 lib: `session.sh`（`oe_generate_session_id`）。バックエンド: `so-compare`（`OE_REVIEW_SO_COMPARE` で実体を上書き可）。VERDICT 抽出・集約は `oe-refute` から意図的に複製（共有 lib 化は follow-up）
+
 ---
 
 ## oe-delegate — 子セッション起動 + キック（親子委譲）
