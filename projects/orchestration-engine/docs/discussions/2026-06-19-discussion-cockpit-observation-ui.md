@@ -123,3 +123,55 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, discuss
 
 - §6 で無効化された DJ-3（pane_id ジョイン）は復活しない。俯瞰は「生存ペイン ↔ session 状態を pane で join」ではなく、**read 時に両ソース（engine: wez + state/audit／delegate: tmux + registry）を `kind`/`mux` 列付き1テーブルに投影（join しない・delegate 行は `timeline:none`）= query-side fusion**、または honest 2 ビュー。どちらを採るかは #177 再設計時に決める（設計SO の codex/cursor は query-side fusion に収束）。
 - 有効な DJ-1/4/5/6（UI 形態・oe-refute 対象外・tmux 既定・capture 導線）は引き続き使える。
+
+## 8. DJ-2/DJ-3 再設計の確定（2026-06-20・#177 実装着手・predecision-exploration 証跡）
+
+§7 で #188 が unblock した俯瞰方式（query-side fusion 単一ビュー or honest 2 ビュー）を #177 実装着手にあたり確定する。確定前に **predecision-exploration**（ゼロベース代替＋確定前証跡）を engine 統合経路 `oe-refute --rubric exploration --lanes 2`（codex+cursor）で **2 ラウンド**回した。両ラウンドとも verdict=`refuted` だったが、**反証は「カテゴリ」ではなく「過剰主張」と「grounding 詳細」に収束**したため、それらを設計へ織り込んだ上で確定する（exploration rubric は「迷ったら refuted 寄り」＝設計の残不確実性では survived を返しにくい。verdict は advisory・REASON 内容が正本：predecision-exploration / so-verdict 規約）。
+
+### 8.1 設計SO の証跡（揮発 output_dir の verdict/reason を転記）
+
+- **R1**（claim=flat 1テーブル fusion + 素朴 audit-tail。`audit_id=202606201236549TGTSWFP090S`）→ **refuted**。
+  - codex: 「audit-tail reducer・CB/multi-pane 合成・tmux liveness の非検出扱い・**単一画面 typed sections 案**が未確定」。
+  - cursor: 「audit-tail 単独完全性・CB/taxonomy 写像・interrupt/attach 終端・『最も適合』比較優位が未検証/コード矛盾、**structured honest-2** 等の未探索代替が残る」。
+  - → **新カテゴリ「単一コマンド・typed sections（structured honest-2）」が出た**。flat fusion は engine/delegate の異質な STATE/TIMELINE 列を混同する欠陥が判明。
+- **R2**（claim=typed sections + audit-terminal reducer。R1 反映済。`audit_id=20260620124213Q2FXT4JXYFJA`）→ **refuted（収束）**。
+  - 両レーンとも「**typed sections 自体は有望**」と合意（カテゴリ収束）。残る指摘は (a) `verification_timeout` の誤分類、(b) multi-pane 要約が blocked を隠す、(c) interrupt が部分 session_end 後に誤分類、(d) max_turns/max_panes 表示と受入1「blocked」文言のずれ、(e) CB payload schema(`limit_type`)↔実装(`reason`)不一致、(f) 「honest 2 より優れる」優位主張が ADR 上未立証、(g) read-only/非検出境界の preview 不統一。
+  - **新カテゴリは出ず**（残りは grounding 詳細 ＋ owner 既決の scope-split 再掲）。→ predecision-exploration の暫定停止条件（新カテゴリが出なければ確定可）を満たす。これ以上の exploration-refute 反復は lateral repetition（reframe-on-stall の stall）と判断し、grounding を設計へ織り込んで確定する。
+- 生出力: `tmp/oe-refute-202606201236549TGTSWFP090S/` ・ `tmp/oe-refute-20260620124213Q2FXT4JXYFJA/`（揮発）。claim doc: `tmp/dj-2-3-claim.md` / `tmp/dj-2-3-claim-v2.md`。
+
+### 8.2 確定（DJ-2/DJ-3 再設計）
+
+- **DJ-2再 / DJ-3再 確定 = 単一コマンド・typed sections（query-side fusion を正直に描画した形）**。1 回の `oe-status` で read 時に両ソースを投影し、**列融合せず区画ごとに適切な列**を持つ:
+  - `=== ENGINE (wez · state/audit) ===`: 行=engine session。STATE は **audit-terminal reducer** 由来（§8.3）。state file があれば outputs/blockers を補足。
+  - `=== DELEGATE (tmux · liveness) ===`: 行=`oe_reg_list` の生存ペイン。**liveness のみ・TIMELINE 列を持たない**（timeline:none を区画レベルで正直に表現）。
+- **優位主張は取り下げる**（R2(f) 反映）。本確定は「honest 2 ビューより優れる」証明に依らない。**owner/cockpit が query-side fusion 方向を既決（kickoff 方針・%32 agree）**であり、typed sections はそれを #188 制約下で正直に描画した**十分**な形（受入1〜3 を満たす）という根拠で確定する。honest 2 ビューは #188 ADR で「◯ 機能充足」とされ等価に近い＝本確定は UX 上の単一画面化であって受入の優劣判断ではない。
+- **scope-split（engine-only + delegate は oe-list 委譲）は owner 既決で不採用**（kickoff: delegate 行を本ツールに含める）。再 litigate しない（R2 breadth 指摘への回答）。
+
+### 8.3 audit-terminal reducer の確定仕様（grounding 反映）
+
+`audit/{ULID}.jsonl` の全イベントを走査し（**末尾行でない**。`cleanup`/`verification_*`/`polling_snapshot` は STATE 導出から除外）、終端シグナルを集めて **severity-max（worst が勝つ）**で 1 つの session-level STATE を導く:
+
+- 終端シグナル収集:
+  - `session_end` の各 `state`（success/blocked/partial/retryable_failure/protocol_error/timeout）。
+  - `circuit_breaker_triggered` の `payload.reason`（無ければ `payload.limit_type` にフォールバック＝schema 不一致 R2(e) への防御）:
+    - `timeout` → `timeout`
+    - `max_turns` / `max_panes` → `blocked`（circuit-breaker-design DI-4 の taxonomy 写像。受入1「blocked」文言に合わせる。R2(d)。reason は注記）
+    - `verification_timeout` → **session 終端に寄与しない**（verify フェーズは monitor 成功後＝target は session_end 済。R2(a) target lifecycle と verification lifecycle の混同を回避。「verify timeout」は注記）
+  - `interrupt` → `interrupted`。
+- severity 順（worst→best）: `protocol_error > timeout > blocked > retryable_failure > partial > interrupted > success`。終端が複数（multi-pane/部分完了+interrupt）でも worst を採るため **blocked/timeout/interrupt が success に隠れない**（R2(b)(c) 解消・受入1 を multi-pane でも満たす）。
+- 終端シグナル無し ＋ `session_start` あり → `running?`（in-flight **または** 孤児/クラッシュ＝read-only では区別不能。限界明記。wez 生存オーバーレイは DJ-5「wez 接続時」の follow-up に defer）。
+- いずれも無し → `?`（unknown）。
+- KVS の位置づけ（R1 緩和）: STATE は audit-terminal が権威（CB-only 終了は KVS 未書込）。KVS は outputs/blockers/verification_summary の**補足**（排除しない）。audit 不在で state file のみのセッションは KVS の `state` を表示し「kvs-only」注記。
+
+### 8.4 read-only / 非検出境界の確定（R2(g) 反映で preview を統一）
+
+- 「検出」（非スコープ）= ペイン**出力/内容**の走査（oe-capture の marker scan・polling 常駐）。
+- oe-status が触れるのは (1) state/audit **ファイル**、(2) tmux/wez **ペイン存在**（mux liveness query・oe-list/oe-select と同類）のみ。**ペイン出力は一切読まない**。
+- `--interactive` の preview: ENGINE 行=**audit timeline 表示**（DJ-6）/ DELEGATE 行=**registry メタ情報のみ**（label/source/pane。`tmux capture-pane` は使わない＝oe-select の借用をやめ、区画間で境界を統一）。これで「state/audit + ペイン存在のみ」を厳守し read-only を airtight にする。
+
+### 8.5 スコープ外として routing する発見（実装しない・implementer-contract）
+
+- **CB payload の schema↔実装ドリフト**（audit-log.schema.json は `limit_type` 記述・実装は `reason` emit）。#177（read-only 観測）の範囲外。reducer は `reason` 優先＋`limit_type` フォールバックで両対応し、ドリフト自体の是正は別 issue に routing（episode に記録）。
+- `--dry-run` 列検証（#188 handoff 残）は **fixture audit/state → 出力 assert のテストスイートが機械検証として代替**（dry-run フラグは v1 で作らない）。
+
+これらにより DJ-2/DJ-3 を再確定し、#177 実装に進む。DJ-2（read-only 俯瞰の境界＝検出を棄却した「なぜ」）の Decision 昇格は closure で判断（§5）。
