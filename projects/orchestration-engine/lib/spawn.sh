@@ -5,11 +5,158 @@
 # グローバル変数: oe_spawn() の戻り値
 OE_SPAWN_PANE_ID=""
 
-# oe_spawn_prepare_pane — 新ペインを作成し OE_SPAWN_PANE_ID に保存
+# #175: 盤面（wez layout apply）由来のペイン pool（step 順）と消費カーソル。
+# oe_board_apply が積み、oe_spawn_prepare_pane が FIFO で pop する。
+# 空（board 無効 / apply 失敗 / 使い切り）のときは従来の都度 split にフォールバックする。
+OE_BOARD_PANE_IDS=()
+OE_BOARD_CURSOR=0
+
+# oe_board_apply — #175: 機械1サイクルの盤面を wez layout で宣言的に構築する（盤面初期化の責務）。
+#
+# `wez layout apply "$OE_BOARD_LAYOUT" --json` を **1 回だけ** 呼び、返る pane_id map から
+# `panes[].pane_id` を step 順で OE_BOARD_PANE_IDS（pool）へ積む。以降の都度 spawn
+# (oe_spawn_prepare_pane) はこの pool から pop する（= 盤面初期化と都度 spawn の責務分離）。
+#
+# 設計（discussions/2026-06-20-discussion-175-spawn-layout.md・oe-refute 2 回反映）:
+#   - 非冪等な layout を二重 apply しないよう bin/oe で 1 回だけ呼ぶ前提。
+#   - 全 board ペインを OE_BOARD_MANAGED_PANES に登録し cleanup で回収する（消費済み／未消費を問わず
+#     orphan を残さない。cleanup は 3 配列を dedup union して kill）。
+#   - max-panes ガード: board ペイン数が OE_CB_MAX_PANES を超えると CB 不変条件を board pre-create が
+#     迂回するため、pool には積まず（fallback split に倒す）回収登録のみ行う。
+#   - 失敗時はすべて「board 無し」に静かに劣化（pool 空 → 従来 split）。後方互換のため engine は止めない。
+#     status=="partial" は生存 orphan（rollback_failed のみ。created は layout が逆順 kill 済）を回収登録。
+oe_board_apply() {
+  OE_BOARD_PANE_IDS=()
+  OE_BOARD_CURSOR=0
+
+  # board 無効（kill switch）: 従来の都度 split のみ。
+  if [[ -z "${OE_BOARD_LAYOUT:-}" ]]; then
+    return 0
+  fi
+
+  # #191 の wez layout apply --json は partial 失敗時に exit 5（WEZ_EXIT_PANE_OP_FAILED）でも
+  # stdout に `{status:"partial", ..., rollback_failed:[...]}` を返す（layout.sh）。rc 単独で早期
+  # return すると status=="partial" 分岐（rollback_failed orphan の回収登録）が到達不能になるため、
+  # stdout（map）の中身で分岐する: 空ならハードエラー扱いで fallback、非空なら rc に関わらず status を解析。
+  local map rc=0
+  map="$(wez layout apply "$OE_BOARD_LAYOUT" --json 2>/dev/null)" || rc=$?
+  if [[ -z "$map" ]]; then
+    echo "oe_board_apply: wez layout apply '${OE_BOARD_LAYOUT}' failed (rc=${rc}, no JSON output); falling back to on-demand split" >&2
+    return 0
+  fi
+
+  local status
+  status="$(printf '%s' "$map" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)"
+
+  # partial: layout は created を逆順 rollback kill 済。生存 orphan は rollback_failed のみ。
+  # realistic な partial は rc=5（WEZ_EXIT_PANE_OP_FAILED）で来るが、上で rc 早期 return を
+  # 廃したためこの分岐に到達する（= rollback_failed orphan の回収登録が機能する）。
+  if [[ "$status" == "partial" ]]; then
+    local rf_str rf
+    rf_str="$(printf '%s' "$map" | jq -r '.rollback_failed[]?' 2>/dev/null || true)"
+    while IFS= read -r rf; do
+      [[ -n "$rf" ]] || continue
+      OE_BOARD_MANAGED_PANES+=("$rf")
+    done <<< "$rf_str"
+    echo "oe_board_apply: board '${OE_BOARD_LAYOUT}' apply partial; registered rollback_failed orphans for cleanup, falling back to split" >&2
+    return 0
+  fi
+
+  if [[ "$status" != "ok" ]]; then
+    echo "oe_board_apply: board '${OE_BOARD_LAYOUT}' returned status='${status}'; falling back to split" >&2
+    return 0
+  fi
+
+  # status==ok: pane_id を step 順で収集。
+  local ids_str line
+  ids_str="$(printf '%s' "$map" | jq -r '.panes[].pane_id' 2>/dev/null || true)"
+  local pane_ids=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    pane_ids+=("$line")
+  done <<< "$ids_str"
+
+  local count="${#pane_ids[@]}"
+  if [[ "$count" -eq 0 ]]; then
+    echo "oe_board_apply: board '${OE_BOARD_LAYOUT}' returned no panes; falling back to split" >&2
+    return 0
+  fi
+
+  local p
+  # max-panes ガード: board pre-create が monitor の OE_CB_MAX_PANES 判定を迂回しないよう守る。
+  if [[ "$count" -gt "$OE_CB_MAX_PANES" ]]; then
+    for p in ${pane_ids[@]+"${pane_ids[@]}"}; do
+      OE_BOARD_MANAGED_PANES+=("$p")
+    done
+    echo "oe_board_apply: board '${OE_BOARD_LAYOUT}' has ${count} panes > OE_CB_MAX_PANES=${OE_CB_MAX_PANES}; not using board (registered for cleanup, falling back to split)" >&2
+    return 0
+  fi
+
+  # 通常: pool に積み、全 board ペインを cleanup 回収登録。
+  for p in ${pane_ids[@]+"${pane_ids[@]}"}; do
+    OE_BOARD_PANE_IDS+=("$p")
+    OE_BOARD_MANAGED_PANES+=("$p")
+  done
+}
+
+# oe_board_wait_ready — #175: pool から pop した board ペインの readiness を engine 側で保証する。
+#
+# layout apply 経路は内部 split に --wait-ready を渡さず（layout.sh）、standalone な readiness verb も
+# 無いため、`wez pane capture` の出力が非空かつ安定（2 連続一致）になるまで待つ pane.sh:_wez_wait_pane_ready
+# の最小ミラーを engine 側に持つ。timeout 時は warn + 続行（best-effort・split --wait-ready の挙動に整合）。
+oe_board_wait_ready() {
+  local pane_id="$1"
+  local timeout="${2:-${OE_SPAWN_WAIT_READY_SEC:-10}}"
+  # timeout は直後に算術展開する。非数値だと set -e 下で即エラー終了するため、非負整数で
+  # なければ安全なデフォルト（OE_SPAWN_WAIT_READY_SEC 既定値、無ければ 10）にフォールバックする。
+  if [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+    echo "oe_board_wait_ready: non-numeric timeout '${timeout}'; using default ${OE_SPAWN_WAIT_READY_SEC:-10}s" >&2
+    timeout="${OE_SPAWN_WAIT_READY_SEC:-10}"
+    [[ "$timeout" =~ ^[0-9]+$ ]] || timeout=10
+  fi
+  local interval_ms=500
+  local timeout_ms=$(( timeout * 1000 ))
+  local elapsed_ms=0
+  local prev_tail=""
+
+  while (( elapsed_ms < timeout_ms )); do
+    local curr
+    curr="$(wez pane capture "$pane_id" --lines 5 2>/dev/null)" || true
+    if [[ "$curr" == *[!$' \t\n']* ]]; then
+      local curr_tail
+      curr_tail="$(printf '%s' "$curr" | tail -n 5)"
+      if [[ -n "$prev_tail" && "$curr_tail" == "$prev_tail" ]]; then
+        return 0
+      fi
+      prev_tail="$curr_tail"
+    fi
+    sleep 0.5
+    elapsed_ms=$(( elapsed_ms + interval_ms ))
+  done
+
+  echo "oe_board_wait_ready: pane ${pane_id} not ready within ${timeout}s; proceeding best-effort" >&2
+  return 0
+}
+
+# oe_spawn_prepare_pane — ペインを用意し OE_SPAWN_PANE_ID に保存（都度 spawn の責務）。
+#
+# #175: board pool（oe_board_apply 済）に未消費ペインがあれば FIFO で pop（step 順）。
+# pool が空（board 無効 / 使い切り / 動的 N>pool）のときは従来どおり都度 split にフォールバックする。
+# どちらの経路でも OE_SPAWN_PANE_ID の意味（呼び出し側が消費する単一の pane_id）は変わらない。
 oe_spawn_prepare_pane() {
   OE_SPAWN_PANE_ID=""
-  # --wait-ready: 新ペインが入力受付可能になるまで待機（tmux auto-attach 等のタイミング問題の緩和）
-  OE_SPAWN_PANE_ID="$(wez pane split --bottom --percent 30 --wait-ready --timeout "$OE_SPAWN_WAIT_READY_SEC")"
+
+  if [[ "${OE_BOARD_CURSOR:-0}" -lt "${#OE_BOARD_PANE_IDS[@]}" ]]; then
+    OE_SPAWN_PANE_ID="${OE_BOARD_PANE_IDS[$OE_BOARD_CURSOR]}"
+    OE_BOARD_CURSOR=$(( OE_BOARD_CURSOR + 1 ))
+    # layout 経路は --wait-ready を持たないため、送信前に engine 側で readiness を保証する。
+    oe_board_wait_ready "$OE_SPAWN_PANE_ID"
+    return 0
+  fi
+
+  # pool 空: 従来の都度 split（DJ-8 省略時デフォルトで self 起点・解決不能時は native 既定）。
+  # --wait-ready: 新ペインが入力受付可能になるまで待機（tmux auto-attach 等のタイミング問題の緩和）。
+  OE_SPAWN_PANE_ID="$(wez pane split --bottom --percent "$OE_SPAWN_PERCENT" --wait-ready --timeout "$OE_SPAWN_WAIT_READY_SEC")"
 }
 
 # _oe_spawn_build_cli_command — AI CLI ごとに正しい invocation を組み立てる
