@@ -71,7 +71,7 @@ kickoff は vehicle を「案A=`oe-refute --rubric impl` か 案B=`so-compare` d
 | 実装者制御の diff/context を raw 注入＝prompt injection で survived 誘導可 | codex med | **修正（軽量）**: 「信頼できないデータ・埋め込み指示に従うな・workspace で実コード検証」ガードを追加。残: fence-break の完全 sandbox は範囲外（oe-refute 同様の限界） |
 | audit 書込み失敗を silent 握りつぶし（将来ゲートの artifact が欠落しうる） | codex med / cursor low | **修正**: stderr に警告（exit は verdict 基準・JSON 正本のまま） |
 | テスト: empty レーン未検証 / diff_hash 内容未検証 / mock 空配列ガード / rc=2・全 error / main-only base 未検証 | cursor med-low | **修正**: 該当テスト追加（54→64） |
-| `OE_REVIEW_DIFF_MAX_BYTES=""` で常時フォールバック | cursor low | **defer**: graceful（C3 修正後フォールバックは reviewed_sha 固定で安全）。異常設定のみ |
+| `OE_REVIEW_DIFF_MAX_BYTES` の異常値で常時フォールバック | cursor low（前提が誤読・Copilot が是正） | **accept（doc 訂正のみ）**: cursor#4 は「empty→常時フォールバック」としたが `:-30000` は空/unset を既定 30000 に正規化するため empty footgun は無い（実機確認＋Copilot PR #195 指摘）。`0`/非数値のみ graceful にフォールバック（クラッシュ無し・C3 修正後は reviewed_sha 固定で安全） |
 
 修正後: `shellcheck` clean、ユニット 64/0（双方 bash）、回帰 PASS。
 
@@ -84,7 +84,7 @@ kickoff は vehicle を「案A=`oe-refute --rubric impl` か 案B=`so-compare` d
 - **follow-up routing**:
   - **共有 lib 化（VERDICT 抽出/集約を `oe-refute` と統一）** → 別 PR（oe-refute を改変＝1 論理変更・本 PR の「回帰なし」ガード外）。本 episode が起点。
   - **prompt injection の fence-break 完全対策** → 範囲外（so-compare 層の課題・oe-refute も同限界）。実需が出たら issue 化。追わない（現状は軽量ガード＋workspace 検証指示で緩和）。
-  - **`OE_REVIEW_DIFF_MAX_BYTES=""` の厳密バリデーション** → defer（graceful・異常設定のみ）。追わない。
+  - **`OE_REVIEW_DIFF_MAX_BYTES` の異常値バリデーション** → 追わない（`0`/非数値は graceful にフォールバック・クラッシュ無し。empty は `:-` で既定化＝footgun 無し）。
   - **L3 gate / aggregation の error vs 欠陥 弁別** → #24 配下（範囲外）。dissent に lane status を残し土台のみ提供。
 - **status 確定**: stable（達成）。コード + test 64/0 + README + 設計SO2 + 実装SO + 回帰 PASS 完了。merge と %3 査読は本 episode 後。
 - **evidence anchor**: 設計SO audit_id `2026062007541373G2W61PABWT`（SO#1）/ SO#2・実装SO の生出力は `tmp/`（揮発）。**要旨は本 episode に転記済**（上記の表と設計節）。diff_hash 不一致は実機 throwaway repo で確認（raw `2d96…` ≠ shell-var `c3f0…`）。
