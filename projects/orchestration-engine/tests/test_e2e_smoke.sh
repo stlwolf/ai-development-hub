@@ -33,6 +33,14 @@ set -euo pipefail
 
 log_dir="${OE_MOCK_LOG_DIR:?}"
 
+# #175: wez layout apply --json — board（parent-children: worker1=bottom / worker2=right）の
+# pane_id map を返す。target=pool[0]=777、reviewer=pool[1]=888 を engine が FIFO 消費する。
+if [[ "${1:-}" == "layout" && "${2:-}" == "apply" ]]; then
+  printf 'apply\n' >> "${log_dir}/layout.log"
+  printf '%s\n' '{"status":"ok","root_pane_id":1,"window_id":1,"panes":[{"id":"worker1","pane_id":777,"index":0},{"id":"worker2","pane_id":888,"index":1}]}'
+  exit 0
+fi
+
 if [[ "${1:-}" == "pane" && "${2:-}" == "split" ]]; then
   shift 2
   while [[ $# -gt 0 ]]; do
@@ -140,6 +148,14 @@ assert_eq "envelope path used in send" "1" \
   "$(awk -v sid="$session_id" 'index($0,"/tmp/oe-" sid "-envelope.json"){found=1} END{print found+0}' "${OE_MOCK_LOG_DIR}/send.log")"
 assert_eq "spawn send executed" "1" \
   "$(awk -v sid="$session_id" 'index($0,"Read /tmp/oe-" sid "-envelope.json and execute the task"){found=1} END{print found+0}' "${OE_MOCK_LOG_DIR}/send.log")"
+
+# ---- #175: 機械1サイクルが規約ベース盤面（wez layout）で成立する ----
+# board init（layout apply）が 1 回呼ばれ、target(777)/reviewer(888) ともに board pool から
+# FIFO 消費される（= fallback split は使われない）。
+assert_eq "board layout applied (#175)" "apply" \
+  "$( [[ -f "${OE_MOCK_LOG_DIR}/layout.log" ]] && cat "${OE_MOCK_LOG_DIR}/layout.log" || echo MISSING )"
+assert_eq "fallback split not used (board が target+reviewer を供給)" "false" \
+  "$( [[ -f "${OE_MOCK_LOG_DIR}/split_last" ]] && echo true || echo false )"
 
 # ---- Step 4-3 Phase E: 検証フェーズが 1 サイクルに含まれる ----
 echo ""
