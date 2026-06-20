@@ -76,6 +76,7 @@ tier=heavy（意図的に oe-review=so-compare wrap を品質ゲートとして�
 - **次の消費者**: (1) #196 PR レビュアー（親 %3 が oe-refute/oe-review 契約の文脈でレビュー）。(2) 今後 VERDICT 抽出/集約ロジックを触る者（単一 source = lib/so-verdict.sh）。(3) cockpit/探索クラスタ — oe-review の**実運用初ケースの記録**として。
 - **follow-up routing**:
   - oe-review の changed_files_count に episode doc（非コード）が混じる件 → **verb への follow-up 候補（本 PR では実装しない・routing のみ）**。再発・摩擦が顕在化したら Issue 化、しなければ追わない。
+  - **Copilot 指摘（back-propagation）**: `so_verdict_extract_verdict` の `grep -iE '…(refuted|survived)\b'` の `\b` は GNU 拡張で厳密 POSIX ERE ではない → 真に POSIX-only な grep 環境では非互換の懸念。**本 PR では非対応**（この行は #184 Fix 1 の既存実装を verbatim に lib 移設したもので、変更は純リファクタの挙動不変を破る）。実機検証では macOS `/usr/bin/grep`=「BSD grep (GNU compatible) 2.6.0-FreeBSD」で `\b` は意図通り（survived/refuted は MATCH・survivedXYZ は非マッチ）＝当環境では再現せず。→ **follow-up（routing のみ）**: POSIX-only grep を対象化する場合の移植性ハードニング。**共有 lib 化により修正は1か所で済む**（本リファクタの便益）。顕在化しなければ追わない。
   - 設計SO（別途 oe-refute）スキップ → 記録済み・follow-up なし（実装SO=oe-review が分解の敵対的チェックを兼ねた）。
   - その他の残課題なし。
 - **status 確定**: in-development → **stable**。達成度: **達成**（受け入れ条件3つ全充足・回帰ゼロ）。
