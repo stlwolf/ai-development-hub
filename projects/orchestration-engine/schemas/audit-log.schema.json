@@ -106,7 +106,7 @@
         "properties": { "event_type": { "const": "circuit_breaker_triggered" } }
       },
       "then": {
-        "description": "サーキットブレーカー発動。payload に limit_type (timeout / max_turns / max_panes) と reached_value を含む。"
+        "description": "サーキットブレーカー発動。payload に reason (timeout / max_turns / max_panes、検証ゲート由来は verification_timeout) を含む。reason=verification_timeout の場合は target_pane_id も含む。"
       }
     },
     {
