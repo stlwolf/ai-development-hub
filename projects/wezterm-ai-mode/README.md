@@ -174,6 +174,97 @@ Options:
 
 指定ペインにフォーカスを移す（`wezterm cli activate-pane` 相当）。`split` はデフォルトで新ペインにフォーカスを奪うため、オーケストレータが作業ウィンドウのフォーカスを維持したい場合は `split` 直後に元ペイン id を `activate` してフォーカスを戻す。成功時は標準出力なし（`--json` 指定時のみ `{"pane_id":N,"status":"activated"}`）。
 
+### `wez layout`
+
+名付き JSON preset に沿ってペインの盤面（親1 + 子N）を機械的に構築する薄い上位層。既存の `wez pane split` プリミティブを preset 順に反復するだけの **wez 基盤専用・盤面構築のみ** のコマンド。**`jq` 必須**（preset 解析と map 出力に使用）。
+
+`wez pane` と同様にソケットを1回だけ解決し、以降の `wezterm cli` 呼び出しは `WEZTERM_UNIX_SOCKET` 経由。エージェント起動コマンドは持たない（盤面のみ。`apply --json` で pane_id map を返すので消費側がそれを使う）。tmux delegate は対象外。
+
+```
+Usage: wez layout [--socket <path>] <subcommand> [options]
+
+Subcommands:
+  apply <name>   Apply a layout preset (splits from the root/self pane)
+  list           List available preset names (lib/layouts/*.json)
+```
+
+> **非冪等（NON-IDEMPOTENT）に関する注記**: `layout apply` は create-only である。所有 marker や置換（`--replace`）は持たないため、**2 回 apply するとペインが倍増する**。「冪等」ではなく **「非冪等・clean baseline に対して再現的」** と理解すること。真の冪等（desired-state 差分）は本 PoC の範囲外。
+
+#### `wez layout apply`
+
+```
+Usage: wez layout apply <name> [options]
+
+Options:
+  --focus <target>   Pane to focus when done (default: root). Either "root", a
+                     step id from the preset, or a numeric pane id (literal).
+                     An invalid target is rejected (exit 64) before any split.
+  --json             Output result as JSON
+```
+
+処理順:
+
+1. ソケットを解決し `WEZTERM_UNIX_SOCKET` を export（`wez_cmd_layout` が1回だけ）。未知サブコマンドは discovery より前に exit 64（`WEZ_EXIT_USAGE`）。
+2. preset を **`ROOT` 解決より前**に読み・検証する。preset 名は `[A-Za-z0-9._-]+` のみ許可（`/`・`..` は exit 64）。不在は exit 1（`WEZ_EXIT_NOT_FOUND`）、schema・引数不正は exit 64（`WEZ_EXIT_USAGE`）。`jq` 未導入は依存失敗として exit 5（`WEZ_EXIT_PANE_OP_FAILED`、`parent-window` と一貫）。
+3. `ROOT`（self ペイン = `WEZTERM_PANE`）を1回解決し実在確認。解決不能・stale なら exit 3（`WEZ_EXIT_PANE_NOT_FOUND`）。
+4. focus 対象（既定 `$ROOT`、`--focus <target>`、preset の `focus`）を**分割前に検証**する。`"root"`・preset の step id・数値 pane id のいずれでもなければ split せず exit 64。
+5. 各 step を順に **explicit `--pane-id $ROOT`** で分割する（`wez pane split` の省略時 active-pane フォールバックを踏ませない）。これにより親が**別ウィンドウを active にした状態でも** self 起点で同一盤面を再現する。
+6. いずれかの split が失敗したら abort し、作成済みペインを**逆順に kill（rollback）** して exit 5（`WEZ_EXIT_PANE_OP_FAILED`）。`--json` 時は `{"status":"partial","root_pane_id":N,"created":[...],"failed_step":K,"rollback_failed":[...]}` を出力（`rollback_failed` は kill に失敗した orphan ペイン）。
+7. 全 step 成功後、focus を復帰する（既定 `$ROOT`、`--focus <target>` で上書き、数値 `--focus` はリテラル pane id）。
+
+**成功時 JSON 出力スキーマ**（`--json`）:
+
+```json
+{
+  "status": "ok",
+  "root_pane_id": 1,
+  "window_id": 0,
+  "panes": [
+    {"id": "worker1", "pane_id": 101, "index": 0},
+    {"id": "worker2", "pane_id": 102, "index": 1}
+  ]
+}
+```
+
+`window_id` は root ペインの所属ウィンドウ（`wezterm cli list` から解決）。
+
+#### `wez layout list`
+
+`lib/layouts/*.json` の preset 名を1行ずつ出力する。
+
+#### preset スキーマ（`lib/layouts/<name>.json`）
+
+```json
+{
+  "version": 1,
+  "root": "self",
+  "steps": [
+    {"id": "worker1", "from": "root", "dir": "bottom", "percent": 30},
+    {"id": "worker2", "from": "root", "dir": "right", "percent": 50}
+  ],
+  "focus": "root"
+}
+```
+
+**PoC 制約**（逸脱は exit 64）:
+
+- `root` は `"self"` のみ。各 step の `from` は `"root"` のみ。
+- step の `id` は非空文字列。**全桁数値（`^[0-9]+$`）は不可**（数値 `--focus` のリテラル pane id 解釈と衝突するため）。
+- `dir` は次のいずれか。CLI の `--<dir>` フラグへ直接マップされる。
+
+  | `dir` | `wez pane split` フラグ |
+  |-------|------------------------|
+  | `bottom` | `--bottom` |
+  | `right`  | `--right` |
+  | `left`   | `--left` |
+  | `top`    | `--top` |
+
+- `percent` は **1〜99 の整数**（小数は schema 段階で exit 64）。
+- `focus` は `"root"`・step の `id`・数値 pane id のいずれか（既定 `"root"`）。`--focus` が指定されればそちらが優先。不正値は **分割前に** exit 64。
+- グリッド／ネストは将来の再帰ツリー schema v2（本 PoC の範囲外）。
+
+> **スコープ外**: layout は **wez 基盤専用**であり、tmux への delegate は持たない（別 issue）。価値は engine／非対話用の outer WezTerm board の構築に限る。
+
 ### `wez notify`
 
 WezTerm ペインに user-var（OSC 1337 SetUserVar）を送信する。送信方式は TTY 直接書き込み（primary）と command string（fallback）の2段階。
@@ -246,6 +337,8 @@ projects/wezterm-ai-mode/
 │   ├── common.sh        # 共通: カラー、ログ関数、exit code 定数
 │   ├── discover.sh      # wez discover の実装
 │   ├── pane.sh          # wez pane の実装（list/split/send/capture/kill/activate）
+│   ├── layout.sh        # wez layout の実装（apply/list・宣言的盤面構築）
+│   ├── layouts/         # layout preset（<name>.json）
 │   └── notify.sh        # wez notify の実装（TTY direct write + fallback）
 ├── docs/
 │   ├── VERIFICATION_MATRIX.md
@@ -260,7 +353,7 @@ projects/wezterm-ai-mode/
 
 - **Bash** 3.2+
 - **wezterm** CLI（`brew install --cask wezterm`）
-- **jq**（推奨。不在時は `grep -c` フォールバックで動作）
+- **jq**（`discover` / `pane` は推奨。不在時は `grep -c` フォールバックで動作。`layout` は**必須**で、未導入時は依存失敗として exit 5 で明示エラー）
 
 ## 開発方式（検証ケース）
 

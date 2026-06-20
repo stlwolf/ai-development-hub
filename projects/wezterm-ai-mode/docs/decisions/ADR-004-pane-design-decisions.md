@@ -9,6 +9,9 @@ related:
   - type: relates_to
     ref: "https://github.com/stlwolf/ai-development-hub/issues/174"
     reason: "DJ-8 split ターゲティング規約 (self / parent-window / explicit) の判断を追記"
+  - type: relates_to
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/165"
+    reason: "DJ-9 wez layout 宣言的盤面構築規約 (preset schema / 非冪等 / rollback) の判断を追記"
   - type: depends_on
     ref: ADR-001-cli-file-structure.md
     reason: "ファイル構成・命名規約を踏襲"
@@ -88,3 +91,24 @@ PoC-02 では `read -p "Kill pane?"` で確認を取っていたが、AI エー�
 `--target` / `--pane-id` を両方省略した場合は **`self` を試行 → 解決不能なら `--pane-id` を省略し wezterm のネイティブ既定（`WEZTERM_PANE` が設定済みならそれ、未設定なら active pane）に委ねる + `wez_warn`**。一方、ユーザが**明示**した `self` / `parent-window` が解決不能なら**フォールバックせず即エラー終了**（exit 3 = `WEZ_EXIT_PANE_NOT_FOUND`）。これは `discover.sh` の「明示指定の失敗＝即エラー」思想に倣う。
 
 後方互換: 本変更でデフォルトが **「常に native 既定」→「`self` を明示渡し（解決不能時のみ native 既定にフォールバック）」** に変わる。B3 は native が使うのと同じ `WEZTERM_PANE` を `--pane-id` で明示渡しするため、`WEZTERM_PANE` が設定された端末では従来 native が選んでいたペインと同一ペインを分割する。解決不能時は `--pane-id` を省略し native の既定（`WEZTERM_PANE`→active pane）に委ねる。`--pane-id`/`--target` なしの呼び出し（`orchestration-engine` の `spawn.sh` 等）は壊れない。明示 `--pane-id N` の挙動は不変。
+
+## DJ-9: wez layout 宣言的盤面構築の規約（#165）
+
+`wez layout` サブコマンド（`lib/layout.sh` + `bin/wez` dispatch）を追加。既存の `wez pane split` プリミティブを名付き JSON preset に沿って機械的に反復する **薄い上位層**。**wez 基盤専用・盤面構築のみ・非冪等（create-only）** に範囲を固定する。設計探索と設計SO reconcile（6 点）は `docs/discussions/2026-06-20-discussion-wez-layout.md` / `docs/plans/2026-06-20-plan-165-wez-layout.md` を正本とする。
+
+- **定義形式（DJ-a）**: YAML パーサを持ち込まず、`jq` で読む JSON 名付き preset を採用。flat children でなく `steps`（`id` + `from` + `dir` + `percent`）+ 明示 `root` とする。flat `children[].target:self` は grid／連鎖を表現できないため。PoC は `root:"self"` / `from:"root"` のみに制約する（逸脱は exit 64）。`dir` ∈ {bottom,right,left,top}（CLI の `--<dir>` フラグへ直接マップ）、`percent` は 1-99。グリッド／ネストは将来の再帰ツリー schema v2（本 PoC 範囲外）。
+- **責務（DJ-b）**: layout は盤面構築のみで、エージェント起動コマンドを持たない（`#114` クリーン出力との二重化回避）。ただし `apply --json` で **pane_id map** を返す（盤面 only ≠ ID を返さない。消費側 `#175` の `OE_SPAWN_PANE_ID` 要求に応える契約）。
+- **実現方式（DJ-c）**: 既存 `wez pane split` の反復で実現する。Lua の `gui-startup`（`.wezterm.lua`）は別リポ管轄であり CLI 主体の hub と思想が割れるため不採用。
+- **socket / root を一度だけ固定（SO reconcile #5）**: `wez_cmd_layout` が `wez_cmd_pane` と同型でソケットを1回解決し `export WEZTERM_UNIX_SOCKET`、`ROOT=$(_wez_resolve_self_pane)` + `_wez_pane_exists` を1回行う。以降全 split は **explicit `--pane-id $ROOT`** を内部関数 `_wez_pane_split` に渡す（`wez pane split` を N 個の subprocess で呼ばない）。これにより B3 default の active-pane フォールバックを踏まず、親が別ウィンドウを active にしていても self 起点で同一盤面を再現する。
+- **非冪等（SO reconcile #2）**: split は create-only。2 回 apply するとペインが倍増する。「冪等」と呼ばず **「非冪等・clean baseline に再現的」** と help/README に明記する。真の冪等（`--replace` + 所有 marker、desired-state 差分）は PoC 外。
+- **部分失敗の rollback（SO reconcile #4）**: k 番目の split が失敗したら abort し、作成済みペインを **逆順に kill（rollback）** して exit 5（`WEZ_EXIT_PANE_OP_FAILED`）。`--json` 時は `{status:"partial", root_pane_id, created, failed_step}` を出力。エージェント未起動の盤面段階のため逆順 kill は安全。
+- **focus（DJ-d）**: 全 split を explicit ターゲティングするため split 毎 activate は不要。最後に focus を復帰する（既定 `root`、`--focus <target>` で上書き、preset の `focus`（step id 可）も解釈）。
+- **oe / tmux（DJ-e）**: wez 基盤専用とし、tmux への delegate は out of scope（`#188` の2基盤別レイヤ + `#175` の非対話 `claude -p` 限定）。価値は engine／非対話用 outer WezTerm board に限ると honest に明記する。
+
+#### 終了コード（DJ-7 の体系を踏襲）
+
+layout 固有の追加コードは無く、既存定数を再利用する: preset 不在 = 1（`WEZ_EXIT_NOT_FOUND`）、root 不在/stale = 3（`WEZ_EXIT_PANE_NOT_FOUND`）、split 失敗（rollback 済）= 5（`WEZ_EXIT_PANE_OP_FAILED`）、schema/引数不正 = 64（`WEZ_EXIT_USAGE`）。`jq` 未導入は依存失敗として 5 に寄せる（DJ-8 の `parent-window` と一貫）。
+
+#### スコープガード
+
+盤面構築のみ（エージェント起動コマンドを持たない）/ wez 専用（tmux 非対応）/ 非冪等（明記）/ `spawn.sh`（`#175`）は触らない / grid は schema v2。

@@ -22,6 +22,8 @@ source "$WEZ_ROOT/lib/common.sh"
 source "$WEZ_ROOT/lib/discover.sh"
 # shellcheck source=../lib/pane.sh
 source "$WEZ_ROOT/lib/pane.sh"
+# shellcheck source=../lib/layout.sh
+source "$WEZ_ROOT/lib/layout.sh"
 # shellcheck source=../lib/notify.sh
 source "$WEZ_ROOT/lib/notify.sh"
 
@@ -34,6 +36,7 @@ Usage: wez <command> [options]
 Commands:
   discover    Auto-detect WezTerm socket and verify connection
   pane        Manage WezTerm panes (list, split, send, capture, kill, activate)
+  layout      Build declarative pane layouts from presets (apply, list)
   notify      Send a notification via user-var (OSC 1337)
   help        Show this help message
   version     Show version
@@ -52,6 +55,9 @@ wez_main() {
       ;;
     pane)
       wez_cmd_pane "$@"
+      ;;
+    layout)
+      wez_cmd_layout "$@"
       ;;
     notify)
       wez_cmd_notify "$@"

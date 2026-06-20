@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "root": "self",
+  "steps": [
+    {"id": "worker1", "from": "root", "dir": "bottom", "percent": 30},
+    {"id": "worker2", "from": "root", "dir": "right", "percent": 50}
+  ],
+  "focus": "root"
+}
