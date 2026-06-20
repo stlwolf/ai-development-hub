@@ -41,6 +41,12 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, episode
 - **set -e バグをテストが捕捉**: `list="$(oe_reg_list)"` が tmux 不在（rc2）で abort → `|| rc=$?` で degrade に修正（reducer 抽出も `reduced='{}'` フォールバックで堅牢化）。
 - **R2(g) 反映**: preview の read-only 境界統一（DELEGATE preview は tmux capture を使わず registry メタのみ＝ペイン出力を一切読まない）。
 
+## 実装SO（oe-review・コード欠陥レンズ・設計SO とは別ステップ）
+
+- `oe-review --lanes 2 --base master`（codex+cursor）→ **verdict=survived**（exit 0）。`reviewed_sha=9fe1fdb`・`diff_base=master`・`changed_files_count=6`・`audit_id=20260620130225WHZKB2XA4A4M`。
+- 両レーンとも audit-terminal reducer・degrade・引数処理・ULID 拘束・read-only 境界を diff/実コード/27 テスト/shellcheck/bash3.2 で照合し material な correctness/堅牢性/セキュリティ欠陥なしと判定。
+- 設計SO（oe-refute・breadth/grounding レンズ）とは別レンズ・別ステップ・別 audit stream（oe-review.jsonl）。設計SO を回したことは実装SO の代替にならない（#192 false-pass 回避）。
+
 ## 範囲外として routing した発見
 
 - **CB payload schema↔impl drift**: `schemas/audit-log.schema.json` は `payload.limit_type` と記述、実装（`lib/monitor.sh`）は `payload.reason` を emit。#177（read-only 観測）の範囲外。oe-status の reducer は `reason` 優先＋`limit_type` フォールバックで両対応。**ドリフト是正は別 issue に切るべき**（producer 側 or schema 側の統一）。
