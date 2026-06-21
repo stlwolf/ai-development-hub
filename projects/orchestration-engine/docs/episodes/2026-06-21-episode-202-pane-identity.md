@@ -15,7 +15,7 @@ related:
 
 # #202 ペイン識別（oe-ident / read-time ambient）実装エピソード
 
-> **reconstructed**（締めで一括執筆＝後追い再構成・リアルタイム追記ではない＝証拠価値はその分低い）。
+> `reconstructed`（締めで一括執筆＝後追い再構成・リアルタイム追記ではない＝証拠価値はその分低い）。
 > cockpit 統括セッション（`%32`）が WORKTREE `feature/#202_pane_identity` で直接実装（委譲なし）。
 
 ## コンテキスト / なぜ
