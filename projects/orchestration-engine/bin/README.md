@@ -85,6 +85,7 @@ oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg 
 - `--label <#N|name>` … registry 登録ラベル（後で `oe-send <label>` で指す）
 - `--claude-arg <arg>` … 子 Claude 起動時に追加引数を渡す（repeatable）。例: `--claude-arg --permission-mode --claude-arg auto`
 - tmux 内必須（`TMUX_PANE` から親ペイン取得、`PARENT_TMUX_PANE` を子へ継承）
+- 子ペインは**親ペイン基準で split** する（`tmux split-window -t "$TMUX_PANE"`）。親が別ウィンドウを active にしている間に委譲しても、子は親のウィンドウに生える（`-d` は focus 移動の抑止のみ・#203）
 
 関連 lib: `delegate-registry.sh`（キック注入は `oe-send` 経由）
 
@@ -209,6 +210,7 @@ oe-status -h | --help
 | `OE_SEND_ENTER_DELAY` | 送信: リテラル送信 → Enter の小休止（秒） | `0.3` |
 | `OE_SEND_FINALIZE` | 送信後 finalize の有効/無効（`0` で無効） | 有効 |
 | `OE_SEND_FINALIZE_TIMEOUT` / `_INTERVAL` / `_STABLE` | finalize の settle 窓 / poll 間隔 / 終端安定回数 | `3` / `0.3` / `3` |
+| `OE_SEND_SIGNAL_MISS` | oe-send: 未着候補（stage miss）検出時に rc4 へ昇格し手動フォールバックを表示（opt-in） | 無効（`0`） |
 | `OE_DELEGATE_WAIT_SEC` | oe-delegate: 子 claude 起動待ち（秒） | `4` |
 | `PARENT_TMUX_PANE` | oe-delegate が子へ渡す親ペイン（戻し用） | （自動） |
 | `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |

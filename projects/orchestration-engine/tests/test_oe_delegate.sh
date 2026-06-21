@@ -19,6 +19,8 @@ set -euo pipefail
 log_dir="${OE_DELEGATE_TEST_LOG_DIR:?}"
 
 if [[ "${1:-}" == "split-window" ]]; then
+  # 全 argv も記録する（targeting=-t の検証用 #203）。最終引数=子コマンドは split-command.log へ。
+  printf '%s\n' "$*" >> "${log_dir}/split-argv.log"
   last=""
   while [[ $# -gt 0 ]]; do
     last="$1"
@@ -147,6 +149,14 @@ rc=0
 bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --label $'bad\rlabel' "task" >"${_TMP_DIR}/stdout.log" 2>"${_TMP_DIR}/stderr.log" || rc=$?
 ck "CR label rc=2" "2" "$rc"
 ck "CR label does not split" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[11] split-window targets the parent pane (#203)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#152" "target task"
+# TMUX_PANE=%1（親）。split-window argv に親ペイン基準 -t %1 が含まれること（フォーカス中ペイン
+# ではなく親ペインを分割する）。子コマンド内の PARENT_TMUX_PANE='%1' とは別トークン（-t %1 で照合）。
+ck "split-window includes -t parent pane" "yes" "$(grep -q -- '-t %1' "$_TMP_DIR/logs/split-argv.log" && echo yes || echo no)"
+ck "split child command unchanged" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

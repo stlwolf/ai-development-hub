@@ -129,9 +129,12 @@ build_child_command() {
   printf '%s\n' "$cmd"
 }
 
-# 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）
+# 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）。
+# split は親ペイン（$PARENT_PANE = oe-delegate を起動した pane）を -t で明示する。-t を省くと
+# tmux はフォーカス中ペインを分割するため、親が別ウィンドウを active にしている間に委譲すると
+# 子が無関係なウィンドウに生える（#203）。-d は focus 移動の抑止で、生える「場所」は -t が決める。
 CHILD_COMMAND="$(build_child_command)"
-CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -c "$WORKSPACE" "$CHILD_COMMAND")"
+CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -t "$PARENT_PANE" -c "$WORKSPACE" "$CHILD_COMMAND")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
 # claude 起動待ち
