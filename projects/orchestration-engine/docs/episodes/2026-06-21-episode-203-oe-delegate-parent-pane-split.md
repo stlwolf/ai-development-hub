@@ -15,7 +15,7 @@ related:
 
 # #203 oe-delegate の split を親ペイン基準にする実装エピソード
 
-> reconstructed（締めで一括執筆＝後追い再構成・リアルタイム追記ではない＝証拠価値はその分低い）。cockpit 統括セッション（`%32`）が WORKTREE
+> `reconstructed`（締めで一括執筆＝後追い再構成・リアルタイム追記ではない＝証拠価値はその分低い）。cockpit 統括セッション（`%32`）が WORKTREE
 > `fix/#203_oe_delegate_parent_pane_split` で直接実装（委譲なし・最小修正）。
 
 ## コンテキスト / 動機
