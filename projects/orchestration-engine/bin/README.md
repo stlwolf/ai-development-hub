@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影）
 
 ---
 
@@ -200,6 +200,31 @@ oe-status -h | --help
 - データ源は `OE_DATA_DIR`（または `OE_AUDIT_DIR` / `OE_STATE_DIR`）で上書き可。
 
 設計の正本: [`../docs/discussions/2026-06-19-discussion-cockpit-observation-ui.md`](../docs/discussions/2026-06-19-discussion-cockpit-observation-ui.md) §8 / [`../docs/decisions/2026-06-19-decision-188-identity-unification.md`](../docs/decisions/2026-06-19-decision-188-identity-unification.md)。関連 lib: `delegate-registry.sh`（`oe_reg_list`）。
+
+## oe-ident — ペインの識別子を read 時に投影（#202）
+
+`pane-border-format` の `#()` から呼ばれ、指定ペインの**オーケストレーション識別子**を 1 行で返す read-only 表示用ヘルパ。`@oe_id` のような stored 状態を作らず、既存ソース（pane-issue / spawn-registry）を**読み取り時に投影**する（#188 の read 時相関・永続マップ不採用に整合・新規 write path 無し）。`oe_reg_list` / `oe_reg_resolve` の宛先解決契約には一切触れない。
+
+```bash
+oe-ident <pane_id> [server_pid]
+```
+
+- `<pane_id>` … 対象ペイン `%N`。不正/欠落でも **空出力・exit 0**（border を壊さない）
+- `[server_pid]` … state キーの名前空間（tmux server pid）。省略時は `$TMUX` から導出。`#()` で TMUX env 不在に備え `#{pid}` を明示渡しできる
+- 出力 `<role> <label>`: `role`=`parent`（子を spawn した）/`child`（自身が被 spawn）は spawn 関係がある時のみ前置。`label`=pane-issue の `#N slug` 優先 → spawn registry の label。識別情報の無いペインは **空行**（honest）
+- 例: `parent #202 pane-identity` / `child #179` / `#204 toolkit`（spawn 関係なし） / （空）
+
+**表示の有効化は dotfiles 側で opt-in**（hub は強制しない・責務境界）。推奨スニペット（`~/.tmux.conf` 等）:
+
+```tmux
+set -g pane-border-status top
+set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-engine/bin/oe-ident #{pane_id} #{pid}) '
+```
+
+- `#()` は tmux が**非同期実行しキャッシュ**（初回空・以降 `status-interval` 毎に更新）＝表示用途で問題なし。コマンドは小ファイル読みのみで高速。
+- pane_title（Claude セッション名が書く所）は**無傷**＝二重 writer の奪い合いが起きない。
+
+関連 lib: `delegate-registry.sh`（`_oe_reg_key` / pane-issue・spawn-registry の読取を共有）。設計経緯: [`../docs/discussions/2026-06-21-discussion-202-pane-identity.md`](../docs/discussions/2026-06-21-discussion-202-pane-identity.md)。
 
 ---
 
