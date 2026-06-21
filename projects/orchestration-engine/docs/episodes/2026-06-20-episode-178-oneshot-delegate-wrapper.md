@@ -19,7 +19,7 @@ tags: [orchestration, delegate, oe-kick, oneshot, hardening, episode]
 
 # #178 oe-kick — ワンショット委譲ラッパー 実装 episode
 
-> 本文は作業中リアルタイム追記（reconstructed ではない）。closure は `episode-retrospective`。
+> 本文は `reconstructed`（closure 一括執筆と推定・追記タイミングは親で未検証＝real-time とは断定しない）。closure は `episode-retrospective`。
 > 親 = `%32`。本セッションは worktree（`feature/#178_oneshot_delegate_wrapper`）で並行子（#199）と非衝突に作業。
 
 ## ミッション（kickoff `.oe/2026-06-20-kickoff-178-oneshot-delegate.md`）

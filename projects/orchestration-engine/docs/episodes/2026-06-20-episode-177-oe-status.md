@@ -19,7 +19,7 @@ tags: [orchestration, cockpit, oe-status, observation, audit, read-only, episode
 
 # #177 oe-status — cockpit 観測UI 実装 episode
 
-> 本文は作業中リアルタイム追記（reconstructed ではない）。closure は `episode-retrospective`。
+> 本文は `reconstructed`（closure 一括執筆と推定・追記タイミングは親で未検証＝real-time とは断定しない）。closure は `episode-retrospective`。
 
 ## 設計フェーズ（2026-06-20）
 

@@ -15,7 +15,7 @@ related:
 
 # #179 通知からペインジャンプ（oe-jump）実装エピソード
 
-> リアルタイム追記（reconstructed ではない）。親 `%32` からの委譲子セッションが WORKTREE
+> `reconstructed`（子セッション執筆・closure 一括執筆と推定／追記タイミングは親で未検証・real-time とは断定しない）。親 `%32` からの委譲子セッションが WORKTREE
 > `feature/#179_notify_pane_jump` で自律実行。
 
 ## コンテキスト / 動機
