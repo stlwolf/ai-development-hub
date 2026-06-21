@@ -18,9 +18,14 @@ export OE_PANE_ISSUE_DIR="$_TMP_DIR/pane-issue"
 export OE_DELEGATE_STATE_DIR="$_TMP_DIR/oe-delegate"
 mkdir -p "$OE_PANE_ISSUE_DIR" "$OE_DELEGATE_STATE_DIR"
 
+# キー生成は本体と同じ契約を使う（手書き複製のドリフトを避ける・Copilot 指摘）。
+# _oe_reg_key は $TMUX から server pid を導出するため、固定 pid を TMUX 経由で注入する
+# （oe-ident の pid-override 経路と同一イディオム）。
+# shellcheck source=../lib/delegate-registry.sh
+source "$PROJECT_DIR/lib/delegate-registry.sh"
+
 PID=9999
-# delegate-registry.sh の _oe_reg_key と同一サニタイズ（<pid>_<pane> の非英数を _ に）
-keyfor() { local k="${PID}_$1"; printf '%s' "${k//[^A-Za-z0-9]/_}"; }
+keyfor() { TMUX="oe,${PID},0" _oe_reg_key "$1"; }
 
 PASS=0
 FAIL=0
