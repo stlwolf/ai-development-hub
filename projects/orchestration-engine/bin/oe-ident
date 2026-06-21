@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# oe-ident — 指定 tmux ペインの「オーケストレーション識別子」を 1 行で返す read-only 表示用ヘルパ（#202 / c″）。
+#
+# pane-border-format の #() から呼ばれ、既存ソース（pane-issue / spawn-registry）を
+# **読み取り時に投影**する。新規 write path を持たない＝#188（read 時相関・永続マップ不採用）に整合。
+# `@oe_id` のような stored 状態を作らないので lifecycle/stale 問題が無く、oe_reg_list/oe_reg_resolve
+# の宛先解決契約にも一切触れない（read 専用・別経路）。
+#
+# usage: oe-ident <pane_id> [server_pid]
+#   <pane_id>     対象ペイン %N。不正/欠落でも border を壊さないよう空出力・exit 0。
+#   [server_pid]  state キーの名前空間（tmux server pid）。省略時は $TMUX から導出。
+#                 tmux の #() は env に TMUX を入れる実測だが、非同期実行の残存不確実性に備え
+#                 pane-border-format 側から #{pid} を明示渡しできる（TMUX 不在でも解決可能）。
+#
+#   出力: "<role> <label>"（role=parent/child は spawn 関係がある時のみ前置 / label=#N slug 等）。
+#         識別情報の無いペインは空行（honest — 無い物を捏造しない）。常に exit 0（表示用途）。
+#
+#   role 導出（registry 読取のみ・書込なし）:
+#     parent = この pane を parent_pane に持つ子 entry が在る（＝子を spawn した）
+#     child  = この pane 自身の spawn entry が在る（oe_reg_record が role:"child" で記録）
+#     （両方なら parent を優先）
+#
+# 例: parent #202 pane-identity / child #179 / #204 toolkit（spawn 関係なし=role 無し） / （空）
+
+set -uo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+PANE="${1:-}"
+PID_OVERRIDE="${2:-}"
+
+# 表示用途: 不正引数でも border を壊さない（空出力・exit 0）
+[[ "$PANE" =~ ^%[0-9]+$ ]] || exit 0
+# jq 無し環境では識別子を出さない（border は空で描画継続）
+command -v jq >/dev/null 2>&1 || exit 0
+
+# state キーの namespace（server pid）。明示引数を優先し、無ければ $TMUX から。
+if [[ -n "$PID_OVERRIDE" ]]; then
+  pid="$PID_OVERRIDE"
+  key="$(TMUX="oe,${PID_OVERRIDE},0" _oe_reg_key "$PANE")"
+else
+  pid="$(_oe_reg_server_pid)"
+  key="$(_oe_reg_key "$PANE")"
+fi
+
+# --- label: pane-issue(.name) 優先 → spawn-registry(.label) ---
+label=""
+if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+  label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
+fi
+own="${OE_DELEGATE_STATE_DIR}/${key}.json"
+is_child=0
+if [[ -f "$own" ]]; then
+  is_child=1
+  [[ -z "$label" ]] && label="$(jq -r '.label // empty' "$own" 2>/dev/null)"
+fi
+
+# --- role: 子を持つ(parent) > 自分が子(child) > なし ---
+# 現サーバ（pid）の子 entry だけを走査（別サーバの stale で pane-id 衝突しても誤検知しない）。
+# grep -F で per-file jq を避ける（#() の hot path・oe_reg_record の compact JSON は形が安定）。
+is_parent=0
+if [[ -n "$pid" ]] && grep -lF "\"parent_pane\":\"${PANE}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
+  is_parent=1
+fi
+role=""
+if [[ "$is_parent" -eq 1 ]]; then
+  role="parent"
+elif [[ "$is_child" -eq 1 ]]; then
+  role="child"
+fi
+
+# --- 出力（role があれば前置・改行は畳む・honest に空なら空行）---
+label="${label//$'\n'/ }"
+label="${label//$'\r'/ }"
+if [[ -n "$role" && -n "$label" ]]; then
+  out="${role} ${label}"
+elif [[ -n "$role" ]]; then
+  out="$role"
+elif [[ -n "$label" ]]; then
+  out="$label"
+else
+  out=""
+fi
+printf '%s\n' "$out"
+exit 0
