@@ -168,6 +168,35 @@ oe-jump --record [--] <target>         # target を記録するだけ（通知�
 
 設計の正本: [`../docs/discussions/2026-06-21-discussion-179-notify-pane-jump.md`](../docs/discussions/2026-06-21-discussion-179-notify-pane-jump.md)。関連 lib: `delegate-registry.sh`（`oe_reg_resolve`）/ 関連: [`../docs/decisions/2026-06-19-decision-188-identity-unification.md`](../docs/decisions/2026-06-19-decision-188-identity-unification.md)。
 
+## oe-view — 生成 doc のクリッカブル md ビューア（#210）
+
+パス（plan/kickoff/episode 等）から Finder/手動ペイン操作なしで即ビューする入口。**md（`*.md`・拡張子/大小無視）→ viewer ペインを解決して `glow` で描画 / 非 md → `open -- <path>`**。クリック層（WezTerm の `hyperlink_rules` + `open-uri`・dotfiles 別 PR）に**非依存で単体動作**する（`--here`/手動で即有用）。
+
+配置（DJ-1）の根拠は **cockpit UX glue**（`wez pane` + `open` + 種別ディスパッチ）であり、`wez` は下層プリミティブのまま使う（ADR-001/004 の wez=下層方針を守る・上方依存を作らない）。viewer 解決ロジックは [`../lib/oe-viewer.sh`](../lib/oe-viewer.sh) に切り出す。
+
+```bash
+oe-view [--here] [--from-link] [--json] [--] <path>   # 既定: md→glow viewer / 非md→open
+oe-view --help
+```
+
+- `<path>` … 表示対象のファイル（必須）。実体存在 + 通常ファイルを常に確認する。
+- `--here` … 分割せず現ペインのページャで表示（md は `glow -p`、無ければ `bat`）。**degrade 本線**（tmux 非 wez / Cursor 統合ターミナル / dotfiles 未反映時）。
+- `--from-link` … クリック経由フラグ。**allowlist 強制・非 md 拒否（md のみ）**を有効化（直叩きより厳格）。クリック経由で任意アプリ/スクリプト起動（非 md `open`）を許さない。
+- `--json` … 結果を JSON で出力: `{status, kind:"md"|"other", action:"glow"|"open", pane_id?}`。
+- viewer ペイン（DJ-4） … state（`~/.claude/state/oe-view/viewer-pane-id`・`OE_VIEW_STATE_DIR` で隔離可）に pane_id を保存し、生存（`wez pane list`）なら **再利用**（send）/ stale・無しなら **split で新規作成 + state 更新**。新規作成時は `wez pane activate <source>` で**作業ペインへ focus を戻す**（#111）。viewer の glow は非ページャ形（`glow -- <file>`＝描画して復帰）で、次回 send と衝突しない（`-p` ページャは `--here` 限定）。
+- セキュリティ（§5・P0） … (1) **送信層のシェル注入対策**: viewer への送信は `wez pane send`＝受信シェルで再トークナイズされるため、送信文字列を組む直前に `printf %q` でシェルクォートする（実在ファイル名 `a$(whoami).md` でも `$(whoami)` が評価されない）。(2) **allowlist**: `--from-link` 時に `realpath` 正規化後 `OE_VIEW_ROOTS` 配下 prefix を判定（`..`/symlink トラバーサル対策）。(3) **入力サニタイズ**: 改行・CR・制御文字を含むパスを拒否。
+- exit: `0` 成功 / `1` 対象不在・allowlist 外・サニタイズ違反・`--from-link` で非 md・glow/open 失敗 / `2` usage・**環境エラー（wez 不在・glow 不在を含む。依存不足は独立コードにせず `2` に統一し導入案内を出す）**。
+
+3 段の degrade（環境に応じた表示経路）:
+
+| 環境 | 表示経路 | 備考 |
+|------|----------|------|
+| WezTerm + `wez` + `glow`（dotfiles 反映済） | クリック or `oe-view <md>` → viewer ペイン `glow`（再利用 split・focus は作業ペイン維持） | 本線。クリック層は dotfiles 別 PR |
+| tmux 非 wez / Cursor 統合ターミナル / dotfiles 未反映 | `oe-view --here <md>` → 現ペイン `glow -p` | 手動・分割しない degrade 本線 |
+| `glow` 未導入 | `oe-view --here <md>` → 現ペイン `bat` | bat フォールバック。両方不在は exit 2 + 導入案内 |
+
+設計の正本: [`../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md`](../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md)。関連 lib: [`../lib/oe-viewer.sh`](../lib/oe-viewer.sh)（viewer 解決）/ 下層: [`../../wezterm-ai-mode/lib/pane.sh`](../../wezterm-ai-mode/lib/pane.sh)（`wez pane split/send/activate`・`_wez_pane_exists`）。クリック層（`wezterm.lua` の `hyperlink_rules` + `open-uri`）は dotfiles 側の別 PR（hub は手順 doc のみ・lua 本体は置かない）。
+
 ## oe-report — 親へ申し送り（legacy）
 
 親ペインへ申し送り / レビュー依頼を送る。**legacy**: 戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化が方針。
@@ -239,5 +268,7 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 | `OE_DELEGATE_WAIT_SEC` | oe-delegate: 子 claude 起動待ち（秒） | `4` |
 | `PARENT_TMUX_PANE` | oe-delegate が子へ渡す親ペイン（戻し用） | （自動） |
 | `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |
+| `OE_VIEW_ROOTS` | oe-view: allowlist 許可ルート（コロン区切り。`--from-link` 時に強制） | リポジトリルートの `projects/` |
+| `OE_VIEW_STATE_DIR` | oe-view: viewer pane id の state 置き場 | `~/.claude/state/oe-view` |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。
