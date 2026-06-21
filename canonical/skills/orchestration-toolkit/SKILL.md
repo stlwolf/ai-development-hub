@@ -5,7 +5,7 @@ description: oe-* オーケストレーションツール群（engine 本体 / �
 
 # Orchestration Toolkit (oe-*) — 統合概観
 
-oe-* ツール群を **1 つのパッケージとして一貫理解する**ための概観。個別スクリプトを repo 走査して断片把握すると齟齬が出るため、本スキルで全体像を取り、詳細は各 verb の README / focused スキルへ routing する。実体は `projects/orchestration-engine/bin/oe-*`（全 11 verb）。
+oe-* ツール群を **1 つのパッケージとして一貫理解する**ための概観。個別スクリプトを repo 走査して断片把握すると齟齬が出るため、本スキルで全体像を取り、詳細は各 verb の README / focused スキルへ routing する。実体は `projects/orchestration-engine/bin/`（`oe` ＋ `oe-*`・全 11 verb）。
 
 ## ツール群（役割別）
 
@@ -26,7 +26,7 @@ discussion/DJ → **設計SO（`oe-refute`）** → 実装 → **実装SO（`oe-
 
 ## 重要な不変条件 / gotcha
 
-- oe-* は **PATH 未登録** → `projects/orchestration-engine/bin/oe-*` でパス起動（`so-compare`/`wez` 等は `~/bin` に sync 済で PATH 上）。
+- `oe` / `oe-*` は **PATH 未登録** → `projects/orchestration-engine/bin/` のパスで起動（`so-compare`/`wez` 等は `~/bin` に sync 済で PATH 上）。
 - SO の audit は本体 per-session（`audit/{id}.jsonl`）と別系統: **`oe-refute.jsonl`（`event_type=oe_refute`・`rubric`）/ `oe-review.jsonl`（`event_type=oe_review`・`lens=impl`・diff バインド）**。`oe-status` の ENGINE 区画には SO audit は出ない（別 viewer）。
 - engine の state KVS は **初回=target 完了（`@@OE_EXIT` 検出）時に作成**・verify は完了後に同 KVS へ追記。**実行中 / CB timeout は KVS 不在**（観測は audit-tail から導く）。
 
