@@ -19,8 +19,9 @@ set -euo pipefail
 log_dir="${OE_DELEGATE_TEST_LOG_DIR:?}"
 
 if [[ "${1:-}" == "split-window" ]]; then
-  # 全 argv も記録する（targeting=-t の検証用 #203）。最終引数=子コマンドは split-command.log へ。
-  printf '%s\n' "$*" >> "${log_dir}/split-argv.log"
+  # 全 argv を 1 行 1 引数で記録する（targeting=-t の順序検証用 #203）。"$*" は argv を 1 文字列に
+  # 結合し境界/クォートを失うため "$@" で 1 引数ずつ出す。最終引数=子コマンドは split-command.log へ。
+  printf '%s\n' "$@" >> "${log_dir}/split-argv.log"
   last=""
   while [[ $# -gt 0 ]]; do
     last="$1"
@@ -153,9 +154,9 @@ ck "CR label does not split" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]
 echo "[11] split-window targets the parent pane (#203)"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#152" "target task"
-# TMUX_PANE=%1（親）。split-window argv に親ペイン基準 -t %1 が含まれること（フォーカス中ペイン
-# ではなく親ペインを分割する）。子コマンド内の PARENT_TMUX_PANE='%1' とは別トークン（-t %1 で照合）。
-ck "split-window includes -t parent pane" "yes" "$(grep -q -- '-t %1' "$_TMP_DIR/logs/split-argv.log" && echo yes || echo no)"
+# split-argv.log は 1 行 1 引数。-t の直後の引数が %1（親=TMUX_PANE）であることを順序込みで検証する
+# （フォーカス中ペインではなく親ペインを分割する）。子コマンド内の PARENT_TMUX_PANE='%1' と混同しない。
+ck "split-window -t targets parent pane" "%1" "$(awk '/^-t$/{getline; print; exit}' "$_TMP_DIR/logs/split-argv.log")"
 ck "split child command unchanged" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
