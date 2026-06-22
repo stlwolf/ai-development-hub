@@ -232,6 +232,21 @@ ck "symlink で root 外実体 → exit 1" "1" "$rc"
 rm -f "$_TMP_DIR/docroot/sub/link-to-outside.md"
 
 # ----------------------------------------------------------------------------
+# [8b] allowlist: realpath 不在フォールバックでも root 内 symlink → root 外実体 → exit 1。
+#      oe-review（#210 実装SO）検出の P0 バイパス回帰: フォールバックが最終要素の symlink を
+#      解かないと、許可 root 内の symlink で root 外 md を開けてしまう。fail-safe で塞ぐ。
+# ----------------------------------------------------------------------------
+echo "[8b] allowlist: realpath 不在でも symlink → root 外実体 → exit 1（フォールバック）"
+all_shims_on; reset_state; reset_logs
+ln -sf "$MD_OUTSIDE" "$_TMP_DIR/docroot/sub/link-to-outside.md"
+rm -f "$_TMP_DIR/pathbin/realpath"   # realpath を外してフォールバック経路を強制
+rc=0; "$VIEW" --from-link -- "$_TMP_DIR/docroot/sub/link-to-outside.md" >/dev/null 2>&1 || rc=$?
+ck "realpath 不在 symlink → exit 1" "1" "$rc"
+ck "send されない" "no" "$([[ -e "$_TMP_DIR/logs/wez.log" ]] && echo yes || echo no)"
+_link_real realpath                  # 後続テストのため realpath を復帰
+rm -f "$_TMP_DIR/docroot/sub/link-to-outside.md"
+
+# ----------------------------------------------------------------------------
 # [9] allowlist: '..' トラバーサルで root 外 → exit 1。
 # ----------------------------------------------------------------------------
 echo "[9] allowlist: '..' トラバーサルで root 外 → exit 1"

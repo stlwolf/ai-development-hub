@@ -63,11 +63,26 @@ _oe_view_canonicalize() {
     realpath -- "$path" 2>/dev/null
     return
   fi
-  # フォールバック: dir を物理解決（symlink/.. を解消）して basename を足す。
-  local dir base
+  # フォールバック: まず最終要素（ファイル）の symlink を追跡解決してから dir を物理解決する。
+  # cd -P は dir の symlink/.. を解消するが「最終要素＝ファイル symlink」は解かない。これを
+  # 怠ると、許可ルート内の symlink が **ルート外の実体** を指すケースで allowlist（--from-link
+  # の P0 境界）をバイパスできてしまう（#210 実装SO=oe-review で検出）。bounded loop で最終要素
+  # symlink を辿り（BSD readlink は 1 段ずつ・循環は上限で打ち切り）、実体の dir を物理解決する。
+  # realpath 主経路では起きない（フォールバック専用の fail-safe）。
+  local dir base resolved_dir target i=0
+  while [[ -L "$path" ]]; do
+    i=$((i + 1))
+    if [[ "$i" -gt 40 ]]; then
+      echo "oe-view: too many levels of symbolic links: $1" >&2; return 1
+    fi
+    target="$(readlink -- "$path")" || return 1
+    case "$target" in
+      /*) path="$target" ;;
+      *)  path="$(dirname -- "$path")/${target}" ;;
+    esac
+  done
   dir="$(dirname -- "$path")"
   base="$(basename -- "$path")"
-  local resolved_dir
   resolved_dir="$(cd -P -- "$dir" 2>/dev/null && pwd -P)" || return 1
   printf '%s/%s\n' "$resolved_dir" "$base"
 }
