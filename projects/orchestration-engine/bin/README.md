@@ -268,7 +268,7 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 | `OE_DELEGATE_WAIT_SEC` | oe-delegate: 子 claude 起動待ち（秒） | `4` |
 | `PARENT_TMUX_PANE` | oe-delegate が子へ渡す親ペイン（戻し用） | （自動） |
 | `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |
-| `OE_VIEW_ROOTS` | oe-view: allowlist 許可ルート（コロン区切り。`--from-link` 時に強制） | リポジトリルートの `projects/` |
+| `OE_VIEW_ROOTS` | oe-view: allowlist 許可ルート（コロン区切り。`--from-link` 時に強制） | 各プロジェクトの `projects/*/docs` のみ（クリック境界を doc に限定。該当無しなら空＝fail-closed） |
 | `OE_VIEW_STATE_DIR` | oe-view: viewer pane id の state 置き場 | `~/.claude/state/oe-view` |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。
