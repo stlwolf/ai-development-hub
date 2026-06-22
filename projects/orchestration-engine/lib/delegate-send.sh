@@ -14,6 +14,12 @@
 # 後段で走らせ、入力欄に payload が staged のまま残る吸収を after-the-fact で1回だけ回復する。
 # finalize は Claude TUI の screen scrape ベースの best-effort・保守的判定で、transport の
 # rc を一切変えない。設計経緯は docs/plans/2026-06-09-plan-oe-send-ingestion-rootfix.md。
+#
+# 活動ログ（#206）: 送信成功時に message_sent を best-effort emit する（永続 append-only・
+# read 時 viewer 用）。event-bus.sh は delegate-registry.sh を必要に応じ自前で source する。
+# 失敗しても oe_send_line の rc は変えない（emit は常に return 0）。
+# shellcheck source=event-bus.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/event-bus.sh" 2>/dev/null || true
 
 # --- finalize 内部ヘルパー（source 専用・oe_ 接頭辞でネームスペース汚染を最小化） ---
 
@@ -204,12 +210,23 @@ oe_send_line() {
     # それを rc=4（suspected non-delivery / stage miss）へ昇格し、呼び出し側のフォールバック/
     # リトライを可能にする（既定は従来どおり rc を変えない・#154）。「confirmed」ではなく「suspected」
     # なのは fast-submit を未着と誤判定し得るため（SO 指摘）。
+    local delivery_signal="none"
     if [[ "$fin_on" == "1" ]]; then
       local fin_rc=0
       _oe_send_finalize "$pane" "$text" "$base_proc" "$base_staged" || fin_rc=$?
+      [[ "$fin_rc" == "3" ]] && delivery_signal="suspected_miss"
+      # 活動ログ（#206）: 送信を message_sent として best-effort emit（rc は不変・常に成功扱い）。
+      if declare -F oe_event_message_sent >/dev/null 2>&1; then
+        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" || true
+      fi
       if [[ "$fin_rc" == "3" && "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
         echo "oe_send_line: signaling suspected non-delivery (stage miss) on ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
         return 4
+      fi
+    else
+      # finalize 無効時は配送を観測しないため none（未着シグナル無し ＝ delivered の確証ではない）。
+      if declare -F oe_event_message_sent >/dev/null 2>&1; then
+        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" || true
       fi
     fi
   fi

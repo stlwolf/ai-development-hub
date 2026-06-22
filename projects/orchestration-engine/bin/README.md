@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox・#206）
 
 ---
 
@@ -257,6 +257,28 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 
 ---
 
+## oe-activity — 親子活動ログの read 時投影ビュー（#206 増分1）
+
+`lib/event-bus.sh` が best-effort 追記する永続 append-only 活動ログ（`oe-events.jsonl`）を **read 時に投影**する read-only ビュー。各イベントは `from`/`to` の `{pane,role,label}` を emit 時に焼き込む自己完結レコードで、`session_id` を主キーにせず registry の生存にも依存しない（GC 後・子が消えた後も残る＝departed children も可視）。新規 write path は持たない（#188 read 時相関の思想に整合）。
+
+```bash
+oe-activity            # 俯瞰: 親子関係ごとに 往復 / 配送 / 直近 preview / 子(送信元)生存
+oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに
+```
+
+- 出す情報は 4 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
+  - `TRIPS` … 関係内の `message_sent` 数（往復回数）
+  - `DELIVERY` … 直近 message の `delivery_signal`（`suspected_miss`|`none`・`delivered` は名乗らない・`(×N)` は suspected_miss 件数）
+  - `PREVIEW` … 直近 message 先頭 ~100 字
+  - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
+- read-only / 非検出: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。ペイン出力は読まない（capture / polling しない）・書込なし
+- degrade: `jq` 不在は件数のみ表示・`tmux` 不在は `LIVE=?`・ログ空は明示メッセージ（いずれも exit 0）
+- 既知の制約: liveness は現サーバの `tmux list-panes -a` 突合。別サーバのペイン ID は `gone` と出る（イベントは server pid を持たないため cross-server scope は増分1 対象外）
+
+関連: `lib/event-bus.sh`（emit プリミティブ・`oe-delegate` が `child_spawned` / `oe_send_line` が `message_sent` を発火）、`schemas/oe-events.schema.json`（レコードスキーマ・audit-log とは別系統）。設計判断は #188 DJ-188-4 を delegate 現実（session_id 不在）へ精緻化したもの。
+
+---
+
 ## 主要な環境変数
 
 | 変数 | 用途 | 既定 |
@@ -270,5 +292,8 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 | `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |
 | `OE_VIEW_ROOTS` | oe-view: allowlist 許可ルート（コロン区切り。`--from-link` 時に強制） | 各プロジェクトの `projects/*/docs` のみ（クリック境界を doc に限定。該当無しなら空＝fail-closed） |
 | `OE_VIEW_STATE_DIR` | oe-view: viewer pane id の state 置き場 | `~/.claude/state/oe-view` |
+| `OE_EVENT_DIR` | 活動ログ（#206）の置き場（`oe-events.jsonl`）。emit / oe-activity 共通 | `~/.claude/state` |
+| `OE_EVENT_LOG` | 活動ログ emit の有効/無効（`0` で kill-switch） | 有効 |
+| `OE_EVENT_PREVIEW_MAX` | message_sent の preview 切り詰め codepoint 数 | `100` |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。

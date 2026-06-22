@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIB="${SCRIPT_DIR}/../lib/delegate-send.sh"
 
 export OE_SEND_ENTER_DELAY=0   # テスト高速化（Enter 前の小休止を 0 に）
+export OE_EVENT_LOG=0          # 活動ログ（#206）emit を無効化（本テストは transport が対象）
 
 # --- サブシェル越しに持つ状態（capture の連続返却とコール数） ---
 CAP_IDXFILE="$(mktemp)";   echo 0 > "$CAP_IDXFILE"

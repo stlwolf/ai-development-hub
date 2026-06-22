@@ -44,9 +44,11 @@ projects/orchestration-engine/
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
 │   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化）
-│   └── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
+│   ├── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
+│   └── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存・report inbox（#206）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
+│   ├── event-bus.sh           # 親子活動ログ emit プリミティブ（child_spawned / message_sent・best-effort・#206）
 │   ├── envelope.sh            # JSON エンベロープ生成
 │   ├── spawn.sh               # wez pane split + send + CLI ディスパッチャ（cursor-agent / claude / codex）
 │   ├── capture.sh             # マーカー検出・6 値分類・KVS 書き込み（target pane 監視）

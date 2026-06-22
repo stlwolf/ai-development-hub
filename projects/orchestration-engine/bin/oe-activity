@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# oe-activity — 親子相互作用の活動ログ（oe-events.jsonl）の read-only 投影ビュー（#206 増分1）
+#
+# usage:
+#   oe-activity            俯瞰: 親子関係ごとに 往復 / 配送 / 直近 preview / 子(送信元)生存
+#   oe-activity --inbox    report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに表示
+#   oe-activity -h | --help
+#
+# lib/event-bus.sh が best-effort 追記する自己完結レコード（from/to の {pane,role,label} を
+# emit 時に焼込）を read 時に投影する。新規 write path は持たない（#188 read 時相関の思想に整合）。
+#
+# 出す情報は 4 つだけ（lifecycle-end / stall は推論しない ＝ DJ-188-2 尊重）:
+#   - 往復回数（TRIPS）  : 関係内の message_sent 数
+#   - 配送（DELIVERY）   : 直近 message の delivery_signal（suspected_miss|none、delivered は名乗らない）
+#   - preview            : 直近 message の先頭 ~100 字
+#   - 送信元生存（LIVE） : 子(worker)ペインの mux 存在 query 結果（alive|gone|?）。
+#                          report の送信元 ＝ 子なので「報告者がまだ居るか」を honest に示す。
+#                          ended/stalled の分類はしない（pane が在る=alive / 無い=gone / tmux 不在=?）。
+#
+# read-only / 非検出: 触れるのは (1) oe-events.jsonl (2) tmux ペイン存在（mux query）のみ。
+#   ペイン出力は一切読まない（capture / polling はしない）。書込なし。
+# 既知の制約: liveness は現サーバの `tmux list-panes -a` 突合。別サーバのペイン ID は gone と出る
+#   （イベントは server pid を持たないため cross-server の厳密 scope は増分1 対象外）。
+
+set -euo pipefail
+
+err() { echo "oe-activity: $*" >&2; }
+
+OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+OE_EVENT_FILE="${OE_EVENT_FILE:-${OE_EVENT_DIR}/oe-events.jsonl}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-activity            俯瞰（親子関係ごとに 往復 / 配送 / preview / 子生存）
+  oe-activity --inbox    report inbox（自分宛の報告を送信元ごとに）
+  oe-activity -h|--help
+
+read-only: oe-events.jsonl と tmux ペイン存在のみを読む（検出・送信はしない）。
+EOF
+}
+
+MODE="overview"
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  --inbox) MODE="inbox"; shift ;;
+  "" ) ;;
+  -*) err "unknown option: $1"; usage; exit 2 ;;
+  *)  err "unexpected argument: $1"; usage; exit 2 ;;
+esac
+[[ $# -eq 0 ]] || { err "unexpected extra argument: $1"; usage; exit 2; }
+
+# --- 入力が無い場合 ---
+if [[ ! -s "$OE_EVENT_FILE" ]]; then
+  echo "(no activity recorded yet in ${OE_EVENT_FILE})"
+  exit 0
+fi
+
+# --- jq 不在は degrade（投影せず件数のみ）---
+if ! command -v jq >/dev/null 2>&1; then
+  err "jq not found — showing raw event count only (install jq for the projected view)"
+  printf 'events: %s  (%s)\n' "$(grep -c '' "$OE_EVENT_FILE" 2>/dev/null || echo '?')" "$OE_EVENT_FILE"
+  exit 0
+fi
+
+SELF="${TMUX_PANE:-}"
+if [[ "$MODE" == "inbox" && -z "$SELF" ]]; then
+  err "inbox mode needs \$TMUX_PANE (run inside a tmux pane) — nothing to filter"
+  exit 0
+fi
+
+# --- liveness（mux 存在 query。tmux 不在は ? で degrade）---
+TMUX_AVAIL=0
+LIVE_SET=""
+if command -v tmux >/dev/null 2>&1; then
+  if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+    TMUX_AVAIL=1
+  fi
+fi
+liveness_of() {
+  local pane="$1"
+  [[ -n "$pane" ]] || { printf '?'; return; }
+  if [[ "$TMUX_AVAIL" != "1" ]]; then printf '?'; return; fi
+  if printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+
+# --- 投影（jq・slurp）: 1 関係 = 1 行の TSV を新しい順に返す ---
+# 出力フィールド: child_pane \t parent_pane \t child_label \t parent_label \t trips \t deliv \t miss \t preview
+project() {
+  jq -rs \
+    --arg mode "$MODE" --arg self "$SELF" '
+    ( [ .[] | select(.type=="child_spawned") ] ) as $spawns
+    | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = $s.from.pane) )            as $parent_of
+    | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = ($s.to.label // "")) )     as $clabel
+    | ( reduce $spawns[] as $s ({}; .[$s.from.pane] = ($s.from.label // "")) ) as $plabel
+    # 各 message を親/子へ向き付け（直接 parent リンク優先 → role → fallback）
+    | ( [ .[] | select(.type=="message_sent") | . as $m
+          | ( if   (($parent_of[$m.from.pane]) // "") == $m.to.pane   then {p:$m.to.pane,   c:$m.from.pane}
+              elif (($parent_of[$m.to.pane])   // "") == $m.from.pane then {p:$m.from.pane, c:$m.to.pane}
+              elif ($m.from.role=="child")  and ($m.to.role=="parent") then {p:$m.to.pane,   c:$m.from.pane}
+              elif ($m.from.role=="parent") and ($m.to.role=="child")  then {p:$m.from.pane, c:$m.to.pane}
+              else {p:$m.from.pane, c:$m.to.pane} end ) as $r
+          | { c:$r.c, p:$r.p, ts:$m.ts, recipient:$m.to.pane,
+              clab_m: (if $r.c==$m.from.pane then $m.from.label else $m.to.label end),
+              plab_m: (if $r.p==$m.from.pane then $m.from.label else $m.to.label end),
+              deliv: ($m.delivery_signal // "none"),
+              prev:  (($m.preview // "") | gsub("[\t\r\n]"; " ")) } ] ) as $msgs
+    # inbox は自分宛の報告だけに絞る
+    | ( if $mode=="inbox" then [ $msgs[] | select(.recipient==$self) ] else $msgs end ) as $fmsgs
+    # 関係キー = (俯瞰のみ) spawn 子 ∪ message 子
+    | ( ( (if $mode=="inbox" then [] else [ $spawns[].to.pane ] end) + [ $fmsgs[].c ] ) | unique ) as $children
+    | [ $children[] | . as $c
+        | ( [ $fmsgs[] | select(.c==$c) ] | sort_by(.ts) ) as $g
+        | ( ($parent_of[$c]) // (if ($g|length)>0 then $g[-1].p else "" end) ) as $p
+        | { c:$c, p:$p,
+            clab: ( ($clabel[$c]) // (if ($g|length)>0 then $g[-1].clab_m else "" end) // "" ),
+            plab: ( ($plabel[$p]) // (if ($g|length)>0 then $g[-1].plab_m else "" end) // "" ),
+            trips: ($g|length),
+            deliv: (if ($g|length)>0 then $g[-1].deliv else "-" end),
+            miss:  ([ $g[] | select(.deliv=="suspected_miss") ] | length),
+            prev:  (if ($g|length)>0 then ($g[-1].prev // "") else "" end),
+            lts:   (if ($g|length)>0 then $g[-1].ts else "" end) } ]
+    | sort_by(.lts) | reverse
+    | .[] | [ .c, .p, .clab, .plab, .trips, .deliv, .miss, .prev ] | @tsv
+  ' "$OE_EVENT_FILE"
+}
+
+# pane を「label (pane)」or「pane」で表示
+disp() {
+  local pane="$1" label="$2"
+  if [[ -n "$label" ]]; then printf '%s (%s)' "$label" "$pane"; else printf '%s' "$pane"; fi
+}
+
+rows="$(project 2>/dev/null)" || { err "failed to project ${OE_EVENT_FILE} (corrupt jsonl?)"; exit 1; }
+
+if [[ -z "$rows" ]]; then
+  if [[ "$MODE" == "inbox" ]]; then echo "(no reports addressed to ${SELF})"; else echo "(no relationships in ${OE_EVENT_FILE})"; fi
+  exit 0
+fi
+
+if [[ "$MODE" == "inbox" ]]; then
+  printf '=== report inbox (to %s · tmux · read-only) ===\n' "$SELF"
+  printf '%-6s  %-5s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "DELIVERY" "FROM" "PREVIEW"
+else
+  printf '=== activity (parent/child · tmux · read-only) ===\n'
+  printf '%-6s  %-5s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "DELIVERY" "RELATION" "PREVIEW"
+fi
+
+while IFS=$'\t' read -r c p clab plab trips deliv miss prev; do
+  [[ -n "$c" || -n "$p" ]] || continue
+  live="$(liveness_of "$c")"     # 送信元 ＝ 子(worker)の生存
+  deliv_disp="$deliv"
+  [[ "${miss:-0}" -gt 0 ]] 2>/dev/null && deliv_disp="${deliv} (×${miss})"
+  if [[ "$MODE" == "inbox" ]]; then
+    relation="$(disp "$c" "$clab")"
+  else
+    relation="$(disp "$p" "$plab") → $(disp "$c" "$clab")"
+  fi
+  printf '%-6s  %-5s  %-20s  %-30s  %s\n' "$live" "$trips" "$deliv_disp" "$relation" "$prev"
+done <<< "$rows"
