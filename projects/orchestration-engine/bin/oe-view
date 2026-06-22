@@ -5,7 +5,8 @@
 #        oe-view --help
 #
 # パスから Finder/手動ペイン操作なしで即ビューする入口:
-#   md（*.md・拡張子/大小無視）→ viewer ペインを解決して glow で描画（lib/oe-viewer.sh）
+#   md（*.md・拡張子/大小無視）→ viewer ペインのプログラムとして glow を直接起動して描画
+#                                 （argv-spawn replace モデル・lib/oe-viewer.sh・DJ-4/§11）
 #   非 md → `open -- <path>`（既定のアプリで開く）
 #
 # クリック層（wezterm.lua の hyperlink_rules + open-uri）に非依存で単体動作する。クリック経由は
@@ -215,7 +216,7 @@ oe_view_cli() {
     return 0
   fi
 
-  # 既定 md: viewer ペインを解決して glow を送る（glow + wez 必須）。
+  # 既定 md: viewer ペインのプログラムとして glow を直接起動（argv-spawn・glow + wez 必須）。
   if ! command -v glow >/dev/null 2>&1; then
     echo "oe-view: 'glow' not found in PATH (required to render markdown)." >&2
     echo "  install: brew install glow  (or use --here with bat installed)" >&2
@@ -227,21 +228,14 @@ oe_view_cli() {
     return 2
   fi
 
-  # oe_viewer_resolve は split 失敗時に rc 2（環境エラー）/ state 失敗時に rc 1。rc を
-  # そのまま伝播する。`if ! cmd; then return $?` は `!` が $? を 0 に潰すため使わず、
-  # 直接 rc を捕捉する。
+  # oe_viewer_resolve は (生存 viewer を kill して) glow を argv-spawn する replace モデル。
+  # path は argv 要素として渡るので %q 不要・注入面なし（§5）。spawn 失敗時 rc 2（環境エラー）/
+  # state 更新失敗時 rc 1。rc をそのまま伝播する。`if ! cmd; then return $?` は `!` が $? を
+  # 0 に潰すため使わず、直接 rc を捕捉する。
   local pane_id rc
-  pane_id="$(oe_viewer_resolve)"; rc=$?
+  pane_id="$(oe_viewer_resolve "$canonical")"; rc=$?
   if [[ "$rc" -ne 0 ]]; then
     return "$rc"
-  fi
-
-  # 送信文字列は %q 済（lib/oe-viewer.sh の oe_viewer_render_command・注入対策 P0）。
-  local cmd
-  cmd="$(oe_viewer_render_command "$canonical")"
-  if ! wez pane send "$pane_id" "$cmd" >/dev/null 2>&1; then
-    echo "oe-view: failed to send render command to viewer pane ${pane_id}" >&2
-    return 1
   fi
 
   [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "md" "glow" "$pane_id"

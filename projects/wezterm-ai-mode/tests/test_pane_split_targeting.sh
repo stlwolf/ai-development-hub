@@ -265,5 +265,60 @@ run_case "priority: --pane-id wins over WEZTERM_PANE/self" 99 0 4 -- --pane-id 4
 run_case "compat: engine spawn-style omitted call" UNSET 0 "" -- --bottom --percent 30 --wait-ready --timeout 10
 
 # ============================================================
+# 6) PROG パススルー (DJ-4 #210): trailing `-- <PROG>...` を wezterm cli split-pane の
+#    PROG にそのまま渡す。PROG 無しは後方互換 (default shell split・既存挙動不変)。
+# ============================================================
+
+# SPLIT_LOG (1 引数 1 行) に PROG マーカー `--` 以降が記録されているか検証するヘルパ。
+# wezterm cli split-pane の最後が `-- <PROG>...` となっていること、PROG 要素が argv で
+# 渡る (リテラル・shell 非経由) ことを確認する。
+split_log_has_line() {  # <literal arg> — SPLIT_LOG に完全一致する 1 行があるか
+  [[ -f "$SPLIT_LOG" ]] || { echo no; return; }
+  if grep -qxF -- "$1" "$SPLIT_LOG"; then echo yes; else echo no; fi
+}
+# split-pane 引数列の `--` 以降 (PROG) を 1 行 1 要素で返す。
+split_log_prog() {
+  [[ -f "$SPLIT_LOG" ]] || return 0
+  awk 'found{print} /^--$/{found=1}' "$SPLIT_LOG"
+}
+
+# PROG 付き: trailing `-- glow -p -- <path>` が split-pane にそのまま渡る (exit 0)。
+reset_log
+export WEZTERM_PANE="1"
+# shellcheck disable=SC2016  # 単一引用は意図的: メタ文字を展開させずリテラルとして渡す検証。
+prog_out=$(_wez_pane_split --right --percent 40 --cwd "$_TMP_DIR" -- glow -p -- '/x/a$(whoami).md' 2>&1 >/dev/null)
+prog_rc=$?
+unset WEZTERM_PANE
+prog_dump="$(split_log_prog)"
+# 期待 PROG 列 (順序通り・メタ文字はリテラル): glow / -p / -- / /x/a$(whoami).md
+if [[ "$prog_rc" -eq 0 ]] \
+  && [[ "$(split_log_has_line 'glow')" == yes ]] \
+  && [[ "$(split_log_has_line '-p')" == yes ]] \
+  && [[ "$prog_dump" == $'glow\n-p\n--\n/x/a$(whoami).md' ]]; then
+  ok "prog: trailing -- forwards PROG verbatim (argv, metachar literal)"
+else
+  fail "prog: expected PROG 'glow -p -- /x/a\$(whoami).md' (rc=$prog_rc prog=[$prog_dump] out=$prog_out)"
+fi
+
+# PROG 列に direction/percent/cwd フラグが混ざらない (PROG は split オプションの後ろに単独で並ぶ)。
+if [[ "$(printf '%s\n' "$prog_dump" | grep -c -- '--right\|--percent\|--cwd' || true)" -eq 0 ]]; then
+  ok "prog: split options are not mixed into PROG"
+else
+  fail "prog: split options leaked into PROG (prog=[$prog_dump])"
+fi
+
+# PROG 無し (後方互換): trailing `--` を付けない従来呼び出しに `--` が現れない (default shell split)。
+reset_log
+export WEZTERM_PANE="1"
+noprog_out=$(_wez_pane_split --right --percent 40 2>&1 >/dev/null)
+noprog_rc=$?
+unset WEZTERM_PANE
+if [[ "$noprog_rc" -eq 0 ]] && ! grep -qxF -- '--' "$SPLIT_LOG"; then
+  ok "prog: omitting -- keeps default shell split (no PROG marker, backward-compatible)"
+else
+  fail "prog: expected no '--' marker without trailing -- (rc=$noprog_rc out=$noprog_out log=$(tr '\n' ' ' < "$SPLIT_LOG" 2>/dev/null))"
+fi
+
+# ============================================================
 printf '\n=== Results: %d passed, %d failed ===\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

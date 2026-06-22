@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# test_oe_view.sh — oe-view（md=glow viewer / 非md=open）の判定・注入安全化・allowlist・
-# サニタイズ・viewer 再利用・degrade・--json を検証する（#210）。
+# test_oe_view.sh — oe-view（md=glow viewer / 非md=open）の判定・注入安全化（argv-spawn）・
+# allowlist・サニタイズ・viewer replace・degrade・--json を検証する（#210）。
+#
+# DJ-4/§11: 既定 md 経路は「split したシェルへ glow を send」から「ペインのプログラムとして
+# glow を直接 argv-spawn する replace モデル」に改定済。検証も `wez pane split … -- glow -p
+# -- <path>` の引数列（PROG が argv で渡る）と replace（生存 viewer の kill→spawn）を見る。
 #
 # 実 wez/glow/open は呼ばず PATH 先頭 mock に差し替える（test_oe_jump.sh / test_pane_split_targeting.sh
 # と同型）:
-#   - wez:  全呼び出しを wez.log に記録。`wez pane list` は $MOCK_PANE_LIST_JSON、
-#           `wez pane split` は $MOCK_SPLIT_PANE_ID を返す。send/activate は引数を log に記録。
-#   - glow: 引数を glow.log に記録。
+#   - wez:  全呼び出しを wez.log に記録（$* を 1 行）。`wez pane list` は $MOCK_PANE_LIST_JSON、
+#           `wez pane split` は $MOCK_SPLIT_PANE_ID を返す。kill/activate は引数を log に記録。
+#   - glow: 引数を glow.log に記録（--here の glow -p / 既存 fallback 検証用）。
 #   - open: 引数を open.log に記録。
 #   - bat:  引数を bat.log に記録（--here の glow 不在フォールバック検証用）。
 #   各 shim の在/不在をテストごとに切り替えるため shim は専用ディレクトリに置き、PATH 先頭の
@@ -38,7 +42,7 @@ printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/wez.log"
 case "${1:-} ${2:-}" in
   "pane list")     printf '%s\n' "${MOCK_PANE_LIST_JSON:-[]}" ;;
   "pane split")    printf '%s\n' "${MOCK_SPLIT_PANE_ID:-9}" ;;
-  "pane send")     exit 0 ;;
+  "pane kill")     exit 0 ;;
   "pane activate") exit 0 ;;
   *)               exit 0 ;;
 esac
@@ -115,59 +119,67 @@ bat_log()  { cat "$_TMP_DIR/logs/bat.log"  2>/dev/null; }
 has_line() { printf '%s\n' "$1" | grep -qF -- "$2" && echo yes || echo no; }
 
 # ----------------------------------------------------------------------------
-# [1] md 既定 → viewer 解決（state 無し=split）+ glow 送信。新規時 source(3) へ activate。
+# [1] md 既定 → viewer 解決（state 無し=spawn）。glow を argv で渡す。新規時 source(3) へ activate。
+#     argv-spawn replace モデル: `wez pane split … -- glow -p -- <path>`（PROG が argv で渡る）。
 # ----------------------------------------------------------------------------
-echo "[1] md 既定 → split + activate(source) + glow send"
+echo "[1] md 既定 → spawn（-- glow -p -- <path>）+ activate(source)"
 all_shims_on; reset_state; reset_logs
 export MOCK_PANE_LIST_JSON="[]"; export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "pane split が呼ばれる"            "yes" "$(has_line "$log" 'pane split')"
-ck "source(3) へ activate（#111）"    "yes" "$(has_line "$log" 'pane activate 3')"
-ck "pane send 9 が呼ばれる"           "yes" "$(has_line "$log" 'pane send 9')"
-ck "state file に新 pane 9 が書かれる" "9" "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
+ck "pane split が呼ばれる"               "yes" "$(has_line "$log" 'pane split')"
+# PROG が argv で渡る: split 行に "-- glow -p --" と canonical path が含まれる（送信文字列でない）。
+ck "split に PROG (-- glow -p --)"        "yes" "$(has_line "$log" '-- glow -p --')"
+ck "split に対象 md path が argv で渡る"  "yes" "$(has_line "$log" "$MD_IN_ROOT")"
+ck "source(3) へ activate（#111）"        "yes" "$(has_line "$log" 'pane activate 3')"
+ck "pane send は呼ばれない（argv-spawn）" "no"  "$(has_line "$log" 'pane send')"
+ck "state 無し→kill されない"            "no"  "$(has_line "$log" 'pane kill')"
+ck "state file に新 pane 9 が書かれる"   "9"   "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
 
 # ----------------------------------------------------------------------------
-# [2] 注入: メタ文字名 'a$(whoami).md' の送信文字列が %q 済（シェル安全）であること。
-#     生の "$(whoami)" が send 行にそのまま現れず、クォート済みリテラルになっている。
+# [2] 注入: メタ文字名 'a$(whoami).md' が **argv 要素**として渡る（shell 非経由・%q 不要）。
+#     argv-spawn では送信文字列を一切組まないため、path は `wez pane split … -- glow -p --
+#     <path>` の引数としてリテラルに渡る。受信シェルで再トークナイズされないので注入面が無い。
+#     mock wez は受け取った引数値（$*）をそのまま記録するため、リテラル 'a$(whoami).md' が
+#     split 行に現れ、`pane send` 経路は存在しない（送信文字列を組まないことの証跡）。
 # ----------------------------------------------------------------------------
-echo "[2] 注入: 送信文字列が %q クォート済（再トークナイズ防止）"
+echo "[2] 注入: path が argv 要素として渡る（送信文字列を組まない・shell 非経由）"
 all_shims_on; reset_state; reset_logs
 export MOCK_PANE_LIST_JSON="[]"; export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" -- "$MD_INJECT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-# %q は '(' ')' '$' をバックスラッシュエスケープする。クォート済みリテラルが送信行に在ること。
-ck "送信行が %q 済リテラルを含む" "yes" "$(has_line "$log" 'a\$\(whoami\).md')"
-# 生（未クォート）の '$(whoami)' が単独で送信行に現れないこと（バックスラッシュ無しの裸）。
-send_line="$(printf '%s\n' "$log" | grep 'pane send' || true)"
+# path はメタ文字を含むファイル名そのもの。argv で渡るのでリテラルが split 行に在る。
+split_line="$(printf '%s\n' "$log" | grep 'pane split' || true)"
 # shellcheck disable=SC2016  # 単一引用は grep -F のリテラルパターン（展開させない）
-if printf '%s\n' "$send_line" | grep -qF 'a$(whoami)' && ! printf '%s\n' "$send_line" | grep -qF 'a\$\(whoami\)'; then
-  raw_unquoted=yes
-else
-  raw_unquoted=no
-fi
-ck "生の未クォート \$(whoami) は送信行に無い" "no" "$raw_unquoted"
+ck "split 行に 'a\$(whoami).md' が argv で渡る" "yes" \
+  "$(printf '%s\n' "$split_line" | grep -qF 'a$(whoami).md' && echo yes || echo no)"
+# 送信文字列を組む経路（pane send）が存在しないこと＝再トークナイズ面が無いことの証跡。
+ck "pane send は呼ばれない（注入面なし）" "no" "$(has_line "$log" 'pane send')"
 
 # ----------------------------------------------------------------------------
-# [3] viewer 再利用: state の pane が生存 → split せず send（同 id）。
+# [3] viewer replace: state の pane が生存 → kill → 新 glow ペインを spawn → state 更新。
+#     glow -p はページャ（シェルでない）ため send 再利用できず、毎回 replace する（DJ-4）。
 # ----------------------------------------------------------------------------
-echo "[3] 再利用: state pane 7 生存 → split なし・send 7"
+echo "[3] replace: state pane 7 生存 → kill 7 → spawn（新 pane 9）"
 all_shims_on; reset_state; reset_logs
 mkdir -p "$OE_VIEW_STATE_DIR"; printf '7\n' > "$OE_VIEW_STATE_DIR/viewer-pane-id"
 export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":true}]'
+export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "pane list で生存確認"   "yes" "$(has_line "$log" 'pane list')"
-ck "split は呼ばれない"     "no"  "$(has_line "$log" 'pane split')"
-ck "pane send 7（再利用）"  "yes" "$(has_line "$log" 'pane send 7')"
+ck "pane list で生存確認"      "yes" "$(has_line "$log" 'pane list')"
+ck "生存 viewer 7 を kill"     "yes" "$(has_line "$log" 'pane kill 7')"
+ck "新 glow ペインを spawn"    "yes" "$(has_line "$log" 'pane split')"
+ck "state が新 pane 9 に更新"  "9"   "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
+ck "pane send は呼ばれない"    "no"  "$(has_line "$log" 'pane send')"
 
 # ----------------------------------------------------------------------------
 # [4] viewer stale: state の pane が不在 → split+state 更新（新 pane 11）。
 # ----------------------------------------------------------------------------
-echo "[4] stale: state pane 7 不在（list に無い）→ split + state 更新"
+echo "[4] stale: state pane 7 不在（list に無い）→ kill なし・spawn + state 更新"
 all_shims_on; reset_state; reset_logs
 mkdir -p "$OE_VIEW_STATE_DIR"; printf '7\n' > "$OE_VIEW_STATE_DIR/viewer-pane-id"
 export MOCK_PANE_LIST_JSON='[{"pane_id":99,"is_active":true}]'   # 7 は不在
@@ -175,8 +187,9 @@ export MOCK_SPLIT_PANE_ID="11"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "split で新規作成"            "yes" "$(has_line "$log" 'pane split')"
-ck "state が新 pane 11 に更新"   "11" "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
+ck "stale → kill されない"       "no"  "$(has_line "$log" 'pane kill')"
+ck "spawn で新規作成"            "yes" "$(has_line "$log" 'pane split')"
+ck "state が新 pane 11 に更新"   "11"  "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
 
 # ----------------------------------------------------------------------------
 # [5] 非 md 直叩き → open -- <path>（canonical パス）。
@@ -229,12 +242,12 @@ ck "'..' で root 外 → exit 1" "1" "$rc"
 # ----------------------------------------------------------------------------
 # [9b] allowlist: --from-link で root 内 md → 許可（exit 0・send される）。
 # ----------------------------------------------------------------------------
-echo "[9b] allowlist: --from-link root 内 md → 許可（exit 0・send）"
+echo "[9b] allowlist: --from-link root 内 md → 許可（exit 0・spawn）"
 all_shims_on; reset_state; reset_logs
 export MOCK_PANE_LIST_JSON="[]"; export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "root 内 → exit 0" "0" "$rc"
-ck "pane send が呼ばれる" "yes" "$(has_line "$(wez_log)" 'pane send')"
+ck "pane split（spawn）が呼ばれる" "yes" "$(has_line "$(wez_log)" 'pane split')"
 
 # ----------------------------------------------------------------------------
 # [10] 入力サニタイズ: 改行・CR・制御文字を含むパス → 拒否（exit 1）。

@@ -63,14 +63,13 @@ oe-view --help
 - **DJ-1 配置 = engine `projects/orchestration-engine/bin/oe-view`**。ただし根拠を訂正: oe-jump の engine 配置理由（`oe_reg_resolve`=tmux↔registry glue）は oe-view に転用しない（oe-view は registry/tmux 不使用）。配置理由は「**cockpit UX glue**（wez pane + open + 種別ディスパッチ）であり、`wez` は下層プリミティブのまま（ADR-001/004 の wez=下層方針を守る・上方依存を作らない）」。viewer 解決ロジックは `lib/oe-viewer.sh` に切り出してテスト mock 容易化。
 - **DJ-2 クリッカブル化 = `hyperlink_rules` 自動マッチ**。必須: `config.hyperlink_rules` 代入はデフォルト規則を全消しするため `wezterm.default_hyperlink_rules()` に `table.insert`。regex は doc ルート＋サブdir＋拡張子で厳格に絞る（例: `…/ai-development-hub/projects/[^/]+/docs/(plans|episodes|kickoffs|discussions|decisions)/[^[:space:]]+\.md`）。空白なしパスのみ対象（本リポは kebab パス規約）。OSC 8 明示出力は tmux で落ちやすい（hyperlink_rules は描画グリッド層で tmux 下も効く）ため v1 では採らない（将来 precision 層候補）。
 - **DJ-3 click→command = wezterm.lua `open-uri` ハンドラ**。条件: ハンドラは `oeview:` 以外を無視・URI を厳格 parse（`oeview:///<abs-path>` 三スラッシュ）・**argv 配列**で `oe-view --from-link <path>` を起動（`wezterm.background_child_process`/`run_child_process`、shell 非経由）。GUI プロセスは PATH が痩せるため `oe-view`/`glow` は**絶対パス**指定。UX は Cmd+Click（`CompleteSelectionOrOpenLinkAtMouseCursor`）と明記。
-- **DJ-4 viewer ペイン = state file 追跡で再利用**。`~/.claude/state/oe-view/viewer-pane-id`（oe-jump の last-target 同型）に pane_id 保存 → `_wez_pane_exists` 相当で生存確認 → 生存なら send / 無効なら split+state 更新。**glow の TUI ページャと send の衝突**を避けるため、再利用は「前回プロセス終了＝プロンプト復帰」を保証できる起動形に限定（非ページャ or 表示後復帰）。できない場合は「毎回 split + 古い viewer kill」に倒す。**新規作成時は `wez pane activate <source>`** でフォーカス奪取（#111）を回避（既定 focus=作業ペイン維持）。
+- **DJ-4 viewer ペイン = argv-spawn の replace モデル**（実機検証で確定・§10）。当初の「split したシェルへ glow をタイプ送信して再利用」は **cockpit で新規ペインが tmux 自動アタッチするため送信コマンドが実行されず glow が描画されない**ことが実機で判明（mock 不可視）。代わりに **ペインのプログラムとして glow を直接起動**する: `wez pane split --right --percent 40 --cwd <dir> -- glow -p <path>`（`wezterm cli split-pane [PROG]`＝シェルの代わりに PROG 実行・公式仕様、実機で描画確認済）。シェルも tmux も経由しない。再利用は **replace**: state（`~/.claude/state/oe-view/viewer-pane-id`）の viewer が生存なら **kill → 新 glow ペインを spawn → state 更新**（glow -p はページャでシェルでないため send 再利用不可）。**spawn 後に `wez pane activate <source>`** で #111 フォーカス奪取を回避。
+  - 前提作業: `wez pane split`（`projects/wezterm-ai-mode`）に **trailing `-- <PROG>...` パススルー**を追加（現状は方向/percent/cwd のみで PROG 非対応）。`wezterm cli split-pane` の PROG をそのまま通す薄い拡張。oe-view が `wezterm cli` を直接叩かず wez 抽象（socket 解決込み）を保つため。
 - **DJ-5 fallback**: `--here` で `glow -p` / `bat`（導入済）。glow 不在・wez 不在は exit 2 + 導入案内。素 install 検証 → 採用なら dotfiles codify。
 
 ## 5. セキュリティ / 堅牢性（実装必須・設計SO で格上げ）
 
-- **送信層のシェル注入（P0・最重要）**: viewer 表示が `wez pane send <id> "glow -- <path>"` の場合、`send-text`（`projects/wezterm-ai-mode/lib/pane.sh:465`）は受信シェルに**行入力としてタイプ→再トークナイズ**される。実在ファイル名 `a$(whoami).md` でも `$(whoami)` がペインのシェルで評価される（`\n` 拒否はメタ文字を防がない）。
-  - v1 修正: 送信文字列を組む直前に `printf %q` でシェルクォート（`glow -- <quoted>`）。
-  - 本筋（follow-up 候補）: `wez` に argv spawn verb（`wezterm cli spawn -- glow <path>`）を足し、shell を経由しない。実装時に v1（%q）か本筋（spawn 追加）かを再評価。
+- **送信層のシェル注入（P0）→ argv-spawn 採用で構造的に解消**（DJ-4 改定）。当初案は `wez pane send` でシェルへタイプ→再トークナイズの注入面があり `printf %q` で緩和予定だった。実機検証の結果 send 経路自体を廃し、path を **`wezterm cli split-pane -- glow -p <path>` の argv 要素**として渡す（shell を一切経由しない）→ 再トークナイズが起きないため `%q` 不要・注入面が消滅。`--here` も `glow -p -- <path>` / `bat -- <path>` の argv 起動で同様に安全。
 - **allowlist 実装必須（P0）**: `oe-view`（特に `--from-link`）は `realpath` 正規化後に doc ルート配下 prefix を判定（`..`/symlink トラバーサル対策）。範囲外は exit 1。
 - **入力サニタイズ**: URI decode 後の改行・NUL・制御文字を拒否。実体存在＋通常ファイル確認。
 - **クリック経由は md 限定**: `--from-link` では非 md `open`（任意アプリ/スクリプト起動）を禁止。CLI 直叩きの非 md `open` とは分ける。
@@ -81,14 +80,16 @@ oe-view --help
 
 `oe-view`（hub・shell・mock shim で wez/glow/open を差し替え）:
 
-- [ ] md 判定 → viewer 解決 + glow 表示の引数列 / 非 md → `open -- <path>`
-- [ ] **注入**: `a$(whoami).md` 等メタ文字ファイル名で送信文字列が `%q` 済（or argv 起動で shell 非経由）であること
+- [ ] md 判定 → `wez pane split … -- glow -p <path>`（argv）の引数列 / 非 md → `open -- <path>`
+- [ ] **注入**: `a$(whoami).md` 等メタ文字ファイル名でも path が **argv 要素**として渡る（shell 非経由・送信文字列を組まない）こと
 - [ ] **allowlist**: doc ルート外パス・symlink 経由の範囲外・`..` → exit 1
-- [ ] 入力サニタイズ: 改行/NUL/制御文字を拒否
+- [ ] 入力サニタイズ: 改行/制御文字を拒否
 - [ ] `--from-link` で非 md `open` が拒否される
-- [ ] viewer 再利用: state の pane 生存→send / stale→split+state 更新 / 新規作成時 source へ activate
+- [ ] viewer replace: state の pane 生存→**kill→spawn→state 更新** / stale・無し→spawn+state / spawn 後 source へ activate
 - [ ] 不在パス→exit 1 / usage 不正→exit 2 / wez・glow 不在→exit 2 + 案内
 - [ ] `--here`（`glow -p`/`bat`）/ `--json` スキーマ（`jq -e`）/ `shellcheck`
+- [ ] `wez pane split -- <PROG>` パススルー（wezterm-ai-mode 側）の単体テスト（PROG 有無で引数列が変わる）
+- [ ] **実機 e2e**: 実 wezterm で `oe-view <md>` → 新ペインで glow が**描画**されること（mock では不可視・必須ゲート）
 
 wezterm.lua 連携（手動・実機ゲート）:
 
@@ -130,3 +131,12 @@ wezterm.lua 連携（手動・実機ゲート）:
 - **DJ-5 exit code 矛盾**: Codex 指摘。環境エラーを `2` に統一で解消。
 - **トリガ再計量**: 3者がキーボードトリガ（QuickSelect/fzf/record-replay）をリスク低減案として提示。ユーザー判断で**クリック維持＋全緩和**に確定。QuickSelect は将来の追加トリガ候補として記録（v1 範囲外）。
 - **1 issue 一括 vs 分割**: issue 1 / PR 2 で合意（§8）。
+
+## 11. 実機 e2e 検証で判明した DJ-4 改定（2026-06-22）
+
+PR1 初版（split したシェルへ `wez pane send "glow -- <path>"`）を実 wezterm+tmux で検証した結果、**glow が描画されない**ことを確認（capture に tmux ステータスバー＋生コマンドのみ・marker ファイル未生成＝コマンド未実行）。
+
+- 根本原因: 新規 wez ペインのシェル rc が **tmux に自動アタッチ**し、`wez pane send` でタイプした命令が tmux 起動タイミングと衝突して実行されない（#144 / ADR-003 / #188 系統）。mock shim は send 引数を記録するだけで実行・tmux・タイミングを再現しないため不可視だった。
+- 検証で確定した修正: **argv-spawn**。`wezterm cli split-pane [PROG]`（公式: シェルの代わりに PROG 実行）で `glow -p <path>` を**ペインのプログラムとして直接起動**。実機で描画を確認（`SPAWN_RENDER_OK` レンダ）。シェル/tmux 非経由ゆえ確実、かつ path が argv で渡り注入面も消滅（§5 改定）。
+- 併せて確認できた動作（実機）: `--here`+bat 描画 / allowlist 通過・非md拒否 / サニタイズ / realpath 正規化 / viewer split・state 再利用解決 / #111 focus 復帰。
+- 教訓: viewer 描画系は mock では検証不能。**実機 e2e を必須ゲート化**（§6）。

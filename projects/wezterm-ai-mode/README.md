@@ -97,7 +97,7 @@ Options:
 #### `wez pane split`
 
 ```
-Usage: wez pane split [options]
+Usage: wez pane split [options] [-- PROG [ARGS...]]
 
 Options:
   --right          Split horizontally, new pane on the right (default)
@@ -113,6 +113,17 @@ Options:
 ```
 
 `--wait-ready` はポーリングで新ペインの出力が安定するまで待機する（tmux auto-attach のタイミング問題を吸収）。
+
+##### PROG パススルー（trailing `-- PROG ...`）
+
+リテラル `--` 以降の引数は、新ペインが**デフォルトシェルの代わりに実行するプログラム（PROG）**として `wezterm cli split-pane -- PROG ...` にそのまま（argv で）渡される。`--` を付けなければ従来どおりデフォルトシェルを起動する（**完全後方互換**）。
+
+```bash
+# 新ペインのプログラムとして glow を直接起動（シェル/tmux 非経由・確実に描画される）
+wez pane split --right --percent 40 --cwd "$dir" -- glow -p -- "$file"
+```
+
+PROG は argv 要素として渡るため、シェルを介さず（再トークナイズが起きず）メタ文字を含むパスも安全に渡せる。`oe-view`（`orchestration-engine`）の viewer ペインがこの経路で `glow` を起動する（新規 wez ペインのシェル rc が tmux 自動アタッチしてタイプ送信が実行されない問題を回避・DJ-4 #210）。`pane_id` / `--json` 出力は PROG の有無で不変。
 
 ##### ターゲティング規約（`--target`）
 

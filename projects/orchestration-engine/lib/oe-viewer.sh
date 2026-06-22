@@ -3,16 +3,22 @@
 #
 # Sourced by bin/oe-view. Not intended for standalone execution.
 # 責務: viewer ペイン（md を glow で描画する固定ペイン）の state file 追跡・生存確認・
-#       再利用 / 新規 split・注入安全な glow 送信文字列の組み立て。
+#       argv-spawn の replace モデル（生存なら kill→新規 spawn / stale・無しなら spawn）。
 # Naming: oe_viewer_* for public, _oe_viewer_* for private。wez（engine）ペインの操作は
 #         すべて下層プリミティブ `wez pane …` 経由（ADR-001/004 の wez=下層方針を守る）。
 #
-# viewer 解決（DJ-4）:
-#   state file（OE_VIEW_STATE_FILE）に pane_id を保存 → `wez pane list` で生存確認 →
-#   生存なら send で再利用 / stale・無しなら split で新規作成し state 更新。
-#   新規 split 時は作成後に source ペインへ activate（#111: split は新ペインへ focus を奪う）。
-#   glow ページャと send の衝突回避: viewer ペインでは glow を非ページャ形（`glow <file>`＝
-#   レンダして終了/プロンプト復帰）で起動する。`-p`（ページャ）は --here 限定（bin/oe-view 側）。
+# viewer 解決（DJ-4・argv-spawn replace モデル・実機検証で確定・§11）:
+#   実機検証で「split したシェルへ glow をタイプ送信」する旧モデルが破綻していた
+#   （新規 wez ペインのシェル rc が tmux に自動アタッチし、send したコマンドが実行されず
+#    glow が描画されない）。代わりに **ペインのプログラムとして glow を直接起動**する:
+#     wez pane split --right --percent <P> --cwd <dir> -- glow -p -- <path>
+#   （wezterm cli split-pane [PROG]＝シェルの代わりに PROG を実行・公式仕様）。
+#   シェルも tmux も経由しないため確実に描画され、path が argv 要素として渡るので
+#   再トークナイズが起きず注入面が消滅する（§5・%q 不要）。
+#   glow -p はページャ（シェルではない）ため send による再利用ができない。よって再利用は
+#   **replace**: state（OE_VIEW_STATE_FILE）の viewer が生存なら kill → 新 glow ペインを
+#   spawn → state 更新 / stale・無しなら spawn + state 更新。spawn 後に source ペイン
+#   （WEZTERM_PANE）へ activate して focus 奪取を回避（#111）。
 
 # viewer state（最後の viewer pane_id 1 件のみ・上書き）。テストは env で隔離する。
 OE_VIEW_STATE_DIR="${OE_VIEW_STATE_DIR:-${HOME}/.claude/state/oe-view}"
@@ -60,14 +66,19 @@ _oe_viewer_pane_exists() {
   fi
 }
 
-# _oe_viewer_split — 新規 viewer ペインを split で作り、新 pane_id を stdout へ。
+# _oe_viewer_spawn <path> — viewer ペインを argv-spawn で新規作成し、新 pane_id を stdout へ。
+#   ペインのプログラムとして glow を直接起動する（DJ-4・shell/tmux 非経由）:
+#     wez pane split --right --percent <P> --cwd <dir> -- glow -p -- <path>
+#   --cwd は path の dirname（glow の相対参照・cwd 表示の整合用）。path は argv 要素で渡す
+#   （`-- glow -p -- <path>`）ため再トークナイズが起きず %q 不要・注入面が消滅（§5）。
 #   作成後に source ペイン（WEZTERM_PANE）へ activate して focus 奪取を回避（#111）。
-#   rc 0=成功（pane_id 出力）/ 2=split 失敗（環境エラー）。
-_oe_viewer_split() {
-  local new_pane source_pane
+#   rc 0=成功（pane_id 出力）/ 2=spawn 失敗（環境エラー）。
+_oe_viewer_spawn() {
+  local path="$1" new_pane source_pane dir
   source_pane="${WEZTERM_PANE:-}"
-  if ! new_pane="$(wez pane split "$OE_VIEW_SPLIT_DIR" --percent "$OE_VIEW_SPLIT_PERCENT" 2>/dev/null)"; then
-    echo "oe-view: failed to split viewer pane (wez pane split)" >&2
+  dir="$(dirname -- "$path")"
+  if ! new_pane="$(wez pane split "$OE_VIEW_SPLIT_DIR" --percent "$OE_VIEW_SPLIT_PERCENT" --cwd "$dir" -- glow -p -- "$path" 2>/dev/null)"; then
+    echo "oe-view: failed to spawn viewer pane (wez pane split -- glow)" >&2
     return 2
   fi
   if ! [[ "$new_pane" =~ ^[0-9]+$ ]]; then
@@ -81,28 +92,22 @@ _oe_viewer_split() {
   printf '%s\n' "$new_pane"
 }
 
-# oe_viewer_resolve — 表示に使う viewer ペイン id を stdout へ解決する。
-#   state の pane が生存 → 再利用（その id）/ stale・無し → split で新規作成し state 更新。
-#   rc 0=成功（pane_id 出力）/ 2=新規作成失敗（環境エラー）。
+# oe_viewer_resolve <path> — viewer ペインに <path> を glow で表示し、使った viewer
+#   pane id を stdout へ出す（argv-spawn replace モデル）。
+#   state の viewer が生存 → kill → 新 glow ペインを spawn → state 更新 /
+#   stale・無し → spawn + state 更新。
+#   glow -p はページャ（シェルではない）ため send による再利用はできず、毎回 replace する。
+#   rc 0=成功（pane_id 出力）/ 2=spawn 失敗（環境エラー）。
 oe_viewer_resolve() {
-  local cached
+  local path="$1" cached
   cached="$(_oe_viewer_read_state)"
+  # 生存している旧 viewer は kill（replace モデル: 新 glow ペインで置き換える）。
+  # best-effort: kill 失敗（既に消えた等）は新規 spawn を妨げない。
   if [[ -n "$cached" ]] && _oe_viewer_pane_exists "$cached"; then
-    printf '%s\n' "$cached"
-    return 0
+    wez pane kill "$cached" 2>/dev/null || true
   fi
   local new_pane
-  new_pane="$(_oe_viewer_split)" || return
+  new_pane="$(_oe_viewer_spawn "$path")" || return
   _oe_viewer_write_state "$new_pane" || return 1
   printf '%s\n' "$new_pane"
-}
-
-# oe_viewer_render_command <path> — viewer ペインへ送る glow コマンド文字列を組み立てて
-#   stdout へ。**送信層のシェル注入対策（P0）**: パスを `printf %q` でシェルクォートして
-#   受信シェルの再トークナイズ（`a$(whoami).md` の `$(whoami)` 評価等）を防ぐ。
-#   非ページャ形（`glow -- <quoted>`）で、表示後プロンプトに復帰する＝次回 send と衝突しない。
-oe_viewer_render_command() {
-  local path="$1" quoted
-  printf -v quoted '%q' "$path"
-  printf 'glow -- %s\n' "$quoted"
 }

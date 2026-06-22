@@ -183,19 +183,19 @@ oe-view --help
 - `--here` … 分割せず現ペインのページャで表示（md は `glow -p`、無ければ `bat`）。**degrade 本線**（tmux 非 wez / Cursor 統合ターミナル / dotfiles 未反映時）。
 - `--from-link` … クリック経由フラグ。**allowlist 強制・非 md 拒否（md のみ）**を有効化（直叩きより厳格）。クリック経由で任意アプリ/スクリプト起動（非 md `open`）を許さない。
 - `--json` … 結果を JSON で出力: `{status, kind:"md"|"other", action:"glow"|"open", pane_id?}`。
-- viewer ペイン（DJ-4） … state（`~/.claude/state/oe-view/viewer-pane-id`・`OE_VIEW_STATE_DIR` で隔離可）に pane_id を保存し、生存（`wez pane list`）なら **再利用**（send）/ stale・無しなら **split で新規作成 + state 更新**。新規作成時は `wez pane activate <source>` で**作業ペインへ focus を戻す**（#111）。viewer の glow は非ページャ形（`glow -- <file>`＝描画して復帰）で、次回 send と衝突しない（`-p` ページャは `--here` 限定）。
-- セキュリティ（§5・P0） … (1) **送信層のシェル注入対策**: viewer への送信は `wez pane send`＝受信シェルで再トークナイズされるため、送信文字列を組む直前に `printf %q` でシェルクォートする（実在ファイル名 `a$(whoami).md` でも `$(whoami)` が評価されない）。(2) **allowlist**: `--from-link` 時に `realpath` 正規化後 `OE_VIEW_ROOTS` 配下 prefix を判定（`..`/symlink トラバーサル対策）。(3) **入力サニタイズ**: 改行・CR・制御文字を含むパスを拒否。
+- viewer ペイン（DJ-4・argv-spawn replace モデル・§11） … **ペインのプログラムとして `glow` を直接起動**する（`wez pane split … -- glow -p -- <path>`・シェル/tmux 非経由）。実機検証で旧「split したシェルへ glow をタイプ送信」モデルが破綻（新規 wez ペインのシェル rc が tmux 自動アタッチしタイプ送信が実行されず描画されない）したため確定した方式。再利用は **replace**: state（`~/.claude/state/oe-view/viewer-pane-id`・`OE_VIEW_STATE_DIR` で隔離可）の viewer が生存（`wez pane list`）なら **kill → 新 glow ペインを spawn → state 更新** / stale・無しなら **spawn + state 更新**（glow `-p` はページャ＝シェルでないため send 再利用不可）。spawn 後は `wez pane activate <source>` で**作業ペインへ focus を戻す**（#111）。
+- セキュリティ（§5・P0） … (1) **シェル注入面の構造的解消**: viewer 起動は `wez pane send`（受信シェルへタイプ→再トークナイズ）を廃し、path を `wez pane split … -- glow -p -- <path>` の **argv 要素**として渡す（シェルを一切経由しない）。再トークナイズが起きないため `printf %q` 不要・注入面が消滅（実在ファイル名 `a$(whoami).md` でも安全）。`glow -p` と `<path>` の間に `--` を置きパスがオプション解釈されないようにする。(2) **allowlist**: `--from-link` 時に `realpath` 正規化後 `OE_VIEW_ROOTS` 配下 prefix を判定（`..`/symlink トラバーサル対策）。(3) **入力サニタイズ**: 改行・CR・制御文字を含むパスを拒否。
 - exit: `0` 成功 / `1` 対象不在・allowlist 外・サニタイズ違反・`--from-link` で非 md・glow/open 失敗 / `2` usage・**環境エラー（wez 不在・glow 不在を含む。依存不足は独立コードにせず `2` に統一し導入案内を出す）**。
 
 3 段の degrade（環境に応じた表示経路）:
 
 | 環境 | 表示経路 | 備考 |
 |------|----------|------|
-| WezTerm + `wez` + `glow`（dotfiles 反映済） | クリック or `oe-view <md>` → viewer ペイン `glow`（再利用 split・focus は作業ペイン維持） | 本線。クリック層は dotfiles 別 PR |
+| WezTerm + `wez` + `glow`（dotfiles 反映済） | クリック or `oe-view <md>` → viewer ペインのプログラムとして `glow` を argv-spawn（replace モデル・focus は作業ペイン維持） | 本線。クリック層は dotfiles 別 PR |
 | tmux 非 wez / Cursor 統合ターミナル / dotfiles 未反映 | `oe-view --here <md>` → 現ペイン `glow -p` | 手動・分割しない degrade 本線 |
 | `glow` 未導入 | `oe-view --here <md>` → 現ペイン `bat` | bat フォールバック。両方不在は exit 2 + 導入案内 |
 
-設計の正本: [`../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md`](../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md)。関連 lib: [`../lib/oe-viewer.sh`](../lib/oe-viewer.sh)（viewer 解決）/ 下層: [`../../wezterm-ai-mode/lib/pane.sh`](../../wezterm-ai-mode/lib/pane.sh)（`wez pane split/send/activate`・`_wez_pane_exists`）。クリック層（`wezterm.lua` の `hyperlink_rules` + `open-uri`）は dotfiles 側の別 PR（hub は手順 doc のみ・lua 本体は置かない）。
+設計の正本: [`../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md`](../docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md)。関連 lib: [`../lib/oe-viewer.sh`](../lib/oe-viewer.sh)（viewer 解決・argv-spawn replace）/ 下層: [`../../wezterm-ai-mode/lib/pane.sh`](../../wezterm-ai-mode/lib/pane.sh)（`wez pane split`（trailing `-- PROG` パススルー）`/kill/activate`・`_wez_pane_exists`）。クリック層（`wezterm.lua` の `hyperlink_rules` + `open-uri`）は dotfiles 側の別 PR（hub は手順 doc のみ・lua 本体は置かない）。
 
 ## oe-report — 親へ申し送り（legacy）
 
