@@ -330,6 +330,9 @@ shim_off glow
 rc=0; "$VIEW" --here -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "--here glow 不在 + bat → exit 0" "0" "$rc"
 ck "bat が呼ばれる"                  "yes" "$(has_line "$(bat_log)" "$MD_IN_ROOT")"
+jb="$("$VIEW" --here --json -- "$MD_IN_ROOT" 2>/dev/null)"
+echo "$jb" | jq -e '.action=="bat"' >/dev/null 2>&1 && r=yes || r=no
+ck "--here bat 時 JSON action=bat"   "yes" "$r"
 reset_logs
 shim_off bat
 rc=0; "$VIEW" --here -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
@@ -375,6 +378,16 @@ chmod +x "$_TMP_DIR/pathbin/wez"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "split 失敗 → exit 2" "2" "$rc"
 shim_off wez; shim_on wez   # 実体 shim（symlink）に戻す
+
+# ----------------------------------------------------------------------------
+# [17] 既定 OE_VIEW_ROOTS: 未設定時は projects/*/docs 限定で、permissive な projects/ に
+#      フォールバックしない（#210 実装SO 指摘）。テスト repo に projects/*/docs は無いため
+#      既定は空=fail-closed となり、明示 root にしか無い MD_IN_ROOT も --from-link で拒否される。
+# ----------------------------------------------------------------------------
+echo "[17] 既定 OE_VIEW_ROOTS: 未設定→docs限定/fail-closed（permissiveでない）"
+all_shims_on; reset_state; reset_logs
+rc=0; env -u OE_VIEW_ROOTS "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+ck "未設定既定で permissive にならず拒否" "1" "$rc"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

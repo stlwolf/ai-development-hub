@@ -23,11 +23,21 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/oe-viewer.sh
 source "${BIN_DIR}/../lib/oe-viewer.sh"
 
-# allowlist（DJ-2/§5・P0）の許可ルート。コロン区切り。未設定時の既定は hub リポの
-# projects/*/docs 相当＝リポジトリルート配下の projects/。bin/ は
+# allowlist（DJ-2/§5・P0）の許可ルート。コロン区切り。未設定時の既定は plan §3 のとおり
+# hub リポ各プロジェクトの docs/ のみ（クリック安全境界を doc に限定）。projects/ 全体だと
+# bin/ 等の非 doc も許可してしまい仕様より広い（#210 実装SO=oe-review 指摘）。bin/ は
 # projects/orchestration-engine/bin なので 3 階層上がリポジトリルート。
-_OE_VIEW_DEFAULT_ROOT="$(cd "${BIN_DIR}/../../.." && pwd)/projects"
-OE_VIEW_ROOTS="${OE_VIEW_ROOTS:-${_OE_VIEW_DEFAULT_ROOT}}"
+_oe_view_default_roots() {
+  local repo d out=""
+  repo="$(cd "${BIN_DIR}/../../.." 2>/dev/null && pwd)" || true
+  [[ -n "$repo" ]] || return 0
+  for d in "$repo"/projects/*/docs; do
+    [[ -d "$d" ]] || continue
+    out="${out:+$out:}$d"
+  done
+  printf '%s' "$out"
+}
+OE_VIEW_ROOTS="${OE_VIEW_ROOTS:-$(_oe_view_default_roots)}"
 
 oe_view_usage() {
   cat >&2 <<'EOF'
@@ -214,11 +224,13 @@ oe_view_cli() {
 
   # --- md: --here は現ペインのページャ（glow -p、無ければ bat）。degrade 本線。 ---
   if [[ "$opt_here" -eq 1 ]]; then
+    local here_action="glow"
     if command -v glow >/dev/null 2>&1; then
       if ! glow -p -- "$canonical"; then
         echo "oe-view: glow failed for: ${canonical}" >&2; return 1
       fi
     elif command -v bat >/dev/null 2>&1; then
+      here_action="bat"
       if ! bat -- "$canonical"; then
         echo "oe-view: bat failed for: ${canonical}" >&2; return 1
       fi
@@ -227,7 +239,8 @@ oe_view_cli() {
       echo "  install: brew install glow  (or brew install bat)" >&2
       return 2
     fi
-    [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "md" "glow"
+    # JSON の action は実際に使ったレンダラを反映する（bat フォールバック時は "bat"）。
+    [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "md" "$here_action"
     return 0
   fi
 
