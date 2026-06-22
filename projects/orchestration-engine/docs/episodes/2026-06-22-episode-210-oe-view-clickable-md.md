@@ -45,16 +45,18 @@ UI 機能ひとつで、**上流の検証ゲートが全部 green でも実欠�
 - **次の消費者**: pane 描画/spawn を伴う engine ツールを次に作る人（real-e2e を先例ゲートとして）／#210 マージ実行者。
 - **follow-up routing**:
   - Cmd+Click → oe-view 発火の実 e2e → 両 PR マージ後に親が実施（本 episode の持ち越し）
-  - 昇格候補 2 件（下記「蒸留シグナル」）→ 可否はユーザー判断（本ターンで提起済・未確定）
+  - 昇格（下記「蒸留シグナル」で基準判定済）: 候補2=ADR-004 DJ-10 へ昇格済 / 候補1=ADR 対象外・rule 昇格は時期尚早で defer
   - 非material 残差（`OE_VIEW_ROOTS` 空白パス・稀な state 書込失敗）→ **追わない**（Minimal Scope 宣言）
   - worktree 掃除（hub / dotfiles 子）→ マージ時
 - **status**: stable（達成度＝**部分**: hub 側は実機 e2e まで完結／Cmd+Click 実 e2e はマージ後）
 - **evidence anchor**: 実装SO 4 巡の verdict・reviewed_sha・e2e 結果は PR #212 のコメントに転記済（`tmp/` 出力は揮発のため PR コメントを正本アンカーとする）
 
-## 蒸留シグナル（昇格候補）
+## 蒸留シグナル（昇格基準に照らした判定）
 
-- 候補1: 「**pane 描画/レンダラ起動系は実機 e2e を必須ゲートに**」→ rule もしくは Decision（mock の限界が起点）。
-- 候補2: 「**新ペイン描画は argv-spawn（`split-pane -- PROG`）／シェルへの send は使わない**」→ wezterm-ai-mode の ADR 候補。
+昇格基準＝「非自明な設計判断（選択肢比較・棄却案あり）」（`episode-retrospective:40`）に当てて判定:
+
+- 候補1「pane 描画系は実機 e2e 必須ゲート」→ **ADR 対象外**。選択肢比較・棄却案を伴う設計判断ではなく、検証規律＝**negative knowledge**（#62 注入先候補）。rule への昇格は 1 事例では時期尚早 → **defer**（非昇格判断を本 episode に記録・`episode-flow-discipline:19`）。
+- 候補2「新ペイン描画は argv-spawn（`split-pane -- PROG`）／shell send 棄却」→ **昇格済**。shell-send を実機で棄却 → argv-spawn 採用＝「選択肢比較・棄却案あり」に該当。pane 設計判断なので慣習どおり **ADR-004 に DJ-10 として追記**（`projects/wezterm-ai-mode/docs/decisions/ADR-004-pane-design-decisions.md`・DJ-8/#174・DJ-9/#165 と同じ追記方式）。
 
 ## Step4（heavy 外部チェック）辞退
 
