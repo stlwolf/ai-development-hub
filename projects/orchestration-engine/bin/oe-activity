@@ -19,15 +19,20 @@
 #
 # read-only / 非検出: 触れるのは (1) oe-events.jsonl (2) tmux ペイン存在（mux query）のみ。
 #   ペイン出力は一切読まない（capture / polling はしない）。書込なし。
-# 既知の制約: liveness は現サーバの `tmux list-panes -a` 突合。別サーバのペイン ID は gone と出る
-#   （イベントは server pid を持たないため cross-server の厳密 scope は増分1 対象外）。
+# 既知の制約（増分1・実装SO 指摘を反映）:
+#   - liveness は現サーバの `tmux list-panes -a` 突合。別サーバのペイン ID は gone と出る。
+#   - イベントは server pid を持たない＝pane を関係キーにする。同一サーバで %N が再利用される
+#     （pane 破棄後の再割当）と、別関係が同一 %N に混線し TRIPS 過大・親/inbox の取り違えが起き得る。
+#     server-pid キー化は後続増分（DJ-188-4 の event bus 拡張）へ defer。
+#   - 壊れた JSONL 行（外部編集等）は read 時に黙ってスキップする（degrade・下記 project）。
 
 set -euo pipefail
 
 err() { echo "oe-activity: $*" >&2; }
 
+# 単一ノブ OE_EVENT_DIR（writer=event-bus.sh と一致）。reader 専用の別ノブは footgun なので持たない。
 OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
-OE_EVENT_FILE="${OE_EVENT_FILE:-${OE_EVENT_DIR}/oe-events.jsonl}"
+OE_EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
 
 usage() {
   cat >&2 <<'EOF'
@@ -86,8 +91,10 @@ liveness_of() {
 
 # --- 投影（jq・slurp）: 1 関係 = 1 行の TSV を新しい順に返す ---
 # 出力フィールド: child_pane \t parent_pane \t child_label \t parent_label \t trips \t deliv \t miss \t preview
+# 前段の `jq -R 'fromjson? // empty'` で壊れた JSONL 行を黙ってスキップ（1 行破損で全体 exit 1 を回避）。
 project() {
-  jq -rs \
+  jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
+  | jq -rs \
     --arg mode "$MODE" --arg self "$SELF" '
     ( [ .[] | select(.type=="child_spawned") ] ) as $spawns
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = $s.from.pane) )            as $parent_of
@@ -122,7 +129,7 @@ project() {
             lts:   (if ($g|length)>0 then $g[-1].ts else "" end) } ]
     | sort_by(.lts) | reverse
     | .[] | [ .c, .p, .clab, .plab, .trips, .deliv, .miss, .prev ] | @tsv
-  ' "$OE_EVENT_FILE"
+  '
 }
 
 # pane を「label (pane)」or「pane」で表示

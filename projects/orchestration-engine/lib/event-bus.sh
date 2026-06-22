@@ -55,8 +55,10 @@ _oe_event_ident() {
     is_parent=1
   fi
   if [[ "$is_parent" -eq 1 ]]; then role="parent"; elif [[ "$is_child" -eq 1 ]]; then role="child"; fi
-  # label の改行（LF/CR）は 1 行 JSON に焼く前に畳む（行境界の偽造防止・oe_reg_list と同方針）。
-  label="${label//$'\n'/ }"; label="${label//$'\r'/ }"
+  # label の制御文字を畳む: TAB は本関数の内部プロトコル（role<TAB>label<TAB>parent）の区切りを
+  # 壊し parent/role の焼き込みを誤らせる（実装SO cursor 指摘）。LF/CR は 1 行 JSON の行境界を壊す
+  # （oe_reg_list / oe-ident と同方針）。いずれも空白へ畳んでから返す。
+  label="${label//$'\t'/ }"; label="${label//$'\n'/ }"; label="${label//$'\r'/ }"
   printf '%s\t%s\t%s\n' "$role" "$label" "$parent"
 }
 

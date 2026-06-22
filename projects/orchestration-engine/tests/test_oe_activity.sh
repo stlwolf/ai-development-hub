@@ -120,5 +120,16 @@ echo "[10] 不正オプション → usage・exit 2"
 rc=0; env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" bash "$OE_ACTIVITY" --bogus >/dev/null 2>&1 || rc=$?
 ck "bad opt exit 2" "2" "$rc"
 
+echo "[11] 壊れた JSONL 行は read 時にスキップ（degrade・exit 0・実装SO cursor 指摘）"
+mkdir -p "$_TMP_DIR/corrupt"
+{
+  printf '%s\n' 'this is not json {{{'
+  printf '%s\n' '{"ts":"2026-06-22T13:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"#206 inbox"},"to":{"pane":"%66","role":"child","label":"#206 impl"}}'
+  printf '%s\n' '{"ts":"2026-06-22T13:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206 impl"},"to":{"pane":"%59","role":"parent","label":"#206 inbox"},"preview":"VALID-AFTER-CORRUPT","delivery_signal":"none"}'
+} > "$_TMP_DIR/corrupt/oe-events.jsonl"
+rc=0; OUT5="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/corrupt" bash "$OE_ACTIVITY" 2>&1)" || rc=$?
+ck "corrupt exit 0" "0" "$rc"
+ckc "valid row survives corrupt line" "$OUT5" "VALID-AFTER-CORRUPT"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

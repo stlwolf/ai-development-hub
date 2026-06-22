@@ -102,6 +102,15 @@ printf '%s' '{"name":"#206\ninbox"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # JSO
 oe_event_child_spawned "%59" "%66" "#206 impl"
 ck "1 physical line" "1" "$(nlines)"
 ck "label folded"    "#206 inbox" "$(last | jq -r .from.label)"
+
+echo "[8b] label 内 TAB も畳む（_oe_event_ident の TAB 区切り内部プロトコルを守る・実装SO cursor 指摘）"
+printf '%s' '{"name":"foo\tbar"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # JSON 文字列内の TAB
+IFS=$'\t' read -r _ _l _p < <(_oe_event_ident "%59") || true
+ck "tab folded in label"       "foo bar" "$_l"
+ck "parent not shifted by tab" ""        "$_p"   # %59 は own entry 無し ＝ parent 空のはず
+reset_events
+oe_event_message_sent "%66" "%59" "x" "none"      # %66→%59（report）。to=%59 の label が焼かれる
+ck "burned label tab-folded"   "foo bar" "$(last | jq -r .to.label)"
 printf '%s' '{"name":"#206 inbox"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # 復元
 
 echo "[9] 関係不明（spawn 関係の無い 2 ペイン）: role は空・fallback で type は出る"

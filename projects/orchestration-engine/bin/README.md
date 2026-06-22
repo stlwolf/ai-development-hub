@@ -273,7 +273,7 @@ oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信�
   - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
 - read-only / 非検出: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。ペイン出力は読まない（capture / polling しない）・書込なし
 - degrade: `jq` 不在は件数のみ表示・`tmux` 不在は `LIVE=?`・ログ空は明示メッセージ（いずれも exit 0）
-- 既知の制約: liveness は現サーバの `tmux list-panes -a` 突合。別サーバのペイン ID は `gone` と出る（イベントは server pid を持たないため cross-server scope は増分1 対象外）
+- 既知の制約（増分1）: liveness は現サーバの `tmux list-panes -a` 突合で別サーバのペイン ID は `gone` と出る。イベントは server pid を持たず **pane を関係キー**にするため、同一サーバで `%N` が再利用（pane 破棄後の再割当）されると別関係が同一 `%N` に混線し得る（TRIPS 過大・親/inbox 取り違え）。server-pid キー化は後続増分（DJ-188-4 拡張）へ defer。壊れた JSONL 行は read 時に黙ってスキップ（degrade）
 
 関連: `lib/event-bus.sh`（emit プリミティブ・`oe-delegate` が `child_spawned` / `oe_send_line` が `message_sent` を発火）、`schemas/oe-events.schema.json`（レコードスキーマ・audit-log とは別系統）。設計判断は #188 DJ-188-4 を delegate 現実（session_id 不在）へ精緻化したもの。
 
