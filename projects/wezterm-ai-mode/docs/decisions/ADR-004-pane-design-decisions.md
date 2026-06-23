@@ -1,6 +1,6 @@
 ---
 title: "ADR-004: pane サブコマンド群の設計判断集"
-date: 2026-04-20
+date: 2026-06-22
 type: decision
 related:
   - type: implements
@@ -12,6 +12,9 @@ related:
   - type: relates_to
     ref: "https://github.com/stlwolf/ai-development-hub/issues/165"
     reason: "DJ-9 wez layout 宣言的盤面構築規約 (preset schema / 非冪等 / rollback) の判断を追記"
+  - type: relates_to
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/210"
+    reason: "DJ-10 split PROG パススルー / 新ペインでのプログラム起動方式 (shell send 棄却 → argv-spawn) の判断を追記"
   - type: depends_on
     ref: ADR-001-cli-file-structure.md
     reason: "ファイル構成・命名規約を踏襲"
@@ -112,3 +115,12 @@ layout 固有の追加コードは無く、既存定数を再利用する: prese
 #### スコープガード
 
 盤面構築のみ（エージェント起動コマンドを持たない）/ wez 専用（tmux 非対応）/ 非冪等（明記）/ `spawn.sh`（`#175`）は触らない / grid は schema v2。
+
+## DJ-10: split の PROG パススルーと新ペインでのプログラム起動方式（#210）
+
+`wez pane split` に trailing `-- <PROG>...` パススルーを追加し、**新ペインでプログラムを動かす場合はペインのプログラムとして直接起動する**（split したシェルへ `wez pane send` でコマンドをタイプ送信しない）ことを規約とする。消費側は oe-view（`#210`）の viewer ペイン（`wez pane split … -- glow -p -- <path>`）。設計探索・実機検証は `../../orchestration-engine/docs/episodes/2026-06-22-episode-210-oe-view-clickable-md.md` / `../../orchestration-engine/docs/plans/2026-06-21-plan-210-oe-view-clickable-md.md` §11 を正本とする。
+
+- **PROG パススルー（DJ-a）**: `wez pane split [...flags] -- <PROG>...` の `--` 以降を `wezterm cli split-pane` の PROG（「シェルの代わりに PROG を実行」）へ透過する。PROG 無しは既定シェル split で **完全後方互換**（出力・exit code 不変）。
+- **shell-send 棄却（DJ-b・実機根拠）**: 当初 `wez pane split`（シェル）→ `wez pane send "<cmd>"`（タイプ送信）で起動する案を採ったが、実機（cockpit）で **新規ペインのシェル rc が tmux に自動アタッチ**し、send したコマンドが実行されず描画されないことを e2e で確認 → 棄却。新ペインでのプログラム起動は send-keys に依存させず PROG 直接起動に倒す。
+- **副次効果（DJ-c）**: PROG は argv 配列で渡るため受信シェルの再トークナイズが起きず、パスのシェル注入面が消える（`printf %q` クォート不要）。
+- **スコープ**: PROG パススルーは split の薄い透過拡張のみ。PROG の中身・ライフサイクル管理は呼び出し側責務（oe-view は replace モデルで viewer を kill→spawn）。
