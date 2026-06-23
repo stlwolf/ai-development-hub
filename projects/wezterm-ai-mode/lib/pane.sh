@@ -166,9 +166,23 @@ _wez_pane_split() {
   local opt_wait_ready=false
   local opt_timeout=10
   local opt_cwd=""
+  # PROG passthrough (DJ-4 #210): everything after a literal `--` becomes the
+  # program the new pane runs instead of the default shell. Passed verbatim to
+  # `wezterm cli split-pane -- <PROG>...` (split-pane treats trailing args after
+  # `--` as PROG per wezterm's official spec). Empty when no `--` is given, in
+  # which case the behavior is fully backward-compatible (default shell split).
+  local -a prog=()
+  local have_prog=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --)
+        # Consume the rest as PROG (do not re-parse as options).
+        shift
+        have_prog=true
+        prog=("$@")
+        break
+        ;;
       --right)       opt_direction="--right" ;;
       --bottom)      opt_direction="--bottom" ;;
       --left)        opt_direction="--left" ;;
@@ -227,7 +241,7 @@ _wez_pane_split() {
         ;;
       --help|-h)
         cat <<'EOF'
-Usage: wez pane split [options]
+Usage: wez pane split [options] [-- PROG [ARGS...]]
 
 Split the current (or specified) pane and create a new one.
 Default direction: --right.
@@ -255,6 +269,12 @@ Options:
   --wait-ready     Wait until the new pane is ready for input
   --timeout <SEC>  Timeout for --wait-ready in seconds (default: 10)
   -h, --help       Show this help
+
+Trailing arguments after a literal `--` are forwarded verbatim as the
+program (PROG) for the new pane, run instead of the default shell
+(wezterm cli split-pane -- PROG ...). Without `--`, the new pane runs
+the default shell (backward-compatible). Example:
+  wez pane split --right --percent 40 --cwd "$dir" -- glow -p -- "$file"
 EOF
         return 0
         ;;
@@ -319,6 +339,13 @@ EOF
   [[ -n "$opt_percent" ]] && split_args+=(--percent "$opt_percent")
   [[ -n "$resolved_pane_id" ]] && split_args+=(--pane-id "$resolved_pane_id")
   [[ -n "$opt_cwd" ]] && split_args+=(--cwd "$opt_cwd")
+  # PROG passthrough (DJ-4 #210): append `-- <PROG>...` last so the new pane
+  # runs PROG instead of the default shell. `have_prog` (not array length)
+  # gates this so a bare trailing `--` still forwards an (empty) PROG marker if
+  # ever given; in practice PROG is non-empty (e.g. glow -p -- <path>).
+  if [[ "$have_prog" == true ]]; then
+    split_args+=(-- "${prog[@]+"${prog[@]}"}")
+  fi
 
   local new_pane_id
   if ! new_pane_id=$(wezterm cli split-pane "${split_args[@]}" 2>/dev/null); then

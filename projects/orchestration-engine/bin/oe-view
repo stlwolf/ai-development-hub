@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# oe-view — 生成 doc のクリッカブル md ビューア（cockpit UX glue・#210）
+#
+# usage: oe-view [--here] [--from-link] [--json] [--] <path>
+#        oe-view --help
+#
+# パスから Finder/手動ペイン操作なしで即ビューする入口:
+#   md（*.md・拡張子/大小無視）→ viewer ペインのプログラムとして glow を直接起動して描画
+#                                 （argv-spawn replace モデル・lib/oe-viewer.sh・DJ-4/§11）
+#   非 md → `open -- <path>`（既定のアプリで開く）
+#
+# クリック層（wezterm.lua の hyperlink_rules + open-uri）に非依存で単体動作する。クリック経由は
+# `--from-link` を立てて起動され、allowlist 強制・非 md 拒否で厳格化する（任意アプリ/スクリプト
+# 起動を防ぐ）。直叩き（--from-link 無し）はユーザー起点として allowlist を強制しない。
+#
+# 配置（DJ-1）: engine に置くのは cockpit UX glue（wez pane + open + 種別ディスパッチ）だから。
+# `wez` は下層プリミティブのまま（ADR-001/004 の wez=下層方針を守る・上方依存を作らない）。
+# viewer 解決ロジックは lib/oe-viewer.sh に切り出す（テスト mock 容易化）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/oe-viewer.sh
+source "${BIN_DIR}/../lib/oe-viewer.sh"
+
+# allowlist（DJ-2/§5・P0）の許可ルート。コロン区切り。未設定時の既定は plan §3 のとおり
+# hub リポ各プロジェクトの docs/ のみ（クリック安全境界を doc に限定）。projects/ 全体だと
+# bin/ 等の非 doc も許可してしまい仕様より広い（#210 実装SO=oe-review 指摘）。bin/ は
+# projects/orchestration-engine/bin なので 3 階層上がリポジトリルート。
+_oe_view_default_roots() {
+  local repo d out=""
+  repo="$(cd "${BIN_DIR}/../../.." 2>/dev/null && pwd)" || true
+  [[ -n "$repo" ]] || return 0
+  for d in "$repo"/projects/*/docs; do
+    [[ -d "$d" ]] || continue
+    out="${out:+$out:}$d"
+  done
+  printf '%s' "$out"
+}
+OE_VIEW_ROOTS="${OE_VIEW_ROOTS:-$(_oe_view_default_roots)}"
+
+oe_view_usage() {
+  cat >&2 <<'EOF'
+usage: oe-view [--here] [--from-link] [--json] [--] <path>
+       oe-view --help
+
+  <path>         表示対象のファイルパス（必須）。
+  --here         分割せず現ペインのページャで表示（md は `glow -p`、無ければ `bat`）。
+                 tmux 非 wez / Cursor 統合ターミナル / dotfiles 未反映時の degrade 本線。
+  --from-link    クリック経由フラグ。allowlist 強制・非 md 拒否（md のみ表示）を有効化。
+  --json         結果を JSON で出力: {status, kind, action, pane_id?}
+  -h, --help     このヘルプを表示
+
+既定: md（*.md・大小無視）→ viewer ペインを解決して glow で表示 / 非 md → `open -- <path>`。
+
+env:
+  OE_VIEW_ROOTS        allowlist 許可ルート（コロン区切り。--from-link 時に強制）
+  OE_VIEW_STATE_DIR    viewer pane id の state 置き場（既定 ~/.claude/state/oe-view）
+
+exit:
+  0   成功
+  1   対象不在 / allowlist 外 / 入力サニタイズ違反 / --from-link で非 md / glow・open 失敗
+  2   usage エラー / 環境エラー（wez 不在・glow 不在を含む。導入案内を stderr に出す）
+EOF
+}
+
+# _oe_view_canonicalize <path> — symlink/.. を解決した絶対パスを stdout へ。
+#   realpath があれば優先（macOS 標準には無いため homebrew coreutils 等）。無ければ
+#   ディレクトリを cd -P で解決し basename を足す移植性フォールバック。rc 0=成功 / 1=失敗。
+_oe_view_canonicalize() {
+  local path="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -- "$path" 2>/dev/null
+    return
+  fi
+  # フォールバック: まず最終要素（ファイル）の symlink を追跡解決してから dir を物理解決する。
+  # cd -P は dir の symlink/.. を解消するが「最終要素＝ファイル symlink」は解かない。これを
+  # 怠ると、許可ルート内の symlink が **ルート外の実体** を指すケースで allowlist（--from-link
+  # の P0 境界）をバイパスできてしまう（#210 実装SO=oe-review で検出）。bounded loop で最終要素
+  # symlink を辿り（BSD readlink は 1 段ずつ・循環は上限で打ち切り）、実体の dir を物理解決する。
+  # realpath 主経路では起きない（フォールバック専用の fail-safe）。
+  local dir base resolved_dir target i=0
+  while [[ -L "$path" ]]; do
+    i=$((i + 1))
+    if [[ "$i" -gt 40 ]]; then
+      echo "oe-view: too many levels of symbolic links: $1" >&2; return 1
+    fi
+    target="$(readlink -- "$path")" || return 1
+    case "$target" in
+      /*) path="$target" ;;
+      *)  path="$(dirname -- "$path")/${target}" ;;
+    esac
+  done
+  dir="$(dirname -- "$path")"
+  base="$(basename -- "$path")"
+  resolved_dir="$(cd -P -- "$dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/%s\n' "$resolved_dir" "$base"
+}
+
+# _oe_view_within_roots <canonical_path> — canonical_path が OE_VIEW_ROOTS のいずれかの
+#   ルート配下（prefix・境界考慮）にあるか。rc 0=許可 / 1=範囲外。
+#   各ルートも canonical 化してから prefix 判定する（.. / symlink トラバーサル対策）。
+_oe_view_within_roots() {
+  local target="$1" root canon_root
+  local IFS=':'
+  for root in $OE_VIEW_ROOTS; do
+    [[ -n "$root" ]] || continue
+    canon_root="$(_oe_view_canonicalize "$root")" || continue
+    [[ -n "$canon_root" ]] || continue
+    # 完全一致、または "<root>/" で始まる（"/a/docs" が "/a/docs-x" を誤許可しない境界）。
+    if [[ "$target" == "$canon_root" || "$target" == "${canon_root}/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# _oe_view_is_md <path> — 拡張子が .md（大小無視）か。rc 0=md / 1=非 md。
+#   bash 3.2 互換（stock macOS）のため ${var,,} は使わず tr で小文字化する。
+_oe_view_is_md() {
+  local lower
+  lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [[ "$lower" == *.md ]]
+}
+
+# _oe_view_json <status> <kind> <action> [pane_id] — 結果を JSON で stdout へ。
+_oe_view_json() {
+  local status="$1" kind="$2" action="$3" pane_id="${4:-}"
+  if command -v jq >/dev/null 2>&1; then
+    if [[ -n "$pane_id" ]]; then
+      jq -n --arg status "$status" --arg kind "$kind" --arg action "$action" --arg pane_id "$pane_id" \
+        '{status:$status, kind:$kind, action:$action, pane_id:($pane_id|tonumber)}'
+    else
+      jq -n --arg status "$status" --arg kind "$kind" --arg action "$action" \
+        '{status:$status, kind:$kind, action:$action}'
+    fi
+  else
+    if [[ -n "$pane_id" ]]; then
+      printf '{"status":"%s","kind":"%s","action":"%s","pane_id":%s}\n' "$status" "$kind" "$action" "$pane_id"
+    else
+      printf '{"status":"%s","kind":"%s","action":"%s"}\n' "$status" "$kind" "$action"
+    fi
+  fi
+}
+
+oe_view_cli() {
+  local opt_here=0 opt_from_link=0 opt_json=0
+  local target="" have_arg=0
+
+  while [[ "${1:-}" == -* ]]; do
+    case "$1" in
+      --here)      opt_here=1; shift ;;
+      --from-link) opt_from_link=1; shift ;;
+      --json)      opt_json=1; shift ;;
+      -h|--help)   oe_view_usage; return 0 ;;
+      --)          shift; break ;;
+      *)           echo "oe-view: unknown option: $1" >&2; oe_view_usage; return 2 ;;
+    esac
+  done
+
+  # 位置引数の「有無」を $# で判定する（明示的な空文字 "" を「省略」と取り違えない）。
+  if [[ $# -gt 0 ]]; then
+    have_arg=1
+    target="$1"; shift
+    if [[ $# -gt 0 ]]; then
+      echo "oe-view: too many arguments (one path only): $*" >&2; oe_view_usage; return 2
+    fi
+  fi
+  if [[ "$have_arg" -eq 0 ]]; then
+    echo "oe-view: a path is required" >&2; oe_view_usage; return 2
+  fi
+
+  # --- 入力サニタイズ（§5）: 空 / 改行・CR・NUL・制御文字を拒否（exit 1） ---
+  if [[ -z "$target" ]]; then
+    echo "oe-view: empty path" >&2; return 1
+  fi
+  # NUL は bash 変数に格納できない（代入時に剥がれる）ため、ここでは表現可能な制御文字
+  # （改行・CR を含む C0 範囲・DEL）を拒否する。C0 範囲 \x01-\x1f が \n(\x0a)/\r(\x0d) を含む。
+  if [[ "$target" == *[$'\x01'-$'\x1f\x7f']* ]]; then
+    echo "oe-view: path must not contain control characters (newlines, CR, etc.)" >&2; return 1
+  fi
+
+  # --- 実体確認（常に）: 存在 + 通常ファイル ---
+  if [[ ! -e "$target" ]]; then
+    echo "oe-view: path does not exist: ${target}" >&2; return 1
+  fi
+  if [[ ! -f "$target" ]]; then
+    echo "oe-view: not a regular file: ${target}" >&2; return 1
+  fi
+
+  # --- canonical 化（allowlist 判定 / glow 送信に使う絶対パス） ---
+  local canonical
+  if ! canonical="$(_oe_view_canonicalize "$target")" || [[ -z "$canonical" ]]; then
+    echo "oe-view: failed to resolve path: ${target}" >&2; return 1
+  fi
+
+  local is_md=0
+  _oe_view_is_md "$canonical" && is_md=1
+
+  # --- --from-link: allowlist 強制 + 非 md 拒否（§5・P0） ---
+  if [[ "$opt_from_link" -eq 1 ]]; then
+    if [[ "$is_md" -eq 0 ]]; then
+      echo "oe-view: --from-link only opens markdown (.md) files; refusing to open: ${canonical}" >&2
+      return 1
+    fi
+    if ! _oe_view_within_roots "$canonical"; then
+      echo "oe-view: path is outside the allowed roots (OE_VIEW_ROOTS): ${canonical}" >&2
+      return 1
+    fi
+  fi
+
+  # --- 非 md（直叩きのみここに来る）: open -- <path> ---
+  if [[ "$is_md" -eq 0 ]]; then
+    if ! command -v open >/dev/null 2>&1; then
+      echo "oe-view: 'open' not found (required to open non-markdown files)" >&2
+      return 2
+    fi
+    if ! open -- "$canonical"; then
+      echo "oe-view: failed to open: ${canonical}" >&2; return 1
+    fi
+    [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "other" "open"
+    return 0
+  fi
+
+  # --- md: --here は現ペインのページャ（glow -p、無ければ bat）。degrade 本線。 ---
+  if [[ "$opt_here" -eq 1 ]]; then
+    local here_action="glow"
+    if command -v glow >/dev/null 2>&1; then
+      if ! glow -p -- "$canonical"; then
+        echo "oe-view: glow failed for: ${canonical}" >&2; return 1
+      fi
+    elif command -v bat >/dev/null 2>&1; then
+      here_action="bat"
+      if ! bat -- "$canonical"; then
+        echo "oe-view: bat failed for: ${canonical}" >&2; return 1
+      fi
+    else
+      echo "oe-view: neither 'glow' nor 'bat' found in PATH (required for --here)." >&2
+      echo "  install: brew install glow  (or brew install bat)" >&2
+      return 2
+    fi
+    # JSON の action は実際に使ったレンダラを反映する（bat フォールバック時は "bat"）。
+    [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "md" "$here_action"
+    return 0
+  fi
+
+  # 既定 md: viewer ペインのプログラムとして glow を直接起動（argv-spawn・glow + wez 必須）。
+  if ! command -v glow >/dev/null 2>&1; then
+    echo "oe-view: 'glow' not found in PATH (required to render markdown)." >&2
+    echo "  install: brew install glow  (or use --here with bat installed)" >&2
+    return 2
+  fi
+  if ! command -v wez >/dev/null 2>&1; then
+    echo "oe-view: 'wez' not found in PATH (required to render markdown in a viewer pane)." >&2
+    echo "  use --here to render in the current pane instead." >&2
+    return 2
+  fi
+
+  # oe_viewer_resolve は (生存 viewer を kill して) glow を argv-spawn する replace モデル。
+  # path は argv 要素として渡るので %q 不要・注入面なし（§5）。spawn 失敗時 rc 2（環境エラー）/
+  # state 更新失敗時 rc 1。rc をそのまま伝播する。`if ! cmd; then return $?` は `!` が $? を
+  # 0 に潰すため使わず、直接 rc を捕捉する。
+  local pane_id rc
+  pane_id="$(oe_viewer_resolve "$canonical")"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    return "$rc"
+  fi
+
+  [[ "$opt_json" -eq 1 ]] && _oe_view_json "ok" "md" "glow" "$pane_id"
+  return 0
+}
+
+# 直接実行時のみ CLI を起動（test から source した場合は自動実行しない・oe-capture 同型）。
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  oe_view_cli "$@"
+fi
