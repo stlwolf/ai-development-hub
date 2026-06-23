@@ -14,6 +14,9 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
+# 活動ログ emit（best-effort・#206）。source 失敗や関数不在でも委譲本体は壊さない。
+# shellcheck source=../lib/event-bus.sh
+source "${BIN_DIR}/../lib/event-bus.sh" 2>/dev/null || true
 
 usage() {
   cat >&2 <<'EOF'
@@ -149,6 +152,11 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
 
 # spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
 oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
+
+# 活動ログに child_spawned を best-effort emit（registry 登録後 ＝ 親 label 解決可）。本体は壊さない。
+if declare -F oe_event_child_spawned >/dev/null 2>&1; then
+  oe_event_child_spawned "$PARENT_PANE" "$CHILD_PANE" "$LABEL" || true
+fi
 
 # キックを oe-send で注入する。delegate は report を内包しない（戻しは子が oe-send で行う）。
 SEND_ARGS=()

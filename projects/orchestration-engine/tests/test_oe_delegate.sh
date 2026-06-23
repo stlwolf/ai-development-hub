@@ -61,6 +61,7 @@ export OE_PANE_ISSUE_DIR="${_TMP_DIR}/pane-issue"
 export OE_DELEGATE_WAIT_SEC=0
 export OE_SEND_FINALIZE=0
 export OE_SEND_ENTER_DELAY=0
+export OE_EVENT_LOG=0          # 活動ログ（#206）emit を無効化（本テストは spawn/kick が対象）
 
 PASS=0
 FAIL=0

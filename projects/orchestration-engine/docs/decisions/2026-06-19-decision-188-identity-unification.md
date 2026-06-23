@@ -4,6 +4,7 @@ title: "#188 オーケストレーション2基盤の identity は pane 層で�
 date: 2026-06-19
 type: decision
 status: accepted
+superseded_by: "Partially superseded by 2026-06-22-decision-206-activity-log-self-contained-events.md — DJ-188-4（Stage-B event bus の鍵戦略）の範囲のみ精緻化（session_id 主キー → 自己完結イベントの write 時 snapshot）。DJ-188-1/2/3/5 は不変。"
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/188"
