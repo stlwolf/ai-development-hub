@@ -143,5 +143,25 @@ env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%1" \
 ck "child_spawned emitted" "1" "$(jq -rs '[.[]|select(.type=="child_spawned" and .to.pane=="%9")]|length' "$EVENTS" 2>/dev/null || echo 0)"
 ck "child label burned-in" "#child" "$(jq -rs 'map(select(.type=="child_spawned"))[-1].to.label' "$EVENTS" 2>/dev/null || echo MISSING)"
 
+echo "[11] 非数値 OE_EVENT_PREVIEW_MAX でも emit は no-op にならない（100 fallback・Copilot 指摘）"
+reset_events
+OE_EVENT_PREVIEW_MAX="abc" oe_event_message_sent "%66" "%59" "$(printf 'A%.0s' {1..150})" "none" 2>/dev/null
+ck "still emitted (not silent no-op)" "1" "$(nlines)"
+ck "preview fell back to 100+…"       "101" "$(last | jq -r '.preview|length')"
+warn="$(OE_EVENT_PREVIEW_MAX="abc" oe_event_message_sent "%66" "%59" "x" "none" 2>&1 >/dev/null)"
+case "$warn" in *非数値*) ck "warn emitted" "1" "1" ;; *) ck "warn emitted" "1" "0" ;; esac
+
+echo "[12] state dir 未設定でも event-bus.sh が既定を入れる（root glob 防止・Copilot 指摘）"
+# _oe_reg_key を他所が定義済 ＝ delegate-registry.sh は source されない経路を再現し、
+# event-bus.sh 自身の fallback 既定が効くことを確認する。PROJECT_DIR は env で渡し inner bash で展開する。
+# shellcheck disable=SC2016  # bash -c 本文の $ は inner shell で展開させる意図
+defs="$(env -u OE_DELEGATE_STATE_DIR -u OE_PANE_ISSUE_DIR PROJECT_DIR="$PROJECT_DIR" bash -c '
+  _oe_reg_key() { printf "k_%s" "$1"; }
+  _oe_reg_server_pid() { printf "9999"; }
+  source "$PROJECT_DIR/lib/event-bus.sh"
+  printf "%s|%s" "${OE_DELEGATE_STATE_DIR:-EMPTY}" "${OE_PANE_ISSUE_DIR:-EMPTY}"')"
+ck "state dir defaulted (not empty)"  "1" "$([[ -n "${defs%|*}" && "${defs%|*}" != "EMPTY" ]] && echo 1 || echo 0)"
+ck "pane-issue dir defaulted (not empty)" "1" "$([[ -n "${defs#*|}" && "${defs#*|}" != "EMPTY" ]] && echo 1 || echo 0)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

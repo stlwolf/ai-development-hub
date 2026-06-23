@@ -25,6 +25,12 @@ if ! declare -F _oe_reg_key >/dev/null 2>&1; then
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" 2>/dev/null || true
 fi
 
+# delegate-registry.sh が source されない（_oe_reg_key を他所が定義済 等）/ 環境で未設定でも、
+# 未定義の state dir で `/${pid}_*.json` のように root 配下を誤って glob しないよう、registry と
+# 同じ既定値をここでもフォールバック設定する（best-effort・Copilot 指摘）。
+OE_DELEGATE_STATE_DIR="${OE_DELEGATE_STATE_DIR:-${HOME}/.claude/state/oe-delegate}"
+OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
+
 # ログの保存先（cross-session。registry / pane-issue と同じ ~/.claude/state 規約）。
 # テストは OE_EVENT_DIR で隔離する。
 OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
@@ -123,6 +129,9 @@ oe_event_message_sent() {
     frole="parent"; trole="child"      # kick: 親 → 子
   fi
   local maxc="${OE_EVENT_PREVIEW_MAX:-100}" extra
+  # 非数値の OE_EVENT_PREVIEW_MAX だと `jq --argjson n` が失敗し emit 丸ごと no-op になる
+  # （best-effort のはずがサイレント no-op になる・Copilot 指摘）。非数値は 100 へ落として warn を出す。
+  case "$maxc" in ''|*[!0-9]*) echo "oe_event_message_sent: OE_EVENT_PREVIEW_MAX='${maxc}' は非数値 → 100 を使用" >&2; maxc=100 ;; esac
   # delivery_signal を suspected_miss|none に正規化（未知値は none）。
   case "$delivery" in suspected_miss|none) ;; *) delivery="none" ;; esac
   extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --argjson n "$maxc" \
