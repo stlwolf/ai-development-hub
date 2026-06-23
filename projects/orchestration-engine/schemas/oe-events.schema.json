@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/stlwolf/ai-development-hub/schemas/oe-events.schema.json",
+  "title": "OE Activity Event",
+  "description": "親子相互作用の永続 append-only 活動ログ（oe-events.jsonl）の 1 行分のスキーマ（#206 増分1）。audit-log.schema.json（engine の session_id 主キー監査）とは別系統。各イベントは from/to の {pane,role,label} を emit 時に焼き込む自己完結レコードで、session_id を主キーにせず registry の生存にも read 時依存しない（#188 DJ-188-4 を delegate 現実へ精緻化）。1 行 1 イベント。vocab は additive 設計（増分2 で report_received / turn を非破壊追加可能）。",
+  "type": "object",
+  "required": ["ts", "type", "from", "to"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "description": "イベント発生時刻（ISO 8601 with timezone）",
+      "format": "date-time",
+      "examples": ["2026-06-22T15:30:00+00:00"]
+    },
+    "type": {
+      "type": "string",
+      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種。追加種別は additive に拡張する。",
+      "enum": ["child_spawned", "message_sent"]
+    },
+    "from": {
+      "$ref": "#/definitions/endpoint",
+      "description": "発生元（child_spawned=親 / message_sent=送信元）。pane/role/label を emit 時に焼き込む。"
+    },
+    "to": {
+      "$ref": "#/definitions/endpoint",
+      "description": "宛先（child_spawned=子 / message_sent=宛先）。pane/role/label を emit 時に焼き込む。"
+    },
+    "preview": {
+      "type": "string",
+      "description": "message_sent のみ: payload 先頭 ~100 codepoint の切り詰め（情報過多回避・行を PIPE_BUF 内に保つ）。spawn の起動コマンドは出さない。"
+    },
+    "delivery_signal": {
+      "type": "string",
+      "description": "message_sent のみ: 配送シグナル。suspected_miss=finalize が未着候補を観測 / none=未着シグナル無し（delivered の確証ではない）。#144 信号を読むのみで reliability の再実装はしない。",
+      "enum": ["suspected_miss", "none"]
+    }
+  },
+  "definitions": {
+    "endpoint": {
+      "type": "object",
+      "required": ["pane", "role", "label"],
+      "properties": {
+        "pane": {
+          "type": "string",
+          "description": "tmux ペイン ID（%N）。emit 時の TMUX_PANE / spawn 結果。空文字は不明（honest）。",
+          "examples": ["%59", "%66"]
+        },
+        "role": {
+          "type": "string",
+          "description": "emit 時に焼き込んだ spawn 関係上の役割。parent=子を spawn した側 / child=spawn された側 / 空=関係不明。read 時に report(child→parent)/kick(parent→child) を live registry 非依存で分類するのに使う。",
+          "enum": ["parent", "child", ""]
+        },
+        "label": {
+          "type": "string",
+          "description": "emit 時に焼き込んだ識別ラベル（pane-issue の #N slug 優先 → spawn registry の label）。空は識別情報なし（honest）。"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "message_sent" } } },
+      "then": {
+        "required": ["preview", "delivery_signal"],
+        "description": "message_sent は preview と delivery_signal を必須とする。"
+      }
+    }
+  ]
+}
