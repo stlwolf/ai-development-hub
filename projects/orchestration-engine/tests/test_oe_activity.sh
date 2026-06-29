@@ -163,5 +163,45 @@ rc=0; TL3="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/
 ck "timeline corrupt exit 0" "0" "$rc"
 ckc "timeline valid row survives corrupt" "$TL3" "VALID-AFTER-CORRUPT"
 
+echo "[15] 空 label でも列ズレしない（US 区切り・実装SO cursor 指摘・overview + timeline）"
+mkdir -p "$_TMP_DIR/emptylabel"
+{
+  printf '%s\n' '{"ts":"2026-06-22T15:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":""},"to":{"pane":"%66","role":"child","label":""}}'
+  printf '%s\n' '{"ts":"2026-06-22T15:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":""},"to":{"pane":"%59","role":"parent","label":""},"preview":"EMPTYLABEL-PREVIEW","delivery_signal":"none"}'
+} > "$_TMP_DIR/emptylabel/oe-events.jsonl"
+EL_OV="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/emptylabel" bash "$OE_ACTIVITY")"
+ckc "overview 空label: preview が正しく出る" "$EL_OV" "EMPTYLABEL-PREVIEW"
+ckc "overview 空label: RELATION=%59 → %66" "$(row_of "$EL_OV" "EMPTYLABEL-PREVIEW")" "%59 → %66"
+EL_TL="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/emptylabel" bash "$OE_ACTIVITY" --timeline)"
+ckc "timeline 空label: preview が正しく出る" "$EL_TL" "EMPTYLABEL-PREVIEW"
+el_tl="$(row_of "$EL_TL" "EMPTYLABEL-PREVIEW")"
+ckc "timeline 空label: RELATION=%59 → %66" "$el_tl" "%59 → %66"
+ck "timeline 空label: turn=1" "1" "$(printf '%s' "$el_tl" | awk '{print $1}')"
+
+echo "[16] preview の制御文字（ESC 等）は空白へ畳む（端末注入防止・実装SO codex 指摘）"
+mkdir -p "$_TMP_DIR/ctrl"
+{
+  printf '%s\n' '{"ts":"2026-06-22T16:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}'
+  printf '%s\n' '{"ts":"2026-06-22T16:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"CTRL\u001b[31mINJECT","delivery_signal":"none"}'
+} > "$_TMP_DIR/ctrl/oe-events.jsonl"
+CT="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/ctrl" bash "$OE_ACTIVITY" --timeline)"
+ESC="$(printf '\033')"
+if printf '%s' "$CT" | LC_ALL=C grep -q "$ESC"; then echo "  FAIL: ESC 未畳み込み"; FAIL=$((FAIL+1)); else echo "  PASS: ESC folded to space"; PASS=$((PASS+1)); fi
+ckc "ctrl: 周辺テキスト CTRL 残存" "$CT" "CTRL"
+ckc "ctrl: 周辺テキスト INJECT 残存" "$CT" "INJECT"
+
+echo "[17] 同一秒の複数送信でも turn は append 順で決定的（実装SO codex 指摘・idx tiebreak）"
+mkdir -p "$_TMP_DIR/samesec"
+{
+  printf '%s\n' '{"ts":"2026-06-22T17:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-FIRST","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-SECOND","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-THIRD","delivery_signal":"none"}'
+} > "$_TMP_DIR/samesec/oe-events.jsonl"
+SS="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/samesec" bash "$OE_ACTIVITY" --timeline)"
+ck "same-sec FIRST turn=1"  "1" "$(printf '%s' "$(row_of "$SS" "SS-FIRST")"  | awk '{print $1}')"
+ck "same-sec SECOND turn=2" "2" "$(printf '%s' "$(row_of "$SS" "SS-SECOND")" | awk '{print $1}')"
+ck "same-sec THIRD turn=3"  "3" "$(printf '%s' "$(row_of "$SS" "SS-THIRD")"  | awk '{print $1}')"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

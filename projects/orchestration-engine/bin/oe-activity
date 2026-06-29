@@ -93,8 +93,10 @@ liveness_of() {
 }
 
 # --- 投影（jq・slurp）: overview/inbox=1 関係 1 行（新しい順）/ timeline=1 送信 1 行（時系列）---
-# overview/inbox フィールド: child_pane \t parent_pane \t child_label \t parent_label \t trips \t deliv \t miss \t preview
-# timeline フィールド:       turn \t ts \t dir \t deliv \t child_pane \t parent_pane \t child_label \t parent_label \t preview
+# フィールド区切りは US (\u001f)。tab だと IFS 空白扱いで連続 tab が折り畳まれ空フィールド（空 label 等）が
+# 消えて列ズレする（実装SO cursor 指摘）。US は非空白なので read -r が空フィールドを保持する。
+# overview/inbox 列順: child_pane, parent_pane, child_label, parent_label, trips, deliv, miss, preview
+# timeline 列順:       turn, ts, dir, deliv, child_pane, parent_pane, child_label, parent_label, preview
 # 前段の `jq -R 'fromjson? // empty'` で壊れた JSONL 行を黙ってスキップ（1 行破損で全体 exit 1 を回避）。
 project() {
   jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
@@ -104,33 +106,35 @@ project() {
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = $s.from.pane) )            as $parent_of
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = ($s.to.label // "")) )     as $clabel
     | ( reduce $spawns[] as $s ({}; .[$s.from.pane] = ($s.from.label // "")) ) as $plabel
-    # 各 message を親/子へ向き付け（直接 parent リンク優先 → role → fallback）
-    | ( [ .[] | select(.type=="message_sent") | . as $m
+    # 各 message を親/子へ向き付け（直接 parent リンク優先 → role → fallback）。
+    # idx = message_sent の append 順位置。秒精度 ts の同秒タイ時に turn/表示順を決定的にする（実装SO codex 指摘）。
+    | ( [ .[] | select(.type=="message_sent") ] | to_entries
+        | map( .key as $idx | .value as $m
           | ( if   (($parent_of[$m.from.pane]) // "") == $m.to.pane   then {p:$m.to.pane,   c:$m.from.pane}
               elif (($parent_of[$m.to.pane])   // "") == $m.from.pane then {p:$m.from.pane, c:$m.to.pane}
               elif ($m.from.role=="child")  and ($m.to.role=="parent") then {p:$m.to.pane,   c:$m.from.pane}
               elif ($m.from.role=="parent") and ($m.to.role=="child")  then {p:$m.from.pane, c:$m.to.pane}
               else {p:$m.from.pane, c:$m.to.pane} end ) as $r
-          | { c:$r.c, p:$r.p, ts:$m.ts, recipient:$m.to.pane,
+          | { idx:$idx, c:$r.c, p:$r.p, ts:$m.ts, recipient:$m.to.pane,
               dir:   (if $m.to.pane==$r.p then "report" elif $m.to.pane==$r.c then "kick" else "→" end),
               clab_m: (if $r.c==$m.from.pane then $m.from.label else $m.to.label end),
               plab_m: (if $r.p==$m.from.pane then $m.from.label else $m.to.label end),
               deliv: ($m.delivery_signal // "none"),
-              prev:  (($m.preview // "") | gsub("[\t\r\n]"; " ")) } ] ) as $msgs
+              prev:  (($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ) ) as $msgs
     # inbox は自分宛の報告だけに絞る
     | ( if $mode=="inbox" then [ $msgs[] | select(.recipient==$self) ] else $msgs end ) as $fmsgs
     | if $mode=="timeline"
       then
-        # timeline: 関係(子)ごとに ts 昇順で turn を振り（read 時導出）、全体を時系列に 1 送信 1 行で展開
+        # timeline: 関係(子)ごとに (ts,idx) 昇順で turn を read 時導出、全体も (ts,idx) で時系列に 1 送信 1 行
         ( $fmsgs | group_by(.c)
-          | map( sort_by(.ts) | to_entries | map(.value + {turn:(.key+1)}) ) | add // [] )
-        | sort_by(.ts)
-        | .[] | [ (.turn|tostring), .ts, (.dir // "→"), (.deliv // "none"), .c, .p, (.clab_m // ""), (.plab_m // ""), (.prev // "") ] | @tsv
+          | map( sort_by(.ts, .idx) | to_entries | map(.value + {turn:(.key+1)}) ) | add // [] )
+        | sort_by(.ts, .idx)
+        | .[] | [ (.turn|tostring), .ts, (.dir // "→"), (.deliv // "none"), .c, .p, (.clab_m // ""), (.plab_m // ""), (.prev // "") ] | join("\u001f")
       else
         # 関係キー = (俯瞰のみ) spawn 子 ∪ message 子
         ( ( (if $mode=="inbox" then [] else [ $spawns[].to.pane ] end) + [ $fmsgs[].c ] ) | unique ) as $children
         | [ $children[] | . as $c
-            | ( [ $fmsgs[] | select(.c==$c) ] | sort_by(.ts) ) as $g
+            | ( [ $fmsgs[] | select(.c==$c) ] | sort_by(.ts, .idx) ) as $g
             | ( ($parent_of[$c]) // (if ($g|length)>0 then $g[-1].p else "" end) ) as $p
             | { c:$c, p:$p,
                 clab: ( ($clabel[$c]) // (if ($g|length)>0 then $g[-1].clab_m else "" end) // "" ),
@@ -139,9 +143,10 @@ project() {
                 deliv: (if ($g|length)>0 then $g[-1].deliv else "-" end),
                 miss:  ([ $g[] | select(.deliv=="suspected_miss") ] | length),
                 prev:  (if ($g|length)>0 then ($g[-1].prev // "") else "" end),
-                lts:   (if ($g|length)>0 then $g[-1].ts else "" end) } ]
-        | sort_by(.lts) | reverse
-        | .[] | [ .c, .p, .clab, .plab, .trips, .deliv, .miss, .prev ] | @tsv
+                lts:   (if ($g|length)>0 then $g[-1].ts else "" end),
+                lidx:  (if ($g|length)>0 then $g[-1].idx else -1 end) } ]
+        | sort_by(.lts, .lidx) | reverse
+        | .[] | [ .c, .p, .clab, .plab, (.trips|tostring), .deliv, (.miss|tostring), .prev ] | join("\u001f")
       end
   '
 }
@@ -167,7 +172,7 @@ fi
 if [[ "$MODE" == "timeline" ]]; then
   printf '=== activity timeline (parent/child · tmux · read-only) ===\n'
   printf '%-4s  %-26s  %-7s  %-16s  %-30s  %s\n' "TURN" "TS" "DIR" "DELIVERY" "RELATION" "PREVIEW"
-  while IFS=$'\t' read -r turn ts dir deliv c p clab plab prev; do
+  while IFS=$'\037' read -r turn ts dir deliv c p clab plab prev; do
     [[ -n "$ts" ]] || continue
     relation="$(disp "$p" "$plab") → $(disp "$c" "$clab")"
     printf '%-4s  %-26s  %-7s  %-16s  %-30s  %s\n' "$turn" "$ts" "$dir" "$deliv" "$relation" "$prev"
@@ -183,7 +188,7 @@ else
   printf '%-6s  %-5s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "DELIVERY" "RELATION" "PREVIEW"
 fi
 
-while IFS=$'\t' read -r c p clab plab trips deliv miss prev; do
+while IFS=$'\037' read -r c p clab plab trips deliv miss prev; do
   [[ -n "$c" || -n "$p" ]] || continue
   live="$(liveness_of "$c")"     # 送信元 ＝ 子(worker)の生存
   deliv_disp="$deliv"
