@@ -380,14 +380,17 @@ ck "split 失敗 → exit 2" "2" "$rc"
 shim_off wez; shim_on wez   # 実体 shim（symlink）に戻す
 
 # ----------------------------------------------------------------------------
-# [17] 既定 OE_VIEW_ROOTS: 未設定時は projects/*/docs 限定で、permissive な projects/ に
-#      フォールバックしない（#210 実装SO 指摘）。テスト repo に projects/*/docs は無いため
-#      既定は空=fail-closed となり、明示 root にしか無い MD_IN_ROOT も --from-link で拒否される。
+# [17] 既定 OE_VIEW_ROOTS: 未設定時は $HOME。$HOME 配下の md は許可・$HOME 外は拒否。
+#      HOME をテスト用ディレクトリに差し替えて決定的に検証する（実 $HOME/$TMPDIR に依存しない）。
 # ----------------------------------------------------------------------------
-echo "[17] 既定 OE_VIEW_ROOTS: 未設定→docs限定/fail-closed（permissiveでない）"
+echo "[17] 既定 OE_VIEW_ROOTS=\$HOME（配下=許可 / 外=拒否）"
 all_shims_on; reset_state; reset_logs
-rc=0; env -u OE_VIEW_ROOTS "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
-ck "未設定既定で permissive にならず拒否" "1" "$rc"
+mkdir -p "$_TMP_DIR/fakehome/sub"
+printf '# h\n' > "$_TMP_DIR/fakehome/sub/inhome.md"
+rc=0; env -u OE_VIEW_ROOTS HOME="$_TMP_DIR/fakehome" "$VIEW" --from-link -- "$_TMP_DIR/fakehome/sub/inhome.md" >/dev/null 2>&1 || rc=$?
+ck "\$HOME 配下 md → 許可(exit 0)" "0" "$rc"
+rc=0; env -u OE_VIEW_ROOTS HOME="$_TMP_DIR/fakehome" "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+ck "\$HOME 外 md → 拒否(exit 1)" "1" "$rc"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
