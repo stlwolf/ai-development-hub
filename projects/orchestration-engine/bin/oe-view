@@ -23,21 +23,11 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/oe-viewer.sh
 source "${BIN_DIR}/../lib/oe-viewer.sh"
 
-# allowlist（DJ-2/§5・P0）の許可ルート。コロン区切り。未設定時の既定は plan §3 のとおり
-# hub リポ各プロジェクトの docs/ のみ（クリック安全境界を doc に限定）。projects/ 全体だと
-# bin/ 等の非 doc も許可してしまい仕様より広い（#210 実装SO=oe-review 指摘）。bin/ は
-# projects/orchestration-engine/bin なので 3 階層上がリポジトリルート。
-_oe_view_default_roots() {
-  local repo d out=""
-  repo="$(cd "${BIN_DIR}/../../.." 2>/dev/null && pwd)" || true
-  [[ -n "$repo" ]] || return 0
-  for d in "$repo"/projects/*/docs; do
-    [[ -d "$d" ]] || continue
-    out="${out:+$out:}$d"
-  done
-  printf '%s' "$out"
-}
-OE_VIEW_ROOTS="${OE_VIEW_ROOTS:-$(_oe_view_default_roots)}"
+# allowlist（§5・P0）の許可ルート。コロン区切り。未設定時の既定は $HOME（ホーム配下の md のみ
+# 許可）。クリック経路は md 限定（非 md は --from-link で拒否）で md→glow は read-only ゆえ、dir
+# 構造で厳密に絞る意味は薄い。$HOME 境界 + realpath 正規化 + サニタイズ + 非 md 拒否を安全弁と
+# する（$HOME 外・/etc 等システム領域は対象外）。OE_VIEW_ROOTS を明示すれば上書き可。
+OE_VIEW_ROOTS="${OE_VIEW_ROOTS:-$HOME}"
 
 oe_view_usage() {
   cat >&2 <<'EOF'
