@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox・#206）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox / timeline・#206）
 
 ---
 
@@ -257,13 +257,14 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 
 ---
 
-## oe-activity — 親子活動ログの read 時投影ビュー（#206 増分1）
+## oe-activity — 親子活動ログの read 時投影ビュー（#206 増分1+2）
 
 `lib/event-bus.sh` が best-effort 追記する永続 append-only 活動ログ（`oe-events.jsonl`）を **read 時に投影**する read-only ビュー。各イベントは `from`/`to` の `{pane,role,label}` を emit 時に焼き込む自己完結レコードで、`session_id` を主キーにせず registry の生存にも依存しない（GC 後・子が消えた後も残る＝departed children も可視）。新規 write path は持たない（#188 read 時相関の思想に整合）。
 
 ```bash
 oe-activity            # 俯瞰: 親子関係ごとに 往復 / 配送 / 直近 preview / 子(送信元)生存
 oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに
+oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行ずつ（kick も出る・turn は read 時導出）
 ```
 
 - 出す情報は 4 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
@@ -271,6 +272,7 @@ oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信�
   - `DELIVERY` … 直近 message の `delivery_signal`（`suspected_miss`|`none`・`delivered` は名乗らない・`(×N)` は suspected_miss 件数）
   - `PREVIEW` … 直近 message 先頭 ~100 字
   - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
+- モード: 既定の俯瞰と `--inbox` は **1 関係 = 1 行のサマリ**（直近 message + 往復数）。`--timeline`（#206 増分2）は **1 送信 = 1 行の時系列**で、関係内の各 `message_sent` を `TURN`（関係内の read 時導出位置）/ `TS` / `DIR`（`report`=子→親 / `kick`=親→子）/ `DELIVERY` / `RELATION` / `PREVIEW` で並べる（kick も含む・全体は古→新）。turn はスキーマに焼かず read 時に `ts` 順で導出する（**スキーマ不変** ＝ event-bus は無改変）。lifecycle-end / stall は推論しない点は俯瞰と同じ（生の `ts` / `dir` のみ）
 - read-only / 非検出: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。ペイン出力は読まない（capture / polling しない）・書込なし
 - degrade: `jq` 不在は件数のみ表示・`tmux` 不在は `LIVE=?`・ログ空は明示メッセージ（いずれも exit 0）
 - 既知の制約（増分1）: liveness は現サーバの `tmux list-panes -a` 突合で別サーバのペイン ID は `gone` と出る。イベントは server pid を持たず **pane を関係キー**にするため、同一サーバで `%N` が再利用（pane 破棄後の再割当）されると別関係が同一 `%N` に混線し得る（TRIPS 過大・親/inbox 取り違え）。server-pid キー化は後続増分（DJ-188-4 拡張）へ defer。壊れた JSONL 行は read 時に黙ってスキップ（degrade）

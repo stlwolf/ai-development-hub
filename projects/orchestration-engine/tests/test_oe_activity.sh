@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # liveness は PATH-stub tmux で固定（%59/%66 を alive・%77 は出さない＝gone）。jq は実体。
 # fixture の oe-events.jsonl を直に置いて投影（往復カウント / liveness / report/kick 向き /
-# inbox フィルタ / degrade / 空）を検証する。
+# inbox フィルタ / timeline(turn 連番・全体時系列・kick 可視) / degrade / 空）を検証する。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -130,6 +130,78 @@ mkdir -p "$_TMP_DIR/corrupt"
 rc=0; OUT5="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/corrupt" bash "$OE_ACTIVITY" 2>&1)" || rc=$?
 ck "corrupt exit 0" "0" "$rc"
 ckc "valid row survives corrupt line" "$OUT5" "VALID-AFTER-CORRUPT"
+
+echo "[12] timeline: 1 送信 1 行・関係内 turn 連番・全体時系列（古→新）・kick も出る"
+TL="$(run --timeline)"
+ckc "timeline header" "$TL" "activity timeline"
+ckc "timeline shows kick (inbox では出ない送信)" "$TL" "increment1"
+ckc "timeline has %66 report" "$TL" "DONE-IMPL-REPORT"
+ckc "timeline has %77 report" "$TL" "PARTIAL-OLD-REPORT"
+# 行抽出（preview マーカで一意）。列: TURN TS DIR DELIVERY RELATION... PREVIEW → $1=turn
+tl_kick="$(row_of "$TL" "increment1")"
+tl_rep66="$(row_of "$TL" "DONE-IMPL-REPORT")"
+tl_rep77="$(row_of "$TL" "PARTIAL-OLD-REPORT")"
+ck "%66 kick turn=1"   "1" "$(printf '%s' "$tl_kick"  | awk '{print $1}')"
+ck "%66 report turn=2" "2" "$(printf '%s' "$tl_rep66" | awk '{print $1}')"
+ck "%77 report turn=1" "1" "$(printf '%s' "$tl_rep77" | awk '{print $1}')"
+ckc "%66 kick dir=kick"     "$tl_kick"  "kick"
+ckc "%66 report dir=report" "$tl_rep66" "report"
+ckc "%77 report suspected_miss" "$tl_rep77" "suspected_miss"
+# 全体は時系列（古→新）: 先頭データ行（title+header の次）= 最古 12:01 の kick
+tl_first="$(printf '%s\n' "$TL" | sed -n '3p')"
+ckc "timeline oldest-first (先頭=12:01 kick)" "$tl_first" "increment1"
+
+echo "[13] timeline: message_sent 無し（spawn のみ）→ (no messages) + exit 0"
+mkdir -p "$_TMP_DIR/spawnonly"
+printf '%s\n' '{"ts":"2026-06-22T14:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}' > "$_TMP_DIR/spawnonly/oe-events.jsonl"
+rc=0; TL2="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/spawnonly" bash "$OE_ACTIVITY" --timeline 2>&1)" || rc=$?
+ck "timeline spawn-only exit 0" "0" "$rc"
+ckc "timeline spawn-only no-messages msg" "$TL2" "no messages"
+
+echo "[14] timeline: 壊れた JSONL 行は read 時にスキップ（exit 0・有効行は残る）"
+rc=0; TL3="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/corrupt" bash "$OE_ACTIVITY" --timeline 2>&1)" || rc=$?
+ck "timeline corrupt exit 0" "0" "$rc"
+ckc "timeline valid row survives corrupt" "$TL3" "VALID-AFTER-CORRUPT"
+
+echo "[15] 空 label でも列ズレしない（US 区切り・実装SO cursor 指摘・overview + timeline）"
+mkdir -p "$_TMP_DIR/emptylabel"
+{
+  printf '%s\n' '{"ts":"2026-06-22T15:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":""},"to":{"pane":"%66","role":"child","label":""}}'
+  printf '%s\n' '{"ts":"2026-06-22T15:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":""},"to":{"pane":"%59","role":"parent","label":""},"preview":"EMPTYLABEL-PREVIEW","delivery_signal":"none"}'
+} > "$_TMP_DIR/emptylabel/oe-events.jsonl"
+EL_OV="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/emptylabel" bash "$OE_ACTIVITY")"
+ckc "overview 空label: preview が正しく出る" "$EL_OV" "EMPTYLABEL-PREVIEW"
+ckc "overview 空label: RELATION=%59 → %66" "$(row_of "$EL_OV" "EMPTYLABEL-PREVIEW")" "%59 → %66"
+EL_TL="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/emptylabel" bash "$OE_ACTIVITY" --timeline)"
+ckc "timeline 空label: preview が正しく出る" "$EL_TL" "EMPTYLABEL-PREVIEW"
+el_tl="$(row_of "$EL_TL" "EMPTYLABEL-PREVIEW")"
+ckc "timeline 空label: RELATION=%59 → %66" "$el_tl" "%59 → %66"
+ck "timeline 空label: turn=1" "1" "$(printf '%s' "$el_tl" | awk '{print $1}')"
+
+echo "[16] preview の制御文字（ESC 等）は空白へ畳む（端末注入防止・実装SO codex 指摘）"
+mkdir -p "$_TMP_DIR/ctrl"
+{
+  printf '%s\n' '{"ts":"2026-06-22T16:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}'
+  printf '%s\n' '{"ts":"2026-06-22T16:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"CTRL\u001b[31mINJECT","delivery_signal":"none"}'
+} > "$_TMP_DIR/ctrl/oe-events.jsonl"
+CT="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/ctrl" bash "$OE_ACTIVITY" --timeline)"
+ESC="$(printf '\033')"
+if printf '%s' "$CT" | LC_ALL=C grep -q "$ESC"; then echo "  FAIL: ESC 未畳み込み"; FAIL=$((FAIL+1)); else echo "  PASS: ESC folded to space"; PASS=$((PASS+1)); fi
+ckc "ctrl: 周辺テキスト CTRL 残存" "$CT" "CTRL"
+ckc "ctrl: 周辺テキスト INJECT 残存" "$CT" "INJECT"
+
+echo "[17] 同一秒の複数送信でも turn は append 順で決定的（実装SO codex 指摘・idx tiebreak）"
+mkdir -p "$_TMP_DIR/samesec"
+{
+  printf '%s\n' '{"ts":"2026-06-22T17:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-FIRST","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-SECOND","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-06-22T17:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"SS-THIRD","delivery_signal":"none"}'
+} > "$_TMP_DIR/samesec/oe-events.jsonl"
+SS="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/samesec" bash "$OE_ACTIVITY" --timeline)"
+ck "same-sec FIRST turn=1"  "1" "$(printf '%s' "$(row_of "$SS" "SS-FIRST")"  | awk '{print $1}')"
+ck "same-sec SECOND turn=2" "2" "$(printf '%s' "$(row_of "$SS" "SS-SECOND")" | awk '{print $1}')"
+ck "same-sec THIRD turn=3"  "3" "$(printf '%s' "$(row_of "$SS" "SS-THIRD")"  | awk '{print $1}')"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
