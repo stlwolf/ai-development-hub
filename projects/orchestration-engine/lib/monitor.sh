@@ -105,8 +105,13 @@ oe_monitor_loop() {
     fi
 
     # 各ペインスキャン + マーカー処理
+    #
+    # #114/#98: pane scrape (oe_capture_scan = wez pane capture, viewport-only/2D グリッド) でなく
+    #   target が tee した per-session ログファイルを走査する (spawn.sh:oe_spawn_send が同じ
+    #   _oe_target_log_path で tee 先を組む = パス書式の単一情報源)。OE_SCAN_MARKER_TYPE=EXIT の
+    #   消費部 (下記 case) は不変で、marker の source が pane→file に変わるだけ。
     for pane_id in "${pending[@]}"; do
-      oe_capture_scan "$pane_id"
+      _oe_scan_log_file "$(_oe_target_log_path "$session_id" "$pane_id")"
 
       case "$OE_SCAN_MARKER_TYPE" in
         EXIT)
