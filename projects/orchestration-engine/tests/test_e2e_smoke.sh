@@ -149,6 +149,11 @@ assert_eq "target payload に umask 077 (#114 secure log)" "true" \
   "$(awk -F'|' '$1=="777" && index($0, "umask 077"){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 assert_eq "reviewer payload に umask 077 (#114 secure log)" "true" \
   "$(awk -F'|' '$1=="888" && index($0, "umask 077"){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
+# Copilot PR #216 反映: 既存ログの mode 保持で 0600 が崩れるのを防ぐため tee 前に rm -f。
+assert_eq "target payload に rm -f target.log (#216 pre-existing fix)" "true" \
+  "$(awk -F'|' '$1=="777" && match($0, /rm -f[[:space:]]+"[^"]+-target\.log"/){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
+assert_eq "reviewer payload に rm -f reviewer.log (#216 pre-existing fix)" "true" \
+  "$(awk -F'|' '$1=="888" && match($0, /rm -f[[:space:]]+"[^"]+-reviewer\.log"/){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 
 assert_eq "session_start emitted" "1" \
   "$(jq -r 'select(.event_type=="session_start") | 1' "$audit_file" | wc -l | tr -d ' ')"

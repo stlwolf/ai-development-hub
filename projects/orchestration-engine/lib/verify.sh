@@ -274,11 +274,13 @@ oe_verify_spawn() {
   # umask 077: reviewer transcript も秘密情報を含み得るため共有 /tmp 上で world-readable に
   #   しない (target と統一・実装SO #114 反映)。tee はパイプライン側なので umask はパイプライン
   #   全体を囲う外側 subshell で設定する。→ ログは 0600。
+  #   rm -f: umask は新規作成時のみ mode を決めるため、既存ログ (前回 run 残り等) があると tee が
+  #   既存 mode を保持して 0600 保証が崩れる。tee 直前に削除して必ず作り直す (Copilot PR #216 指摘・target と対称)。
   local log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
   local base_cli_command
   base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$OE_VERIFY_ENVELOPE_PATH" "$PROJECT_DIR")"
   local cli_command
-  cli_command="( umask 077 ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
+  cli_command="( umask 077 ; rm -f \"${log_path}\" ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
   wez pane send "$reviewer_pane_id" "$cli_command"
 
