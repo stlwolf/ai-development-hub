@@ -240,8 +240,25 @@ oe_spawn_send() {
   local base_cli_command
   base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$envelope_path" "$workspace")"
 
+  # #114/#98: target も reviewer (verify.sh) と同じ file-redirect 経路に統一する。
+  #   `( cmd 2>&1 ; printf @@OE_EXIT ) | tee log_path` 形で stdout+stderr+marker を per-session
+  #   ログへ落とし、monitor は wez pane capture (2D グリッド scrape・viewport-only) でなく
+  #   ログファイルを走査する。tee は pane TTY にも書くため人間は引き続き pane で観察できる。
+  #   exit code は内側 subshell 末尾の $? で AI CLI のものを捕捉 (printf 自身の rc に汚染されない)。
+  #
+  #   umask 077: transcript には task 本文/stderr/パス/秘密情報が含まれ得るため、共有 /tmp 上で
+  #   world-readable (既定 umask 022 → 0644) にしない。tee はパイプライン側プロセスなので umask は
+  #   パイプライン全体を囲う外側 subshell で設定する (左 subshell 内だけでは tee に効かない)。
+  #   → ログは 0600。umask 変更は subshell scope でペインの対話シェルに波及しない (実装SO #114 反映)。
+  #   rm -f: umask は **新規作成時のみ** mode を決める。同パスが既存 (前回 run の残り等) だと tee は
+  #   既存 mode を保持して 0600 保証が崩れるため、tee 直前に削除して必ず restrictive umask 下で
+  #   作り直す (Copilot PR #216 指摘反映)。/tmp symlink 攻撃の完全対処は保存先を 0700 専用 dir へ
+  #   移す別 issue 候補 (ADR 残ハードニング候補) で扱う。
+  local log_path
+  log_path="$(_oe_target_log_path "$session_id" "$pane_id")"
+
   local cli_command
-  cli_command="${base_cli_command} ; printf '\\n@@OE_EXIT:%d\\n' \$?"
+  cli_command="( umask 077 ; rm -f \"${log_path}\" ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
   wez pane send "$pane_id" "$cli_command"
 

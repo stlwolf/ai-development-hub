@@ -53,6 +53,53 @@ oe_capture_scan() {
   _oe_capture_scan_parse "$normalized"
 }
 
+# _oe_target_log_path — orchestrate 対象 (target) の file-redirect ログパスを 1 箇所で生成する。
+#
+# spawn 側 (tee 構築) と monitor 側 (scan) の両方がこの関数を使い、パス書式の drift を防ぐ
+# (#98: 経路の非対称そのものが将来の hazard 要因)。reviewer は単一なので session 単独鍵
+# (/tmp/oe-{rsid}-reviewer.log) で足りるが、target は monitor が複数ペインを並走しうる
+# (#98 動機: multi-pane) ため pane_id も鍵に含め、同一 session の複数ペインが同じログへ tee して
+# marker が混ざるのを防ぐ。共通 glob /tmp/oe-{session_id}-* (cleanup.sh:55) で掃除されるよう
+# session_id 前置を維持する (target log の cleanup 追加変更は不要)。
+_oe_target_log_path() {
+  local session_id="$1"
+  local pane_id="$2"
+  printf '/tmp/oe-%s-%s-target.log' "$session_id" "$pane_id"
+}
+
+# _oe_scan_log_file — file-redirect ログから marker をスキャンする共通コア。
+#
+# tail で末尾 N 行を取り、capture 経路と同じ正規化 (_oe_normalize_capture_output) + parse
+# (_oe_capture_scan_parse) を適用する。pane scrape (oe_capture_scan) と違い WezTerm の
+# viewport-only / 2D グリッド描画に依存しないため、長文・行折返し・装飾でも marker を取りこぼさない
+# (#114: クリーン取得チャネル / #98: target を本経路へ統一)。
+# verify 経路 (verify.sh:_oe_verify_scan_log_file) と monitor 経路 (target) の双方から呼ぶ
+# 単一の primitive。正規化を含め経路間差異 (=ロケール依存の取り残し) を 1 箇所に集約する。
+#
+# 引数: log_path, [lines] (既定 5000 — 長文 markdown でも marker が tail 内に収まる量)
+# 戻り値: OE_SCAN_* 変数群 (_oe_capture_scan_parse と同じインターフェース)。
+#         file 不在時は OE_SCAN_* を空のまま return 0 (cleanup と race しても無害に継続)。
+_oe_scan_log_file() {
+  local log_path="$1"
+  local lines="${2:-5000}"
+
+  OE_SCAN_MARKER_TYPE=""
+  OE_SCAN_VALUE=""
+  OE_SCAN_BLOCKED="false"
+  OE_SCAN_EXIT_CODE=""
+  OE_SCAN_VERIFY_RESULT=""
+
+  [[ -f "$log_path" ]] || return 0
+
+  local captured
+  captured="$(tail -n "$lines" "$log_path" 2>/dev/null)" || return 0
+
+  local normalized
+  normalized="$(_oe_normalize_capture_output "$captured")"
+
+  _oe_capture_scan_parse "$normalized"
+}
+
 # _oe_capture_scan_parse — capture 出力文字列をパースする内部関数
 # テスト容易性のために wez 呼び出しと分離
 #

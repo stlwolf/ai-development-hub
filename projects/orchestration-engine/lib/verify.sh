@@ -268,13 +268,19 @@ oe_verify_spawn() {
   # `( cmd 2>&1 ; printf @@OE_EXIT ) | tee log_path` の形にすることで:
   #   - claude/cursor の stdout/stderr と @@OE_EXIT の両方を 1 つの log file に同順序で記録
   #   - pane (TTY) には引き続き出力されるので人間可視性は維持
-  #   - bash の PIPESTATUS 依存を回避 (sub-shell 内の $? で claude exit code を反映)
-  # scan は file 経路 (_oe_verify_scan_log_file) に切替済み。
+  #   - bash の PIPESTATUS 依存を回避 (内側 sub-shell 内の $? で claude exit code を反映)
+  # scan は file 経路 (_oe_verify_scan_log_file → capture.sh:_oe_scan_log_file) に切替済み。
+  #
+  # umask 077: reviewer transcript も秘密情報を含み得るため共有 /tmp 上で world-readable に
+  #   しない (target と統一・実装SO #114 反映)。tee はパイプライン側なので umask はパイプライン
+  #   全体を囲う外側 subshell で設定する。→ ログは 0600。
+  #   rm -f: umask は新規作成時のみ mode を決めるため、既存ログ (前回 run 残り等) があると tee が
+  #   既存 mode を保持して 0600 保証が崩れる。tee 直前に削除して必ず作り直す (Copilot PR #216 指摘・target と対称)。
   local log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
   local base_cli_command
   base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$OE_VERIFY_ENVELOPE_PATH" "$PROJECT_DIR")"
   local cli_command
-  cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\""
+  cli_command="( umask 077 ; rm -f \"${log_path}\" ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
   wez pane send "$reviewer_pane_id" "$cli_command"
 
@@ -475,27 +481,12 @@ oe_verify_emit_completed() {
 #   適用する実装 (wezterm-ai-mode ADR-004:65)。長文 markdown では @@OE_VERIFY が viewport 外に
 #   押し出されて拾えない。reviewer 送信側で `( cmd ; printf @@OE_EXIT ) | tee log_path` に
 #   切替えており、本関数は log file 経路で同じ parse を行う。
+#
+# #114/#98: log-file 走査の実体は capture.sh:_oe_scan_log_file に集約済み (target 経路と共有する
+#   単一 primitive)。本関数は reviewer 呼び出し側の名前を維持する薄いラッパ。正規化 (#112) も
+#   共通コア側で適用される。
 _oe_verify_scan_log_file() {
-  local log_path="$1"
-  local lines="${2:-5000}"
-
-  OE_SCAN_MARKER_TYPE=""
-  OE_SCAN_VALUE=""
-  OE_SCAN_BLOCKED="false"
-  OE_SCAN_EXIT_CODE=""
-  OE_SCAN_VERIFY_RESULT=""
-
-  [[ -f "$log_path" ]] || return 0
-
-  local captured
-  captured="$(tail -n "$lines" "$log_path" 2>/dev/null)" || return 0
-
-  # #112: capture 経路と同じ正規化（U+3000/NBSP 畳み込み含む）を共通ヘルパーで適用し、
-  # log-file 経路だけ字下げ marker がロケール依存で残る取りこぼしを防ぐ（Copilot 指摘）。
-  local normalized
-  normalized="$(_oe_normalize_capture_output "$captured")"
-
-  _oe_capture_scan_parse "$normalized"
+  _oe_scan_log_file "$1" "${2:-5000}"
 }
 
 # _oe_verify_generate_session_id — 検証 agent 用の ULID 形式セッション ID を生成
