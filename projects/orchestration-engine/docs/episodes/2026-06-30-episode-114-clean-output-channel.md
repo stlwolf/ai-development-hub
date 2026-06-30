@@ -3,7 +3,7 @@ id: "01KWC6K04BKRM56PJZ6MCZ34K9"
 title: "#114 クリーン出力チャネル統一(scrape脱却)ADR + #98 target file-redirect 実装"
 date: 2026-06-30
 type: episode
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/114"
@@ -82,5 +82,60 @@ acquisition チャネルの正準ベースライン = 非対話 one-shot の `2>
   - 注: reviewer 経路（verify.sh:277 の `tee …-reviewer.log`）も同じ露出を持つ**先行 issue**。本変更は同パターンを target へ水平展開した結果、target にも露出が及んだ。
   - 規律どおり PR を保留。修正方針（log 作成時に `umask 077` で 0600）と reviewer 同時是正の要否を人間と確認 → **target+reviewer 両方**を選択。
   - 修正: `( umask 077 ; ( cmd 2>&1 ; printf @@OE_EXIT ) | tee log )` に。tee はパイプライン側なので umask はパイプライン全体を囲う外側 subshell で設定（左 subshell 内では効かない＝/tmp で実証: 左のみ 0644 / 全体囲い 0600、exit code 捕捉も維持）。spawn.sh(target) + verify.sh(reviewer) 両方。e2e に umask 077 回帰アサーション追加。
-  - 再 oe-review（同 diff）: （結果を追記）
+  - 再 oe-review（同 diff・audit_id `20260630122954FD9EF151FGHT`）: **survived**（2/2・codex が umask 077 の transcript 権限制限を実コードで確認、cursor も umask 0600・共通 scan primitive の一貫性を確認）。
   - 学び: 設計SO（oe-refute・breadth）を通過しても実装SO（oe-review・コード欠陥/到達可能性）が別レンズで material 欠陥を捕捉した。両 SO は代替不可（#192 の false-pass 回避の実例）。
+
+## Closure（episode-retrospective・heavy tier）
+
+tier: **heavy**（実行中に SO 2回 refuted→修正の方針反映 / 意図的外部レビュー2レーン[oe-refute, oe-review×2] / 非自明設計判断[A-D・acquisition vs recording 軸] / Decision 昇格あり）。
+
+### closure gate checklist
+
+- **Context / なぜ**: 冒頭に記載済（両系統とも非対話 one-shot 化済で残ギャップは target の取得チャネルが pane-scrape のまま＝非対称。#114 が方針、#98 が target 実装）。
+- **次の消費者**: #98（target file-redirect 実装の親 issue・本 PR で close）/ 将来 push 配送・案C/案D を検討する engine 拡張（#188 typed event bus・#105 Phase5）/ scrape の正当残存用途（readiness・oe-capture #109）を触る作業。
+- **follow-up routing**:
+  - reviewer 経路の同露出 → **本 PR で同時是正済**（umask 077）。
+  - ログ保存先を共有 `/tmp` → 専用ディレクトリ（`OE_DATA_DIR` 下 0700 等）へ移すハードニング → **defer・別 issue 候補**（reviewer 含む大きめ変更）。ADR 結果節に明記。
+  - 案C（構造化 sidecar）/ 案D（子が typed event を emit）/ push 配送 → **defer・進化経路**として ADR に外部化（#188 / #105 と連結）。
+  - 対話 TUI orchestrate の別チャネル → **defer**（#114 が明示的に切り出した別課題）。
+- **status 確定**: draft → **stable**（達成: #114 ADR 確定 + #98 target 実装完了・全テスト green・両 SO クリア）。
+- **evidence anchor**: 設計SO audit_id `20260630094501F1333D1JNE4W`、実装SO refuted `202606301215340G0VFGFZW3R5` / survived `20260630122954FD9EF151FGHT`。設計SO の探索木 trace は揮発 scratchpad（dj-114-tree.md）だったが**内容を ADR 棄却案節へ転記済**（パス依存を排除）。
+
+### 事実・失敗
+
+- 設計SO（oe-refute）が **refuted**（2/2）。第4カテゴリ（既存 event-bus/audit の producer-side channel・get-text/scrollback）未評価と grounding 不足を指摘 → 一次情報で grounding し ADR の幅・精度を是正（本文「設計フェーズ」§predecision 参照）。
+- 実装SO（oe-review）が **refuted**（1/2 material）。transcript を /tmp に 0644 で露出するセキュリティ欠陥 → `umask 077`（0600）で是正、再 oe-review survived（本文「検証ゲート」参照）。
+- いずれも選択的省略なし（両 refuted の audit_id・修正・再検証を上記に明記）。
+
+### 決定と根拠（→ Decision 昇格済）
+
+本 episode の設計判断は ADR `2026-06-30-decision-114-clean-output-channel.md` に蒸留（取得チャネル正準化・scrape 降格スコープ・取得×配送×制御分離×acquisition/recording 軸・棄却/defer 案）。
+
+### わかったこと（W）
+
+- target/reviewer は**既に両方とも非対話 one-shot**（`cursor-agent --print` / `claude -p`）。#114 の初期案「非対話 claude -p + file-redirect」のうち非対話部分は実現済で、残ギャップは取得チャネルのみだった（設計の最大の単純化点）。
+- 既存 event-bus/audit JSONL は engine が**検知後に emit する recording・downstream** であり、acquisition チャネルではない（混同しやすい・設計SO が指摘）。
+- `cursor-agent`/`claude` とも `--output-format json` を一次確認（案B 棄却根拠は「json 不明」でなく pane 喪失・Phase3 逸脱）。
+- パイプライン `( cmd ) | tee` の umask は**外側 subshell で囲わないと tee に効かない**（/tmp で実証）。
+
+### 原則（Pattern / Anti-pattern）
+
+- Pattern: 取得経路を統一するとき**パス書式の単一情報源**（`_oe_target_log_path`）を spawn/monitor で共有 → 経路非対称ハザード（#98 が警戒）を構造的に排除。
+- Anti-pattern: 取得チャネルを file-redirect 化する際、transcript を**共有 /tmp に既定 umask（0644）で**落とす → world-readable 露出。`( umask 077; … | tee )` で 0600 にする。チャネル統一は「機能」だけでなく**権限**も統一せよ。
+- Pattern: 設計SO（breadth）と実装SO（コード欠陥）は**別レンズ・別ステップ**。設計SO 通過は実装SO の代替にならない（本 episode で実装SO のみが material セキュリティ欠陥を捕捉）。
+
+### 蒸留シグナル
+
+- Decision: **昇格済**（本 ADR）。
+- skill/rule: なし（既存 episode-flow / predecision / SO 群で覆われる）。
+- negative knowledge（#62）: 「file-redirect 化で /tmp 既定 umask 露出」は anti-pattern 候補として上記に記録。
+
+### Step4 外部チェック
+
+closure 品質（失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation）の focused check を `so-compare`（codex）で実施。出力: `tmp/so-20260630-213846/codex-stdout.txt`。
+
+結果=部分合格。指摘と対応:
+- 選択的省略なし（両 refuted は記録済）と確認。ただし機械確認用に `事実・失敗` 見出しが無い → **本 closure に追加**（上記）。
+- follow-up routing は網羅と確認（漏れなし）。
+- 揮発 scratchpad の要点は ADR 棄却案節へ転記済と確認。Step4 結果リンク未記入 → **本記述で充足**。
+- **back-propagation 漏れ（valid）**: 先行 ADR `2026-05-18-decision-reviewer-output-file-redirect.md` が reviewer の旧 `tee` を accepted のまま載せ、umask 是正への前方参照が無い → 同 ADR に #114 ADR への補足参照を **1 行追記して是正**。

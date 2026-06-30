@@ -64,6 +64,8 @@ cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | te
 wez pane send "$reviewer_pane_id" "$cli_command"
 ```
 
+> **後続是正（#114 / 2026-06-30）**: 上記 `tee` は共有 `/tmp` 上で既定 umask（0644・world-readable）でログを作るため、transcript（秘密情報を含み得る）の露出面がある。[#114 ADR](./2026-06-30-decision-114-clean-output-channel.md) で target/reviewer 両経路を `( umask 077 ; … | tee … )`（0600）に是正済み。本節の現行コードはその形。
+
 - サブシェル `( ... )` 内で `$?` を読むので claude/cursor の exit code が確定 → printf に渡る
 - printf も tee を経由 → log file と pane TTY の両方に書かれる
 - bash の PIPESTATUS 依存が消え、zsh / busybox tee でも動作 (pane 内 shell の柔軟性確保)
