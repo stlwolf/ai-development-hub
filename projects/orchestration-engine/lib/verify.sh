@@ -475,27 +475,12 @@ oe_verify_emit_completed() {
 #   適用する実装 (wezterm-ai-mode ADR-004:65)。長文 markdown では @@OE_VERIFY が viewport 外に
 #   押し出されて拾えない。reviewer 送信側で `( cmd ; printf @@OE_EXIT ) | tee log_path` に
 #   切替えており、本関数は log file 経路で同じ parse を行う。
+#
+# #114/#98: log-file 走査の実体は capture.sh:_oe_scan_log_file に集約済み (target 経路と共有する
+#   単一 primitive)。本関数は reviewer 呼び出し側の名前を維持する薄いラッパ。正規化 (#112) も
+#   共通コア側で適用される。
 _oe_verify_scan_log_file() {
-  local log_path="$1"
-  local lines="${2:-5000}"
-
-  OE_SCAN_MARKER_TYPE=""
-  OE_SCAN_VALUE=""
-  OE_SCAN_BLOCKED="false"
-  OE_SCAN_EXIT_CODE=""
-  OE_SCAN_VERIFY_RESULT=""
-
-  [[ -f "$log_path" ]] || return 0
-
-  local captured
-  captured="$(tail -n "$lines" "$log_path" 2>/dev/null)" || return 0
-
-  # #112: capture 経路と同じ正規化（U+3000/NBSP 畳み込み含む）を共通ヘルパーで適用し、
-  # log-file 経路だけ字下げ marker がロケール依存で残る取りこぼしを防ぐ（Copilot 指摘）。
-  local normalized
-  normalized="$(_oe_normalize_capture_output "$captured")"
-
-  _oe_capture_scan_parse "$normalized"
+  _oe_scan_log_file "$1" "${2:-5000}"
 }
 
 # _oe_verify_generate_session_id — 検証 agent 用の ULID 形式セッション ID を生成

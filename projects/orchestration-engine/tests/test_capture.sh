@@ -356,6 +356,48 @@ echo "-- exit_code=42 → protocol_error --"
 oe_capture_classify 42
 assert_eq "state" "protocol_error" "$OE_CLASSIFY_STATE"
 
+# --- #114/#98: _oe_target_log_path（target log の単一情報源） ---
+echo ""
+echo "=== #114/#98: _oe_target_log_path ==="
+assert_eq "session+pane 鍵で /tmp/oe-{sid}-{pane}-target.log" \
+  "/tmp/oe-SESS01-777-target.log" "$(_oe_target_log_path "SESS01" "777")"
+assert_eq "別 pane は別パス（同一 session でも衝突しない）" \
+  "/tmp/oe-SESS01-888-target.log" "$(_oe_target_log_path "SESS01" "888")"
+
+# --- #114/#98: _oe_scan_log_file（file-redirect ログ走査の共通コア） ---
+echo ""
+echo "=== #114/#98: _oe_scan_log_file ==="
+_SCAN_TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$_SCAN_TMPDIR"' EXIT
+
+echo "-- ファイル不在 → OE_SCAN_* 空・return 0（cleanup と race しても無害） --"
+_rc=0
+_oe_scan_log_file "${_SCAN_TMPDIR}/nonexistent.log" || _rc=$?
+assert_eq "return 0" "0" "$_rc"
+assert_eq "MARKER_TYPE 空" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- @@OE_EXIT:0 を含むログ → EXIT 検出 --"
+printf 'target output line 1\ntarget output line 2\n\n@@OE_EXIT:0\n' > "${_SCAN_TMPDIR}/exit0.log"
+_oe_scan_log_file "${_SCAN_TMPDIR}/exit0.log"
+assert_eq "MARKER_TYPE=EXIT" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "EXIT_CODE=0" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- 多数行の末尾に marker（tail で確実に拾う＝viewport-only 非依存） --"
+{ for i in $(seq 1 300); do echo "verbose line $i"; done; printf '@@OE_EXIT:1\n'; } > "${_SCAN_TMPDIR}/long.log"
+_oe_scan_log_file "${_SCAN_TMPDIR}/long.log"
+assert_eq "MARKER_TYPE=EXIT（長文でも検出）" "EXIT" "$OE_SCAN_MARKER_TYPE"
+assert_eq "EXIT_CODE=1" "1" "$OE_SCAN_EXIT_CODE"
+
+echo "-- TUI 字下げ marker（先頭空白）→ 正規化で検出（#112 と同経路） --"
+printf '  @@OE_EXIT:0\n' > "${_SCAN_TMPDIR}/indent.log"
+_oe_scan_log_file "${_SCAN_TMPDIR}/indent.log"
+assert_eq "字下げ marker 検出" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- プロンプトエコー行（marker 後にテキスト）→ 誤検知しない（行末アンカー維持） --"
+printf '正確に @@OE_EXIT:0 とだけ出力してください\n' > "${_SCAN_TMPDIR}/echo.log"
+_oe_scan_log_file "${_SCAN_TMPDIR}/echo.log"
+assert_eq "エコー行は EXIT 非検出" "" "$OE_SCAN_EXIT_CODE"
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

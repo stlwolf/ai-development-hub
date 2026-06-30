@@ -79,6 +79,12 @@ if [[ "${1:-}" == "pane" && "${2:-}" == "send" ]]; then
     reviewer_log="${BASH_REMATCH[1]}"
     printf 'review output\n@@OE_VERIFY:pass\n\n@@OE_EXIT:0\n' > "$reviewer_log"
   fi
+  # #114/#98: target pane (777) も file-redirect 経路に統一。payload の tee "...-target.log" を
+  # 検知し、@@OE_EXIT:0 を log file へ書く（monitor は wez pane capture でなく本 file を走査する）。
+  if [[ "$pane_id" == "777" ]] && [[ "$payload" =~ tee[[:space:]]+\"([^\"]+-target\.log)\" ]]; then
+    target_log="${BASH_REMATCH[1]}"
+    printf 'mock target output\n@@OE_EXIT:0\n' > "$target_log"
+  fi
   exit 0
 fi
 
@@ -132,8 +138,12 @@ assert_eq "audit file exists" "true" "$( [[ -f "$audit_file" ]] && echo true || 
 assert_eq "state.session_id" "$session_id" "$(jq -r '.session_id' "$state_file")"
 assert_eq "session_id matches ULID alphabet pattern" "true" "$( [[ "$session_id" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]] && echo true || echo false )"
 assert_eq "state.state" "success" "$(jq -r '.state' "$state_file")"
-assert_eq "capture target pane (777) called at least once" "true" \
-  "$( [[ -f "${OE_MOCK_LOG_DIR}/capture_count_777" && "$(cat "${OE_MOCK_LOG_DIR}/capture_count_777")" -ge 1 ]] && echo true || echo false )"
+# #114/#98: target は file-redirect 経路で監視される（旧 capture_count_777 ≥1 assertion は廃止）。
+# monitor が wez pane capture でなく tee した log を走査することは、target payload (pane=777) に
+# tee /tmp/oe-{sid}-{pane}-target.log が含まれ、かつ state.state==success で 1 サイクル完走した
+# ことで確認する（reviewer の tee assertion と対称）。
+assert_eq "target payload に tee target.log (#114/#98)" "true" \
+  "$(awk -F'|' '$1=="777" && match($0, /tee[[:space:]]+"[^"]+-target\.log"/){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 
 assert_eq "session_start emitted" "1" \
   "$(jq -r 'select(.event_type=="session_start") | 1' "$audit_file" | wc -l | tr -d ' ')"
