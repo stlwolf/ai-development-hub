@@ -268,13 +268,17 @@ oe_verify_spawn() {
   # `( cmd 2>&1 ; printf @@OE_EXIT ) | tee log_path` の形にすることで:
   #   - claude/cursor の stdout/stderr と @@OE_EXIT の両方を 1 つの log file に同順序で記録
   #   - pane (TTY) には引き続き出力されるので人間可視性は維持
-  #   - bash の PIPESTATUS 依存を回避 (sub-shell 内の $? で claude exit code を反映)
-  # scan は file 経路 (_oe_verify_scan_log_file) に切替済み。
+  #   - bash の PIPESTATUS 依存を回避 (内側 sub-shell 内の $? で claude exit code を反映)
+  # scan は file 経路 (_oe_verify_scan_log_file → capture.sh:_oe_scan_log_file) に切替済み。
+  #
+  # umask 077: reviewer transcript も秘密情報を含み得るため共有 /tmp 上で world-readable に
+  #   しない (target と統一・実装SO #114 反映)。tee はパイプライン側なので umask はパイプライン
+  #   全体を囲う外側 subshell で設定する。→ ログは 0600。
   local log_path="/tmp/oe-${reviewer_session_id}-reviewer.log"
   local base_cli_command
   base_cli_command="$(_oe_spawn_build_cli_command "$ai_cli" "$ai_model" "$OE_VERIFY_ENVELOPE_PATH" "$PROJECT_DIR")"
   local cli_command
-  cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\""
+  cli_command="( umask 077 ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
   wez pane send "$reviewer_pane_id" "$cli_command"
 

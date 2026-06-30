@@ -144,6 +144,11 @@ assert_eq "state.state" "success" "$(jq -r '.state' "$state_file")"
 # ことで確認する（reviewer の tee assertion と対称）。
 assert_eq "target payload に tee target.log (#114/#98)" "true" \
   "$(awk -F'|' '$1=="777" && match($0, /tee[[:space:]]+"[^"]+-target\.log"/){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
+# #114 実装SO 反映: transcript ログを world-readable にしないため payload は umask 077 で囲う。
+assert_eq "target payload に umask 077 (#114 secure log)" "true" \
+  "$(awk -F'|' '$1=="777" && index($0, "umask 077"){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
+assert_eq "reviewer payload に umask 077 (#114 secure log)" "true" \
+  "$(awk -F'|' '$1=="888" && index($0, "umask 077"){found=1} END{print (found+0==1) ? "true" : "false"}' "${OE_MOCK_LOG_DIR}/send.log")"
 
 assert_eq "session_start emitted" "1" \
   "$(jq -r 'select(.event_type=="session_start") | 1' "$audit_file" | wc -l | tr -d ' ')"

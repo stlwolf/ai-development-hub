@@ -76,4 +76,11 @@ acquisition チャネルの正準ベースライン = 非対話 one-shot の `2>
 
 ### 検証ゲート
 
-- 実装SO（`oe-review`・reviewed diff バインド・設計SO と別レンズ）: （結果を追記）
+- 実装SO（`oe-review`・reviewed diff バインド・設計SO と別レンズ）: **refuted**（1/2 material・audit_id `202606301215340G0VFGFZW3R5`）。
+  - codex(refuted): target transcript を権限制限なしの `tee /tmp/oe-{sid}-{pane}-target.log`（既定 umask 022 → 0644 world-readable）へ永続化。pane 表示のみ（ephemeral）だった target が共有 /tmp 上の読み取り可能ファイルに露出。秘密情報を含み得る。cleanup は best-effort で実行中/異常終了時を防げない。
+  - cursor(survived): correctness/堅牢性に material 欠陥なし。
+  - 注: reviewer 経路（verify.sh:277 の `tee …-reviewer.log`）も同じ露出を持つ**先行 issue**。本変更は同パターンを target へ水平展開した結果、target にも露出が及んだ。
+  - 規律どおり PR を保留。修正方針（log 作成時に `umask 077` で 0600）と reviewer 同時是正の要否を人間と確認 → **target+reviewer 両方**を選択。
+  - 修正: `( umask 077 ; ( cmd 2>&1 ; printf @@OE_EXIT ) | tee log )` に。tee はパイプライン側なので umask はパイプライン全体を囲う外側 subshell で設定（左 subshell 内では効かない＝/tmp で実証: 左のみ 0644 / 全体囲い 0600、exit code 捕捉も維持）。spawn.sh(target) + verify.sh(reviewer) 両方。e2e に umask 077 回帰アサーション追加。
+  - 再 oe-review（同 diff）: （結果を追記）
+  - 学び: 設計SO（oe-refute・breadth）を通過しても実装SO（oe-review・コード欠陥/到達可能性）が別レンズで material 欠陥を捕捉した。両 SO は代替不可（#192 の false-pass 回避の実例）。

@@ -244,12 +244,17 @@ oe_spawn_send() {
   #   `( cmd 2>&1 ; printf @@OE_EXIT ) | tee log_path` 形で stdout+stderr+marker を per-session
   #   ログへ落とし、monitor は wez pane capture (2D グリッド scrape・viewport-only) でなく
   #   ログファイルを走査する。tee は pane TTY にも書くため人間は引き続き pane で観察できる。
-  #   exit code は subshell 末尾の $? で AI CLI のものを捕捉 (printf 自身の rc に汚染されない)。
+  #   exit code は内側 subshell 末尾の $? で AI CLI のものを捕捉 (printf 自身の rc に汚染されない)。
+  #
+  #   umask 077: transcript には task 本文/stderr/パス/秘密情報が含まれ得るため、共有 /tmp 上で
+  #   world-readable (既定 umask 022 → 0644) にしない。tee はパイプライン側プロセスなので umask は
+  #   パイプライン全体を囲う外側 subshell で設定する (左 subshell 内だけでは tee に効かない)。
+  #   → ログは 0600。umask 変更は subshell scope でペインの対話シェルに波及しない (実装SO #114 反映)。
   local log_path
   log_path="$(_oe_target_log_path "$session_id" "$pane_id")"
 
   local cli_command
-  cli_command="( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\""
+  cli_command="( umask 077 ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
   wez pane send "$pane_id" "$cli_command"
 

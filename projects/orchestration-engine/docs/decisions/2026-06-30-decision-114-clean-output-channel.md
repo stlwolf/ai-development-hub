@@ -61,7 +61,8 @@ orchestration-engine は orchestrate 対象（target）と検証者（reviewer�
 ## 実装（#98 = 案A の target 脚）
 
 - `lib/capture.sh`: `_oe_scan_log_file <path> [lines]`（log 走査の共通コア＝reviewer/target 共有 primitive）と `_oe_target_log_path <session_id> <pane_id>`（target log の単一情報源 → `/tmp/oe-{sid}-{pane}-target.log`）を新設。
-- `lib/spawn.sh:oe_spawn_send`: target 送信を `( cmd 2>&1 ; printf @@OE_EXIT ) | tee "$(_oe_target_log_path …)"` に統一。tee は pane TTY にも書くため**人間は引き続き pane で観察**できる。
+- `lib/spawn.sh:oe_spawn_send`: target 送信を `( umask 077 ; ( cmd 2>&1 ; printf @@OE_EXIT ) | tee "$(_oe_target_log_path …)" )` に統一。tee は pane TTY にも書くため**人間は引き続き pane で観察**できる。
+- **ログ権限 0600**（実装SO 反映）: transcript は task 本文/stderr/パス/秘密情報を含み得るため、共有 `/tmp` 上で world-readable（既定 umask 022 → 0644）にしない。`tee` はパイプライン側プロセスなので umask はパイプライン全体を囲う外側 subshell（`( umask 077 ; … | tee … )`）で設定する（左 subshell 内だけでは tee に効かない）。target/reviewer 両経路に適用し、統一チャネルを secure-by-construction にする（verify.sh も同形）。
 - `lib/monitor.sh`: scan を `oe_capture_scan`（wez pane capture）→ `_oe_scan_log_file "$(_oe_target_log_path …)"` に切替。`OE_SCAN_MARKER_TYPE=EXIT` 消費部は不変（source が pane→file に変わるだけ）。
 - `lib/verify.sh:_oe_verify_scan_log_file`: 共通コアへ委譲する薄いラッパに変更（reviewer 経路は不変）。
 - `lib/cleanup.sh`: 変更不要（glob `/tmp/oe-{session_id}-*`〔cleanup.sh:55〕が target log を捕捉）。
@@ -94,4 +95,6 @@ orchestration-engine は orchestrate 対象（target）と検証者（reviewer�
 - target/reviewer の取得チャネルが file-redirect に統一され、#98 の「経路の非対称＝将来 hazard」が解消。
 - 完了 acquisition の正準が明文化され、scrape の正当な残存用途（readiness / 対話 attach）と区別された。
 - 取得×配送×制御分離×(acquisition vs recording) の軸により、案C/案D/push 配送への将来拡張が記述上 open に保たれた。
-- 全テスト 23 ファイル green / shellcheck clean。実装SO（`oe-review`）を PR 前に実施。
+- 実装SO（`oe-review`・audit_id `202606301215340G0VFGFZW3R5`）が refuted（target transcript を 0644 で /tmp へ露出）。修正として両経路に `umask 077`（0600）を適用し再検証で survived。設計SO とは別レンズが実際に material 欠陥を捕捉した（#192 の false-pass 回避＝設計SO 通過≠実装SO 代替の実例）。
+- 全テスト 23 ファイル green / shellcheck clean。
+- 残ハードニング候補（defer・本 ADR スコープ外）: ログ保存先を共有 `/tmp` から専用ディレクトリ（`OE_DATA_DIR` 下 0700 等）へ移す案。reviewer 経路も含む大きめ変更のため別 issue 候補。
