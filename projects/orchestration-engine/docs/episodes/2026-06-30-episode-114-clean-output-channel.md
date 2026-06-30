@@ -139,3 +139,23 @@ closure 品質（失敗の選択的省略 / routing 網羅 / evidence anchor / b
 - follow-up routing は網羅と確認（漏れなし）。
 - 揮発 scratchpad の要点は ADR 棄却案節へ転記済と確認。Step4 結果リンク未記入 → **本記述で充足**。
 - **back-propagation 漏れ（valid）**: 先行 ADR `2026-05-18-decision-reviewer-output-file-redirect.md` が reviewer の旧 `tee` を accepted のまま載せ、umask 是正への前方参照が無い → 同 ADR に #114 ADR への補足参照を **1 行追記して是正**。
+
+## Follow-up（2026-07-01・PR #216 受け入れレビュー対応・追記）
+
+closure 後の追記（リアルタイム追記の延長・上記本体は overwrite しない）。親の受け入れレビューからの 2 件を 1 ラウンドで対応。
+
+### Copilot レビュー対応（PR #216・1 ラウンド）
+
+未返信 Copilot スレッド 2 件（spawn.sh:257 / verify.sh:281）。**同一の妥当な指摘**: `umask 077` は **新規作成時のみ** mode を決めるため、ログが既存（前回 run 残り等）だと `tee` が既存 mode を保持し 0600 保証が崩れる。
+
+- 対応（valid・修正）: `tee` 直前に `rm -f "$log_path"` を追加し、必ず restrictive umask 下で作り直す。spawn.sh(target) + verify.sh(reviewer) 両方。/tmp で実証（stale 0644 + umask のみ→0644 / +rm -f→0600・exit code 捕捉維持）。e2e に rm -f 回帰アサーション 2 件追加。両スレッドへ返信済。
+- 残（defer・既記載）: /tmp symlink 攻撃の完全対処は保存先を 0700 専用 dir へ移す別 issue 候補（rm -f は TOCTOU 残あり・現実的な stale 0644 ケースは解消）。
+- 1 ラウンドで完結。再レビュー再依頼（`--add-reviewer @copilot`）はしない（ユーザー明示時のみ）。
+
+### episode 訂正（親ファクトチェック反映）
+
+本体の数値を残したまま訂正を追記（additive）:
+
+- **e2e テスト数**: テスト節「`test_e2e_smoke` … 46 PASS」は誤り。umask アサーション追加で **48**、本 follow-up の rm -f アサーション追加で現在 **50 PASS**（`bash tests/test_e2e_smoke.sh` で確認）。
+- **bash 3.2 失敗の明記（選択的省略の補完）**: 「全 23 テストファイル green」は **bash 5.2.37 での結果**。macOS 標準 `/bin/bash`（**3.2.57**）では `tests/test_*.sh` 23 件中 **21 green / 2 fail**（`test_monitor` 本 PR 変更・`test_cleanup` 未変更）。原因は **#193 の既存債務**（`declare -A` 連想配列＝bash 4+ 必須、`test_monitor.sh:37 line 37: declare: -A: invalid option`）。**master の同テストも 3.2 で同様に fail＝本変更の回帰ではない**（master 版を 3.2 で実行し確認）。bash 5.2 では 23 件全 green。
+- **行番号ドリフト**: 上記「設計フェーズ」の `oe_audit_emit "session_end"` 参照 `monitor.sh:123` は master 時点の値。本変更でコメント追加により現在 **:128**（attach.sh:45 は不変）。
