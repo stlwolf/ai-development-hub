@@ -8,6 +8,9 @@ related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/92"
     reason: "本 episode の対象 issue（検証ゲート v2）"
+  - type: decision
+    ref: ../decisions/2026-07-01-decision-92-commit-range-verify-inputs.md
+    reason: "本 episode の設計判断を蒸留した ADR（commit 範囲評価・worker-commit 契約）"
   - type: refines
     ref: ../decisions/2026-06-30-decision-114-clean-output-channel.md
     reason: "#114 のクリーン取得チャネル上で検証入力を構築。#92 は acquisition の上の『何を検証入力にするか』"
