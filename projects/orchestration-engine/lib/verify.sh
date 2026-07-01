@@ -139,11 +139,12 @@ The marker must be on its own line, no surrounding spaces, exact case. The shell
 #   設計SO 3 ラウンドで working-tree diff は pane-blind / pre-existing dirty 混入 / output_dir 契約破綻が
 #   構造的欠陥と確定。baseline は spawn 時 (session_start payload.git_head)、end は worker 終了時
 #   (session_end payload.git_head) を audit から解決する。
-#   - 変更ファイル = git diff --name-only baseline..end (per-pane・output_dir 非依存・範囲外の余計変更も可視)。
+#   - 変更ファイル = git diff --name-only <baseline> + untracked (= baseline からの全 footprint。
+#     committed + 未コミット残余の両方を捕捉。実装SO 反映で baseline..end [committed のみ] から変更)。
 #     baseline 時点で既に dirty だったファイルは「pre-existing」注記 (worker の git add -A 巻き込みを可視化)。
 #   - 完了報告 = git log baseline..end (skill 契約(2)「コミットログ」に合致)。旧 state_change enum は
 #     engine 分類状態 (補助) に relabel。
-#   - worker 未コミット (範囲空) / baseline 未解決時は working-tree diff に degraded フォールバック (縮退を明示)。
+#   - baseline 未解決時 (非 git / audit 欠落) は working-tree diff に degraded フォールバック (縮退を明示)。
 #   残 (別 follow-up): multi-pane 帰属 (branch/worktree) / reviewer verdict チャネルの marker 注入 (#101)。
 
 # _oe_verify_annotate_files — 変更ファイル行を組み立て、baseline 時点で既に dirty だったパスに注記を付ける。
@@ -229,7 +230,15 @@ oe_verify_prompt_build() {
     last_state_change="(audit log not found: $audit_path)"
   fi
 
-  # 変更ファイル: KVS outputs[] 優先 → commit 範囲 diff → degraded working-tree diff → placeholder。
+  # 変更ファイル: KVS outputs[] 優先 → baseline からの全 footprint → degraded working-tree → placeholder。
+  #
+  # 実装SO (oe-review, audit 202607010937017EMCG63SGW7P) 反映:
+  #   変更ファイルは `git diff --name-only <baseline>` (baseline commit と作業ツリーの差分) + untracked で
+  #   取る。これは committed (baseline..end) と **未コミット残余** の両方を1つの diff で捕捉するため:
+  #     - 部分コミット (一部だけ commit し残りを未コミットで終了) の残余が漏れない (codex 指摘)。
+  #     - 空/revert コミット (log 非空だが diff 空) を「footprint なし」と正確に表現し、
+  #       degraded working-tree へ誤フォールバックして「worker 未コミット」と矛盾する注記を出さない (cursor 指摘)。
+  #   完了報告 (git log baseline..end) が commit 構造を、本セクションが実ファイル footprint を示す。
   local changed_files_block="" changed_files_note=""
   local outputs_count=0
   if [[ -f "$kvs_path" ]]; then
@@ -239,24 +248,27 @@ oe_verify_prompt_build() {
   if [[ "$outputs_count" -gt 0 ]]; then
     changed_files_block="$(jq -r '.outputs[] | "- " + .' "$kvs_path")"
     changed_files_note="(source: KVS outputs[])"
-  else
-    local range_files=""
-    if [[ -n "$range" ]]; then
-      range_files="$(git -C "$PROJECT_DIR" diff --name-only "$range" 2>/dev/null || true)"
-    fi
-    if [[ -n "$range_files" ]]; then
-      changed_files_block="$(_oe_verify_annotate_files "$range_files" "$baseline_dirty")"
-      changed_files_note="(source: git diff --name-only ${range})"
+  elif [[ -n "$baseline_head" ]]; then
+    # 主経路: baseline からの全 footprint (committed + uncommitted + untracked)
+    local diff_files untracked_files all_files
+    diff_files="$(git -C "$PROJECT_DIR" diff --name-only "$baseline_head" 2>/dev/null || true)"
+    untracked_files="$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard 2>/dev/null || true)"
+    all_files="$(printf '%s\n%s\n' "$diff_files" "$untracked_files" | awk 'NF' | sort -u)"
+    if [[ -n "$all_files" ]]; then
+      changed_files_block="$(_oe_verify_annotate_files "$all_files" "$baseline_dirty")"
+      changed_files_note="(source: git diff --name-only ${baseline_head} + untracked = baseline からの全 footprint。committed + 未コミット残余を含むため、完了報告の commit 列と突合し未コミット変更の有無を確認せよ)"
     else
-      # degraded: commit 範囲が空/未解決 → working-tree diff (無関係な変更を含み得る)
-      local wt_files
-      wt_files="$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null || true)"
-      if [[ -n "$wt_files" ]]; then
-        changed_files_block="$(printf '%s\n' "$wt_files" | awk 'NF { print "- " $0 }')"
-        changed_files_note="(degraded: working-tree diff — worker が未コミットのため commit 範囲を取れず。無関係な変更を含み得る。実コードで裏取りせよ)"
-      else
-        changed_files_block="(no changes detected: commit 範囲空 + working-tree diff 空)"
-      fi
+      changed_files_block="(no file changes since baseline ${baseline_head}. 完了報告の commit 列を確認せよ — 空コミット / revert 等で net 変更なしの可能性)"
+    fi
+  else
+    # baseline 未解決 (非 git / audit 欠落) → degraded working-tree diff (帰属不能・無関係変更を含み得る)
+    local wt_files
+    wt_files="$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null || true)"
+    if [[ -n "$wt_files" ]]; then
+      changed_files_block="$(printf '%s\n' "$wt_files" | awk 'NF { print "- " $0 }')"
+      changed_files_note="(degraded: baseline 未解決のため working-tree diff。無関係な変更を含み得る。実コードで裏取りせよ)"
+    else
+      changed_files_block="(no changes detected: baseline 未解決 + working-tree diff 空)"
     fi
   fi
 

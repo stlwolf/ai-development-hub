@@ -58,6 +58,10 @@ if [[ "$sub" == "log" ]]; then
   [[ -n "${OE_MOCK_GIT_LOG:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_LOG}"
   exit 0
 fi
+if [[ "$sub" == "ls-files" ]]; then
+  [[ -n "${OE_MOCK_GIT_UNTRACKED:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_UNTRACKED}"
+  exit 0
+fi
 if [[ "$sub" == "rev-parse" ]]; then
   printf '%s\n' "${OE_MOCK_GIT_HEAD:-0000000000000000000000000000000000000000}"
   exit 0
@@ -279,17 +283,19 @@ _empty_outputs_kvs() {
 JSON
 }
 
-# -- Case A: commit 範囲 baseline..end からの変更ファイル + commit log + pre-existing 注記 --
-echo "-- Case A: commit 範囲 (session_start baseline + session_end end) --"
+# -- Case A: baseline からの全 footprint (committed + untracked) + commit log + pre-existing 注記 --
+echo "-- Case A: 全 footprint (committed + untracked/uncommitted) --"
 oe_audit_emit "session_start" "$target_session_id" "$target_pane_id" "" '{"git_head":"BASE111","baseline_dirty":["docs/preexisting.md"]}'
 oe_audit_emit "session_end" "$target_session_id" "$target_pane_id" "success" '{"git_head":"END222"}'
 _empty_outputs_kvs
+# git diff <baseline> (committed + 未コミット tracked) と ls-files (untracked) の両方を footprint に含む。
 export OE_MOCK_GIT_RANGE_FILES="lib/feature.sh
 docs/preexisting.md"
+export OE_MOCK_GIT_UNTRACKED="newfile.txt"
 export OE_MOCK_GIT_LOG="- abc123 feat: add feature
 - def456 wip: docs"
 oe_verify_prompt_build "RTEST_PROMPT_RANGE" "$target_pane_id" "$target_session_id" "$target_envelope_path"
-unset OE_MOCK_GIT_RANGE_FILES OE_MOCK_GIT_LOG
+unset OE_MOCK_GIT_RANGE_FILES OE_MOCK_GIT_UNTRACKED OE_MOCK_GIT_LOG
 P="$OE_VERIFY_PROMPT_PATH"
 
 assert_eq "OE_VERIFY_PROMPT_PATH set" "/tmp/oe-RTEST_PROMPT_RANGE-verify-inputs.md" "$P"
@@ -305,27 +311,32 @@ assert_eq "完了報告に commit log (abc123)" "true" \
   "$(grep -q 'abc123 feat: add feature' "$P" && echo true || echo false)"
 assert_eq "engine 分類状態に state_change イベント" "true" \
   "$(grep -qE '"event_type": ?"state_change"' "$P" && echo true || echo false)"
-assert_eq "変更ファイルに range file (lib/feature.sh)" "true" \
+assert_eq "footprint に committed file (lib/feature.sh)" "true" \
   "$(grep -q '^- lib/feature.sh' "$P" && echo true || echo false)"
+assert_eq "footprint に untracked/uncommitted file (newfile.txt) [codex 欠陥修正]" "true" \
+  "$(grep -q '^- newfile.txt' "$P" && echo true || echo false)"
+assert_eq "変更ファイル note に footprint 明示" "true" \
+  "$(grep -q 'footprint' "$P" && echo true || echo false)"
 assert_eq "pre-existing 注記 (docs/preexisting.md)" "true" \
   "$(grep -qF -- '- docs/preexisting.md  ⚠ pre-existing' "$P" && echo true || echo false)"
 
-# -- Case B: worker 未コミット (commit 範囲空) → degraded working-tree diff --
+# -- Case B: commits あり but footprint 空 (空/revert コミット) → placeholder (degraded に誤フォールバックしない) --
 echo ""
-echo "-- Case B: 未コミット → degraded working-tree diff --"
-# session_start/end は Case A のものが残る (range=BASE111..END222)。range diff / log を空にして degraded 経路へ。
+echo "-- Case B: commits あり + footprint 空 → 'no file changes since baseline' [cursor 欠陥修正] --"
+# session_start/end は Case A の pane42 baseline BASE111..END222 が残る。
+# git diff <baseline> / untracked を空に、commit log は非空 (空 or revert コミットの想定)。
 _empty_outputs_kvs
-export OE_MOCK_GIT_FILES="lib/uncommitted.sh"
-oe_verify_prompt_build "RTEST_PROMPT_DEGRADED" "$target_pane_id" "$target_session_id" "$target_envelope_path"
-unset OE_MOCK_GIT_FILES
-PD="$OE_VERIFY_PROMPT_PATH"
+export OE_MOCK_GIT_LOG="- ccc333 revert: undo previous"
+oe_verify_prompt_build "RTEST_PROMPT_EMPTY" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+unset OE_MOCK_GIT_LOG
+PE="$OE_VERIFY_PROMPT_PATH"
 
-assert_eq "degraded: working-tree diff file (lib/uncommitted.sh)" "true" \
-  "$(grep -q '^- lib/uncommitted.sh' "$PD" && echo true || echo false)"
-assert_eq "degraded: 変更ファイル note に degraded 明示" "true" \
-  "$(grep -q 'degraded' "$PD" && echo true || echo false)"
-assert_eq "degraded: 完了報告に未コミット注記" "true" \
-  "$(grep -q 'コミットなし' "$PD" && echo true || echo false)"
+assert_eq "empty footprint: 完了報告に commit (ccc333)" "true" \
+  "$(grep -q 'ccc333 revert' "$PE" && echo true || echo false)"
+assert_eq "empty footprint: 変更ファイルは 'no file changes since baseline'" "true" \
+  "$(grep -q 'no file changes since baseline' "$PE" && echo true || echo false)"
+assert_eq "empty footprint: degraded/未コミット と誤表示しない" "false" \
+  "$(grep -qE 'degraded|worker が未コミット' "$PE" && echo true || echo false)"
 
 # -- Case C: KVS outputs[] は commit 範囲より優先される --
 echo ""
@@ -372,10 +383,28 @@ assert_eq "pane フィルタ: prompt に target pane_id=42" "true" \
 assert_eq "pane フィルタ: 別 pane 99 の state_change は混入しない" "false" \
   "$(grep -q '"pane_id": 99' "$filter_prompt_path" && echo true || echo false)"
 
+# -- Case E: baseline 未解決 (session_start なし) → degraded working-tree diff --
+echo ""
+echo "-- Case E: baseline 未解決 → degraded working-tree diff --"
+# 別 session (audit に session_start なし) を使い baseline を未解決にする。
+nobase_sid="RTEST_NOBASE_SID"
+export OE_MOCK_GIT_FILES="lib/degraded.sh"
+oe_verify_prompt_build "RTEST_PROMPT_NOBASE" "$target_pane_id" "$nobase_sid" "$target_envelope_path"
+unset OE_MOCK_GIT_FILES
+PN="$OE_VERIFY_PROMPT_PATH"
+
+assert_eq "degraded: commit_range 未解決" "true" \
+  "$(grep -q '^commit_range: <未解決>' "$PN" && echo true || echo false)"
+assert_eq "degraded: working-tree diff file (lib/degraded.sh)" "true" \
+  "$(grep -q '^- lib/degraded.sh' "$PN" && echo true || echo false)"
+assert_eq "degraded: 変更ファイル note に degraded + baseline 未解決 明示" "true" \
+  "$(grep -q 'degraded: baseline 未解決' "$PN" && echo true || echo false)"
+
 rm -f "/tmp/oe-RTEST_PROMPT_RANGE-verify-inputs.md" \
-  "/tmp/oe-RTEST_PROMPT_DEGRADED-verify-inputs.md" \
+  "/tmp/oe-RTEST_PROMPT_EMPTY-verify-inputs.md" \
   "/tmp/oe-RTEST_PROMPT_OUTPUTS-verify-inputs.md" \
-  "/tmp/oe-RTEST_PROMPT_FILTER-verify-inputs.md"
+  "/tmp/oe-RTEST_PROMPT_FILTER-verify-inputs.md" \
+  "/tmp/oe-RTEST_PROMPT_NOBASE-verify-inputs.md"
 
 # ---- Phase C: oe_verify_envelope_create に prompt path を渡すと read_docs に 5 件目が追加される ----
 echo ""
