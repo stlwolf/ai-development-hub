@@ -35,7 +35,7 @@ depends:
 3. `persistent-exploration` の突破口チェックリスト（API 直接・DB 状態・マイグレーション履歴等）でコード側の代替アプローチを尽くす。
 4. 入出力のコードパスに未読が無くなって初めて外部要因の仮説に進む。
    - **engine 統合経路**（効果は未測定・#177 で観測予定＝so-compare 手動反証を engine 統合・再現可能にした段階）: 外部要因へ進む確定の前に、「コードパスは読了し原因は外部要因である」を `claim` とした claim doc（frontmatter ＋ body に `hypothesis-*.md` 群＋read-state を集約）を `oe-refute --claim <doc> --rubric exploration` で**同期反証**する。生成と物理分離した独立レーンが breadth(軸5＝未読パス/未試行が残らないか)/grounding(軸3＝根拠) レンズで反証し、`{verdict, reason, output_dir}` が `refuted` なら外部要因ジャンプを**保留**する。`output_dir` は揮発するので verdict/reason の**内容**を確定時証跡へ転記する（パスだけに頼らない）。
-   - `oe-refute` / `so-compare` が使えない / timeout する場合は、外部要因ジャンプの確定を止めて人間承認を取る（黙って skip しない）。
+   - **弱 SO の終了条件**（`docs/specs/document-format.md` §3.1）: `oe-refute` / `so-compare` が使えない、または**全レーンが実返却なし**（`timeout_empty` の1回リトライ後も空、あるいは `success_empty`〔exit0 だが空〕で全レーン空。後者は機構上 partial＝exit1 計上だが、実返却ゼロなので "0 はなし" 抵触）なら、外部要因ジャンプの確定を止めて人間承認を取る（黙って skip しない）。partial は**実返却が 1 レーン以上あるとき**に限り disclose して進んでよい（advisory）。
 
 ## hypothesis ファイルフォーマット
 

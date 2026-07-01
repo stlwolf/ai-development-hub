@@ -32,6 +32,21 @@ description: 蒸留パイプライン文書（kickoff/episode/decision/discussio
 | `type` | enum | `discussion` / `kickoff` / `plan` / `episode` / `decision` |
 | `status` | enum | `draft` / `in-development` / `stable` / `deprecated` |
 
+### kickoff / plan は `so` モードを必須で宣言する
+
+`kickoff` / `plan` を作成するときは、frontmatter に **`so` モードを必須**で入れる（SO を**設計段階で選択・記録**する）:
+
+```yaml
+so:
+  design: weak | strong   # 設計 SO のモード
+  impl: weak | strong     # 実装 SO のモード
+  reason: "<なぜそのモードか>"
+```
+
+- **強 SO** = `peer-ai-review`（全レーン返却＋合意まで iterate・partial=再試行・0=不可）。高難易度/高リスク/不可逆に。
+- **弱 SO** = `so-compare` / `oe-refute` / `oe-review`（1 周可・partial=disclose して進む・**0=SO 未実施扱いで再試行/escalate＝最低 1 レーン必須="0 はなし"**）。低〜中難易度/可逆に。
+- レーン数・モデルは mode に焼かず都度指定（直交・既定ポリシーは `orchestration-toolkit`）。定義の正本は `docs/specs/document-format.md` §3.1。
+
 ### 文書型の選び方
 
 | type | 用途 | フォーマット深度 |
