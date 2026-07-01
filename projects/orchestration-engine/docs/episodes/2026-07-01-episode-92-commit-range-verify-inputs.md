@@ -79,4 +79,7 @@ tags: [orchestration, verification-gate, commit-range, design-so, impl-so, refra
 - **status**: stable / 達成度 = **部分達成**（単一 UC 分の変更ファイル・完了報告は達成、multi-pane と verdict 注入は明示 defer）。
 - **evidence anchor**: 設計SO 3 ラウンド（audit `…4P78` / `…NMG0` / `…1Q8N`）・実装SO 2 ラウンド（`…MCG6` refuted → `…KD15` survived）。生出力は `tmp/oe-refute-*` / `tmp/oe-review-*`（揮発）だが verdict と要点は本文に転記済み。
 - **back-propagation**: #92 の issue framing（working-tree diff 前提・「commit で diff 空=問題」）が今回の設計で覆った → README 派生 issue 表の #92 行を landed スコープに更新。
+- **PR**: [#219](https://github.com/stlwolf/ai-development-hub/pull/219)。マージ・worktree 掃除は人間/親（本 session はしない）。
 - **PR レビュー後の追記**: Copilot review の実質指摘があれば本 closure に追記（マージ前）。
+
+Step4 辞退: heavy tier の closure 外部チェック（`so-compare`）を起動したが SO lanes が空出力（env: codex は 240s 内に stdout を emit せず / claude-safe 空）で usable な結果を得られず。closure の 4 観点は本 episode で機械検証可能なため辞退。 / 既存チェックで覆った観点: 省略チェック（失敗＝本文の主内容・設計SO 3R + 実装SO refuted→survived を audit_id つきで全記載）/ routing（全 5 follow-up に行き先付与）/ evidence anchor（audit_id 5 件を本文転記・`tmp/oe-refute-*` / `tmp/oe-review-*` の verdict JSON と突合可）/ back-propagation（#92 issue framing の欠陥 → README #92 行を更新）。 / 未実施観点と判断: なし（4 観点すべて covered・低リスク）。
