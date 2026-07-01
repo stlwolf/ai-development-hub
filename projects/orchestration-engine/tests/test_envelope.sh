@@ -50,7 +50,11 @@ JSON="$OE_ENVELOPE_PATH"
 
 assert_eq "session_id" "TEST_SESSION_01" "$(jq -r '.session_id' "$JSON")"
 assert_eq "pane_id" "42" "$(jq -r '.pane_id' "$JSON")"
-assert_eq "task.description" "Test task description" "$(jq -r '.task.description' "$JSON")"
+# #92: task.description は元タスク + 完了プロトコル (commit してから終了) の付与形になる。
+assert_eq "task.description は元タスクで始まる" "true" \
+  "$(jq -r '.task.description' "$JSON" | head -1 | grep -qxF 'Test task description' && echo true || echo false)"
+assert_eq "task.description に完了プロトコル (commit 指示) を付与" "true" \
+  "$(jq -r '.task.description' "$JSON" | grep -q '完了プロトコル' && echo true || echo false)"
 assert_eq "task.output_dir" "./output" "$(jq -r '.task.output_dir' "$JSON")"
 assert_eq "task.exit_conditions.marker" "@@OE_EXIT" "$(jq -r '.task.exit_conditions.marker' "$JSON")"
 assert_eq "task.exit_conditions.timeout_seconds" "300" "$(jq -r '.task.exit_conditions.timeout_seconds' "$JSON")"
