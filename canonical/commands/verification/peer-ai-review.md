@@ -1,6 +1,6 @@
 ---
 name: peer-ai-review
-description: 修正タスクや設計判断に対して、Codex CLIとClaude Codeにピアレビューを依頼し、3者合意に至るまでイテレーションを繰り返す。SOプロンプト構成、カバレッジギャップ分析、レビューログ運用を含む。
+description: 修正タスクや設計判断に対して、Codex CLIとClaude Codeにピアレビューを依頼し、3者合意に至るまでイテレーションを繰り返す。**強 SO**（全レーン返却＋合意まで iterate・partial=再試行・0=不可）。SOプロンプト構成、カバレッジギャップ分析、レビューログ運用を含む。
 depends:
   - skill: so-compare
   - skill: persistent-exploration
@@ -14,6 +14,8 @@ depends:
 
 修正タスクや設計判断に対して、Codex CLI と Claude Code にピアレビューを依頼し、自分の判断と比較する。
 **3者（自分 / Codex / Claude）が合意に至るまでイテレーションを繰り返す。1回で終わらせる必要はない。**
+
+> **SO モード: 強 SO**（強/弱の定義は `docs/specs/document-format.md` §3.1）。**終了条件**: 指定全レーン返却＋全レーン合意（material 残ゼロ）まで iterate（partial=再試行で埋める・**0=不可＝全返却が条件**）。高難易度/高リスク/不可逆に。低〜中で可逆・1 周で足りるなら **弱 SO**（`so-compare` / `oe-refute` / `oe-review`）を使う。
 
 ## 入力形式
 

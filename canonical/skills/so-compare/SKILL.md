@@ -1,11 +1,13 @@
 ---
 name: so-compare
-description: so-compare.shでセカンドオピニオン（Codex/Claude/Cursor）を取得し、結果を比較する。ピアレビュー、修正方針の検証、設計判断の反証に使用する。プロンプト設計原則、結果読み込み手順、合意判定基準を含む。
+description: so-compare.shでセカンドオピニオン（Codex/Claude/Cursor）を取得し、結果を比較する。ピアレビュー、修正方針の検証、設計判断の反証に使用する。**弱 SO**（1周可・partial=disclose・0はなし）。プロンプト設計原則、結果読み込み手順、合意判定基準を含む。
 depends:
   - cli: so-compare
 ---
 
 # SO Compare — セカンドオピニオン比較
+
+> **SO モード: 弱 SO**（強/弱の定義は `docs/specs/document-format.md` §3.1）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（一部 timeout）=**disclose して進む**（advisory）／**0（全 timeout/空）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。機構: `SO_TIMEOUT`（既定 240）は**初回試行の基準**・`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
 
 ## スクリプトの場所
 

@@ -79,6 +79,10 @@ related:
     ref: "~/.cursor/plans/adversarial-review_skill_plan_981ae49b.plan.md"
     reason: "変換元プラン"
 tags: []  # 推測禁止。明示的なタグ情報がある場合のみ
+so:                       # SO モード（§3.1・kickoff 必須）。プランから推測不可＝要選択（既定 weak 提案）
+  design: weak | strong
+  impl: weak | strong
+  reason: "<要選択>"
 ```
 
 | 入力フィールド | 出力フィールド | 変換ルール |
@@ -93,6 +97,7 @@ tags: []  # 推測禁止。明示的なタグ情報がある場合のみ
 | _(新規)_ | `scope` | Context 内の記述から推測（例: `canonical` スキル関連なら `canonical`）。推測不可な場合は省略（フィールド自体を出力しない） |
 | _(新規)_ | `related[]` | Context セクションのURL・パスを構造化。不明な場合は `derived_from` のみ |
 | _(新規)_ | `tags` | 推測禁止。ソースに明示的なタグ情報がある場合のみ使用。不明な場合は空配列 `[]` |
+| _(新規)_ | `so` | SO モード（§3.1・kickoff 必須）。プランから推測不可＝**要選択**（既定 `weak` を提案し、高難易度/高リスク/不可逆なら `strong`）。省略しない |
 
 **リポジトリのプランMD → Kickoff:**
 
@@ -191,6 +196,7 @@ related:
 ```
 ## 必須チェック
 - [ ] frontmatter に title, date, type: kickoff が含まれている
+- [ ] frontmatter に `so`（`design`/`impl`/`reason`）が含まれている（§3.1・kickoff 必須。推測不可なら要選択プレースホルダで残す）
 - [ ] プランの全Stepが「## 実装計画」配下に含まれている
 - [ ] プランの全GATEが含まれている
 - [ ] プランの全STOP（Stage境界）が含まれている
