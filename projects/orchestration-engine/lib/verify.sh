@@ -134,11 +134,36 @@ The marker must be on its own line, no surrounding spaces, exact case. The shell
 #
 # F4: engine は skill prompt 本文を組み立てない。3 入力の構造化抽出のみ。
 #     検証 agent が use_skills + read_docs で skill を読んで自分でプロンプトを組み立てる。
-# F7: outputs[] は MVP では常に空配列のため、git diff --name-only パスが常時選択される。
-#     outputs[] の書き込み拡張は本 Step スコープ外。
+#
+# #92 (設計 D): 評価単位を「作業ツリー diff の推定」から「commit 範囲 baseline..end」に変える。
+#   設計SO 3 ラウンドで working-tree diff は pane-blind / pre-existing dirty 混入 / output_dir 契約破綻が
+#   構造的欠陥と確定。baseline は spawn 時 (session_start payload.git_head)、end は worker 終了時
+#   (session_end payload.git_head) を audit から解決する。
+#   - 変更ファイル = git diff --name-only baseline..end (per-pane・output_dir 非依存・範囲外の余計変更も可視)。
+#     baseline 時点で既に dirty だったファイルは「pre-existing」注記 (worker の git add -A 巻き込みを可視化)。
+#   - 完了報告 = git log baseline..end (skill 契約(2)「コミットログ」に合致)。旧 state_change enum は
+#     engine 分類状態 (補助) に relabel。
+#   - worker 未コミット (範囲空) / baseline 未解決時は working-tree diff に degraded フォールバック (縮退を明示)。
+#   残 (別 follow-up): multi-pane 帰属 (branch/worktree) / reviewer verdict チャネルの marker 注入 (#101)。
+
+# _oe_verify_annotate_files — 変更ファイル行を組み立て、baseline 時点で既に dirty だったパスに注記を付ける。
+# 引数: files (改行区切りのパス), baseline_dirty (改行区切りの baseline dirty パス集合)
+_oe_verify_annotate_files() {
+  local files="$1"
+  local baseline_dirty="$2"
+  local f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if [[ -n "$baseline_dirty" ]] && printf '%s\n' "$baseline_dirty" | grep -qxF -- "$f"; then
+      printf -- '- %s  ⚠ pre-existing at baseline (worker が既存 dirty を巻き込んだ可能性・独立検証せよ)\n' "$f"
+    else
+      printf -- '- %s\n' "$f"
+    fi
+  done <<< "$files"
+}
+
 oe_verify_prompt_build() {
   local reviewer_session_id="$1"
-  # shellcheck disable=SC2034  # API 安定化のため引数として保持 (将来 per-pane 拡張で使用予定)
   local target_pane_id="$2"
   local target_session_id="$3"
   local target_envelope_path="$4"
@@ -157,9 +182,41 @@ oe_verify_prompt_build() {
     task_description="(target envelope not found: $target_envelope_path)"
   fi
 
-  # 完了報告: audit JSONL から target_pane_id の最後の state_change イベントを抽出
-  # Copilot #3 反映: 全セッションの最後の state_change ではなく、target_pane_id でフィルタする
-  # (oe_verify_run_phase は複数 target pane を順次扱うため、混線を避ける)
+  # #92: baseline / end / baseline_dirty を audit の session_start / session_end payload から
+  #   target_pane_id で解決する (複数 target pane を順次扱うため pane フィルタで混線回避)。
+  local baseline_head="" end_head="" baseline_dirty=""
+  if [[ -f "$audit_path" ]]; then
+    # audit は JSONL のため -s (slurp) で配列化してから map する。
+    baseline_head="$(jq -r -s --argjson pid "$target_pane_id" \
+      'map(select(.event_type == "session_start" and .pane_id == $pid)) | last | .payload.git_head // ""' \
+      "$audit_path")"
+    baseline_dirty="$(jq -r -s --argjson pid "$target_pane_id" \
+      'map(select(.event_type == "session_start" and .pane_id == $pid)) | last | (.payload.baseline_dirty // []) | .[]' \
+      "$audit_path")"
+    end_head="$(jq -r -s --argjson pid "$target_pane_id" \
+      'map(select(.event_type == "session_end" and .pane_id == $pid)) | last | .payload.git_head // ""' \
+      "$audit_path")"
+  fi
+  # end が materialize されていなければ現在 HEAD にフォールバック
+  # (単一 UC synchronous では verify は monitor 完了直後に走るため worker 終了時と一致)。
+  if [[ -z "$end_head" ]]; then
+    end_head="$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)"
+  fi
+
+  local range=""
+  [[ -n "$baseline_head" && -n "$end_head" ]] && range="${baseline_head}..${end_head}"
+
+  # 完了報告: commit 範囲 baseline..end の git log を正本にする。
+  local commit_log_block=""
+  if [[ -n "$range" ]]; then
+    commit_log_block="$(git -C "$PROJECT_DIR" log --no-color --format='- %h %s' "$range" 2>/dev/null || true)"
+  fi
+  if [[ -z "$commit_log_block" ]]; then
+    commit_log_block="(commit 範囲 ${range:-<未解決>} にコミットなし。worker が未コミットの可能性。engine 分類状態と変更ファイルで判断せよ)"
+  fi
+
+  # engine 分類状態 (補助): audit の最後の state_change。engine の failure-taxonomy 分類であり、
+  # 実装者の完了報告ではない (旧「完了報告」ラベルは誤りだったため relabel)。
   local last_state_change
   if [[ -f "$audit_path" ]]; then
     last_state_change="$(jq -s --argjson pid "$target_pane_id" \
@@ -172,8 +229,8 @@ oe_verify_prompt_build() {
     last_state_change="(audit log not found: $audit_path)"
   fi
 
-  # 変更ファイル: KVS の outputs[] を優先、空なら git diff --name-only にフォールバック (F7)
-  local changed_files_block
+  # 変更ファイル: KVS outputs[] 優先 → commit 範囲 diff → degraded working-tree diff → placeholder。
+  local changed_files_block="" changed_files_note=""
   local outputs_count=0
   if [[ -f "$kvs_path" ]]; then
     outputs_count="$(jq '(.outputs // []) | length' "$kvs_path")"
@@ -181,15 +238,25 @@ oe_verify_prompt_build() {
 
   if [[ "$outputs_count" -gt 0 ]]; then
     changed_files_block="$(jq -r '.outputs[] | "- " + .' "$kvs_path")"
+    changed_files_note="(source: KVS outputs[])"
   else
-    # フォールバック: git diff --name-only (MVP では常にこちらが選択される)
-    # iter2 #3252519559 反映: PROJECT_DIR で git を実行することで、caller の CWD に依存しない安定した
-    # 結果を得る。target task の実際の output_dir に紐づけるのは派生 Issue #92 のスコープ。
-    local git_output
-    if git_output="$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null)" && [[ -n "$git_output" ]]; then
-      changed_files_block="$(printf '%s\n' "$git_output" | awk 'NF { print "- " $0 }')"
+    local range_files=""
+    if [[ -n "$range" ]]; then
+      range_files="$(git -C "$PROJECT_DIR" diff --name-only "$range" 2>/dev/null || true)"
+    fi
+    if [[ -n "$range_files" ]]; then
+      changed_files_block="$(_oe_verify_annotate_files "$range_files" "$baseline_dirty")"
+      changed_files_note="(source: git diff --name-only ${range})"
     else
-      changed_files_block="(no changes detected from KVS outputs[] or git diff)"
+      # degraded: commit 範囲が空/未解決 → working-tree diff (無関係な変更を含み得る)
+      local wt_files
+      wt_files="$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null || true)"
+      if [[ -n "$wt_files" ]]; then
+        changed_files_block="$(printf '%s\n' "$wt_files" | awk 'NF { print "- " $0 }')"
+        changed_files_note="(degraded: working-tree diff — worker が未コミットのため commit 範囲を取れず。無関係な変更を含み得る。実コードで裏取りせよ)"
+      else
+        changed_files_block="(no changes detected: commit 範囲空 + working-tree diff 空)"
+      fi
     fi
   fi
 
@@ -198,13 +265,18 @@ oe_verify_prompt_build() {
     printf '# Compliance Review Inputs\n\n'
     printf 'reviewer_session_id: %s\n' "$reviewer_session_id"
     printf 'target_session_id: %s\n' "$target_session_id"
-    printf 'target_pane_id: %s\n\n' "$target_pane_id"
+    printf 'target_pane_id: %s\n' "$target_pane_id"
+    printf 'commit_range: %s\n\n' "${range:-<未解決>}"
     printf '## 要件 (Task description)\n\n'
     printf '%s\n\n' "$task_description"
-    printf '## 完了報告 (Latest state_change event)\n\n'
+    printf '## 完了報告 (Commit log: %s)\n\n' "${range:-<未解決>}"
+    printf '**注**: これは被検証者 (worker) の自己申告です。adversarial-review の原則どおり報告を信用せず、必ず実コード (下記変更ファイル) を確認してください。\n\n'
+    # shellcheck disable=SC2016  # backticks in single quotes are literal Markdown fences here
+    printf '```\n%s\n```\n\n' "$commit_log_block"
+    printf '## engine 分類状態 (Latest state_change・補助シグナル)\n\n'
     # shellcheck disable=SC2016  # backticks in single quotes are literal Markdown fences here
     printf '```json\n%s\n```\n\n' "$last_state_change"
-    printf '## 変更ファイル (Changed files)\n\n'
+    printf '## 変更ファイル (Changed files) %s\n\n' "$changed_files_note"
     printf '%s\n' "$changed_files_block"
   } > "$prompt_path"
 

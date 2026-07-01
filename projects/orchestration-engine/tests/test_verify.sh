@@ -36,21 +36,37 @@ assert_eq() {
 # OE_MOCK_GIT_FILES が設定されていればそれを返し、未設定なら空文字列を返す
 cat > "${_TMP_DIR}/bin/git" <<'EOF'
 #!/usr/bin/env bash
-# iter2 #3252519559 反映: verify.sh は `git -C "$PROJECT_DIR" diff --name-only` 形式で呼ぶようになった。
-# 先頭の -C <dir> を skip して subcommand を判定する。
+# iter2 #3252519559 反映: verify.sh は `git -C "$PROJECT_DIR" ...` 形式で呼ぶ。先頭の -C <dir> を skip。
+# #92 (設計 D): commit 範囲評価のため diff <range> / log / rev-parse を追加でモックする。
 args=("$@")
 i=0
-# -C <path> を skip
 if [[ "${args[0]:-}" == "-C" && -n "${args[1]:-}" ]]; then
   i=2
 fi
-if [[ "${args[i]:-}" == "diff" && "${args[$((i+1))]:-}" == "--name-only" ]]; then
-  if [[ -n "${OE_MOCK_GIT_FILES:-}" ]]; then
-    printf '%s\n' "${OE_MOCK_GIT_FILES}"
+sub="${args[i]:-}"
+if [[ "$sub" == "diff" && "${args[$((i+1))]:-}" == "--name-only" ]]; then
+  # range 引数 (args[i+2]) の有無で range diff / working-tree diff を分岐:
+  #   range あり → OE_MOCK_GIT_RANGE_FILES (commit 範囲) / range なし → OE_MOCK_GIT_FILES (working-tree)
+  if [[ -n "${args[$((i+2))]:-}" ]]; then
+    [[ -n "${OE_MOCK_GIT_RANGE_FILES:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_RANGE_FILES}"
+  else
+    [[ -n "${OE_MOCK_GIT_FILES:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_FILES}"
   fi
   exit 0
 fi
-# git diff 以外の git は素通り (実 git を使う)
+if [[ "$sub" == "log" ]]; then
+  [[ -n "${OE_MOCK_GIT_LOG:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_LOG}"
+  exit 0
+fi
+if [[ "$sub" == "rev-parse" ]]; then
+  printf '%s\n' "${OE_MOCK_GIT_HEAD:-0000000000000000000000000000000000000000}"
+  exit 0
+fi
+if [[ "$sub" == "status" ]]; then
+  [[ -n "${OE_MOCK_GIT_DIRTY:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_DIRTY}"
+  exit 0
+fi
+# その他の git は素通り (実 git を使う)
 exec /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/git "$@"
 EOF
 chmod +x "${_TMP_DIR}/bin/git"
@@ -242,16 +258,78 @@ assert_eq "payload.reviewer_pane_id" "888" \
 assert_eq "payload.reviewer_session_id" "$reviewer_session_id_for_spawn" \
   "$(jq -r 'select(.event_type=="verification_started") | .payload.reviewer_session_id' "$target_audit")"
 
-# ---- Phase C: oe_verify_prompt_build (3 入力の構造化抽出) ----
+# ---- Phase C: oe_verify_prompt_build (#92 設計 D: commit 範囲 baseline..end 評価) ----
 echo ""
-echo "=== oe_verify_prompt_build (Phase C) ==="
+echo "=== oe_verify_prompt_build (Phase C・#92 commit 範囲) ==="
 
-# 既に oe_verify_spawn 経由で target session の audit log に verification_started イベントが
-# 書かれている。Phase C 用に state_change イベントを追記:
+# 補助シグナルの state_change (engine 分類状態)
 oe_audit_emit "state_change" "$target_session_id" "$target_pane_id" "success" '{"from":"progress","to":"success"}'
 
-# Case 1: KVS に outputs[] が複数あるケース (git フォールバックは呼ばれない)
 target_kvs_file="${OE_STATE_DIR}/${target_session_id}.state.json"
+_empty_outputs_kvs() {
+  cat > "$target_kvs_file" <<'JSON'
+{
+  "session_id": "01KRMYHMET73WDE32JXD1TZ0A4",
+  "pane_id": 42,
+  "state": "success",
+  "last_updated": "2026-05-15T12:34:56Z",
+  "outputs": [],
+  "blockers": []
+}
+JSON
+}
+
+# -- Case A: commit 範囲 baseline..end からの変更ファイル + commit log + pre-existing 注記 --
+echo "-- Case A: commit 範囲 (session_start baseline + session_end end) --"
+oe_audit_emit "session_start" "$target_session_id" "$target_pane_id" "" '{"git_head":"BASE111","baseline_dirty":["docs/preexisting.md"]}'
+oe_audit_emit "session_end" "$target_session_id" "$target_pane_id" "success" '{"git_head":"END222"}'
+_empty_outputs_kvs
+export OE_MOCK_GIT_RANGE_FILES="lib/feature.sh
+docs/preexisting.md"
+export OE_MOCK_GIT_LOG="- abc123 feat: add feature
+- def456 wip: docs"
+oe_verify_prompt_build "RTEST_PROMPT_RANGE" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+unset OE_MOCK_GIT_RANGE_FILES OE_MOCK_GIT_LOG
+P="$OE_VERIFY_PROMPT_PATH"
+
+assert_eq "OE_VERIFY_PROMPT_PATH set" "/tmp/oe-RTEST_PROMPT_RANGE-verify-inputs.md" "$P"
+assert_eq "prompt file exists" "true" "$( [[ -f "$P" ]] && echo true || echo false )"
+assert_eq "section: 要件" "true" "$(grep -q '^## 要件' "$P" && echo true || echo false)"
+assert_eq "section: 完了報告 (commit log)" "true" "$(grep -q '^## 完了報告 (Commit log: BASE111..END222)' "$P" && echo true || echo false)"
+assert_eq "section: engine 分類状態" "true" "$(grep -q '^## engine 分類状態' "$P" && echo true || echo false)"
+assert_eq "section: 変更ファイル" "true" "$(grep -q '^## 変更ファイル' "$P" && echo true || echo false)"
+assert_eq "commit_range メタ = BASE111..END222" "true" "$(grep -q '^commit_range: BASE111..END222' "$P" && echo true || echo false)"
+assert_eq "要件 = target.task.description" "true" \
+  "$(grep -q 'Target task description' "$P" && echo true || echo false)"
+assert_eq "完了報告に commit log (abc123)" "true" \
+  "$(grep -q 'abc123 feat: add feature' "$P" && echo true || echo false)"
+assert_eq "engine 分類状態に state_change イベント" "true" \
+  "$(grep -qE '"event_type": ?"state_change"' "$P" && echo true || echo false)"
+assert_eq "変更ファイルに range file (lib/feature.sh)" "true" \
+  "$(grep -q '^- lib/feature.sh' "$P" && echo true || echo false)"
+assert_eq "pre-existing 注記 (docs/preexisting.md)" "true" \
+  "$(grep -qF -- '- docs/preexisting.md  ⚠ pre-existing' "$P" && echo true || echo false)"
+
+# -- Case B: worker 未コミット (commit 範囲空) → degraded working-tree diff --
+echo ""
+echo "-- Case B: 未コミット → degraded working-tree diff --"
+# session_start/end は Case A のものが残る (range=BASE111..END222)。range diff / log を空にして degraded 経路へ。
+_empty_outputs_kvs
+export OE_MOCK_GIT_FILES="lib/uncommitted.sh"
+oe_verify_prompt_build "RTEST_PROMPT_DEGRADED" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+unset OE_MOCK_GIT_FILES
+PD="$OE_VERIFY_PROMPT_PATH"
+
+assert_eq "degraded: working-tree diff file (lib/uncommitted.sh)" "true" \
+  "$(grep -q '^- lib/uncommitted.sh' "$PD" && echo true || echo false)"
+assert_eq "degraded: 変更ファイル note に degraded 明示" "true" \
+  "$(grep -q 'degraded' "$PD" && echo true || echo false)"
+assert_eq "degraded: 完了報告に未コミット注記" "true" \
+  "$(grep -q 'コミットなし' "$PD" && echo true || echo false)"
+
+# -- Case C: KVS outputs[] は commit 範囲より優先される --
+echo ""
+echo "-- Case C: KVS outputs[] 優先 --"
 cat > "$target_kvs_file" <<'JSON'
 {
   "session_id": "01KRMYHMET73WDE32JXD1TZ0A4",
@@ -262,77 +340,42 @@ cat > "$target_kvs_file" <<'JSON'
   "blockers": []
 }
 JSON
+export OE_MOCK_GIT_RANGE_FILES="lib/should_not_appear.sh"
+oe_verify_prompt_build "RTEST_PROMPT_OUTPUTS" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+unset OE_MOCK_GIT_RANGE_FILES
+PO="$OE_VERIFY_PROMPT_PATH"
 
-echo "-- Case 1: KVS の outputs[] を使用 --"
-oe_verify_prompt_build "RTEST_PROMPT_01" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+assert_eq "outputs[] 優先: src/foo.sh" "true" \
+  "$(grep -q '^- src/foo.sh' "$PO" && echo true || echo false)"
+assert_eq "outputs[] 優先: range file は出ない" "false" \
+  "$(grep -q 'should_not_appear' "$PO" && echo true || echo false)"
 
-assert_eq "OE_VERIFY_PROMPT_PATH set" "/tmp/oe-RTEST_PROMPT_01-verify-inputs.md" "$OE_VERIFY_PROMPT_PATH"
-assert_eq "prompt file exists" "true" "$( [[ -f "$OE_VERIFY_PROMPT_PATH" ]] && echo true || echo false )"
-
-assert_eq "section: 要件" "true" "$(grep -q '^## 要件' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "section: 完了報告" "true" "$(grep -q '^## 完了報告' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "section: 変更ファイル" "true" "$(grep -q '^## 変更ファイル' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-
-assert_eq "要件 = target.task.description" "true" \
-  "$(grep -q 'Target task description' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "完了報告に state_change イベント" "true" \
-  "$(grep -qE '"event_type": ?"state_change"' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "変更ファイルに outputs[0]" "true" \
-  "$(grep -q '^- src/foo.sh' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "変更ファイルに outputs[1]" "true" \
-  "$(grep -q '^- tests/test_foo.sh' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-
-# Case 2: KVS の outputs[] が空 → git diff フォールバック (git mock 経由)
+# -- Case D: baseline / state_change は target_pane_id でフィルタ (別 pane を混入させない) --
 echo ""
-echo "-- Case 2: outputs[] 空 → git diff --name-only フォールバック --"
-
-cat > "$target_kvs_file" <<'JSON'
-{
-  "session_id": "01KRMYHMET73WDE32JXD1TZ0A4",
-  "pane_id": 42,
-  "state": "success",
-  "last_updated": "2026-05-15T12:34:56Z",
-  "outputs": [],
-  "blockers": []
-}
-JSON
-
-export OE_MOCK_GIT_FILES="lib/changed.sh
-tests/test_changed.sh"
-oe_verify_prompt_build "RTEST_PROMPT_GIT" "$target_pane_id" "$target_session_id" "$target_envelope_path"
-unset OE_MOCK_GIT_FILES
-
-assert_eq "prompt path (git fallback)" "/tmp/oe-RTEST_PROMPT_GIT-verify-inputs.md" "$OE_VERIFY_PROMPT_PATH"
-assert_eq "git fallback: lib/changed.sh" "true" \
-  "$(grep -q '^- lib/changed.sh' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "git fallback: tests/test_changed.sh" "true" \
-  "$(grep -q '^- tests/test_changed.sh' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-assert_eq "git fallback: outputs[0] (src/foo.sh) は含まない" "false" \
-  "$(grep -q '^- src/foo.sh' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-
-# Case 3: outputs[] 空 + git 出力も空 → "(no changes detected ...)" プレースホルダ
-echo ""
-echo "-- Case 3: outputs[] 空 + git 空 → プレースホルダ --"
-
-unset OE_MOCK_GIT_FILES
-oe_verify_prompt_build "RTEST_PROMPT_02" "$target_pane_id" "$target_session_id" "$target_envelope_path"
-assert_eq "プレースホルダ表示" "true" \
-  "$(grep -q 'no changes detected' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
-
-# Copilot #3 反映: state_change は target_pane_id でフィルタされる
-# 別 pane (99) の state_change イベントを混入させても、target (pane 42) の方が選ばれることを確認
-echo ""
-echo "-- Copilot #3: oe_verify_prompt_build は state_change を target_pane_id でフィルタ --"
+echo "-- Case D: pane_id フィルタ (baseline + state_change) --"
+# 別 pane 99 の session_start / state_change を混入させても pane 42 の baseline / 分類が選ばれる。
+oe_audit_emit "session_start" "$target_session_id" 99 "" '{"git_head":"OTHERBASE","baseline_dirty":[]}'
 oe_audit_emit "state_change" "$target_session_id" 99 "partial" '{"from":"progress","to":"partial","note":"different pane"}'
+_empty_outputs_kvs
+export OE_MOCK_GIT_RANGE_FILES="lib/pane42.sh"
+export OE_MOCK_GIT_LOG="- aaa111 pane42 commit"
 oe_verify_prompt_build "RTEST_PROMPT_FILTER" "$target_pane_id" "$target_session_id" "$target_envelope_path"
+unset OE_MOCK_GIT_RANGE_FILES OE_MOCK_GIT_LOG
 filter_prompt_path="$OE_VERIFY_PROMPT_PATH"
 
-assert_eq "Copilot #3: prompt に target pane_id=42 が含まれる" "true" \
+assert_eq "pane フィルタ: commit_range は pane 42 baseline (BASE111)" "true" \
+  "$(grep -q '^commit_range: BASE111..END222' "$filter_prompt_path" && echo true || echo false)"
+assert_eq "pane フィルタ: 別 pane baseline (OTHERBASE) は使わない" "false" \
+  "$(grep -q 'OTHERBASE' "$filter_prompt_path" && echo true || echo false)"
+assert_eq "pane フィルタ: prompt に target pane_id=42" "true" \
   "$(grep -q '"pane_id": 42' "$filter_prompt_path" && echo true || echo false)"
-assert_eq "Copilot #3: 別 pane 99 の state_change は混入しない" "false" \
+assert_eq "pane フィルタ: 別 pane 99 の state_change は混入しない" "false" \
   "$(grep -q '"pane_id": 99' "$filter_prompt_path" && echo true || echo false)"
 
-rm -f "/tmp/oe-RTEST_PROMPT_FILTER-verify-inputs.md"
+rm -f "/tmp/oe-RTEST_PROMPT_RANGE-verify-inputs.md" \
+  "/tmp/oe-RTEST_PROMPT_DEGRADED-verify-inputs.md" \
+  "/tmp/oe-RTEST_PROMPT_OUTPUTS-verify-inputs.md" \
+  "/tmp/oe-RTEST_PROMPT_FILTER-verify-inputs.md"
 
 # ---- Phase C: oe_verify_envelope_create に prompt path を渡すと read_docs に 5 件目が追加される ----
 echo ""

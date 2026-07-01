@@ -260,10 +260,28 @@ oe_spawn_send() {
   local cli_command
   cli_command="( umask 077 ; rm -f \"${log_path}\" ; ( ${base_cli_command} 2>&1 ; printf '\\n@@OE_EXIT:%d\\n' \$? ) | tee \"${log_path}\" )"
 
+  # #92: worker 起動 **前** に baseline を確定する (send 後だと worker の変更が baseline に入る競合窓が残る)。
+  #   - git_head: worker 開始時点の HEAD。検証ゲートが `baseline..end` の commit 範囲を評価入力にする起点。
+  #   - baseline_dirty: 開始時点で既に dirty/untracked だったパス集合。worker が `git add -A` で
+  #     これらを巻き込んでも、verify 側が「pre-existing」と注記して silent な混入を防ぐ (設計SO round3 反映)。
+  #   git 不能 (非 git workspace 等) では空で記録し、verify 側は working-tree diff に degraded フォールバックする。
+  local baseline_head baseline_dirty_json
+  baseline_head="$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)"
+  baseline_dirty_json="$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null \
+    | sed -E 's/^.{3}//; s/^.* -> //' \
+    | jq -R -s 'split("\n") | map(select(length>0))' 2>/dev/null || true)"
+  [[ -n "$baseline_dirty_json" ]] || baseline_dirty_json='[]'
+
   wez pane send "$pane_id" "$cli_command"
 
-  # session_start の state は audit schema（failure-taxonomy）と整合するため null
-  oe_audit_emit "session_start" "$session_id" "$pane_id" "" "{}"
+  # session_start: state は audit schema（failure-taxonomy）と整合するため null。
+  # payload に #92 baseline (git_head / baseline_dirty) を載せる。
+  local start_payload
+  start_payload="$(jq -cn \
+    --arg gh "$baseline_head" \
+    --argjson dirty "$baseline_dirty_json" \
+    '{git_head: $gh, baseline_dirty: $dirty}')"
+  oe_audit_emit "session_start" "$session_id" "$pane_id" "" "$start_payload"
 }
 
 # oe_spawn — 後方互換ラッパー（prepare → send）

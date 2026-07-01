@@ -193,7 +193,7 @@ MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した�
 
 | Issue | 内容 |
 |---|---|
-| [#92](https://github.com/stlwolf/ai-development-hub/issues/92) | 検証ゲート v2 検討候補: 変更ファイル検出 per-pane 化 + 完了報告内容の充実 |
+| [#92](https://github.com/stlwolf/ai-development-hub/issues/92) | 検証ゲート v2: 検証入力を **commit 範囲 (baseline..end)** 評価に変更 (単一 UC 分 landed)。変更ファイル=`git diff baseline..end`・完了報告=`git log baseline..end`・worker commit 契約 + baseline/end materialize。設計SO 3 ラウンドで working-tree diff の pane-blind/dirty 混入を構造的欠陥と確定 (→ commit 評価に reframe)。残: multi-pane 帰属 (branch/worktree)・reviewer verdict チャネルの marker 注入 ([#101](https://github.com/stlwolf/ai-development-hub/issues/101)) は別 follow-up |
 | [#93](https://github.com/stlwolf/ai-development-hub/issues/93) | reviewer 一時ファイル掃除 (前半完了) + nonce marker (後半 = MVP 後拡張) |
 | [#98](https://github.com/stlwolf/ai-development-hub/issues/98) | target ペイン出力を file redirect 経路に統一 |
 | [#99](https://github.com/stlwolf/ai-development-hub/issues/99) | bin/oe --task-file の異常系 (空 / 不在 / 不正パス) の仕様明示 |

@@ -161,6 +161,25 @@ assert_contains() {
   (( FAIL++ )) || true
 }
 
+# #92: session_end は end HEAD を materialize した payload ({"git_head":...}) を持つため、
+# 完全一致でなく prefix でアサートする (git_head 値は実行環境の HEAD で非決定的)。
+assert_contains_prefix() {
+  local label="$1"
+  local prefix="$2"
+  shift 2
+  local haystack=("$@")
+  local item
+  for item in "${haystack[@]}"; do
+    if [[ "$item" == "$prefix"* ]]; then
+      echo "  PASS: $label"
+      (( PASS++ )) || true
+      return 0
+    fi
+  done
+  echo "  FAIL: $label (prefix='$prefix' not found in [${haystack[*]}])"
+  (( FAIL++ )) || true
+}
+
 # --- テスト a: 単一ペイン EXIT:0 → ループ終了 ---
 
 echo "=== Test a: 単一ペイン EXIT:0 → ループ終了 ==="
@@ -178,7 +197,7 @@ assert_eq "scan count for p1" "1" "$(mock_scan_count p1)"
 assert_eq "KVS write count" "1" "$_MOCK_KVS_WRITE_COUNT"
 assert_eq "KVS args include session/pane/state" "sess-a|p1|success" "$_MOCK_KVS_LAST_ARGS"
 assert_contains "state_change emitted" "state_change|sess-a|p1|success|" "${_MOCK_AUDIT_CALLS[@]}"
-assert_contains "session_end emitted" "session_end|sess-a|p1|success|" "${_MOCK_AUDIT_CALLS[@]}"
+assert_contains_prefix "session_end emitted (#92: git_head payload)" 'session_end|sess-a|p1|success|{"git_head":' "${_MOCK_AUDIT_CALLS[@]}"
 assert_eq "no kill calls" "0" "${#_MOCK_KILL_CALLS[@]}"
 assert_eq "cleanup not called in monitor" "0" "$_MOCK_CLEANUP_CALLED"
 
@@ -215,7 +234,7 @@ assert_eq "OE_DONE_PANES[0]" "p1" "${OE_DONE_PANES[0]}"
 assert_eq "p1 scan count" "1" "$(mock_scan_count p1)"
 assert_eq "p2 scan count" "3" "$(mock_scan_count p2)"
 assert_contains "state_change for p1" "state_change|sess-c|p1|success|" "${_MOCK_AUDIT_CALLS[@]}"
-assert_contains "session_end for p1" "session_end|sess-c|p1|success|" "${_MOCK_AUDIT_CALLS[@]}"
+assert_contains_prefix "session_end for p1 (#92: git_head payload)" 'session_end|sess-c|p1|success|{"git_head":' "${_MOCK_AUDIT_CALLS[@]}"
 assert_contains "CB max_turns" \
   'circuit_breaker_triggered|sess-c|0||{"reason":"max_turns"}' \
   "${_MOCK_AUDIT_CALLS[@]}"

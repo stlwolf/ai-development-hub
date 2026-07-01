@@ -158,8 +158,15 @@ assert_eq "reviewer payload に rm -f reviewer.log (#216 pre-existing fix)" "tru
 assert_eq "session_start emitted" "1" \
   "$(jq -r 'select(.event_type=="session_start") | 1' "$audit_file" | wc -l | tr -d ' ')"
 assert_eq "session_start state null" "null" "$(jq -r 'select(.event_type=="session_start") | .state' "$audit_file")"
+# #92: session_start は baseline (git_head) を、session_end は end (git_head) を payload に持つ。
+assert_eq "session_start payload に git_head キー (#92 baseline)" "true" \
+  "$(jq -r 'select(.event_type=="session_start") | (.payload | has("git_head"))' "$audit_file")"
+assert_eq "session_start payload に baseline_dirty キー (#92)" "true" \
+  "$(jq -r 'select(.event_type=="session_start") | (.payload | has("baseline_dirty"))' "$audit_file")"
 assert_eq "session_end emitted" "1" \
   "$(jq -r 'select(.event_type=="session_end") | 1' "$audit_file" | wc -l | tr -d ' ')"
+assert_eq "session_end payload に git_head キー (#92 end materialize)" "true" \
+  "$(jq -r 'select(.event_type=="session_end") | (.payload | has("git_head"))' "$audit_file")"
 assert_eq "state_change emitted" "1" \
   "$(jq -r 'select(.event_type=="state_change" and .state=="success") | 1' "$audit_file" | wc -l | tr -d ' ')"
 assert_eq "cleanup emitted" "1" \

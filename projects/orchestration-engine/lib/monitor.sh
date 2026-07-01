@@ -125,7 +125,13 @@ oe_monitor_loop() {
             oe_audit_emit "state_change" "$session_id" "$pane_id" "$OE_CLASSIFY_STATE"
           fi
 
-          oe_audit_emit "session_end" "$session_id" "$pane_id" "$OE_CLASSIFY_STATE"
+          # #92: worker 終了時点 (EXIT 検出時) の HEAD を materialize して session_end payload に記録。
+          #   検証ゲートは `baseline..end` を評価するため、end を verify 実行時の HEAD に依存させず
+          #   worker 終了時刻に固定する (verify 遅延・後続 commit で範囲がずれるのを防ぐ・設計SO round3 反映)。
+          local end_head end_payload
+          end_head="$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)"
+          end_payload="$(jq -cn --arg gh "$end_head" '{git_head: $gh}')"
+          oe_audit_emit "session_end" "$session_id" "$pane_id" "$OE_CLASSIFY_STATE" "$end_payload"
           oe_capture_write_kvs "$session_id" "$pane_id" "$OE_CLASSIFY_STATE"
           OE_DONE_PANES+=("$pane_id")
           ;;

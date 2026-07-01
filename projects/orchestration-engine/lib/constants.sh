@@ -75,6 +75,18 @@ OE_TARGET_AI_MODEL="${OE_TARGET_AI_MODEL:-composer-2}"
 OE_VERIFY_AI_CLI="${OE_VERIFY_AI_CLI:-claude}"
 OE_VERIFY_AI_MODEL="${OE_VERIFY_AI_MODEL:-claude-sonnet-4-6}"
 
+# #92: target 完了プロトコル — worker は作業を commit してから完了する。
+# 検証ゲートは「commit 範囲 (baseline..end)」を変更ファイル一覧・完了報告の正本にするため
+# (作業ツリーの推定をやめる。設計SO 3ラウンドで working-tree diff の pane-blind/dirty 混入が
+#  構造的欠陥と確定)。これは engine 側の target 契約であり、検証 skill (adversarial-review) の
+# プロンプト規約ではない。oe_envelope_create が target の task.description 末尾に付与する
+# (reviewer envelope = oe_verify_envelope_create には付与しない)。
+# 未コミット時は verify 側が working-tree diff に degraded フォールバックする (縮退を隠さない)。
+OE_TARGET_COMPLETION_PROTOCOL="
+
+---
+完了プロトコル (必須): 作業が完了したら、変更したファイルを git commit してください (WIP コミットで構いません)。自分が変更したファイルのみを git add し、コミットメッセージの1行目に「何を・なぜ」を要約してください (必要なら本文に詳細)。コミット後にタスクを終了してください (シェルが完了マーカーを自動付与します)。検証者はあなたのコミット範囲を評価します。"
+
 # Step 4-4 Phase C: reviewer 一時ファイル掃除用配列 (派生 Issue #93 前半)
 # oe_verify_run_phase で reviewer ULID 生成時に append、oe_cleanup で対応する /tmp/oe-{rsid}-verify-* を削除
 OE_VERIFY_REVIEWER_SESSION_IDS=()
