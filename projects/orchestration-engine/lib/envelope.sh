@@ -21,10 +21,15 @@ oe_envelope_create() {
 
   local envelope_path="/tmp/oe-${session_id}-envelope.json"
 
+  # #92: target には完了プロトコル (commit してから終了) を task.description 末尾に付与する。
+  # これは engine 側の target 契約 (検証ゲートが commit 範囲を評価入力にするため)。
+  # constants.sh 未 source 環境 (envelope.sh 単体テスト等) では :- で空フォールバックし従来挙動。
+  local full_desc="${task_description}${OE_TARGET_COMPLETION_PROTOCOL:-}"
+
   jq -n \
     --arg sid "$session_id" \
     --argjson pid "$pane_id" \
-    --arg desc "$task_description" \
+    --arg desc "$full_desc" \
     --arg odir "$output_dir" \
     --argjson timeout "$timeout_seconds" \
     --argjson max_panes "$OE_CB_MAX_PANES" \
