@@ -114,12 +114,15 @@ actual="$("$TREE" | grep -F '%85')"
 ck "pane-issue wins" '   ├─ %85  alive  #5706 renamed ~attelu.5706' "$actual"
 
 # ----------------------------------------------------------------------------
-echo "[4] label sanitize: LF/CR/TAB/US は空白へ畳む"
+echo "[4] label sanitize: LF/CR/TAB/US/ESC/C1 を空白へ畳む（端末制御・視覚偽装の遮断）"
 # ----------------------------------------------------------------------------
 reset_state
 mkentry %60 $'bad\nlab\tx\037y' "/w/one" ""
-export MOCK_LIVE_PANES="%60"
-ck "sanitized label" '%60  alive  bad lab x y ~one' "$("$TREE")"
+mkentry %61 $'esc\033[2Jwipe\xc2\x9bcsi' "/w/esc" ""
+export MOCK_LIVE_PANES="%60 %61"
+expected='%60  alive  bad lab x y ~one
+%61  alive  esc [2Jwipe csi ~esc'
+ck "sanitized label" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
 echo "[5] 純粋 cycle: 擬似 root で描画・[cycle] 打ち切り・無限ループなし（liveness ? 経路）"
@@ -176,6 +179,8 @@ mkentry %70 "" "/w/seventy" ""
 export MOCK_LIVE_PANES="%70"
 export MOCK_PANE_TITLE="picked up title"
 ck "title fallback" '%70  alive  picked up title ~seventy' "$("$TREE")"
+export MOCK_PANE_TITLE=$'spoof\033]0;t\007end'
+ck "title sanitize (OSC/BEL)" '%70  alive  spoof ]0;t end ~seventy' "$("$TREE")"
 unset MOCK_PANE_TITLE
 
 # ----------------------------------------------------------------------------

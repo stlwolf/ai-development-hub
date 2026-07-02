@@ -326,6 +326,7 @@ oe-tree -h     # ヘルプ
 - **root 合成**: root 親は registry に entry を持たない（`parent_pane` 参照としてのみ現れる）ため合成する。ラベルは pane-issue > `pane_title`（alive のみ）> `?`（honest — 無い物を捏造しない。`oe-ident` と同方針）。子のラベルは pane-issue(.name) > registry(.label)（`oe_reg_list` と同優先順位）
 - **role 列は持たない**: ツリーは関係そのものを描くため parent/child は木の形が搬送する（`oe-ident` が role を前置するのは単一ペインの孤立表示だから）
 - **read-only / 非検出**: 触れるのは registry / pane-issue の state ファイルと tmux のペイン存在・pane_title（mux query）のみ。`oe_reg_gc` 等の write path は呼ばない（#177 / #188 の read-only 観測規律）
+- **出力 sanitize**: label / workspace の制御文字（C0 全域 + DEL + C1 = U+0000-001F / 007F / 0080-009F）を codepoint レベルで空白へ畳む。人間向け cockpit 表示のため ESC/CSI/OSC による偽行・画面消去・視覚偽装を遮断する（`oe_reg_list` の LF/CR 防御より広い — 表示ツールの脅威モデル）
 - degrade / exit: liveness query 失敗は `?` で継続。`$TMUX` 不在は scoping も liveness も成立しない（部分価値を残す degrade が構造的に無い）ため stderr note + exit 2（`oe_reg_list` / `oe_reg_resolve` の rc=2 規約と一致）。異 server の stale entry は非表示 + footer で件数開示。純粋 cycle（pane-id 再利用の理論ケース）は擬似 root で描画し `[cycle]` で打ち切り
 - follow-up（未実装・surface のみ）: `--json` 出力 / gone root ラベルの event-log 補完 / ラベル解決の共通 read ヘルパ化
 

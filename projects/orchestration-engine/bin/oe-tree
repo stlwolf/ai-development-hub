@@ -74,9 +74,13 @@ liveness_of() {
 }
 
 # --- 現 server の entry 収集（US 区切り: pane<US>parent<US>workspace<US>label）---
-# 制御文字は jq 側で空白へ畳む: US は行内プロトコルの区切りを壊し（event-bus と同根）、
-# LF/CR は行指向出力の偽行注入（oe_reg_list L155-162 と同じ防御）、TAB は表示崩れ防止
-# （oe-activity の畳み方針。oe_reg_list の注記どおりレコード境界偽造ではない — 別根拠）。
+# 制御文字は jq 側で C0 全域 + DEL + C1（U+0000-001F / 007F / 0080-009F）を空白へ畳む:
+#   - US は行内プロトコルの区切りを壊す（event-bus と同根）・LF/CR は行指向出力の偽行注入
+#     （oe_reg_list L155-162 と同じ防御）・TAB は表示崩れ（oe-activity の畳み方針）。
+#   - ESC/CSI/OSC 等はツリー行の視覚偽装・画面消去・端末制御に到達し得る（oe-delegate の
+#     --label は LF/CR しか拒否しない＝registry 経由で到達可能・実装SO codex 指摘）。
+#     oe_reg_list は ANSI を「別軸・scope 外」と注記するが、oe-tree は人間向け cockpit
+#     表示そのものなので視覚偽装が本ツールの脅威モデルに入る — codepoint レベルで畳む。
 ENTRIES=""
 FOREIGN=0
 SKIPPED=0
@@ -89,7 +93,7 @@ for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
     continue
   fi
   _line="$(jq -r '
-    def clean: tostring | gsub("[\u001f\t\r\n]"; " ");
+    def clean: tostring | gsub("[\u0000-\u001f\u007f-\u009f]"; " ");
     [ (.pane // "" | clean), (.parent_pane // "" | clean),
       (.workspace // "" | clean), (.label // "" | clean) ] | join("\u001f")
   ' "$_f" 2>/dev/null)" || { SKIPPED=$((SKIPPED + 1)); continue; }
@@ -132,6 +136,14 @@ children_of() { # <pane> — 直下の子を pane 番号の数値昇順で
   printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" '$2==p {print $1}' | sort -t% -k2 -n
 }
 
+# sanitize_out <text> — 出力チョークポイントの sanitize（収集ループの clean と同じ
+# codepoint クラス。pane-issue / pane_title 由来＝jq clean を通らない経路の一括防御）。
+# jq 失敗時は C0+DEL のみの byte-wise tr へ縮退（C0/DEL は UTF-8 多バイト列に現れない）。
+sanitize_out() {
+  printf '%s' "$1" | jq -Rrs 'gsub("[\u0000-\u001f\u007f-\u009f]"; " ")' 2>/dev/null \
+    || printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' '
+}
+
 label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(alive のみ) > "?"
   local pane="$1" key label=""
   key="$(_oe_reg_key "$pane")"
@@ -142,8 +154,7 @@ label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(aliv
   if [[ -z "$label" && "$HAVE_LIVE" -eq 1 ]] && printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then
     label="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)" || label=""
   fi
-  # 出力チョークポイントの sanitize（pane-issue / pane_title 由来を含む全ソース一括防御）
-  label="${label//$'\n'/ }"; label="${label//$'\r'/ }"; label="${label//$'\t'/ }"; label="${label//$'\037'/ }"
+  label="$(sanitize_out "$label")"
   printf '%s' "${label:-?}"
 }
 
