@@ -62,3 +62,15 @@ tags: [orchestration, cockpit, spawn-tree, topology, observation, read-only, epi
 - shellcheck: `bin/oe-tree` / `tests/test_oe_tree.sh` とも指摘ゼロ（テスト側 SC2155 を 1 件修正）。
 - 実データ検証: 実行のたびに登記が動く現場をそのまま捕捉 — プロトタイプ時に居た %110 が本実装の実行時には GC 済みで新 spawn %116 が出現。「gone は次の spawn 登記まで」のスナップショット意味論が実データで実演された（DJ-OPEN-2 で受入済みの性質そのもの）。
 - doc: `bin/README.md` に oe-tree 節（意味論・root 合成・role 列なしの根拠・degrade/exit 規約・follow-up 明記）、`README.md` 構成ツリーに 1 行。
+
+## 実装SO（oe-review・2026-07-03）
+
+- **SO#1**（audit_id 20260702193221P5S74SS5ARP5・reviewed_sha a71b587・2レーン）: codex=survived / cursor=**refuted** → conservative 集約で refuted・PR 保留。cursor の material 指摘 2 件を実コード照合の上で両方採用:
+  - **failure propagation**: 読めない/不正な現 server entry を `continue` で無言スキップ → 全滅時に「(no spawn entries)」と事実に反する断言・部分スキップ時は不完全ツリーが完全に見える。foreign には footer note を出す非対称は「honest degrade」の自己矛盾 — 指摘どおり。→ SKIPPED カウンタ + footer 開示 + 全滅時は `(no readable spawn entries ...)` に変更。
+  - **偽 [cycle]**: 同一 `.pane` の重複 entry（key と .pane の不整合＝write 側不変条件違反データ）を dedup せず、2 回目の render が visited に当たり正当な子でないのに `[cycle]` と誤表示 — 到達可能（ファイル操作で作れる）。→ 収集時に先勝ち dedup し skipped として開示。
+  - 非 material 指摘（pane-issue 経路 label の US 未畳み）も安価なので同時に畳んだ。cursor が反証して潰した候補（VISITED 境界一致・cycle sweep・sanitize・degrade 同型）は実装の妥当性の裏取りとして episode に残る。
+  - 修正 commit: 56ce2c5（tests 18 チェックに拡張・shellcheck クリーン維持）。
+- **SO#2**（audit_id 202607021939281V98DFA6052R・reviewed_sha 56ce2c5）: cursor=**survived**（SO#1 指摘の修正を確認・新規 material なし）/ codex=**refuted**（新規指摘）→ conservative 集約で refuted。codex 指摘を一次照合の上採用:
+  - **ESC 等の端末制御文字の直出し**: sanitize が LF/CR/TAB/US のみで、`oe-delegate --label $'\e[2J...'` 経由で ESC が registry に到達し（oe-delegate は LF/CR しか拒否しない — 実照合済み）、人間向け cockpit 表示に画面消去・視覚偽装・OSC 端末制御が通る。`oe_reg_list` は ANSI を「別軸・scope 外」と注記するが（宛先表の脅威モデル＝レコード境界偽造）、oe-tree は表示そのものが製品なので視覚偽装が本ツールの脅威モデルに入る — material と判断。→ C0 全域 + DEL + C1（U+0000-001F/007F/0080-009F）を jq の codepoint gsub で空白へ畳む（収集経路の clean + pane-issue/pane_title 経路の `sanitize_out` チョークポイント。C1 は UTF-8 符号化形も畳めるよう byte-wise でなく codepoint 処理・jq 不能時は C0+DEL の tr へ縮退）。修正 commit: edc7fa2（tests 19 チェック・OSC/BEL タイトル偽装ケース含む）。
+  - 教訓（レーン別レンズの差）: SO#1 で cursor が「pane-issue 経路の US 未畳みは非 material」と流した箇所の上位集合を SO#2 で codex が material として拾った — 2 レーンの独立性が働いた形。
+- **SO#3**（audit_id 202607021947362XW6QQHR5P69・reviewed_sha edc7fa2）: **survived 2/2**（codex/cursor とも material なし。cursor は 19/19 テスト・shellcheck・cycle/dedup/sanitize/foreign 経路の手動追跡を明記）。実装SO ゲート通過 — PR 作成へ。
