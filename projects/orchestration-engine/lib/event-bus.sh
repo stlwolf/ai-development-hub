@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# event-bus.sh — 親子相互作用の永続 append-only 活動ログ（source 専用・#206 増分1）
+# event-bus.sh — 親子相互作用の永続 append-only 活動ログ（source 専用・#206 増分1 + 増分A）
 #
 # 各イベントは from/to の {pane, role, label} を emit 時に焼き込む「自己完結レコード」。
 # session_id を主キーにせず（delegate 子は session_id を持たない）、registry の生存にも
@@ -35,17 +35,20 @@ OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
 # テストは OE_EVENT_DIR で隔離する。
 OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
 
-# _oe_event_ident <pane> — pane の識別子を read 時投影し "role<TAB>label<TAB>parent_pane" を返す。
+# _oe_event_ident <pane> — pane の識別子を read 時投影し "role<US>label<US>parent_pane" を返す。
 #   role  : parent（この pane を parent_pane に持つ子 entry が在る） > child（自身の spawn entry が在る） > ""
 #   label : pane-issue(.name) 優先 → spawn-registry(.label)
 #   parent_pane : 自身の spawn entry の parent_pane（無ければ空）。message の report/kick 方向判定に使う。
 #   file 読みのみ・tmux 不要・best-effort（jq 不在は全空）。
+#   区切りは US (\037)。TAB は IFS 空白扱いのため read が先頭 TAB を剥ぎ、role 空 + label あり
+#   （registry GC 後の departed pane 等）で label が role 位置へシフトし schema 違反の role を
+#   焼いていた（#206A テストで検出した増分1 の潜在バグ）。oe-activity の列区切りと同じ理由で US。
 _oe_event_ident() {
   local pane="${1:-}" pid key label="" own parent="" is_child=0 is_parent=0 role=""
-  if ! command -v jq >/dev/null 2>&1; then printf '\t\t\n'; return 0; fi
+  if ! command -v jq >/dev/null 2>&1; then printf '\037\037\n'; return 0; fi
   pid="$(_oe_reg_server_pid 2>/dev/null)" || pid=""
   key="$(_oe_reg_key "$pane" 2>/dev/null)" || key=""
-  [[ -n "$key" ]] || { printf '\t\t\n'; return 0; }
+  [[ -n "$key" ]] || { printf '\037\037\n'; return 0; }
   if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
@@ -61,11 +64,12 @@ _oe_event_ident() {
     is_parent=1
   fi
   if [[ "$is_parent" -eq 1 ]]; then role="parent"; elif [[ "$is_child" -eq 1 ]]; then role="child"; fi
-  # label の制御文字を畳む: TAB は本関数の内部プロトコル（role<TAB>label<TAB>parent）の区切りを
-  # 壊し parent/role の焼き込みを誤らせる（実装SO cursor 指摘）。LF/CR は 1 行 JSON の行境界を壊す
-  # （oe_reg_list / oe-ident と同方針）。いずれも空白へ畳んでから返す。
-  label="${label//$'\t'/ }"; label="${label//$'\n'/ }"; label="${label//$'\r'/ }"
-  printf '%s\t%s\t%s\n' "$role" "$label" "$parent"
+  # label の制御文字を畳む: US は本関数の内部プロトコル（role<US>label<US>parent）の区切りを
+  # 壊し parent/role の焼き込みを誤らせる（実装SO cursor 指摘の TAB 版を US へ引継ぎ）。TAB も
+  # 表示崩れ防止で従来どおり畳む。LF/CR は 1 行 JSON の行境界を壊す（oe_reg_list / oe-ident と
+  # 同方針）。いずれも空白へ畳んでから返す。
+  label="${label//$'\037'/ }"; label="${label//$'\t'/ }"; label="${label//$'\n'/ }"; label="${label//$'\r'/ }"
+  printf '%s\037%s\037%s\n' "$role" "$label" "$parent"
 }
 
 # oe_event_emit <type> <from_pane> <from_role> <from_label> <to_pane> <to_role> <to_label> [extra_json]
@@ -103,9 +107,9 @@ oe_event_child_spawned() {
   local pp="${1:-}" cp="${2:-}" clabel="${3:-}"
   local plabel clabel_r
   # role/parent は構築上 parent/child で確定するため捨てる（label だけ使う）。
-  IFS=$'\t' read -r _ plabel _ < <(_oe_event_ident "$pp") || true
+  IFS=$'\037' read -r _ plabel _ < <(_oe_event_ident "$pp") || true
   if [[ -z "$clabel" ]]; then
-    IFS=$'\t' read -r _ clabel_r _ < <(_oe_event_ident "$cp") || true
+    IFS=$'\037' read -r _ clabel_r _ < <(_oe_event_ident "$cp") || true
     clabel="$clabel_r"
   fi
   oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "{}"
@@ -119,8 +123,8 @@ oe_event_message_sent() {
   command -v jq >/dev/null 2>&1 || return 0
   local fp="${1:-}" tp="${2:-}" preview="${3:-}" delivery="${4:-none}"
   local frole flabel fparent trole tlabel tparent
-  IFS=$'\t' read -r frole flabel fparent < <(_oe_event_ident "$fp") || true
-  IFS=$'\t' read -r trole tlabel tparent < <(_oe_event_ident "$tp") || true
+  IFS=$'\037' read -r frole flabel fparent < <(_oe_event_ident "$fp") || true
+  IFS=$'\037' read -r trole tlabel tparent < <(_oe_event_ident "$tp") || true
   # 直接の親子リンク（spawn entry の parent_pane）で report/kick の方向を honest に確定する。
   # 多段ツリーで pane が parent かつ child のとき per-pane role は曖昧なので、関係で上書きする。
   if [[ -n "$fparent" && "$fparent" == "$tp" ]]; then
@@ -137,4 +141,36 @@ oe_event_message_sent() {
   extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --argjson n "$maxc" \
     '{preview: (if ($p|length) > $n then ($p[0:$n] + "…") else $p end), delivery_signal: $d}' 2>/dev/null)" || return 0
   oe_event_emit "message_sent" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
+}
+
+# oe_event_report_received <from_pane(受領者=ackした側)> <to_pane(報告元)> <covers_count> <covers_last_ts>
+#   受領印（#206A）。covers_count / covers_last_ts は frontier snapshot（この ack がカバーする
+#   to→from 宛て message_sent の累計数と最終 ts）。本関数は「引数のみの純 emit」——
+#   ログ（oe-events.jsonl）を read しない（emit primitive は registry/pane-issue の小さな
+#   state file しか読まない既存規約の維持・DJ-206A-6）。covers の計算・0 件 no-op 判定・
+#   acker への echo は verb 層（bin/oe-ack）の責務。将来の追加 emitter（oe-send --ack 等の
+#   sugar / フック）もこの口に乗る。
+oe_event_report_received() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local fp="${1:-}" tp="${2:-}" covers="${3:-}" lts="${4:-}"
+  # covers_count は正の整数のみ（schema minimum 1）。0/非数値/空・frontier ts 空は
+  # 受領印として無意味なので emit しない（best-effort の範囲で schema 違反行を作らない）。
+  case "$covers" in ''|*[!0-9]*) return 0 ;; esac
+  [[ "$covers" -ge 1 ]] || return 0
+  [[ -n "$lts" ]] || return 0
+  local frole flabel fparent trole tlabel tparent
+  IFS=$'\037' read -r frole flabel fparent < <(_oe_event_ident "$fp") || true
+  IFS=$'\037' read -r trole tlabel tparent < <(_oe_event_ident "$tp") || true
+  # message_sent と同じ関係上書き: 直接の親子リンクで役割を honest に確定する。
+  # 典型は from=親（受領者）/ to=子（報告元）だが、構築上でなく registry で決める。
+  if [[ -n "$fparent" && "$fparent" == "$tp" ]]; then
+    frole="child"; trole="parent"      # 子が親からの message に受領印（対称ケース）
+  elif [[ -n "$tparent" && "$tparent" == "$fp" ]]; then
+    frole="parent"; trole="child"      # 親が子の報告に受領印（主用途）
+  fi
+  local extra
+  extra="$(jq -cn --argjson c "$covers" --arg lts "$lts" \
+    '{covers_count: $c, covers_last_ts: $lts}' 2>/dev/null)" || return 0
+  oe_event_emit "report_received" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
 }

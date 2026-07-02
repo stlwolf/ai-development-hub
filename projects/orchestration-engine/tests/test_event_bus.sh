@@ -103,11 +103,16 @@ oe_event_child_spawned "%59" "%66" "#206 impl"
 ck "1 physical line" "1" "$(nlines)"
 ck "label folded"    "#206 inbox" "$(last | jq -r .from.label)"
 
-echo "[8b] label 内 TAB も畳む（_oe_event_ident の TAB 区切り内部プロトコルを守る・実装SO cursor 指摘）"
+echo "[8b] label 内 TAB/US も畳む（_oe_event_ident の US 区切り内部プロトコルを守る・実装SO cursor 指摘）"
 printf '%s' '{"name":"foo\tbar"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # JSON 文字列内の TAB
-IFS=$'\t' read -r _ _l _p < <(_oe_event_ident "%59") || true
+IFS=$'\037' read -r _ _l _p < <(_oe_event_ident "%59") || true
 ck "tab folded in label"       "foo bar" "$_l"
 ck "parent not shifted by tab" ""        "$_p"   # %59 は own entry 無し ＝ parent 空のはず
+printf '%s' '{"name":"foo\u001fbar"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # JSON escape の US
+IFS=$'\037' read -r _ _l _p < <(_oe_event_ident "%59") || true
+ck "US folded in label"        "foo bar" "$_l"
+ck "parent not shifted by US"  ""        "$_p"
+printf '%s' '{"name":"foo\tbar"}' > "$OE_PANE_ISSUE_DIR/$(keyfor %59)"  # TAB へ戻す（下の burn 検証は TAB fixture）
 reset_events
 oe_event_message_sent "%66" "%59" "x" "none"      # %66→%59（report）。to=%59 の label が焼かれる
 ck "burned label tab-folded"   "foo bar" "$(last | jq -r .to.label)"
@@ -162,6 +167,54 @@ defs="$(env -u OE_DELEGATE_STATE_DIR -u OE_PANE_ISSUE_DIR PROJECT_DIR="$PROJECT_
   printf "%s|%s" "${OE_DELEGATE_STATE_DIR:-EMPTY}" "${OE_PANE_ISSUE_DIR:-EMPTY}"')"
 ck "state dir defaulted (not empty)"  "1" "$([[ -n "${defs%|*}" && "${defs%|*}" != "EMPTY" ]] && echo 1 || echo 0)"
 ck "pane-issue dir defaulted (not empty)" "1" "$([[ -n "${defs#*|}" && "${defs#*|}" != "EMPTY" ]] && echo 1 || echo 0)"
+
+echo "[13] report_received（#206A）: 純 emit・covers 焼込・関係 role 上書き（親が子の報告に受領印）"
+# [10] の oe-delegate 実行が registry を GC する（stub list-panes に %66 が居ない）ため、
+# 関係 role の検証用に %66 entry を再作成する。
+jq -cn '{pane:"%66",label:"#206 impl",workspace:"/w",parent_pane:"%59",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %66).json"
+reset_events
+oe_event_report_received "%59" "%66" 3 "2026-07-02T10:06:00+00:00"
+ck "type"              "report_received" "$(last | jq -r .type)"
+ck "from.pane=受領者"   "%59"             "$(last | jq -r .from.pane)"
+ck "from.role=parent"  "parent"          "$(last | jq -r .from.role)"
+ck "to.pane=報告元"     "%66"             "$(last | jq -r .to.pane)"
+ck "to.role=child"     "child"           "$(last | jq -r .to.role)"
+ck "covers_count"      "3"               "$(last | jq -r .covers_count)"
+ck "covers_count is number" "number"     "$(last | jq -r '.covers_count|type')"
+ck "covers_last_ts"    "2026-07-02T10:06:00+00:00" "$(last | jq -r .covers_last_ts)"
+
+echo "[14] report_received: 不正 covers は emit しない（schema 違反行を作らない・常に rc=0）"
+reset_events
+rc=0; oe_event_report_received "%59" "%66" 0 "2026-07-02T10:06:00+00:00" || rc=$?
+ck "covers=0 rc=0"      "0" "$rc"
+rc=0; oe_event_report_received "%59" "%66" "abc" "2026-07-02T10:06:00+00:00" || rc=$?
+ck "covers=abc rc=0"    "0" "$rc"
+rc=0; oe_event_report_received "%59" "%66" 3 "" || rc=$?
+ck "frontier空 rc=0"    "0" "$rc"
+rc=0; OE_EVENT_LOG=0 oe_event_report_received "%59" "%66" 3 "2026-07-02T10:06:00+00:00" || rc=$?
+ck "kill-switch rc=0"   "0" "$rc"
+ck "no write (0/abc/空/off)" "0" "$(nlines)"
+
+echo "[15] report_received: spawn 関係の無い 2 ペインでも emit（role は空・honest）"
+reset_events
+oe_event_report_received "%80" "%81" 1 "2026-07-02T10:00:00+00:00"
+ck "emitted"         "1"  "$(nlines)"
+ck "from.role empty" ""   "$(last | jq -r .from.role)"
+ck "to.role empty"   ""   "$(last | jq -r .to.role)"
+
+echo "[16] 回帰: registry GC 後（entry 消滅・pane-issue label のみ）でも label が role 位置へシフトしない"
+# TAB 区切り内部プロトコル時代の潜在バグ: role 空 + label あり だと read が先頭 TAB を剥ぎ
+# label を role に焼いていた（schema の role enum 違反）。departed children の ack で直撃する。
+rm -f "$OE_DELEGATE_STATE_DIR"/*.json
+reset_events
+oe_event_message_sent "%66" "%59" "after-gc report" "none"
+ck "msg from.role empty (not label)" ""           "$(last | jq -r .from.role)"
+ck "msg to.role empty (not label)"   ""           "$(last | jq -r .to.role)"
+ck "msg to.label = pane-issue label" "#206 inbox" "$(last | jq -r .to.label)"
+oe_event_report_received "%59" "%66" 1 "2026-07-02T10:30:00+00:00"
+ck "ack from.role empty (not label)" ""           "$(last | jq -r .from.role)"
+ck "ack from.label = pane-issue label" "#206 inbox" "$(last | jq -r .from.label)"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
