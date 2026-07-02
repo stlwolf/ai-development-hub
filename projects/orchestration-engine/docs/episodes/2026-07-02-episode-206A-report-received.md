@@ -56,3 +56,9 @@ tags: [orchestration, activity-log, report-received, ack, event-bus, cockpit, ep
 - S9（oe-report 載せ替え・承認済み「同 PR」）: 生 `tmux send-keys` 2 連を `oe_send_line` へ差替え（`delegate-send.sh` ヘッダが明記していた設計済み受け皿）。`test_oe_report.sh` 新設（11 checks・両系 green）— emit される message_sent / --review prefix / 改行 fail-fast / 死ペイン非0 / 親未解決 exit 1。
 - S8（README）: 本体 README（bin ツリー・委譲 CLI 節に oe-ack / oe-report 追記）+ bin/README.md（oe-ack 新セクション・oe-activity を増分1+2+A へ・出す情報 4→5・受領印の残余リスク開示・oe-report 載せ替え注記・OE_EVENT_DIR 行）。
 - ADR 昇格判断: DJ-206A-1（actor 明示 verb）/ DJ-206A-2（frontier snapshot）/ DJ-206A-6（層分離）は増分1 ADR の DJ-206-3 予約を具体化する決定級と判断し `docs/decisions/2026-07-02-decision-206A-report-received-ack.md` へ昇格。探索木（tmp・揮発）の蒸留先もこの ADR の選択肢表 + 本 episode で恒久化。
+- 最終検証（実データ dogfood）: 本セッション自身が親（%73）からのキック受領者だったため、実ログ（`~/.claude/state/oe-events.jsonl`）でループを実演 — `--inbox` PENDING=1 → `oe-ack %73`（echo「acked 1 件（累計 1）/ 最終: <ts> <kickoff preview>」）→ PENDING=0、`--timeline` 末尾に ack 行（label 焼込済み・`covers=1 ≤ frontier`）、emit 行は自己完結（from=%106/to=%73/covers_*）。既存行・既存ビュー不変は回帰スイート green で、emit best-effort（常に rc0）はテスト [14] + kill-switch で担保。
+
+## 実装SO（oe-review・PR 前）
+
+- Round 1（audit_id 202607021135333JAYK2ZGFDRZ・reviewed_sha b446b8a・codex+cursor）: **refuted**（codex 1/2・conservative）。指摘 = 「viewer は frontier snapshot 規則で未受領を出すのに、oe-ack の no-op 判定は covers_count 最大値だけを引く近道 → 部分ログ状態（rotation/破損で古い行欠落）で received が可視件数を上回り、viewer は PENDING を出すのに verb が no-op ＝ 解消不能な不整合」。検証の結果**実在の欠陥**と判定（現時点で機械的には発生しない状態だが、ADR が viewer 規則を意味論の正本と定めた以上 verb の逸脱はバグ）。cursor lane は survived（既知残余の範囲と判定）だが conservative 集約に従い処置。
+- 修正: `_ack_scan` の received 計算を viewer と同一の frontier 規則（各 ack の `K = min(covers_count, |ts ≤ covers_last_ts|)` の max）へ差し替え。部分ログ状態では pending が正となり、再 ack が可視全量を新 frontier でカバーし直して**自己回復**する。test_oe_ack.sh に [9]（部分ログ自己回復: 過去 ack covers=5・可視 2+新着1 → acked 1 件・covers=3 → 再実行 no-op）を追加。oe-ack 39 checks + 回帰 3 スイート、bash 両系 green。

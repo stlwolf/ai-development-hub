@@ -77,10 +77,16 @@ if [[ ! -s "$OE_EVENT_FILE" ]]; then
 fi
 
 # _ack_scan <other_pane>
-#   ログを read-only で走査し "<total>US<last_ts>US<prev_covered>US<last_preview>" を返す。
+#   ログを read-only で走査し "<total>US<last_ts>US<received>US<last_preview>" を返す。
 #   total        = other→self の message_sent 累計数（ファイル順・壊れ行は黙って skip）
 #   last_ts      = その最終 message の ts（frontier 候補）
-#   prev_covered = 既存 ack（self→other の report_received）の covers_count 最大値
+#   received     = 既存 ack（self→other の report_received）が既にカバーする件数。
+#                  viewer（oe-activity）と同一の frontier snapshot 規則で数える:
+#                  各 ack の K = min(covers_count, |ts <= covers_last_ts|) の max。
+#                  covers_count 最大値だけを引く近道は不可 — 部分ログ状態（rotation/破損で
+#                  古い行が落ちた後）に received が可視件数を上回り、viewer は PENDING を
+#                  出すのに verb が no-op する解消不能な不整合になる（実装SO codex 指摘）。
+#                  同一規則なら再 ack が現在の可視全量を新 frontier でカバーし直し自己回復する。
 #   last_preview = 最終 message の preview（echo 用）
 #   フィールド区切りは US (\u001f)（oe-activity と同じ理由: 空フィールド保持）。
 _ack_scan() {
@@ -88,11 +94,14 @@ _ack_scan() {
   jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
   | jq -rs --arg self "$SELF" --arg other "$other" '
       [ .[] | select(.type=="message_sent" and .from.pane==$other and .to.pane==$self) ] as $msgs
-      | [ .[] | select(.type=="report_received" and .from.pane==$self and .to.pane==$other)
-          | .covers_count ] as $acks
+      | [ .[] | select(.type=="report_received" and .from.pane==$self and .to.pane==$other) ] as $acks
+      | ( [ $acks[] | . as $a
+            | ([ $msgs[] | select(.ts <= ($a.covers_last_ts // "")) ] | length) as $k1
+            | (if ($a.covers_count // 0) < $k1 then ($a.covers_count // 0) else $k1 end) ]
+          | max // 0 ) as $received
       | [ ($msgs | length | tostring),
           (if ($msgs|length) > 0 then $msgs[-1].ts else "" end),
-          (($acks | max) // 0 | tostring),
+          ($received | tostring),
           (if ($msgs|length) > 0 then (($msgs[-1].preview // "") | gsub("[[:cntrl:]]"; " ")) else "" end) ]
       | join("\u001f")'
 }
@@ -101,13 +110,13 @@ _ack_scan() {
 #   1 相手ぶんの受領印: pending を計算し、あれば emit + echo。無ければ no-op を告知。
 _ack_one() {
   local other="$1" disp="$2"
-  local total last_ts prev_covered last_prev pending
-  IFS=$'\037' read -r total last_ts prev_covered last_prev < <(_ack_scan "$other") || true
+  local total last_ts received last_prev pending
+  IFS=$'\037' read -r total last_ts received last_prev < <(_ack_scan "$other") || true
   if [[ -z "${total:-}" || "$total" -eq 0 ]]; then
     echo "oe-ack: nothing to ack from ${disp}（${SELF} 宛ての message なし）" >&2
     return 0
   fi
-  pending=$(( total - prev_covered ))
+  pending=$(( total - received ))
   if [[ "$pending" -le 0 ]]; then
     echo "oe-ack: nothing to ack from ${disp}（累計 ${total} 件すべて受領済み）" >&2
     return 0

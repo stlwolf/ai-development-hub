@@ -126,5 +126,28 @@ ck  "rc=0"                "0" "$rc"
 ckc "acked 1 件（新着分）" "$OUT8" "acked 1 件"
 ck  "covers_count=5"      "5" "$(last | jq -r .covers_count)"
 
+echo "[9] 部分ログ自己回復（実装SO codex 指摘）: 過去 ack の covers_count が可視件数を超えても viewer 規則で pending を出し再 ack できる"
+# rotation/破損で古い行が落ちた状態を再現: 過去 ack は covers=5/frontier=10:05 だが、
+# 可視なのは ts<=frontier の 2 通 + 新着 1 通のみ。viewer 規則 received=min(5,2)=2 → pending=1。
+# covers_count 最大値(5)だけ引く近道だと pending=3-5<=0 で no-op になり PENDING が解消不能になる。
+mkdir -p "$_TMP_DIR/partial"
+cat > "$_TMP_DIR/partial/oe-events.jsonl" <<'EOF'
+{"ts":"2026-07-02T10:04:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"OLD-4","delivery_signal":"none"}
+{"ts":"2026-07-02T10:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"OLD-5","delivery_signal":"none"}
+{"ts":"2026-07-02T10:06:00+00:00","type":"report_received","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"},"covers_count":5,"covers_last_ts":"2026-07-02T10:05:00+00:00"}
+{"ts":"2026-07-02T10:10:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"NEW-AFTER-PARTIAL","delivery_signal":"none"}
+EOF
+PARTIAL="$_TMP_DIR/partial/oe-events.jsonl"
+OUT9="$(env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/partial" bash "$OE_ACK" '%66' 2>&1)"; rc=$?
+ck  "rc=0"                    "0" "$rc"
+ckc "acked 1 件（viewer 規則の pending）" "$OUT9" "acked 1 件"
+ck  "再 ack の covers=可視全量 3"  "3" "$(tail -n1 "$PARTIAL" | jq -r .covers_count)"
+ck  "frontier=新着 ts"         "2026-07-02T10:10:00+00:00" "$(tail -n1 "$PARTIAL" | jq -r .covers_last_ts)"
+# 再実行: received = min(3, |ts<=10:10|=3) = 3 → pending 0 → no-op（自己回復完了）
+before9="$(grep -c '' "$PARTIAL")"
+OUT9b="$(env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/partial" bash "$OE_ACK" '%66' 2>&1)"
+ckc "回復後は no-op"           "$OUT9b" "nothing to ack"
+ck  "行数不変"                 "$before9" "$(grep -c '' "$PARTIAL")"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
