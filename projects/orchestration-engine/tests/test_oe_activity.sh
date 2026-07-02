@@ -203,5 +203,59 @@ ck "same-sec FIRST turn=1"  "1" "$(printf '%s' "$(row_of "$SS" "SS-FIRST")"  | a
 ck "same-sec SECOND turn=2" "2" "$(printf '%s' "$(row_of "$SS" "SS-SECOND")" | awk '{print $1}')"
 ck "same-sec THIRD turn=3"  "3" "$(printf '%s' "$(row_of "$SS" "SS-THIRD")"  | awk '{print $1}')"
 
+echo "[18] inbox PENDING（#206A）: 未ack / 部分ack（count cap で同秒割込み除外）/ 全ack"
+mkdir -p "$_TMP_DIR/acked"
+{
+  printf '%s\n' '{"ts":"2026-07-02T12:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"}}'
+  printf '%s\n' '{"ts":"2026-07-02T12:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"ACK-R1","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"ACK-R2","delivery_signal":"none"}'
+  # ack（covers=2・frontier=12:05）emit 後、同秒 12:05 に 3 通目が割り込んだ状況を再現
+  printf '%s\n' '{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"ACK-R3-SAMESEC","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-07-02T12:05:01+00:00","type":"report_received","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"},"covers_count":2,"covers_last_ts":"2026-07-02T12:05:00+00:00"}'
+  # 未ack の別関係（%77）
+  printf '%s\n' '{"ts":"2026-07-02T12:10:00+00:00","type":"message_sent","from":{"pane":"%77","role":"","label":""},"to":{"pane":"%59","role":"","label":""},"preview":"NOACK-X1","delivery_signal":"none"}'
+} > "$_TMP_DIR/acked/oe-events.jsonl"
+AIN="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY" --inbox)"
+ckc "inbox PENDING header" "$AIN" "PENDING"
+a66="$(row_of "$AIN" "ACK-R3-SAMESEC")"; a77="$(row_of "$AIN" "NOACK-X1")"
+# 列: LIVE TRIPS PENDING ... → $3=PENDING。count cap: K=min(2, |ts<=12:05|=3)=2 → pending=3-2=1
+ck "%66 部分ack pending=1（同秒割込みは cap で未受領のまま）" "1" "$(printf '%s' "$a66" | awk '{print $3}')"
+ck "%77 未ack pending=1" "1" "$(printf '%s' "$a77" | awk '{print $3}')"
+# 全 ack: covers=3・frontier=12:05 を追記 → pending=0
+printf '%s\n' '{"ts":"2026-07-02T12:11:00+00:00","type":"report_received","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"},"covers_count":3,"covers_last_ts":"2026-07-02T12:05:00+00:00"}' >> "$_TMP_DIR/acked/oe-events.jsonl"
+AIN2="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY" --inbox)"
+ck "%66 全ack pending=0" "0" "$(printf '%s' "$(row_of "$AIN2" "ACK-R3-SAMESEC")" | awk '{print $3}')"
+
+echo "[19] PENDING 続き: 複数 ack は max（巻き戻りなし）/ ack 後の新着 / kick は数えない"
+# 古い ack（covers=1）を後から追記しても received は max のまま → pending=0 を維持
+printf '%s\n' '{"ts":"2026-07-02T12:12:00+00:00","type":"report_received","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"},"covers_count":1,"covers_last_ts":"2026-07-02T12:01:00+00:00"}' >> "$_TMP_DIR/acked/oe-events.jsonl"
+AIN3="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY" --inbox)"
+ck "古い ack 追記でも pending=0（max・巻き戻りなし）" "0" "$(printf '%s' "$(row_of "$AIN3" "ACK-R3-SAMESEC")" | awk '{print $3}')"
+# ack 後の新着 → pending=1 に戻る。kick（%59→%66）は自分宛てでないので inbox/pending に影響しない
+printf '%s\n' '{"ts":"2026-07-02T12:20:00+00:00","type":"message_sent","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"},"preview":"ACK-KICK","delivery_signal":"none"}' >> "$_TMP_DIR/acked/oe-events.jsonl"
+printf '%s\n' '{"ts":"2026-07-02T12:21:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"ACK-R4-NEW","delivery_signal":"none"}' >> "$_TMP_DIR/acked/oe-events.jsonl"
+AIN4="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY" --inbox)"
+a66n="$(row_of "$AIN4" "ACK-R4-NEW")"
+ck "新着後 pending=1（kick は数えない）" "1" "$(printf '%s' "$a66n" | awk '{print $3}')"
+ck "trips=4（report のみ・kick 除外）"   "4" "$(printf '%s' "$a66n" | awk '{print $2}')"
+
+echo "[20] timeline: 受領印(ack)行が interleave（turn=- / dir=ack / covers 表示）"
+ATL="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY" --timeline)"
+ack_row="$(row_of "$ATL" "covers=2")"
+ck  "ack 行 turn=-"   "-"   "$(printf '%s' "$ack_row" | awk '{print $1}')"
+ck  "ack 行 dir=ack"  "ack" "$(printf '%s' "$ack_row" | awk '{print $3}')"
+ckc "ack 行 frontier 表示" "$ack_row" "2026-07-02T12:05:00+00:00"
+ckc "ack 行 受領印 preview" "$ack_row" "受領印"
+# message 行の turn 連番は ack 行に影響されない
+ck "R1 turn=1" "1" "$(printf '%s' "$(row_of "$ATL" "ACK-R1")" | awk '{print $1}')"
+ck "R4 turn=5" "5" "$(printf '%s' "$(row_of "$ATL" "ACK-R4-NEW")" | awk '{print $1}')"
+
+echo "[21] 回帰: report_received が混在しても overview の列構成・既存投影は不変"
+AOV="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/acked" bash "$OE_ACTIVITY")"
+ov66="$(row_of "$AOV" "ACK-R4-NEW")"
+ck "overview に PENDING ヘッダは無い" "0" "$(printf '%s\n' "$AOV" | sed -n '2p' | grep -cF PENDING || true)"
+ck  "overview trips は kick 込み 5"    "5" "$(printf '%s' "$ov66" | awk '{print $2}')"
+ckc "overview 最新 preview"            "$ov66" "ACK-R4-NEW"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

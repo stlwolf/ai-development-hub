@@ -1,0 +1,114 @@
+---
+id: "01KWH80EP7X26S62YZJ9F1H16M"
+title: "#206/A episode — report_received（oe-ack primitive + frontier snapshot）実装記録"
+date: 2026-07-02
+type: episode
+status: stable
+related:
+  - type: derived_from
+    ref: ../plans/2026-07-02-plan-206A-report-received.md
+    reason: "本 episode の実行対象プラン（kickoff-206A の忠実変換 + 設計確定事項 v3）"
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/206"
+    reason: "(A) report_received — 子の報告の「受領」可視化"
+  - type: design_context
+    ref: ../decisions/2026-06-22-decision-206-activity-log-self-contained-events.md
+    reason: "決定境界 DJ-206-1/2/3（本増分は DJ-206-3 予約済みの additive 追加）"
+tags: [orchestration, activity-log, report-received, ack, event-bus, cockpit, episode]
+---
+
+# #206/A episode — report_received（oe-ack primitive + frontier snapshot）実装記録
+
+親（統括）からの委譲子セッションとして、#206 (A)「子の報告の受領可視化」を実装する。現状の活動ログは `message_sent`（送った）+ `delivery_signal`（suspected_miss|none）までで「親が実際に受領／確認した」信号が無く、`message_sent` → `report_received` のループが閉じていない — それを閉じるのが本作業。viewer read-only 規律により emit は actor 側の明示トリガが必要で、「誰がいつ受領印を打つか」が核の設計判断だった。
+
+## 設計フェーズ（2026-07-02・実装前）
+
+- kickoff（`.oe/kickoff-206A.md`・揮発）読了 → issue #206 原文・増分1 ADR・`lib/event-bus.sh`・`schemas/oe-events.schema.json`・`bin/oe-activity`・`lib/delegate-send.sh`・`bin/oe-send`・`bin/oe-report` を読了してから設計に入った。
+- **ゼロベース設計**（`predecision-exploration`）: 探索木を `tmp/dj-206A-tree.md`（gitignore・揮発）に外部化。トリガ候補 = 明示 ack verb（A）/ 応答連動バンドル（A'）/ oe-capture 結線（B）/ UserPromptSubmit ハーネス受信フック（C・ゼロベース発見）/ read 時推論（D・棄却=DJ-206-2 と同じ category error）/ 子側 scrape（E・棄却=検出禁止）/ viewer 表示時自動 ack（棄却=read-only 違反）。
+- **設計SO**（`oe-refute --rubric exploration`・弱SO・2レーン）を 3 周実行。verdict は 3 周とも refuted（conservative 集約 = 1 レーン refuted で全体 refuted）:
+  - SO#1（audit_id 20260702072958R02QXBD79T1R）: 実質的発見 — legacy `oe-report` の emit 漏れ（この経路は `message_sent` すら emit しない盲点）/ 素の位置 watermark の非安全レース・rotation 脆弱性 / 未探索の応答連動カテゴリ → v2 改訂。
+  - SO#2（audit_id 20260702073615X1ATZJBMHKP1）: 実質的発見 — covers_count 単独は rotation で false-ack（v1 執筆者の「縮退安全」主張は誤りだった）/ emit がログを read するのは「emit primitive は小さな state file しか読まない」既存規約と衝突 / frontier/snapshot 型が未探索 → v3 改訂（frontier snapshot + count cap・層分離）。
+  - SO#3（audit_id 20260702074310YMBYRSHM9QD8）: **新カテゴリゼロ**（未実装で ADR defer 済みの rotation を前提とする複合エッジ・既定置項目の再言・訂正 event の additive defer のみ）→ `predecision-exploration` の暫定停止条件を充足と判断し打切り。
+- **打切りとゲート**: exploration rubric + conservative 集約の下では残余リスク列挙が尽きず「survived」は構造的に出にくい。「refuted×3 だが round 3 は新カテゴリゼロ」の状態を隠さずそのままユーザー承認ゲートに提示し、打切り判断ごと承認を得た（このペイン・2026-07-02）。
+- **確定した設計**（詳細はプラン Context / 探索木は本 episode 執筆時点で tmp に現存・要旨をここへ蒸留）:
+  - DJ-206A-1: トリガ = 明示 ack verb `bin/oe-ack`（primitive）。sugar（`oe-send --ack`）/ ハーネスフックは additive defer。
+  - DJ-206A-2: 意味論 = frontier snapshot（`covers_last_ts` 主 + `covers_count` の同秒 cap）。viewer 投影 = 方向フィルタ → K = min(covers_count, |ts ≤ covers_last_ts|) の先頭 K 件 received・複数 ack は max K。
+  - DJ-206A-3: from=受領者 / to=報告元（actor=from 規則）。covers_* は report_received のみ必須。
+  - DJ-206A-4: `--inbox` PENDING 列 / `--timeline` ack 行。overview 不変。
+  - DJ-206A-5: `oe-report` の emit 漏れ → ユーザー選択「同 PR」で `oe_send_line` へ載せ替え（S9 発動）。
+  - DJ-206A-6: 層分離 — lib 層は引数のみの純 emit・ログ read/covers 計算/echo は verb 層。
+  - 受入残余リスク: ack 直前着弾レース（echo で開示）/ 誤 ack 訂正なし（additive で将来）/ rotation 増分への frontier 整合申し送り。
+- 併走の学び（プロセス）: kickoff→設計に直行し **plan 変換（`kickoff-to-plan`）を飛ばしてユーザー承認を求めた → 指摘で是正**。また plan frontmatter が spec（#218 で `so` 強/弱が追加された直後）と 3 点ズレて再指摘: gitignore 対象（`.oe/` / `tmp/`）を `related[]` 参照にしない（本文言及が慣行）/ `implements` でなく §6 語彙の `parent_issue` / `so` はテンプレート順で最後。
+
+## 実装フェーズ
+
+（S3 schema → S4 emit → S5 oe-ack → G1 → S6 viewer → S7 tests → G2 → S8 README → S9 oe-report 載せ替え、の順で随時追記する）
+
+- S1/S2: worktree `feature/#206A_report_received` 作成（cwd 非追従は既知仕様 → 以後絶対パス操作）。プランを worktree へ移動し本 episode を開始。
+- S3（schema）: type enum に `report_received` 追加 + `covers_count`（minimum 1）/ `covers_last_ts`（date-time）を allOf 条件付き必須で追加。`jq -e` で構文と enum/minimum を確認。ファイル冒頭 description の「増分2 で report_received を追加可能」は実装済みの事実に合わせ in-place 修正（事実ドリフト扱い）。
+- S4（emit）: `oe_event_report_received <from> <to> <covers_count> <covers_last_ts>` を追加。引数のみの純 emit（DJ-206A-6）。covers 0/非数値/frontier 空は「schema 違反行を作らない」ため emit せず return 0。role の関係上書き（直接親子リンク優先）は `oe_event_message_sent` と同イディオム。
+- S5（oe-ack）: verb 層でログを read-only 走査（壊れ行 skip は viewer と同じ `fromjson? // empty`）。covers = 累計数 + 最終 ts、pending = 累計 − 既存 ack の covers_count 最大値。pending 0 は emit しない。emit 後に「acked N 件（累計 M）/ 最終: ts + preview」を stderr echo（レース開示 affordance）。`--all` は自分宛て送信元を列挙し per-relation に同処理。書き味の注意: Write ツールが jq の `join("")` を literal US に展開したため、oe-activity と同じエスケープ表記へ置換した。
+- G1: shellcheck PASS（oe-ack / event-bus.sh）。隔離スモーク（OE_EVENT_DIR ほか 3 dir を mktemp に向ける）で 5 シナリオ確認 — (1) 初回 ack=累計2件・emit 行の形状正 (2) 再 ack no-op・行数不変 (3) 新着後 `--all` で pending 1 件のみ ack（累計3）(4) TMUX_PANE 無し exit 2 (5) 純 emit の引数バリデーション（0/非数値/ts 空 → emit されず rc=0）。**kick（親→子）が covers に数えられていない**（方向フィルタ有効）ことも (1) で確認（メッセージ3件中 report 2件のみカウント）。python jsonschema は環境に無く、schema 適合は jq 構造チェックで代替（S7 のテストでも固定）。
+- S6（viewer）: `project()` に received_of（frontier + count cap・複数 ack max）を def として追加、idx を message-local → **イベント全体の global 位置**に一般化（ack 行と同軸で interleave するため。既存 turn/表示順は単調写像なので不変）。inbox に PENDING 列、timeline に ack 行（turn="-"・dir=ack・preview に covers と frontier）。スモークで PENDING 0→新着→1、ack 行 interleave、overview 列構成不変を確認。
+- S7→G2 初回 red で**増分1 由来の潜在バグを検出**: `_oe_event_ident` の内部プロトコルが TAB 区切りだが、TAB は bash read の IFS 空白扱いのため**先頭 TAB（=role 空）が剥がれて label が role 位置にシフト**し、schema の role enum に違反する行を焼く。発火条件は「role 空 + label あり」= registry GC 後の departed pane — **#206A の主要ユースケース（子が去った後に親が ack）が直撃**。テスト suite では [10]（oe-delegate 実行）の registry GC が偶然この状態を作り [13] が red になって発見（単体再現では registry が残っていて green だった）。修正 = プロトコル区切りを US (\037) へ変更（oe-activity の列区切りが同じ理由で US を選んだ前例に整合）・emit 側 6 read サイト追随・label の US 畳み込み追加・GC 状態の回帰テスト [16] を追加。`oe_event_message_sent` にも同経路が存在したため同時に治っている（増分1 の既存 fixture/テストは全て green のまま＝表示互換）。
+- もう 1 件のテスト red は fixture marker 衝突（`grep "ACK-R1"` が `NOACK-R1` にもマッチ）→ marker 改名で解消（プロダクトコードのバグではない）。
+- G2: 3 スイート（event_bus 59 / oe_activity 66 / oe_ack 33）+ 隣接回帰 4 スイート（delegate_send 36 / oe_delegate 20 / oe_ident 11 / delegate_registry 20）を bash 5.2.37 と 3.2.57 の両方で green。shellcheck も全変更ファイル PASS。
+- S9（oe-report 載せ替え・承認済み「同 PR」）: 生 `tmux send-keys` 2 連を `oe_send_line` へ差替え（`delegate-send.sh` ヘッダが明記していた設計済み受け皿）。`test_oe_report.sh` 新設（11 checks・両系 green）— emit される message_sent / --review prefix / 改行 fail-fast / 死ペイン非0 / 親未解決 exit 1。
+- S8（README）: 本体 README（bin ツリー・委譲 CLI 節に oe-ack / oe-report 追記）+ bin/README.md（oe-ack 新セクション・oe-activity を増分1+2+A へ・出す情報 4→5・受領印の残余リスク開示・oe-report 載せ替え注記・OE_EVENT_DIR 行）。
+- ADR 昇格判断: DJ-206A-1（actor 明示 verb）/ DJ-206A-2（frontier snapshot）/ DJ-206A-6（層分離）は増分1 ADR の DJ-206-3 予約を具体化する決定級と判断し `docs/decisions/2026-07-02-decision-206A-report-received-ack.md` へ昇格。探索木（tmp・揮発）の蒸留先もこの ADR の選択肢表 + 本 episode で恒久化。
+- 最終検証（実データ dogfood）: 本セッション自身が親（%73）からのキック受領者だったため、実ログ（`~/.claude/state/oe-events.jsonl`）でループを実演 — `--inbox` PENDING=1 → `oe-ack %73`（echo「acked 1 件（累計 1）/ 最終: <ts> <kickoff preview>」）→ PENDING=0、`--timeline` 末尾に ack 行（label 焼込済み・`covers=1 ≤ frontier`）、emit 行は自己完結（from=%106/to=%73/covers_*）。既存行・既存ビュー不変は回帰スイート green で、emit best-effort（常に rc0）はテスト [14] + kill-switch で担保。
+
+## 実装SO（oe-review・PR 前）
+
+- Round 1（audit_id 202607021135333JAYK2ZGFDRZ・reviewed_sha b446b8a・codex+cursor）: **refuted**（codex 1/2・conservative）。指摘 = 「viewer は frontier snapshot 規則で未受領を出すのに、oe-ack の no-op 判定は covers_count 最大値だけを引く近道 → 部分ログ状態（rotation/破損で古い行欠落）で received が可視件数を上回り、viewer は PENDING を出すのに verb が no-op ＝ 解消不能な不整合」。検証の結果**実在の欠陥**と判定（現時点で機械的には発生しない状態だが、ADR が viewer 規則を意味論の正本と定めた以上 verb の逸脱はバグ）。cursor lane は survived（既知残余の範囲と判定）だが conservative 集約に従い処置。
+- 修正: `_ack_scan` の received 計算を viewer と同一の frontier 規則（各 ack の `K = min(covers_count, |ts ≤ covers_last_ts|)` の max）へ差し替え。部分ログ状態では pending が正となり、再 ack が可視全量を新 frontier でカバーし直して**自己回復**する。test_oe_ack.sh に [9]（部分ログ自己回復: 過去 ack covers=5・可視 2+新着1 → acked 1 件・covers=3 → 再実行 no-op）を追加。oe-ack 39 checks + 回帰 3 スイート、bash 両系 green。
+- Round 2（audit_id 20260702115242WFFVCM4J1F0X・reviewed_sha 8f4561c）: **survived**（2/2 レーン）。codex=「emit / frontier 計算 / viewer 投影 / oe-report 載せ替えに material な欠陥なし」、cursor=「frontier 規則の 3 者一致・kick 除外・部分ログ自己回復・GC 後 role 焼込みまでテストで裏付け。残リスクは設計受入済みの best-effort/レース範囲」→ PR ゲート通過。
+- PR: [#220](https://github.com/stlwolf/ai-development-hub/pull/220)（feat(oe): report_received 受領印で子報告の受領ループを閉じる）。
+
+## Closure（episode-retrospective・tier=heavy）
+
+tier 判定: heavy（該当トリガ = 失敗/撤回あり〔watermark 案 2 段階の棄却・テスト red・実装SO round1 refuted・**プロセス指摘 2 件**=kickoff→plan 変換の飛ばしと plan frontmatter の spec 3点ズレをいずれも人間ゲートで是正〕・意図的 SO レーン起動〔oe-refute×3 + oe-review×2〕・非自明な設計判断〔DJ-206A-1/2/6〕・昇格候補あり〔ADR 化済み〕）。
+
+### 決定と根拠
+
+正本は ADR [`../decisions/2026-07-02-decision-206A-report-received-ack.md`](../decisions/2026-07-02-decision-206A-report-received-ack.md)（選択肢表・棄却理由・残余リスクを蒸留済み）。本 episode は経緯（SO 3周の各 verdict と反映・打切り判断・実装SO ラウンド）を保持する。
+
+### 原則（Pattern / Anti-pattern・#62 negative knowledge 候補）
+
+- **NG**: bash の内部プロトコル区切りに TAB を使い `IFS=$'\t' read` で受ける — TAB は IFS 空白扱いのため**先頭の空フィールドが剥がれて後続フィールドがシフト**する（本件では role 空 + label あり で label が role 位置に焼かれ schema 違反）。**OK**: US (`\037`) 等の非空白制御文字を区切りにする（`oe-activity` の列区切りと同じ選択。空フィールドが保持される）。
+- **NG**: 同じ意味論を 2 箇所（viewer の投影規則と verb の no-op 判定）で別々の近道で実装する — 部分ログ状態で「表示は pending・操作は no-op」の解消不能な不整合になる。**OK**: 意味論の正本（ADR の投影規則）を両者が同一の式で実装し、逸脱をレビュー観点にする。
+
+### わかったこと（W）
+
+- 対話 TUI への prompt 直接注入という「CLI で読む経路が存在しない」消費形態では、受領の ground truth は (i) 届いた（ハーネスのみ知る）と (ii) 読まれた（アクターのみ知る）に分裂する。増分Aは (ii) を actor 明示 verb で埋め、(i) は additive defer — この分裂の明示自体が探索（案C）の成果。
+- exploration rubric + conservative 集約（1 レーン refuted で全体 refuted）の下では「survived」は構造的に出にくい。SO の価値は verdict でなく**新カテゴリの発見が止まるまでの反復**にあり、打切りは人間ゲートに委ねる運用が機能した（3周で 3 → 2 → 0 個の新規論点）。
+
+### 蒸留シグナル
+
+- Decision: 昇格済み（上記 ADR）。
+- skill / rule: 変更提案なし — ただし正確には「既存規律で足りた」ではなく、**既存規律（`kickoff-to-plan` 変換・spec-card frontmatter 規約）の適用漏れが 2 回発生し、いずれも人間ゲートの指摘で是正された**。規律の内容自体は妥当だったため変更提案はしないが、適用漏れの捕捉が人間依存である点は soft-floor の既知限界の実例として記録する（Step4 SO 指摘で本節を是正）。
+- negative knowledge（#62）: 上記「原則」2 対を注入候補プールへ（#62 の注入側フォーマット確定後に回収される前提で本 episode に置く）。
+
+### follow-up routing（残課題と行き先）
+
+- `oe-send --ack` sugar / UserPromptSubmit 受信フック自動 emit / overview 受領表示 → **行き先: plan「スコープ外（Post-Completion）」節 + PR #220 本文に列挙済み**（sugar/フックは ADR 選択肢表にも defer として記録。issue 化するかは親/人間の裁量。子からは issue を起票しない）。
+- server-pid キー化（%N 再利用の混線・増分1 既知制約）→ **行き先: 増分1 ADR「残課題」節 + plan スコープ外に defer 済み**（本増分は悪化させないことのみ確認。後続増分の扱い）。
+- log rotation 導入時の ack/frontier 整合保存 → **行き先: ADR「結果」節に申し送りとして記録済み**（rotation 増分の実装者が ADR を読む）。
+- 誤 ack の訂正（retraction）event → **行き先: ADR「結果」節**（vocab additive で将来可能・影響は表示限定と記録済み）。
+- `oe-*` を通らない生 send-keys 報告の非観測 → **追わない**（emit しないものは観測できない = 機構の定義そのもの。README に開示済み）。
+- inbox の FROM 列が「自分が子として kick を受ける」ケースで関係の子（=自分）を表示する既存挙動（実データ dogfood で観察）→ **行き先: 増分1 由来の表示仕様として追わない**（PENDING 計算は sender ベースで正しい。表示改善が要るなら親が #206 残スコープで判断）。
+
+### status / 消費者
+
+- status: draft → **stable**（達成: (A) report_received のループ閉鎖・受け入れ条件充足・PR #220 提出済み）。
+- 次の消費者: (1) 親統括セッション（#206 (A) の完了確認と残増分の判断）(2) rotation / sugar / フック follow-up の実装者（ADR 経由）(3) #62 negative knowledge 注入パイプライン（上記「原則」）(4) episode 品質監査（#149 系・本 closure 自体が heavy tier 実適用例）。
+
+### Step4 外部チェック（heavy tier・実施済み）
+
+- `so-compare`（codex + claude・focused check: 選択的省略 / routing 網羅 / evidence anchor / back-propagation）を closure 初稿に対して実行（出力: `tmp/so-206A-closure/`・揮発のため要点を本転記）。
+- **両レーンが material な closure 欠陥を検出**（自己評価では拾えなかった＝Step4 の存在意義を実証）: (1) プロセス指摘 2 件（plan 変換飛ばし・spec 3点ズレ）が tier 判定と蒸留シグナルから欠落、「既存規律で足りた」は不正確（両レーン一致）(2) server-pid キー化の routing 漏れ（codex）(3) 行き先 dangling — 「ADR スコープ外節」は実在せず overview 受領表示は ADR に無い（claude）(4) frontmatter status のフリップ漏れ（claude・付記）。
+- 全件を本 closure に反映済み（tier 判定・蒸留シグナル・routing 2 件・行き先の正確化・status stable 化）。evidence anchor / back-propagation の 2 観点は両レーン「確認済み・問題なし」。
+
+### 形式メモ（スキル効果測定用）
+
+チャネル骨格で「原則（対構造）」と「follow-up routing の行き先強制」が効いた（PR/ADR に散っていた残課題が 1 箇所で行き先付きになった）。拾いにくかったのは「わかったこと」と「決定と根拠」の境界（ADR へ蒸留済みのため episode 側は経緯保持に寄せた）。KPT/YWT の皮は使わず骨格のみ。摩擦は低（closure 一式で 30 分弱・Step4 SO 待ちが最長）。

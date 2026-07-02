@@ -5,8 +5,8 @@ orchestration-engine の実行可能エントリの簡易リファレンス（AI
 scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox / timeline・#206）
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206）
 
 ---
 
@@ -205,7 +205,28 @@ oe-view --help
 oe-report [--review] <message>
 ```
 
+送信は `oe_send_line`（`delegate-send.sh`）経由（#206A で生 `send-keys` から載せ替え・#142 の部分前倒し）。1 行保証・死ペイン検知・copy-mode 解除・finalize・`message_sent` emit が `oe-send` と同じに揃う — 載せ替え前はこの経路の報告が活動ログに載らず、inbox / 受領印（`report_received`）ループの盲点だった。
+
 関連 lib: `delegate-send.sh`
+
+---
+
+## oe-ack — 自分宛て報告への受領印（#206A）
+
+自分（`$TMUX_PANE`）宛てに届いた報告（`message_sent`）へ**受領印**（`report_received`）を打つ actor verb。viewer（`oe-activity`）は read-only 規律で emit できないため、「読んだ」の印は**受領した側のアクター**（AI が report 処理時 / 人間が inbox 確認時に `!` 経由）が明示的に打つ。
+
+```bash
+oe-ack <target>     # 相手（%N / ラベル。oe-send と同じ union 解決）からの自分宛て報告に受領印
+oe-ack --all        # 自分宛て未受領のある相手すべてに per-relation で受領印
+```
+
+- **意味論（frontier snapshot）**: emit する `report_received` に `covers_count`（相手→自分宛て message の累計数）と `covers_last_ts`（カバーする最終 message の ts）を焼き込む自己完結レコード。viewer は `K = min(covers_count, |ts ≤ covers_last_ts|)` の先頭 K 件を received と投影（複数 ack は max・巻き戻りなし・同秒割込みは count cap で除外）
+- **層分離**: ログ read・covers 計算・echo は本 verb（`oe-activity` と同じ read クラス）。`lib/event-bus.sh` の `oe_event_report_received` は引数のみの純 emit（emit primitive はログを読まない規約を維持）
+- 未受領分が無ければ **no-op**（emit しない・exit 0）。emit 後は stderr に `acked N 件（累計 M）/ 最終: <ts> <preview>` を echo — **ack 直前に割り込んだ新着**が frontier に入るレース残余は防止せず、この echo で acker が即検証できる形で開示する
+- 誤 ack の訂正手段は増分Aには無い（訂正 event は vocab additive で将来可能・影響は表示限定）。`oe-*` を通らない生 `send-keys` の報告は emit が無いため観測不能（既知の限界）
+- ガード: `$TMUX_PANE` 必須（受領印は受領者ペインから）・自分自身への ack は拒否・jq 必須
+
+関連: `lib/event-bus.sh`（純 emit）/ `schemas/oe-events.schema.json`（`covers_*` は `report_received` のみ必須）/ 表示は `oe-activity --inbox`（PENDING 列）・`--timeline`（ack 行）。
 
 ---
 
@@ -257,27 +278,29 @@ set -g pane-border-format '#[align=left] #(/path/to/repo/projects/orchestration-
 
 ---
 
-## oe-activity — 親子活動ログの read 時投影ビュー（#206 増分1+2）
+## oe-activity — 親子活動ログの read 時投影ビュー（#206 増分1+2+A）
 
-`lib/event-bus.sh` が best-effort 追記する永続 append-only 活動ログ（`oe-events.jsonl`）を **read 時に投影**する read-only ビュー。各イベントは `from`/`to` の `{pane,role,label}` を emit 時に焼き込む自己完結レコードで、`session_id` を主キーにせず registry の生存にも依存しない（GC 後・子が消えた後も残る＝departed children も可視）。新規 write path は持たない（#188 read 時相関の思想に整合）。
+`lib/event-bus.sh` が best-effort 追記する永続 append-only 活動ログ（`oe-events.jsonl`）を **read 時に投影**する read-only ビュー。各イベントは `from`/`to` の `{pane,role,label}` を emit 時に焼き込む自己完結レコードで、`session_id` を主キーにせず registry の生存にも依存しない（GC 後・子が消えた後も残る＝departed children も可視）。新規 write path は持たない（#188 read 時相関の思想に整合。受領印の emit は `oe-ack`）。
 
 ```bash
 oe-activity            # 俯瞰: 親子関係ごとに 往復 / 配送 / 直近 preview / 子(送信元)生存
-oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに
-oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行ずつ（kick も出る・turn は read 時導出）
+oe-activity --inbox    # report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに（PENDING=未受領数）
+oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行ずつ（kick も出る・受領印 ack 行を interleave）
 ```
 
-- 出す情報は 4 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
+- 出す情報は 5 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
   - `TRIPS` … 関係内の `message_sent` 数（往復回数）
   - `DELIVERY` … 直近 message の `delivery_signal`（`suspected_miss`|`none`・`delivered` は名乗らない・`(×N)` は suspected_miss 件数）
   - `PREVIEW` … 直近 message 先頭 ~100 字
   - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
-- モード: 既定の俯瞰と `--inbox` は **1 関係 = 1 行のサマリ**（直近 message + 往復数）。`--timeline`（#206 増分2）は **1 送信 = 1 行の時系列**で、関係内の各 `message_sent` を `TURN`（関係内の read 時導出位置）/ `TS` / `DIR`（`report`=子→親 / `kick`=親→子）/ `DELIVERY` / `RELATION` / `PREVIEW` で並べる（kick も含む・全体は古→新）。turn はスキーマに焼かず read 時に `ts` 順で導出する（**スキーマ不変** ＝ event-bus は無改変）。lifecycle-end / stall は推論しない点は俯瞰と同じ（生の `ts` / `dir` のみ）
+  - `PENDING`（inbox・#206A） … 自分宛て message のうち**未受領**の数（0=すべて受領済み）。`report_received` の frontier snapshot（`covers_count`/`covers_last_ts`）から read 時導出: `K = min(covers_count, |ts ≤ covers_last_ts|)` の先頭 K 件が received・複数 ack は max K（単調・巻き戻りなし）。受領は推論しない — actor が `oe-ack` で打った印だけを数える
+- モード: 既定の俯瞰と `--inbox` は **1 関係 = 1 行のサマリ**（直近 message + 往復数）。`--timeline`（#206 増分2）は **1 送信 = 1 行の時系列**で、関係内の各 `message_sent` を `TURN`（関係内の read 時導出位置）/ `TS` / `DIR`（`report`=子→親 / `kick`=親→子）/ `DELIVERY` / `RELATION` / `PREVIEW` で並べる（kick も含む・全体は古→新）。増分A で受領印（`report_received`）も `TURN="-"` / `DIR=ack` の 1 行として interleave する（preview に `covers=N ≤ frontier`）。turn はスキーマに焼かず read 時に `ts` 順で導出する。lifecycle-end / stall は推論しない点は俯瞰と同じ
 - read-only / 非検出: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。ペイン出力は読まない（capture / polling しない）・書込なし
 - degrade: `jq` 不在は件数のみ表示・`tmux` 不在は `LIVE=?`・ログ空は明示メッセージ（いずれも exit 0）
 - 既知の制約（増分1）: liveness は現サーバの `tmux list-panes -a` 突合で別サーバのペイン ID は `gone` と出る。イベントは server pid を持たず **pane を関係キー**にするため、同一サーバで `%N` が再利用（pane 破棄後の再割当）されると別関係が同一 `%N` に混線し得る（TRIPS 過大・親/inbox 取り違え）。server-pid キー化は後続増分（DJ-188-4 拡張）へ defer。壊れた JSONL 行は read 時に黙ってスキップ（degrade）
+- 既知の残余（増分A・受領印）: ack 直前に割り込んだ新着が frontier に入り得る（`oe-ack` の echo で開示）・誤 ack の訂正 event は未実装（additive で将来）・log rotation 導入時は ack/frontier 整合の保存が制約（rotation 増分へ申し送り）
 
-関連: `lib/event-bus.sh`（emit プリミティブ・`oe-delegate` が `child_spawned` / `oe_send_line` が `message_sent` を発火）、`schemas/oe-events.schema.json`（レコードスキーマ・audit-log とは別系統）。設計判断は #188 DJ-188-4 を delegate 現実（session_id 不在）へ精緻化したもの。
+関連: `lib/event-bus.sh`（emit プリミティブ・`oe-delegate` が `child_spawned` / `oe_send_line` が `message_sent` / `oe-ack` が `report_received` を発火）、`schemas/oe-events.schema.json`（レコードスキーマ・audit-log とは別系統）。設計判断は #188 DJ-188-4 を delegate 現実（session_id 不在）へ精緻化したもの。
 
 ---
 
@@ -294,7 +317,7 @@ oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行�
 | `OE_JUMP_STATE_DIR` | oe-jump: `--record`/replay の state 置き場 | `~/.claude/state/oe-jump` |
 | `OE_VIEW_ROOTS` | oe-view: allowlist 許可ルート（コロン区切り。`--from-link` 時に強制） | 各プロジェクトの `projects/*/docs` のみ（クリック境界を doc に限定。該当無しなら空＝fail-closed） |
 | `OE_VIEW_STATE_DIR` | oe-view: viewer pane id の state 置き場 | `~/.claude/state/oe-view` |
-| `OE_EVENT_DIR` | 活動ログ（#206）の置き場（`oe-events.jsonl`）。emit / oe-activity 共通 | `~/.claude/state` |
+| `OE_EVENT_DIR` | 活動ログ（#206）の置き場（`oe-events.jsonl`）。emit / oe-activity / oe-ack 共通 | `~/.claude/state` |
 | `OE_EVENT_LOG` | 活動ログ emit の有効/無効（`0` で kill-switch） | 有効 |
 | `OE_EVENT_PREVIEW_MAX` | message_sent の preview 切り詰め codepoint 数 | `100` |
 

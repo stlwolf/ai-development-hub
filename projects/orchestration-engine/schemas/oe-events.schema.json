@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/stlwolf/ai-development-hub/schemas/oe-events.schema.json",
   "title": "OE Activity Event",
-  "description": "親子相互作用の永続 append-only 活動ログ（oe-events.jsonl）の 1 行分のスキーマ（#206 増分1）。audit-log.schema.json（engine の session_id 主キー監査）とは別系統。各イベントは from/to の {pane,role,label} を emit 時に焼き込む自己完結レコードで、session_id を主キーにせず registry の生存にも read 時依存しない（#188 DJ-188-4 を delegate 現実へ精緻化）。1 行 1 イベント。vocab は additive 設計（増分2 で report_received / turn を非破壊追加可能）。",
+  "description": "親子相互作用の永続 append-only 活動ログ（oe-events.jsonl）の 1 行分のスキーマ（#206 増分1）。audit-log.schema.json（engine の session_id 主キー監査）とは別系統。各イベントは from/to の {pane,role,label} を emit 時に焼き込む自己完結レコードで、session_id を主キーにせず registry の生存にも read 時依存しない（#188 DJ-188-4 を delegate 現実へ精緻化）。1 行 1 イベント。vocab は additive 設計（増分A で report_received を非破壊追加済み。turn 等も同様に追加可能）。",
   "type": "object",
   "required": ["ts", "type", "from", "to"],
   "properties": {
@@ -14,16 +14,16 @@
     },
     "type": {
       "type": "string",
-      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種。追加種別は additive に拡張する。",
-      "enum": ["child_spawned", "message_sent"]
+      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加。追加種別は additive に拡張する。",
+      "enum": ["child_spawned", "message_sent", "report_received"]
     },
     "from": {
       "$ref": "#/definitions/endpoint",
-      "description": "発生元（child_spawned=親 / message_sent=送信元）。pane/role/label を emit 時に焼き込む。"
+      "description": "発生元（child_spawned=親 / message_sent=送信元 / report_received=受領者=ack を打った側）。pane/role/label を emit 時に焼き込む。"
     },
     "to": {
       "$ref": "#/definitions/endpoint",
-      "description": "宛先（child_spawned=子 / message_sent=宛先）。pane/role/label を emit 時に焼き込む。"
+      "description": "宛先（child_spawned=子 / message_sent=宛先 / report_received=報告元=受領した message の送信側）。pane/role/label を emit 時に焼き込む。"
     },
     "preview": {
       "type": "string",
@@ -33,6 +33,16 @@
       "type": "string",
       "description": "message_sent のみ: 配送シグナル。suspected_miss=finalize が未着候補を観測 / none=未着シグナル無し（delivered の確証ではない）。#144 信号を読むのみで reliability の再実装はしない。",
       "enum": ["suspected_miss", "none"]
+    },
+    "covers_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "report_received のみ: この受領印がカバーする message_sent（to.pane → from.pane 宛て）の累計数。emit 時に verb 層（oe-ack）がログから計算して焼き込む（frontier snapshot・自己完結）。0 件時は emit しない（no-op）ため minimum 1。同秒に割り込んだ未読 message を received に含めない cap として read 時に使う。"
+    },
+    "covers_last_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "report_received のみ: カバーする最終 message_sent の ts（frontier）。viewer は (ts,idx) 順で ts がこの値以下の件数と covers_count の小さい方 K を採り、先頭 K 件を received と投影する（rotation で古い行が落ちても新規未読を誤って received にしない）。"
     }
   },
   "definitions": {
@@ -64,6 +74,13 @@
       "then": {
         "required": ["preview", "delivery_signal"],
         "description": "message_sent は preview と delivery_signal を必須とする。"
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "report_received" } } },
+      "then": {
+        "required": ["covers_count", "covers_last_ts"],
+        "description": "report_received は covers_count と covers_last_ts（frontier snapshot）を必須とする。"
       }
     }
   ]
