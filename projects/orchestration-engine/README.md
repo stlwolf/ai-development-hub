@@ -46,7 +46,8 @@ projects/orchestration-engine/
 │   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化。送信は oe_send_line 経由=活動ログに載る）
 │   ├── oe-ack                 # 自分宛て報告への受領印（report_received）を打つ actor verb（#206A・frontier snapshot）
 │   ├── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
-│   └── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
+│   ├── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
+│   └── oe-tree                # spawn トポロジ（親→子→孫）の read-only 罫線ツリー表示（registry 現 server スナップショット・#221）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
 │   ├── event-bus.sh           # 親子活動ログ emit プリミティブ（child_spawned / message_sent / report_received・best-effort・#206）

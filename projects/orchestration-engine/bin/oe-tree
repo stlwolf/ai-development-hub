@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221）
+#
+# usage: oe-tree
+#
+# spawn registry（~/.claude/state/oe-delegate/）の現 tmux server 分を走査し、
+# parent_pane 連鎖から森林を再構成して罫線ツリーで表示する。oe-list が flat な
+# 宛先候補（自分の直下の子に scoping）なのに対し、oe-tree は「何が何を立てたか」
+# 「どのペインが孫か」を現 server 全域で描く観測ビュー（oe-activity / oe-status と
+# 同クラス）。
+#
+# 意味論（設計SO で明文化を要求された点・DJ-221-2/6）:
+#   - 本ビューは「現在の登記のスナップショット」であり歴史ではない。gone entry は
+#     次の oe_reg_record 時の GC まで表示される（read-only ではデータ源の性質を
+#     変えられない）。spawn の歴史フローは oe-activity（event log）の領分。
+#   - liveness は oe-activity と同じ mux 存在 query（tmux list-panes -a 突合）:
+#     pane が在る=alive / 無い=gone / query 失敗=?（degrade・観測は止めない）。
+#   - root 親は registry に entry を持たない（parent_pane 参照としてのみ現れる）
+#     ため合成し、ラベルは pane-issue > pane_title(alive のみ) > "?"（honest —
+#     無い物を捏造しない。oe-ident と同方針）。
+#   - role 列は持たない: ツリーは関係そのものを描くため parent/child は木の形が
+#     搬送する（oe-ident が role を前置するのは単一ペインの孤立表示だから）。
+#
+# read-only / 非検出: 読むのは (1) registry / pane-issue の state ファイル
+#   (2) tmux のペイン存在・pane_title（mux query）のみ。oe_reg_gc 等の write path は
+#   一切呼ばない（#177 / #188 の read-only 観測規律）。
+#
+# exit: 0=表示成功（登記 0 件の空表示を含む）/ 2=環境エラー（tmux scope 不能・jq 不在）。
+#   $TMUX 不在は server_pid が導出できず scoping も liveness も成立しない＝部分価値を
+#   残す degrade が構造的に無いため、lib 家族の規約（oe_reg_list / oe_reg_resolve）に
+#   合わせ exit 2（DJ-221-7）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+case "${1:-}" in
+  -h|--help)
+    cat >&2 <<'EOF'
+usage: oe-tree
+
+spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
+（read-only・現 tmux server の全森林）。各ノード: <pane> <liveness> <label> [~workspace] [(you)]
+
+注: 現在の登記のスナップショット（gone entry は次の spawn 登記時の GC まで表示）。
+歴史は oe-activity を参照。
+EOF
+    exit 0 ;;
+  "" ) : ;;
+  * ) echo "oe-tree: unexpected argument: $1" >&2; echo "usage: oe-tree" >&2; exit 2 ;;
+esac
+
+command -v jq >/dev/null 2>&1 || { echo "oe-tree: jq is required" >&2; exit 2; }
+
+SERVER_PID="$(_oe_reg_server_pid)"
+if [[ -z "$SERVER_PID" ]]; then
+  echo "oe-tree: not inside tmux (\$TMUX is unset) — spawn registry is scoped by tmux server pid" >&2
+  exit 2
+fi
+SELF="${TMUX_PANE:-}"
+
+# --- liveness（mux 存在 query。query 失敗は ? で degrade — oe-activity と同方針）---
+HAVE_LIVE=0
+LIVE_SET=""
+if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+  HAVE_LIVE=1
+fi
+liveness_of() {
+  local pane="$1"
+  if [[ "$HAVE_LIVE" -ne 1 ]]; then printf '?'; return; fi
+  if printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+
+# --- 現 server の entry 収集（US 区切り: pane<US>parent<US>workspace<US>label）---
+# 制御文字は jq 側で空白へ畳む: US は行内プロトコルの区切りを壊し（event-bus と同根）、
+# LF/CR は行指向出力の偽行注入（oe_reg_list L155-162 と同じ防御）、TAB は表示崩れ防止
+# （oe-activity の畳み方針。oe_reg_list の注記どおりレコード境界偽造ではない — 別根拠）。
+ENTRIES=""
+FOREIGN=0
+for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
+  [[ -e "$_f" ]] || continue
+  _base="$(basename "$_f" .json)"
+  if [[ "$_base" != "${SERVER_PID}_"* ]]; then
+    FOREIGN=$((FOREIGN + 1))
+    continue
+  fi
+  _line="$(jq -r '
+    def clean: tostring | gsub("[\u001f\t\r\n]"; " ");
+    [ (.pane // "" | clean), (.parent_pane // "" | clean),
+      (.workspace // "" | clean), (.label // "" | clean) ] | join("\u001f")
+  ' "$_f" 2>/dev/null)" || continue
+  [[ -n "$_line" ]] || continue
+  # pane が %N 形でない entry は辺として解釈できないためスキップ（壊れた JSON と同扱い）
+  [[ "${_line%%$'\037'*}" =~ ^%[0-9]+$ ]] || continue
+  ENTRIES+="${_line}"$'\n'
+done
+
+if [[ -z "$ENTRIES" ]]; then
+  echo "(no spawn entries for this tmux server)"
+  [[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)"
+  exit 0
+fi
+
+entry_field_of() { # <pane> <field-index> — ENTRIES から該当 pane の列を引く
+  printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" -v i="$2" '$1==p {print $i; exit}'
+}
+
+children_of() { # <pane> — 直下の子を pane 番号の数値昇順で
+  printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" '$2==p {print $1}' | sort -t% -k2 -n
+}
+
+label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(alive のみ) > "?"
+  local pane="$1" key label=""
+  key="$(_oe_reg_key "$pane")"
+  if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
+  fi
+  [[ -n "$label" ]] || label="$(entry_field_of "$pane" 4)"
+  if [[ -z "$label" && "$HAVE_LIVE" -eq 1 ]] && printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then
+    label="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)" || label=""
+  fi
+  # 出力チョークポイントの sanitize（pane-issue / pane_title 由来を含む全ソース一括防御）
+  label="${label//$'\n'/ }"; label="${label//$'\r'/ }"; label="${label//$'\t'/ }"
+  printf '%s' "${label:-?}"
+}
+
+# --- 森林構築: root = parent 参照のうち entry 無し pane ∪ parent 空の entry ---
+ROOTS="$(
+  {
+    printf '%s' "$ENTRIES" | awk -F $'\037' '$2!="" {print $2}' | sort -u \
+    | while IFS= read -r _p; do
+        [[ -n "$_p" ]] || continue
+        if ! printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$_p" '$1==p {found=1} END {exit found?0:1}'; then
+          printf '%s\n' "$_p"
+        fi
+      done
+    printf '%s' "$ENTRIES" | awk -F $'\037' '$2=="" {print $1}'
+  } | sort -t% -k2 -n -u
+)"
+
+VISITED=" "
+render() { # <pane> <prefix> <child-prefix>
+  local pane="$1" pfx="$2" cpfx="$3"
+  local live label ws suffix=""
+  if [[ "$VISITED" == *" ${pane} "* ]]; then
+    printf '%s%s  [cycle]\n' "$pfx" "$pane"
+    return 0
+  fi
+  VISITED+="${pane} "
+  live="$(liveness_of "$pane")"
+  label="$(label_of "$pane")"
+  ws="$(entry_field_of "$pane" 3)"
+  [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
+  [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
+  printf '%s%s  %-5s  %s%s\n' "$pfx" "$pane" "$live" "$label" "$suffix"
+  local kids n i=0 c
+  kids="$(children_of "$pane")"
+  n="$(printf '%s' "$kids" | grep -c . || true)"
+  while IFS= read -r c; do
+    [[ -n "$c" ]] || continue
+    i=$((i + 1))
+    if [[ "$i" -eq "$n" ]]; then
+      render "$c" "${cpfx}└─ " "${cpfx}   "
+    else
+      render "$c" "${cpfx}├─ " "${cpfx}│  "
+    fi
+  done <<< "$kids"
+}
+
+while IFS= read -r _r; do
+  [[ -n "$_r" ]] || continue
+  render "$_r" "" ""
+done <<< "$ROOTS"
+
+# 未到達 entry の sweep: 純粋 cycle（全ノードが entry 持ち parent を指す輪）は root を
+# 持たず上のループで描かれない。無言で消すと「登記に在るのに見えない」偽りになるため、
+# 最小 pane を擬似 root として描く（cycle guard が輪の閉じで [cycle] を打って止める）。
+while IFS= read -r _p; do
+  [[ -n "$_p" ]] || continue
+  [[ "$VISITED" == *" ${_p} "* ]] && continue
+  render "$_p" "" ""
+done < <(printf '%s' "$ENTRIES" | awk -F $'\037' '{print $1}' | sort -t% -k2 -n)
+
+[[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)"
+exit 0
