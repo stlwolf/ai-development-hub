@@ -3,7 +3,7 @@ id: "01KWJ0F80R40JRHTKQHDWB8D0C"
 title: "#221 episode — spawn ツリー（親→子→孫）read-only トポロジ観測ビュー実装記録"
 date: 2026-07-03
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/221"
@@ -74,3 +74,58 @@ tags: [orchestration, cockpit, spawn-tree, topology, observation, read-only, epi
   - **ESC 等の端末制御文字の直出し**: sanitize が LF/CR/TAB/US のみで、`oe-delegate --label $'\e[2J...'` 経由で ESC が registry に到達し（oe-delegate は LF/CR しか拒否しない — 実照合済み）、人間向け cockpit 表示に画面消去・視覚偽装・OSC 端末制御が通る。`oe_reg_list` は ANSI を「別軸・scope 外」と注記するが（宛先表の脅威モデル＝レコード境界偽造）、oe-tree は表示そのものが製品なので視覚偽装が本ツールの脅威モデルに入る — material と判断。→ C0 全域 + DEL + C1（U+0000-001F/007F/0080-009F）を jq の codepoint gsub で空白へ畳む（収集経路の clean + pane-issue/pane_title 経路の `sanitize_out` チョークポイント。C1 は UTF-8 符号化形も畳めるよう byte-wise でなく codepoint 処理・jq 不能時は C0+DEL の tr へ縮退）。修正 commit: edc7fa2（tests 19 チェック・OSC/BEL タイトル偽装ケース含む）。
   - 教訓（レーン別レンズの差）: SO#1 で cursor が「pane-issue 経路の US 未畳みは非 material」と流した箇所の上位集合を SO#2 で codex が material として拾った — 2 レーンの独立性が働いた形。
 - **SO#3**（audit_id 202607021947362XW6QQHR5P69・reviewed_sha edc7fa2）: **survived 2/2**（codex/cursor とも material なし。cursor は 19/19 テスト・shellcheck・cycle/dedup/sanitize/foreign 経路の手動追跡を明記）。実装SO ゲート通過 — PR 作成へ。
+
+## PR
+
+- [PR #222](https://github.com/stlwolf/ai-development-hub/pull/222)（feat(oe): spawn トポロジの read-only ツリー観測 verb oe-tree を追加）。コミット 4 件: a71b587（feat）→ 56ce2c5（fix: skip 開示 + dedup）→ edc7fa2（fix: C0/C1/DEL sanitize）→ ea1d236（docs: episode 追記）。マージ・worktree 掃除はしない（kickoff 規律・人間/親）。
+
+## Closure（episode-retrospective・heavy tier・2026-07-03）
+
+tier 判定: heavy（意図的 SO レーンを 5 回起動 = oe-refute ×2 + oe-review ×3 / 非自明な設計判断あり / SO 指摘による修正 2 回あり）。
+
+### 事実・失敗（選択的省略をしない）
+
+0. **設計フェーズの誤り一式**（採否の詳細は設計フェーズ節の SO#1/#2 記録が正本 — ここは失敗棚卸しとしての列挙）: tmux 不在挙動の二転（exit 2 → pid グループ degrade → 比較の上 exit 2 に統合）・初期案の sanitize 欠落・森林構築/複数 root/orphan/cycle の仕様化不足・テスト計画の具体性不足・TAB sanitize の引用根拠誤り（oe_reg_list の注記と矛盾）。
+1. **role 列棄却の初期根拠が誤り**: stored field（常に "child"）だけ見て「情報ゼロ」と断定したが、`oe-ident` の read-time role 導出という家族概念が実在した（設計SO#1 両レーン指摘）。結論（列なし）は維持されたが根拠を差し替えた — 結論が生き残っても根拠が死んでいることはある。
+2. **v2 改訂を追記形式にして探索木本文と矛盾を作った**（設計SO#2 codex 指摘）— working doc は統合書き直しが正・履歴は episode 側に持つ、で回復。
+3. **実装 v1 に failure propagation 欠陥**: 壊れ/不正/重複 entry の無言スキップで「登記なし」と偽る・偽 [cycle] 表示（実装SO#1 cursor 指摘）→ 56ce2c5 で修正。
+4. **ESC/端末制御文字の sanitize 漏れ**（実装SO#2 codex 指摘）→ edc7fa2 で修正。oe_reg_list の「ANSI は scope 外」注記に引っ張られ、表示ツール自身の脅威モデルで考え直すのが遅れた。
+5. episode に commit hash を誤記（5db595d と書くべきは edc7fa2）→ 事実ドリフトとして in-place 修正（kickoff のエピソード精度規律）。
+6. ツール操作の失敗: 探索木/スクリプト編集時に不可視の生制御文字（US・C0 範囲）を 2 度ソースへ混入させ、Edit の文字列一致も阻害した → `\uXXXX` 明示エスケープへ統一して回復。
+
+### 決定と根拠（詳細は本文の設計フェーズ節・確定はユーザー承認済み）
+
+- 新規 verb `oe-tree`（oe-list --tree / oe-status 区画 / event-log 再構成 / JSON only を棄却 — 棄却理由は探索木 v3 から本文に転記済み）。核: **oe-list の宛先契約（self scoping）とトポロジ全域表示は意味論が別物**。
+- registry 現在スナップショット主義（歴史は oe-activity・レイヤ分離）・gone 表示 + GC 不呼出・tmux 不在 exit 2（「degrade で残せる部分価値が構造的に無い」比較の上）・role 列なし（木の形が搬送）。
+
+### わかったこと
+
+- `oe_reg_gc` は `oe_reg_record` 時のみ走る write path で、**異 server pid の entry を無条件 rm する**（L182）— 観測ツールから GC を呼べない構造的理由・複数 server 表示が「実在し得ない状態」である理由の両方がここに帰着する。
+- event log（child_spawned）は server_pid を持たず、server 再起動を跨ぐ歴史再構成は pane-id 再利用で混同する — oe-activity の既知の制約と同根で、oe-tree が「現在」に限定する根拠。
+- `C-Space g`（tmux-claude-picker）は tmux 構造（window/pane）の対話ピッカーで、spawn 帰属（誰が誰を委譲したか）は tmux が知らないデータ — oe-tree と補完関係（承認時のユーザー質問への実物照合で確認）。
+
+### 原則（Pattern / Anti-pattern 対）
+
+- NG: producer 側 sanitize の scope 注記（oe_reg_list「ANSI は視覚偽装＝別軸・scope 外」）を消費者にそのまま流用する / OK: **表示ツールは自分の脅威モデルで sanitize クラスを決める**（人間向け表示が製品なら C0/C1/DEL 全域を codepoint で畳む）。→ #62（negative knowledge 注入）実装時に回収（routing 先: #62）。
+- NG: working doc の改訂を追記だけで済ませ本文との矛盾を残す / OK: 確定前 working doc は統合書き直し・改訂履歴は episode が持つ。
+
+### 蒸留シグナル
+
+- **Decision/ADR: 非昇格**（adr-1 の判断）。理由: 本件の決定は tool-local（表示形式・データ源選択・degrade 規約）で、新 write path・スキーマ・イベント意味論の変更がなく #114/#92/#206A 級のシステム横断影響に届かない。判断の再利用は `bin/README.md` の oe-tree 節 + 本 episode の DJ 記録で足りる。
+- skill / rule 昇格: なし。
+
+### 残課題（routing — 全件行き先付き）
+
+- `--json` 出力・gone root ラベルの event-log 補完・ラベル解決 4 重化の共通 read ヘルパ化・oe-status への observe 統合: **[PR #222](https://github.com/stlwolf/ai-development-hub/pull/222) スコープ外節に surface 済み**。採否・起票は epic [#169](https://github.com/stlwolf/ai-development-hub/issues/169) オーナー（人間/親）判断に委ねる — 子からは追わない。
+- ペイン分割レイアウト戦略（第2弾）: [#221](https://github.com/stlwolf/ai-development-hub/issues/221) 本文が別 issue と宣言済み — 起票待ち（子からは追わない）。
+- popup キーバインド / fzf 対話化: dotfiles 側 / #176 系譜 — PR #222 に surface 済み・追わない（必要になったとき hub vs dotfiles 分担で判断）。
+
+### closure gate
+
+- Context/なぜ: 冒頭 2 文で自己完結（flat oe-list で親子が追えない認知負荷）— 充足。
+- 次の消費者: (1) #169 epic の観測 UI 後続（fzf 化・observe 統合）の実装者 (2) 第2弾 issue の起票者（スコープ境界の参照元）(3) sanitize 脅威モデルの対構造は #62 実装時の注入候補。
+- evidence anchor: 揮発参照（`tmp/dj-221-tree.md`・`tmp/oe-refute-*`・`tmp/oe-review-*`）の要点（DJ と棄却理由・audit_id・verdict・レーン note）は本文へ転記済み。SO の生出力は audit_id（oe-refute/oe-review の audit jsonl）で追跡可能。
+- status: draft → **stable**・達成（受入条件 2 点とも実測検証済み・PR #222 作成済み）。
+- Step 4 外部チェック（so-compare 弱SO・`tmp/so-20260703-045437`・揮発）: codex=**refuted**（(a) 設計フェーズの採用済み指摘が失敗棚卸しから欠落 (b) frontmatter status が draft のまま宣言と矛盾）/ claude=**survived**（省略は concealment でなく圧縮と判定・軽微 1 件 = 56ce2c5 の skip 開示が bin/README 未記載）。→ (a) は本節の項目 0 として追補・(b) は frontmatter を stable に確定・claude 指摘の README 追記も反映（いずれも本 closure コミットに含む）。弱SO 規律: 両レーン実返却あり・指摘は全件処置済みで確定に進む。
+
+形式メモ: チャネル骨格で「事実・失敗」の選択的省略チェックが効いた（SO 指摘 4 件 + 自己失敗 2 件を列挙する動機になった）。「原則」の対構造は sanitize の学びに自然に嵌った。皮（KPT/YWT）は使わず。摩擦は Step 4 外部チェックの待ち時間のみ。
