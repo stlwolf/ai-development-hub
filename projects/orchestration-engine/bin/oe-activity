@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
-# oe-activity — 親子相互作用の活動ログ（oe-events.jsonl）の read-only 投影ビュー（#206 増分1）
+# oe-activity — 親子相互作用の活動ログ（oe-events.jsonl）の read-only 投影ビュー（#206 増分1 + 増分A）
 #
 # usage:
 #   oe-activity            俯瞰: 親子関係ごとに 往復 / 配送 / 直近 preview / 子(送信元)生存
-#   oe-activity --inbox    report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに表示
-#   oe-activity --timeline 時系列: 関係内の各送信を turn 順に 1 行ずつ（turn は read 時導出）
+#   oe-activity --inbox    report inbox: 自分(=$TMUX_PANE)宛の報告を送信元(子)ごとに表示（PENDING=未受領数）
+#   oe-activity --timeline 時系列: 関係内の各送信を turn 順に 1 行ずつ（turn は read 時導出）+ 受領印(ack)行
 #   oe-activity -h | --help
 #
 # lib/event-bus.sh が best-effort 追記する自己完結レコード（from/to の {pane,role,label} を
 # emit 時に焼込）を read 時に投影する。新規 write path は持たない（#188 read 時相関の思想に整合）。
+# 受領印（report_received・#206A）の emit は actor verb bin/oe-ack — viewer は投影のみ。
 #
-# 出す情報は 4 つだけ（lifecycle-end / stall は推論しない ＝ DJ-188-2 尊重）:
+# 出す情報は 5 つだけ（lifecycle-end / stall は推論しない ＝ DJ-188-2 尊重）:
 #   - 往復回数（TRIPS）  : 関係内の message_sent 数
 #   - 配送（DELIVERY）   : 直近 message の delivery_signal（suspected_miss|none、delivered は名乗らない）
 #   - preview            : 直近 message の先頭 ~100 字
 #   - 送信元生存（LIVE） : 子(worker)ペインの mux 存在 query 結果（alive|gone|?）。
 #                          report の送信元 ＝ 子なので「報告者がまだ居るか」を honest に示す。
 #                          ended/stalled の分類はしない（pane が在る=alive / 無い=gone / tmux 不在=?）。
+#   - 受領（PENDING/ack）: inbox の PENDING = 自分宛て message のうち未受領の数（0=すべて受領済み）。
+#                          report_received の frontier snapshot（covers_count/covers_last_ts）から
+#                          read 時導出: K = min(covers_count, |ts <= covers_last_ts|) の先頭 K 件が
+#                          received・複数 ack は max K（単調・巻き戻りなし）。受領は推論しない —
+#                          actor が oe-ack で打った印だけを数える。
 #
 # read-only / 非検出: 触れるのは (1) oe-events.jsonl (2) tmux ペイン存在（mux query）のみ。
 #   ペイン出力は一切読まない（capture / polling はしない）。書込なし。
@@ -39,8 +45,8 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   oe-activity            俯瞰（親子関係ごとに 往復 / 配送 / preview / 子生存）
-  oe-activity --inbox    report inbox（自分宛の報告を送信元ごとに）
-  oe-activity --timeline 時系列（関係内の各送信を turn 順に 1 行ずつ）
+  oe-activity --inbox    report inbox（自分宛の報告を送信元ごとに・PENDING=未受領数）
+  oe-activity --timeline 時系列（関係内の各送信を turn 順に 1 行ずつ・受領印 ack 行を含む）
   oe-activity -h|--help
 
 read-only: oe-events.jsonl と tmux ペイン存在のみを読む（検出・送信はしない）。
@@ -95,39 +101,65 @@ liveness_of() {
 # --- 投影（jq・slurp）: overview/inbox=1 関係 1 行（新しい順）/ timeline=1 送信 1 行（時系列）---
 # フィールド区切りは US (\u001f)。tab だと IFS 空白扱いで連続 tab が折り畳まれ空フィールド（空 label 等）が
 # 消えて列ズレする（実装SO cursor 指摘）。US は非空白なので read -r が空フィールドを保持する。
-# overview/inbox 列順: child_pane, parent_pane, child_label, parent_label, trips, deliv, miss, preview
+# overview/inbox 列順: child_pane, parent_pane, child_label, parent_label, trips, deliv, miss, pending, preview
+#                      （pending は inbox のみ意味を持つ。overview は "-"）
 # timeline 列順:       turn, ts, dir, deliv, child_pane, parent_pane, child_label, parent_label, preview
+#                      （受領印は turn="-", dir="ack" の行として interleave）
 # 前段の `jq -R 'fromjson? // empty'` で壊れた JSONL 行を黙ってスキップ（1 行破損で全体 exit 1 を回避）。
 project() {
   jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
   | jq -rs \
     --arg mode "$MODE" --arg self "$SELF" '
+    # received 数の read 時導出（frontier snapshot 意味論・#206A）:
+    # 候補 $cands（相手→自分宛て message の昇順）に対し、各 ack の
+    # K = min(covers_count, |ts <= covers_last_ts|) を取り、複数 ack は max（単調・巻き戻りなし）。
+    # count cap により「ack 計算後に同秒で割り込んだ message」を received に含めない。
+    def received_of($acks; $rcv; $org; $cands):
+      ( [ $acks[] | select(.receiver==$rcv and .origin==$org) | . as $a
+          | ([ $cands[] | select(.ts <= $a.frontier) ] | length) as $k1
+          | (if $a.covers < $k1 then $a.covers else $k1 end) ] | max // 0 );
     ( [ .[] | select(.type=="child_spawned") ] ) as $spawns
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = $s.from.pane) )            as $parent_of
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = ($s.to.label // "")) )     as $clabel
     | ( reduce $spawns[] as $s ({}; .[$s.from.pane] = ($s.from.label // "")) ) as $plabel
+    # idx = イベント全体の append 順位置（global）。message と ack を同じ軸で並べ、秒精度 ts の
+    # 同秒タイ時に turn/表示順を決定的にする（実装SO codex 指摘の idx を増分A で global 化）。
+    | ( to_entries ) as $indexed
+    # 受領印（report_received・#206A）: receiver=from（ack を打った側）/ origin=to（報告元）。
+    | ( [ $indexed[] | select(.value.type=="report_received")
+        | { aidx:.key, ts:.value.ts,
+            receiver:.value.from.pane, origin:.value.to.pane,
+            rlab:(.value.from.label // ""), olab:(.value.to.label // ""),
+            covers:(.value.covers_count // 0), frontier:(.value.covers_last_ts // "") } ] ) as $acks
     # 各 message を親/子へ向き付け（直接 parent リンク優先 → role → fallback）。
-    # idx = message_sent の append 順位置。秒精度 ts の同秒タイ時に turn/表示順を決定的にする（実装SO codex 指摘）。
-    | ( [ .[] | select(.type=="message_sent") ] | to_entries
-        | map( .key as $idx | .value as $m
+    | ( [ $indexed[] | select(.value.type=="message_sent")
+        | .key as $idx | .value as $m
           | ( if   (($parent_of[$m.from.pane]) // "") == $m.to.pane   then {p:$m.to.pane,   c:$m.from.pane}
               elif (($parent_of[$m.to.pane])   // "") == $m.from.pane then {p:$m.from.pane, c:$m.to.pane}
               elif ($m.from.role=="child")  and ($m.to.role=="parent") then {p:$m.to.pane,   c:$m.from.pane}
               elif ($m.from.role=="parent") and ($m.to.role=="child")  then {p:$m.from.pane, c:$m.to.pane}
               else {p:$m.from.pane, c:$m.to.pane} end ) as $r
-          | { idx:$idx, c:$r.c, p:$r.p, ts:$m.ts, recipient:$m.to.pane,
+          | { idx:$idx, sender:$m.from.pane, c:$r.c, p:$r.p, ts:$m.ts, recipient:$m.to.pane,
               dir:   (if $m.to.pane==$r.p then "report" elif $m.to.pane==$r.c then "kick" else "→" end),
               clab_m: (if $r.c==$m.from.pane then $m.from.label else $m.to.label end),
               plab_m: (if $r.p==$m.from.pane then $m.from.label else $m.to.label end),
               deliv: ($m.delivery_signal // "none"),
-              prev:  (($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ) ) as $msgs
+              prev:  (($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ] ) as $msgs
     # inbox は自分宛の報告だけに絞る
     | ( if $mode=="inbox" then [ $msgs[] | select(.recipient==$self) ] else $msgs end ) as $fmsgs
     | if $mode=="timeline"
       then
-        # timeline: 関係(子)ごとに (ts,idx) 昇順で turn を read 時導出、全体も (ts,idx) で時系列に 1 送信 1 行
-        ( $fmsgs | group_by(.c)
-          | map( sort_by(.ts, .idx) | to_entries | map(.value + {turn:(.key+1)}) ) | add // [] )
+        # timeline: 関係(子)ごとに (ts,idx) 昇順で turn を read 時導出、受領印(ack)行を interleave し、
+        # 全体を (ts,idx) で時系列に 1 イベント 1 行
+        ( ( $fmsgs | group_by(.c)
+            | map( sort_by(.ts, .idx) | to_entries | map(.value + {turn:(.key+1)}) ) | add // [] )
+          + [ $acks[] | . as $a
+              | ( if   (($parent_of[$a.origin])   // "") == $a.receiver then {p:$a.receiver, c:$a.origin,   plab:$a.rlab, clab:$a.olab}
+                  elif (($parent_of[$a.receiver]) // "") == $a.origin   then {p:$a.origin,   c:$a.receiver, plab:$a.olab, clab:$a.rlab}
+                  else {p:$a.receiver, c:$a.origin, plab:$a.rlab, clab:$a.olab} end ) as $r
+              | { idx:$a.aidx, ts:$a.ts, turn:"-", dir:"ack", deliv:"-",
+                  c:$r.c, p:$r.p, clab_m:$r.clab, plab_m:$r.plab,
+                  prev: ("受領印 covers=" + ($a.covers|tostring) + " ≤ " + $a.frontier) } ] )
         | sort_by(.ts, .idx)
         | .[] | [ (.turn|tostring), .ts, (.dir // "→"), (.deliv // "none"), .c, .p, (.clab_m // ""), (.plab_m // ""), (.prev // "") ] | join("\u001f")
       else
@@ -136,17 +168,24 @@ project() {
         | [ $children[] | . as $c
             | ( [ $fmsgs[] | select(.c==$c) ] | sort_by(.ts, .idx) ) as $g
             | ( ($parent_of[$c]) // (if ($g|length)>0 then $g[-1].p else "" end) ) as $p
+            # PENDING（inbox のみ）: 自分宛て候補 $g のうち未受領数。inbox の $g は全件 recipient=self
+            # なので相手 = $g[0].sender。rotation で covers_count が可視件数を超えても負にしない（clamp 0）。
+            | ( if $mode=="inbox" and ($g|length) > 0
+                then received_of($acks; $self; $g[0].sender; $g) else 0 end ) as $recv
             | { c:$c, p:$p,
                 clab: ( ($clabel[$c]) // (if ($g|length)>0 then $g[-1].clab_m else "" end) // "" ),
                 plab: ( ($plabel[$p]) // (if ($g|length)>0 then $g[-1].plab_m else "" end) // "" ),
                 trips: ($g|length),
                 deliv: (if ($g|length)>0 then $g[-1].deliv else "-" end),
                 miss:  ([ $g[] | select(.deliv=="suspected_miss") ] | length),
+                pend:  (if $mode=="inbox"
+                        then ((($g|length) - $recv) | if . < 0 then 0 else . end | tostring)
+                        else "-" end),
                 prev:  (if ($g|length)>0 then ($g[-1].prev // "") else "" end),
                 lts:   (if ($g|length)>0 then $g[-1].ts else "" end),
                 lidx:  (if ($g|length)>0 then $g[-1].idx else -1 end) } ]
         | sort_by(.lts, .lidx) | reverse
-        | .[] | [ .c, .p, .clab, .plab, (.trips|tostring), .deliv, (.miss|tostring), .prev ] | join("\u001f")
+        | .[] | [ .c, .p, .clab, .plab, (.trips|tostring), .deliv, (.miss|tostring), .pend, .prev ] | join("\u001f")
       end
   '
 }
@@ -182,21 +221,23 @@ fi
 
 if [[ "$MODE" == "inbox" ]]; then
   printf '=== report inbox (to %s · tmux · read-only) ===\n' "$SELF"
-  printf '%-6s  %-5s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "DELIVERY" "FROM" "PREVIEW"
+  printf '%-6s  %-5s  %-7s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "PENDING" "DELIVERY" "FROM" "PREVIEW"
 else
   printf '=== activity (parent/child · tmux · read-only) ===\n'
   printf '%-6s  %-5s  %-20s  %-30s  %s\n' "LIVE" "TRIPS" "DELIVERY" "RELATION" "PREVIEW"
 fi
 
-while IFS=$'\037' read -r c p clab plab trips deliv miss prev; do
+while IFS=$'\037' read -r c p clab plab trips deliv miss pend prev; do
   [[ -n "$c" || -n "$p" ]] || continue
   live="$(liveness_of "$c")"     # 送信元 ＝ 子(worker)の生存
   deliv_disp="$deliv"
   [[ "${miss:-0}" -gt 0 ]] 2>/dev/null && deliv_disp="${deliv} (×${miss})"
   if [[ "$MODE" == "inbox" ]]; then
+    # PENDING = 未受領数（0 = すべて受領済み・oe-ack が打った印だけを数える）
     relation="$(disp "$c" "$clab")"
+    printf '%-6s  %-5s  %-7s  %-20s  %-30s  %s\n' "$live" "$trips" "$pend" "$deliv_disp" "$relation" "$prev"
   else
     relation="$(disp "$p" "$plab") → $(disp "$c" "$clab")"
+    printf '%-6s  %-5s  %-20s  %-30s  %s\n' "$live" "$trips" "$deliv_disp" "$relation" "$prev"
   fi
-  printf '%-6s  %-5s  %-20s  %-30s  %s\n' "$live" "$trips" "$deliv_disp" "$relation" "$prev"
 done <<< "$rows"

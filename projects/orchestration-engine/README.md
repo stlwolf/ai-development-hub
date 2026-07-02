@@ -43,12 +43,13 @@ projects/orchestration-engine/
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
-│   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化）
+│   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化。送信は oe_send_line 経由=活動ログに載る）
+│   ├── oe-ack                 # 自分宛て報告への受領印（report_received）を打つ actor verb（#206A・frontier snapshot）
 │   ├── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
-│   └── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存・report inbox / timeline（#206）
+│   └── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
-│   ├── event-bus.sh           # 親子活動ログ emit プリミティブ（child_spawned / message_sent・best-effort・#206）
+│   ├── event-bus.sh           # 親子活動ログ emit プリミティブ（child_spawned / message_sent / report_received・best-effort・#206）
 │   ├── envelope.sh            # JSON エンベロープ生成
 │   ├── spawn.sh               # wez pane split + send + CLI ディスパッチャ（cursor-agent / claude / codex）
 │   ├── capture.sh             # マーカー検出・6 値分類・KVS 書き込み（target pane 監視）
@@ -95,7 +96,8 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 - `oe-kick` — `oe-delegate` の薄いワンショットラッパー。`#N` or kickoff パスを 1 引数で受け妥当なフラグ列へ展開（`--label` 自動付与・workspace 既定化）（[#178](https://github.com/stlwolf/ai-development-hub/issues/178)）
 - `oe-send` — 既存ペインへ 1 行を汎用送信。親→子の追送、子→親の戻し（`oe-send "$PARENT_TMUX_PANE" ...`）、関連の薄い側道会話を一手に担う。`%N`/ラベル解決・`--kickoff`・`--no-enter`（投入のみ＝ステージ）
 - `oe-list` — 宛先候補を source 列付きで一覧
-- `oe-report` — legacy（戻しは `oe-send` に一本化済み）
+- `oe-report` — legacy（戻しは `oe-send` に一本化済み。送信は `oe_send_line` 経由なので活動ログ（`message_sent`）に載る）
+- `oe-ack` — 自分宛て報告への**受領印**（`report_received`）を打つ actor verb（[#206](https://github.com/stlwolf/ai-development-hub/issues/206) (A)）。viewer は read-only 規律のため、受領は受領した側（AI が report 処理時 / 人間が inbox 確認時）が明示的に打つ。`oe-activity --inbox` の PENDING 列 / `--timeline` の ack 行で `message_sent` → `report_received` のループが閉じる
 
 設計上のポイント:
 

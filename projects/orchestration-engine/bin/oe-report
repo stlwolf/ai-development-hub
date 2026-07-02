@@ -8,8 +8,15 @@
 #   2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（手動設定時のみ。oe-delegate は書き出さない）
 # どちらもなければエラー終了（exit 1）。
 # 注: 戻しは汎用 oe-send への一本化が方針。本コマンドは legacy（整理は #142 論点E）。
+# 送信は oe_send_line（delegate-send.sh）経由 — 生 send-keys 時代は message_sent を emit せず
+# 活動ログ（inbox / report_received ループ・#206A）の盲点だった。載せ替えで 1 行保証・
+# 死ペイン検知・copy-mode 解除・finalize・message_sent emit が oe-send と同じに揃う（#142 の部分前倒し）。
 
 set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-send.sh
+source "${BIN_DIR}/../lib/delegate-send.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -59,12 +66,11 @@ fi
   exit 1
 }
 
-# メッセージを組み立てて送信
+# メッセージを組み立てて送信（1 行保証・emit 込みの oe_send_line。失敗は rc をそのまま返す）
 if [[ "$REVIEW" -eq 1 ]]; then
   PREFIX="レビュー依頼"
 else
   PREFIX="申し送り"
 fi
 
-tmux send-keys -l -t "$PARENT_PANE" "${PREFIX}: ${MESSAGE}"
-tmux send-keys -t "$PARENT_PANE" Enter
+oe_send_line "$PARENT_PANE" "${PREFIX}: ${MESSAGE}"

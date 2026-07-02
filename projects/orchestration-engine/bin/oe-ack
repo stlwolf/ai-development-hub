@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# oe-ack — 自分宛て報告への受領印（report_received）を打つ actor verb（#206A）
+#
+# usage: oe-ack [--all] [--] [<target>]
+#
+# 「子の報告が親に届いた／読まれた」を可視化する #206 (A) の書き込み口。viewer
+# （oe-activity）は read-only 規律で emit できないため、受領印は受領した側の
+# アクター（AI が report 処理時 / 人間が inbox 確認時）が本 verb で明示的に打つ。
+#
+# 意味論（frontier snapshot・DJ-206A-2）: emit する report_received イベントに
+# covers_count（対象相手→自分宛て message_sent の累計数）と covers_last_ts
+# （カバーする最終 message の ts）を焼き込む。viewer は (ts,idx) 順で
+# K = min(covers_count, |ts <= covers_last_ts|) の先頭 K 件を received と投影する。
+# ログ read と covers 計算は本 verb 層の責務で、lib/event-bus.sh の
+# oe_event_report_received は引数のみの純 emit（DJ-206A-6 の層分離）。
+#
+# 既知の残余（開示・増分A受入済み）: ログに到着済みだが acker 未読の報告が
+# frontier に入り得る。防止せず、emit 直後に「acked N 件 / 最終: <ts> <preview>」を
+# stderr へ echo して acker が即検証できるようにする（affordance による開示）。
+# 誤 ack の訂正手段は増分Aには無い（訂正 event は vocab additive で将来可能）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/event-bus.sh
+source "${BIN_DIR}/../lib/event-bus.sh"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+err() { echo "oe-ack: $*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-ack [--all] [--] [<target>]
+
+  <target>    受領印を打つ相手。生のペインID（例: %5）か ラベル（#142 / 任意名）。
+              ラベルは registry で解決（候補は oe-list / oe-activity --inbox で確認）
+  --all       自分宛て未受領 message のある相手すべてに per-relation で受領印を打つ
+  -h, --help  このヘルプを表示
+
+自分（$TMUX_PANE）宛てに <target> から届いた message_sent の累計に受領印
+（report_received・frontier snapshot）を打つ。未受領分が無ければ何も emit しない。
+受領済みは oe-activity --inbox（PENDING 列）/ --timeline（ack 行）で見える。
+EOF
+  exit 1
+}
+
+ALL=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --all) ALL=1; shift ;;
+    -h|--help) usage ;;
+    --) shift; break ;;
+    *) err "unknown option: $1"; usage ;;
+  esac
+done
+
+TARGET="${1:-}"
+if [[ "$ALL" -eq 1 && -n "$TARGET" ]]; then
+  err "--all と <target> は同時指定できません"
+  usage
+fi
+if [[ "$ALL" -eq 0 && -z "$TARGET" ]]; then
+  err "target が必要です（または --all）"
+  usage
+fi
+
+SELF="${TMUX_PANE:-}"
+[[ -n "$SELF" ]] || { err "\$TMUX_PANE が必要です（tmux ペイン内で実行）— 受領印は受領者ペインから打つ"; exit 2; }
+command -v jq >/dev/null 2>&1 || { err "jq が必要です（covers の計算に使用）"; exit 2; }
+
+# 単一ノブ OE_EVENT_DIR（writer=event-bus.sh / reader=oe-activity と一致）
+OE_EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
+if [[ ! -s "$OE_EVENT_FILE" ]]; then
+  echo "oe-ack: nothing to ack (no activity recorded yet in ${OE_EVENT_FILE})" >&2
+  exit 0
+fi
+
+# _ack_scan <other_pane>
+#   ログを read-only で走査し "<total>US<last_ts>US<prev_covered>US<last_preview>" を返す。
+#   total        = other→self の message_sent 累計数（ファイル順・壊れ行は黙って skip）
+#   last_ts      = その最終 message の ts（frontier 候補）
+#   prev_covered = 既存 ack（self→other の report_received）の covers_count 最大値
+#   last_preview = 最終 message の preview（echo 用）
+#   フィールド区切りは US (\u001f)（oe-activity と同じ理由: 空フィールド保持）。
+_ack_scan() {
+  local other="$1"
+  jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
+  | jq -rs --arg self "$SELF" --arg other "$other" '
+      [ .[] | select(.type=="message_sent" and .from.pane==$other and .to.pane==$self) ] as $msgs
+      | [ .[] | select(.type=="report_received" and .from.pane==$self and .to.pane==$other)
+          | .covers_count ] as $acks
+      | [ ($msgs | length | tostring),
+          (if ($msgs|length) > 0 then $msgs[-1].ts else "" end),
+          (($acks | max) // 0 | tostring),
+          (if ($msgs|length) > 0 then (($msgs[-1].preview // "") | gsub("[[:cntrl:]]"; " ")) else "" end) ]
+      | join("\u001f")'
+}
+
+# _ack_one <other_pane> <display_name>
+#   1 相手ぶんの受領印: pending を計算し、あれば emit + echo。無ければ no-op を告知。
+_ack_one() {
+  local other="$1" disp="$2"
+  local total last_ts prev_covered last_prev pending
+  IFS=$'\037' read -r total last_ts prev_covered last_prev < <(_ack_scan "$other") || true
+  if [[ -z "${total:-}" || "$total" -eq 0 ]]; then
+    echo "oe-ack: nothing to ack from ${disp}（${SELF} 宛ての message なし）" >&2
+    return 0
+  fi
+  pending=$(( total - prev_covered ))
+  if [[ "$pending" -le 0 ]]; then
+    echo "oe-ack: nothing to ack from ${disp}（累計 ${total} 件すべて受領済み）" >&2
+    return 0
+  fi
+  oe_event_report_received "$SELF" "$other" "$total" "$last_ts"
+  # 開示 affordance: 何を受領印したかを acker が即検証できるように出す。
+  # 直前に読んだ内容と最終 preview が食い違えば、ack 直前に新着が割り込んだサイン。
+  echo "oe-ack: acked ${pending} 件（累計 ${total}）from ${disp} / 最終: ${last_ts} 「${last_prev}」" >&2
+}
+
+if [[ "$ALL" -eq 1 ]]; then
+  # 自分宛て message の送信元を列挙し、per-relation に受領印（pending 無しは各々 no-op）
+  senders="$(jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
+    | jq -rs --arg self "$SELF" \
+        '[ .[] | select(.type=="message_sent" and .to.pane==$self) | .from.pane ] | unique | .[]')"
+  if [[ -z "$senders" ]]; then
+    echo "oe-ack: nothing to ack（${SELF} 宛ての message なし）" >&2
+    exit 0
+  fi
+  while IFS= read -r sender; do
+    [[ -n "$sender" ]] || continue
+    _ack_one "$sender" "$sender"
+  done <<< "$senders"
+  exit 0
+fi
+
+# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決・oe-send と同じ）。
+# 子が departed で registry から消えた後は、oe-activity --inbox に出る生の %N を渡す。
+PANE="$(oe_reg_resolve "$TARGET")" || exit
+if [[ "$PANE" == "$SELF" ]]; then
+  err "自分自身（${SELF}）への受領印は打てません"
+  exit 2
+fi
+if [[ "$TARGET" == "$PANE" ]]; then
+  _ack_one "$PANE" "$PANE"
+else
+  _ack_one "$PANE" "${TARGET} (${PANE})"
+fi
