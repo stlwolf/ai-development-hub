@@ -187,7 +187,33 @@ actual="$("$TREE" | grep -cE '%85  gone|%110  alive')"
 ck "gone mid keeps child" "2" "$actual"
 
 # ----------------------------------------------------------------------------
-echo "[11] 引数: --help は exit 0 / 未知引数は exit 2"
+echo "[11] 壊れ JSON / 不正 pane / 重複 pane: skip 件数を footer 開示・有効 entry は描画"
+# ----------------------------------------------------------------------------
+reset_state
+mkentry %60 "standalone" "/w/one" ""
+printf '{broken' > "${OE_DELEGATE_STATE_DIR}/12345__901.json"
+printf '{"pane":"nope","label":"x","workspace":"","parent_pane":"","role":"child"}' \
+  > "${OE_DELEGATE_STATE_DIR}/12345__902.json"
+printf '{"pane":"%%60","label":"dup","workspace":"","parent_pane":"","role":"child"}' \
+  > "${OE_DELEGATE_STATE_DIR}/12345__903.json"
+export MOCK_LIVE_PANES="%60"
+expected='%60  alive  standalone ~one
+note: 3 entries skipped (unreadable or duplicate pane)'
+ck "partial skip disclosed" "$expected" "$("$TREE")"
+
+# ----------------------------------------------------------------------------
+echo "[12] 現 server entry が全滅（壊れのみ）: 「登記なし」と偽らず readable 無しを明示 + exit 0"
+# ----------------------------------------------------------------------------
+reset_state
+printf '{broken' > "${OE_DELEGATE_STATE_DIR}/12345__901.json"
+out="$("$TREE")"; rc=$?
+expected='(no readable spawn entries for this tmux server)
+note: 1 entries skipped (unreadable or duplicate pane)'
+ck "all-broken message" "$expected" "$out"
+ck "all-broken exit 0" "0" "$rc"
+
+# ----------------------------------------------------------------------------
+echo "[13] 引数: --help は exit 0 / 未知引数は exit 2"
 # ----------------------------------------------------------------------------
 "$TREE" --help >/dev/null 2>&1; ck "help exit 0" "0" "$?"
 "$TREE" bogus  >/dev/null 2>&1; ck "unknown arg exit 2" "2" "$?"

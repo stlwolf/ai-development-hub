@@ -79,6 +79,8 @@ liveness_of() {
 # （oe-activity の畳み方針。oe_reg_list の注記どおりレコード境界偽造ではない — 別根拠）。
 ENTRIES=""
 FOREIGN=0
+SKIPPED=0
+SEEN_PANES=" "
 for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
   [[ -e "$_f" ]] || continue
   _base="$(basename "$_f" .json)"
@@ -90,16 +92,35 @@ for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
     def clean: tostring | gsub("[\u001f\t\r\n]"; " ");
     [ (.pane // "" | clean), (.parent_pane // "" | clean),
       (.workspace // "" | clean), (.label // "" | clean) ] | join("\u001f")
-  ' "$_f" 2>/dev/null)" || continue
-  [[ -n "$_line" ]] || continue
-  # pane が %N 形でない entry は辺として解釈できないためスキップ（壊れた JSON と同扱い）
-  [[ "${_line%%$'\037'*}" =~ ^%[0-9]+$ ]] || continue
+  ' "$_f" 2>/dev/null)" || { SKIPPED=$((SKIPPED + 1)); continue; }
+  [[ -n "$_line" ]] || { SKIPPED=$((SKIPPED + 1)); continue; }
+  _pane="${_line%%$'\037'*}"
+  # pane が %N 形でない entry は辺として解釈できない（壊れた JSON と同扱い）。
+  # 同一 pane の重複 entry（key と .pane の不整合＝write 側不変条件違反）は先勝ちで捨てる
+  # — dedup しないと 2 回目の render が visited に当たり偽 [cycle] を表示する（実装SO 指摘）。
+  if ! [[ "$_pane" =~ ^%[0-9]+$ ]] || [[ "$SEEN_PANES" == *" ${_pane} "* ]]; then
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+  SEEN_PANES+="${_pane} "
   ENTRIES+="${_line}"$'\n'
 done
 
-if [[ -z "$ENTRIES" ]]; then
-  echo "(no spawn entries for this tmux server)"
+# 読めない/解釈できない/重複の現 server entry は無言で捨てず件数を footer で開示する
+# （foreign と同型の honest degrade — 全滅時も部分スキップ時も「登記どおり」と偽らない。実装SO 指摘）。
+print_notes() {
+  [[ "$SKIPPED" -gt 0 ]] && echo "note: ${SKIPPED} entries skipped (unreadable or duplicate pane)"
   [[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)"
+  return 0
+}
+
+if [[ -z "$ENTRIES" ]]; then
+  if [[ "$SKIPPED" -gt 0 ]]; then
+    echo "(no readable spawn entries for this tmux server)"
+  else
+    echo "(no spawn entries for this tmux server)"
+  fi
+  print_notes
   exit 0
 fi
 
@@ -122,7 +143,7 @@ label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(aliv
     label="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)" || label=""
   fi
   # 出力チョークポイントの sanitize（pane-issue / pane_title 由来を含む全ソース一括防御）
-  label="${label//$'\n'/ }"; label="${label//$'\r'/ }"; label="${label//$'\t'/ }"
+  label="${label//$'\n'/ }"; label="${label//$'\r'/ }"; label="${label//$'\t'/ }"; label="${label//$'\037'/ }"
   printf '%s' "${label:-?}"
 }
 
@@ -183,5 +204,5 @@ while IFS= read -r _p; do
   render "$_p" "" ""
 done < <(printf '%s' "$ENTRIES" | awk -F $'\037' '{print $1}' | sort -t% -k2 -n)
 
-[[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)"
+print_notes
 exit 0
