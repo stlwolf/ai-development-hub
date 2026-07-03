@@ -71,3 +71,18 @@ SO モード（kickoff 指定）: 設計SO=弱（`so-compare` or `oe-refute --ru
 - `tests/test_oe_tree.sh`（拡張）: mock tmux を拡張（`MOCK_LIVE_LINES` = タブ区切り verbatim / `display-message` を format 引数で分岐 `MOCK_ACTIVE_PANE`）・既存 13 ブロックの期待値を座標列（`-`）対応に更新・新規 4 ブロック（[14] 座標併記+sanitize / [15] 引数検証 6 ケース+watch tmux-less / [16] watch 1 tick 非 TTY background・ヘッダ+内容+復元 / [17] (you) fallback freeze）。**31/31 PASS**（#221 時点 19 → 31）。
 - shellcheck: `bin/oe-tree` / `tests/test_oe_tree.sh` とも指摘ゼロ。
 - doc: `bin/README.md` oe-tree 節を「#221 / #223」に改題・座標列と出力例更新・`### --watch` 小節（read セット同一の非検出境界=DJ-223-9 / kill 反映=DJ-223-10 / 配置非依存 / 逐次ループの自己抑制 / (you) 注入と freeze / run-shell スニペット=例キー T + `tmux list-keys` 衝突確認注記 / toggle 意味論 / -C・-EE / follow-up 一覧）。`README.md` 構成ツリー 1 行更新。
+- コミット: 8111166（feat）。
+
+## 受入検証（2026-07-03）
+
+- **verify-2（live 更新・read-only）**: 実 tmux + 隔離 state dir（`OE_DELEGATE_STATE_DIR` override・実 registry 非接触）で実測 — 検証用 detached セッションのペインを登記 → `--watch --interval 1` 実行中に (a) 登記追加（spawn 相当）(b) `kill-session`（実ペイン消滅）を発生 → 捕捉 5 フレームで「最初: alive・late-spawn 不在 / 最後: gone・late-spawn 出現」を機械 assert で確認（4/4 True）。kill が alive→gone 遷移として数秒で反映（DJ-223-10 の意味論どおり）。
+- **verify-1（キー一発・浮遊表示・レイアウト非消費）**: 本実装を README スニペットと同一経路（`run-shell` + `-e 'TMUX_PANE=#{pane_id}'` + `display-popup -E`）で popup 表示 — ユーザーがキー操作（q/Esc）で正常クローズ（exit 0）・視覚/復帰の問題指摘なし。popup 内 `(you)` マーカーは -e 注入経路で表示（テスト [17] は fallback 経路を mock で担保）。「キー一発で開く」の最終形は dotfiles への bind 追加（マージ後・環境側責務）で成立 — 本 PR の提供物はスニペットまで（責務分界どおり）。プロトタイプ段のデモ 2 回 + 本実装 1 回の計 3 回とも人間のキーで正常終了。
+
+## 実装SO（oe-review・2026-07-03）
+
+- **SO#1**（audit_id 20260703094630WRQ0ZRR653HK・reviewed_sha 8111166・diff_base master・2 レーン）: **survived 2/2**（1 周通過 — #221 は 3 周を要した）。codex=「--watch/座標追加に material な correctness/到達可能性/堅牢性/security 欠陥は確認できなかった」/ cursor=「watch/snapshot 分岐・re-exec・liveness/座標パース・sanitize・引数検証・非TTY EOF 退避・trap 復元をコードと 31/31 テストで照合し material な欠陥なし」。実装SO ゲート通過 — PR 作成へ。
+- 1 周通過の背景（belief・断定しない）: 設計SO 2 周が実装前に sanitize 経路・EOF busy-loop・freeze 意味論・テスト計画を先に固めたこと + 中核ロジック無改変（additive 変更に限定）が効いた可能性。
+
+## Decision/ADR 昇格判断（adr-1）
+
+- **非昇格**（#221 と同判断）。理由: 本件の決定は tool-local（watch 機構・座標表示・終了 UX・スニペット形）で新規 write path・スキーマ・イベント意味論の変更がない。唯一システム横断性のある DJ-223-9（非検出境界は「何を読むか」の線 — 観測 verb の watch 化の参照点）は hg-1 でユーザー裁定済みで、`bin/README.md` の --watch 節に参照点として明文化済み + 本 episode の DJ 記録で再利用可能 — #114/#92/#206A 級の独立 ADR には届かない。将来 watch 系が増えて線の解釈が争点化したら、その時点の episode から昇格すればよい（積み上げ式）。
