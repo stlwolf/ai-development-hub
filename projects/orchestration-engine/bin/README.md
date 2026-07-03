@@ -353,7 +353,7 @@ bind-key T run-shell "tmux display-popup -e 'TMUX_PANE=#{pane_id}' -E -x C -y C 
 ```
 
 - `-x C -y C` は popup 枠を画面中央に置く明示指定（省略時も概ね中央 — 明示しておくと環境差の切り分けが楽）
-- **中身はパネル中央に描画**（TTY 時のみ）: 描画ブロックの縦横を毎 tick 測り、パネル内の中央に置く（左上張り付きの是正 — hg-2 ユーザー要望）。幅は近似 wcwidth（ASCII=1 / それ以外=2）のため罫線・和文混在ではやや左寄りになり得る。非 TTY（テスト・パイプ）は無加工・サイズ取得失敗は pad 0 に degrade
+- **中身はパネル中央に描画**（TTY 時のみ）: 描画ブロックの縦横を毎 tick 測り、パネル内の中央に置く（左上張り付きの是正 — hg-2）。パネルサイズは `stty size < /dev/tty` を一次にする（tmux popup 内では `tput cols` が実 pty を引けず 80×24 の fallback を返すため — 実測。stty は実サイズを返す）・失敗時のみ tput に fallback。幅は近似 wcwidth（ASCII / 罫線 = 1・その他 = 2）のため非 ASCII 記号混在ではやや左寄りになり得る。非 TTY（テスト・パイプ）は無加工・サイズ取得不能は pad 0 に degrade
 
 - oe-tree は PATH 登録前提にしない（絶対パスで書く。PATH に通している環境は `oe-tree --watch` で可）。dotfiles にパスを書く運用コスト（リポジトリ移動で陳腐化）は #202 と同型の受容
 - **toggle の意味論**: popup 表示中のキーは popup 内プログラムへ渡るため、tmux bind による「同キーで開閉」は構造的に不成立。開く=bind 1 キー / 閉じる=`q` or `Esc` 1 キーの 2 キー完結（hg-1 受入済み）。`display-popup -C` は別ペイン/スクリプトからの強制 close（rescue）。`-EE`（成功時のみ自動 close）は代替として存在するが、エラー保持は tool 側の 3s hold が配置非依存に同じ役割を果たすため既定にしない

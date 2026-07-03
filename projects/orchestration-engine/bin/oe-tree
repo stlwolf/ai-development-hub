@@ -130,12 +130,19 @@ if [[ "$WATCH" -eq 1 ]]; then
 
 ${_frame}"
     # 中身の描画位置（hg-2）: TTY のときはブロックをパネル中央に置く（左上張り付きの是正）。
-    # 非 TTY（テスト・パイプ）は無加工。幅は近似 wcwidth（ASCII=1 / それ以外=2 — 罫線を
-    # 2 と過大に数え中央よりやや左に寄り得る・表示ツールの許容誤差）。サイズ取得失敗は
-    # pad 0 で従来表示に degrade。
+    # 非 TTY（テスト・パイプ）は無加工。幅は近似 wcwidth（ASCII=1 / 罫線 │├└─ =1 /
+    # それ以外=2）。和文以外の非 ASCII 記号が混ざるとなお誤差は残る（表示ツールの許容誤差）。
+    # サイズ取得失敗は pad 0 で従来表示に degrade。
     if [[ -t 1 ]]; then
-      _rows="$(tput lines 2>/dev/null)" || _rows=0
-      _cols="$(tput cols 2>/dev/null)" || _cols=0
+      # サイズは stty size < /dev/tty を一次にする: tmux popup 内では tput が実 pty を
+      # 引けず 80x24 の fallback を返す（実測・hg-2）— stty は popup 実サイズを返す。
+      if _sz="$(stty size </dev/tty 2>/dev/null)" && [[ "$_sz" =~ ^[0-9]+\ [0-9]+$ ]]; then
+        _rows="${_sz%% *}"
+        _cols="${_sz##* }"
+      else
+        _rows="$(tput lines 2>/dev/null)" || _rows=0
+        _cols="$(tput cols 2>/dev/null)" || _cols=0
+      fi
       [[ "$_rows" =~ ^[0-9]+$ ]] || _rows=0
       [[ "$_cols" =~ ^[0-9]+$ ]] || _cols=0
       _h=0
@@ -144,7 +151,8 @@ ${_frame}"
         _h=$((_h + 1))
         _nc=${#_l}
         _ascii="${_l//[^ -~]/}"
-        _lw=$((_nc + (_nc - ${#_ascii})))
+        _box="${_l//[^│├└─]/}"
+        _lw=$((_nc + (_nc - ${#_ascii}) - ${#_box}))
         _w=$((_lw > _w ? _lw : _w))
       done <<< "$_block"
       _top=$(((_rows - _h) / 2))
