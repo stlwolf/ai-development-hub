@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 #
-# test_oe_tree.sh — oe-tree（spawn トポロジ read-only ツリー表示・#221）を検証する
+# test_oe_tree.sh — oe-tree（spawn トポロジ read-only ツリー表示・#221 / --watch + 座標 #223）を検証する
 #
 # 実 tmux は起動せず PATH 先頭 mock に差し替える（test_oe_jump / test_oe_select と同型）:
-#   - tmux: list-panes は $MOCK_LIVE_PANES を返す（$MOCK_TMUX_FAIL=1 で失敗＝liveness ? 経路）。
-#           display-message は $MOCK_PANE_TITLE を返す（pane_title fallback 用）。
+#   - tmux: list-panes は $MOCK_LIVE_LINES（タブ区切り pane<TAB>座標・verbatim）優先、
+#           無ければ $MOCK_LIVE_PANES（pane のみ＝座標 "-" 経路）。$MOCK_TMUX_FAIL=1 で失敗＝liveness ? 経路。
+#           display-message は format 引数で分岐: '#{pane_id}' → $MOCK_ACTIVE_PANE（(you) fallback 用）/
+#           それ以外 → $MOCK_PANE_TITLE（pane_title fallback 用）。
 #   - jq : 実体を使う（oe-tree の entry パースは実 jq のフィルタに依存）。
 # state は OE_DELEGATE_STATE_DIR / OE_PANE_ISSUE_DIR の一時 dir に隔離。
 # TMUX 偽値 "/tmp/mock-tmux,12345,0" で server pid = 12345 に固定（決定的 key 生成）。
+# --watch は非 TTY（stdin=/dev/null）の background 起動 → kill で 1 tick 分を検証
+# （EOF-safe sleep 経路の検証を兼ねる。実 popup の視覚・q/Esc 対話終了は自動テストでは
+# 覆えない構造的限界 — hg-1 ライブデモ + verify の実測が正・episode 記録）。
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -28,10 +33,18 @@ cat > "$_TMP_DIR/pathbin/tmux" <<'EOF'
 case "${1:-}" in
   list-panes)
     [[ "${MOCK_TMUX_FAIL:-0}" == "1" ]] && exit 1
-    # shellcheck disable=SC2086
-    printf '%s\n' ${MOCK_LIVE_PANES:-} ;;
+    if [[ -n "${MOCK_LIVE_LINES:-}" ]]; then
+      printf '%s\n' "$MOCK_LIVE_LINES"
+    else
+      # shellcheck disable=SC2086
+      printf '%s\n' ${MOCK_LIVE_PANES:-}
+    fi ;;
   display-message)
-    printf '%s\n' "${MOCK_PANE_TITLE:-}" ;;
+    if [[ "$*" == *'#{pane_id}'* ]]; then
+      printf '%s\n' "${MOCK_ACTIVE_PANE:-}"
+    else
+      printf '%s\n' "${MOCK_PANE_TITLE:-}"
+    fi ;;
   *) exit 0 ;;
 esac
 EOF
@@ -85,11 +98,11 @@ echo "[1] 3 世代チェーン: 罫線・世代・gone 合成 root・兄弟数�
 # ----------------------------------------------------------------------------
 reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
-expected='%49  gone   ?
-└─ %83  alive  fresh-orch-2 ~biz-infra
-   ├─ %85  alive  #5706 ~attelu.5706
-   │  └─ %110  alive  #5706-u1 ~attelu (you)
-   └─ %94  alive  #36 ~ecs'
+expected='%49  -       gone   ?
+└─ %83  -       alive  fresh-orch-2 ~biz-infra
+   ├─ %85  -       alive  #5706 ~attelu.5706
+   │  └─ %110  -       alive  #5706-u1 ~attelu (you)
+   └─ %94  -       alive  #36 ~ecs'
 ck "chain render" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -99,9 +112,9 @@ reset_state
 mkentry %8  "second-tree" "/w/two" %7
 mkentry %60 "standalone"  "/w/one" ""
 export MOCK_LIVE_PANES="%8 %60"
-expected='%7  gone   ?
-└─ %8  alive  second-tree ~two
-%60  alive  standalone ~one'
+expected='%7  -       gone   ?
+└─ %8  -       alive  second-tree ~two
+%60  -       alive  standalone ~one'
 ck "multi-root order" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -111,7 +124,7 @@ reset_state; fixture_chain
 printf '{"name":"#5706 renamed"}' > "${OE_PANE_ISSUE_DIR}/$(keyfor %85)"
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
 actual="$("$TREE" | grep -F '%85')"
-ck "pane-issue wins" '   ├─ %85  alive  #5706 renamed ~attelu.5706' "$actual"
+ck "pane-issue wins" '   ├─ %85  -       alive  #5706 renamed ~attelu.5706' "$actual"
 
 # ----------------------------------------------------------------------------
 echo "[4] label sanitize: LF/CR/TAB/US/ESC/C1 を空白へ畳む（端末制御・視覚偽装の遮断）"
@@ -120,8 +133,8 @@ reset_state
 mkentry %60 $'bad\nlab\tx\037y' "/w/one" ""
 mkentry %61 $'esc\033[2Jwipe\xc2\x9bcsi' "/w/esc" ""
 export MOCK_LIVE_PANES="%60 %61"
-expected='%60  alive  bad lab x y ~one
-%61  alive  esc [2Jwipe csi ~esc'
+expected='%60  -       alive  bad lab x y ~one
+%61  -       alive  esc [2Jwipe csi ~esc'
 ck "sanitized label" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -131,8 +144,8 @@ reset_state
 mkentry %201 "lab201" "" %202
 mkentry %202 "lab202" "" %201
 export MOCK_TMUX_FAIL=1
-expected='%201  ?      lab201
-└─ %202  ?      lab202
+expected='%201  -       ?      lab201
+└─ %202  -       ?      lab202
    └─ %201  [cycle]'
 ck "cycle cut + degrade ?" "$expected" "$("$TREE")"
 unset MOCK_TMUX_FAIL
@@ -145,7 +158,7 @@ mkentry %60 "standalone" "/w/one" ""
 printf '{"pane":"%%7","label":"foreign","workspace":"/w","parent_pane":"%%1","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/99999__7.json"
 export MOCK_LIVE_PANES="%60"
-expected='%60  alive  standalone ~one
+expected='%60  -       alive  standalone ~one
 note: 1 entries from other tmux servers not shown (stale)'
 ck "foreign hidden + footer" "$expected" "$("$TREE")"
 
@@ -178,9 +191,9 @@ reset_state
 mkentry %70 "" "/w/seventy" ""
 export MOCK_LIVE_PANES="%70"
 export MOCK_PANE_TITLE="picked up title"
-ck "title fallback" '%70  alive  picked up title ~seventy' "$("$TREE")"
+ck "title fallback" '%70  -       alive  picked up title ~seventy' "$("$TREE")"
 export MOCK_PANE_TITLE=$'spoof\033]0;t\007end'
-ck "title sanitize (OSC/BEL)" '%70  alive  spoof ]0;t end ~seventy' "$("$TREE")"
+ck "title sanitize (OSC/BEL)" '%70  -       alive  spoof ]0;t end ~seventy' "$("$TREE")"
 unset MOCK_PANE_TITLE
 
 # ----------------------------------------------------------------------------
@@ -188,7 +201,7 @@ echo "[10] gone 中間ノード: 親子とも登記あり・中間だけ gone �
 # ----------------------------------------------------------------------------
 reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %94 %110"   # %85 が gone
-actual="$("$TREE" | grep -cE '%85  gone|%110  alive')"
+actual="$("$TREE" | grep -cE '%85  -[[:space:]]+gone|%110  -[[:space:]]+alive')"
 ck "gone mid keeps child" "2" "$actual"
 
 # ----------------------------------------------------------------------------
@@ -202,7 +215,7 @@ printf '{"pane":"nope","label":"x","workspace":"","parent_pane":"","role":"child
 printf '{"pane":"%%60","label":"dup","workspace":"","parent_pane":"","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/12345__903.json"
 export MOCK_LIVE_PANES="%60"
-expected='%60  alive  standalone ~one
+expected='%60  -       alive  standalone ~one
 note: 3 entries skipped (unreadable or duplicate pane)'
 ck "partial skip disclosed" "$expected" "$("$TREE")"
 
@@ -222,6 +235,62 @@ echo "[13] 引数: --help は exit 0 / 未知引数は exit 2"
 # ----------------------------------------------------------------------------
 "$TREE" --help >/dev/null 2>&1; ck "help exit 0" "0" "$?"
 "$TREE" bogus  >/dev/null 2>&1; ck "unknown arg exit 2" "2" "$?"
+
+# ----------------------------------------------------------------------------
+echo "[14] 座標列（#223 DJ-223-11）: list-panes の format 拡張から併記・sanitize・不明は -"
+# ----------------------------------------------------------------------------
+reset_state
+mkentry %60 "one" "/w/one" ""
+mkentry %61 "two" "/w/two" ""
+mkentry %62 "thr" "/w/thr" ""
+export MOCK_LIVE_LINES=$'%60\t0:1.1\n%61\tmain:2.3\n%62\tbad\033name:1.1'
+expected='%60  0:1.1   alive  one ~one
+%61  main:2.3  alive  two ~two
+%62  bad name:1.1  alive  thr ~thr'
+ck "coords rendered + sanitized" "$expected" "$("$TREE")"
+unset MOCK_LIVE_LINES
+
+# ----------------------------------------------------------------------------
+echo "[15] --watch 引数検証（#223）: interval 不正・--interval 単独は exit 2"
+# ----------------------------------------------------------------------------
+"$TREE" --interval 3 >/dev/null 2>&1;            ck "interval without watch exit 2" "2" "$?"
+"$TREE" --watch --interval 0 >/dev/null 2>&1;    ck "interval 0 exit 2" "2" "$?"
+"$TREE" --watch --interval -1 >/dev/null 2>&1;   ck "interval negative exit 2" "2" "$?"
+"$TREE" --watch --interval abc >/dev/null 2>&1;  ck "interval non-numeric exit 2" "2" "$?"
+"$TREE" --watch --interval >/dev/null 2>&1;      ck "interval missing value exit 2" "2" "$?"
+err="$(env -u TMUX -u TMUX_PANE "$TREE" --watch </dev/null 2>&1 >/dev/null)"; rc=$?
+ck "watch tmux-less exit 2" "2" "$rc"
+ck "watch tmux-less note" "yes" "$(printf '%s' "$err" | grep -q 'not inside tmux' && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+echo "[16] --watch 1 tick（#223）: 非 TTY background でヘッダ + ツリー内容 + 復元シーケンス"
+# ----------------------------------------------------------------------------
+reset_state; fixture_chain
+export MOCK_LIVE_PANES="%83 %85 %94 %110"
+_watch_out="$_TMP_DIR/watch-out.txt"
+"$TREE" --watch --interval 1 </dev/null >"$_watch_out" 2>&1 &
+_watch_pid=$!
+sleep 1.5
+kill "$_watch_pid" 2>/dev/null
+wait "$_watch_pid" 2>/dev/null
+ck "watch header" "yes" "$(grep -q 'oe-tree --watch · interval=1s' "$_watch_out" && echo yes || echo no)"
+ck "watch tree content" "yes" "$(grep -q '%110  -       alive  #5706-u1 ~attelu (you)' "$_watch_out" && echo yes || echo no)"
+ck "watch alt-screen restore" "yes" "$(grep -q $'\033\[?1049l' "$_watch_out" && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+echo "[17] --watch の (you) fallback（#223 DJ-223-6）: TMUX_PANE unset → display-message の active pane を freeze"
+# ----------------------------------------------------------------------------
+reset_state; fixture_chain
+export MOCK_LIVE_PANES="%83 %85 %94 %110"
+export MOCK_ACTIVE_PANE="%94"
+_watch_out2="$_TMP_DIR/watch-out2.txt"
+env -u TMUX_PANE "$TREE" --watch --interval 1 </dev/null >"$_watch_out2" 2>&1 &
+_watch_pid2=$!
+sleep 1.5
+kill "$_watch_pid2" 2>/dev/null
+wait "$_watch_pid2" 2>/dev/null
+ck "fallback (you) on active pane" "yes" "$(grep -q '%94  -       alive  #36 ~ecs (you)' "$_watch_out2" && echo yes || echo no)"
+unset MOCK_ACTIVE_PANE
 
 # ----------------------------------------------------------------------------
 echo

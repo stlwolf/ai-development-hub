@@ -302,33 +302,57 @@ oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行�
 
 関連: `lib/event-bus.sh`（emit プリミティブ・`oe-delegate` が `child_spawned` / `oe_send_line` が `message_sent` / `oe-ack` が `report_received` を発火）、`schemas/oe-events.schema.json`（レコードスキーマ・audit-log とは別系統）。設計判断は #188 DJ-188-4 を delegate 現実（session_id 不在）へ精緻化したもの。
 
-## oe-tree — spawn トポロジの read-only ツリー表示（#221）
+## oe-tree — spawn トポロジの read-only ツリー表示 + live 表示（#221 / #223）
 
-spawn registry（`~/.claude/state/oe-delegate/`）の現 tmux server 分を走査し、`parent_pane` 連鎖から森林を再構成して罫線ツリーで表示する。`oe-list` が flat な宛先候補（自分の直下の子に scoping）なのに対し、oe-tree は「何が何を立てたか」「どのペインが孫か」を**現 server 全域**で描く観測ビュー（`oe-status` / `oe-activity` と同クラス）。
+spawn registry（`~/.claude/state/oe-delegate/`）の現 tmux server 分を走査し、`parent_pane` 連鎖から森林を再構成して罫線ツリーで表示する。`oe-list` が flat な宛先候補（自分の直下の子に scoping）なのに対し、oe-tree は「何が何を立てたか」「どのペインが孫か」を**現 server 全域**で描く観測ビュー（`oe-status` / `oe-activity` と同クラス）。`--watch` で poll 再描画の live 表示（tmux popup からの常用を想定・#223）。
 
 ```bash
-oe-tree        # 現 server の spawn 森林を罫線ツリーで表示
-oe-tree -h     # ヘルプ
+oe-tree                      # 現 server の spawn 森林を罫線ツリーで表示（一発スナップショット）
+oe-tree --watch              # live 表示（2s poll 再描画・q / Esc / C-c で終了）
+oe-tree --watch --interval 5 # 更新間隔を変更（秒・正整数）
+oe-tree -h                   # ヘルプ
 ```
 
-出力例（各ノード: `<pane> <liveness> <label> [~workspace] [(you)]`）:
+出力例（各ノード: `<pane> <座標 session:win.pane|-> <liveness> <label> [~workspace] [(you)]`）:
 
 ```text
-%49  gone   ?
-└─ %83  alive  fresh-orch-2 ~biz-infra
-   ├─ %85  alive  #5706 ~attelu.5706-orchestration
-   └─ %94  alive  #36 ~biz-infra.infra-#36_ecs-stack
-%73  alive  #206 increment2-timeline
-└─ %114  alive  #221 spawn-tree-view ~ai-development-hub (you)
+%49  -       gone   ?
+└─ %83  0:1.1   alive  fresh-orch-2 ~biz-infra
+   ├─ %85  0:1.4   alive  #5706 ~attelu.5706-orchestration
+   └─ %94  0:1.3   alive  #36 ~biz-infra.infra-#36_ecs-stack
+%119  0:3.1   alive  #206 increment2-timeline
+└─ %120  0:3.2   alive  #223 live-topology-viewer ~ai-development-hub (you)
 ```
 
 - **スナップショット意味論**: 本ビューは「現在の登記」であり歴史ではない。gone entry は次の `oe_reg_record` 時の GC まで表示される（read-only ではデータ源の性質を変えられない）。spawn の**歴史**フローは `oe-activity`（event log・`child_spawned`）の領分（レイヤ分離）
+- **座標の併記（DJ-223-11）**: `%N` は `oe-send` / `oe-jump` / `oe-list` との**突合キー**として維持し、人間の導線用に tmux 座標（`session:window.pane`）を併記する。座標は liveness と同じ 1 回の `tmux list-panes -a` コールの format 拡張で取る（追加コストなし）。gone / 取得不能は `-`（tmux 上に存在しない pane に座標は無い — honest）
 - **root 合成**: root 親は registry に entry を持たない（`parent_pane` 参照としてのみ現れる）ため合成する。ラベルは pane-issue > `pane_title`（alive のみ）> `?`（honest — 無い物を捏造しない。`oe-ident` と同方針）。子のラベルは pane-issue(.name) > registry(.label)（`oe_reg_list` と同優先順位）
 - **role 列は持たない**: ツリーは関係そのものを描くため parent/child は木の形が搬送する（`oe-ident` が role を前置するのは単一ペインの孤立表示だから）
-- **read-only / 非検出**: 触れるのは registry / pane-issue の state ファイルと tmux のペイン存在・pane_title（mux query）のみ。`oe_reg_gc` 等の write path は呼ばない（#177 / #188 の read-only 観測規律）
-- **出力 sanitize**: label / workspace の制御文字（C0 全域 + DEL + C1 = U+0000-001F / 007F / 0080-009F）を codepoint レベルで空白へ畳む。人間向け cockpit 表示のため ESC/CSI/OSC による偽行・画面消去・視覚偽装を遮断する（`oe_reg_list` の LF/CR 防御より広い — 表示ツールの脅威モデル）
-- degrade / exit: liveness query 失敗は `?` で継続。`$TMUX` 不在は scoping も liveness も成立しない（部分価値を残す degrade が構造的に無い）ため stderr note + exit 2（`oe_reg_list` / `oe_reg_resolve` の rc=2 規約と一致）。異 server の stale entry は非表示 + footer で件数開示。現 server の読めない/不正/重複 entry も無言で捨てず footer で skip 件数を開示（全滅時は `(no readable spawn entries ...)` — 「登記なし」と偽らない）。純粋 cycle（pane-id 再利用の理論ケース）は擬似 root で描画し `[cycle]` で打ち切り
-- follow-up（未実装・surface のみ）: `--json` 出力 / gone root ラベルの event-log 補完 / ラベル解決の共通 read ヘルパ化
+- **read-only / 非検出**: 触れるのは registry / pane-issue の state ファイルと tmux のペイン存在・座標・pane_title（mux query）のみ。`oe_reg_gc` 等の write path は呼ばない（#177 / #188 の read-only 観測規律）
+- **出力 sanitize**: label / workspace / 座標の制御文字（C0 全域 + DEL + C1 = U+0000-001F / 007F / 0080-009F）を codepoint レベルで空白へ畳む。人間向け cockpit 表示のため ESC/CSI/OSC による偽行・画面消去・視覚偽装を遮断する（`oe_reg_list` の LF/CR 防御より広い — 表示ツールの脅威モデル）
+- degrade / exit: liveness query 失敗は `?` で継続。`$TMUX` 不在は scoping も liveness も成立しない（部分価値を残す degrade が構造的に無い）ため stderr note + exit 2（`oe_reg_list` / `oe_reg_resolve` の rc=2 規約と一致。`--watch` 中は popup(-E) 即閉じ対策で TTY のときだけ 3s hold してから exit）。異 server の stale entry は非表示 + footer で件数開示。現 server の読めない/不正/重複 entry も無言で捨てず footer で skip 件数を開示（全滅時は `(no readable spawn entries ...)` — 「登記なし」と偽らない）。純粋 cycle（pane-id 再利用の理論ケース）は擬似 root で描画し `[cycle]` で打ち切り
+
+### --watch（live 表示・#223）
+
+tick ごとに自分自身（snapshot モード）を re-exec し、alt screen 上に `\e[H` + 本文 + `\e[J` で再描画する（全画面 clear のフリッカーなし・各フレームは一発実行と厳密に同一のコードパス）。終了は `q` / `Esc` / `C-c`。
+
+- **read セットは snapshot と同一**: poll が反復するのは registry / pane-issue / ペイン存在・座標・pane_title の read だけで、「何を読むか」の線は動かさない（capture 走査・自動反応=検出には踏み込まない — `oe-status` DJ-1(c) が守った非検出境界との整合。将来の watch 系追加もこの線を参照点にする）
+- **kill の反映**: alive→gone の遷移として数秒で映る。**ノードがツリーから消えるのは次 spawn の GC 時**（スナップショット意味論のまま — watch はデータ源の性質を変えない）
+- **配置は非依存**: `--watch` はただの CLI なので popup / 常設ペイン / 専用 window のどこでも動く。推奨は floating popup（レイアウト面積を恒久消費しない）
+- ループは逐次実行なので、登記が増えて 1 tick が interval を超えても遅延は累積しない（実効更新周期が伸びるだけ・バックログや暴走は構造的に起きない）。大規模時は `--interval` を伸ばす
+- `(you)` マーカー: popup 内では `TMUX_PANE` が unset のため、watch 開始時に active pane（= popup を開いたペイン）を 1 回だけ解決して固定する。下記スニペットの `-e 'TMUX_PANE=#{pane_id}'` を使えば opener が正確に注入される（`run-shell` 経由のときだけ format が展開される点に注意 — `display-popup` 直書きでは展開されない）
+
+**popup キーバインドは dotfiles 側で opt-in**（hub は強制しない・責務境界 = `oe-ident` #202 と同型）。推奨スニペット（`~/.tmux.conf` 等）:
+
+```tmux
+# oe topology live popup（例: prefix + T。キーは環境の空きに合わせる — tmux list-keys で衝突確認。
+# 例の T は tmux 既定で未割当だが、picker 等の自前 bind と衝突しないキーを選ぶこと）
+bind-key T run-shell "tmux display-popup -e 'TMUX_PANE=#{pane_id}' -E -w 70% -h 60% -T ' oe topology ' '/path/to/repo/projects/orchestration-engine/bin/oe-tree --watch'"
+```
+
+- oe-tree は PATH 登録前提にしない（絶対パスで書く。PATH に通している環境は `oe-tree --watch` で可）。dotfiles にパスを書く運用コスト（リポジトリ移動で陳腐化）は #202 と同型の受容
+- **toggle の意味論**: popup 表示中のキーは popup 内プログラムへ渡るため、tmux bind による「同キーで開閉」は構造的に不成立。開く=bind 1 キー / 閉じる=`q` or `Esc` 1 キーの 2 キー完結（hg-1 受入済み）。`display-popup -C` は別ペイン/スクリプトからの強制 close（rescue）。`-EE`（成功時のみ自動 close）は代替として存在するが、エラー保持は tool 側の 3s hold が配置非依存に同じ役割を果たすため既定にしない
+- follow-up（未実装・surface のみ）: `--json` 出力 / gone root ラベルの event-log 補完 / ラベル解決の共通 read ヘルパ化 / 汎用 `oe-watch` verb（他の観測 view の live 化）/ status-line 向け要約（`--summary`）/ popup 内 fzf 対話化（#176 系譜）
 
 関連 lib: `delegate-registry.sh`（`_oe_reg_server_pid` / `_oe_reg_key`・read ヘルパのみ使用）。
 

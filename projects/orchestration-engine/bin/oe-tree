@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
-# oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221）
+# oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221 / live 化 #223）
 #
-# usage: oe-tree
+# usage: oe-tree [--watch [--interval N]]
 #
 # spawn registry（~/.claude/state/oe-delegate/）の現 tmux server 分を走査し、
 # parent_pane 連鎖から森林を再構成して罫線ツリーで表示する。oe-list が flat な
 # 宛先候補（自分の直下の子に scoping）なのに対し、oe-tree は「何が何を立てたか」
 # 「どのペインが孫か」を現 server 全域で描く観測ビュー（oe-activity / oe-status と
-# 同クラス）。
+# 同クラス）。--watch で poll 再描画の live 表示（tmux popup からの常用を想定・#223）。
 #
 # 意味論（設計SO で明文化を要求された点・DJ-221-2/6）:
 #   - 本ビューは「現在の登記のスナップショット」であり歴史ではない。gone entry は
 #     次の oe_reg_record 時の GC まで表示される（read-only ではデータ源の性質を
-#     変えられない）。spawn の歴史フローは oe-activity（event log）の領分。
+#     変えられない）。--watch でも同じ: kill は alive→gone の遷移として反映され、
+#     ノードがツリーから消えるのは次 spawn の GC 時（DJ-223-10・hg-1 受入済み）。
+#     spawn の歴史フローは oe-activity（event log）の領分。
 #   - liveness は oe-activity と同じ mux 存在 query（tmux list-panes -a 突合）:
 #     pane が在る=alive / 無い=gone / query 失敗=?（degrade・観測は止めない）。
+#     同じ 1 コールの format 拡張で tmux 座標（session:window.pane）も取り %N に併記する
+#     （DJ-223-11: %N は oe-send / oe-jump / oe-list との突合キー・座標は人間の導線。
+#     gone/不明は "-" — tmux 上に存在しない pane に座標は無い）。
 #   - root 親は registry に entry を持たない（parent_pane 参照としてのみ現れる）
 #     ため合成し、ラベルは pane-issue > pane_title(alive のみ) > "?"（honest —
 #     無い物を捏造しない。oe-ident と同方針）。
@@ -22,13 +27,16 @@
 #     搬送する（oe-ident が role を前置するのは単一ペインの孤立表示だから）。
 #
 # read-only / 非検出: 読むのは (1) registry / pane-issue の state ファイル
-#   (2) tmux のペイン存在・pane_title（mux query）のみ。oe_reg_gc 等の write path は
-#   一切呼ばない（#177 / #188 の read-only 観測規律）。
+#   (2) tmux のペイン存在・座標・pane_title（mux query）のみ。oe_reg_gc 等の write path は
+#   一切呼ばない（#177 / #188 の read-only 観測規律）。--watch の poll はこの read セットを
+#   反復するだけで「何を読むか」の線は動かさない（capture 走査・自動反応に踏み込まない —
+#   oe-status DJ-1(c) が守った非検出境界との整合 = DJ-223-9・hg-1 裁定済み）。
 #
-# exit: 0=表示成功（登記 0 件の空表示を含む）/ 2=環境エラー（tmux scope 不能・jq 不在）。
-#   $TMUX 不在は server_pid が導出できず scoping も liveness も成立しない＝部分価値を
-#   残す degrade が構造的に無いため、lib 家族の規約（oe_reg_list / oe_reg_resolve）に
-#   合わせ exit 2（DJ-221-7）。
+# exit: 0=表示成功（登記 0 件の空表示を含む）/ 2=環境エラー（tmux scope 不能・jq 不在・
+#   引数不正）。$TMUX 不在は server_pid が導出できず scoping も liveness も成立しない＝
+#   部分価値を残す degrade が構造的に無いため、lib 家族の規約（oe_reg_list /
+#   oe_reg_resolve）に合わせ exit 2（DJ-221-7）。--watch 中の env エラーは popup(-E) が
+#   即閉じてメッセージが読めないため、TTY のときだけ 3s hold してから exit 2。
 
 set -euo pipefail
 
@@ -36,41 +44,124 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 
-case "${1:-}" in
-  -h|--help)
-    cat >&2 <<'EOF'
-usage: oe-tree
+WATCH=0
+INTERVAL=2
+INTERVAL_SET=0
+usage_err() {
+  echo "oe-tree: $1" >&2
+  echo "usage: oe-tree [--watch [--interval N]]" >&2
+  exit 2
+}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      cat >&2 <<'EOF'
+usage: oe-tree [--watch [--interval N]]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
-（read-only・現 tmux server の全森林）。各ノード: <pane> <liveness> <label> [~workspace] [(you)]
+（read-only・現 tmux server の全森林）。
+各ノード: <pane> <座標 session:win.pane|-> <liveness> <label> [~workspace] [(you)]
 
-注: 現在の登記のスナップショット（gone entry は次の spawn 登記時の GC まで表示）。
-歴史は oe-activity を参照。
+  --watch       poll 再描画の live 表示（q / Esc / C-c で終了）
+  --interval N  --watch の更新間隔（秒・正整数・既定 2）
+
+注: 現在の登記のスナップショット（kill は alive→gone 遷移として反映・ノードが消えるのは
+次の spawn 登記時の GC）。歴史は oe-activity を参照。
 EOF
-    exit 0 ;;
-  "" ) : ;;
-  * ) echo "oe-tree: unexpected argument: $1" >&2; echo "usage: oe-tree" >&2; exit 2 ;;
-esac
+      exit 0 ;;
+    --watch) WATCH=1 ;;
+    --interval)
+      shift
+      [[ $# -gt 0 ]] || usage_err "--interval requires a value"
+      INTERVAL="$1"
+      INTERVAL_SET=1 ;;
+    *) usage_err "unexpected argument: $1" ;;
+  esac
+  shift
+done
+[[ "$INTERVAL_SET" -eq 1 && "$WATCH" -eq 0 ]] && usage_err "--interval requires --watch"
+if [[ "$WATCH" -eq 1 ]]; then
+  [[ "$INTERVAL" =~ ^[0-9]+$ && "$INTERVAL" -ge 1 ]] \
+    || usage_err "--interval must be a positive integer (seconds), got: ${INTERVAL}"
+fi
 
-command -v jq >/dev/null 2>&1 || { echo "oe-tree: jq is required" >&2; exit 2; }
+# watch モードの env エラーは popup(-E) が即閉じてメッセージが読めないため、
+# TTY のときだけ 3s hold してから exit する（非 TTY = テスト/パイプは即 exit）。
+env_fail() {
+  echo "oe-tree: $1" >&2
+  if [[ "$WATCH" -eq 1 && -t 0 ]]; then
+    read -r -s -t 3 -n 1 2>/dev/null || true
+  fi
+  exit 2
+}
+
+command -v jq >/dev/null 2>&1 || env_fail "jq is required"
 
 SERVER_PID="$(_oe_reg_server_pid)"
 if [[ -z "$SERVER_PID" ]]; then
-  echo "oe-tree: not inside tmux (\$TMUX is unset) — spawn registry is scoped by tmux server pid" >&2
-  exit 2
+  env_fail "not inside tmux (\$TMUX is unset) — spawn registry is scoped by tmux server pid"
 fi
+
+# --- watch モード: tick ごとに自分自身（snapshot モード）を re-exec して描画（DJ-223-6）---
+# 中核ロジック（森林構築・render・sanitize・#221 実装SO 3周通過）を refactor せず温存し、
+# 各フレームを一発実行と厳密に同一のコードパスにする（watch と snapshot の意味論乖離を防ぐ）。
+if [[ "$WATCH" -eq 1 ]]; then
+  # (you) の SELF freeze: popup 内では TMUX_PANE が unset（実測・#223）。開始時の active pane
+  # （= popup を開いたペイン）を 1 回だけ解決して子 re-exec へ export する。per-tick 解決は
+  # フォーカス移動で (you) が drift するため凍結（DJ-223-6）。query 失敗はマーカーなし degrade。
+  if [[ -z "${TMUX_PANE:-}" ]]; then
+    _self="$(tmux display-message -p '#{pane_id}' 2>/dev/null)" || _self=""
+    if [[ -n "$_self" ]]; then
+      export TMUX_PANE="$_self"
+    fi
+  fi
+  # alt screen + cursor hide。tput 非依存の標準シーケンス（popup / 常設ペインで同じ挙動）。
+  # フレームは \e[H（home）+ 本文 + \e[J（末尾消去）— 全画面 clear のフリッカーを避ける。
+  trap 'printf "\e[?25h\e[?1049l"' EXIT
+  trap 'exit 0' INT TERM
+  printf '\e[?1049h\e[?25l'
+  while :; do
+    _frame="$("$0" 2>&1)" || true # tick 失敗も出力ごと表示して観測を止めない
+    printf '\e[H%s\n\n%s\e[J' \
+      "oe-tree --watch · interval=${INTERVAL}s · $(date +%H:%M:%S) · q/Esc: quit" "$_frame"
+    # read が sleep 兼 key listener（popup stdin は TTY — 実測）。q / Esc で終了。
+    if read -r -s -t "$INTERVAL" -n 1 _key 2>/dev/null; then
+      case "$_key" in q|Q|$'\e') exit 0 ;; esac
+    else
+      _rc=$?
+      # rc>128 = timeout（正常 tick）。それ以外（stdin EOF 等）は busy-loop 防止で sleep へ退避
+      [[ "$_rc" -gt 128 ]] || sleep "$INTERVAL"
+    fi
+  done
+fi
+
 SELF="${TMUX_PANE:-}"
 
-# --- liveness（mux 存在 query。query 失敗は ? で degrade — oe-activity と同方針）---
+# --- liveness + 座標（mux 存在 query。1 コールで両方取る — 追加プロセスなし・DJ-223-11）---
+# タブ区切り: pane_id<TAB>session:window.pane。session_name にタブが含まれると座標側が
+# 欠けるが表示は "-" へ degrade するだけ（座標は人間の導線・突合キーは %N）。
+# query 失敗は ? で degrade — oe-activity と同方針。
 HAVE_LIVE=0
 LIVE_SET=""
-if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+_TAB=$'\t'
+if LIVE_SET="$(tmux list-panes -a -F "#{pane_id}${_TAB}#{session_name}:#{window_index}.#{pane_index}" 2>/dev/null)"; then
   HAVE_LIVE=1
 fi
+is_alive() { # <pane> — LIVE_SET の第 1 列と厳密一致
+  [[ "$HAVE_LIVE" -eq 1 ]] || return 1
+  printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{f=1} END{exit f?0:1}'
+}
 liveness_of() {
   local pane="$1"
   if [[ "$HAVE_LIVE" -ne 1 ]]; then printf '?'; return; fi
-  if printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then printf 'alive'; else printf 'gone'; fi
+  if is_alive "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+coord_of() { # <pane> — alive ペインの tmux 座標（session:window.pane）。gone / 不明は "-"
+  local c=""
+  if [[ "$HAVE_LIVE" -eq 1 ]]; then
+    c="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{print $2; exit}')"
+  fi
+  printf '%s' "${c:--}"
 }
 
 # --- 現 server の entry 収集（US 区切り: pane<US>parent<US>workspace<US>label）---
@@ -137,7 +228,7 @@ children_of() { # <pane> — 直下の子を pane 番号の数値昇順で
 }
 
 # sanitize_out <text> — 出力チョークポイントの sanitize（収集ループの clean と同じ
-# codepoint クラス。pane-issue / pane_title 由来＝jq clean を通らない経路の一括防御）。
+# codepoint クラス。pane-issue / pane_title / tmux 座標由来＝jq clean を通らない経路の一括防御）。
 # jq 失敗時は C0+DEL のみの byte-wise tr へ縮退（C0/DEL は UTF-8 多バイト列に現れない）。
 sanitize_out() {
   printf '%s' "$1" | jq -Rrs 'gsub("[\u0000-\u001f\u007f-\u009f]"; " ")' 2>/dev/null \
@@ -151,7 +242,7 @@ label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(aliv
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
   [[ -n "$label" ]] || label="$(entry_field_of "$pane" 4)"
-  if [[ -z "$label" && "$HAVE_LIVE" -eq 1 ]] && printf '%s\n' "$LIVE_SET" | grep -qxF "$pane"; then
+  if [[ -z "$label" ]] && is_alive "$pane"; then
     label="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)" || label=""
   fi
   label="$(sanitize_out "$label")"
@@ -175,18 +266,21 @@ ROOTS="$(
 VISITED=" "
 render() { # <pane> <prefix> <child-prefix>
   local pane="$1" pfx="$2" cpfx="$3"
-  local live label ws suffix=""
+  local live coord label ws suffix=""
   if [[ "$VISITED" == *" ${pane} "* ]]; then
     printf '%s%s  [cycle]\n' "$pfx" "$pane"
     return 0
   fi
   VISITED+="${pane} "
   live="$(liveness_of "$pane")"
+  # 座標も出力チョークポイントを通す（session_name はユーザー入力由来）。%-6s は "0:1.1" 級の
+  # 最小揃え（長い session 名は溢れてよい — 表示ツールの正直な degrade）。
+  coord="$(sanitize_out "$(coord_of "$pane")")"
   label="$(label_of "$pane")"
   ws="$(entry_field_of "$pane" 3)"
   [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
   [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
-  printf '%s%s  %-5s  %s%s\n' "$pfx" "$pane" "$live" "$label" "$suffix"
+  printf '%s%s  %-6s  %-5s  %s%s\n' "$pfx" "$pane" "$coord" "$live" "$label" "$suffix"
   local kids n i=0 c
   kids="$(children_of "$pane")"
   n="$(printf '%s' "$kids" | grep -c . || true)"
