@@ -91,6 +91,18 @@ SO モード（kickoff 指定）: 設計SO=弱（`so-compare` or `oe-refute --ru
 
 - [PR #225](https://github.com/stlwolf/ai-development-hub/pull/225)（feat(oe): oe-tree に --watch live 表示と tmux 座標併記を追加）。コミット 2 件: 8111166（feat）→ ef73a98（docs: episode 追記）。マージ・worktree 掃除はしない（kickoff 規律・人間/親）。
 
+## hg-2: PR 後のユーザー表示調整サイクル（2026-07-03・closure 後の追記）
+
+closure 確定後、ユーザーが popup 実物を見ながらの表示調整を要望（このペインで直接 = kickoff の想定どおりの運用）。調整 4 点を DJ-223-12 系として実装・PR #225 に追加コミット:
+
+- **位置（1 回誤読）**: 「左上すぎる・中央に」の実体は **popup 枠でなくパネル内の中身**（ツリー本文が左上張り付き）だった。初回は枠位置と誤読しスニペットに `-x C -y C` を足して「変わってない」と再報告を受け、切り分けで判明 — 中身をパネル中央に毎 tick 描画（TTY 時のみ・近似 wcwidth・非 TTY 無加工）で解決。`-x C -y C` は無害な明示指定として残す（doc の根拠文言は訂正済み）。教訓は「位置」の語が指す座標系（画面/枠内）の確認を先にすること。
+- **列順**: 座標（window.pane）を %N より前へ（「人間ベースの導線が先」— ユーザー要望の言葉どおり）。%N は突合キーとして 2 列目に維持。
+- **セッション前置**: 単一セッション運用では冗長（全部 0）— **適応表示**に（live ペインが複数セッションにまたがる時だけ `session:` を自動前置。落としきらないのは同名 window.pane の衝突曖昧化を防ぐため）。
+- **並び順**: 従来は %N 昇順（≒spawn 順）。ユーザーの「window/pane 番号の順がいいかも」に沿い**画面配置順**（session→window→pane 昇順・座標なし=gone は末尾に %N 順）へ変更。AskUserQuestion は 60s タイムアウト（hg-1 と同パターン）— 発言済みの選好 + 可逆性（1 行で戻せる）を根拠に推奨側で実装し、実物 popup で確認提示。gone root（座標なし）が子 alive でも末尾に回る制約は README に明記。
+- tests: [14] を複数セッション/単一セッション/gone 末尾の 3 assert に再構成 + 全期待値を新列順に更新 — **32 チェック PASS**。shellcheck clean 維持。
+- ユーザー確認: 中央 + 新レイアウトの popup を実物確認 → 指摘なしでクローズ（q/Esc 正常終了）。
+- 実装SO: 差分が reviewed_sha 8111166 から変わったため oe-review を再実行（結果は下に追記）。
+
 ## Closure（episode-retrospective・heavy tier・2026-07-03）
 
 tier 判定: heavy（実行中に撤回・根拠差し替えあり / 意図的 SO レーン 3 回 = oe-refute ×2 + oe-review ×1 / 非自明な設計判断あり）。

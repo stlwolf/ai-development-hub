@@ -98,11 +98,11 @@ echo "[1] 3 世代チェーン: 罫線・世代・gone 合成 root・兄弟数�
 # ----------------------------------------------------------------------------
 reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
-expected='%49  -       gone   ?
-└─ %83  -       alive  fresh-orch-2 ~biz-infra
-   ├─ %85  -       alive  #5706 ~attelu.5706
-   │  └─ %110  -       alive  #5706-u1 ~attelu (you)
-   └─ %94  -       alive  #36 ~ecs'
+expected='-     %49    gone   ?
+└─ -     %83    alive  fresh-orch-2 ~biz-infra
+   ├─ -     %85    alive  #5706 ~attelu.5706
+   │  └─ -     %110   alive  #5706-u1 ~attelu (you)
+   └─ -     %94    alive  #36 ~ecs'
 ck "chain render" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -112,9 +112,9 @@ reset_state
 mkentry %8  "second-tree" "/w/two" %7
 mkentry %60 "standalone"  "/w/one" ""
 export MOCK_LIVE_PANES="%8 %60"
-expected='%7  -       gone   ?
-└─ %8  -       alive  second-tree ~two
-%60  -       alive  standalone ~one'
+expected='-     %7     gone   ?
+└─ -     %8     alive  second-tree ~two
+-     %60    alive  standalone ~one'
 ck "multi-root order" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -124,7 +124,7 @@ reset_state; fixture_chain
 printf '{"name":"#5706 renamed"}' > "${OE_PANE_ISSUE_DIR}/$(keyfor %85)"
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
 actual="$("$TREE" | grep -F '%85')"
-ck "pane-issue wins" '   ├─ %85  -       alive  #5706 renamed ~attelu.5706' "$actual"
+ck "pane-issue wins" '   ├─ -     %85    alive  #5706 renamed ~attelu.5706' "$actual"
 
 # ----------------------------------------------------------------------------
 echo "[4] label sanitize: LF/CR/TAB/US/ESC/C1 を空白へ畳む（端末制御・視覚偽装の遮断）"
@@ -133,8 +133,8 @@ reset_state
 mkentry %60 $'bad\nlab\tx\037y' "/w/one" ""
 mkentry %61 $'esc\033[2Jwipe\xc2\x9bcsi' "/w/esc" ""
 export MOCK_LIVE_PANES="%60 %61"
-expected='%60  -       alive  bad lab x y ~one
-%61  -       alive  esc [2Jwipe csi ~esc'
+expected='-     %60    alive  bad lab x y ~one
+-     %61    alive  esc [2Jwipe csi ~esc'
 ck "sanitized label" "$expected" "$("$TREE")"
 
 # ----------------------------------------------------------------------------
@@ -144,8 +144,8 @@ reset_state
 mkentry %201 "lab201" "" %202
 mkentry %202 "lab202" "" %201
 export MOCK_TMUX_FAIL=1
-expected='%201  -       ?      lab201
-└─ %202  -       ?      lab202
+expected='-     %201   ?      lab201
+└─ -     %202   ?      lab202
    └─ %201  [cycle]'
 ck "cycle cut + degrade ?" "$expected" "$("$TREE")"
 unset MOCK_TMUX_FAIL
@@ -158,7 +158,7 @@ mkentry %60 "standalone" "/w/one" ""
 printf '{"pane":"%%7","label":"foreign","workspace":"/w","parent_pane":"%%1","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/99999__7.json"
 export MOCK_LIVE_PANES="%60"
-expected='%60  -       alive  standalone ~one
+expected='-     %60    alive  standalone ~one
 note: 1 entries from other tmux servers not shown (stale)'
 ck "foreign hidden + footer" "$expected" "$("$TREE")"
 
@@ -191,9 +191,9 @@ reset_state
 mkentry %70 "" "/w/seventy" ""
 export MOCK_LIVE_PANES="%70"
 export MOCK_PANE_TITLE="picked up title"
-ck "title fallback" '%70  -       alive  picked up title ~seventy' "$("$TREE")"
+ck "title fallback" '-     %70    alive  picked up title ~seventy' "$("$TREE")"
 export MOCK_PANE_TITLE=$'spoof\033]0;t\007end'
-ck "title sanitize (OSC/BEL)" '%70  -       alive  spoof ]0;t end ~seventy' "$("$TREE")"
+ck "title sanitize (OSC/BEL)" '-     %70    alive  spoof ]0;t end ~seventy' "$("$TREE")"
 unset MOCK_PANE_TITLE
 
 # ----------------------------------------------------------------------------
@@ -201,7 +201,7 @@ echo "[10] gone 中間ノード: 親子とも登記あり・中間だけ gone �
 # ----------------------------------------------------------------------------
 reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %94 %110"   # %85 が gone
-actual="$("$TREE" | grep -cE '%85  -[[:space:]]+gone|%110  -[[:space:]]+alive')"
+actual="$("$TREE" | grep -cE '%85[[:space:]]+gone|%110[[:space:]]+alive')"
 ck "gone mid keeps child" "2" "$actual"
 
 # ----------------------------------------------------------------------------
@@ -215,7 +215,7 @@ printf '{"pane":"nope","label":"x","workspace":"","parent_pane":"","role":"child
 printf '{"pane":"%%60","label":"dup","workspace":"","parent_pane":"","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/12345__903.json"
 export MOCK_LIVE_PANES="%60"
-expected='%60  -       alive  standalone ~one
+expected='-     %60    alive  standalone ~one
 note: 3 entries skipped (unreadable or duplicate pane)'
 ck "partial skip disclosed" "$expected" "$("$TREE")"
 
@@ -237,17 +237,26 @@ echo "[13] 引数: --help は exit 0 / 未知引数は exit 2"
 "$TREE" bogus  >/dev/null 2>&1; ck "unknown arg exit 2" "2" "$?"
 
 # ----------------------------------------------------------------------------
-echo "[14] 座標列（#223 DJ-223-11）: list-panes の format 拡張から併記・sanitize・不明は -"
+echo "[14] 座標列（#223 DJ-223-11/hg-2）: 併記・sanitize・適応セッション前置・画面配置順・gone は末尾"
 # ----------------------------------------------------------------------------
+# 複数セッション（0 / main / bad<ESC>name の 3 つ）: session: を前置したまま・session→window→pane 順
 reset_state
 mkentry %60 "one" "/w/one" ""
 mkentry %61 "two" "/w/two" ""
 mkentry %62 "thr" "/w/thr" ""
 export MOCK_LIVE_LINES=$'%60\t0:1.1\n%61\tmain:2.3\n%62\tbad\033name:1.1'
-expected='%60  0:1.1   alive  one ~one
-%61  main:2.3  alive  two ~two
-%62  bad name:1.1  alive  thr ~thr'
-ck "coords rendered + sanitized" "$expected" "$("$TREE")"
+expected='0:1.1  %60    alive  one ~one
+bad name:1.1  %62    alive  thr ~thr
+main:2.3  %61    alive  two ~two'
+ck "multi-session coords + order" "$expected" "$("$TREE")"
+# 単一セッション: session: を落とし window.pane のみ・window→pane 昇順・座標なし（gone）は末尾
+mkentry %59 "old" "/w/old" ""
+export MOCK_LIVE_LINES=$'%61\t0:2.3\n%60\t0:1.1\n%62\t0:1.2'
+expected='1.1   %60    alive  one ~one
+1.2   %62    alive  thr ~thr
+2.3   %61    alive  two ~two
+-     %59    gone   old ~old'
+ck "single-session strip + layout order + gone last" "$expected" "$("$TREE")"
 unset MOCK_LIVE_LINES
 
 # ----------------------------------------------------------------------------
@@ -274,7 +283,7 @@ sleep 1.5
 kill "$_watch_pid" 2>/dev/null
 wait "$_watch_pid" 2>/dev/null
 ck "watch header" "yes" "$(grep -q 'oe-tree --watch · interval=1s' "$_watch_out" && echo yes || echo no)"
-ck "watch tree content" "yes" "$(grep -q '%110  -       alive  #5706-u1 ~attelu (you)' "$_watch_out" && echo yes || echo no)"
+ck "watch tree content" "yes" "$(grep -q -- '-     %110   alive  #5706-u1 ~attelu (you)' "$_watch_out" && echo yes || echo no)"
 ck "watch alt-screen restore" "yes" "$(grep -q $'\033\[?1049l' "$_watch_out" && echo yes || echo no)"
 
 # ----------------------------------------------------------------------------
@@ -289,7 +298,7 @@ _watch_pid2=$!
 sleep 1.5
 kill "$_watch_pid2" 2>/dev/null
 wait "$_watch_pid2" 2>/dev/null
-ck "fallback (you) on active pane" "yes" "$(grep -q '%94  -       alive  #36 ~ecs (you)' "$_watch_out2" && echo yes || echo no)"
+ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 ~ecs (you)' "$_watch_out2" && echo yes || echo no)"
 unset MOCK_ACTIVE_PANE
 
 # ----------------------------------------------------------------------------

@@ -17,9 +17,11 @@
 #     spawn の歴史フローは oe-activity（event log）の領分。
 #   - liveness は oe-activity と同じ mux 存在 query（tmux list-panes -a 突合）:
 #     pane が在る=alive / 無い=gone / query 失敗=?（degrade・観測は止めない）。
-#     同じ 1 コールの format 拡張で tmux 座標（session:window.pane）も取り %N に併記する
-#     （DJ-223-11: %N は oe-send / oe-jump / oe-list との突合キー・座標は人間の導線。
-#     gone/不明は "-" — tmux 上に存在しない pane に座標は無い）。
+#     同じ 1 コールの format 拡張で tmux 座標（session:window.pane）も取り、%N より前に
+#     表示する（DJ-223-11 + hg-2: 人間の導線 = window/pane 番号が先・%N は oe-send /
+#     oe-jump / oe-list との突合キーとして併記維持。gone/不明は "-" — tmux 上に存在
+#     しない pane に座標は無い）。session: は複数セッション時のみ前置（適応表示）。
+#     並びは画面配置順（session→window→pane 昇順・座標なしは末尾に pane 番号順）。
 #   - root 親は registry に entry を持たない（parent_pane 参照としてのみ現れる）
 #     ため合成し、ラベルは pane-issue > pane_title(alive のみ) > "?"（honest —
 #     無い物を捏造しない。oe-ident と同方針）。
@@ -60,7 +62,9 @@ usage: oe-tree [--watch [--interval N]]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
-各ノード: <pane> <座標 session:win.pane|-> <liveness> <label> [~workspace] [(you)]
+各ノード: <座標 win.pane|-> <pane> <liveness> <label> [~workspace] [(you)]
+（座標は複数セッション時のみ session: を前置。並びは画面配置順 = window→pane 昇順・
+gone は末尾）
 
   --watch       poll 再描画の live 表示（q / Esc / C-c で終了）
   --interval N  --watch の更新間隔（秒・正整数・既定 2）
@@ -122,8 +126,39 @@ if [[ "$WATCH" -eq 1 ]]; then
   printf '\e[?1049h\e[?25l'
   while :; do
     _frame="$("$0" 2>&1)" || true # tick 失敗も出力ごと表示して観測を止めない
-    printf '\e[H%s\n\n%s\e[J' \
-      "oe-tree --watch · interval=${INTERVAL}s · $(date +%H:%M:%S) · q/Esc: quit" "$_frame"
+    _block="oe-tree --watch · interval=${INTERVAL}s · $(date +%H:%M:%S) · q/Esc: quit
+
+${_frame}"
+    # 中身の描画位置（hg-2）: TTY のときはブロックをパネル中央に置く（左上張り付きの是正）。
+    # 非 TTY（テスト・パイプ）は無加工。幅は近似 wcwidth（ASCII=1 / それ以外=2 — 罫線を
+    # 2 と過大に数え中央よりやや左に寄り得る・表示ツールの許容誤差）。サイズ取得失敗は
+    # pad 0 で従来表示に degrade。
+    if [[ -t 1 ]]; then
+      _rows="$(tput lines 2>/dev/null)" || _rows=0
+      _cols="$(tput cols 2>/dev/null)" || _cols=0
+      [[ "$_rows" =~ ^[0-9]+$ ]] || _rows=0
+      [[ "$_cols" =~ ^[0-9]+$ ]] || _cols=0
+      _h=0
+      _w=0
+      while IFS= read -r _l; do
+        _h=$((_h + 1))
+        _nc=${#_l}
+        _ascii="${_l//[^ -~]/}"
+        _lw=$((_nc + (_nc - ${#_ascii})))
+        _w=$((_lw > _w ? _lw : _w))
+      done <<< "$_block"
+      _top=$(((_rows - _h) / 2))
+      _top=$((_top < 0 ? 0 : _top))
+      _left=$(((_cols - _w) / 2))
+      _left=$((_left < 0 ? 0 : _left))
+      _lpad="$(printf '%*s' "$_left" '')"
+      _out=""
+      for ((_i = 0; _i < _top; _i++)); do _out+=$'\n'; done
+      while IFS= read -r _l; do _out+="${_lpad}${_l}"$'\n'; done <<< "$_block"
+      printf '\e[H%s\e[J' "$_out"
+    else
+      printf '\e[H%s\n\e[J' "$_block"
+    fi
     # read が sleep 兼 key listener（popup stdin は TTY — 実測）。q / Esc で終了。
     if read -r -s -t "$INTERVAL" -n 1 _key 2>/dev/null; then
       case "$_key" in q|Q|$'\e') exit 0 ;; esac
@@ -162,6 +197,42 @@ coord_of() { # <pane> — alive ペインの tmux 座標（session:window.pane�
     c="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{print $2; exit}')"
   fi
   printf '%s' "${c:--}"
+}
+# セッション前置は適応表示（hg-2 ユーザー要望）: live ペインが単一セッションに収まる間は
+# window.pane だけを見せ（人間の導線は window/pane 番号）、複数セッションにまたがった時だけ
+# session: を自動で前置する（落とすと同名 window.pane が衝突して曖昧になるため）。
+# session 名は末尾の「:window.pane」以外の部分（名前自体に : を含み得るので後方から剥がす）。
+SINGLE_SESSION=0
+if [[ "$HAVE_LIVE" -eq 1 ]]; then
+  _sess_n="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' 'NF>1 {c=$2; sub(/:[^:]*$/, "", c); print c}' | sort -u | grep -c . || true)"
+  [[ "$_sess_n" -le 1 ]] && SINGLE_SESSION=1
+fi
+coord_display() { # <coord> — 表示形へ（単一セッション時は session: を落とす）
+  local c="$1"
+  if [[ "$SINGLE_SESSION" -eq 1 && "$c" == *:* ]]; then
+    printf '%s' "${c##*:}"
+  else
+    printf '%s' "$c"
+  fi
+}
+# order_panes — stdin の pane 列を表示順に並べる（root と兄弟の順序・hg-2 ユーザー要望）。
+# 画面配置順: 座標あり（alive）を session 名 → window 番号 → pane 番号の昇順で先に、
+# 座標なし（gone / 不明）は末尾に pane 番号昇順で置く（人間の導線 = 「どの window にいるか」。
+# gone root は子が alive でも座標を持たないため末尾に回る — スナップショット意味論の帰結）。
+order_panes() {
+  local p c wp w pi
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    c="$(coord_of "$p")"
+    if [[ "$c" == "-" || "$c" != *:* ]]; then
+      printf '1\t\t0\t0\t%s\t%s\n' "${p#%}" "$p"
+    else
+      wp="${c##*:}"
+      w="${wp%%.*}"
+      pi="${wp##*.}"
+      printf '0\t%s\t%s\t%s\t%s\t%s\n' "${c%:*}" "$w" "$pi" "${p#%}" "$p"
+    fi
+  done | sort -t $'\t' -k1,1n -k2,2 -k3,3n -k4,4n -k5,5n | awk -F '\t' '{print $NF}'
 }
 
 # --- 現 server の entry 収集（US 区切り: pane<US>parent<US>workspace<US>label）---
@@ -223,8 +294,8 @@ entry_field_of() { # <pane> <field-index> — ENTRIES から該当 pane の列�
   printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" -v i="$2" '$1==p {print $i; exit}'
 }
 
-children_of() { # <pane> — 直下の子を pane 番号の数値昇順で
-  printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" '$2==p {print $1}' | sort -t% -k2 -n
+children_of() { # <pane> — 直下の子を表示順（order_panes: 画面配置順・座標なしは末尾）で
+  printf '%s' "$ENTRIES" | awk -F $'\037' -v p="$1" '$2==p {print $1}' | order_panes
 }
 
 # sanitize_out <text> — 出力チョークポイントの sanitize（収集ループの clean と同じ
@@ -260,7 +331,7 @@ ROOTS="$(
         fi
       done
     printf '%s' "$ENTRIES" | awk -F $'\037' '$2=="" {print $1}'
-  } | sort -t% -k2 -n -u
+  } | sort -u | order_panes
 )"
 
 VISITED=" "
@@ -273,14 +344,15 @@ render() { # <pane> <prefix> <child-prefix>
   fi
   VISITED+="${pane} "
   live="$(liveness_of "$pane")"
-  # 座標も出力チョークポイントを通す（session_name はユーザー入力由来）。%-6s は "0:1.1" 級の
-  # 最小揃え（長い session 名は溢れてよい — 表示ツールの正直な degrade）。
-  coord="$(sanitize_out "$(coord_of "$pane")")"
+  # 座標も出力チョークポイントを通す（session_name はユーザー入力由来）。座標が先頭列
+  # （hg-2 ユーザー要望: 人間の導線 = window/pane 番号を %N より前に）。%-4s / %-5s は
+  # "1.2" / "%120" 級の最小揃え（長い値は溢れてよい — 表示ツールの正直な degrade）。
+  coord="$(sanitize_out "$(coord_display "$(coord_of "$pane")")")"
   label="$(label_of "$pane")"
   ws="$(entry_field_of "$pane" 3)"
   [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
   [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
-  printf '%s%s  %-6s  %-5s  %s%s\n' "$pfx" "$pane" "$coord" "$live" "$label" "$suffix"
+  printf '%s%-4s  %-5s  %-5s  %s%s\n' "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
   local kids n i=0 c
   kids="$(children_of "$pane")"
   n="$(printf '%s' "$kids" | grep -c . || true)"

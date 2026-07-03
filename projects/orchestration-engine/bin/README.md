@@ -313,19 +313,21 @@ oe-tree --watch --interval 5 # 更新間隔を変更（秒・正整数）
 oe-tree -h                   # ヘルプ
 ```
 
-出力例（各ノード: `<pane> <座標 session:win.pane|-> <liveness> <label> [~workspace] [(you)]`）:
+出力例（各ノード: `<座標 win.pane|-> <pane> <liveness> <label> [~workspace] [(you)]`）:
 
 ```text
-%49  -       gone   ?
-└─ %83  0:1.1   alive  fresh-orch-2 ~biz-infra
-   ├─ %85  0:1.4   alive  #5706 ~attelu.5706-orchestration
-   └─ %94  0:1.3   alive  #36 ~biz-infra.infra-#36_ecs-stack
-%119  0:3.1   alive  #206 increment2-timeline
-└─ %120  0:3.2   alive  #223 live-topology-viewer ~ai-development-hub (you)
+1.1   %124   alive  biz-infra
+└─ 1.2   %125   alive  #36-topo ~biz-infra.docs-#36_staging-topology
+3.1   %119   alive  #206 increment2-timeline
+└─ 3.2   %120   alive  #223 live-topology-viewer ~ai-development-hub (you)
+-     %83    gone   ?
+├─ 1.3   %94    alive  #36 ~biz-infra.infra-#36_ecs-stack
+└─ 1.4   %85    alive  #5706 ~attelu.5706-orchestration
 ```
 
 - **スナップショット意味論**: 本ビューは「現在の登記」であり歴史ではない。gone entry は次の `oe_reg_record` 時の GC まで表示される（read-only ではデータ源の性質を変えられない）。spawn の**歴史**フローは `oe-activity`（event log・`child_spawned`）の領分（レイヤ分離）
-- **座標の併記（DJ-223-11）**: `%N` は `oe-send` / `oe-jump` / `oe-list` との**突合キー**として維持し、人間の導線用に tmux 座標（`session:window.pane`）を併記する。座標は liveness と同じ 1 回の `tmux list-panes -a` コールの format 拡張で取る（追加コストなし）。gone / 取得不能は `-`（tmux 上に存在しない pane に座標は無い — honest）
+- **座標の併記（DJ-223-11 + hg-2）**: 人間の導線 = tmux 座標（`window.pane`）を先頭列に置き、`%N` は `oe-send` / `oe-jump` / `oe-list` との**突合キー**として併記維持する。`session:` は **live ペインが複数セッションにまたがる時だけ自動で前置**（単一セッション運用では省く — 適応表示）。座標は liveness と同じ 1 回の `tmux list-panes -a` コールの format 拡張で取る（追加コストなし）。gone / 取得不能は `-`（tmux 上に存在しない pane に座標は無い — honest）
+- **並び順（hg-2）**: root・兄弟とも**画面配置順**（session→window→pane の昇順）。座標を持たないノード（gone / query 不能）は末尾に pane 番号昇順 — gone root は子が alive でも座標が無いため末尾に回る（スナップショット意味論の帰結・正直な制約）
 - **root 合成**: root 親は registry に entry を持たない（`parent_pane` 参照としてのみ現れる）ため合成する。ラベルは pane-issue > `pane_title`（alive のみ）> `?`（honest — 無い物を捏造しない。`oe-ident` と同方針）。子のラベルは pane-issue(.name) > registry(.label)（`oe_reg_list` と同優先順位）
 - **role 列は持たない**: ツリーは関係そのものを描くため parent/child は木の形が搬送する（`oe-ident` が role を前置するのは単一ペインの孤立表示だから）
 - **read-only / 非検出**: 触れるのは registry / pane-issue の state ファイルと tmux のペイン存在・座標・pane_title（mux query）のみ。`oe_reg_gc` 等の write path は呼ばない（#177 / #188 の read-only 観測規律）
@@ -347,8 +349,11 @@ tick ごとに自分自身（snapshot モード）を re-exec し、alt screen �
 ```tmux
 # oe topology live popup（例: prefix + T。キーは環境の空きに合わせる — tmux list-keys で衝突確認。
 # 例の T は tmux 既定で未割当だが、picker 等の自前 bind と衝突しないキーを選ぶこと）
-bind-key T run-shell "tmux display-popup -e 'TMUX_PANE=#{pane_id}' -E -w 70% -h 60% -T ' oe topology ' '/path/to/repo/projects/orchestration-engine/bin/oe-tree --watch'"
+bind-key T run-shell "tmux display-popup -e 'TMUX_PANE=#{pane_id}' -E -x C -y C -w 70% -h 60% -T ' oe topology ' '/path/to/repo/projects/orchestration-engine/bin/oe-tree --watch'"
 ```
+
+- `-x C -y C` は popup 枠を画面中央に置く明示指定（省略時も概ね中央 — 明示しておくと環境差の切り分けが楽）
+- **中身はパネル中央に描画**（TTY 時のみ）: 描画ブロックの縦横を毎 tick 測り、パネル内の中央に置く（左上張り付きの是正 — hg-2 ユーザー要望）。幅は近似 wcwidth（ASCII=1 / それ以外=2）のため罫線・和文混在ではやや左寄りになり得る。非 TTY（テスト・パイプ）は無加工・サイズ取得失敗は pad 0 に degrade
 
 - oe-tree は PATH 登録前提にしない（絶対パスで書く。PATH に通している環境は `oe-tree --watch` で可）。dotfiles にパスを書く運用コスト（リポジトリ移動で陳腐化）は #202 と同型の受容
 - **toggle の意味論**: popup 表示中のキーは popup 内プログラムへ渡るため、tmux bind による「同キーで開閉」は構造的に不成立。開く=bind 1 キー / 閉じる=`q` or `Esc` 1 キーの 2 キー完結（hg-1 受入済み）。`display-popup -C` は別ペイン/スクリプトからの強制 close（rescue）。`-EE`（成功時のみ自動 close）は代替として存在するが、エラー保持は tool 側の 3s hold が配置非依存に同じ役割を果たすため既定にしない
