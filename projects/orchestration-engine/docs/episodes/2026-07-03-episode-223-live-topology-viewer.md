@@ -106,7 +106,8 @@ closure 確定後、ユーザーが popup 実物を見ながらの表示調整�
   - **到達可能性の実測**: tmux 3.5a の `#{session_name}` format 出力は制御文字を**リテラルエスケープ**する（LF→`\n`・TAB→`\t` の 2 文字）。session 名に実 LF を入れた detached セッションを作り `list-panes -a -F` を実行しても出力行数=実ペイン数（10=10）で偽行注入なし — **codex の主張する境界破壊はこの環境では到達不能**（cursor の survived と整合）。
   - **ただし防御的に採用**: 「tmux のエスケープ挙動への暗黙依存」を残すのは #221 の「表示ツールは自分の脅威モデルで守る」方針とズレる。format を `pane_id<TAB>window.pane<TAB>session_name` に変え、**内部境界（liveness/座標/順序）を安全列（$1=%N / $2=数値 window.pane）だけで構成**し、user-controlled な session_name は最終列 + 表示時 sanitize_out に隔離 → 指摘の根を構造的に断つ。テストに TAB 注入ケースを追加（session 名の TAB が $4 に溢れても $1/$2 無傷 = liveness/座標が壊れないことを実証）= **33 チェック**。
   - 撤回した誤り（自己）: 検証で作った制御文字入り detached セッションを kill し残し、実 snapshot が一時「複数セッション」判定で `0:` 前置になった → session_id 指定で掃除。
-- 実装SO#3（防御反映後・再々実行）→（結果は下に追記）
+- **実装SO#3**（audit_id 20260703141412QENF1FRJ83F1・reviewed_sha a4078e2）: **survived 2/2**（codex/cursor とも material なし。cursor は 33 テスト + liveness/座標/sanitize/trap/引数検証を実コードで反証・「先頭ゼロ interval 警告等は exit 2 に収まり通常利用外」と明記）。実装SO ゲート通過 — hg-2 サイクル確定。
+- hg-2 コミット（PR #225 追加分）: 5f4aa67（ui: 座標先頭・画面配置順・中身中央）→ 2421512（fix: X 軸 stty 修正・cmd 撤去）→ a4078e2（fix: 内部境界を安全列のみ・session_name 隔離）。
 
 ## Closure（episode-retrospective・heavy tier・2026-07-03）
 
