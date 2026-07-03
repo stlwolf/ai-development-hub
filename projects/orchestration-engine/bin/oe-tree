@@ -180,17 +180,22 @@ fi
 
 SELF="${TMUX_PANE:-}"
 
-# --- liveness + 座標（mux 存在 query。1 コールで両方取る — 追加プロセスなし・DJ-223-11）---
-# タブ区切り: pane_id<TAB>session:window.pane。session_name にタブが含まれると座標側が
-# 欠けるが表示は "-" へ degrade するだけ（座標は人間の導線・突合キーは %N）。
+# --- liveness + 座標（mux 存在 query。1 コールで取る — 追加プロセスなし・DJ-223-11）---
+# タブ区切り: pane_id<TAB>window.pane<TAB>session_name。**内部境界に使う列は安全な形式の
+# もののみ**にする — $1(pane_id=%N) と $2(window.pane=数値) は tmux が制御文字を含み得ない
+# 値で返し、liveness/座標/順序判定はこの 2 列だけで行う。user-controlled な session_name は
+# 必ず**最終列**に置き、表示時に sanitize_out を通す（実装SO#2 codex 指摘: session_name を
+# 内部区切りに生で混ぜるのを避ける。tmux format は制御文字をリテラルエスケープするため実
+# LF/TAB の行・列注入は元々到達不能〔本環境 tmux 3.5a で実測〕だが、その暗黙依存を構造的に
+# 断つ — #221 の「表示ツールは自分の脅威モデルで守る」方針と一貫）。
 # query 失敗は ? で degrade — oe-activity と同方針。
 HAVE_LIVE=0
 LIVE_SET=""
 _TAB=$'\t'
-if LIVE_SET="$(tmux list-panes -a -F "#{pane_id}${_TAB}#{session_name}:#{window_index}.#{pane_index}" 2>/dev/null)"; then
+if LIVE_SET="$(tmux list-panes -a -F "#{pane_id}${_TAB}#{window_index}.#{pane_index}${_TAB}#{session_name}" 2>/dev/null)"; then
   HAVE_LIVE=1
 fi
-is_alive() { # <pane> — LIVE_SET の第 1 列と厳密一致
+is_alive() { # <pane> — LIVE_SET の第 1 列（pane_id）と厳密一致
   [[ "$HAVE_LIVE" -eq 1 ]] || return 1
   printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{f=1} END{exit f?0:1}'
 }
@@ -199,46 +204,51 @@ liveness_of() {
   if [[ "$HAVE_LIVE" -ne 1 ]]; then printf '?'; return; fi
   if is_alive "$pane"; then printf 'alive'; else printf 'gone'; fi
 }
-coord_of() { # <pane> — alive ペインの tmux 座標（session:window.pane）。gone / 不明は "-"
+winpane_of() { # <pane> — alive ペインの window.pane（安全な数値列 $2）。gone / 不明は "-"
   local c=""
   if [[ "$HAVE_LIVE" -eq 1 ]]; then
     c="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{print $2; exit}')"
   fi
   printf '%s' "${c:--}"
 }
+session_of() { # <pane> — alive ペインの session_name（最終列 $3・user-controlled）。無ければ空
+  [[ "$HAVE_LIVE" -eq 1 ]] || return 0
+  printf '%s\n' "$LIVE_SET" | awk -F '\t' -v p="$1" '$1==p{print $3; exit}'
+}
 # セッション前置は適応表示（hg-2 ユーザー要望）: live ペインが単一セッションに収まる間は
 # window.pane だけを見せ（人間の導線は window/pane 番号）、複数セッションにまたがった時だけ
 # session: を自動で前置する（落とすと同名 window.pane が衝突して曖昧になるため）。
-# session 名は末尾の「:window.pane」以外の部分（名前自体に : を含み得るので後方から剥がす）。
 SINGLE_SESSION=0
 if [[ "$HAVE_LIVE" -eq 1 ]]; then
-  _sess_n="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' 'NF>1 {c=$2; sub(/:[^:]*$/, "", c); print c}' | sort -u | grep -c . || true)"
+  _sess_n="$(printf '%s\n' "$LIVE_SET" | awk -F '\t' 'NF>=3{print $3}' | sort -u | grep -c . || true)"
   [[ "$_sess_n" -le 1 ]] && SINGLE_SESSION=1
 fi
-coord_display() { # <coord> — 表示形へ（単一セッション時は session: を落とす）
-  local c="$1"
-  if [[ "$SINGLE_SESSION" -eq 1 && "$c" == *:* ]]; then
-    printf '%s' "${c##*:}"
+coord_of() { # <pane> — 表示用座標。単一=window.pane / 複数=session:window.pane / gone=-
+  local wp
+  wp="$(winpane_of "$1")"
+  [[ "$wp" == "-" ]] && { printf '-'; return; }
+  if [[ "$SINGLE_SESSION" -eq 1 ]]; then
+    printf '%s' "$wp"
   else
-    printf '%s' "$c"
+    printf '%s:%s' "$(session_of "$1")" "$wp"
   fi
 }
 # order_panes — stdin の pane 列を表示順に並べる（root と兄弟の順序・hg-2 ユーザー要望）。
 # 画面配置順: 座標あり（alive）を session 名 → window 番号 → pane 番号の昇順で先に、
 # 座標なし（gone / 不明）は末尾に pane 番号昇順で置く（人間の導線 = 「どの window にいるか」。
 # gone root は子が alive でも座標を持たないため末尾に回る — スナップショット意味論の帰結）。
+# ソートキーは安全列（winpane $2・session $3）だけを使う。
 order_panes() {
-  local p c wp w pi
+  local p wp w pi
   while IFS= read -r p; do
     [[ -n "$p" ]] || continue
-    c="$(coord_of "$p")"
-    if [[ "$c" == "-" || "$c" != *:* ]]; then
+    wp="$(winpane_of "$p")"
+    if [[ "$wp" == "-" || "$wp" != *.* ]]; then
       printf '1\t\t0\t0\t%s\t%s\n' "${p#%}" "$p"
     else
-      wp="${c##*:}"
       w="${wp%%.*}"
       pi="${wp##*.}"
-      printf '0\t%s\t%s\t%s\t%s\t%s\n' "${c%:*}" "$w" "$pi" "${p#%}" "$p"
+      printf '0\t%s\t%s\t%s\t%s\t%s\n' "$(session_of "$p")" "$w" "$pi" "${p#%}" "$p"
     fi
   done | sort -t $'\t' -k1,1n -k2,2 -k3,3n -k4,4n -k5,5n | awk -F '\t' '{print $NF}'
 }
@@ -355,7 +365,7 @@ render() { # <pane> <prefix> <child-prefix>
   # 座標も出力チョークポイントを通す（session_name はユーザー入力由来）。座標が先頭列
   # （hg-2 ユーザー要望: 人間の導線 = window/pane 番号を %N より前に）。%-4s / %-5s は
   # "1.2" / "%120" 級の最小揃え（長い値は溢れてよい — 表示ツールの正直な degrade）。
-  coord="$(sanitize_out "$(coord_display "$(coord_of "$pane")")")"
+  coord="$(sanitize_out "$(coord_of "$pane")")"
   label="$(label_of "$pane")"
   ws="$(entry_field_of "$pane" 3)"
   [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"

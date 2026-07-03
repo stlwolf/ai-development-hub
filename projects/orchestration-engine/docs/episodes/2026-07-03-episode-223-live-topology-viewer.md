@@ -102,7 +102,11 @@ closure 確定後、ユーザーが popup 実物を見ながらの表示調整�
 - **cmd 列（試行 → ユーザー判断で撤去）**: hg-2 の「余白に追加情報を拾えるか」を受け、read セット内（同一 list-panes コールの format 拡張・追加コストゼロ）で拾える `pane_current_command` を A 案として一旦実装。だが実物では値がほぼ全部 `2.1.199`（claude CLI がプロセス名をバージョン文字列に書き換えるため）で**情報量が薄い**とユーザー確認 → **列ごと撤去**（1 コール内 format なので復活は容易）。追加の表示内容（未受領数・状態等 = 新データ源が要る B 系）は別 issue で積む方針をユーザーと合意（レイヤ分離 = DJ-223-4/9 の維持）。read セット拡張自体は「同一 tmux query の format 追加は非検出境界を越えない」ことの実例。
 - tests: [14] を複数セッション/単一セッション/gone 末尾の 3 assert に再構成 + 全期待値を新列順に更新 — **32 チェック PASS**。shellcheck clean 維持。
 - ユーザー確認: 中央 + 新レイアウトの popup を実物確認（q/Esc 正常終了）。cmd 列は撤去で最終確定。
-- 実装SO: 差分が reviewed_sha 8111166 から変わったため oe-review を再実行（結果は下に追記）。
+- **実装SO#2**（audit_id 20260703135720T0Z5SXR4H344・reviewed_sha 2421512・2 レーン）: cursor=survived / codex=**refuted** → conservative 集約で refuted。codex 指摘 = 「`#{session_name}`（user-controlled）を内部の TAB/改行区切り LIVE_SET に生で混ぜており、LF で偽行注入・TAB で列ずれ → liveness/座標の偽装が到達可能」。一次照合:
+  - **到達可能性の実測**: tmux 3.5a の `#{session_name}` format 出力は制御文字を**リテラルエスケープ**する（LF→`\n`・TAB→`\t` の 2 文字）。session 名に実 LF を入れた detached セッションを作り `list-panes -a -F` を実行しても出力行数=実ペイン数（10=10）で偽行注入なし — **codex の主張する境界破壊はこの環境では到達不能**（cursor の survived と整合）。
+  - **ただし防御的に採用**: 「tmux のエスケープ挙動への暗黙依存」を残すのは #221 の「表示ツールは自分の脅威モデルで守る」方針とズレる。format を `pane_id<TAB>window.pane<TAB>session_name` に変え、**内部境界（liveness/座標/順序）を安全列（$1=%N / $2=数値 window.pane）だけで構成**し、user-controlled な session_name は最終列 + 表示時 sanitize_out に隔離 → 指摘の根を構造的に断つ。テストに TAB 注入ケースを追加（session 名の TAB が $4 に溢れても $1/$2 無傷 = liveness/座標が壊れないことを実証）= **33 チェック**。
+  - 撤回した誤り（自己）: 検証で作った制御文字入り detached セッションを kill し残し、実 snapshot が一時「複数セッション」判定で `0:` 前置になった → session_id 指定で掃除。
+- 実装SO#3（防御反映後・再々実行）→（結果は下に追記）
 
 ## Closure（episode-retrospective・heavy tier・2026-07-03）
 

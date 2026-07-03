@@ -239,19 +239,29 @@ echo "[13] 引数: --help は exit 0 / 未知引数は exit 2"
 # ----------------------------------------------------------------------------
 echo "[14] 座標列（#223 DJ-223-11/hg-2）: 併記・sanitize・適応セッション前置・画面配置順・gone は末尾"
 # ----------------------------------------------------------------------------
-# 複数セッション（0 / main / bad<ESC>name の 3 つ）: session: を前置したまま・session→window→pane 順
+# 複数セッション（0 / main / bad<ESC>name の 3 つ）: session: を前置・session→window→pane 順。
+# format は pane<TAB>window.pane<TAB>session_name（session_name は最終列 = 内部境界を汚さない）。
 reset_state
 mkentry %60 "one" "/w/one" ""
 mkentry %61 "two" "/w/two" ""
 mkentry %62 "thr" "/w/thr" ""
-export MOCK_LIVE_LINES=$'%60\t0:1.1\n%61\tmain:2.3\n%62\tbad\033name:1.1'
+export MOCK_LIVE_LINES=$'%60\t1.1\t0\n%61\t2.3\tmain\n%62\t1.1\tbad\033name'
 expected='0:1.1  %60    alive  one ~one
 bad name:1.1  %62    alive  thr ~thr
 main:2.3  %61    alive  two ~two'
 ck "multi-session coords + order" "$expected" "$("$TREE")"
+# session_name の最終列 TAB 注入: 内部境界（$1 pane / $2 window.pane）は無傷で liveness/座標が
+# 壊れないこと（実装SO#2 codex 指摘の防御）。%63 の session 名に TAB を仕込む
+mkentry %63 "tabbed" "/w/tab" ""
+export MOCK_LIVE_LINES=$'%60\t1.1\t0\n%63\t1.5\tev\til'
+# TAB は最終列で $4 に溢れ、$1(pane)/$2(window.pane=1.5) は無傷 → liveness/座標は正しく、
+# session 表示だけ TAB 以降（il）が切れる（ev のみ）。ラベルは registry の tabbed（session 名でない）。
+actual="$("$TREE" | grep -F '%63')"
+ck "session TAB does not corrupt liveness/coord" 'ev:1.5  %63    alive  tabbed ~tab' "$actual"
+reset_state; mkentry %60 "one" "/w/one" ""; mkentry %61 "two" "/w/two" ""; mkentry %62 "thr" "/w/thr" ""
 # 単一セッション: session: を落とし window.pane のみ・window→pane 昇順・座標なし（gone）は末尾
 mkentry %59 "old" "/w/old" ""
-export MOCK_LIVE_LINES=$'%61\t0:2.3\n%60\t0:1.1\n%62\t0:1.2'
+export MOCK_LIVE_LINES=$'%61\t2.3\t0\n%60\t1.1\t0\n%62\t1.2\t0'
 expected='1.1   %60    alive  one ~one
 1.2   %62    alive  thr ~thr
 2.3   %61    alive  two ~two
