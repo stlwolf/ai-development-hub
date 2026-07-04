@@ -66,3 +66,10 @@ oe-tree 単一ツール拡張として実装（別コンポーネントなし）
 - fzf cancel→130 / error→2、番号フォールバック: 有効→jump+zoom・範囲外/非数値→2・空→130、空森→rc1。
 
 shellcheck: pass（rc=0）。
+
+## テスト・実装SO
+
+- `test_oe_tree.sh`: [19]-[26] を追加（モード排他・`--pick-list` 形式/stderr 分離・fzf jump+zoom ターゲット・冪等 zoom・gone 伝播・fzf cancel/error/empty・番号 fallback・空森）。**全 60 PASS**（既存 [1]-[18] 回帰込み）。`test_oe_jump`(38)/`test_oe_select`(35) も回帰なし。
+  - 実装中に見つけた 1 件: [26] の stderr 検出 assert が `set -uo pipefail` 下で `--pick|grep` のパイプ終了に --pick の exit 1 を拾われ誤判定 → stderr を先に変数へ取ってから grep する形（既存 [8]/[15] と同型）に修正。tool 側の欠陥ではなくテスト記述の罠。
+- テストの構造的限界（自動化不能・ライブ実測が正）: 実 popup の対話終了、popup 内 cross-session focus（hg-227-a）、fzf alt-screen × popup（hg-227-b）。mock は select-pane/resize-pane の**呼び出しと引数**までを検証。
+- **実装SO（oe-review・impl レンズ・2 レーン codex/cursor）**: verdict = **survived**（material な correctness/到達可能性/堅牢性/セキュリティ欠陥なし・reviewed_sha `0ee2cfe`・audit_id `20260704174832EM1YAVR5KTBC`）。設計SO（設計レンズ・refuted→反映済み）とは別レンズ・別ステップ。
