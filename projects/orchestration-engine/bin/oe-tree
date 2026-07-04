@@ -42,7 +42,15 @@
 
 set -euo pipefail
 
-BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# invoked path を symlink 解決してから lib dir を決める（~/bin 経由の symlink 起動でも
+# lib を source できるように・#223 配布対応）。macOS の readlink は -f 非対応のためループで解決。
+_oe_src="${BASH_SOURCE[0]:-$0}"
+while [[ -h "$_oe_src" ]]; do
+  _oe_dir="$(cd -P "$(dirname "$_oe_src")" && pwd)"
+  _oe_src="$(readlink "$_oe_src")"
+  case "$_oe_src" in /*) ;; *) _oe_src="$_oe_dir/$_oe_src" ;; esac
+done
+BIN_DIR="$(cd -P "$(dirname "$_oe_src")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 

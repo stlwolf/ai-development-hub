@@ -312,6 +312,17 @@ ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 
 unset MOCK_ACTIVE_PANE
 
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+echo "[18] symlink 経由起動でも lib を source できる（#223 配布・symlink 安全化）"
+# ----------------------------------------------------------------------------
+reset_state; fixture_chain
+_oe_link="$_TMP_DIR/pathbin/oe-tree-linked"
+ln -sf "$PROJECT_DIR/bin/oe-tree" "$_oe_link"   # 実 hub oe-tree を指す symlink（~/bin 配布と同型）
+_direct="$("$TREE" 2>&1)"; _drc=$?              # copy: BIN_DIR=temp/bin → temp/lib
+_linked="$("$_oe_link" 2>&1)"; _lrc=$?          # symlink: readlink 解決で hub/bin → hub/lib を source
+ck "symlink 起動 rc == 直接起動 rc" "$_drc" "$_lrc"
+ck "symlink 起動 出力 == 直接起動 出力" "$_direct" "$_linked"
+
 echo
 echo "PASS=${PASS} FAIL=${FAIL}"
 [[ "$FAIL" -eq 0 ]] || exit 1
