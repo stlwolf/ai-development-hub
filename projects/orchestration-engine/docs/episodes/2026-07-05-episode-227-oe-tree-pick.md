@@ -3,7 +3,7 @@ id: "01KWQ1EENZ8YKR0KS1SCSTJ305"
 title: "#227 episode — oe-tree に対話ナビ（fzf 選択 → oe-jump → resize-pane -Z 最大化）を追加"
 date: 2026-07-05
 type: episode
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/227"
@@ -73,3 +73,47 @@ shellcheck: pass（rc=0）。
   - 実装中に見つけた 1 件: [26] の stderr 検出 assert が `set -uo pipefail` 下で `--pick|grep` のパイプ終了に --pick の exit 1 を拾われ誤判定 → stderr を先に変数へ取ってから grep する形（既存 [8]/[15] と同型）に修正。tool 側の欠陥ではなくテスト記述の罠。
 - テストの構造的限界（自動化不能・ライブ実測が正）: 実 popup の対話終了、popup 内 cross-session focus（hg-227-a）、fzf alt-screen × popup（hg-227-b）。mock は select-pane/resize-pane の**呼び出しと引数**までを検証。
 - **実装SO（oe-review・impl レンズ・2 レーン codex/cursor）**: verdict = **survived**（material な correctness/到達可能性/堅牢性/セキュリティ欠陥なし・reviewed_sha `0ee2cfe`・audit_id `20260704174832EM1YAVR5KTBC`）。設計SO（設計レンズ・refuted→反映済み）とは別レンズ・別ステップ。
+
+## Closure（episode-retrospective・tier=heavy）
+
+tier=heavy（設計SO refuted による方針是正あり・意図的な外部レビュー 2 種を起動・非自明な設計判断 DJ-227-1〜7）。達成度 = 達成（PR #228・SO 両方通過）。
+
+### closure gate
+- **Context / なぜ**: 冒頭に自己完結（#223 の live 表示から「見て飛ぶ + 最大化」を 1 導線に）。
+- **次の消費者**: (1) PR #228 レビュアー（Copilot/人間）。(2) `prefix+v` bind を実適用する dotfiles 作業（本 PR 外・親/人間）。(3) `--watch`→`--pick` glance 統合を検討する後続（follow-up）。
+- **follow-up routing**: 
+  - `--watch` から 1 キーで `--pick` を起動する glance→pick 統合 → **`bin/README.md` の follow-up 節に記載・別 concern**（popup 相互作用が `--pick` 着地の上に乗る additive・設計SO R5 由来）。
+  - bind の実適用（`prefix+v`）→ **dotfiles/環境側**（hub は推奨スニペット doc のみ・#202/#223 分界）。
+  - hg-227-a（popup 内 cross-session jump）/ hg-227-b（fzf alt-screen × popup）→ **ライブ実測**（自動テスト構造的限界・bind 適用時に人間が確認）。
+  - 追わない: fzf `--listen` 真 live picker（版数依存・今回不要）。
+- **status 確定**: stable（達成）。
+- **evidence anchor**: SO 証跡は揮発（`tmp/`）だが、verdict/reason・reviewed_sha・audit_id・zoom 実測結果を本文へ転記済み。探索木（`tmp/dj-227-tree.md`）の要点（DJ と棄却理由）は本文 + PR 本文へ蒸留済み。
+- **SO 証跡リンク**: 設計SO output_dir `tmp/oe-refute-20260704164920PWZN1700RBD0` / 実装SO output_dir `tmp/oe-review-20260704174832EM1YAVR5KTBC`（いずれも揮発・要点は転記済み）。
+
+### 決定と根拠（棄却した案）
+- 対話モードの形: `--pick` 独立フラグを採用。`--watch` の fzf 化（自動 reload）は fzf の定期 reload が版数依存配管になり、純ビュー温存の境界にも触れるため棄却。
+- zoom: ensure-zoomed（対象指定・冪等）採用。素の `resize-pane -Z`（トグル）は既 zoom で解除方向に倒れ、無指定は popup/現 window を掴むため棄却（実測で確認）。
+- preview: **不採用**。oe-select 流用の `capture-pane` は観測系 cockpit の非検出境界（discussion §8.4・oe-status が意図的に外した）に反する。ツリー行が座標/liveness/label を既に示すため不要。
+- oe-jump への `--zoom` フラグ追加は棄却（確定境界「新規は fzf + resize-pane -Z のみ / oe-jump 再利用」の外・1 PR = 1 論理変更に反る）。第二 consumer が現れたら昇格を再検討。
+
+### 原則（Pattern / Anti-pattern）
+- **Pattern**: 観測ビューに対話を足すとき、表示ロジックを複製せず内部モード（`--pick-list`）で「同一 render 経路 + 隠しキー列」を emit する（`--watch` re-exec と同じ「フレーム=一発実行と同一コードパス」）。tmux-claude-picker の `--list` と同型。
+- **Anti-pattern**: 兄弟 verb（oe-select）の UX 部品（capture-pane preview）を無反省に流用する。verb のクラス（観測 vs 送信選択）で境界が違い、oe-tree は観測系の非検出境界に縛られる。設計SO が捕捉。
+- **Anti-pattern（テスト）**: `set -uo pipefail` 下で `cmd|grep && echo yes || echo no` は、cmd が非 0 終了だとパイプ終了が grep 一致を隠す。stderr は先に変数へ取ってから grep する（[26] で自己検出・既存 [8]/[15] が正しい型）。
+
+### 蒸留シグナル
+- Decision 昇格: **なし**（DJ は #221/#223 の確立パターンの範囲内・新カテゴリの決定なし）。preview 非検出境界は discussion §8.4 に既出で再確認に留まる。
+- skill/rule 昇格: なし。
+
+### 残課題
+- 上記 follow-up routing のとおり（全て行き先付与済み・dangling なし）。
+- 証明できなかったこと: popup 内 cross-session jump + zoom の E2E は mock では覆えず（select-pane/resize-pane の呼び出し・引数までを検証）、ライブ実測が未了（hg-227-a/b）。bind 実適用時に人間確認。
+- 実装SO（oe-review・cursor レーン）が挙げた非 material の残リスク（揮発 `tmp/oe-review-...` からの転記）:
+  - `ctrl-r` reload はテスト未カバー（手動 smoke 依存）→ 追わない（fzf の bind 動作は fzf 責務・回帰リスク低。必要なら follow-up の watch 統合と併せて）。
+  - `#{window_zoomed_flag}` 非対応の古い tmux では冪等 zoom 保証が弱化しうる（コード上の既知 degrade。本環境 tmux 3.5a は対応・flag 未取得時は無害な no-op に倒す設計）→ 追わない（対象環境で対応済み）。
+
+### Step4 外部チェック（closure 品質・so-compare codex 1 レーン）
+出力: `tmp/so-20260705-025458/`（揮発・要点転記済み）。指摘 2 点を反映:
+- README routing 申告の精緻化: `--pick` 詳細 doc は `bin/README.md`（L362-）に在り申告どおり。加えて project-level `README.md` L50 の 1 行要約が `--watch` 止まりで stale だったため `--pick`/#227 を追記（back-propagation）。
+- 実装SO の Open risks（ctrl-r 未カバー・zoomed_flag degrade）を上記残課題へ転記。
+その他は問題なし（設計SO refuted・R1/R2・preview 撤回・R5 follow-up・[26] pipefail 罠・discussion §8.4 の back-propagation は明示済みと確認）。
