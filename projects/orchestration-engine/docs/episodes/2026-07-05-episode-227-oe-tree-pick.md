@@ -117,3 +117,15 @@ tier=heavy（設計SO refuted による方針是正あり・意図的な外部�
 - README routing 申告の精緻化: `--pick` 詳細 doc は `bin/README.md`（L362-）に在り申告どおり。加えて project-level `README.md` L50 の 1 行要約が `--watch` 止まりで stale だったため `--pick`/#227 を追記（back-propagation）。
 - 実装SO の Open risks（ctrl-r 未カバー・zoomed_flag degrade）を上記残課題へ転記。
 その他は問題なし（設計SO refuted・R1/R2・preview 撤回・R5 follow-up・[26] pipefail 罠・discussion §8.4 の back-propagation は明示済みと確認）。
+
+## 追試: 実機 E2E（隔離 tmux サーバ・ユーザーセッション未接触・2026-07-05）
+
+ユーザー要望で mock なしの実機確認を実施。隔離サーバ（`tmux -L oe227live`・2 session × 2 pane）に実 pane を立て、scratch registry に森を登記し、実 `oe-jump` + 実 `resize-pane -Z` を駆動（選択は番号 fallback 経路＝jump/zoom コードパスは fzf 経路と同一）。[verified]
+
+- pick-list が実 forest から候補（`%N<TAB>座標付き表示`）を正しく生成。
+- **cross-session jump + zoom**: 別セッション B の pane を選ぶと B の active pane がその pane へ移動し（実 `select-pane`/`select-window`）、B の window が `zoomed=1`（実 `resize-pane -Z -t`）。セッション A は不変。
+- **冪等 zoom**: 既 zoom の pane を再選択しても `zoomed=1` 維持（トグル解除しない）。
+- **gone**: pane kill 後、候補に gone 表示で残り、選ぶと `oe-jump` が rc1（pane not found）を伝播。
+- 番号 fallback の空入力=130 / 範囲外=2 も実サーバで確認。teardown 済み。
+
+hg-227-a/b の更新: cross-session の `select-pane`/`select-window` + targeted zoom は**実 tmux で確認済み**。**未確認で残るのは (1) attached client を別 session へ動かす `switch-client`（headless テストは client 未接続のため no-op だった。実 popup では効くはず・要人間確認）(2) tmux popup 内での fzf 対話 UI（alt-screen 相互作用・自動化不能）**。この 2 点は `prefix+v` bind 適用時に人間が実 popup で確認する。
