@@ -59,7 +59,9 @@ oe_cleanup() {
 
     # 検証 agent の一時ファイル (reviewer_session_id 起点) も削除
     local reviewer_pane
-    for reviewer_pane in "${OE_VERIFY_MANAGED_PANES[@]}"; do
+    # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
+    # （ADR-005・oe-delegate:126 と同型のガード）。
+    for reviewer_pane in ${OE_VERIFY_MANAGED_PANES[@]+"${OE_VERIFY_MANAGED_PANES[@]}"}; do
       # reviewer ファイルは reviewer_session_id ベース。pane_id では特定できないため
       # /tmp/oe-*-verify-{envelope.json,inputs.md} を一括掃除する想定だが、
       # 他セッションの一時ファイルに影響を出さないよう、ここではセッション内で
@@ -74,7 +76,8 @@ oe_cleanup() {
     # /tmp/oe-{rsid}-reviewer.log (Phase C.5 file-redirect 経路) を削除
     declare -p OE_VERIFY_REVIEWER_SESSION_IDS >/dev/null 2>&1 || OE_VERIFY_REVIEWER_SESSION_IDS=()
     local rsid
-    for rsid in "${OE_VERIFY_REVIEWER_SESSION_IDS[@]}"; do
+    # bash 3.2 空配列展開ガード（上と同型・ADR-005）
+    for rsid in ${OE_VERIFY_REVIEWER_SESSION_IDS[@]+"${OE_VERIFY_REVIEWER_SESSION_IDS[@]}"}; do
       [[ -n "$rsid" ]] || continue
       rm -f "/tmp/oe-${rsid}-verify-envelope.json" 2>/dev/null || true
       rm -f "/tmp/oe-${rsid}-verify-inputs.md" 2>/dev/null || true

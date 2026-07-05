@@ -34,7 +34,44 @@ _MOCK_TMPDIR="${SCRIPT_DIR}/.tmp_test_monitor_$$"
 mkdir -p "$_MOCK_TMPDIR"
 trap 'rm -rf "$_MOCK_TMPDIR"' EXIT
 
-declare -A _MOCK_SCAN_OUTPUT
+# bash 3.2 互換: declare -A（連想配列）は bash 4.0+ のため使用不可（ADR-005）。
+# pane_id→scan出力 の対応を平行配列 + ヘルパー関数で保持する
+# （lib/monitor.sh の _OE_LAST_STATE_* / _oe_monitor_last_state_* と同型）。
+_MOCK_SCAN_OUTPUT_PANES=()
+_MOCK_SCAN_OUTPUT_VALS=()
+
+_mock_scan_output_clear() {
+  _MOCK_SCAN_OUTPUT_PANES=()
+  _MOCK_SCAN_OUTPUT_VALS=()
+}
+
+# 戻り値: stdout に値（改行なし printf）、未登録は空出力 + 1
+_mock_scan_output_get() {
+  local pane_id="$1"
+  local i
+  for (( i = 0; i < ${#_MOCK_SCAN_OUTPUT_PANES[@]}; i++ )); do
+    if [[ "${_MOCK_SCAN_OUTPUT_PANES[i]}" == "$pane_id" ]]; then
+      printf '%s' "${_MOCK_SCAN_OUTPUT_VALS[i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_mock_scan_output_set() {
+  local pane_id="$1"
+  local val="$2"
+  local i
+  for (( i = 0; i < ${#_MOCK_SCAN_OUTPUT_PANES[@]}; i++ )); do
+    if [[ "${_MOCK_SCAN_OUTPUT_PANES[i]}" == "$pane_id" ]]; then
+      _MOCK_SCAN_OUTPUT_VALS[i]="$val"
+      return 0
+    fi
+  done
+  _MOCK_SCAN_OUTPUT_PANES+=("$pane_id")
+  _MOCK_SCAN_OUTPUT_VALS+=("$val")
+}
+
 _MOCK_KILL_CALLS=()
 
 # wez モック（CB の kill 経路用。#114/#98 以降 monitor は target を pane capture せず
@@ -58,7 +95,7 @@ _oe_target_log_path() {
   printf '%s' "$2"
 }
 
-# scan モック: 渡された path(=pane_id) で呼び出し回数を記録し、_MOCK_SCAN_OUTPUT[pane] を
+# scan モック: 渡された path(=pane_id) で呼び出し回数を記録し、pane に対応する mock 出力を
 # 実 parse (_oe_capture_scan_parse) に流して OE_SCAN_* を本物どおり設定する（parse 忠実性を保つ）。
 _oe_scan_log_file() {
   local pane_id="$1"
@@ -72,7 +109,7 @@ _oe_scan_log_file() {
   OE_SCAN_BLOCKED="false"
   OE_SCAN_EXIT_CODE=""
   OE_SCAN_VERIFY_RESULT=""
-  _oe_capture_scan_parse "${_MOCK_SCAN_OUTPUT[$pane_id]:-}"
+  _oe_capture_scan_parse "$(_mock_scan_output_get "$pane_id")"
 }
 
 mock_scan_count() {
@@ -111,7 +148,7 @@ oe_capture_write_kvs() {
 # --- モックリセット ---
 
 reset_mocks() {
-  _MOCK_SCAN_OUTPUT=()
+  _mock_scan_output_clear
   _MOCK_KILL_CALLS=()
   _MOCK_AUDIT_CALLS=()
   _MOCK_CLEANUP_CALLED=0
@@ -184,7 +221,7 @@ assert_contains_prefix() {
 
 echo "=== Test a: 単一ペイン EXIT:0 → ループ終了 ==="
 reset_mocks
-_MOCK_SCAN_OUTPUT[p1]="task output
+_mock_scan_output_set p1 "task output
 @@OE_EXIT:0
 done"
 
@@ -207,7 +244,7 @@ echo ""
 echo "=== Test b: CB タイムアウト発動 ==="
 reset_mocks
 OE_CB_TIMEOUT=0
-_MOCK_SCAN_OUTPUT[p1]="no markers here"
+_mock_scan_output_set p1 "no markers here"
 
 oe_monitor_loop "sess-b" "p1" || true
 
@@ -224,8 +261,8 @@ echo ""
 echo "=== Test c: 複数ペイン — 1 完了 + 1 未完了 ==="
 reset_mocks
 OE_CB_MAX_TURNS=3
-_MOCK_SCAN_OUTPUT[p1]="@@OE_EXIT:0"
-_MOCK_SCAN_OUTPUT[p2]="still running"
+_mock_scan_output_set p1 "@@OE_EXIT:0"
+_mock_scan_output_set p2 "still running"
 
 oe_monitor_loop "sess-c" "p1" "p2" || true
 
@@ -246,7 +283,7 @@ echo ""
 echo "=== Test d: マーカーなし → ループ継続 ==="
 reset_mocks
 OE_CB_MAX_TURNS=3
-_MOCK_SCAN_OUTPUT[p1]="just normal output"
+_mock_scan_output_set p1 "just normal output"
 
 oe_monitor_loop "sess-d" "p1" || true
 
@@ -274,7 +311,7 @@ assert_eq "kill count" "3" "${#_MOCK_KILL_CALLS[@]}"
 echo ""
 echo "=== Test g: interrupt (SIGINT) ==="
 reset_mocks
-_MOCK_SCAN_OUTPUT[p1]="running without marker"
+_mock_scan_output_set p1 "running without marker"
 OE_CB_MAX_TURNS=100
 _OE_MONITOR_SLEEP_INT_PHASE=0
 sleep() {
@@ -301,7 +338,7 @@ sleep() { :; }
 echo ""
 echo "=== Test f: trap 復元 ==="
 reset_mocks
-_MOCK_SCAN_OUTPUT[p1]="@@OE_EXIT:0"
+_mock_scan_output_set p1 "@@OE_EXIT:0"
 
 oe_monitor_loop "sess-f" "p1"
 
