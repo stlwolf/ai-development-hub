@@ -244,83 +244,84 @@ if [[ "$PICK" -eq 1 ]]; then
 
   # 候補は自身を --pick-list で再帰起動して取得。stdout = "%N<TAB>表示行" のみ／note・空森
   # メッセージは stderr（候補に混ぜない）。mapfile は macOS の bash 3.2 に無いので while-read。
-  CANDS=()
-  while IFS= read -r _l; do
-    [[ "$_l" == %[0-9]*$'\t'* ]] && CANDS+=("$_l")
-  done < <("$OE_TREE_SELF" --pick-list)
-  if [[ ${#CANDS[@]} -eq 0 ]]; then
-    echo "oe-tree: no spawn nodes to pick (see notes above; try: oe-tree)" >&2
-    pick_hold
-    exit 1
-  fi
-
-  # 選択: fzf があれば fzf、無ければ番号フォールバック（oe-select 同型）。
-  SELECTED=""
-  if command -v fzf >/dev/null 2>&1; then
-    # 1 列目（%N）は隠しキー: --delimiter TAB + --with-nth 2 で表示/検索は 2 列目のみ。
-    # ctrl-r reload は同一 --pick-list を再実行（fzf は bind を $SHELL -c で走らせるため絶対パス）。
-    rc=0
-    SELECTED="$(printf '%s\n' "${CANDS[@]}" | fzf \
-      --delimiter=$'\t' \
-      --with-nth=2 \
-      --layout=reverse \
-      --prompt='jump> ' \
-      --header='enter: jump+zoom   ctrl-r: refresh   esc: cancel' \
-      --bind="ctrl-r:reload('${OE_TREE_SELF}' --pick-list)")" || rc=$?
-    # rc 130（Ctrl-C）/ 1（no match=未選択）→ cancel(130) / rc>=2（fzf 自体のエラー）→ 2
-    if [[ "$rc" -eq 130 || "$rc" -eq 1 ]]; then
-      exit 130
-    elif [[ "$rc" -ge 2 ]]; then
-      echo "oe-tree: fzf failed (rc=${rc})" >&2
-      exit 2
+  # ループ: jump 失敗（gone/未解決）は exit せず picker に戻る（#227 hg 追修正）。抜けるのは
+  # 成功 / cancel(Esc・空・EOF) / fzf エラー / 空森 / zoom 失敗(既に移動済) のみ。候補は毎回取り直す。
+  while :; do
+    CANDS=()
+    while IFS= read -r _l; do
+      [[ "$_l" == %[0-9]*$'\t'* ]] && CANDS+=("$_l")
+    done < <("$OE_TREE_SELF" --pick-list)
+    if [[ ${#CANDS[@]} -eq 0 ]]; then
+      echo "oe-tree: no spawn nodes to pick (see notes above; try: oe-tree)" >&2
+      pick_hold
+      exit 1
     fi
-  else
-    echo "oe-tree: select a node to jump to:" >&2
-    _i=1
-    for _l in "${CANDS[@]}"; do
-      printf '%3d) %s\n' "$_i" "${_l#*$'\t'}" >&2   # 表示は %N を落とした 2 列目（木の形は保つ）
-      _i=$((_i + 1))
-    done
-    printf 'number> ' >&2
-    _reply=""
-    if ! IFS= read -r _reply <"$OE_TREE_TTY"; then exit 130; fi   # EOF=cancel
-    [[ -n "$_reply" ]] || exit 130                                # 空入力=cancel
-    if ! [[ "$_reply" =~ ^[0-9]+$ ]]; then
-      echo "oe-tree: invalid selection" >&2; exit 2
+
+    # 選択: fzf があれば fzf、無ければ番号フォールバック（oe-select 同型）。
+    SELECTED=""
+    if command -v fzf >/dev/null 2>&1; then
+      # 1 列目（%N）は隠しキー: --delimiter TAB + --with-nth 2 で表示/検索は 2 列目のみ。
+      # ctrl-r reload は同一 --pick-list を再実行（fzf は bind を $SHELL -c で走らせるため絶対パス）。
+      rc=0
+      SELECTED="$(printf '%s\n' "${CANDS[@]}" | fzf \
+        --delimiter=$'\t' \
+        --with-nth=2 \
+        --layout=reverse \
+        --prompt='jump> ' \
+        --header='enter: jump+zoom   ctrl-r: refresh   esc: cancel' \
+        --bind="ctrl-r:reload('${OE_TREE_SELF}' --pick-list)")" || rc=$?
+      # rc 130（Ctrl-C）/ 1（no match=未選択）→ cancel(130) / rc>=2（fzf 自体のエラー）→ 2
+      if [[ "$rc" -eq 130 || "$rc" -eq 1 ]]; then
+        exit 130
+      elif [[ "$rc" -ge 2 ]]; then
+        echo "oe-tree: fzf failed (rc=${rc})" >&2
+        exit 2
+      fi
+    else
+      echo "oe-tree: select a node to jump to:" >&2
+      _i=1
+      for _l in "${CANDS[@]}"; do
+        printf '%3d) %s\n' "$_i" "${_l#*$'\t'}" >&2   # 表示は %N を落とした 2 列目（木の形は保つ）
+        _i=$((_i + 1))
+      done
+      printf 'number> ' >&2
+      _reply=""
+      if ! IFS= read -r _reply <"$OE_TREE_TTY"; then exit 130; fi   # EOF=cancel
+      [[ -n "$_reply" ]] || exit 130                                # 空入力=cancel
+      if ! [[ "$_reply" =~ ^[0-9]+$ ]]; then
+        echo "oe-tree: invalid selection" >&2; exit 2
+      fi
+      # 先頭ゼロの 8 進解釈を避けて 10 進化してから範囲チェック（oe-select と同型）。
+      _idx=$((10#$_reply))
+      if [[ "$_idx" -lt 1 || "$_idx" -gt ${#CANDS[@]} ]]; then
+        echo "oe-tree: invalid selection" >&2; exit 2
+      fi
+      SELECTED="${CANDS[$((_idx - 1))]}"
     fi
-    # 先頭ゼロの 8 進解釈を避けて 10 進化してから範囲チェック（oe-select と同型）。
-    _idx=$((10#$_reply))
-    if [[ "$_idx" -lt 1 || "$_idx" -gt ${#CANDS[@]} ]]; then
-      echo "oe-tree: invalid selection" >&2; exit 2
+
+    [[ -n "$SELECTED" ]] || exit 130   # 空選択（fzf rc0 + 空 stdout 等）も cancel
+    PANE="${SELECTED%%$'\t'*}"
+    if ! [[ "$PANE" =~ ^%[0-9]+$ ]]; then
+      echo "oe-tree: could not extract pane id from selection" >&2
+      exit 1
     fi
-    SELECTED="${CANDS[$((_idx - 1))]}"
-  fi
 
-  [[ -n "$SELECTED" ]] || exit 130   # 空選択（fzf rc0 + 空 stdout 等）も cancel
-  PANE="${SELECTED%%$'\t'*}"
-  if ! [[ "$PANE" =~ ^%[0-9]+$ ]]; then
-    echo "oe-tree: could not extract pane id from selection" >&2
-    exit 1
-  fi
+    # jump（oe-jump 再利用・focus）。失敗（gone/未解決）は理由を一瞬出して picker に戻る（exit しない）。
+    if ! "${BIN_DIR}/oe-jump" -- "$PANE"; then
+      echo "oe-tree: '${PANE}' へ jump できません（gone/未解決）— picker に戻ります" >&2
+      pick_hold
+      continue
+    fi
 
-  # jump（oe-jump 再利用・focus）。gone/未解決は oe-jump が理由を stderr に出す → hold して伝える。
-  # rc は oe-jump のものを伝播（1=pane 無し/focus 失敗 / 2=環境）。
-  if "${BIN_DIR}/oe-jump" -- "$PANE"; then
-    :
-  else
-    rc=$?
-    pick_hold
-    exit "$rc"
-  fi
-
-  # zoom（新規・対象指定 ensure-zoomed）。jump は成功済み — zoom 失敗は部分成功として rc1
-  # （「ジャンプし最大化」を偽らない）。
-  if ! ensure_zoom "$PANE"; then
-    echo "oe-tree: jumped to ${PANE} but failed to zoom (resize-pane -Z)" >&2
-    pick_hold
-    exit 1
-  fi
-  exit 0
+    # zoom（対象指定 ensure-zoomed）。jump は成功済み＝既に移動 — zoom 失敗は部分成功として exit 1
+    # （「ジャンプし最大化」を偽らない・戻らない）。
+    if ! ensure_zoom "$PANE"; then
+      echo "oe-tree: jumped to ${PANE} but failed to zoom (resize-pane -Z)" >&2
+      pick_hold
+      exit 1
+    fi
+    exit 0
+  done
 fi
 
 SELF="${TMUX_PANE:-}"

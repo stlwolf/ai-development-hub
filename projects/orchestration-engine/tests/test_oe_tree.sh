@@ -72,6 +72,15 @@ make_fzf() {
 [[ -n "${FZF_CANCEL:-}" ]] && exit 130
 [[ -n "${FZF_FAIL:-}" ]] && exit "$FZF_FAIL"
 [[ -n "${FZF_EMPTY:-}" ]] && exit 0
+# stateful（ループ戻り検証用）: 1 回目は $FZF_ONCE_PANE を返し、2 回目以降は cancel(130)。
+if [[ -n "${FZF_ONCE_PANE:-}" ]]; then
+  if [[ -e "${FZF_ONCE_CF:?FZF_ONCE_CF required}" ]]; then exit 130; fi
+  : > "$FZF_ONCE_CF"
+  while IFS= read -r line; do
+    [[ "${line%%$'\t'*}" == "$FZF_ONCE_PANE" ]] && { printf '%s\n' "$line"; exit 0; }
+  done
+  exit 1
+fi
 pick="${FZF_PICK_PANE:-}"
 while IFS= read -r line; do
   [[ "${line%%$'\t'*}" == "$pick" ]] && { printf '%s\n' "$line"; exit 0; }
@@ -406,12 +415,21 @@ ck "pick no re-zoom when flag=1" "" "$(grep -F 'resize-pane' "$TMUX_CALL_LOG" ||
 unset TMUX_CALL_LOG
 
 # ----------------------------------------------------------------------------
-echo "[23] --pick gone 選択: oe-jump が pane 無しで rc1 → 伝播（zoom せず）"
+echo "[23] --pick gone/jump 失敗: exit せず picker に戻る（成功/cancel のみ抜ける・#227 hg 追修正）"
 # ----------------------------------------------------------------------------
+reset_state; fixture_chain
+export MOCK_LIVE_PANES="%83 %85 %94 %110"   # %49 は gone（live 集合に無い）
+make_fzf; export MOCK_ZOOM_FLAG="0"
 export TMUX_CALL_LOG="$_TMP_DIR/calls23.log"; : > "$TMUX_CALL_LOG"
-FZF_PICK_PANE="%49" MOCK_ZOOM_FLAG="0" "$TREE" --pick </dev/null >/dev/null 2>&1; rc=$?
-ck "pick gone exit 1" "1" "$rc"
+# stateful fzf: 1 回目 gone(%49) → oe-jump 失敗 → picker に戻る → 2 回目 fzf は cancel → 130。
+# 旧挙動なら gone 選択で exit 1。130 になること自体がループ（戻り→再選択）の証拠。
+rm -f "$_TMP_DIR/cf23"
+FZF_ONCE_PANE="%49" FZF_ONCE_CF="$_TMP_DIR/cf23" "$TREE" --pick </dev/null >/dev/null 2>&1; rc=$?
+ck "pick gone loops back then cancel→130 (旧: exit1)" "130" "$rc"
 ck "pick gone no zoom" "" "$(grep -F 'resize-pane' "$TMUX_CALL_LOG" || true)"
+rm -f "$_TMP_DIR/cf23b"
+err23="$(FZF_ONCE_PANE="%49" FZF_ONCE_CF="$_TMP_DIR/cf23b" "$TREE" --pick </dev/null 2>&1 >/dev/null)"
+ck "pick gone shows 戻ります on stderr" "yes" "$(printf '%s' "$err23" | grep -q 'picker に戻ります' && echo yes || echo no)"
 unset TMUX_CALL_LOG
 
 # ----------------------------------------------------------------------------
