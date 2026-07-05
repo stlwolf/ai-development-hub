@@ -81,6 +81,9 @@ ck "空白のみでも tag 無害化"     '< invoke x>' "$(OE_SANITIZE_MAX_CP=' 
 ck "空値でも tag 無害化"         '< invoke x>' "$(OE_SANITIZE_MAX_CP='' oe_sanitize_conversation '<invoke x>')"
 # 負数は無効化(disable)でなく coerce（jq が走り tag 無害化される＝silent bypass しない・Copilot 指摘）
 ck "負数は coerce・無効化しない"  '< invoke x>' "$(OE_SANITIZE_MAX_CP=-5 oe_sanitize_conversation '<invoke x>')"
+# 先頭ゼロは 10 進正規化され jq 版に依らず数値化される＝tr fallback へ縮退せず bypass しない（Copilot 指摘）
+ck "先頭ゼロ 050 正規化・bypass しない" '< invoke x>' "$(OE_SANITIZE_MAX_CP=050 oe_sanitize_conversation '<invoke x>')"
+ck "先頭ゼロ 05 は 5 として truncate"   'abcde…'      "$(OE_SANITIZE_MAX_CP=05 oe_sanitize_conversation 'abcdef')"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
