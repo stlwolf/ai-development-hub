@@ -37,6 +37,15 @@ set -euo pipefail
 
 err() { echo "oe-activity: $*" >&2; }
 
+# #224: 会話到達面へ出す preview を read 側でも無害化する。write-time（event-bus）は新規 event しか
+# 覆えず、legacy / 外部編集で壊れた / write-time 失敗の raw preview が tool-call タグ列や box-drawing
+# を伴って会話へ再露出しうる（実装SO=oe-review 検出）。共有 helper を通し単一実装で塞ぐ。
+_SANITIZE_LIB="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/../lib/sanitize.sh"
+# shellcheck source=../lib/sanitize.sh
+if [[ -r "$_SANITIZE_LIB" ]]; then source "$_SANITIZE_LIB"; fi
+# lib 不在時は degrade（jq 投影の cntrl gsub は効くのでタグ列のみ無処理＝従来同等の安全度）。
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
+
 # 単一ノブ OE_EVENT_DIR（writer=event-bus.sh と一致）。reader 専用の別ノブは footgun なので持たない。
 OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
 OE_EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
@@ -144,6 +153,9 @@ project() {
               clab_m: (if $r.c==$m.from.pane then $m.from.label else $m.to.label end),
               plab_m: (if $r.p==$m.from.pane then $m.from.label else $m.to.label end),
               deliv: ($m.delivery_signal // "none"),
+              # #224: タグ列/box/court の無害化は write-time（event-bus）＋ read-time（下流の
+              # bash ループが oe_sanitize_conversation を通す）で行う。ここの jq cntrl→space は
+              # 「US 区切りを join 前に潰す protocol 防御」＝別役割なので温存する（US 混入で列ズレ防止）。
               prev:  (($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ] ) as $msgs
     # inbox は自分宛の報告だけに絞る
     | ( if $mode=="inbox" then [ $msgs[] | select(.recipient==$self) ] else $msgs end ) as $fmsgs
@@ -213,6 +225,7 @@ if [[ "$MODE" == "timeline" ]]; then
   printf '%-4s  %-26s  %-7s  %-16s  %-30s  %s\n' "TURN" "TS" "DIR" "DELIVERY" "RELATION" "PREVIEW"
   while IFS=$'\037' read -r turn ts dir deliv c p clab plab prev; do
     [[ -n "$ts" ]] || continue
+    prev="$(oe_sanitize_conversation "$prev")"   # #224: read 側の会話到達面無害化
     relation="$(disp "$p" "$plab") → $(disp "$c" "$clab")"
     printf '%-4s  %-26s  %-7s  %-16s  %-30s  %s\n' "$turn" "$ts" "$dir" "$deliv" "$relation" "$prev"
   done <<< "$rows"
@@ -229,6 +242,7 @@ fi
 
 while IFS=$'\037' read -r c p clab plab trips deliv miss pend prev; do
   [[ -n "$c" || -n "$p" ]] || continue
+  prev="$(oe_sanitize_conversation "$prev")"   # #224: read 側の会話到達面無害化
   live="$(liveness_of "$c")"     # 送信元 ＝ 子(worker)の生存
   deliv_disp="$deliv"
   [[ "${miss:-0}" -gt 0 ]] 2>/dev/null && deliv_disp="${deliv} (×${miss})"

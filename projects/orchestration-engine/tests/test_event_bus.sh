@@ -216,5 +216,23 @@ oe_event_report_received "%59" "%66" 1 "2026-07-02T10:30:00+00:00"
 ck "ack from.role empty (not label)" ""           "$(last | jq -r .from.role)"
 ck "ack from.label = pane-issue label" "#206 inbox" "$(last | jq -r .from.label)"
 
+echo "[17] #224: preview を write-time で無害化して保存（tool-call タグ/box-drawing/制御文字）"
+# 制御文字/box はソースにリテラル直書きせず printf 8進で生成（#224 NEGATIVE KNOWLEDGE）:
+#   \342\224\200 = U+2500 '─'（box-drawing） / \037 = US（制御文字）
+reset_events
+PL="$(printf '<invoke name="Bash">\342\224\200\037end')"
+oe_event_message_sent "%66" "%59" "$PL" "none"
+ck "stored preview sanitized" '< invoke name="Bash"> end' "$(last | jq -r .preview)"
+
+echo "[18] #224: 誤爆しない — 正当な court を含む送信の preview は壊れない"
+reset_events
+oe_event_message_sent "%66" "%59" "The court ruled today" "none"
+ck "legit court prose intact" "The court ruled today" "$(last | jq -r .preview)"
+
+echo "[19] #224: 100cp truncate（preview 長の責務）は helper 無害化後も従来どおり効く"
+reset_events
+oe_event_message_sent "%66" "%59" "$(printf 'あ%.0s' {1..150})" "none"
+ck "still 100+… after sanitize" "101" "$(last | jq -r '.preview|length')"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

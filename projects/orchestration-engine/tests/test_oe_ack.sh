@@ -149,5 +149,13 @@ OUT9b="$(env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%59" OE_EVENT_
 ckc "回復後は no-op"           "$OUT9b" "nothing to ack"
 ck  "行数不変"                 "$before9" "$(grep -c '' "$PARTIAL")"
 
+echo "[13] #224: preview echo（会話到達面）を read 側で無害化（legacy/破損 raw preview 対策・実装SO 検出）"
+mkdir -p "$_TMP_DIR/rawtag"
+# raw <invoke> を含む未ack report を置く → pending>0 で echo 経路に入り、最終 preview が無害化される
+printf '%s\n' '{"ts":"2026-07-03T09:00:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"<invoke name=\"Bash\">raw","delivery_signal":"none"}' > "$_TMP_DIR/rawtag/oe-events.jsonl"
+RTACK="$(env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/rawtag" bash "$OE_ACK" '%66' 2>&1)"
+ckc "ack echo: tag neutralized (< invoke)" "$RTACK" "< invoke"
+if printf '%s' "$RTACK" | grep -qF '<invoke'; then echo "  FAIL: ack echo に raw <invoke 残存"; FAIL=$((FAIL+1)); else echo "  PASS: ack echo の raw <invoke 除去"; PASS=$((PASS+1)); fi
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

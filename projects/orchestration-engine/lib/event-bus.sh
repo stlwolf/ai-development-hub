@@ -25,6 +25,12 @@ if ! declare -F _oe_reg_key >/dev/null 2>&1; then
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" 2>/dev/null || true
 fi
 
+# #224: 会話到達面へ載る preview を write-time で無害化する共有 helper（多重 source は冪等）。
+if ! declare -F oe_sanitize_conversation >/dev/null 2>&1; then
+  # shellcheck source=sanitize.sh
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" 2>/dev/null || true
+fi
+
 # delegate-registry.sh が source されない（_oe_reg_key を他所が定義済 等）/ 環境で未設定でも、
 # 未定義の state dir で `/${pid}_*.json` のように root 配下を誤って glob しないよう、registry と
 # 同じ既定値をここでもフォールバック設定する（best-effort・Copilot 指摘）。
@@ -138,6 +144,14 @@ oe_event_message_sent() {
   case "$maxc" in ''|*[!0-9]*) echo "oe_event_message_sent: OE_EVENT_PREVIEW_MAX='${maxc}' は非数値 → 100 を使用" >&2; maxc=100 ;; esac
   # delivery_signal を suspected_miss|none に正規化（未知値は none）。
   case "$delivery" in suspected_miss|none) ;; *) delivery="none" ;; esac
+  # #224: 会話到達面（oe-activity/oe-ack が読む preview）へ載る前に write-time で無害化する。
+  # ここ1箇所で全 read consumer を drift なくカバーする（DJ-4=write-time）。tool-call タグ列・
+  # box-drawing・制御文字・行頭孤立 court を無害化。この後の 100cp truncate は preview 長の
+  # 責務として据え置く（helper 既定 OE_SANITIZE_MAX_CP はこれより十分大きく干渉しない）。
+  # read 側（oe-activity/oe-ack）の [[:cntrl:]] gsub は US 区切り protocol 防御として温存する。
+  # best-effort: サニタイズが万一失敗しても emit を落とさず raw preview で続行（set -e 下でも安全）。
+  local _san
+  if _san="$(oe_sanitize_conversation "$preview")"; then preview="$_san"; fi
   extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --argjson n "$maxc" \
     '{preview: (if ($p|length) > $n then ($p[0:$n] + "…") else $p end), delivery_signal: $d}' 2>/dev/null)" || return 0
   oe_event_emit "message_sent" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"

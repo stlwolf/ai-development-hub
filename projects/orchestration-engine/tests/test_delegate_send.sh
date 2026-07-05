@@ -145,14 +145,15 @@ MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_proc)" )
 oe_send_line "%5" "PAY11" >/dev/null 2>&1
 ck "edge processing は submitted 扱い・撃たない" "1" "$(enter_count)"
 
-echo "[12] finalize: stage_miss_suspect（一度も staged 観測せず空）→ warn のみ・撃たない・rc 不変"
+echo "[12] finalize: stage_miss_suspect（既定=opt-out）→ 撃たない・rc 不変・warn ノイズを出さない（#224）"
 reset_fin
 MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_empty)" )
 # サブシェル($(...))にすると MOCK_SENDKEYS_LOG が親に伝播しないため、stderr はファイルへ。
 rc=0; oe_send_line "%5" "PAY12" >/dev/null 2>"$ERRFILE" || rc=$?
 ck "stage_miss でも rc=0（rc 透過）" "0" "$rc"
 ck "stage_miss は撃たない（transport の1回のみ）" "1" "$(enter_count)"
-ck "stage_miss warn を出す" "yes" "$(grep -q 'possible stage miss' "$ERRFILE" && echo yes || echo no)"
+# #224: 既定パス（SIGNAL_MISS 未設定）は rc も変えない no-op なので warn は純ノイズ → 抑制する。
+ck "stage_miss(既定) は warn を出さない（#224 ノイズ抑制）" "no" "$(grep -q 'possible stage miss' "$ERRFILE" && echo yes || echo no)"
 
 echo "[13] finalize: base_staged（送信前から入力欄に内容）→ 無条件 unknown・撃たない"
 reset_fin
@@ -227,12 +228,26 @@ MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_empty)" )
 rc=0; OE_SEND_SIGNAL_MISS=1 oe_send_line "%5" "PAY22" >/dev/null 2>"$ERRFILE" || rc=$?
 ck "opt-in 時の未着候補は rc=4" "4" "$rc"
 ck "rc=4 でも追加 submit しない（transport の Enter 1回のみ）" "1" "$(enter_count)"
+# #224: genuine な失敗シグナルは opt-in 側で残す（warn を出す）。既定[12]との対比。
+ck "opt-in 時は genuine signal として warn を出す（#224）" "yes" "$(grep -q 'possible stage miss' "$ERRFILE" && echo yes || echo no)"
 
 echo "[23] transport 失敗の明示伝播: send-keys 失敗 → rc=2（|| rc=\$? 文脈でも握り潰さない・#154 SO 指摘）"
 reset_fin
 MOCK_CAP_SEQ=( "$(scr_empty)" )
 rc=0; MOCK_SENDKEYS_FAIL=1 oe_send_line "%5" "PAY23" >/dev/null 2>&1 || rc=$?
 ck "send-keys 失敗は rc=2 で伝播（errexit に頼らない）" "2" "$rc"
+
+echo "[24] #224 payload-echo guard: payload を stdout に出さない（bin/oe-send もこの primitive を通す）"
+# oe-send / oe-delegate の送信実体は oe_send_line。payload を会話へ echo し返さない
+# （出すのは stderr の診断のみ）ことを回帰ロックする。stdout だけ捕捉し stderr は捨てる。
+reset_fin
+MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'GUARDPAY24')" )
+guard_out="$(oe_send_line "%5" "GUARDPAY24" 2>/dev/null)"
+ck "stdout に payload を出さない" "" "$(printf '%s' "$guard_out" | grep -F 'GUARDPAY24' || true)"
+# --no-enter（ステージのみ）でも stdout に出さない
+reset_fin
+guard_out2="$(oe_send_line "%5" "GUARDPAY24B" "0" 2>/dev/null)"
+ck "--no-enter でも stdout に payload を出さない" "" "$(printf '%s' "$guard_out2" | grep -F 'GUARDPAY24B' || true)"
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]
