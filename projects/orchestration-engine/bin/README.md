@@ -372,20 +372,23 @@ oe-tree --pick   # 森ツリーを fzf に流す → 選択 → oe-jump で focu
 - **jump は `oe-jump` 再利用**: 選んだ `%N` を `oe-jump -- %N` に渡す（`switch-client`/`select-window`/`select-pane` 権威・別 window/session 跨ぎ対応）。jump ロジックは複製しない
 - **zoom（新規）**: jump 成功後、対象 window が未 zoom のときだけ `resize-pane -Z -t <pane>` で最大化する（**対象ペイン指定** — 無指定だと popup / 現 window を掴む）。既に zoom 済み（`#{window_zoomed_flag}`=1）なら**再 `-Z` しない**（トグルで解除される事故を防ぐ・冪等）。単一 pane window は `-Z` が無害な no-op
 - **read-only は維持**: jump/zoom は registry / トポロジ**データを編集しない**（#221/#223 のデータ read-only 不変条件は保たれる）。jump+zoom は**ユーザーが明示的に命じるナビ**＝受動検出でも自動作用でもなく、`prefix+g` picker が `select-pane` するのと同カテゴリ（非検出境界の本旨に反しない）。純ビュー（引数なし / `--watch`）はデフォルトで温存
-- **gone ペイン**: 候補には残す（ビューと一貫・gone 表示自体が情報）。選ぶと `oe-jump` が「pane 無し」で rc1 → メッセージを提示して終了（popup では TTY のとき 3s hold で読めるようにしてから閉じる）
+- **gone / jump 失敗**: 候補には残す（ビューと一貫・gone 表示自体が情報）。選んで `oe-jump` が失敗（gone/未解決）すると、理由を一瞬出して（TTY のとき 3s hold）**picker に戻る**（exit せずループ・#227 hg 追修正）。失敗のたびに popup が閉じないので別ノードを選び直せる。候補は戻るたび取り直す（最新化）
 - **fzf 非在**: 番号フォールバック（`oe-select` 同型 — 候補を番号付きで出し `/dev/tty` から番号 read。木の形は番号前置で保つ）。空入力 / EOF = cancel(130)・非数値 / 範囲外 = 2
-- degrade / exit: 0=jump+zoom 成功 / 1=候補なし・jump 不能・zoom 失敗（部分成功を偽らない）/ 2=usage・fzf 自体のエラー / 130=cancel。`--pick` と `--watch` は併用不可
+- degrade / exit: 0=jump+zoom 成功 / 1=候補なし（空森）・zoom 失敗（jump 済みで部分成功を偽らない）/ 2=usage・fzf 自体のエラー・番号 fallback の不正入力 / 130=cancel（Esc・空・EOF）。**jump 失敗（gone/未解決）は exit せず picker に戻る（ループ）**。`--pick` と `--watch` は併用不可
 
 **popup キーバインドは dotfiles 側で opt-in**（hub は強制しない・責務境界 = `oe-ident` #202 / `--watch` の bind と同型）。`--watch`（観測）を別キー、`--pick`（ナビ）を別キーに割り当てる想定。推奨スニペット（`~/.tmux.conf` 等）:
 
 ```tmux
 # oe topology pick popup（例: prefix + v。キーは環境の空きに合わせる — tmux list-keys で衝突確認）
-# fzf を popup 内で動かすため -E（対話プログラムを走らせる）。選択後は jump+zoom して自然クローズ。
-bind-key v run-shell "tmux display-popup -e 'TMUX_PANE=#{pane_id}' -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/repo/projects/orchestration-engine/bin/oe-tree --pick'"
+# fzf を popup 内で動かすため -E。選択後は jump+zoom して自然クローズ。
+# 直 display-popup（run-shell を使わない）: run-shell はコマンド出力を別ビューで表示するため、失敗系
+# （Esc/gone で非 0 exit や stderr）で余計なペインが一瞬出る（#227 hg で実測・撤去）。TMUX_PANE は
+# oe-tree が popup 内で display-message から自己解決するので -e 注入も不要。
+bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/repo/projects/orchestration-engine/bin/oe-tree --pick'
 ```
 
-- `-e 'TMUX_PANE=#{pane_id}'` は `(you)` マーカーの opener 注入（`--watch` と同じ・`run-shell` 経由のときだけ format が展開される）
-- bind の実適用は本 PR 外（dotfiles / 環境側）。hub は推奨スニペットを doc で示すに留める（#202/#223 と同じ hub/dotfiles 分界）。実測が要る点（popup 内 cross-session jump / fzf × popup alt-screen の相互作用）はライブ確認で詰める
+- `(you)` マーカーは oe-tree が popup 内で `display-message` から active pane を自己解決する（`--watch` と同じ・#223）。run-shell + `-e` 注入は失敗系で別ビュー表示を招くため使わない（#227 hg）
+- bind の実適用は本 PR 外（dotfiles / 環境側）。hub は推奨スニペットを doc で示すに留める（#202/#223 と同じ hub/dotfiles 分界）
 
 - follow-up（未実装・surface のみ）: `--json` 出力 / gone root ラベルの event-log 補完 / ラベル解決の共通 read ヘルパ化 / 汎用 `oe-watch` verb（他の観測 view の live 化）/ status-line 向け要約（`--summary`）/ **`--watch` から 1 キーで `--pick` を起動する glance→pick 統合（設計SO 由来・popup 相互作用が絡むため `--pick` を土台に additive に足す別 concern）**
 
