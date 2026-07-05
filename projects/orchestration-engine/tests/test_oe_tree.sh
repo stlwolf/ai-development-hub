@@ -26,10 +26,15 @@ mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/lib" "$_TMP_DIR/pathbin"
 cp "$PROJECT_DIR/bin/oe-tree" "$_TMP_DIR/bin/oe-tree"
 chmod +x "$_TMP_DIR/bin/oe-tree"
 ln -s "$PROJECT_DIR/lib/delegate-registry.sh" "$_TMP_DIR/lib/delegate-registry.sh"
+# --pick は隣接 oe-jump を再利用する（jump ロジック複製なし・#227）。同じ temp/bin に symlink し、
+# oe-jump 自身の lib 解決（../lib/delegate-registry.sh）が temp/lib（上の symlink）を指すようにする。
+ln -s "$PROJECT_DIR/bin/oe-jump" "$_TMP_DIR/bin/oe-jump"
 
 # mock tmux: list-panes / display-message のみ意味を持つ（他は成功で素通し）
 cat > "$_TMP_DIR/pathbin/tmux" <<'EOF'
 #!/usr/bin/env bash
+# 呼び出しを log（--pick の jump/zoom ターゲット検証用・TMUX_CALL_LOG 設定時のみ）。
+[[ -n "${TMUX_CALL_LOG:-}" ]] && printf 'tmux %s\n' "$*" >> "$TMUX_CALL_LOG"
 case "${1:-}" in
   list-panes)
     [[ "${MOCK_TMUX_FAIL:-0}" == "1" ]] && exit 1
@@ -40,20 +45,47 @@ case "${1:-}" in
       printf '%s\n' ${MOCK_LIVE_PANES:-}
     fi ;;
   display-message)
-    if [[ "$*" == *'#{pane_id}'* ]]; then
+    if [[ "$*" == *'#{window_zoomed_flag}'* ]]; then
+      printf '%s\n' "${MOCK_ZOOM_FLAG:-0}"    # --pick ensure_zoom 用（既定 0=未 zoom）
+    elif [[ "$*" == *'#{pane_id}'* ]]; then
       printf '%s\n' "${MOCK_ACTIVE_PANE:-}"
     else
       printf '%s\n' "${MOCK_PANE_TITLE:-}"
     fi ;;
-  *) exit 0 ;;
+  *) exit 0 ;;                                 # resize-pane / switch-client / select-* は成功で素通し
 esac
 EOF
 chmod +x "$_TMP_DIR/pathbin/tmux"
 
-# 実 jq を厳選 PATH に含める（mock は tmux のみ）
+# 実 jq は pathbin に symlink して使う（mock は tmux/fzf のみ）。JQ_DIR を PATH に足すと、
+# そこに同居する実 fzf（/opt/homebrew/bin）まで拾って fzf 有無の切替テストが崩れるため、
+# jq だけを隔離 pathbin に持ち込み PATH から JQ_DIR を外す（test_oe_select の実 fzf 除外と同方針）。
 JQ_BIN="$(command -v jq)" || { echo "FATAL: jq is required to run this test" >&2; exit 1; }
-JQ_DIR="$(dirname "$JQ_BIN")"
-export PATH="${_TMP_DIR}/pathbin:${JQ_DIR}:/usr/bin:/bin"
+ln -s "$JQ_BIN" "$_TMP_DIR/pathbin/jq"
+export PATH="${_TMP_DIR}/pathbin:/usr/bin:/bin"
+
+# mock fzf（make_fzf/rm_fzf で有無を切替）。候補は "%N<TAB>表示行"。TAB 区切りの first-field(%N)が
+# $FZF_PICK_PANE に一致する行を返す。FZF_CANCEL=130 / FZF_FAIL=<n> / FZF_EMPTY=空 stdout+rc0。
+make_fzf() {
+  cat > "$_TMP_DIR/pathbin/fzf" <<'EOF'
+#!/usr/bin/env bash
+[[ -n "${FZF_CANCEL:-}" ]] && exit 130
+[[ -n "${FZF_FAIL:-}" ]] && exit "$FZF_FAIL"
+[[ -n "${FZF_EMPTY:-}" ]] && exit 0
+pick="${FZF_PICK_PANE:-}"
+while IFS= read -r line; do
+  [[ "${line%%$'\t'*}" == "$pick" ]] && { printf '%s\n' "$line"; exit 0; }
+done
+exit 1
+EOF
+  chmod +x "$_TMP_DIR/pathbin/fzf"
+}
+rm_fzf() { rm -f "$_TMP_DIR/pathbin/fzf"; }
+
+# --pick 番号フォールバックの tty シーム（/dev/tty は非対話で開けない）。OE_TREE_TTY で差し替える。
+OE_TREE_TTY_FILE="$_TMP_DIR/tty-input"
+feed_tty() { printf '%s\n' "$1" > "$OE_TREE_TTY_FILE"; }
+feed_tty_empty() { : > "$OE_TREE_TTY_FILE"; }
 
 export OE_DELEGATE_STATE_DIR; OE_DELEGATE_STATE_DIR="$_TMP_DIR/state"
 export OE_PANE_ISSUE_DIR;     OE_PANE_ISSUE_DIR="$_TMP_DIR/pane-issue"
@@ -322,6 +354,101 @@ _direct="$("$TREE" 2>&1)"; _drc=$?              # copy: BIN_DIR=temp/bin → tem
 _linked="$("$_oe_link" 2>&1)"; _lrc=$?          # symlink: readlink 解決で hub/bin → hub/lib を source
 ck "symlink 起動 rc == 直接起動 rc" "$_drc" "$_lrc"
 ck "symlink 起動 出力 == 直接起動 出力" "$_direct" "$_linked"
+
+# ============================================================================
+# 対話ナビ --pick / --pick-list（#227）
+# 実 fzf は PATH から除外済み（make_fzf/rm_fzf で mock の有無を切替）。jump は隣接 oe-jump を
+# 再利用し、mock tmux が select-pane/resize-pane を TMUX_CALL_LOG に記録する。実 popup の
+# 対話終了・cross-session focus は自動テストの構造的限界（hg-227-a/b はライブ実測が正・episode 記録）。
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+echo "[19] モード排他: --pick+--watch / --pick-list+--watch は exit 2"
+# ----------------------------------------------------------------------------
+"$TREE" --pick --watch      >/dev/null 2>&1; ck "pick+watch exit 2" "2" "$?"
+"$TREE" --pick-list --watch >/dev/null 2>&1; ck "pick-list+watch exit 2" "2" "$?"
+
+# ----------------------------------------------------------------------------
+echo "[20] --pick-list: 隠しキー列 %N<TAB> を前置・stdout は候補のみ・note は stderr"
+# ----------------------------------------------------------------------------
+reset_state; fixture_chain
+export MOCK_LIVE_PANES="%83 %85 %94 %110"
+pl_out="$("$TREE" --pick-list 2>/dev/null)"
+ck "pick-list key col + display (%110)" "yes" \
+  "$(printf '%s\n' "$pl_out" | awk -F '\t' '$1=="%110" && $2 ~ /%110   alive  #5706-u1 ~attelu \(you\)/ {print "yes"; exit}')"
+ck "pick-list 5 nodes = 5 keyed lines" "5" "$(printf '%s\n' "$pl_out" | grep -c $'\t')"
+printf '{"pane":"%%7","label":"f","workspace":"/w","parent_pane":"%%1","role":"child"}' \
+  > "${OE_DELEGATE_STATE_DIR}/99999__7.json"
+ck "pick-list note not in stdout" "" "$("$TREE" --pick-list 2>/dev/null | grep 'note:' || true)"
+ck "pick-list note on stderr" "yes" \
+  "$("$TREE" --pick-list 2>&1 >/dev/null | grep -q 'not shown (stale)' && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+echo "[21] --pick (fzf): alive 選択 → oe-jump focus + 対象指定 zoom（resize-pane -Z -t %N）"
+# ----------------------------------------------------------------------------
+reset_state; fixture_chain
+export MOCK_LIVE_PANES="%83 %85 %94 %110"
+make_fzf
+export TMUX_CALL_LOG="$_TMP_DIR/calls21.log"; : > "$TMUX_CALL_LOG"
+FZF_PICK_PANE="%85" MOCK_ZOOM_FLAG="0" "$TREE" --pick </dev/null >/dev/null 2>&1; rc=$?
+ck "pick jump+zoom exit 0" "0" "$rc"
+ck "pick oe-jump select-pane target" "yes" "$(grep -qF 'select-pane -t %85' "$TMUX_CALL_LOG" && echo yes || echo no)"
+ck "pick zoom targets selected pane (-t)" "yes" "$(grep -qF 'resize-pane -Z -t %85' "$TMUX_CALL_LOG" && echo yes || echo no)"
+unset TMUX_CALL_LOG
+
+# ----------------------------------------------------------------------------
+echo "[22] --pick 冪等 zoom: 既 zoom(flag=1) は再 -Z しない（トグルで解除される事故を防ぐ）"
+# ----------------------------------------------------------------------------
+export TMUX_CALL_LOG="$_TMP_DIR/calls22.log"; : > "$TMUX_CALL_LOG"
+FZF_PICK_PANE="%85" MOCK_ZOOM_FLAG="1" "$TREE" --pick </dev/null >/dev/null 2>&1; rc=$?
+ck "pick already-zoomed exit 0" "0" "$rc"
+ck "pick no re-zoom when flag=1" "" "$(grep -F 'resize-pane' "$TMUX_CALL_LOG" || true)"
+unset TMUX_CALL_LOG
+
+# ----------------------------------------------------------------------------
+echo "[23] --pick gone 選択: oe-jump が pane 無しで rc1 → 伝播（zoom せず）"
+# ----------------------------------------------------------------------------
+export TMUX_CALL_LOG="$_TMP_DIR/calls23.log"; : > "$TMUX_CALL_LOG"
+FZF_PICK_PANE="%49" MOCK_ZOOM_FLAG="0" "$TREE" --pick </dev/null >/dev/null 2>&1; rc=$?
+ck "pick gone exit 1" "1" "$rc"
+ck "pick gone no zoom" "" "$(grep -F 'resize-pane' "$TMUX_CALL_LOG" || true)"
+unset TMUX_CALL_LOG
+
+# ----------------------------------------------------------------------------
+echo "[24] --pick (fzf) 分岐: cancel→130 / no-match→130 / fzf error→2 / empty→130"
+# ----------------------------------------------------------------------------
+FZF_CANCEL=1        "$TREE" --pick </dev/null >/dev/null 2>&1; ck "fzf cancel 130" "130" "$?"
+FZF_PICK_PANE="%zz" "$TREE" --pick </dev/null >/dev/null 2>&1; ck "fzf no-match 130" "130" "$?"
+FZF_FAIL=3          "$TREE" --pick </dev/null >/dev/null 2>&1; ck "fzf error 2" "2" "$?"
+FZF_EMPTY=1         "$TREE" --pick </dev/null >/dev/null 2>&1; ck "fzf empty 130" "130" "$?"
+
+# ----------------------------------------------------------------------------
+echo "[25] --pick 番号フォールバック（fzf 非在）: 有効→jump+zoom / 範囲外・非数値→2 / 空→130"
+# ----------------------------------------------------------------------------
+rm_fzf
+export MOCK_ZOOM_FLAG="0"
+# 候補順（画面配置順・座標なしは末尾）: 1)%49 gone 2)%83 3)%85 4)%110 5)%94。番号3=%85。
+export TMUX_CALL_LOG="$_TMP_DIR/calls25.log"; : > "$TMUX_CALL_LOG"
+feed_tty "3"; OE_TREE_TTY="$OE_TREE_TTY_FILE" "$TREE" --pick >/dev/null 2>&1; rc=$?
+ck "number select exit 0" "0" "$rc"
+ck "number select jump+zoom %85" "yes" "$(grep -qF 'resize-pane -Z -t %85' "$TMUX_CALL_LOG" && echo yes || echo no)"
+unset TMUX_CALL_LOG
+feed_tty "99";  OE_TREE_TTY="$OE_TREE_TTY_FILE" "$TREE" --pick >/dev/null 2>&1; ck "number out-of-range 2" "2" "$?"
+feed_tty "abc"; OE_TREE_TTY="$OE_TREE_TTY_FILE" "$TREE" --pick >/dev/null 2>&1; ck "number non-numeric 2" "2" "$?"
+feed_tty_empty; OE_TREE_TTY="$OE_TREE_TTY_FILE" "$TREE" --pick >/dev/null 2>&1; ck "number empty 130" "130" "$?"
+
+# ----------------------------------------------------------------------------
+echo "[26] --pick 候補なし（空森）: rc1・stdout 空・メッセージは stderr"
+# ----------------------------------------------------------------------------
+reset_state
+out="$("$TREE" --pick </dev/null 2>/dev/null)"; rc=$?
+ck "pick empty forest exit 1" "1" "$rc"
+ck "pick empty forest stdout empty" "" "$out"
+# stderr を先に変数へ取ってから grep する（`--pick|grep` を直に繋ぐと pipefail が --pick の
+# exit 1 を拾い、grep が一致しても && 側に進めない）。
+err="$("$TREE" --pick </dev/null 2>&1 >/dev/null)"
+ck "pick empty forest msg on stderr" "yes" \
+  "$(printf '%s' "$err" | grep -q 'no spawn nodes to pick' && echo yes || echo no)"
 
 echo
 echo "PASS=${PASS} FAIL=${FAIL}"

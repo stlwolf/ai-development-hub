@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
-# oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221 / live 化 #223）
+# oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221 / live 化 #223 / 対話ナビ #227）
 #
-# usage: oe-tree [--watch [--interval N]]
+# usage: oe-tree [--watch [--interval N]] | [--pick]
 #
 # spawn registry（~/.claude/state/oe-delegate/）の現 tmux server 分を走査し、
 # parent_pane 連鎖から森林を再構成して罫線ツリーで表示する。oe-list が flat な
 # 宛先候補（自分の直下の子に scoping）なのに対し、oe-tree は「何が何を立てたか」
 # 「どのペインが孫か」を現 server 全域で描く観測ビュー（oe-activity / oe-status と
 # 同クラス）。--watch で poll 再描画の live 表示（tmux popup からの常用を想定・#223）。
+#
+# --pick（対話ナビ・#227）: 森ツリーからノードを fzf で選び、その %N へ oe-jump で
+#   focus（jump ロジックは再利用・複製しない）→ 対象 window を resize-pane -Z で最大化する。
+#   prefix+g の session picker のトポロジ版 + 最大化。森構築/描画は本ツールの既存ロジックを
+#   内部モード --pick-list（%N<TAB>表示行 を emit）で再利用し、新規に足すのは fzf 選択 +
+#   ensure-zoomed のみ。fzf 非在時は番号フォールバック（oe-select 同型）。
+#   jump/zoom は「ユーザーが明示的に命じるナビ」＝受動検出でも自動作用でもなく、registry/
+#   トポロジのデータは編集しない（#221/#223 の read-only 不変条件は保たれる・prefix+g picker が
+#   select-pane するのと同カテゴリ）。純ビュー（引数なし / --watch）はデフォルトで温存。
 #
 # 意味論（設計SO で明文化を要求された点・DJ-221-2/6）:
 #   - 本ビューは「現在の登記のスナップショット」であり歴史ではない。gone entry は
@@ -51,22 +60,27 @@ while [[ -h "$_oe_src" ]]; do
   case "$_oe_src" in /*) ;; *) _oe_src="$_oe_dir/$_oe_src" ;; esac
 done
 BIN_DIR="$(cd -P "$(dirname "$_oe_src")" && pwd)"
+# 再帰起動（--pick の候補取得 / --watch の tick 再描画 / fzf の ctrl-r reload）用の絶対パス。
+# fzf は bind を `$SHELL -c` で走らせ $0 がシェル名になるため、reload には解決済み絶対パスが要る。
+OE_TREE_SELF="${BIN_DIR}/$(basename "$_oe_src")"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 WATCH=0
+PICK=0
+MODE=view          # view（既定・純ビュー） / picklist（内部・--pick の候補 emit）
 INTERVAL=2
 INTERVAL_SET=0
 usage_err() {
   echo "oe-tree: $1" >&2
-  echo "usage: oe-tree [--watch [--interval N]]" >&2
+  echo "usage: oe-tree [--watch [--interval N]] | [--pick]" >&2
   exit 2
 }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       cat >&2 <<'EOF'
-usage: oe-tree [--watch [--interval N]]
+usage: oe-tree [--watch [--interval N]] | [--pick]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
@@ -76,12 +90,18 @@ gone は末尾）
 
   --watch       poll 再描画の live 表示（q / Esc / C-c で終了）
   --interval N  --watch の更新間隔（秒・正整数・既定 2）
+  --pick        対話ナビ: ノードを fzf で選び、その %N へ oe-jump で focus →
+                対象 window を resize-pane -Z で最大化（fzf 非在時は番号選択）。
+                enter=jump+zoom / ctrl-r=refresh / esc=cancel。--watch とは併用不可。
 
 注: 現在の登記のスナップショット（kill は alive→gone 遷移として反映・ノードが消えるのは
-次の spawn 登記時の GC）。歴史は oe-activity を参照。
+次の spawn 登記時の GC）。歴史は oe-activity を参照。--pick の jump/zoom はユーザー起点の
+ナビでデータは read-only のまま（registry/トポロジを編集しない）。
 EOF
       exit 0 ;;
     --watch) WATCH=1 ;;
+    --pick) PICK=1 ;;
+    --pick-list) MODE=picklist ;;   # 内部用: --pick が候補（%N<TAB>表示行）を取るため自身を再帰起動する
     --interval)
       shift
       [[ $# -gt 0 ]] || usage_err "--interval requires a value"
@@ -91,6 +111,10 @@ EOF
   esac
   shift
 done
+# モードは排他: 純ビュー / --watch(live) / --pick(対話) / --pick-list(内部) は 1 つだけ。
+[[ "$WATCH" -eq 1 && "$PICK" -eq 1 ]] && usage_err "--pick and --watch are mutually exclusive"
+[[ "$MODE" == picklist && ( "$WATCH" -eq 1 || "$PICK" -eq 1 ) ]] \
+  && usage_err "--pick-list is internal and cannot be combined with --watch/--pick"
 [[ "$INTERVAL_SET" -eq 1 && "$WATCH" -eq 0 ]] && usage_err "--interval requires --watch"
 if [[ "$WATCH" -eq 1 ]]; then
   [[ "$INTERVAL" =~ ^[0-9]+$ && "$INTERVAL" -ge 1 ]] \
@@ -184,6 +208,119 @@ ${_frame}"
       [[ "$_rc" -gt 128 ]] || sleep "$INTERVAL"
     fi
   done
+fi
+
+# --- pick モード: 森ツリーからノードを選び oe-jump で focus → 対象 window を最大化（#227）---
+# 森構築/描画は本ツールの既存ロジックを再利用する（自身を --pick-list で再帰起動して候補を
+# 取る＝森ロジックを複製しない・DJ-223-6 の「フレーム=一発実行と同一コードパス」を踏襲）。
+# jump は oe-jump 再利用（jump ロジックを複製しない）。新規は fzf 選択 + ensure-zoomed のみ。
+# データは read-only のまま（jump/zoom は registry/トポロジを編集しない・ユーザー起点のナビ）。
+if [[ "$PICK" -eq 1 ]]; then
+  # 番号フォールバックの対話入力は端末から直接読む（既定 /dev/tty）。OE_TREE_TTY はテスト用シーム。
+  OE_TREE_TTY="${OE_TREE_TTY:-/dev/tty}"
+
+  # (you) の SELF freeze（--watch と同型）: popup 内では TMUX_PANE が unset（実測・#223）。
+  # 候補 emit の再帰起動へ export し、フォーカス移動前の自ペインを (you) として一貫表示する。
+  if [[ -z "${TMUX_PANE:-}" ]]; then
+    _self="$(tmux display-message -p '#{pane_id}' 2>/dev/null)" || _self=""
+    [[ -n "$_self" ]] && export TMUX_PANE="$_self"
+  fi
+
+  # popup(-E) は終了で即閉じる。jump 不能（gone 等）や zoom 失敗のメッセージを読めるよう、
+  # TTY のとき 3s hold してから抜ける（--watch の env_fail と同パターン・DJ-227-4/7）。
+  pick_hold() { if [[ -t 0 ]]; then read -r -s -t 3 -n 1 2>/dev/null || true; fi; }
+
+  # ensure_zoom <pane> — 対象 window が未 zoom のときだけ resize-pane -Z -t <pane>（冪等）。
+  # 既 zoom(1) は再 -Z しない（トグルで解除される事故を防ぐ・隔離 tmux 3.5a で実測）。
+  # flag が 0 / query 失敗（"") のときは -Z を試みる（単一 pane window では無害な no-op）。
+  # -t <pane> で対象 window に結びつけるのが要点（無指定は popup/現 window を掴む・設計SO R1）。
+  ensure_zoom() {
+    local pane="$1" zf
+    zf="$(tmux display-message -p -t "$pane" '#{window_zoomed_flag}' 2>/dev/null)" || zf=""
+    [[ "$zf" == "1" ]] && return 0
+    tmux resize-pane -Z -t "$pane" 2>/dev/null || return 1
+    return 0
+  }
+
+  # 候補は自身を --pick-list で再帰起動して取得。stdout = "%N<TAB>表示行" のみ／note・空森
+  # メッセージは stderr（候補に混ぜない）。mapfile は macOS の bash 3.2 に無いので while-read。
+  CANDS=()
+  while IFS= read -r _l; do
+    [[ "$_l" == %[0-9]*$'\t'* ]] && CANDS+=("$_l")
+  done < <("$OE_TREE_SELF" --pick-list)
+  if [[ ${#CANDS[@]} -eq 0 ]]; then
+    echo "oe-tree: no spawn nodes to pick (see notes above; try: oe-tree)" >&2
+    pick_hold
+    exit 1
+  fi
+
+  # 選択: fzf があれば fzf、無ければ番号フォールバック（oe-select 同型）。
+  SELECTED=""
+  if command -v fzf >/dev/null 2>&1; then
+    # 1 列目（%N）は隠しキー: --delimiter TAB + --with-nth 2 で表示/検索は 2 列目のみ。
+    # ctrl-r reload は同一 --pick-list を再実行（fzf は bind を $SHELL -c で走らせるため絶対パス）。
+    rc=0
+    SELECTED="$(printf '%s\n' "${CANDS[@]}" | fzf \
+      --delimiter=$'\t' \
+      --with-nth=2 \
+      --layout=reverse \
+      --prompt='jump> ' \
+      --header='enter: jump+zoom   ctrl-r: refresh   esc: cancel' \
+      --bind="ctrl-r:reload('${OE_TREE_SELF}' --pick-list)")" || rc=$?
+    # rc 130（Ctrl-C）/ 1（no match=未選択）→ cancel(130) / rc>=2（fzf 自体のエラー）→ 2
+    if [[ "$rc" -eq 130 || "$rc" -eq 1 ]]; then
+      exit 130
+    elif [[ "$rc" -ge 2 ]]; then
+      echo "oe-tree: fzf failed (rc=${rc})" >&2
+      exit 2
+    fi
+  else
+    echo "oe-tree: select a node to jump to:" >&2
+    _i=1
+    for _l in "${CANDS[@]}"; do
+      printf '%3d) %s\n' "$_i" "${_l#*$'\t'}" >&2   # 表示は %N を落とした 2 列目（木の形は保つ）
+      _i=$((_i + 1))
+    done
+    printf 'number> ' >&2
+    _reply=""
+    if ! IFS= read -r _reply <"$OE_TREE_TTY"; then exit 130; fi   # EOF=cancel
+    [[ -n "$_reply" ]] || exit 130                                # 空入力=cancel
+    if ! [[ "$_reply" =~ ^[0-9]+$ ]]; then
+      echo "oe-tree: invalid selection" >&2; exit 2
+    fi
+    # 先頭ゼロの 8 進解釈を避けて 10 進化してから範囲チェック（oe-select と同型）。
+    _idx=$((10#$_reply))
+    if [[ "$_idx" -lt 1 || "$_idx" -gt ${#CANDS[@]} ]]; then
+      echo "oe-tree: invalid selection" >&2; exit 2
+    fi
+    SELECTED="${CANDS[$((_idx - 1))]}"
+  fi
+
+  [[ -n "$SELECTED" ]] || exit 130   # 空選択（fzf rc0 + 空 stdout 等）も cancel
+  PANE="${SELECTED%%$'\t'*}"
+  if ! [[ "$PANE" =~ ^%[0-9]+$ ]]; then
+    echo "oe-tree: could not extract pane id from selection" >&2
+    exit 1
+  fi
+
+  # jump（oe-jump 再利用・focus）。gone/未解決は oe-jump が理由を stderr に出す → hold して伝える。
+  # rc は oe-jump のものを伝播（1=pane 無し/focus 失敗 / 2=環境）。
+  if "${BIN_DIR}/oe-jump" -- "$PANE"; then
+    :
+  else
+    rc=$?
+    pick_hold
+    exit "$rc"
+  fi
+
+  # zoom（新規・対象指定 ensure-zoomed）。jump は成功済み — zoom 失敗は部分成功として rc1
+  # （「ジャンプし最大化」を偽らない）。
+  if ! ensure_zoom "$PANE"; then
+    echo "oe-tree: jumped to ${PANE} but failed to zoom (resize-pane -Z)" >&2
+    pick_hold
+    exit 1
+  fi
+  exit 0
 fi
 
 SELF="${TMUX_PANE:-}"
@@ -300,17 +437,21 @@ done
 
 # 読めない/解釈できない/重複の現 server entry は無言で捨てず件数を footer で開示する
 # （foreign と同型の honest degrade — 全滅時も部分スキップ時も「登記どおり」と偽らない。実装SO 指摘）。
+# picklist モードでは note / 空森メッセージを stderr へ流す（stdout は候補行だけに保つ —
+# --pick 側が stdout を "%N<TAB>表示行" の候補列として読むため）。view モードは従来どおり stdout。
+_note_fd=1
+[[ "$MODE" == picklist ]] && _note_fd=2
 print_notes() {
-  [[ "$SKIPPED" -gt 0 ]] && echo "note: ${SKIPPED} entries skipped (unreadable or duplicate pane)"
-  [[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)"
+  [[ "$SKIPPED" -gt 0 ]] && echo "note: ${SKIPPED} entries skipped (unreadable or duplicate pane)" >&"$_note_fd"
+  [[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)" >&"$_note_fd"
   return 0
 }
 
 if [[ -z "$ENTRIES" ]]; then
   if [[ "$SKIPPED" -gt 0 ]]; then
-    echo "(no readable spawn entries for this tmux server)"
+    echo "(no readable spawn entries for this tmux server)" >&"$_note_fd"
   else
-    echo "(no spawn entries for this tmux server)"
+    echo "(no spawn entries for this tmux server)" >&"$_note_fd"
   fi
   print_notes
   exit 0
@@ -364,8 +505,14 @@ VISITED=" "
 render() { # <pane> <prefix> <child-prefix>
   local pane="$1" pfx="$2" cpfx="$3"
   local live coord label ws suffix=""
+  # picklist モードは各ノード行の先頭に隠しキー列 "%N<TAB>" を前置する（fzf の --with-nth 2 /
+  # 番号 fallback の %N 抽出用）。表示本文（$pfx 以降）は view と同一なので木の形は保たれる。
   if [[ "$VISITED" == *" ${pane} "* ]]; then
-    printf '%s%s  [cycle]\n' "$pfx" "$pane"
+    if [[ "$MODE" == picklist ]]; then
+      printf '%s\t%s%s  [cycle]\n' "$pane" "$pfx" "$pane"
+    else
+      printf '%s%s  [cycle]\n' "$pfx" "$pane"
+    fi
     return 0
   fi
   VISITED+="${pane} "
@@ -378,7 +525,11 @@ render() { # <pane> <prefix> <child-prefix>
   ws="$(entry_field_of "$pane" 3)"
   [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
   [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
-  printf '%s%-4s  %-5s  %-5s  %s%s\n' "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
+  if [[ "$MODE" == picklist ]]; then
+    printf '%s\t%s%-4s  %-5s  %-5s  %s%s\n' "$pane" "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
+  else
+    printf '%s%-4s  %-5s  %-5s  %s%s\n' "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
+  fi
   local kids n i=0 c
   kids="$(children_of "$pane")"
   n="$(printf '%s' "$kids" | grep -c . || true)"
