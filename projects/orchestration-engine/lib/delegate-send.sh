@@ -109,7 +109,13 @@ _oe_send_finalize() {
   # する（既定は rc 不変・#154）。fast submit を未着と誤判定し得るため opt-in（二重 submit 回避）。
   # 入力欄に内容が残る（折返し/省略で payload と完全一致しない）ケースは unknown 扱いで warn しない（Copilot 指摘）。
   if [[ "$saw_staged" == "0" && "$staged" == "0" ]] && ! _oe_send_has_content "$input"; then
-    echo "oe_send_line: finalize: payload not observed staged or submitted on ${pane} (possible stage miss / fast submit)" >&2
+    # #224: 既定（signal-miss opt-out）では warn を出さない。suspected-miss は fast-submit の
+    # 誤検知を多く含み既定では rc も変えない（no-op）ため、既定パスの warn は純ノイズになる。
+    # genuine な失敗シグナルは opt-in（OE_SEND_SIGNAL_MISS=1）側で warn + rc=4（oe_send_line）
+    # として残す。state machine（return 3）は不変＝echo だけを opt-in にゲートする。
+    if [[ "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
+      echo "oe_send_line: finalize: payload not observed staged or submitted on ${pane} (possible stage miss / fast submit)" >&2
+    fi
     return 3
   fi
   # それ以外（base_proc=1・非安定・折返し等）= unknown → 撃たない
