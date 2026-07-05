@@ -129,3 +129,12 @@ tier=heavy（設計SO refuted による方針是正あり・意図的な外部�
 - 番号 fallback の空入力=130 / 範囲外=2 も実サーバで確認。teardown 済み。
 
 hg-227-a/b の更新: cross-session の `select-pane`/`select-window` + targeted zoom は**実 tmux で確認済み**。**未確認で残るのは (1) attached client を別 session へ動かす `switch-client`（headless テストは client 未接続のため no-op だった。実 popup では効くはず・要人間確認）(2) tmux popup 内での fzf 対話 UI（alt-screen 相互作用・自動化不能）**。この 2 点は `prefix+v` bind 適用時に人間が実 popup で確認する。
+
+## 追試2: 実 popup・ライブセッションでの人間実操作（2026-07-05・ユーザー実行）
+
+ユーザーが本番セッションで `tmux display-popup -E '... oe-tree --pick'` を 2 回実行（`bin/README.md` の推奨スニペット同型）。read-only クエリで確認した結果 [verified]:
+
+- 1 回目: 候補（登記 4 件: `%125` #36-topo / `%131` #227 / `%85` #5706 / `%94` #36）から `%125`(#36-topo) を選択 → active pane が `%125`（window `0:1`）へ移動し `0:1` が `zoomed=1`。
+- 2 回目: `%131`(#227) を選択 → active が `%131`（window `0:3`）へ移動し `0:3` が `zoomed=1`。1 回目の `0:1` は最大化のまま（飛び元/前回対象を unzoom しない＝設計どおり）。
+
+これで **hg-227-b（tmux popup 内での fzf 対話 UI・alt-screen 相互作用）= 実機確認済み**（popup 内で fzf が描画・キー選択を受け付け、選択が 2 回とも成立）。**jump + targeted zoom は実 attached client でも確認済み**（cross-window・同一 session）。**hg-227-a のうち cross-session `switch-client`（client を別 session へ移動）だけは未確認のまま**（ユーザーの pane が全て session `0` のため cross-session hop が発生せず。select 系 + zoom は隔離サーバの追試1で確認済み）。→ 実運用で別 session の子が立った時に自然に確認される（追わない残課題）。
