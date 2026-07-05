@@ -13,7 +13,8 @@
 # 飛ばし隣接テキストを誤結合させ、誤爆（正当テキストの巻き込み）時の被害も大きい。
 # 無害化はトークンを壊して tool-call として解釈されない形にしつつ文脈を残す。
 
-# 会話へ載せる文字数の上限（codepoint）。<=0 で truncate 無効。
+# 会話へ載せる文字数の上限（codepoint）。0 で truncate 無効（明示的なエスケープハッチ）。
+# 負数・非数値は typo とみなし安全側の既定 4000 へ coerce する（下の guard 参照）＝無効化はしない。
 OE_SANITIZE_MAX_CP="${OE_SANITIZE_MAX_CP:-4000}"
 
 # oe_sanitize_conversation <text>

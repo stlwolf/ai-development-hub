@@ -30,6 +30,10 @@ if ! declare -F oe_sanitize_conversation >/dev/null 2>&1; then
   # shellcheck source=sanitize.sh
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" 2>/dev/null || true
 fi
+# source 失敗（欠落/権限/source エラー）でも emit は best-effort・noise-free を保つ: 未定義なら
+# no-op へフォールバック定義し、oe_event_message_sent 内の呼び出しが `command not found` を
+# stderr へ漏らすのを防ぐ（Copilot 指摘・oe-activity/oe-ack と同型の degrade）。
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
 
 # delegate-registry.sh が source されない（_oe_reg_key を他所が定義済 等）/ 環境で未設定でも、
 # 未定義の state dir で `/${pid}_*.json` のように root 配下を誤って glob しないよう、registry と

@@ -56,7 +56,7 @@ echo "[6] truncate（codepoint 上限・マルチバイト安全）"
 ck "truncate fires"          'abcde…'  "$(OE_SANITIZE_MAX_CP=5 oe_sanitize_conversation 'abcdefghij')"
 ck "no truncate under max"   'abc'     "$(OE_SANITIZE_MAX_CP=5 oe_sanitize_conversation 'abc')"
 ck "truncate multibyte-safe" "$(printf '\343\201\202%.0s' $(seq 1 5))…" "$(OE_SANITIZE_MAX_CP=5 oe_sanitize_conversation "$(printf '\343\201\202%.0s' $(seq 1 10))")"
-ck "max<=0 disables"         'abcdefghij' "$(OE_SANITIZE_MAX_CP=0 oe_sanitize_conversation 'abcdefghij')"
+ck "max=0 disables truncate" 'abcdefghij' "$(OE_SANITIZE_MAX_CP=0 oe_sanitize_conversation 'abcdefghij')"
 
 echo "[7] 複合（1 入力に複数ハザード）"
 ck "combined"                '[court]'  "$(oe_sanitize_conversation 'court')"
@@ -79,6 +79,8 @@ echo "[9] 環境値ガード: OE_SANITIZE_MAX_CP 非数値でも tag 無害化�
 ck "非数値 abc でも tag 無害化"  '< invoke x>' "$(OE_SANITIZE_MAX_CP=abc oe_sanitize_conversation '<invoke x>')"
 ck "空白のみでも tag 無害化"     '< invoke x>' "$(OE_SANITIZE_MAX_CP=' ' oe_sanitize_conversation '<invoke x>')"
 ck "空値でも tag 無害化"         '< invoke x>' "$(OE_SANITIZE_MAX_CP='' oe_sanitize_conversation '<invoke x>')"
+# 負数は無効化(disable)でなく coerce（jq が走り tag 無害化される＝silent bypass しない・Copilot 指摘）
+ck "負数は coerce・無効化しない"  '< invoke x>' "$(OE_SANITIZE_MAX_CP=-5 oe_sanitize_conversation '<invoke x>')"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
