@@ -27,6 +27,10 @@ source "${BIN_DIR}/../lib/event-bus.sh"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 
+# #224: preview echo（会話到達面）を read 側でも無害化する共有 helper。event-bus.sh 経由で
+# 既に source 済みだが、未ロード時は degrade（cntrl gsub は _ack_scan 側で効く・従来同等）。
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
+
 err() { echo "oe-ack: $*" >&2; }
 
 usage() {
@@ -102,6 +106,8 @@ _ack_scan() {
       | [ ($msgs | length | tostring),
           (if ($msgs|length) > 0 then $msgs[-1].ts else "" end),
           ($received | tostring),
+          # #224: タグ列等の無害化は write-time＋read-time（_ack_one が echo 前に
+          # oe_sanitize_conversation を通す）。ここの cntrl→space は US 区切り protocol 防御で温存。
           (if ($msgs|length) > 0 then (($msgs[-1].preview // "") | gsub("[[:cntrl:]]"; " ")) else "" end) ]
       | join("\u001f")'
 }
@@ -124,6 +130,7 @@ _ack_one() {
   oe_event_report_received "$SELF" "$other" "$total" "$last_ts"
   # 開示 affordance: 何を受領印したかを acker が即検証できるように出す。
   # 直前に読んだ内容と最終 preview が食い違えば、ack 直前に新着が割り込んだサイン。
+  last_prev="$(oe_sanitize_conversation "$last_prev")"   # #224: read 側の会話到達面無害化
   echo "oe-ack: acked ${pending} 件（累計 ${total}）from ${disp} / 最終: ${last_ts} 「${last_prev}」" >&2
 }
 

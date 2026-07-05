@@ -257,5 +257,20 @@ ck "overview に PENDING ヘッダは無い" "0" "$(printf '%s\n' "$AOV" | sed -
 ck  "overview trips は kick 込み 5"    "5" "$(printf '%s' "$ov66" | awk '{print $2}')"
 ckc "overview 最新 preview"            "$ov66" "ACK-R4-NEW"
 
+echo "[22] #224: read 側で raw preview の tool-call タグ列/box-drawing を無害化（legacy/破損 event 対策・実装SO 検出）"
+mkdir -p "$_TMP_DIR/rawtag"
+# legacy/破損で jsonl に raw <invoke> + box-drawing(U+2500 は JSON ─) が残った状況を再現。
+# write-time サニタイズを経ていない raw preview が会話面へ再露出しないことを検証（ゲート要件）。
+{
+  printf '%s\n' '{"ts":"2026-06-22T18:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":"c"}}'
+  printf '%s\n' '{"ts":"2026-06-22T18:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"<invoke name=\"Bash\">─BOX","delivery_signal":"none"}'
+} > "$_TMP_DIR/rawtag/oe-events.jsonl"
+RT="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/rawtag" bash "$OE_ACTIVITY" --timeline)"
+ckc "read: tag neutralized (< invoke)" "$RT" "< invoke"
+if printf '%s' "$RT" | grep -qF '<invoke'; then echo "  FAIL: raw <invoke 残存"; FAIL=$((FAIL+1)); else echo "  PASS: raw <invoke 除去"; PASS=$((PASS+1)); fi
+_BOXC="$(printf '\342\224\200')"
+if printf '%s' "$RT" | LC_ALL=C grep -qF "$_BOXC"; then echo "  FAIL: box-drawing 残存"; FAIL=$((FAIL+1)); else echo "  PASS: box-drawing 除去"; PASS=$((PASS+1)); fi
+ckc "read: 周辺テキスト BOX 残存" "$RT" "BOX"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
