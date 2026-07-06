@@ -687,6 +687,95 @@ printf '%s\n' "@@OE_VERIFY:fail" > "$_VERIFY_NORM_LOG"
 _oe_verify_scan_log_file "$_VERIFY_NORM_LOG"
 assert_eq "log経路 字下げなし VERIFY (回帰)" "fail" "$OE_SCAN_VERIFY_RESULT"
 
+# ---- #100: _oe_verify_scan_log_file の主要ケース (marker 発見 / 未発見 / 長文 / 破損 / 欠落 / lines) ----
+# verify 経路の入口 (reviewer log 走査)。共通コア capture.sh:_oe_scan_log_file への薄い委譲だが、
+# oe_verify_run_phase は本ラッパ経由で OE_SCAN_VERIFY_RESULT と OE_SCAN_EXIT_CODE の **二値** を
+# 消費する (verify.sh:oe_verify_run_phase の記録分岐)。reviewer log は
+# `( claude ... 2>&1 ; printf @@OE_EXIT:%d ) | tee log` 形式で、reviewer が @@OE_VERIFY:<result> を
+# 出してから exit するため、正典ログは両 marker が並ぶ。test_capture.sh の _oe_scan_log_file 節は
+# EXIT のみを file 経由で検証しており、verify 語彙 (pass/fail/warn) + 二値の file 経由検証は本節が担う。
+echo ""
+echo "=== #100: _oe_verify_scan_log_file (verify 経路の入口・二値検出) ==="
+
+_S100_LOG="${_TMP_DIR}/s100_scan.log"
+
+echo "-- marker 発見: 複数行 reviewer log + @@OE_VERIFY:pass + @@OE_EXIT:0 (正典・二値) --"
+printf '%s\n' \
+  'Compliance Review: reading target envelope and audit log' \
+  'Requirement coverage looks complete.' \
+  '@@OE_VERIFY:pass' \
+  '@@OE_EXIT:0' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "pass/0: VERIFY_RESULT" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "pass/0: EXIT_CODE" "0" "$OE_SCAN_EXIT_CODE"
+assert_eq "pass/0: MARKER_TYPE (両検出は EXIT 優先で後方互換)" "EXIT" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- marker 発見: @@OE_VERIFY:fail + @@OE_EXIT:0 (issues あり・clean exit) --"
+printf '%s\n' 'Issues Found: missing requirement X' '@@OE_VERIFY:fail' '@@OE_EXIT:0' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "fail/0: VERIFY_RESULT" "fail" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "fail/0: EXIT_CODE" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- marker 発見: @@OE_VERIFY:warn + @@OE_EXIT:0 --"
+printf '%s\n' 'Spec Compliant with advisory recommendations' '@@OE_VERIFY:warn' '@@OE_EXIT:0' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "warn/0: VERIFY_RESULT" "warn" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- 長文 log (既定 lines=5000 超) の末尾 marker → tail 窓内で検出 (viewport-only 非依存) --"
+# Copilot #3528353687 反映: 400 行では既定窓 (5000) 内に全行が収まり tail の「末尾だけ読む」挙動を
+# 検証できない (全行読んでも通る)。既定超の行数を生成し、(a) 末尾 marker は窓内で拾える /
+# (b) 窓外 (先頭) の marker は拾えない、の対で tail 境界を固定する (tail が外れる/窓が縮む回帰を検知)。
+{ seq 1 5200 | sed 's/^/review markdown line /'; printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; } > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "長文(>5000): 末尾 VERIFY_RESULT (tail 窓内で検出)" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "長文(>5000): 末尾 EXIT_CODE (tail 窓内で検出)" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- 長文 log (既定 lines=5000 超) の先頭 marker → 既定窓の外で不検出 (tail が末尾のみ読む証明) --"
+{ printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; seq 1 5200 | sed 's/^/review markdown line /'; } > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "長文(>5000): 先頭 marker は既定窓外 → VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "長文(>5000): 先頭 marker は既定窓外 → EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
+
+echo "-- marker 未発見: reviewer 出力途中 (verdict 未出力) → 二値とも空 --"
+printf '%s\n' 'analysis still in progress' 'no verdict emitted yet' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "未発見: VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "未発見: EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
+assert_eq "未発見: MARKER_TYPE 空" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- @@OE_EXIT のみ (reviewer が marker を出さず終了) → protocol error 形状 --"
+printf '%s\n' 'reviewer aborted before emitting verdict' '@@OE_EXIT:1' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "EXIT のみ: EXIT_CODE=1" "1" "$OE_SCAN_EXIT_CODE"
+assert_eq "EXIT のみ: VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- 破損入力: 不正な VERIFY 値 → 無視 (EXIT は拾う) --"
+printf '%s\n' '@@OE_VERIFY:maybe' '@@OE_EXIT:0' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "不正 VERIFY 値: VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "不正 VERIFY 値: EXIT_CODE=0" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- 破損入力: envelope 指示文のエコー (marker + 後置テキスト) → 行末アンカーで無視 --"
+# reviewer envelope (verify.sh) は本文に @@OE_VERIFY:pass を含むため transcript にエコーされ得る。
+printf '%s\n' '@@OE_VERIFY:pass — when the skill report concludes Spec Compliant' > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "エコー行: VERIFY_RESULT 空 (誤検知しない)" "" "$OE_SCAN_VERIFY_RESULT"
+
+echo "-- ファイル欠落 → OE_SCAN_* 空・return 0 (cleanup と race しても無害) --"
+_s100_rc=0
+_oe_verify_scan_log_file "${_TMP_DIR}/s100_absent.log" || _s100_rc=$?
+assert_eq "欠落: return 0" "0" "$_s100_rc"
+assert_eq "欠落: VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "欠落: EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
+assert_eq "欠落: MARKER_TYPE 空" "" "$OE_SCAN_MARKER_TYPE"
+
+echo "-- lines 引数 (第2引数) の委譲: 小さい窓では先頭 marker を tail が窓外に落とす --"
+{ printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; for i in $(seq 1 10); do echo "trailing filler $i"; done; } > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG" 3
+assert_eq "lines=3: 先頭 marker は窓外 → VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "lines=3: 先頭 marker は窓外 → EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "既定 lines (5000): 先頭 marker も窓内 → VERIFY_RESULT=pass" "pass" "$OE_SCAN_VERIFY_RESULT"
 # ---- #101: reviewer marker false-positive 抑制 (markdown 引用との偶然一致) ----
 echo ""
 echo "=== #101: reviewer 本文引用マーカーの false-positive 抑制 ==="
