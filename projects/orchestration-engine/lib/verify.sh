@@ -62,7 +62,9 @@ Emit exactly one of the following on a new line at the very end, immediately bef
 - @@OE_VERIFY:fail — when the skill report concludes \"Status: Issues Found\" with one or more critical issues (Missing requirements / Extra unneeded work / Misunderstandings that affect functionality)
 - @@OE_VERIFY:warn — when the skill report concludes \"Status: Spec Compliant\" but the Recommendations section is non-trivial, or when issues are observed but are minor / advisory / non-blocking
 
-The marker must be on its own line, no surrounding spaces, exact case. The shell will append @@OE_EXIT:0 automatically."
+The marker must be on its own line, no surrounding spaces, exact case. The shell will append @@OE_EXIT:0 automatically.
+
+Emit this marker exactly once, and only as that final line. Do NOT reproduce the bare marker string as a standalone line anywhere earlier in your review body — not in examples, quotes, or code blocks. When you need to refer to a verdict value in prose, write it inline in backticks (e.g. \`pass\`) or spell it out, never on its own line. A standalone marker line placed elsewhere can be misdetected as your verdict (#101)."
 
   # read_docs 配列を構築 (verify_prompt_path が指定されたら 5 件目に追加)
   local read_docs_json
@@ -569,6 +571,17 @@ oe_verify_emit_completed() {
 # #114/#98: log-file 走査の実体は capture.sh:_oe_scan_log_file に集約済み (target 経路と共有する
 #   単一 primitive)。本関数は reviewer 呼び出し側の名前を維持する薄いラッパ。正規化 (#112) も
 #   共通コア側で適用される。
+#
+# #101 (reviewer marker false-positive): reviewer が review 本文で @@OE_VERIFY 文字列を独立行として
+#   引用しても、共有コアの「最後の一致が勝つ」走査は genuine verdict (reviewer が最後に emit する行) を
+#   正しく採る — 引用が verdict の**前**にある限り FP にならない (test_verify.sh の #101 節で回帰 lock)。
+#   verdict の**後**に置かれた bare 単独行引用だけは位置では genuine と判別不能 (#112 が原理限界を記録)。
+#   この残差は本関数側の位置ヒューリスティックでは潰せない: 試作した「最後の @@OE_EXIT 行より前に
+#   VERIFY を限定」案は、reviewer が本文で @@OE_EXIT を引用しストリーミング途中で観測されると
+#   genuine verdict を空にして exit_without_verify_marker で不可逆に失敗させる回帰を生むため棄却
+#   (実装SO oe-review 検出・audit 20260706111920NRDX1GRYZSJD)。よって抑制は task.description の
+#   引用禁止プロンプト制約 (prompt A) が担い、機械的な完全抑制は nonce/sentinel 化 (#93) の follow-up。
+#   走査ロジック自体は共有コアのまま変更しない。
 _oe_verify_scan_log_file() {
   _oe_scan_log_file "$1" "${2:-5000}"
 }
