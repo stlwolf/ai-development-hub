@@ -55,7 +55,20 @@ run --task-file
 ck    "exit 2"  "2" "$RUN_RC"
 cksub "message" "requires a path argument" "$RUN_ERR"
 
-echo "[5] 不正パス (読めない=権限なし): set -e の cat 失敗 (exit 1) でなく exit 2"
+echo "[5] 不正パス (非通常ファイル=FIFO): 'file not found' でなく 'not a regular file' で exit 2"
+# ディレクトリは -d 分岐で先に return するため ! -f 分岐は素通りする。FIFO で ! -f 分岐を直接カバーする。
+# ! -f は cat 前に return 2 するため FIFO 読取でブロックしない。
+if command -v mkfifo >/dev/null 2>&1; then
+  fifo="$_TMP_DIR/afifo"; mkfifo "$fifo"
+  run --task-file "$fifo"
+  ck    "exit 2"  "2" "$RUN_RC"
+  cksub "message" "not a regular file" "$RUN_ERR"
+  rm -f "$fifo"
+else
+  echo "  SKIP: mkfifo 不在"
+fi
+
+echo "[6] 不正パス (読めない=権限なし): set -e の cat 失敗 (exit 1) でなく exit 2"
 if [[ "$(id -u)" -ne 0 ]]; then
   noread="$_TMP_DIR/noread.md"; echo "task" > "$noread"; chmod 000 "$noread"
   run --task-file "$noread"
