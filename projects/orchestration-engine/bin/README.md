@@ -19,6 +19,8 @@ bash bin/oe "タスク記述"
 bash bin/oe --task-file <path>
 ```
 
+- `--task-file <path>` の異常系は暗黙にフォールバックせず、明示エラーを stderr に出して **exit 2**（usage エラー）で弾く（#99）。対象: パス未指定 / 不在パス / ディレクトリ / 非通常ファイル / 読めない（権限）/ **空ファイル**（空は既定タスクへ暗黙フォールバックしていた挙動を廃止）。
+
 関連 lib: `envelope.sh` / `spawn.sh` / `capture.sh` / `verify.sh` / `monitor.sh` / `audit.sh` / `cleanup.sh` / `constants.sh`
 
 ## oe-capture — ペイン capture（本体エンジン補助）
