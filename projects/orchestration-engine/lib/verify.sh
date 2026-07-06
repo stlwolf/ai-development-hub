@@ -62,7 +62,7 @@ Emit exactly one of the following on a new line at the very end, immediately bef
 - @@OE_VERIFY:fail — when the skill report concludes \"Status: Issues Found\" with one or more critical issues (Missing requirements / Extra unneeded work / Misunderstandings that affect functionality)
 - @@OE_VERIFY:warn — when the skill report concludes \"Status: Spec Compliant\" but the Recommendations section is non-trivial, or when issues are observed but are minor / advisory / non-blocking
 
-The marker must be on its own line, no surrounding spaces, exact case. The shell will append @@OE_EXIT:0 automatically.
+The marker must be on its own line, no surrounding spaces, exact case. The shell will append @@OE_EXIT:{code} automatically (0 on success; the reviewer command's real exit status otherwise).
 
 Emit this marker exactly once, and only as that final line. Do NOT reproduce the bare marker string as a standalone line anywhere earlier in your review body — not in examples, quotes, or code blocks. When you need to refer to a verdict value in prose, write it inline in backticks (e.g. \`pass\`) or spell it out, never on its own line. A standalone marker line placed elsewhere can be misdetected as your verdict (#101)."
 
