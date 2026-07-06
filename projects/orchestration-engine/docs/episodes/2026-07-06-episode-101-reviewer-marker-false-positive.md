@@ -8,6 +8,9 @@ related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/101"
     reason: "reviewer が review 本文で @@OE_VERIFY marker を引用すると verdict と誤検出する false-positive の抑制"
+  - type: pull_request
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/237"
+    reason: "本 episode の実装 PR（prompt A 緩和 + 回帰テスト・DONE_WITH_CONCERNS）"
   - type: design_so
     ref: "oe-refute exploration / audit 20260706090509B9QFVCX0YBES (verdict=refuted 2/2)"
     reason: "予決定探索: 当初の C-local『最終非空行のみ/EXIT-gating』案を反証（回帰破壊+postamble FN）"
