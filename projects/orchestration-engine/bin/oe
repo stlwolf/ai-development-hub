@@ -45,15 +45,36 @@ oe_main() {
   # 後方互換: bin/oe "<text>" 形式も引き続き動作。
   local task_description
   if [[ "${1:-}" == "--task-file" ]]; then
-    if [[ -z "${2:-}" ]]; then
+    # --task-file 異常系の仕様 (#99): 空 / 不在 / 不正パス (ディレクトリ・非通常ファイル・権限) を
+    # 明示エラー + exit 2 (usage エラー) で弾く。文言・exit code は bin/oe-capture の validation
+    # 規約に揃える。これにより「空ファイルが暗黙に既定タスクへフォールバック」「読めないファイルが
+    # set -e 下の cat 失敗で exit 1 + 生エラー」といった暗黙挙動を排除する。
+    local task_file="${2:-}"
+    if [[ -z "$task_file" ]]; then
       echo "oe: --task-file requires a path argument" >&2
       return 2
     fi
-    if [[ ! -f "$2" ]]; then
-      echo "oe: --task-file: file not found: $2" >&2
+    if [[ ! -e "$task_file" ]]; then
+      echo "oe: --task-file: file not found: $task_file" >&2
       return 2
     fi
-    task_description="$(cat "$2")"
+    if [[ -d "$task_file" ]]; then
+      echo "oe: --task-file: path is a directory, not a file: $task_file" >&2
+      return 2
+    fi
+    if [[ ! -f "$task_file" ]]; then
+      echo "oe: --task-file: not a regular file: $task_file" >&2
+      return 2
+    fi
+    if [[ ! -r "$task_file" ]]; then
+      echo "oe: --task-file: file not readable: $task_file" >&2
+      return 2
+    fi
+    if [[ ! -s "$task_file" ]]; then
+      echo "oe: --task-file: file is empty: $task_file" >&2
+      return 2
+    fi
+    task_description="$(cat "$task_file")"
     shift 2
   fi
   task_description="${task_description:-${*:-Run orchestration task}}"
