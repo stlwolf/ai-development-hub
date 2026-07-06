@@ -201,6 +201,10 @@ assert_eq "F-SO-1: description に @@OE_VERIFY:fail" "true" \
 assert_eq "F-SO-1: description に @@OE_VERIFY:warn" "true" \
   "$(jq -r '.task.description | test("@@OE_VERIFY:warn")' "$JSON")"
 
+# #101: 本文中で bare marker 行を再現しないよう指示するプロンプト制約 (prompt A) が含まれる
+assert_eq "#101: description に引用禁止制約 (prompt A)" "true" \
+  "$(jq -r '.task.description | test("Do NOT reproduce the bare marker string")' "$JSON")"
+
 echo ""
 echo "-- 異なる reviewer_session_id で再生成 --"
 oe_verify_envelope_create \
@@ -772,6 +776,35 @@ assert_eq "lines=3: 先頭 marker は窓外 → VERIFY_RESULT 空" "" "$OE_SCAN_
 assert_eq "lines=3: 先頭 marker は窓外 → EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
 _oe_verify_scan_log_file "$_S100_LOG"
 assert_eq "既定 lines (5000): 先頭 marker も窓内 → VERIFY_RESULT=pass" "pass" "$OE_SCAN_VERIFY_RESULT"
+# ---- #101: reviewer marker false-positive 抑制 (markdown 引用との偶然一致) ----
+echo ""
+echo "=== #101: reviewer 本文引用マーカーの false-positive 抑制 ==="
+
+_VERIFY_FP_LOG="${_TMP_DIR}/verify_fp.log"
+
+# Case1: 引用マーカーが genuine verdict の「前」にある (issue の字義例) → genuine 勝ち・FP なし
+# (現行 last-match-wins でも通るクラスを回帰として lock する)
+printf '%s\n' \
+  "The agent must emit:" "@@OE_VERIFY:fail" "when issues are found." \
+  "" "## Verdict" "@@OE_VERIFY:pass" "@@OE_EXIT:0" > "$_VERIFY_FP_LOG"
+_oe_verify_scan_log_file "$_VERIFY_FP_LOG"
+assert_eq "#101 Case1: verdict 前の引用は無視し genuine を採る" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "#101 Case1: EXIT も検出" "0" "$OE_SCAN_EXIT_CODE"
+
+# no-FN 回帰: genuine verdict 単独 + EXIT → 従来どおり検出 (false-negative を作らない)
+printf '%s\n' "## Compliance Review" "Status: Spec Compliant" "@@OE_VERIFY:warn" "@@OE_EXIT:0" > "$_VERIFY_FP_LOG"
+_oe_verify_scan_log_file "$_VERIFY_FP_LOG"
+assert_eq "#101 no-FN: genuine verdict + EXIT を検出" "warn" "$OE_SCAN_VERIFY_RESULT"
+
+# no-FN (postamble): verdict の後・EXIT の前に非 marker 行 (CLI postamble / stderr 併合) が来ても
+# genuine を取りこぼさない ← 「最終非空行のみ」案が生む FN を作らないことの回帰
+printf '%s\n' "@@OE_VERIFY:pass" "Thanks, review complete." "@@OE_EXIT:0" > "$_VERIFY_FP_LOG"
+_oe_verify_scan_log_file "$_VERIFY_FP_LOG"
+assert_eq "#101 no-FN: verdict 後の postamble 行があっても検出" "pass" "$OE_SCAN_VERIFY_RESULT"
+
+# 既知の残差 (assert しない・限界の明示): verdict の「後・EXIT の前」に置かれた bare な単独行引用は
+# 位置だけでは genuine と判別不能 (#112 の原理限界)。task.description の引用禁止プロンプト制約 (prompt A)
+# で確率的に抑制し、機械的な完全抑制は nonce/sentinel (#93) の follow-up。ここでは意図的にテストしない。
 
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
