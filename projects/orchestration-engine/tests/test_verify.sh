@@ -686,7 +686,7 @@ assert_eq "log経路 字下げなし VERIFY (回帰)" "fail" "$OE_SCAN_VERIFY_RE
 # ---- #100: _oe_verify_scan_log_file の主要ケース (marker 発見 / 未発見 / 長文 / 破損 / 欠落 / lines) ----
 # verify 経路の入口 (reviewer log 走査)。共通コア capture.sh:_oe_scan_log_file への薄い委譲だが、
 # oe_verify_run_phase は本ラッパ経由で OE_SCAN_VERIFY_RESULT と OE_SCAN_EXIT_CODE の **二値** を
-# 消費する (verify.sh:672 の記録分岐)。reviewer log は
+# 消費する (verify.sh:oe_verify_run_phase の記録分岐)。reviewer log は
 # `( claude ... 2>&1 ; printf @@OE_EXIT:%d ) | tee log` 形式で、reviewer が @@OE_VERIFY:<result> を
 # 出してから exit するため、正典ログは両 marker が並ぶ。test_capture.sh の _oe_scan_log_file 節は
 # EXIT のみを file 経由で検証しており、verify 語彙 (pass/fail/warn) + 二値の file 経由検証は本節が担う。
@@ -717,11 +717,20 @@ printf '%s\n' 'Spec Compliant with advisory recommendations' '@@OE_VERIFY:warn' 
 _oe_verify_scan_log_file "$_S100_LOG"
 assert_eq "warn/0: VERIFY_RESULT" "warn" "$OE_SCAN_VERIFY_RESULT"
 
-echo "-- 長文 log の末尾 marker (tail で拾う = viewport-only 非依存・verify 二値版) --"
-{ for i in $(seq 1 400); do echo "review markdown line $i"; done; printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; } > "$_S100_LOG"
+echo "-- 長文 log (既定 lines=5000 超) の末尾 marker → tail 窓内で検出 (viewport-only 非依存) --"
+# Copilot #3528353687 反映: 400 行では既定窓 (5000) 内に全行が収まり tail の「末尾だけ読む」挙動を
+# 検証できない (全行読んでも通る)。既定超の行数を生成し、(a) 末尾 marker は窓内で拾える /
+# (b) 窓外 (先頭) の marker は拾えない、の対で tail 境界を固定する (tail が外れる/窓が縮む回帰を検知)。
+{ seq 1 5200 | sed 's/^/review markdown line /'; printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; } > "$_S100_LOG"
 _oe_verify_scan_log_file "$_S100_LOG"
-assert_eq "長文: VERIFY_RESULT (末尾でも検出)" "pass" "$OE_SCAN_VERIFY_RESULT"
-assert_eq "長文: EXIT_CODE (末尾でも検出)" "0" "$OE_SCAN_EXIT_CODE"
+assert_eq "長文(>5000): 末尾 VERIFY_RESULT (tail 窓内で検出)" "pass" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "長文(>5000): 末尾 EXIT_CODE (tail 窓内で検出)" "0" "$OE_SCAN_EXIT_CODE"
+
+echo "-- 長文 log (既定 lines=5000 超) の先頭 marker → 既定窓の外で不検出 (tail が末尾のみ読む証明) --"
+{ printf '@@OE_VERIFY:pass\n@@OE_EXIT:0\n'; seq 1 5200 | sed 's/^/review markdown line /'; } > "$_S100_LOG"
+_oe_verify_scan_log_file "$_S100_LOG"
+assert_eq "長文(>5000): 先頭 marker は既定窓外 → VERIFY_RESULT 空" "" "$OE_SCAN_VERIFY_RESULT"
+assert_eq "長文(>5000): 先頭 marker は既定窓外 → EXIT_CODE 空" "" "$OE_SCAN_EXIT_CODE"
 
 echo "-- marker 未発見: reviewer 出力途中 (verdict 未出力) → 二値とも空 --"
 printf '%s\n' 'analysis still in progress' 'no verdict emitted yet' > "$_S100_LOG"
