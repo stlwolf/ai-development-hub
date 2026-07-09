@@ -108,13 +108,16 @@ if [[ "$FM_PRESENT" -eq 1 ]]; then
 
   # --- (2) 鮮度 date が N 日以内か ---
   log "checking 鮮度 freshness (<= ${MAX_AGE_DAYS} days)..."
-  # grep 非マッチ（鮮度 欠落）でも pipefail/set -e で途中終了しないよう { grep || true; } で吸収し、
-  # section 検査と最終 summary に必ず到達させる（全 WARN 一括出力の契約を守る）。
-  FRESH_RAW="$(printf '%s\n' "$FRONTMATTER" \
-    | { grep -E '^鮮度:' || true; } | head -1 \
-    | sed -E 's/^鮮度:[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')"
-  if [[ -n "$FRESH_RAW" ]]; then
-    if [[ "$FRESH_RAW" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  # 鮮度 キーが宣言されている場合のみ値を検査する（キー欠落は REQUIRED_KEYS ループで WARN 済み・
+  # ここで二重に出さない）。値が空なら date check を素通りさせず format 不正として WARN する。
+  # 到達判定の grep は if 条件（set -e 抑止）。抽出側は { grep || true; } で pipefail 死を回避する。
+  if printf '%s\n' "$FRONTMATTER" | grep -qE '^鮮度:'; then
+    FRESH_RAW="$(printf '%s\n' "$FRONTMATTER" \
+      | { grep -E '^鮮度:' || true; } | head -1 \
+      | sed -E 's/^鮮度:[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')"
+    if [[ -z "$FRESH_RAW" ]]; then
+      warn "鮮度 has an empty value (must be YYYY-MM-DD)"
+    elif [[ "$FRESH_RAW" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
       BOARD_EPOCH="$(jq -n --arg d "$FRESH_RAW" '$d | strptime("%Y-%m-%d") | mktime' 2>/dev/null || true)"
       if [[ -z "$BOARD_EPOCH" ]]; then
         warn "鮮度 is not a parseable date: ${FRESH_RAW}"
@@ -128,7 +131,6 @@ if [[ "$FM_PRESENT" -eq 1 ]]; then
       warn "鮮度 must be YYYY-MM-DD, got: ${FRESH_RAW}"
     fi
   fi
-  # 鮮度 キー自体の欠落は上の REQUIRED_KEYS ループで WARN 済み。
 fi
 
 # --- (3) 必須 section 見出しの存在 ---

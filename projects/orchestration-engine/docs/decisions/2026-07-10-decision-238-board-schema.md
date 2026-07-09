@@ -10,7 +10,7 @@ related:
     reason: "統括 succession を第一級概念に。board schema = declared 層（PR-C）"
   - type: design_context
     ref: ".oe/ref-plan-stage1.md"
-    reason: "段階1 実装計画の正本。§2 PR-C（schema/validator の内容）・§4 Q8（置き場・粒度・advisory）"
+    reason: "段階1 実装計画の正本。§2 PR-C（schema/validator の内容）・§4 Q8（置き場・粒度・advisory）。注: .oe/ は gitignore 済みの machine-local 資料で、この checkout には含まれない（out-of-repo）。durable な上位アーキは #238 と decisions/ の succession-watchdog 決定 doc を参照。"
   - type: reference
     ref: "projects/orchestration-engine/scripts/validate-envelope.sh"
     reason: "踏襲した validator idiom（exit code・VERBOSE・helper 構造）"
@@ -134,6 +134,6 @@ cockpit を早めに整備し運用に回して改善を続ける。
 ## 8. 関連リンク
 
 - Issue #238: https://github.com/stlwolf/ai-development-hub/issues/238
-- 段階1 実装計画（正本・§2 PR-C / §4 Q8）: `.oe/ref-plan-stage1.md`
+- 段階1 実装計画（正本・§2 PR-C / §4 Q8）: `.oe/ref-plan-stage1.md`（out-of-repo・`.oe/` は gitignore 済みの machine-local。この checkout には含まれない）
 - validator: `projects/orchestration-engine/scripts/validate-board.sh`
 - 踏襲した sibling validator: `projects/orchestration-engine/scripts/validate-envelope.sh` / `projects/orchestration-engine/scripts/validate-session-state.sh`

@@ -179,6 +179,14 @@ ckc "env エラーメッセージ"       "$OUT" "OE_BOARD_MAX_AGE_DAYS must be"
 rc=0; OUT="$(env OE_BOARD_NOW_EPOCH=notanumber "$BASH" "$VALIDATOR" "$B" 2>&1)" || rc=$?
 ck  "NOW_EPOCH 非数値 exit 2" "2" "$rc"
 
+echo "[13] 鮮度 キーあり・値が空 → exit 1 / WARN empty（date check を素通りさせない）"
+B="$_TMP_DIR/empty-fresh.md"; write_valid_board "$B"
+sed 's/^鮮度: .*/鮮度:/' "$B" > "$B.tmp" && mv "$B.tmp" "$B"
+run "$NOW" "$B"
+ck  "exit 1"        "1" "$RUN_RC"
+ckc "WARN empty 値" "$RUN_OUT" "鮮度 has an empty value"
+ncc "missing key の二重 WARN を出さない" "$RUN_OUT" "missing required frontmatter key: 鮮度"
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
