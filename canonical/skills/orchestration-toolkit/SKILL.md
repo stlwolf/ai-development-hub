@@ -25,6 +25,16 @@ discussion/DJ → **設計SO** → 実装 → **実装SO** → Episode → PR �
 - **完全移譲**: 自律委譲子は discussion/設計SO から 実装→実装SO→Episode→PR→Copilot→closure まで**一気通貫**（親は巻き取らない）。
 - **自律委譲子の権限（運用・opt-in）**: `oe-delegate`/`oe-kick` は既定で permission-mode を付けない。自律子には `--claude-arg --permission-mode --claude-arg auto` を**明示的に渡す**。`bypassPermissions` は委譲子では即死するため `auto` を使う（実機学び・コード強制ではない）。auto/full 権限の自律子はガードレールでユーザー明示承認が要る。
 
+## malform hygiene（生 capture の会話混入を断つ）
+
+長寿命・ツール密な統括セッションでは、子ペインの生出力（tool-call タグ列・box-drawing・制御文字）が親の会話コンテキストへ入ると、親が自己回帰で模倣して tool-call malform が連鎖・悪化する。oe-* の**会話到達面**（event-bus preview）は write+read サニタイズ済み（#224 / `projects/orchestration-engine/lib/sanitize.sh`）だが、**統括が生 `wez pane capture` / `tmux capture-pane` を直叩きして会話へ貼る経路はサニタイズを通らない**＝文字列制御では消えない。ここは behavioral な規律で断つ:
+
+- **壊れた/生の子ペイン出力を会話へ貼り返さない**。渡すなら要約するか、path（ファイル/ログの場所）で受け渡す。これは tmux/Wez どちらの capture でも効く load-bearing な規範。
+- どうしても中身を確認するなら、生出力を**そのまま会話に載せない**（必要行だけ要約・引用符やコードブロックで囲んで自己回帰の連続を断つ）。現状 sanitize 済みの tmux peek 入口は無い（安全 capture 入口は follow-up）。
+- **親をリーンに保つ**: capture は最小限に、重い読み取り・作業は子へオフロードし、セッションは短命化して早めに handoff する（長コンテキスト劣化＝Phase 5 #105/#108 の副因も緩む）。
+
+報告・戻しでも同じ（生 capture を貼らず要約 or path）。委譲/報告の操作手順は `delegate-task`。背景と scoping は #233。
+
 ## 重要な不変条件 / gotcha
 
 - `oe` / `oe-*` は **PATH 未登録** → `projects/orchestration-engine/bin/` のパスで起動（`so-compare`/`wez` 等は `~/bin` に sync 済で PATH 上）。

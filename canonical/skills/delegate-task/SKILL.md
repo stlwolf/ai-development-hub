@@ -137,6 +137,12 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 `PARENT_TMUX_PANE` が未設定（手動委譲・再アタッチ後など）なら、親ペインを `oe-list` で確認して
 `%N` を直接指定する。
 
+### malform を持ち込まない（生 capture を貼らない）
+
+戻し・追加指示で子ペインの生出力（tool-call タグ列・box-drawing・制御文字）を **そのまま貼らない**。
+要約するか path（ファイル/ログの場所）で渡す。生貼付は親の自己回帰模倣で tool-call malform を
+連鎖させる（#233 の主題）。full な規律は `orchestration-toolkit` の「malform hygiene」節。
+
 ### oe-report（legacy）
 
 `oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。delegate された子では
