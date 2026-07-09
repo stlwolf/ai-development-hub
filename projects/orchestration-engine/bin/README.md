@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0）
 
 ---
 
@@ -398,6 +398,27 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 
 ---
 
+## oe-undelivered — 報告未達検知 watchdog（#239 段階0・read-only・cron 可）
+
+子→親の報告（`message_sent`）のうち、親が受領印（`report_received`・#220/#206A）を打っておらず（未ack）、かつ最古の未ack報告が**時間窓 W を越えた**ものを検出し、owner に ping する read-only 観測 verb。統括死亡 / send 無言失敗で報告が虚空へ消える経路（#239 mode3・チャネル脆弱）を、**#220 の frontier（未ack）＋時間次元**で決定論的に拾う（ペイン出力は capture しない）。
+
+```bash
+oe-undelivered                  # 既定窓 30 分（1800s）で報告未達を検出し owner ping
+oe-undelivered --window 3600    # 窓を 1 時間へ
+oe-undelivered -h | --help
+```
+
+- **検知（2条件）**: `pending>0`（未ack）かつ `age = now - 最古未ack報告の ts > W`。`$TMUX_PANE` に依存せず**全 (child→parent) ペアを横断**する（`oe-activity --inbox` の self 中心と違う）。親子の向きは `child_spawned` / `report_received` / role / known-parent の複合で解決し、departed で role 空になる子（mode3 主対象）も取りこぼさない。
+- **frontier**: `oe-ack` / `oe-activity` と**同一の read 規則**（`K = min(covers_count, |ts ≤ covers_last_ts|)`・複数 ack は max・巻き戻りなし）。ack ループ本体は再構築しない（`report_received` を consume）。
+- **出力**: stdout に FLAG 全件（cron ログ / 手動確認の durable signal）。owner ping は `wez notify`（best-effort）。**二重通知抑止**: verb 固有の seen cache（`${OE_EVENT_DIR}/oe-undelivered/seen`・キー `<child>|<parent>|<oldest_ts>`）に無い新規キーのみ notify。cache は verb 自身の bookkeeping で engine state ではない。
+- **read-only / 非検出**: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。engine state（events/registry/session-state）は mutate しない。exit は常に 0（observer）・usage エラーのみ 2。
+- **cron 例**（登録は owner 環境依存・自動化しない）: `*/15 * * * * /path/to/oe-undelivered >> "$HOME/.claude/state/oe-undelivered/cron.log" 2>&1`。cron 間隔と W は独立に調律する。
+- **注記**: `wez notify` の cron（no TTY / mux socket）到達性は未検証 → stdout が durable な signal。frontier read 規則は `oe-ack` / `oe-activity` に続く3つ目の copy（共有 lib 統合は follow-up）。
+
+関連: `schemas/oe-events.schema.json`（`report_received` の `covers_*`）/ `bin/oe-ack`（受領印の writer・`_ack_scan`）/ `bin/oe-activity`（PENDING の reader・`received_of`）。
+
+---
+
 ## 主要な環境変数
 
 | 変数 | 用途 | 既定 |
@@ -414,5 +435,7 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 | `OE_EVENT_DIR` | 活動ログ（#206）の置き場（`oe-events.jsonl`）。emit / oe-activity / oe-ack 共通 | `~/.claude/state` |
 | `OE_EVENT_LOG` | 活動ログ emit の有効/無効（`0` で kill-switch） | 有効 |
 | `OE_EVENT_PREVIEW_MAX` | message_sent の preview 切り詰め codepoint 数 | `100` |
+| `OE_UNDELIVERED_WINDOW_SEC` | oe-undelivered: 報告未達とみなす時間窓 W（秒）。`--window` が優先 | `1800`（30分） |
+| `OE_UNDELIVERED_NOW_EPOCH` | oe-undelivered: now（epoch 秒）の上書き。主にテストの age 決定論化用 | （`date +%s`） |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。
