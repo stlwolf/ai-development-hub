@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+# oe-undelivered — 報告未達検知 watchdog（#239 段階0・do-less MVP・read-only・cron 可）
+#
+# usage:
+#   oe-undelivered [--window <sec>]
+#   oe-undelivered -h | --help
+#
+# 目的（mode3 チャネル脆弱の検知）: 委譲子が親へ送った報告（child→parent の message_sent）のうち、
+#   親が受領印（report_received・#220/#206A）を打っておらず（未ack）、かつ最古の未ack報告が時間窓 W を
+#   越えて放置されているものを検出し、owner に ping する。統括死亡 / send 無言失敗で報告が虚空へ消える
+#   経路（#239 mode3）を「#220 の frontier（未ack）＋時間次元」で決定論的に拾う。
+#
+# 位置づけ（read-only 観測 family = oe-status / oe-activity / oe-ident と同群）:
+#   - engine state（oe-events.jsonl / delegate-registry / session-state）を一切 mutate しない。
+#     読むのは oe-events.jsonl と tmux ペイン存在（mux query）のみ。ペイン出力は capture しない（決定論）。
+#   - #220 の受領印イベント（report_received）を consume し、frontier の read 規則
+#     （K = min(covers_count, |ts ≤ covers_last_ts|)・複数 ack は max・巻き戻りなし）を
+#     oe-ack / oe-activity と同一に適用する（ack ループ本体は再構築しない）。
+#   - cron から回る＝$TMUX_PANE を持たないため、oe-activity --inbox（self 中心）と違い
+#     全 (child→parent) ペアを横断する。self アンカーが無いぶん、親子の向きは child_spawned /
+#     report_received / role / known-parent の複合で解決する（departed で role 空になる子＝mode3 の
+#     主対象を取りこぼさないため）。
+#
+# 検知（2条件）: pending > 0（未ack）かつ age = now - (最古未ack報告の ts) > W。
+# 出力:
+#   - stdout: 現在 FLAG 中の全件（cron ログ / 手動確認の durable な signal）。
+#   - owner ping: `wez notify`（best-effort）。二重通知抑止（D-b）: verb 固有の seen cache
+#     （${OE_EVENT_DIR}/oe-undelivered/seen・キー "<child>|<parent>|<oldest_ts>"）に無い新規キーのみ
+#     notify し、cache へ追記する。cache は verb 自身の bookkeeping で engine state ではない。
+# exit code: 常に 0（observer）。usage エラーのみ 2 / 投影失敗のみ 1。
+#
+# 既知の制約（新規導入でなく event モデル由来・開示）:
+#   - ts は秒精度・message 単位 id 無し → age は ±1s（分スケール窓で無害）。
+#   - 同一サーバで %N が再利用されると別関係が混線しうる（oe-activity と同じ既知制約）。
+#   - 親子の向きが child_spawned / report_received / role / known-parent のいずれからも
+#     判別できない完全に文脈欠落したペアは report と断定せず skip する（誤検知回避側に倒す）。
+#   - jq の frontier read 規則は oe-ack / oe-activity に続く3つ目の copy（共有 lib 統合は follow-up）。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# #224/#233: 会話到達面へ出す preview を read 側でも無害化する共有 helper（oe-activity と同型）。
+# 不在時は degrade（jq の cntrl→space が効くので従来同等の安全度）。
+_SANITIZE_LIB="${BIN_DIR}/../lib/sanitize.sh"
+# shellcheck source=../lib/sanitize.sh
+if [[ -r "$_SANITIZE_LIB" ]]; then source "$_SANITIZE_LIB"; fi
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
+
+err() { echo "oe-undelivered: $*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-undelivered [--window <sec>]   報告未達（未ack かつ age>W）を検出し owner に ping
+  oe-undelivered -h | --help
+
+  --window <sec>   時間窓 W（秒）。既定 1800（30分）。環境変数 OE_UNDELIVERED_WINDOW_SEC でも指定可
+                   （--window が優先）。
+
+read-only: oe-events.jsonl と tmux ペイン存在のみを読む（capture・engine state 変更はしない）。
+owner ping は wez notify（best-effort）。二重通知は verb 固有の seen cache で抑止する。
+cron 例: */15 * * * * /path/to/oe-undelivered >> "$HOME/.claude/state/oe-undelivered/cron.log" 2>&1
+EOF
+}
+
+DEFAULT_WINDOW=1800
+WINDOW="${OE_UNDELIVERED_WINDOW_SEC:-$DEFAULT_WINDOW}"
+
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --window)
+      shift
+      [[ -n "${1:-}" ]] || { err "--window は秒数（正の整数）が必要です"; usage; exit 2; }
+      WINDOW="$1"; shift ;;
+    --window=*) WINDOW="${1#--window=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) err "unknown option: $1"; usage; exit 2 ;;
+  esac
+done
+[[ $# -eq 0 ]] || { err "unexpected argument: $1"; usage; exit 2; }
+
+# window は正の整数（秒）
+[[ "$WINDOW" =~ ^[0-9]+$ && "$WINDOW" -gt 0 ]] || { err "window は正の整数（秒）: got [$WINDOW]"; usage; exit 2; }
+
+command -v jq >/dev/null 2>&1 || { err "jq が必要です（frontier / age 計算に使用）"; exit 2; }
+
+# 単一ノブ OE_EVENT_DIR（writer=event-bus.sh / reader=oe-activity・oe-ack と一致）
+OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+OE_EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
+
+if [[ ! -s "$OE_EVENT_FILE" ]]; then
+  echo "oe-undelivered: no activity recorded yet (${OE_EVENT_FILE})"
+  exit 0
+fi
+
+# now は既定で date +%s（%s は BSD/GNU 両 date で可搬）。テストは OE_UNDELIVERED_NOW_EPOCH で
+# 固定して age を決定論化する（jq の now builtin を使わない理由＝再現性）。
+NOW_EPOCH="${OE_UNDELIVERED_NOW_EPOCH:-$(date +%s)}"
+[[ "$NOW_EPOCH" =~ ^[0-9]+$ ]] || { err "OE_UNDELIVERED_NOW_EPOCH は epoch 秒（整数）: got [$NOW_EPOCH]"; exit 2; }
+
+# --- liveness（mux 存在 query のみ。tmux 不在は ? で degrade。oe-activity と同型・capture しない）---
+TMUX_AVAIL=0
+LIVE_SET=""
+if command -v tmux >/dev/null 2>&1; then
+  if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+    TMUX_AVAIL=1
+  fi
+fi
+liveness_of() {
+  local pane="$1"
+  [[ -n "$pane" ]] || { printf '?'; return; }
+  [[ "$TMUX_AVAIL" == "1" ]] || { printf '?'; return; }
+  if printf '%s\n' "$LIVE_SET" | grep -qxF -- "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+
+# pane を「label (pane)」or「pane」で表示（oe-activity と同型）
+disp() {
+  local pane="$1" label="$2"
+  if [[ -n "$label" ]]; then printf '%s (%s)' "$label" "$pane"; else printf '%s' "$pane"; fi
+}
+
+# age（秒）を人間可読へ（例: 5400 → 1h30m / 2700 → 45m）
+fmt_age() {
+  local s="$1" h m
+  [[ "$s" =~ ^[0-9]+$ ]] || { printf '%s' "$s"; return; }
+  h=$(( s / 3600 )); m=$(( (s % 3600) / 60 ))
+  if [[ "$h" -gt 0 ]]; then printf '%dh%dm' "$h" "$m"; else printf '%dm' "$m"; fi
+}
+
+# --- dedup（D-b）: verb 固有 seen cache（engine state ではない）---
+SEEN_DIR="${OE_EVENT_DIR}/oe-undelivered"
+SEEN_FILE="${SEEN_DIR}/seen"
+seen_has() {
+  [[ -r "$SEEN_FILE" ]] || return 1
+  grep -qxF -- "$1" "$SEEN_FILE" 2>/dev/null
+}
+
+# --- 投影（jq・slurp）: FLAG 行 1 件 1 行（US \u001f 区切り・空フィールド保持）---
+# 列: child_pane, parent_pane, child_label, parent_label, pending, oldest_ts, age_sec, miss_unacked, preview
+# 壊れた JSONL 行は前段 `jq -R 'fromjson? // empty'` で黙ってスキップ（oe-activity と同じ degrade）。
+project() {
+  jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
+  | jq -rs --argjson now "$NOW_EPOCH" --argjson window "$WINDOW" '
+    # ISO-8601（event-bus は常に +00:00）を epoch へ。parse 不能は null（後段で skip）。
+    def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
+    # 受領数の read 時導出（frontier snapshot・#206A/#220 と同一規則）:
+    #   各 ack の K = min(covers_count, |ts ≤ covers_last_ts|)、複数 ack は max（単調・巻き戻りなし）。
+    def received_of($acks; $rcv; $org; $cands):
+      ( [ $acks[] | select(.receiver==$rcv and .origin==$org) | . as $a
+          | ([ $cands[] | select(.ts <= $a.frontier) ] | length) as $k1
+          | (if $a.covers < $k1 then $a.covers else $k1 end) ] | max // 0 );
+
+    ( [ .[] | select(.type=="child_spawned") ] )    as $spawns
+    | ( [ .[] | select(.type=="report_received") ] ) as $ackraw
+    # 親子の向きを解決する権威マップ（強い順）:
+    #   parent_of[child]=parent（child_spawned）/ ack_parent_of[reporter]=acker（report_received）
+    #   known_parents = spawn/ack で親として振る舞った pane 集合
+    | ( reduce $spawns[] as $s ({}; .[$s.to.pane]   = $s.from.pane) )        as $parent_of
+    | ( reduce $ackraw[] as $a ({}; .[$a.to.pane]   = $a.from.pane) )        as $ack_parent_of
+    | ( reduce ($spawns[].from.pane, $ackraw[].from.pane) as $p ({}; .[$p]=true) ) as $known_parents
+    | ( reduce $spawns[] as $s ({}; .[$s.to.pane]   = ($s.to.label // "")) ) as $clabel
+    | ( reduce $spawns[] as $s ({}; .[$s.from.pane] = ($s.from.label // "")) ) as $plabel
+    | ( to_entries ) as $indexed
+    # 受領印: receiver=from（ack を打った親）/ origin=to（報告した子）
+    | ( [ $indexed[] | select(.value.type=="report_received")
+        | { receiver:.value.from.pane, origin:.value.to.pane,
+            covers:(.value.covers_count // 0), frontier:(.value.covers_last_ts // "") } ] ) as $acks
+    # report（child→parent）判定: report なら child=from / parent=to（全 rule で一貫）
+    | ( [ $indexed[]
+          | select(.value.type=="message_sent")
+          | .key as $idx | .value as $m
+          | select(
+              (($parent_of[$m.from.pane]) // "")     == $m.to.pane
+              or (($ack_parent_of[$m.from.pane]) // "") == $m.to.pane
+              or (($m.from.role=="child") and ($m.to.role=="parent"))
+              or (($known_parents | has($m.to.pane)) and (($known_parents | has($m.from.pane)) | not))
+            )
+          | { idx:$idx, c:$m.from.pane, p:$m.to.pane, ts:$m.ts,
+              deliv:($m.delivery_signal // "none"),
+              clab_m:($m.from.label // ""), plab_m:($m.to.label // ""),
+              prev:(($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ] ) as $reports
+    | [ ($reports | group_by([.c, .p]))[]
+        | ( sort_by(.ts, .idx) ) as $g
+        | $g[0].c as $c | $g[0].p as $p
+        | received_of($acks; $p; $c; $g) as $recv
+        | (($g | length) - $recv) as $pending0
+        | (if $pending0 < 0 then 0 else $pending0 end) as $pending
+        | select($pending > 0)
+        # 未ack = 先頭 $recv 件（frontier は ts 単調）を除いた残り。最古未ack = $g[$recv]。
+        | ($g[$recv:]) as $unacked
+        | $unacked[0] as $oldest
+        | ts_epoch($oldest.ts) as $ots
+        | select($ots != null)
+        | ($now - $ots) as $age
+        | select($age > $window)
+        | { c:$c, p:$p,
+            # label も stdout / wez notify（会話到達面）へ出るため cntrl を畳む（prev と同扱い・
+            # US 区切り protocol 防御も兼ねる）。full な無害化は bash 側 oe_sanitize_conversation。
+            clab: ((($clabel[$c]) // $oldest.clab_m // "") | gsub("[[:cntrl:]]"; " ")),
+            plab: ((($plabel[$p]) // $oldest.plab_m // "") | gsub("[[:cntrl:]]"; " ")),
+            pending: $pending,
+            ots: $oldest.ts,
+            age: $age,
+            miss: ([ $unacked[] | select(.deliv=="suspected_miss") ] | length),
+            prev: $oldest.prev } ]
+    | sort_by(.age) | reverse
+    | .[] | [ .c, .p, .clab, .plab, (.pending|tostring), .ots, (.age|tostring), (.miss|tostring), .prev ]
+    | join("\u001f")
+  '
+}
+
+rows="$(project 2>/dev/null)" || { err "failed to project ${OE_EVENT_FILE} (corrupt jsonl?)"; exit 1; }
+
+if [[ -z "$rows" ]]; then
+  echo "oe-undelivered: no undelivered reports (pending>0 かつ age>${WINDOW}s は無し)"
+  exit 0
+fi
+
+# --- FLAG 行を stdout へ（durable signal）+ 新規キーを収集 ---
+new_keys=()
+notify_lines=()
+printf '=== undelivered reports (read-only · window=%ss) ===\n' "$WINDOW"
+printf '%-6s  %-7s  %-8s  %-4s  %-26s  %-34s  %s\n' "PLIVE" "PENDING" "AGE" "MISS" "OLDEST_TS" "CHILD → PARENT" "PREVIEW"
+while IFS=$'\037' read -r c p clab plab pending ots age miss prev; do
+  [[ -n "$c" || -n "$p" ]] || continue
+  prev="$(oe_sanitize_conversation "$prev")"
+  # #224/#233: label も会話到達面（stdout / wez notify body）へ出るため preview と同様に無害化する
+  # （ESC/CSI/OSC・タグ列・box・制御文字。到達可能な視覚偽装/制御注入を防ぐ・実装SO codex 指摘）。
+  clab="$(oe_sanitize_conversation "$clab")"
+  plab="$(oe_sanitize_conversation "$plab")"
+  plive="$(liveness_of "$p")"
+  age_disp="$(fmt_age "$age")"
+  crel="$(disp "$c" "$clab")"
+  prel="$(disp "$p" "$plab")"
+  relation="${crel} → ${prel}"
+  miss_disp="${miss:-0}"
+  printf '%-6s  %-7s  %-8s  %-4s  %-26s  %-34s  %s\n' \
+    "$plive" "$pending" "$age_disp" "$miss_disp" "$ots" "$relation" "$prev"
+  key="${c}|${p}|${ots}"
+  if ! seen_has "$key"; then
+    new_keys+=("$key")
+    line="${relation} · pending=${pending} · age=${age_disp} · parent=${plive}"
+    [[ "$miss_disp" != "0" ]] && line="${line} · miss=${miss_disp}"
+    notify_lines+=("$line")
+  fi
+done <<< "$rows"
+
+# --- 新規キーのみ owner へ ping（二重通知抑止）---
+# seen cache は「実際に owner へ通知できた」ときだけ追記する。wez 不在 / notify 失敗 / 中断時に
+# 先行追記すると、通知していないのにキーが seen となり owner ping が永続的に抑止される
+# （実装SO cursor 指摘）。通知経路が無い・失敗なら記録せず次回再通知する（stdout は毎回 durable に
+# 表示済み・wez 復帰時に通知される）。stdout 出力が durable な signal で wez notify は best-effort。
+if [[ "${#new_keys[@]}" -gt 0 ]] && command -v wez >/dev/null 2>&1; then
+  body="$(printf '%s\n' "${notify_lines[@]}")"
+  if wez notify "oe watchdog: undelivered report(s)" "$body" 2>/dev/null; then
+    # 通知成功時のみ seen cache 追記（verb 固有 state・best-effort。追記失敗は次回再通知になるだけ）
+    if mkdir -p "$SEEN_DIR" 2>/dev/null; then
+      for k in "${new_keys[@]}"; do
+        printf '%s\n' "$k" >> "$SEEN_FILE" 2>/dev/null || true
+      done
+    else
+      err "seen cache dir を作成できませんでした（${SEEN_DIR}）— 二重通知抑止は無効・検知は継続"
+    fi
+  fi
+fi
+
+exit 0
