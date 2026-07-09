@@ -264,11 +264,17 @@ sync_claude_statusline() {
     fi
 
     local backup existing_cmd tmp_settings
+    # settings.json が壊れている（jq で parse 不能）なら statusLine merge のみ skip し、sync 全体は
+    # abort させない（set -euo pipefail 下で jq の非0を握りつぶす。hooks merge の if jq 姿勢に揃える）。
+    if ! existing_cmd=$(jq -r '.statusLine.command // ""' "$settings_target" 2>/dev/null); then
+        warn "settings.json を jq で parse できません（壊れている可能性）— statusLine merge を skip: ${settings_target}"
+        return
+    fi
+
     backup="${settings_target}.bak.$(date +%Y%m%d-%H%M%S)"
     cp "$settings_target" "$backup"
     info "  Backup: ${backup}"
 
-    existing_cmd=$(jq -r '.statusLine.command // ""' "$settings_target")
     tmp_settings="$(mktemp "${settings_target}.tmp.XXXXXX")"
 
     # 非破壊 merge（Q4）:

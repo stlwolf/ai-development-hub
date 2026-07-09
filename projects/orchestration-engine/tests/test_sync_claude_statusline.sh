@@ -76,6 +76,24 @@ run_sync
 ckc "新規作成 command は producer" "$(sl '.statusLine.command')" "$MARKER"
 ck  "refreshInterval=10" "10" "$(sl '.statusLine.refreshInterval')"
 
+echo "[7] 回帰(Copilot C1/C3): wrap 済 command を実行し ~/ 展開・表示保持・beat を確認(E2E)"
+fresh_home h7
+cat > "$HOMEDIR/mybar.sh" <<'BAR'
+#!/usr/bin/env bash
+name="$(jq -r '.model.display_name')"
+printf 'USERBAR[%s]\n' "$name"
+BAR
+chmod +x "$HOMEDIR/mybar.sh"
+# ユーザー command は ~/ (tilde) を使う → wrap 後も展開が保たれること。
+printf '%s' '{"statusLine":{"type":"command","command":"~/mybar.sh"}}' > "$ST"
+run_sync
+WRAPPED="$(sl '.statusLine.command')"
+HB7="$_TMP_DIR/hb7"; mkdir -p "$HB7"
+OUT7="$(printf '%s' '{"session_id":"01E2E","model":{"display_name":"Opus"},"context_window":{"used_percentage":12}}' \
+  | env HOME="$HOMEDIR" OE_HEARTBEAT_DIR="$HB7" TMUX_PANE='%2' sh -c "$WRAPPED")"
+ckc "wrap 実行: ~/ 展開しユーザー表示を保持" "$OUT7" "USERBAR[Opus]"
+ck  "wrap 実行でも beat を書く" "12" "$(jq -r '.context_pct' "$HB7/01E2E.json" 2>/dev/null)"
+
 # ============================================================================
 echo ""
 echo "=== RESULT: PASS=$PASS FAIL=$FAIL ==="

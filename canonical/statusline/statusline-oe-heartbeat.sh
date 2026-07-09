@@ -69,8 +69,11 @@ _oe_heartbeat_write || true
 
 # --- 表示（非破壊）---
 # 既存 statusLine を wrap: 元コマンドへ stdin を渡し、その出力をそのまま表示（best-effort）。
+# eval は set +u の subshell で走らせ、元コマンドが未設定変数を参照しても（通常 shell 同様に
+# 空へ）動くようにする（本 producer 自身の set -u で元 statusLine の意味を変えない）。~/ や $VAR
+# の展開は %q（sync 側の退避）→ outer shell の語 parse → eval の再 parse を経て保たれる。
 if [[ -n "${OE_HEARTBEAT_WRAP_CMD:-}" ]]; then
-  if wrapped_out="$(printf '%s' "$input" | eval "${OE_HEARTBEAT_WRAP_CMD}" 2>/dev/null)"; then
+  if wrapped_out="$(printf '%s' "$input" | ( set +u; eval "${OE_HEARTBEAT_WRAP_CMD}" ) 2>/dev/null)"; then
     printf '%s\n' "$wrapped_out"
     exit 0
   fi
