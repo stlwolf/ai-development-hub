@@ -1,0 +1,7 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "\"$HOME/.claude/statusline/statusline-oe-heartbeat.sh\"",
+    "refreshInterval": 10
+  }
+}
