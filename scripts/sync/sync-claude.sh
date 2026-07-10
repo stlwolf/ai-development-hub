@@ -342,11 +342,11 @@ main() {
     echo ""
 
     # 7. statusLine producer script (#239 PR-A: beat producer)
-    sync_hook_scripts "${CANONICAL_DIR}/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
+    sync_hook_scripts "${CANONICAL_DIR}/claude/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
     echo ""
 
     # 8. statusLine config (non-destructive merge into settings.json)
-    sync_claude_statusline "${CANONICAL_DIR}/statusline/claude.statusline.json" "${TARGET_BASE}/settings.json" "statusLine"
+    sync_claude_statusline "${CANONICAL_DIR}/claude/statusline/claude.statusline.json" "${TARGET_BASE}/settings.json" "statusLine"
     echo ""
 
     # 9. MCP servers (merge into ~/.claude.json)

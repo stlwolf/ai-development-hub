@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test_oe_heartbeat_producer.sh — canonical/statusline/statusline-oe-heartbeat.sh
+# test_oe_heartbeat_producer.sh — canonical/claude/statusline/statusline-oe-heartbeat.sh
 #   （#239 段階1 PR-A・statusLine 拍動 producer）の検証。
 #
 # 観点（plan §2 PR-A の test 方針）:
@@ -15,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-PRODUCER="$REPO_ROOT/canonical/statusline/statusline-oe-heartbeat.sh"
+PRODUCER="$REPO_ROOT/canonical/claude/statusline/statusline-oe-heartbeat.sh"
 
 [[ -f "$PRODUCER" ]] || { echo "FAIL: producer not found: $PRODUCER"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
