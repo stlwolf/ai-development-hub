@@ -1,0 +1,339 @@
+#!/usr/bin/env bash
+# oe-vitals — 統括の vital 監視 consumer（#239 段階1 PR-B・read-only・cron 可）
+#
+# usage:
+#   oe-vitals [--window <sec>] [--threshold <pct>]
+#   oe-vitals -h | --help
+#
+# 目的（mode1 context 肥大死 / プロセス死の機械化）: statusLine 拍動 producer（PR-A・
+#   statusline-oe-heartbeat.sh）が session 毎に書く sidecar（拍動 = {ts, context_pct, pane}）を
+#   out-of-session の cron から読み、統括 session の vital（拍動鮮度 + context% 負荷）を判定して
+#   owner に ping する。#238 の中核「context 閾値 handoff の自己申告脱却」に最短で届ける観測 verb。
+#
+# 位置づけ（read-only 観測 family = oe-status / oe-activity / oe-undelivered と同群）:
+#   - engine state（oe-events.jsonl / delegate-registry / session-state）も producer の sidecar も
+#     一切 mutate しない。読むのは sidecar dir と board file と tmux ペイン存在（mux query）のみ。
+#     ペイン出力は capture しない（決定論）。GC（停止 session の sidecar 掃除）は producer data の
+#     mutation ゆえ行わない（read-only 観測姿勢・任意の bookkeeping は seen cache のみ）。
+#   - 入力面が段階0 と別: `oe-undelivered` は oe-events.jsonl の frontier（未ack）を読むが、本 verb は
+#     sidecar dir を読む。→ frontier read の jq（oe-undelivered の「3つ目の copy」）は再コピーしない。
+#
+# 2つの検知器を正しく分離する（設計SO の反証を反映した改訂版・設計の肝）:
+#   1. context% 閾値（mode1 context 肥大死＝#238 中核・確度が高い）:
+#        beat fresh + pane が gone でない（alive or ?）+ context_pct > T → handoff 期 → ping。
+#        beat fresh は「ctx 値が信頼できる＝直近まで書けている」ことを担保する。
+#   2. death（プロセス死＝crash・pane 消滅）:
+#        pane が tmux で **確定 gone** のときのみ ping（beat 鮮度に依存しない）。
+#        当初は「beat-staleness＝プロセス死検知」（生存プロセスは refreshInterval の fixed timer で beat を
+#        撃ち続けるから）としたが、設計SO(codex/claude/cursor)が反証: (a)tmux 不在/socket 不通の `?` を
+#        `¬alive` として death 扱いし cron で偽 crash ping を出す、(b)「idle でも beat 継続」premise は
+#        実機未検証で death の linchpin にできない。→ death は **確定 gone のみ**に絞る。これで ? は死に
+#        ならず、idle-premise は death の前提から外れ、gone×fresh も即検知される（旧設計の最大 W 遅延を解消）。
+#   alive×stale / ?×stale は no-op（生存/不明を死に化かさない・「alive×stale→hang」は実装しない）。
+#   代償: tmux 不在時は death を検知できない（context のみ degrade 動作）。これは偽陽性を出すより安全側。
+#
+# 真理値表（統括 session のみ対象・board 突合で scope 化した後）:
+#   | pane      | beat 鮮度 | context% | 解釈                       | 動作                       |
+#   |-----------|-----------|----------|----------------------------|----------------------------|
+#   | alive / ? | fresh     | > T      | context 肥大接近（#238 中核）| ping（handoff 促し）        |
+#   | alive / ? | fresh     | ≤ T      | 健全                       | なし                       |
+#   | alive / ? | stale     | —        | 生存/不明×拍動停止（idle 等）| なし（死に化かさない・開示穴）|
+#   | gone      | fresh/stale| —       | プロセス終了（crash 疑い）  | ping（1回・board 突合で判別）|
+#   | 不在      | —         | —        | producer 未設定 — 死ではない | なし（未設定を検知に化かさない）|
+#
+# 統括スコープ化（board 突合・MVP）: sidecar dir には statusLine を持つ全 session の beat が入る
+#   （統括に限らない）。consumer は統括 session だけを対象化する。board（declared 層・PR-C）の
+#   `現統括` pane と、sidecar の pane を突合し、現統括の sidecar だけを判定する。board は machine-local
+#   （gitignored `.oe/`・commit しない）ゆえ path は OE_BOARD_FILE で与える（既定なし）。board が
+#   未設定 / 未解決なら統括を特定できず no-op（検知に化かさない）。
+#
+# gone×stale の crash/handoff 曖昧性は board 突合そのものが解く: orderly handoff 後は board の
+#   `現統括` が後任 pane に進むため、停止した前任の sidecar は現統括と一致せず scope 外になる
+#   （＝想定内の handoff は ping しない）。board がまだ死んだ pane を `現統括` と declare したまま
+#   その pane が gone×stale なら crash 疑い → ping（declared が observed の ground truth を補完）。
+#   seen cache は「session 毎に 1 回だけ ping」して二重通知を抑止する。
+#
+# ping 経路（oe-undelivered と同一）: `wez notify`（best-effort）+ stdout が durable な signal +
+#   verb 固有 seen cache（${OE_EVENT_DIR}/oe-vitals/seen・キー "<kind>|<session_id>"・通知成功時のみ
+#   追記）で二重通知を抑止する。cache は verb 自身の bookkeeping で engine state ではない。
+# exit code: 常に 0（observer）。usage エラーのみ 2 / sidecar 投影失敗は個別 skip。
+#
+# 既知の制約（新規導入でなく producer 契約 / 環境由来・開示）:
+#   - board 突合は sidecar の `pane` が埋まっている前提。producer は pane=${TMUX_PANE:-} を書くため、
+#     statusLine 実行 env に $TMUX_PANE が伝播しないと pane は空になり、現統括 pane と突合できず
+#     統括を特定できない（＝検知が no-op に落ちる）。この場合は「絶対 fresh の統括 sidecar が居ても
+#     scope できない」ことを honest に stdout へ出す。
+#   - board の `現統括` は PR-C frontmatter 形（`現統括: "%144"`）と現行 freeform 行（`現統括: pane
+#     `%158``）の双方に対応するため、`現統括` marker 以降の最初の `%NNN` を現統括 pane とする heuristic。
+#   - `wez notify` の cron（no TTY / mux socket）到達性は段階0 から未検証 → stdout が durable signal。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# #224/#233: 会話到達面へ出す文字列（stdout / wez notify body）を無害化する共有 helper（oe-undelivered
+# と同型）。不在時は degrade（jq の cntrl→space が効くので従来同等の安全度）。
+_SANITIZE_LIB="${BIN_DIR}/../lib/sanitize.sh"
+# shellcheck source=../lib/sanitize.sh
+if [[ -r "$_SANITIZE_LIB" ]]; then source "$_SANITIZE_LIB"; fi
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
+
+err() { echo "oe-vitals: $*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-vitals [--window <sec>] [--threshold <pct>]   統括の拍動鮮度 + context% を判定し owner に ping
+  oe-vitals -h | --help
+
+  --window <sec>      拍動 staleness 窓 W（秒）。既定 1800（30分・producer の beat 間隔 ≪ W）。
+                      環境変数 OE_VITALS_WINDOW_SEC でも指定可（--window が優先）。
+  --threshold <pct>   context% 閾値 T（0-100 整数）。既定 85。context_pct > T で ping。
+                      環境変数 OE_VITALS_CONTEXT_THRESHOLD でも指定可（--threshold が優先）。
+
+statusLine 拍動 producer（PR-A）が書く sidecar を読み、board（OE_BOARD_FILE）の現統括 pane と突合して
+統括 session だけを対象化する。read-only: sidecar / board / tmux ペイン存在のみを読む（capture・engine
+state 変更・sidecar 掃除はしない）。owner ping は wez notify（best-effort）。二重通知は verb 固有の
+seen cache で抑止する。
+cron 例: */15 * * * * OE_BOARD_FILE=/path/to/.oe/START-HERE-board.md /path/to/oe-vitals >> "$HOME/.claude/state/oe-vitals/cron.log" 2>&1
+EOF
+}
+
+DEFAULT_WINDOW=1800
+DEFAULT_THRESHOLD=85
+WINDOW="${OE_VITALS_WINDOW_SEC:-$DEFAULT_WINDOW}"
+THRESHOLD="${OE_VITALS_CONTEXT_THRESHOLD:-$DEFAULT_THRESHOLD}"
+
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --window)
+      shift
+      [[ -n "${1:-}" ]] || { err "--window は秒数（正の整数）が必要です"; usage; exit 2; }
+      WINDOW="$1"; shift ;;
+    --window=*) WINDOW="${1#--window=}"; shift ;;
+    --threshold)
+      shift
+      [[ -n "${1:-}" ]] || { err "--threshold は 0-100 の整数が必要です"; usage; exit 2; }
+      THRESHOLD="$1"; shift ;;
+    --threshold=*) THRESHOLD="${1#--threshold=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) err "unknown option: $1"; usage; exit 2 ;;
+  esac
+done
+[[ $# -eq 0 ]] || { err "unexpected argument: $1"; usage; exit 2; }
+
+# window は正の整数（秒）
+[[ "$WINDOW" =~ ^[0-9]+$ && "$WINDOW" -gt 0 ]] || { err "window は正の整数（秒）: got [$WINDOW]"; usage; exit 2; }
+# threshold は 0-100 の整数
+[[ "$THRESHOLD" =~ ^[0-9]+$ && "$THRESHOLD" -le 100 ]] || { err "threshold は 0-100 の整数: got [$THRESHOLD]"; usage; exit 2; }
+
+command -v jq >/dev/null 2>&1 || { err "jq が必要です（sidecar / context% 判定に使用）"; exit 2; }
+
+# sidecar dir は producer（PR-A）と同一の env ノブ OE_HEARTBEAT_DIR を共有する（consumer は producer が
+# 書いた dir を読む）。既定は producer と一致させる。default はここでインライン宣言し env で上書き可
+# （lib/event-bus.sh idiom）。constants.sh には足さない（engine/project-relative 専用）。
+OE_HEARTBEAT_DIR="${OE_HEARTBEAT_DIR:-${HOME:-}/.claude/state/oe-heartbeat}"
+
+# 統括スコープ化に使う board。machine-local（gitignored `.oe/`）ゆえ既定 path は持たず OE_BOARD_FILE で
+# 与える。未設定 / 未解決なら統括を特定できず no-op（検知に化かさない）。
+OE_BOARD_FILE="${OE_BOARD_FILE:-}"
+
+# 単一ノブ OE_EVENT_DIR（oe-undelivered / event-bus.sh と一致）配下に verb 固有 seen cache を置く。
+# 注: 名前空間衝突回避のため seen dir は oe-vitals/（producer の sidecar dir = oe-heartbeat/ とは別）。
+OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+SEEN_DIR="${OE_EVENT_DIR}/oe-vitals"
+SEEN_FILE="${SEEN_DIR}/seen"
+
+# now は既定で date +%s（%s は BSD/GNU 両 date で可搬）。テストは OE_VITALS_NOW_EPOCH で固定して
+# 鮮度判定を決定論化する。
+NOW_EPOCH="${OE_VITALS_NOW_EPOCH:-$(date +%s)}"
+[[ "$NOW_EPOCH" =~ ^[0-9]+$ ]] || { err "OE_VITALS_NOW_EPOCH は epoch 秒（整数）: got [$NOW_EPOCH]"; exit 2; }
+
+# --- liveness（mux 存在 query のみ。tmux 不在は ? で degrade。oe-undelivered と同型・capture しない）---
+TMUX_AVAIL=0
+LIVE_SET=""
+if command -v tmux >/dev/null 2>&1; then
+  if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+    TMUX_AVAIL=1
+  fi
+fi
+liveness_of() {
+  local pane="$1"
+  [[ -n "$pane" ]] || { printf '?'; return; }
+  [[ "$TMUX_AVAIL" == "1" ]] || { printf '?'; return; }
+  if printf '%s\n' "$LIVE_SET" | grep -qxF -- "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+
+# age（秒）を人間可読へ（例: 5400 → 1h30m / 2700 → 45m）。oe-undelivered:fmt_age と同型。
+fmt_age() {
+  local s="$1" h m
+  [[ "$s" =~ ^[0-9]+$ ]] || { printf '%s' "$s"; return; }
+  h=$(( s / 3600 )); m=$(( (s % 3600) / 60 ))
+  if [[ "$h" -gt 0 ]]; then printf '%dh%dm' "$h" "$m"; else printf '%dm' "$m"; fi
+}
+
+# --- dedup: verb 固有 seen cache（engine state ではない）---
+seen_has() {
+  [[ -r "$SEEN_FILE" ]] || return 1
+  grep -qxF -- "$1" "$SEEN_FILE" 2>/dev/null
+}
+
+# --- board 突合: 現統括 pane を解決する（PR-C frontmatter 形 / 現行 freeform 行の両対応）---
+# `現統括` marker 以降の最初の `%NNN` を現統括 pane とする。前任 pane（同じ行の後方に併記されうる）は
+# marker 直後の最初の1件を取ることで除外する。board 不在 / marker 不在 / pane 不在は空を返す。
+# 設計SO(cursor)の反証: `現統括` を colon 無しで grep すると board の見出し `## in-flight（現統括 %144
+# の担当）` のような **stale pane を含む注記行**を誤 match しうる（実 board で確認）。宣言行は `現統括:`
+# （colon 付き）ゆえ colon を必須にして見出しの併記を除外する。
+resolve_supervisor_pane() {
+  local bf="$1" line
+  [[ -n "$bf" && -r "$bf" ]] || { printf ''; return; }
+  line="$(grep -m1 -- '現統括:' "$bf" 2>/dev/null)" || true
+  [[ -n "$line" ]] || { printf ''; return; }
+  printf '%s' "$line" | sed -E 's/.*現統括//' | grep -oE '%[0-9]+' | head -1
+}
+# board の succession 状態を best-effort で抽出（death FLAG の human 向け注記のみ・logic は分岐しない）。
+# 同上（設計SO 反証）: 宣言 `succession:` の colon を必須にし、見出し `## succession 手順` を除外する。
+resolve_succession() {
+  local bf="$1" line val
+  [[ -n "$bf" && -r "$bf" ]] || { printf ''; return; }
+  line="$(grep -m1 -- 'succession:' "$bf" 2>/dev/null)" || true
+  [[ -n "$line" ]] || { printf ''; return; }
+  # `succession:` 以降を次の区切り（`/` または全角括弧）まで取り、markdown 強調とスペースを除く。
+  val="$(printf '%s' "$line" | sed -E 's/.*succession:?[[:space:]]*//; s#[[:space:]]*/.*##; s/（.*//; s/[*`]//g; s/[[:space:]]*$//')"
+  printf '%s' "$val"
+}
+
+SUP="$(resolve_supervisor_pane "$OE_BOARD_FILE")"
+
+# --- sidecar 群を集める（set -u 下の空配列展開を避けるため件数を先に見る）---
+shopt -s nullglob
+files=("$OE_HEARTBEAT_DIR"/*.json)
+shopt -u nullglob
+total_sidecars=${#files[@]}
+
+if [[ "$total_sidecars" -eq 0 ]]; then
+  echo "oe-vitals: no heartbeat recorded yet (${OE_HEARTBEAT_DIR}) — producer 未配備 or 未実行"
+  exit 0
+fi
+
+if [[ -z "$SUP" ]]; then
+  echo "oe-vitals: 統括を特定できません（board 未設定/未解決）。sidecar は ${total_sidecars} 件あるが scope できず検知なし。"
+  echo "  hint: OE_BOARD_FILE に board（declared 層・現統括 pane を含む）path を与えてください。"
+  exit 0
+fi
+
+# --- 現統括 pane に一致する sidecar を選ぶ（複数一致=pane 再利用は最新 ts を採用）---
+# empty_pane_count = pane 空の sidecar 数。全 sidecar が pane 空なら board 突合の前提（sidecar.pane が
+# 埋まっている）が崩れており、producer の $TMUX_PANE 未伝播（PR-A session_id 主キー vs PR-B pane 突合の
+# 契約差）を honest に signal する材料にする（設計SO codex/cursor の指摘）。
+sup_sid=""; sup_ts=-1; sup_ctx="0"; sup_pane=""; empty_pane_count=0
+if [[ "$total_sidecars" -gt 0 ]]; then
+  for f in "${files[@]}"; do
+    [[ -e "$f" ]] || continue
+    # 壊れた / object でない JSON は黙って skip（degrade）。US 区切りで ts/context_pct/pane を投影。
+    parsed="$(jq -r 'select(type=="object") | "\(.ts // 0)|\(.context_pct // 0)|\(.pane // "")"' "$f" 2>/dev/null)" || continue
+    [[ -n "$parsed" ]] || continue
+    IFS='|' read -r p_ts p_ctx p_pane <<< "$parsed"
+    [[ -n "$p_pane" ]] || { empty_pane_count=$((empty_pane_count + 1)); continue; }
+    [[ "$p_pane" == "$SUP" ]] || continue
+    [[ "$p_ts" =~ ^[0-9]+$ ]] || continue
+    if [[ "$p_ts" -gt "$sup_ts" ]]; then
+      sup_ts="$p_ts"; sup_ctx="$p_ctx"; sup_pane="$p_pane"; sup_sid="$(basename "$f" .json)"
+    fi
+  done
+fi
+
+if [[ -z "$sup_sid" ]]; then
+  # board は現統括 pane を declare したが、その pane を持つ sidecar が無い（producer 未設定 or
+  # $TMUX_PANE 未伝播で pane 空）＝拍動が絶対 fresh でも scope できない。「不在」を「死」に化かさない。
+  echo "oe-vitals: 現統括 ${SUP} の heartbeat が見つかりません（producer 未設定 or pane 未伝播）→ 検知なし。"
+  if [[ "$empty_pane_count" -gt 0 ]]; then
+    # 設計SO 反証: PR-A は session_id 主キー・pane は best-effort（空でも契約は保たれる）。pane 空だと
+    # board（pane declare）と突合できず watchdog が inert 化する。この症状を明示的に開示する。
+    echo "  warn: sidecar ${total_sidecars} 件中 ${empty_pane_count} 件が pane 空（\$TMUX_PANE 未伝播の疑い）。board 突合は sidecar.pane に依存するため統括を scope できません。"
+  fi
+  echo "  note: producer が sidecar に pane を書けているか（statusLine env の \$TMUX_PANE 伝播）を確認してください。"
+  exit 0
+fi
+
+# --- 検知（統括 sidecar 1 件に真理値表を適用）---
+age=$(( NOW_EPOCH - sup_ts ))
+[[ "$age" -lt 0 ]] && age=0   # 未来 ts（時計ずれ）は 0 秒扱い（fresh 側・誤検知回避）
+plive="$(liveness_of "$sup_pane")"
+
+is_fresh=0
+[[ "$age" -le "$WINDOW" ]] && is_fresh=1
+over_threshold=0
+# context_pct は float でありうる（producer は数値化して書く）。bash の -gt は整数専用ゆえ awk で比較。
+if awk -v c="$sup_ctx" -v t="$THRESHOLD" 'BEGIN{ exit !((c+0) > (t+0)) }' 2>/dev/null; then
+  over_threshold=1
+fi
+
+# 2 検知器（設計SO の反証を反映して改訂）:
+#   death   : pane が tmux で **確定 gone**（`plive=="gone"`）のときのみ。beat 鮮度に依存しない。
+#             → 設計SO(codex/claude/cursor)の反証: 旧述語 `stale ∧ ¬alive` は tmux 不在/socket 不通の
+#               `?` を death 扱いし、cron で **偽 crash ping** を出す経路があった（? は gone でない）。
+#               また staleness 単独 death は「idle でも beat 継続」の未検証 premise が linchpin だった。
+#               death を確定 gone に絞ると (1)? は死にならない (2)idle-premise が death の前提から外れる
+#               (3)gone×fresh も即検知（旧設計の最大 W 遅延を解消）。tmux 不在時は death 検知不可（開示）。
+#   context : fresh（beat 新鮮＝ctx 値が信頼可）かつ pane が gone でない（alive or ?）かつ ctx>T（mode1 中核）。
+#             ? でも fresh beat は「直近まで書けていた＝実質 alive」ゆえ context は degrade して動く。
+#   alive×stale / ?×stale は no-op（生存/不明を death に化かさない・hang 誤検知を実装しない）。
+flag_kind=""
+if [[ "$plive" == "gone" ]]; then
+  flag_kind="death"
+elif [[ "$is_fresh" -eq 1 && "$over_threshold" -eq 1 ]]; then
+  flag_kind="context"
+fi
+
+if [[ -z "$flag_kind" ]]; then
+  if [[ "$is_fresh" -eq 1 ]]; then
+    state="は健全"; reason="検知なし"
+  else
+    # beat stale だが pane が gone でない（alive or ?）: 生存/不明×拍動停止。死に化かさず no-op（開示穴）。
+    state=""; reason="検知なし（beat stale だが pane が gone でない＝death は確定 gone でのみ判定・alive/?×stale は no-op）"
+  fi
+  echo "oe-vitals: 現統括 ${SUP}${state}（beat $( [[ $is_fresh -eq 1 ]] && echo fresh || echo stale )/$(fmt_age "$age") · ctx=${sup_ctx}% · pane=${plive} · W=${WINDOW}s · T=${THRESHOLD}%）→ ${reason}。"
+  exit 0
+fi
+
+# --- FLAG 行を stdout へ（durable signal）+ 新規キーを収集 ---
+sup_ctx_disp="$(oe_sanitize_conversation "$sup_ctx")"
+sup_sid_disp="$(oe_sanitize_conversation "$sup_sid")"
+age_disp="$(fmt_age "$age")"
+beat_disp="$( [[ $is_fresh -eq 1 ]] && echo fresh || echo stale )(${age_disp})"
+
+if [[ "$flag_kind" == "context" ]]; then
+  note="context 肥大接近（>${THRESHOLD}%）— handoff 促し"
+else
+  succ="$(oe_sanitize_conversation "$(resolve_succession "$OE_BOARD_FILE")")"
+  note="プロセス死（crash 疑い・board が現統括のまま pane 消滅）· board succession=${succ:-?}"
+fi
+
+printf '=== supervisor vitals (read-only · window=%ss · threshold=%s%%) ===\n' "$WINDOW" "$THRESHOLD"
+printf '%-8s  %-6s  %-14s  %-6s  %-28s  %-8s  %s\n' "KIND" "PLIVE" "BEAT" "CTX%" "SESSION" "PANE" "NOTE"
+printf '%-8s  %-6s  %-14s  %-6s  %-28s  %-8s  %s\n' \
+  "$flag_kind" "$plive" "$beat_disp" "$sup_ctx_disp" "$sup_sid_disp" "$sup_pane" "$note"
+
+# --- 新規キーのみ owner へ ping（二重通知抑止・session 毎 kind 毎に 1 回）---
+# seen cache は「実際に owner へ通知できた」ときだけ追記する（oe-undelivered と同じ規律）: wez 不在 /
+# notify 失敗時に先行追記すると、通知していないのにキーが seen となり owner ping が永続的に抑止される。
+key="${flag_kind}|${sup_sid}"
+if ! seen_has "$key" && command -v wez >/dev/null 2>&1; then
+  if [[ "$flag_kind" == "context" ]]; then
+    title="oe watchdog: supervisor context high"
+  else
+    title="oe watchdog: supervisor process death"
+  fi
+  body="現統括 ${sup_pane} (${sup_sid_disp}) · ${flag_kind} · beat=${beat_disp} · ctx=${sup_ctx_disp}% · ${note}"
+  if wez notify "$title" "$body" 2>/dev/null; then
+    if mkdir -p "$SEEN_DIR" 2>/dev/null; then
+      printf '%s\n' "$key" >> "$SEEN_FILE" 2>/dev/null || true
+    else
+      err "seen cache dir を作成できませんでした（${SEEN_DIR}）— 二重通知抑止は無効・検知は継続"
+    fi
+  fi
+fi
+
+exit 0
