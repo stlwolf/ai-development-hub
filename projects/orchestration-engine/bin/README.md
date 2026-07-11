@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1）
 
 ---
 
@@ -419,6 +419,33 @@ oe-undelivered -h | --help
 
 ---
 
+## oe-vitals — 統括 vital 監視 watchdog（#239 段階1・read-only・cron 可）
+
+statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane}`）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。
+
+```bash
+oe-vitals                          # 既定 W=1800s / T=85% で統括 vital を判定し owner ping
+oe-vitals --window 3600            # 拍動 staleness 窓 W を 1 時間へ
+oe-vitals --threshold 90           # context% 閾値 T を 90 へ
+oe-vitals -h | --help
+```
+
+- **2 検知器**: (1) **context**（`beat fresh + pane ¬gone + context_pct > T` → handoff 促し・#238 中核）(2) **death**（`pane が tmux 確定 gone` のときのみ・beat 鮮度非依存 → crash 疑い）。`alive/? × stale` は no-op（生存/不明を死に化かさない・hang 誤検知を実装しない）。**tmux 不在時は death 検知不可・context のみ degrade 動作**（偽陽性を出すより安全側）。
+- **統括スコープ化（board 突合）**: sidecar dir には statusLine を持つ全 session の beat が入るため、board（declared 層・PR-C）の `現統括` pane（`現統括:` 宣言行の最初の `%NNN`・見出し併記は除外）と sidecar の `pane` を突合し、現統括の sidecar だけを判定する。board path は `OE_BOARD_FILE` で与える（machine-local・既定なし）。**未設定 / 未解決 / 現統括 pane の sidecar 不在 → no-op**（未設定を「死」に化かさない）。orderly handoff 後は board の `現統括` が後任へ進み前任は scope 外＝想定内 handoff は ping しない（`gone × declared` のみ crash 疑い）。
+- **出力**: stdout に FLAG（cron ログ / 手動確認の durable signal）。owner ping は `wez notify`（best-effort）。**二重通知抑止**: verb 固有 seen cache（`${OE_EVENT_DIR}/oe-vitals/seen`・キー `<kind>|<session_id>`・通知成功時のみ追記。producer の sidecar dir `oe-heartbeat/` とは別 namespace）。
+- **read-only / 非検出**: 触れるのは sidecar dir / board / tmux ペイン存在（mux query）のみ。producer の sidecar は **GC しない**（削除しない＝read-only 観測姿勢）。exit は常に 0（observer）・usage エラーのみ 2。
+- **cron 配線**（登録は owner 環境依存・自動化しない）: verb 単体では回らない。周期実行の crontab / launchd エントリ設置は deployment 手順で、段階0 `oe-undelivered` と同じ out-of-session cron に相乗りする。`OE_BOARD_FILE` を必ず設定すること（board 突合の前提）。例:
+
+  ```
+  */15 * * * * OE_BOARD_FILE="$HOME/path/to/.oe/START-HERE-board.md" /path/to/oe-vitals >> "$HOME/.claude/state/oe-vitals/cron.log" 2>&1
+  ```
+
+- **既知の制約 / 運用前提**（開示）: board 突合は sidecar の `pane` が埋まっている前提（producer の `$TMUX_PANE` 伝播依存・PR-A は session_id 主キーで pane は best-effort）。未伝播なら scope できず no-op（sidecar が全て pane 空なら明示 warn）。実 board は PR-C schema へ未 migrate でも現行 freeform 行に対応。`wez notify` の cron 到達性は未検証 → stdout が durable signal。follow-up: board が `session_id` を declare（pane 非依存化）/ context の再 ping interval / inert 時の config-health ping。
+
+関連: producer `../../../canonical/claude/statusline/statusline-oe-heartbeat.sh`（sidecar 契約の正本）/ board schema `../scripts/validate-board.sh`・`../docs/decisions/2026-07-10-decision-238-board-schema.md`（`現統括` declared 層）/ template `bin/oe-undelivered`（read-only 観測 family）。
+
+---
+
 ## 主要な環境変数
 
 | 変数 | 用途 | 既定 |
@@ -437,5 +464,10 @@ oe-undelivered -h | --help
 | `OE_EVENT_PREVIEW_MAX` | message_sent の preview 切り詰め codepoint 数 | `100` |
 | `OE_UNDELIVERED_WINDOW_SEC` | oe-undelivered: 報告未達とみなす時間窓 W（秒）。`--window` が優先 | `1800`（30分） |
 | `OE_UNDELIVERED_NOW_EPOCH` | oe-undelivered: now（epoch 秒）の上書き。主にテストの age 決定論化用 | （`date +%s`） |
+| `OE_VITALS_WINDOW_SEC` | oe-vitals: 拍動 staleness 窓 W（秒）。`--window` が優先 | `1800`（30分） |
+| `OE_VITALS_CONTEXT_THRESHOLD` | oe-vitals: context% 閾値 T（0-100 整数）。`--threshold` が優先 | `85` |
+| `OE_VITALS_NOW_EPOCH` | oe-vitals: now（epoch 秒）の上書き。主にテストの鮮度決定論化用 | （`date +%s`） |
+| `OE_BOARD_FILE` | oe-vitals: 統括スコープ化に使う board（`現統括` pane を含む）の path。未設定なら scope 不能で no-op | （なし） |
+| `OE_HEARTBEAT_DIR` | oe-vitals が読む sidecar dir（**producer PR-A と共有**の env ノブ） | `~/.claude/state/oe-heartbeat` |
 
 本体エンジン側（`OE_POLL_INTERVAL` / `OE_CB_*` / `OE_TARGET_AI_*` / `OE_VERIFY_AI_*` 等）は [`../lib/constants.sh`](../lib/constants.sh) を参照。
