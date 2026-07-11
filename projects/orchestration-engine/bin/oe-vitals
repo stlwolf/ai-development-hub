@@ -141,7 +141,8 @@ OE_BOARD_FILE="${OE_BOARD_FILE:-}"
 
 # 単一ノブ OE_EVENT_DIR（oe-undelivered / event-bus.sh と一致）配下に verb 固有 seen cache を置く。
 # 注: 名前空間衝突回避のため seen dir は oe-vitals/（producer の sidecar dir = oe-heartbeat/ とは別）。
-OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+# HOME 未設定でも set -u で abort しないよう ${HOME:-} で守る（producer と同方針・実装SO codex 指摘）。
+OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME:-}/.claude/state}"
 SEEN_DIR="${OE_EVENT_DIR}/oe-vitals"
 SEEN_FILE="${SEEN_DIR}/seen"
 
@@ -187,10 +188,13 @@ seen_has() {
 # （colon 付き）ゆえ colon を必須にして見出しの併記を除外する。
 resolve_supervisor_pane() {
   local bf="$1" line
-  [[ -n "$bf" && -r "$bf" ]] || { printf ''; return; }
+  [[ -n "$bf" && -r "$bf" ]] || { printf ''; return 0; }
   line="$(grep -m1 -- '現統括:' "$bf" 2>/dev/null)" || true
-  [[ -n "$line" ]] || { printf ''; return; }
-  printf '%s' "$line" | sed -E 's/.*現統括//' | grep -oE '%[0-9]+' | head -1
+  [[ -n "$line" ]] || { printf ''; return 0; }
+  # 実装SO(claude/codex)指摘: `現統括:` 宣言はあるが %NNN が無い board では末尾 grep が rc1 を返し、
+  # set -o pipefail 下で pipeline→関数→SUP="$(...)" と伝播して set -e が script を落とす（exit 0
+  # 契約違反・graceful no-op に到達不能）。→ `|| true` で pane 未解決は空返し＝統括未解決の no-op へ流す。
+  printf '%s' "$line" | sed -E 's/.*現統括//' | grep -oE '%[0-9]+' | head -1 || true
 }
 # board の succession 状態を best-effort で抽出（death FLAG の human 向け注記のみ・logic は分岐しない）。
 # 同上（設計SO 反証）: 宣言 `succession:` の colon を必須にし、見出し `## succession 手順` を除外する。

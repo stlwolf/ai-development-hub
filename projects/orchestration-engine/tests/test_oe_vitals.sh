@@ -271,5 +271,18 @@ ckc "heartbeat 見つからない" "$OUT" "heartbeat が見つかりません"
 ckc "pane 空を明示（未伝播の疑い）" "$OUT" "pane 空"
 ncc "死に化かさない" "$OUT" "プロセス死"
 
+echo "[24] board に 現統括: 宣言はあるが %NNN 無し → graceful no-op（pipefail 落ちの回帰・実装SO 指摘）"
+mkfix f24; write_sidecar sup "$FRESH" 91 "%158"
+printf '%s\n' "# board" "" "現統括: （未定・pane 未記載）" "succession: 進行中" > "$BOARD"
+rc=0; OUT="$(run "$NOW")" || rc=$?
+ck  "exit 0（set -e で落ちない）" "0" "$rc"
+ckc "統括を特定できない no-op" "$OUT" "統括を特定できません"
+
+echo "[25] HOME 未設定 + OE_EVENT_DIR 未設定 → unbound で落ちない（exit 0・実装SO codex 指摘）"
+mkfix f25; board_frontmatter "%158" "完了"; write_sidecar sup "$FRESH" 40 "%158"
+rc=0; OUT="$(env -u HOME -u OE_EVENT_DIR PATH="$STUB_BIN:$PATH" OE_HEARTBEAT_DIR="$SIDEDIR" OE_BOARD_FILE="$BOARD" OE_VITALS_NOW_EPOCH="$NOW" bash "$OE_VITALS" 2>&1)" || rc=$?
+ck  "HOME/OE_EVENT_DIR 未設定でも exit 0" "0" "$rc"
+ckc "健全（正常に判定まで到達）" "$OUT" "は健全"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

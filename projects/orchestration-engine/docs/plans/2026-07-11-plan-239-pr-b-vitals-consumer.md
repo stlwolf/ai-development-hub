@@ -128,6 +128,19 @@ board は machine-local（gitignored `.oe/`・commit しない）ゆえ普遍的
 - **Alt-C: `oe-events.jsonl` 相関で統括 session を動的解決（board 不要）**。defer 理由: 統括が parent として event 痕跡を持つ前提 + 相関 jq＝重い（別 PR）。
 - **Alt: config-health owner ping**（inert watchdog を dedup 付きで 1回 ping）。defer 理由: kickoff の「未設定は no-op」方針。owner が inert 可視化を望むなら additive に足す。
 
+## 実装SO ゲート結果（`oe-review --lanes 3`・reviewed diff・弱SO・別レンズ）
+
+- **verdict: refuted（2/3）** / audit_id `20260711025400M3MK3ZMARMG3` / reviewed_sha `b7f266a` / diff_base master / lanes 3（codex・claude refuted / cursor survived）。出力（揮発）: `tmp/oe-review-20260711025400M3MK3ZMARMG3/`。設計SO と別 audit stream（lens=impl）。
+- **material 反証と対応**（いずれも実バグ・fix + 回帰テスト）:
+
+  | # | 反証（レーン） | 対応 |
+  |---|---|---|
+  | I1 | `resolve_supervisor_pane` 末尾 pipeline が `現統括:` 宣言あり・`%NNN` 無しのとき grep rc1 → pipefail→`SUP="$(...)"`→set -e で script exit 1（exit 0 契約違反・graceful no-op 到達不能）(claude/codex) | 末尾に `\|\| true`。pane 未解決は空返し＝統括未解決 no-op へ。回帰テスト [24] |
+  | I2 | `OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"` の裸 `${HOME}` が set -u 下で HOME 未設定時 unbound → 落ちる (codex) | `${HOME:-}` に（producer と同方針）。回帰テスト [25] |
+
+- cursor は survived（真理値表・seen 規律・board 抽出・bash 堅牢性を反証的に確認）。
+- fix 後 **77/77 green**（bash 5.2.37 / 3.2.57・shellcheck clean）。**設計SO + 実装SO の両ゲートを通過**（両方 refuted → material 反証を reconcile・弱SO ゆえ各1周）。
+
 ## スコープ / 触るファイル
 
 - 新規: `projects/orchestration-engine/bin/oe-vitals`（**着地済み**・read-only observer）。
