@@ -34,7 +34,7 @@ tags: [orchestration, succession, watchdog, seat, exploration, de-converge, rati
 
 - **この doc の立ち位置**: 決定は decision doc、実装は merged code + 各 PR の episode/plan が正本。decision doc は **結論 + 要約された根拠** を載せる（結論のみではない）。本 doc が担うのは **その手前の「探索と却下」の詳細** — decision doc が carry しない代替案の全体像・棄却ロジック・探索の軌跡。根拠の一部（seat defer の理由・feasibility の含意）は decision doc の根拠節と主題が重なるが、本 doc はそれを **却下・探索の側から詳細化**し、確定した結論の正本は decision doc を指す（重複させない意図で、重なる箇所は pointer 化して探索の新規分のみ残す）。
 - **verification status 凡例**: `[verified]`（実体を開いて確認）/ `[unverified-summary]`（一次を引くが entailment 未確認・多くは proposal の [verified] を二次で引くもの）/ `[speculation]`（根拠なし）。
-- **本 doc 自身の蒸留ゲート（disclosure）**: この蒸留は弱設計SO（`oe-refute --rubric exploration --lanes 3`・audit `20260712130417P0X8CSTCK5D5`）を1周通した。**refuted（claude/cursor が material に「過剰 prune」を指摘・codex はレーン error＝partial）**。指摘に応じて §3.4（作らなかった段階ロードマップ）追補・§4 の round findings に durable substance 追記・§1/§3 の前提修正・重複箇所の pointer 化を反映した。弱SO ゆえ 1周で reconcile し iterate しない。**源泉側の網羅性**（別 worktree の gitignored proposal 3本＝94k に他の durable 落ちが無いか）は反証レーンが source を直読できず、蒸留者の block 単位判断に依存する `[unverified-summary]`。plan-stage1 非再蒸留 scope は owner が committed source と突合し承認済（claude レーンも一次で妥当性を confirm）だが、**committed 側に残る plan-stage1 への「詳細と根拠」ポインタが docs/#238 掃除後に dead-end 化する残件**は follow-up として surface（[§6](#6-非対象既-committed-へのポインタ)）。
+- **本 doc 自身の蒸留ゲート（disclosure）**: この蒸留は弱設計SO（`oe-refute --rubric exploration --lanes 3`・audit `20260712130417P0X8CSTCK5D5`）を1周通した。**refuted（claude/cursor が material に「過剰 prune」を指摘・codex はレーン error＝partial）**。指摘に応じて §3.4（作らなかった段階ロードマップ）追補・§4 の round findings に durable substance 追記・§1/§3 の前提修正・重複箇所の pointer 化を反映した。弱SO ゆえ 1周で reconcile し iterate しない。**源泉側の網羅性**（別 worktree の gitignored proposal 3本＝94k に他の durable 落ちが無いか）は反証レーンが source を直読できず、蒸留者の block 単位判断に依存する `[unverified-summary]`。plan-stage1 非再蒸留 scope は owner が committed source と突合し承認済（claude レーンも一次で妥当性を confirm）。**committed 側に残っていた plan-stage1 への「詳細と根拠」ポインタ**は、その後 owner 決定 = (b) 張替（#250）で committed 正本へ張り替え済み（§6.1・掃除後 dead-end 化しない）。
 
 ---
 
@@ -159,12 +159,12 @@ seat 固有価値は `@seat` mailbox による mode3（チャネル脆弱）の*
   - 段階0 oe-undelivered（[#241](https://github.com/stlwolf/ai-development-hub/issues/241)）→ `episodes/2026-07-09-episode-239-report-undelivered-watchdog.md`
 - **昇格規則の文脈**: `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-doc-flow-stocktake.md`（§6.1 DJ-2 昇格義務 / DJ-10 discard 記録）
 
-### 6.1 残件（設計SO cursor レーンが surface・掃除前に owner 判断）
+### 6.1 残件の解消（設計SO cursor が surface → owner 決定 = (b) 張替・#250 で実施済み）
 
-本 doc は **arch レベルの探索・却下根拠**に絞り、plan-stage1 の実装詳細（Q3-Q8 open question 解消・cross-PR 統合 rationale）は再蒸留しない（owner 承認 scope・実装は merged code + PR 各 doc が正本）。ただし残件が1つある:
+本 doc は **arch レベルの探索・却下根拠**に絞り、plan-stage1 の実装詳細（Q3-Q8 open question 解消・cross-PR 統合 rationale）は再蒸留しない（owner 承認 scope・実装は merged code + PR 各 doc が正本）。当初この scope 下では committed→plan-stage1 の dead-pointer が残件だったが、**owner 決定 = (b) 張替**で解消済み:
 
-- **committed 側の dead-end ポインタ**: lean-arch decision（`:109`）/ PR-B plan（`:40`）/ board-schema decision（`:137`）は「詳細と根拠」の正本として **gitignored な `plan-stage1.md` を指したまま**。docs/#238 worktree を掃除（削除）すると `plan-stage1.md` が消え、これらのポインタが恒久的に dead-end 化する。
-- **選択肢（owner HG）**: (a) 掃除前に plan-stage1 の open question 解消部も committed へ移す（scope 拡大）／(b) ポインタを本 discussion or PR 各 doc へ張り替える／(c) pointer rot を許容し掃除する。→ **本 PR では実装せず surface のみ**。docs/#238 掃除の前に判断する。
+- **元の残件**: lean-arch decision / PR-B plan / board-schema decision / PR-A・PR-C episode が「詳細と根拠」の正本として **gitignored な `plan-stage1.md` / `ref-plan-stage1.md` を指したまま**で、docs/#238 worktree 掃除で恒久 dead-end 化する状態だった。
+- **解消（(b) 張替・#250）**: これらのポインタを、参照内容を現に持つ committed doc（本 discussion §4/§6・各 decision の §open questions / §2/§4・PR-B plan・各 PR episode）へ張り替えた。**各張替先に内容が実在することを確認済み（gap なし）** — Q3-Q8 の解消・段階1 実装（PR 分割）・設計 SO 反映はすべて committed に存在する。plan-stage1 のみに残る最深部の rationale は owner 承認 scope 上「追わない」とした「詳細」で、ポインタが約束する substance（解消済みの決定・実装・SO）は committed で満たされる。→ docs/#238 worktree 掃除後も dead-end 化しない。
 
 ---
 

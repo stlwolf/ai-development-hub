@@ -12,8 +12,8 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/pull/245"
     reason: "本 episode が closure する PR（producer + sync 非破壊 merge）"
   - type: source_material
-    ref: ".oe/ref-plan-stage1.md"
-    reason: "実装計画の正本（§2 PR-A / §4 Q4）。worktree external・gitignore"
+    ref: "projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md"
+    reason: "上位アーキ（producer=PR-A・§4 Q4 = producer 配備 sync 自動）の committed 正本。#250 で昇格元 working plan .oe/ref-plan-stage1.md（worktree external・gitignore）を (b) 張替し dead-end 化を解消。"
   - type: source_material
     ref: "projects/orchestration-engine/bin/oe-undelivered"
     reason: "段階0（#241）= sidecar 契約・observer family の template"
