@@ -1,9 +1,9 @@
 ---
 id: "01KNCK58PTF85AVQD4M9BFYV99"
-title: "蒸留パイプライン ドキュメントフォーマット定義"
-date: 2026-04-05
+title: "ドキュメントフロー定義 — 蒸留5段・作業層・遷移/ゲート/ライフサイクル"
+date: 2026-04-05                # 作成日（v2 改訂は 2026-07-13・#249）
 type: decision
-status: draft                # #19 MVP での実運用検証を経て stable に昇格予定
+status: stable               # v2（#249）で draft→stable 昇格（G6）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/15"
@@ -11,6 +11,12 @@ related:
   - type: parent_epic
     ref: "https://github.com/stlwolf/ai-development-hub/issues/10"
     reason: "Epic #10 Tier 2"
+  - type: derived_from
+    ref: "projects/orchestration-engine/docs/discussions/2026-07-12-discussion-doc-flow-stocktake.md"
+    reason: "v2 改訂の設計ブリーフ（DJ-2/DJ-5〜11）。2層構造の公認・型名分離・昇格義務・遷移/ゲート/ライフサイクル規範の出所"
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/249"
+    reason: "v2 改訂タスク（作業層公認・委譲文書の型名分離・昇格義務の規約化・draft→stable）"
   - type: design_context
     ref: "projects/orchestration-research/synthesis/architecture-sketch.md"
     reason: "§5 MVP 構成（エンベロープ・パーサー・ゲート）、§6 蒸留パイプライン"
@@ -26,36 +32,115 @@ related:
   - type: integration_target
     ref: "https://github.com/stlwolf/ai-development-hub/issues/19"
     reason: "#19 MVP 4-1 envelope / 4-2 output parse / 4-3 validation gate の入力契約"
-tags: [spec-card, format, ulid, epic-10, tier-2]
+  - type: future_hook
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/185"
+    reason: "raw log レイヤーの位置づけ・ライフサイクルの機械強制（規範と機構の分離）"
+tags: [spec-card, format, process, doc-flow, working-layer, promotion, ulid, epic-10, tier-2]
 ---
 
-# 蒸留パイプライン ドキュメントフォーマット定義
+# ドキュメントフロー定義 — 蒸留5段・作業層・遷移/ゲート/ライフサイクル
 
-## 1. 目的
+## 1. 目的とスコープ
 
-蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision）の各段階で生成されるドキュメントのフォーマットを統一する。
+AI 駆動開発のドキュメントフロー全体を定義する。**format（各文書のフォーマット）と process（層・遷移・ゲート・ライフサイクル・昇格）を1本に統合**する（層定義と遷移規則は密結合であり spec の本数を増やさない）。
 
-- [#19 MVP](https://github.com/stlwolf/ai-development-hub/issues/19) の 4-1（エンベロープ）/ 4-2（成果物パース）/ 4-3（検証ゲート）が消費する入力契約
-- `frontmatter 索引 + rg` による検索戦略（context-foundation.md §5 Q2 暫定判断）の実現基盤
-- ドキュメント間の参照追跡を ULID で機械的に行えるようにする
+- **format 面**: 蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision）の各段階で生成される文書のフォーマットを統一する。
+  - [#19 MVP](https://github.com/stlwolf/ai-development-hub/issues/19) の 4-1（エンベロープ）/ 4-2（成果物パース）/ 4-3（検証ゲート）が消費する入力契約
+  - `frontmatter 索引 + rg` による検索戦略（context-foundation.md §5 Q2 暫定判断）の実現基盤
+  - 文書間の参照追跡を ULID で機械的に行えるようにする
+- **process 面**: どのタスクがどの層から入り（§10）・どのゲートを通り（§11）・各文書がどう生き死にし（§12）・作業層の設計級コンテンツをどう昇格するか（§13）・方向転換をどう記録するか（§14）を規定する。
 
-## 2. 蒸留パイプラインと文書型
+このフローは実運用で **committed 蒸留層**と **machine-local 作業層**の2層に自然分化した（棚卸し 2026-07-12・DJ-2）。v2 は両層を正式構造として定義する（§2）。
 
-[document-format-design-principles.md](../../ideas/20260221/document-format-design-principles.md) の write:read 比率に基づき、フォーマット深度に差をつける。
+## 2. 2層構造（+ raw log 層）
+
+実運用は下記の2層 + raw log 層に分化している。どれが git 管理でどれが gitignored かを最初に確定させる。
+
+### 2.1 committed 蒸留層（正本・git 管理）
+
+discussion → kickoff → plan → episode → decision の**蒸留5段**。すべて git commit し、frontmatter 必須5項（id/title/date/type/status）+ ULID + 命名規約 + status enum を持つ（§3〜§9 の format 機構はこの層に適用）。蒸留の正本であり、後続タスク・別エージェント・人間が参照する信頼できる資産。
+
+### 2.2 machine-local 作業層（`.oe/`・gitignored・使い捨て）
+
+統括・委譲・監査の作業を回すための**使い捨て文書**。実運用で自然発生した合理的進化であり欠陥ではない（棚卸し §5）。特性:
+
+- **gitignored**（本リポジトリでは `.oe/` を `.gitignore` 済み）。
+- **frontmatter は最小または不要**（走査時 36本中 frontmatter 付きは 3本＝規律外だが正常）。
+- **machine-local な情報を含みうる**（pane 番号・絶対パス・稼働中セッション固有値）。全 commit はノイズと手間。
+- **消えてよい**（worktree 掃除で失われても原則問題ない）。
+- **ただし設計級コンテンツが生まれたら §13 昇格義務が発火**する（唯一の実害＝滞留を塞ぐ）。
+
+### 2.3 raw log 層（verbatim・別レイヤー）
+
+エージェント往復の verbatim ログ。curated な蒸留5段とは**別レイヤー**として扱う（#185 の方針と整合）。gitignored 運用（projects 側の `docs/raw-logs/`）が既にあり、committed 実体は rally-log 1本のみが例外。curated 文書へ蒸留する材料であって、それ自体は正本ではない。
+
+### 2.4 一枚絵
+
+```text
+committed 蒸留層（git 管理・正本）
+    discussion → kickoff(opt) → plan → episode → decision
+                        ↑ 昇格（§13・設計級 + durable な証拠/知見）
+machine-local 作業層（gitignored・使い捨て）
+    .oe/  : brief / report / claim / handoff / board / so-prompt / issue下書き / 作業層plan / 監査ワークベンチ / proposal
+    tmp/  : SO・探索の生出力（so-*/ ・oe-refute の output_dir ・dj-N-tree ・hypothesis-NNN 等・さらに揮発的）
+raw log 層（gitignored・verbatim・別レイヤー #185）
+    docs/raw-logs/
+```
+
+`tmp/` は作業層のさらに揮発的な下位区画（SO・探索・監査の生出力）。原則使い捨てだが、確定前の設計級証跡（`predecision-exploration` の `tmp/dj-N-tree.md` 等）が生じたら §13 昇格の対象になりうる（証跡は episode/decision へ蒸留）。
+
+## 3. 文書型カタログ
+
+### 3.1 committed 蒸留5段（閉じた enum）
+
+[document-format-design-principles.md](../../ideas/20260221/document-format-design-principles.md) の write:read 比率に基づき、フォーマット深度に差をつける。この5型は #19 検証ゲートが `type` enum として検証する**閉じた集合**。
 
 | 段階 | type 値 | write:read | フォーマット深度 | 目的 |
 |------|---------|-----------|----------------|------|
 | Discussion | `discussion` | 低（書く≒読む） | 最小: frontmatter のみ | 探索的。構造化されていない |
-| KickOff | `kickoff` | 中〜高 | 重い: frontmatter + セクションテンプレート | スコープ確定、方針の言語化 |
-| Plan | `plan` | 中 | 重い: frontmatter + セクションテンプレート | 実行可能な粒度まで分解 |
+| KickOff | `kickoff` | 中〜高 | 重い: frontmatter + セクションテンプレート | スコープ確定、方針の言語化。**オプション層**（§8・§10・DJ-7） |
+| Plan | `plan` | 中 | 重い: frontmatter + セクションテンプレート | 実行可能な粒度まで分解。**実装系で必須**（§10） |
 | Episode | `episode` | 中（読む方が多い） | 中間: frontmatter + 性質ガイド | 実行記録。本文はフリーフォーム |
 | Decision/ADR | `decision` | 高（読むが圧倒的に多い） | 重い: frontmatter + セクションテンプレート | 蒸留の最終成果 |
 
-## 3. 共通フロントマター
+### 3.2 作業層の型集合（開いた集合）
+
+作業層は committed 5段のような閉じた enum ではなく、**必要に応じて型が増える開いた集合**。規律の本体は型名ではなく次の**不変条件**である:
+
+- machine-local（pane 番号・絶対パス等を含みうる）+ gitignored + 消えてよい + **設計級が生まれたら昇格**（§13）。
+
+したがって「網羅」はこの不変条件が担い、下表の型集合は 2026-07-12 走査で観測された実例（illustrative・閉じた列挙ではない）:
+
+| 型 | 役割 | 備考 |
+|----|------|------|
+| `brief` | 統括（親）→ 子への scoped タスク指示書 | 固定節（plan-first / episode 義務 / 昇格規則 / 参照ポインタ）を持つ。**旧称 kickoff**（§3.3 移行注記）。フロー層 kickoff（§8・committed）とは別物 |
+| `report` | 子 → 親の報告・調査結果 | SOV 旧規約（DOCUMENT_CONVENTION v0）の `report` 型を概念的に包摂（統一は別 issue・§16） |
+| `claim` | 反証SO（`oe-refute`）へ渡す主張 doc | predecision-exploration の確定前証跡にも使う |
+| `handoff` | セッション間の引き継ぎ | 引き継ぎ完了後は消えてよい |
+| `board` | 統括の作業盤 | succession board（統括継承）等 |
+| `so-prompt` | SO 投入プロンプトの下書き | — |
+| `issue下書き` | `gh issue create` 前の草稿 | commit された issue が正本になれば消えてよい |
+| `作業層plan` | 委譲子の作業計画 | 本改訂の `.oe/plan-249-v2.md` が実例 |
+| `監査ワークベンチ` | 分析・監査の中間生成物 | — |
+| `proposal` | 設計級の探索文書 | **昇格対象**（§13・#238/#250 が初回実地例） |
+
+frontmatter は不要または最小でよい。設計級コンテンツ（proposal 等）は §13 で committed へ昇格する。
+
+### 3.3 型名分離と移行（brief）
+
+N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留フローの kickoff 層（設計文書・committed）と (b) 委譲用の指示書（子への引き渡し・`.oe/`）が別物で同名を共有していた — を、**委譲文書の型名を `brief` に確定**して解消する（DJ-2/DJ-7・owner 決定 2026-07-13）。
+
+- フロー層 kickoff（§8 テンプレ・committed・`plan-to-kickoff` 変換の出力）は**存続**する（層の廃止なし）。作業層の `brief` とは別物。
+- 現行の `.oe/kickoff-*.md`（旧称・委譲文書）は `.oe/brief-*.md` へ移行する。作業層は gitignored・使い捨てゆえ**一括改名は不要** — 新規 doc から `brief` を使い、旧 doc は自然に消える。
+- `oe-delegate` / `oe-send` の `--kickoff` flag のリネーム/alias は engine コード変更であり**本 spec の scope 外**。flag 整合は follow-up issue（engine 側）で扱う（§16）。
+
+## 4. 共通フロントマター
+
+以下の format 機構（§4〜§9）は **committed 蒸留層に適用**する。作業層は frontmatter 最小/不要（§2.2）。
 
 ### 必須フィールド
 
-全文書型で必須。
+全 committed 文書型で必須。
 
 ```yaml
 ---
@@ -72,22 +157,24 @@ status: <ステータス>    # draft | in-development | stable | deprecated
 文書型に応じて使用。
 
 ```yaml
-source: "<出典>"                        # 起点となる Epic / Issue（kickoff で使用）
-scope: canonical | <project-name>       # 影響範囲（kickoff で使用）
-related:                                # 型付き参照配列（§6 参照）
+source: "<出典>"                        # 起点となる Epic / Issue（kickoff/plan で使用）
+scope: canonical | <project-name>       # 影響範囲（kickoff/plan で使用）
+related:                                # 型付き参照配列（§7 参照）
   - type: <関係型>
     ref: "<パスまたは URL>"
     reason: "<関係の説明>"
 tags: [tag1, tag2]                      # 検索・フィルタ用タグ
-so:                                     # SO モード（kickoff/plan で必須・§3.1 参照）
+so:                                     # SO モード（plan で必須・§4.1 参照）
   design: weak | strong                 # 設計 SO のモード
   impl: weak | strong                   # 実装 SO のモード
   reason: "<なぜそのモードか>"
 ```
 
-### 3.1 SO モード（強/弱・kickoff/plan で選択）
+### 4.1 SO モード（強/弱・plan で選択）
 
-セカンドオピニオン（SO）を **強 SO / 弱 SO** の 2 モードとして定義し、kickoff/plan の frontmatter `so.design` / `so.impl`（＋ `reason`）で **設計段階に選択・記録**する。用途目安: 強＝高難易度・高リスク・不可逆／弱＝低〜中難易度・可逆。
+セカンドオピニオン（SO）を **強 SO / 弱 SO** の 2 モードとして定義し、frontmatter `so.design` / `so.impl`（＋ `reason`）で **設計段階に選択・記録**する。用途目安: 強＝高難易度・高リスク・不可逆／弱＝低〜中難易度・可逆。
+
+- **記録層**: `so` は **plan で必須**（kickoff オプション化〔DJ-7〕により plan が実装系の主経路のため）。kickoff を経由する場合は kickoff で記録してもよい。
 
 | | ツール | 終了条件 | partial（一部 timeout） | 0（全 timeout/空） |
 |---|---|---|---|---|
@@ -98,7 +185,9 @@ so:                                     # SO モード（kickoff/plan で必須�
 - 機構層（`SO_TIMEOUT`[既定 240]は**初回試行の基準**＝`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**・#22 の exit 0/1/2 分離・#196 の conservative 集約＝verdict 取れないレーンは `error` で survived を阻む）の上に乗る **consumer ルール**。「timeout で実質 SO をパスできる」を弱 SO の "0 はなし" フロアで塞ぐ。
 - 補足（機構境界）: exit0＋空（`success_empty`）は機構上 **partial に計上**されるため、「最低 1 レーン**実返却**」の担保は機構 exit code でなく **consumer ルール側**が負う。また `oe-refute`/`oe-review` の集約は #196 conservative＝**error レーンがあれば全体 `refuted`（保留）**で、弱 SO の generic partial=disclose より**厳しい側に倒す**（error は disclose せず保留）。
 
-## 4. ULID 規約
+## 5. ULID 規約
+
+committed 層のみ（作業層は ULID 不要）。
 
 ### フォーマット
 
@@ -126,22 +215,11 @@ print(ts + rand)
 ### ファイル命名との共存
 
 - **ULID**: frontmatter の `id` フィールドに格納。機械追跡用
-- **ファイル名**: `YYYY-MM-DD-{type}-{topic}.md` を維持。人間ナビゲーション用
-  - 例: `2026-04-05-decision-quality-gate-skip-prevention.md`
-  - ADR は `ADR-NNN-{topic}.md` も許容（既存プロジェクト互換）
+- **ファイル名**: `YYYY-MM-DD-{type}-{topic}.md` を維持。人間ナビゲーション用（§9）
 
 ULID はファイル名に含めない。理由: ファイル名が長くなり人間可読性が下がる。`rg "^id:" docs/` で ULID → ファイルの逆引きは十分に高速。
 
-### 将来拡張: 双方向トレーサビリティ（スコープ外）
-
-specre の `@specre <ULID>` パターン — ソースコード中にマーカーを配置し、ドキュメント↔コード間の参照を追跡する。本定義では規約のみ記載し、ツール実装は #19 MVP 以降で検討。
-
-```ruby
-# @doc 01KNCK58PTF85AVQD4M9BFYV99
-class SomeClass
-```
-
-## 5. Status ライフサイクル
+## 6. Status ライフサイクル
 
 specre の status enum を採用。
 
@@ -160,7 +238,7 @@ draft → in-development → stable → deprecated
 
 遷移は強制しない。スキップ・逆行を許容する（specre と同方針）。
 
-## 6. Related 型の語彙
+## 7. Related 型の語彙
 
 `related[]` 配列の `type` フィールドに使える値。既存の kickoff/ADR ドキュメントで使用されている型を棚卸しして明文化。
 
@@ -172,7 +250,7 @@ draft → in-development → stable → deprecated
 | `design_context` | 設計判断の背景 | architecture-sketch, context-foundation |
 | `integration_target` | 統合・参照先 | 既存スキル、コマンド |
 | `future_hook` | 将来の接続点 | 未着手の Issue、構想段階の機能 |
-| `derived_from` | 派生元 | ADR が別の ADR から派生 |
+| `derived_from` | 派生元 | ADR が別の ADR / discussion から派生 |
 | `supersedes` | 置き換え対象 | 新 ADR → 旧 ADR |
 | `sibling` | 同列の成果物 | 同一 Epic 内の別 Issue |
 | `evidence_for` | 根拠を提供 | 失敗事例 → 設計要件 |
@@ -181,7 +259,11 @@ draft → in-development → stable → deprecated
 
 新しい型が必要な場合は追加してよい。ただし既存の型で表現できるなら既存を使う。
 
-## 7. 文書型別テンプレート
+**昇格の参照（§13）**: 昇格元の作業層 doc（gitignored）を `related` の `ref` で指さない — 掃除で dead-end 化する（§13.4 dead-pointer）。provenance は本文の散文注記（「元は `.oe/...` に在った」）で残し、`ref` には committed の昇格先を張る。
+
+## 8. 文書型別テンプレート
+
+committed 蒸留5段のテンプレート。
 
 ### Discussion
 
@@ -198,9 +280,9 @@ tags: [topic-tags]
 ---
 ```
 
-### KickOff
+### KickOff（オプション層）
 
-既存パターン（`docs/plans/issue#10/*.md`）を明文化。
+**フロー層 kickoff**（committed・設計文書・`plan-to-kickoff` 変換の出力）のテンプレート。オプション層であり、使う条件は §10 を参照（対話でスコープ確定できない大型 / SO・外部共有への投入時）。**作業層の委譲文書 `brief`（§3.2）とは別物**。既存パターン（`docs/plans/issue#10/*.md`）を明文化。
 
 ```yaml
 ---
@@ -219,7 +301,7 @@ related:
     ref: "<URL>"
     reason: "<説明>"
 tags: [tags]
-so:                          # SO モード（必須・§3.1）
+so:                          # SO モード（§4.1）
   design: weak | strong
   impl: weak | strong
   reason: "<なぜそのモードか>"
@@ -233,12 +315,12 @@ so:                          # SO モード（必須・§3.1）
 ## 完了条件
 ## ステップ
 ## リスク・未確認事項
-## セカンドオピニオン検証（frontmatter `so` のモードに従う・§3.1）
+## セカンドオピニオン検証（frontmatter `so` のモードに従う・§4.1）
 ```
 
-### Plan
+### Plan（実装系で必須）
 
-`kickoff-to-plan` スキルの出力形式と整合。frontmatter は KickOff と同構造。
+`kickoff-to-plan` スキルの出力形式と整合。frontmatter は KickOff と同構造。kickoff を経由せず**直生成**する経路が主（DJ-7）。
 
 ```yaml
 ---
@@ -249,21 +331,21 @@ type: plan
 status: draft
 related:
   - type: derived_from
-    ref: "<kickoff ファイルパス>"
+    ref: "<kickoff ファイルパス>"    # kickoff 経由の場合
     reason: "<説明>"
 tags: [tags]
-so:                          # SO モード（必須・§3.1）
+so:                          # SO モード（必須・§4.1）
   design: weak | strong
   impl: weak | strong
   reason: "<なぜそのモードか>"
 ---
 ```
 
-本文は `kickoff-to-plan` SKILL.md の出力フォーマット定義に従う（TODO 項目 + Gate + Context）。
+本文は `kickoff-to-plan` SKILL.md の出力フォーマット定義に従う（TODO 項目 + Gate + Context）。**plan は実行可能な粒度（コマンドレベル）まで分解する**（DJ-11 大原則）。
 
 ### Episode
 
-frontmatter + 性質ガイド。本文はフリーフォーム（ハイブリッド構成）。
+frontmatter + 性質ガイド。本文はフリーフォーム（ハイブリッド構成）。ライフサイクル規範は §12。
 
 ```yaml
 ---
@@ -330,7 +412,9 @@ tags: [tags]
 この決定により何が変わるか / 注意点
 ```
 
-## 8. ファイル命名規約
+## 9. ファイル命名規約
+
+### committed 層
 
 ```
 YYYY-MM-DD-{type}-{topic}.md
@@ -349,33 +433,178 @@ YYYY-MM-DD-{type}-{topic}.md
 | KickOff / Plan | `docs/plans/{issue-or-epic}/` |
 | プロジェクト横断の Episode | `docs/episodes/` |
 | プロジェクト固有の Episode | プロジェクト固有ディレクトリ（規約は各プロジェクト） |
-| Discussion | `docs/draft/` または `ideas/` |
+| Discussion | `docs/draft/` または `ideas/`・プロジェクト固有は `projects/{name}/docs/discussions/` |
 
-## 9. #19 MVP との接続
+### 作業層（`.oe/`）
+
+```
+.oe/{type}-{topic}.md
+```
+
+- `{type}`: `brief`, `report`, `claim`, `handoff`, `board`, `so-prompt` 等（開いた集合・§3.2）
+- 日付・ULID は不要（machine-local・使い捨て）。例: `.oe/brief-249.md` / `.oe/plan-249-v2.md` / `.oe/report-238.md`
+- 旧称の `.oe/kickoff-*.md`（委譲文書）は `.oe/brief-*.md` へ移行（§3.3）
+
+## 10. 遷移規則（タスク種別 → 入口層）
+
+タスク種別ごとに、どの層から入るか + 省略条件。
+
+タスク種別ごとに、どの層から入るか + 省略条件。この表は**骨格**（DJ-6 が明示的にそうスコープした）であり、全タスク種別の網羅的な決定表ではない。境界は下の判定順で捌く。
+
+| タスク種別 | 入口層 | 省略条件 / 注記 |
+|-----------|--------|----------------|
+| 設計判断が多い | discussion（QDD 併用） | `predecision-exploration` を通す（§11 ゲート1） |
+| スコープ確定済みの実装 | plan（直生成） | kickoff 省略可・**plan は必須** |
+| 大型（対話でスコープ確定不能）/ SO・外部共有への投入 | kickoff → plan | `plan-to-kickoff` 変換。kickoff はオプション層 |
+| 軽微修正 | 層なし直実装 | episode opt-out（1行の記録で可） |
+| 調査・研究 | research ノート or discussion | `research-intake` / `oss-research-session` |
+
+**不変則**: `plan` は実装系タスクで**必須**（kickoff 経由でも直生成でも）。`kickoff` はオプション層（DJ-7・層の廃止はしない。既存 kickoff doc と `plan-to-kickoff` スキルは壊さない）。
+
+**判定順（軸が直交し複数行に該当するとき・境界の解消）**:
+
+1. **設計判断が絡むか** — 絡むなら discussion から（省略できるのは対話でスコープを確定でき QDD 不要と判断できるときのみ）。
+2. **実装を伴うか** — 伴うなら **plan 必須**。**「軽微修正」は plan 必須則の唯一の例外**（可逆・小・自明で設計判断を含まないもの。判断に迷うなら軽微ではない＝plan を書く）。bugfix / 緊急 hotfix も設計判断が無ければ軽微側、有れば plan 側。
+3. **迷ったら重い側（plan・discussion）に倒す** — 過小な層選択（層なしで済ませて設計級を作業層に滞留させる）が実害（§13）だから。
+4. **単位**: 入口層は **issue 単位**（複数 issue 束ね / Epic 横断は各 issue に分けるか、束ねる場合は最大スコープの種別で判定）。docs-only 変更は「文書＝成果物」ゆえ実装系として扱う（本 #249 改訂が実例＝作業層 plan を使い plan 必須側）。
+5. **親→子委譲**: 統括が入口層を決め、子には `brief`（§3.2）で渡す。子の作業も同じ判定順に従う（実装系なら子が plan を書く）。
+
+**research ノートの位置づけ**: `research-intake` / `oss-research-session` の出力は committed 蒸留5段（§3.1 の閉じた enum）の外の独立成果物（`docs/research/`・別スキーマ `status: research-complete` 等）。入口としては使えるが 5型ではない。そこから設計へ進むときは discussion / plan へ接続する（research ノート自体を蒸留5段に混ぜない）。
+
+## 11. ゲート配置
+
+フロー上のゲート6点と、各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。
+
+```text
+[設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
+                (2 は plan 確定前)
+```
+
+| # | 位置 | ゲート | routing スキル / ルール |
+|---|------|--------|------------------------|
+| 1 | 設計判断の確定前 | ゼロベース代替探索を最低1回 | `predecision-exploration` |
+| 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
+| 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
+| 4 | 実装 → PR | 実装SO（`so.impl`）+ テスト実行 + Copilot | `so-compare`/`peer-ai-review` + `copilot-review-response` |
+| 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed` 明示）→ owner マージ（HG） | `episode-retrospective` |
+| 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定（§13） | `branch-finish` + §13 |
+
+ガードレール枠（#248）の固定節はこの配置図を参照する。
+
+## 12. ライフサイクル規範
+
+episode を中心とした文書の生き死にの規範。**規範をここに置き、機械強制（hook・oe 結合）は #185 に残す**（規範と機構の分離）。
+
+- **着手時に枠を作る**: episode はタスク着手時に枠を作成する（closure 時に一から書き起こさない）。
+- **リアルタイム追記を原則**とする: 作業の進行に合わせて追記する。後追いで再構成した場合は冒頭に `reconstructed` を明示する（追記ログと証拠価値が違う）。
+- **closure はマージ前**: episode の closure（status 確定・振り返り）は PR レビュー後・**マージ前**に行う（ゲート5）。
+- **tier は痕跡価値で決める**: opt-out / standard / heavy の判定は `episode-retrospective` に従う（痕跡の価値＝非自明な文脈の繋がりがあるか）。
+
+## 13. 昇格義務（作業層 → committed）
+
+作業層に生まれた**設計級コンテンツ**（および durable な証拠・知見）を committed 蒸留層へ昇格して commit する義務（DJ-2）。git の外にこれらが滞留する唯一の実害（棚卸し §5）を塞ぐ。#238/#250 が初回実地例。
+
+### 13.1 トリガー（いつ昇格するか）
+
+**判定は型名でなく内容で行う**（`report` だから除外・`proposal` だから対象、ではない）。同じ文書に設計級と運用情報が混在しうるので、混合文書は**該当ブロックのみ抽出**して昇格する。
+
+- **対象（内容）**:
+  - 設計級 — 探索の軌跡・代替案の全体像・却下ロジック・設計根拠・divergence の reconcile。
+  - durable な証拠・知見 — 監査結果・再現条件・計測値・確定した技術的事実・失敗記録 / negative knowledge（#62）。設計判断でなくても後の消費者に価値が残るもの（`episode-retrospective` が独立の保存対象として扱う種類）。
+- **非対象（内容）**: pane 番号・絶対パス・使い捨ての委譲指示・運用連絡など、その場限りの運用情報。`brief` 本体や `report` / `board` / `handoff` は**通常これに当たる**が、設計級 / durable が混入していればその部分は対象（型で免除されない）。
+- **判定タイミング**:
+  - (1) **episode closure 時**（§11 ゲート5・マージ前）＝ 昇格**候補の洗い出し**（episode の「蒸留シグナル / 昇格候補」節）。
+  - (2) **昇格の実行**は §11 ゲート6（merge 後の後始末）＝ **worktree 掃除の前**に行う（掃除で git の外に消えるのを防ぐ）。
+  - (3) **catch-all（規範）**: 上記2点はマージ・closure・掃除に錨付くため、それらを通らない滞留経路が残る（closure せず放棄・pane/セッション終了・PR/merge 未達の調査・メイン worktree の `.oe/` が掃除されない・複数 worktree への分散）。これを塞ぐため、**handoff / pane 終了時**と**定期棚卸し**を昇格判定の catch-all とする（散在時は「その設計級を生んだセッションの担当」が昇格責任を負う）。**機械強制は #185 に残す**（規範と機構の分離・§12）。
+- **層の射程**: 作業層（`.oe/`）だけでなく、`tmp/` の確定前設計級証跡（§2.4）と raw log 層（§2.3）に設計級が生じた場合も対象（raw log は curated へ蒸留する材料＝rally-log 46k が実例）。
+
+### 13.2 判定基準（include / exclude・#250 実地例）
+
+**落とす（exclude）**:
+
+- **①既出**: committed（decision / episode / merged code / PR plan）に要旨が既出のもの。**grep で欠落を確認**してから判定する（蒸留者の自己申告に寄せない）。ただし grep は逐語一致で意味的な言い換え・要約・複数文書への分散を捕捉できない＝「既出」判定の**必要条件であって十分条件ではない**。grep ヒットゼロは残す方向の強い根拠だが、ヒットありでも意味的包含を人手で確認する。**疑わしきは残す**（誤 drop より重複の方が害が小さい・危険側に倒さない）。
+- **②supersede**: 後段の作業で反証・上書きされた根拠（前提そのもの）。残すと古い前提を復活させ読者を誤導するため「既出」より**強い** drop 理由。ただし drop するのは**覆された前提そのもの**であって、「**なぜ覆ったか**」（reconcile・転回の理由）は durable な negative knowledge として**残す**（§14 方向転換の記録へ・全面 drop しない）。
+- **③boilerplate / 全文**: test 方針・config 詳細・link list・凡例・全文転写（durable な「なぜ」を含まない）。
+
+**残す（include）**:
+
+- committed にゼロか要約のみ + durable なもの — 代替案の全体像・却下ロジック・探索の軌跡・divergence の reconcile 記録（decision が結論に圧縮して落とす why-not）。
+
+**境界の運用**: 「decision は結論のみ」は不正確（decision は結論 + 要約根拠を持つ）。よって重なる結論は **pointer 化**し、探索・却下側の詳細のみ残す（全否定でも全転写でもない中間）。
+
+### 13.3 昇格先の型選択
+
+昇格先は**内容の種類**で選ぶ（昇格元が `proposal` か `作業層plan` か `report` かは問わない）:
+
+- 探索・却下・軌跡が主 → **discussion**（DJ-6 整合）
+- 確定した判断 → **decision**
+- 実行記録 → **episode**
+- durable な証拠・知見（監査・再現条件・negative knowledge） → 文脈により episode / decision（該当タスクの episode 内、または独立の decision）
+
+**作業層 plan の扱い**: 実装計画そのものは merged code + PR 各 doc が正本ゆえ再蒸留しない。plan に残る**設計級部分のみ**（棄却案・根拠）を discussion / decision へ（#250 の plan-stage1 判断＝再蒸留せず、残る設計級は arch discussion へ・実装詳細は張替で担保）。
+
+### 13.4 dead-pointer の張替（昇格の1単位）
+
+昇格は「内容の移設」だけでなく「参照の張替」までを1単位とする（#250 (b)）。
+
+- **問題**: committed doc が gitignored な作業層 doc を「正本」として参照していると、worktree 掃除で恒久 dead-end 化する。
+- **規則**: 昇格時に committed→working の参照を、昇格先の committed doc へ **repoint** する。
+- **gap 検証**: 張替先に substance が実在することを一次確認（grep）。在れば張替で完結、無ければ内容そのものを移設する。
+- **保持の例外**: provenance breadcrumb（元は `.oe/...` に在った旨）は散文で保持可（`related` の `ref` にはしない・§7）。実行時の自己レビュー記録（事実・失敗ログ）は verbatim 保持（張替は履歴の改変になる）。
+
+### 13.5 checkpoint（過剰 prune の防止）
+
+計画で「残す」と決めたブロックを成果物で落とすと過剰 prune になる（#250 の失敗）。**include/exclude 表 → 成果物の逐次突合**を昇格手順の checkpoint に置く。表は昇格作業の plan（作業層 plan・#250 では `.oe/plan-250-distill.md`）に書き、成果物 doc と突合する（機械突合できると強いが、現状は plan-first ゲートと設計SO が代替）。
+
+### 13.6 #248 からの参照粒度
+
+ガードレール固定節が参照できる1行版:
+
+> 設計級コンテンツは closure / 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。
+
+詳細基準は本 §13 が正本。
+
+## 14. 方向転換の記録
+
+調査で前提が覆ったときの記録は、**新しい層・義務を作らない**（DJ-10）。
+
+- 覆した先の文書（plan / episode）に **discard 記録の1節**（何を捨てたか + なぜ）を置く規範のみとする。`reframe-on-stall-rule` の reconcile 原則と同一。
+- その転換に長期価値があるかの判定は既存の昇格ゲート（episode closure → decision・§13）に任せ、**記録時点で判断を迫らない**。
+- 実践例: `docs/plans/.../2026-07-11-plan-247...` §2.1 / wez notify episode（`projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md`）。
+
+## 15. #19 MVP との接続
+
+committed 層の入力契約（§4〜§9）を #19 MVP が消費する。
 
 ### 4-2 パーサーが期待するもの
 
 - YAML frontmatter ブロック（`---` で囲まれた先頭領域）
 - 必須フィールド 5つ（`id`, `title`, `date`, `type`, `status`）が存在すること
-- `type` の値が定義済み enum に含まれること
+- `type` の値が定義済み enum（§3.1 の5型）に含まれること
 
 ### 4-3 検証ゲートが検証するもの
 
 - 必須フィールドの存在と型
 - `status` の値が定義済み enum に含まれること
-- `id` が ULID 形式（26文字・Crockford Base32 文字集合）を満たすこと（MVP では §4「バリデーション方針」のとおり構文チェックのみ。厳密なタイムスタンプ検証は将来拡張）
+- `id` が ULID 形式（26文字・Crockford Base32 文字集合）を満たすこと（MVP では §5「バリデーション方針」のとおり構文チェックのみ。厳密なタイムスタンプ検証は将来拡張）
 - `related[].ref` が解決可能であること（ファイルパスの場合は存在確認、URL の場合はスキップ可）
 
-## 10. 将来拡張（スコープ外）
+作業層（§2.2）は検証ゲートの対象外（frontmatter 最小/不要）。
+
+## 16. 将来拡張（スコープ外）
 
 - **`@doc <ULID>` 双方向トレーサビリティ**: specre の `@specre` パターンを流用し、ソースコード↔ドキュメント間の参照を追跡
-- **ハーネス自動強制**: フック（#24）でドキュメント生成時にフォーマット準拠を検証 → reject
+- **ハーネス自動強制**: フック（#24）でドキュメント生成時にフォーマット準拠を検証 → reject。作業層の昇格義務（§13）・ライフサイクル規範（§12）の hard 化もここに接続
 - **`outputs:` フィールド**: NLAH State Semantics 対応。ドキュメントが生成する成果物の宣言
 - **index.json 自動生成**: specre の `specre index` 相当。frontmatter を集約した索引ファイル
 - **既存ドキュメントの段階的移行**: 既存の kickoff/ADR に `id`(ULID) / `status` を遡及追加（必要性が出たら）
+- **`brief` 型名と engine flag の整合**: `oe-delegate` / `oe-send` の `--kickoff` flag を `brief` 型名に整合させる（engine コード変更・follow-up issue）
+- **SOV 旧規約の統一**: `projects/second-opinion-verification/docs/DOCUMENT_CONVENTION.md`（v0・`report` 型・`keywords`/`use_when` 等）を canonical へ吸収するか deprecate するか（優先度低・別 issue・§3.2）
+- **raw log の長期ストア**: raw log 層（§2.3）の保全・検索の機械化（#185）
 
 ## ソース
 
+- [document-flow-stocktake discussion](../../projects/orchestration-engine/docs/discussions/2026-07-12-discussion-doc-flow-stocktake.md) — v2 改訂の設計ブリーフ（DJ-2/DJ-5〜11）
 - [specre](https://github.com/yoshiakist/specre) — ULID・status enum・仕様カードの参考（MIT License）
 - [document-format-design-principles.md](../../ideas/20260221/document-format-design-principles.md) — write:read 比率、フォーマット目的分類
 - [context-foundation.md](../../projects/orchestration-research/synthesis/context-foundation.md) — コンテキスト種類と保存フォーマット
