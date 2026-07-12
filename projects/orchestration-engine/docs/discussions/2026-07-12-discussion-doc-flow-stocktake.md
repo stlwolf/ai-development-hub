@@ -79,6 +79,17 @@ cockpit 統括セッション上で owner と question-driven-design により�
 - **DJ-3**: **ガードレール枠 v0 = スキル + 固定テンプレ**。内容: フロー全体地図（5段+作業層+昇格規則）/ 委譲 kick 文書に必ず入れる固定節（plan-first・episode 義務・昇格規則・参照ポインタ）のテンプレ / 新 repo cold-start 手順。まず soft で運用し、効いた節だけ oe-delegate の機械注入 → hook へ段階 hard 化（エンジンへの本組み込みは将来）。
 - **DJ-4**: issue 分割は新規3本 + 既存接続（#217 / #194 / #185）。
 
+## 6.1 追補: フロー詳細規定の合意（同日・第2ラウンド QDD）
+
+棚卸し後、owner から「フロー自体をもっと細かく規定したい」との方向が出たため、同セッションで QDD を継続。以下を #249（v2 改訂）への owner 承認スケルトンとして確定した。
+
+- **DJ-5（置き場）**: 遷移規則・ゲート配置・ライフサイクル規範は **document-format.md v2 に統合**（format + process の1本。層定義と遷移規則は密結合であり、spec の本数を増やさない）。
+- **DJ-6（遷移規則）**: タスク種別 → 入口層の表 + **省略条件の明文化**を v2 に置く。骨格: 設計判断が多い→discussion から（QDD 併用）/ スコープ確定済み実装→plan から / 軽微修正→層なし直実装（episode opt-out 1行可）/ 調査・研究→research ノート or discussion。
+- **DJ-7（kickoff 層の去就）**: **kickoff は元々オプションが本来の意図**（文脈上発生したら作る・必ずしも無い）— 規約が明文化していなかっただけであり、v2 で「オプション層 + 使う条件（対話でスコープ確定できない大型 / SO・外部共有への投入時の plan-to-kickoff 変換）」を明文化する。**plan は必須**（実装系タスク。kickoff 経由でも直生成でもよい）。層の廃止はしない（既存 kickoff doc と plan-to-kickoff スキルは壊さない）。
+- **DJ-8（ゲート配置）**: フロー上の位置を v2 で図式化する6点 — (1) 設計判断確定前 = predecision-exploration（ゼロベース1回）(2) plan 確定前 = 設計SO（`so.design`）(3) plan→実装 = owner HG（implementation-gate）(4) 実装→PR = 実装SO + テスト実行 + Copilot (5) PR→merge = episode closure（マージ前・後追いは reconstructed 明示）→ owner マージ（HG）(6) merge 後 = issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定。ガードレール枠（#248）の固定節はこの配置図を参照する。
+- **DJ-9（ライフサイクル）**: 規範（episode はタスク着手時に枠作成・リアルタイム追記原則・closure はマージ前・tier は痕跡価値）は v2 spec に置き、**機械強制（hook・oe 結合）は #185 に残す**（規範と機構の分離）。
+- **DJ-10（方向転換の記録）**: 調査で前提が覆った時の記録は**新しい層・義務を作らず**、「覆した先の文書（plan/episode）に discard 記録の1節（何を捨てたか + なぜ）を置く」規範のみとする（reframe-on-stall の reconcile 原則と同一。実践例 = #247 plan §2.1、wez notify episode）。その転換に長期価値があるかの判定は既存の昇格ゲート（episode closure → decision）に任せ、記録時点で判断を迫らない。
+
 ## 7. 分割 issue
 
 - ガードレール枠 v0 スキル（DJ-3 の実装）→ #248
@@ -89,7 +100,7 @@ cockpit 統括セッション上で owner と question-driven-design により�
 ## 8. 保留・未解決
 
 - 委譲文書の新名称（kick / brief / task 等）— v2 改訂（#249）で確定。
-- kickoff 層と plan 層の境界曖昧（N1 の (a) 側）— v2 改訂で「kickoff を独立層として維持するか plan に統合するか」を論点化。
+- ~~kickoff 層と plan 層の境界曖昧~~ — **解決済（DJ-7・§6.1）**: kickoff はオプション層・plan は必須。
 - G4（昇格率）の適正水準 — 全昇格は非目標。episode-retrospective の昇格判定を通す運用が先（#217/#185 側）。
 - 強制の hard 化（hook）— v0 スキルの運用実績で「効いた節」を特定してから（#24 hook epic と接続）。
 - second-opinion-verification の旧規約（DOCUMENT_CONVENTION v0・report 型）の統一 — v2 改訂の scope 判断に委ねる（優先度低）。
