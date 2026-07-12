@@ -89,6 +89,7 @@ cockpit 統括セッション上で owner と question-driven-design により�
 - **DJ-8（ゲート配置）**: フロー上の位置を v2 で図式化する6点 — (1) 設計判断確定前 = predecision-exploration（ゼロベース1回）(2) plan 確定前 = 設計SO（`so.design`）(3) plan→実装 = owner HG（implementation-gate）(4) 実装→PR = 実装SO + テスト実行 + Copilot (5) PR→merge = episode closure（マージ前・後追いは reconstructed 明示）→ owner マージ（HG）(6) merge 後 = issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定。ガードレール枠（#248）の固定節はこの配置図を参照する。
 - **DJ-9（ライフサイクル）**: 規範（episode はタスク着手時に枠作成・リアルタイム追記原則・closure はマージ前・tier は痕跡価値）は v2 spec に置き、**機械強制（hook・oe 結合）は #185 に残す**（規範と機構の分離）。
 - **DJ-10（方向転換の記録）**: 調査で前提が覆った時の記録は**新しい層・義務を作らず**、「覆した先の文書（plan/episode）に discard 記録の1節（何を捨てたか + なぜ）を置く」規範のみとする（reframe-on-stall の reconcile 原則と同一。実践例 = #247 plan §2.1、wez notify episode）。その転換に長期価値があるかの判定は既存の昇格ゲート（episode closure → decision）に任せ、記録時点で判断を迫らない。
+- **DJ-11（ガードレールと個別スキルの責務分離・二層構造）**: ガードレール（#248）が持つのは **(a) 要素ドキュメントごとの大原則1行**（plan 必須 / plan は実行可能粒度＝コマンドレベルまで / episode は着手時に枠・リアルタイム追記・closure はマージ前、等）と **(b) 遷移・ゲートごとの「必ず通すスキル」ルーティング表**のみ。**中身の品質基準は個別スキルに委ねる**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract — 表はほぼ既存スキルで埋まる）。これによりガードレールは薄く安定し、基準は各スキルで独立にイテレートできる。**唯一の穴 = plan 直書き時の本文基準スキル**（kickoff オプション化〔DJ-7〕により plan 直書きが主経路になったため）だが、**今は作らない** — 大原則1行を guardrail 固定節に直書きして運用し、1行で足りないとドッグフードで実証されたら plan-authoring スキルを切る（do-less・#247 と同じ判断構造）。
 
 ## 7. 分割 issue
 
