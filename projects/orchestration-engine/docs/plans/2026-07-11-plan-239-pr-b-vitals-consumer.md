@@ -37,7 +37,7 @@ so:
 - 親 `%158` から委譲された子セッション。**マージ・worktree 掃除はしない**（親/owner の HG）。実装子は worktree 作成 → 実装 → テスト → SO → PR 作成 → 報告まで。
 - PR-B = statusLine 拍動 producer（PR-A・master マージ済 `7f741e6`）が session 毎に書く sidecar を **out-of-session cron から読み**、統括の **context% 肥大接近（mode1・#238 中核）** と **プロセス死** を検知して owner に ping する read-only 姉妹 verb。段階0 `oe-undelivered` の観測 family（`liveness_of` / `disp` / `fmt_age` / seen cache dedup / owner ping / exit 0 / `--window`+env+`NOW_EPOCH`）を template として踏襲する（再実装しない）。
 - **入力面が段階0 と別**: `oe-undelivered` は oe-events.jsonl の frontier（未ack）を読むが、PR-B は **sidecar dir** を読む。→ frontier read の jq は再コピーしない。
-- 上位アーキ（lean + sidecar・seat defer）と Q3-Q8 推奨は HG 確定済（親 plan `.oe/plan-stage1.md` §2/§4）。本 plan の射程は **その下の実装レベル設計判断のみ**。
+- 上位アーキ（lean + sidecar・seat defer）と Q3-Q8 推奨は HG 確定済（上位アーキ = `projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md`、Q3-Q8 推奨の要約は同 decision の §open questions。#250 で昇格元 working plan `.oe/plan-stage1.md` を (b) 張替）。本 plan の射程は **その下の実装レベル設計判断のみ**。
 
 ## sidecar 契約（PR-A が正本・本 consumer が read）
 

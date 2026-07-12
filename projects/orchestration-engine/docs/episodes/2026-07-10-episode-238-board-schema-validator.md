@@ -22,7 +22,7 @@ related:
 
 ## Context / なぜ
 
-#238「統括 succession を第一級概念に」の段階1 は3 PR に分かれ（PR-A statusline producer / PR-B watchdog consumer / PR-C board schema）、本作業は **PR-C**（declared 層）を親 pane `%144` から委譲されたもの。cockpit 統括の succession board に構造と鮮度を強制する schema と advisory validator を与える。board 実体は machine-local・ephemeral のため commit せず、in-repo には spec doc と validator のみを足す（plan `.oe/ref-plan-stage1.md` §2 PR-C / §4 Q8）。
+#238「統括 succession を第一級概念に」の段階1 は3 PR に分かれ（PR-A statusline producer / PR-B watchdog consumer / PR-C board schema）、本作業は **PR-C**（declared 層）を親 pane `%144` から委譲されたもの。cockpit 統括の succession board に構造と鮮度を強制する schema と advisory validator を与える。board 実体は machine-local・ephemeral のため commit せず、in-repo には spec doc と validator のみを足す（設計は `projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md` §2 PR-C / §4 Q8。#250 で昇格元 working plan `.oe/ref-plan-stage1.md` を (b) 張替）。
 
 ## 事実・失敗（実行ログに残るもの・選択的省略しない）
 

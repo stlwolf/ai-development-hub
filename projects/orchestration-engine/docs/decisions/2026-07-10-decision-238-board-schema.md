@@ -9,8 +9,8 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/238"
     reason: "統括 succession を第一級概念に。board schema = declared 層（PR-C）"
   - type: design_context
-    ref: ".oe/ref-plan-stage1.md"
-    reason: "段階1 実装計画の正本。§2 PR-C（schema/validator の内容）・§4 Q8（置き場・粒度・advisory）。注: .oe/ は gitignore 済みの machine-local 資料で、この checkout には含まれない（out-of-repo）。durable な上位アーキは #238 と decisions/ の succession-watchdog 決定 doc を参照。"
+    ref: "projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md"
+    reason: "上位アーキ（lean・declared 層 = PR-C）の committed 正本。§2 PR-C（schema/validator）・§4 Q8（置き場・粒度・advisory）相当は本 decision 自身が持つ。#250 で昇格元 working plan .oe/ref-plan-stage1.md（out-of-repo・gitignore）を (b) 張替し dead-end 化を解消。"
   - type: reference
     ref: "projects/orchestration-engine/scripts/validate-envelope.sh"
     reason: "踏襲した validator idiom（exit code・VERBOSE・helper 構造）"
@@ -127,13 +127,13 @@ cockpit を早めに整備し運用に回して改善を続ける。
 
 ## 7. 非対象・将来 defer
 
-- **複数 seat の board**: MVP は単一 `supervisor` board のみ。複数 seat は seat 概念自体が defer のため不要（`.oe/ref-plan-stage1.md` §4 Q8）。
+- **複数 seat の board**: MVP は単一 `supervisor` board のみ。複数 seat は seat 概念自体が defer のため不要（Q8。上位アーキ decision の §open questions「board schema 置き場…単一 supervisor」と整合）。
 - **full JSON Schema 化**: 現状は必須 + 存在 + 鮮度の最小検証。厳密な schema 化（値の形式・enum の強制）が要るなら将来 ajv-cli 等へ移行しうる（sibling validator と同じ defer 方針）。
 - **schema の adoption**: 実 board を本 frontmatter 形式へ移行する運用は board 保守側の作業で、本 PR の scope 外。
 
 ## 8. 関連リンク
 
 - Issue #238: https://github.com/stlwolf/ai-development-hub/issues/238
-- 段階1 実装計画（正本・§2 PR-C / §4 Q8）: `.oe/ref-plan-stage1.md`（out-of-repo・`.oe/` は gitignore 済みの machine-local。この checkout には含まれない）
+- 段階1（PR-C = board schema）の committed 正本: 本 decision（§2 = PR-C 設計 / §4 = Q8 置き場・粒度）+ 実装記録 `projects/orchestration-engine/docs/episodes/2026-07-10-episode-238-board-schema-validator.md`。上位アーキ全体は `projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md`（#250 で昇格元 working plan `.oe/ref-plan-stage1.md` を (b) 張替）
 - validator: `projects/orchestration-engine/scripts/validate-board.sh`
 - 踏襲した sibling validator: `projects/orchestration-engine/scripts/validate-envelope.sh` / `projects/orchestration-engine/scripts/validate-session-state.sh`

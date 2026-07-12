@@ -110,7 +110,7 @@ tags: [orchestration, succession, watchdog, statusline, heartbeat, phase5, decis
 
 ### ポインタ
 
-- 段階1 実装計画（HG 用の正本・PR 分割 + open question 解消 + 設計 SO 反映）: `/Users/eddy/work/repos/github.com/stlwolf/ai-development-hub.docs-#238_succession_watchdog_design/.oe/plan-stage1.md`（`.oe/` は gitignore・working 正本）。
+- 段階1 実装（PR 分割 + open question 解消 + 設計 SO 反映）の committed 正本群（#250 で昇格元の working plan `.oe/plan-stage1.md` を (b) 張替。掃除後 dead-end 化しない）: Q3-Q8 の解消は本 decision の §open questions / §注意点、consumer 側の実装レベル設計判断（Q3 OS cron・Q7 閾値）と実装 SO は `projects/orchestration-engine/docs/plans/2026-07-11-plan-239-pr-b-vitals-consumer.md`、board schema（PR-C・Q8）は `projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md`、各 PR の実装記録は `projects/orchestration-engine/docs/episodes/2026-07-10-episode-239-statusline-heartbeat-producer.md`（PR-A）/ `projects/orchestration-engine/docs/episodes/2026-07-11-episode-239-pr-b-vitals-consumer.md`（PR-B）/ `projects/orchestration-engine/docs/episodes/2026-07-10-episode-238-board-schema-validator.md`（PR-C）、設計 SO 3段の軌跡・代替案・却下根拠は `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-238-239-succession-watchdog-design-rationale.md`（§4・§6）。
 - 段階0（`oe-undelivered`・報告未達検知・#241 済）: `/Users/eddy/work/repos/github.com/stlwolf/ai-development-hub.docs-#238_succession_watchdog_design/projects/orchestration-engine/docs/episodes/2026-07-09-episode-239-report-undelivered-watchdog.md`
 
 ## verification status 凡例
