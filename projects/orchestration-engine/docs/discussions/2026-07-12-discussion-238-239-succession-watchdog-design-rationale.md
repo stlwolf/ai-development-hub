@@ -87,7 +87,7 @@ tags: [orchestration, succession, watchdog, seat, exploration, de-converge, rati
 seat 固有価値は `@seat` mailbox による mode3（チャネル脆弱）の**予防**にある（段階0 は**検知**のみ）。それでも「今」入れなかった理由:
 
 - **未証明の need**: 散文 board で 4代 handoff は mailbox なしに成立してきた [unverified-summary]（#238/#239 本文・実運用）。予防機構の need が実証されていない。
-- **三者同期リスク**: seat を新正本にすると board / seat / registry の三者同期が生じ、mode4（state 乖離）を**悪化**させる。C1/DJ-188-4 は「横断観測は新 state でなく typed append-only event bus」と明示 [verified] `decisions/2026-06-19-...-188-identity-unification.md`。
+- **三者同期リスク**: seat を新正本にすると board / seat / registry の三者同期が生じ、mode4（state 乖離）を**悪化**させる。C1/DJ-188-4 は「横断観測は新 state でなく typed append-only event bus」と明示 [verified] `projects/orchestration-engine/docs/decisions/2026-06-19-decision-188-identity-unification.md`。
 - **carrier 動機の消滅**: feasibility 解消で context% は seat が運ぶ必要がなくなった（[§5](#5-確定に効いた非自明な転回)）。seat keystone を正当化していた動機の1つが消えた。
 - → **defer が妥当**。段階0 検知を運用に回し、**報告 stranding が再発したら** seat を導入する。これは「4代成立」実績に賭けた判断であり、stranding 頻度を運用観測して再評価する（decision doc の残リスク）。
 
@@ -116,7 +116,7 @@ seat 固有価値は `@seat` mailbox による mode3（チャネル脆弱）の*
 
 - **round1 の load-bearing な findings の durable substance**（表索引の裏の設計帰結・後段に効いた分）:
   - **(3) context% GC-handoff の実質 defer**: 原案は context% を「統括の自己申告」に依存させており、劣化した統括は申告しない＝#238 中核（context 閾値 handoff）が実質先送りになる、と反証された。これが後の feasibility 解消（statusline が context% を機械露出）で解け、seat carrier の動機を消した（[§5.1](#51-feasibility-解消が-seat-の統合力を糖衣へ後退させた-divergence-の-reconcile-記録)）— round1 の defer 指摘が reframe の起点。
-  - **(5) declared run-state と engine session-state の境界未整理**: run-state を engine の session-state に載せようとしていたが、対話 delegate 子は success/blocked/timeout の完了 lifecycle を持たない＝session-state は category error（DJ-188-2）。→ run-state は **delegate/succession 層の別契約**として設計せよ、と境界を確定。これが最終 lean の「declared 層（board schema）は engine state ゼロ」へ収束した探索根拠 [verified] `decisions/2026-06-19-...-188-identity-unification.md`（DJ-188-2/4）。
+  - **(5) declared run-state と engine session-state の境界未整理**: run-state を engine の session-state に載せようとしていたが、対話 delegate 子は success/blocked/timeout の完了 lifecycle を持たない＝session-state は category error（DJ-188-2）。→ run-state は **delegate/succession 層の別契約**として設計せよ、と境界を確定。これが最終 lean の「declared 層（board schema）は engine state ゼロ」へ収束した探索根拠 [verified] `projects/orchestration-engine/docs/decisions/2026-06-19-decision-188-identity-unification.md`（DJ-188-2/4）。
 - **round2 の spot-check（親の独立検証）**: SO の material claim を鵜呑みにせず一次で裏取り — `git merge-base --is-ancestor HEAD master` で worktree が master より前を確認、`statusline.md:139` の cancel 挙動を doc 直読で確認。SO の指摘は正確だった [verified]。
 - **round3 の看板修正はさらに supersede された（軌跡の正直さ）**: round3 は「beat-staleness＝プロセス死検知」（生存プロセスは `refreshInterval` の fixed timer で beat を撃ち続けるから）へ修正した。だが後段の **PR-B 設計SO（audit `20260710165558WHKWV6XCJXXA`・refuted 3/3）がこの premise をさらに反証**し、death 判定を「tmux 確定 gone のみ」へ再転回した（`?×stale` を偽 death 扱いする経路と、idle-premise が実機未検証で death の linchpin にできない点を突いた）[verified] `plans/2026-07-11-plan-239-pr-b-vitals-consumer.md` DJ-3 / `episodes/2026-07-11-episode-239-pr-b-vitals-consumer.md`。→ **round3 の findings 詳細は committed（PR-B plan/episode）に上書き済み**。ここでは軌跡のノードとしてのみ記録し、詳細は再蒸留しない（古い前提を復活させない）。
 - **軌跡の meta 価値**: 同一設計に対し独立した3ラウンド（+ PR 段の2ラウンド）が successively 早期の「確定」を崩し続けた。model は各段で「探索十分・確定してよい」と申告したがり、SO ゲートがそれを構造的に抑止した。これが「収束は model の call ではない」の生きた例（`exhaustion-before-conclusion-rule` §Application）。

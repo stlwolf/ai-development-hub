@@ -54,7 +54,7 @@ tags: [orchestration, distillation, promotion, succession, watchdog, episode, cl
 - **落とす③（boilerplate/全文）**: test 方針・config 詳細・link list・verification 凡例・全文転写。durable な「なぜ」を含まない。
 - **残す①（committed にゼロか要約のみ + durable）**: 代替案の全体像・却下ロジック・探索の軌跡・divergence の reconcile 記録。decision doc が結論に圧縮して落とす「why-not」。
 - **grounding は自己申告でなく実証**: 「committed に無い」は **grep で欠落を実証**（audit id 不在・grep ヒットゼロ）してから残す/落とすを決めた。蒸留者の自己判断だけに寄せない。
-- **境界の nюanс（SO が修正させた）**: 「decision doc は結論のみ」は不正確 — decision は結論 + 要約根拠を持つ。よって「重複させない」は **重なる結論を pointer 化し、探索・却下の側の詳細のみ残す**という運用に落ちる。全否定でも全転写でもない中間。
+- **境界のニュアンス（SO が修正させた）**: 「decision doc は結論のみ」は不正確 — decision は結論 + 要約根拠を持つ。よって「重複させない」は **重なる結論を pointer 化し、探索・却下の側の詳細のみ残す**という運用に落ちる。全否定でも全転写でもない中間。
 - **include 判断と成果物の突合が要る（今回の失敗）**: 計画で「残す」と決めたブロックを成果物で落とすと過剰 prune になる。**include/exclude 表 → 成果物の逐次突合**を昇格規則の checkpoint にすべき（今回は SO が代替したが、機械突合できると強い）。
 
 ## わかったこと（W）
