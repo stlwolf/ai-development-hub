@@ -6,7 +6,7 @@ type: discussion
 status: stable
 related:
   - type: spec
-    ref: ../../../../docs/specs/document-format.md
+    ref: "docs/specs/document-format.md"
     reason: "棚卸し対象の正本定義（蒸留5段）。本 discussion の DJ-2 が v2 改訂の入力になる"
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/217"
