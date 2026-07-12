@@ -13,7 +13,7 @@ description: Episode の closure 時に構造化振り返りを適用する。cl
 
 ## いつ使わないか
 
-- Episode 本文（追記ログ）の書き方 — 本文はフリーフォーム + 性質ガイドのまま（`document-format.md` §7）。**本スキルは本文に構造を課さない**（書きアンカー保護、design-principles §5）
+- Episode 本文（追記ログ）の書き方 — 本文はフリーフォーム + 性質ガイドのまま（`document-format.md` の「文書型別テンプレート」節の Episode〔§8〕）。**本スキルは本文に構造を課さない**（書きアンカー保護、design-principles §5）
 - frontmatter / ULID / 命名規則 — `spec-card` が担う（本スキルは重複させない）
 - kickoff / plan / discussion の closure — 対象は episode のみ
 
@@ -130,7 +130,7 @@ so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) �
 ## 既存スキル・ドキュメントとの関係
 
 - **`spec-card`**: frontmatter / ULID / 命名 / status enum の正本。本スキルは closure の中身を担い、形式は spec-card に従う
-- **`document-format.md` §7 Episode**: 本文フリーフォーム + 性質ガイドの定義。本スキルは末尾の構造化 FB セクションの実装
+- **`document-format.md` の「文書型別テンプレート」節の Episode〔§8〕**: 本文フリーフォーム + 性質ガイドの定義。本スキルは末尾の構造化 FB セクションの実装
 - **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
 - **Issue #60 / #62**: 出力型の消費チャネル先（失敗分類 / negative knowledge 注入）。注入側フォーマットは #62 で設計
