@@ -64,7 +64,7 @@ tags: [orchestration, doc-flow, document-format, promotion, rename, brief, desig
 
 ## 残課題 / follow-up routing
 
-- **engine flag 整合**（`oe-delegate` / `oe-send` の `--kickoff` を `brief` 型名へ）: 行き先 = **別 issue（engine）**。本 PR では移行注記のみ（§3.3 / §16）。子（本タスク）は engine コードを触らない。
+- **engine flag 整合**（`oe-delegate` / `oe-send` の `--kickoff` を `brief` 型名へ）: 行き先 = **#255**（surface 済み）。本 PR では移行注記のみ（§3.3 / §16）。子（本タスク）は engine コードを触らない。
 - **SOV 旧規約統一**（`DOCUMENT_CONVENTION.md` v0 の canonical 吸収 or deprecate）: 行き先 = **別 issue（優先度低・§16）**。
 - **トリガー/checkpoint の機械強制**: 行き先 = **#185 / #24**（規範は v2 spec に着地・機構は defer）。
 - **マージ・worktree 掃除**: 行き先 = **親/owner（HG）**。子はやらない。
