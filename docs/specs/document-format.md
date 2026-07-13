@@ -471,21 +471,26 @@ YYYY-MM-DD-{type}-{topic}.md
 
 ## 11. ゲート配置
 
-フロー上のゲート6点と、各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。
+フロー上のゲート — 設計着手前の soft gate (0)（必要時）+ 確定〜後始末の (1)–(6)。各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。既存の (1)–(6) は番号を維持し、先頭に (0) を追加する（consumer の再 stale 化回避）。
 
 ```text
-[設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
-                (2 は plan 確定前)
+[設計着手前] --(0)--> [設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
 ```
+
+- (0) は設計着手前の soft gate（毎回ではなく必要時のみ挿入）
+- (2) は plan 確定前（設計SO）
 
 | # | 位置 | ゲート | routing スキル / ルール |
 |---|------|--------|------------------------|
+| 0 | 設計着手前（必要時・soft） | `question-driven-design` で人間と scope・考慮漏れ・設計着手可能性をすり合わせる。設計判断が多い / 前提未確定 / 着手可能性が不明なとき (1) の前に挿入 | `question-driven-design` + `implementation-gate-rule` |
 | 1 | 設計判断の確定前 | ゼロベース代替探索を最低1回 | `predecision-exploration` |
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
 | 4 | 実装 → PR | 実装SO（`so.impl`）+ テスト実行 + Copilot | `so-compare`/`peer-ai-review` + `copilot-review-response` |
 | 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed` 明示）→ owner マージ（HG） | `episode-retrospective` |
 | 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定（§13） | `branch-finish` + §13 |
+
+(0) は毎回ではなく**必要時の soft gate**（(3)/(5)/(6) の owner HG のような必須ゲートとは別）。§10 遷移規則の「設計判断が多い → discussion（QDD 併用）」がこの (0) に対応する（DJ-6）— 入口層 discussion での QDD と gate (0) は同じ「人間とのすり合わせ」を指す。
 
 ガードレール枠（#248）の固定節はこの配置図を参照する。
 
