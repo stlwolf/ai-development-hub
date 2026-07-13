@@ -83,6 +83,15 @@ BIN="$REPO/projects/orchestration-engine/bin"
 子に報告させたいなら、その指示は **task / kickoff の本文に自分で書く**。戻しの送信自体は子が
 汎用の `oe-send "$PARENT_TMUX_PANE" "..."` で行う（下記「戻し」）。
 
+### worktree 作成分担（子が自作・統括は hands-off）
+
+委譲では **worktree を作るのは子**で、統括（親）は作らない。誰が作るかを取り違えると統括の pane が迷子になる。
+
+- **子が自分の worktree を作る**: 子は自分の pane で `wt switch --create <branch>` を実行し labeling する（issue 起点でも同じ）。並列委譲でも**各子がそれぞれ自分の分を作る**。
+- **統括（親）は事前作成しない・hands-off**: 親が `wt switch --create` すると親自身の pane ラベルが張り替わり迷子になる。**hands-off が統括の条件**。親がどうしても worktree を用意する稀な場合だけ、labeling を伴わない `git worktree add`（`wt switch` の pane-labeling を避ける）を使う。
+- **per-issue は end-to-end で子へ**: 各 issue の §0 洗い出し以降（設計 SO / 調査 / 実装）を統括が自分の会話で巻き取らず、issue ごとに子スレッドへ一気通貫で委譲する（親 lean）。§0 の一括 read-only 洗い出しだけは親 or 使い捨て subagent が担ってよい。
+- **マージ・worktree 掃除は親 / 人間（HG）**: 子は完了報告のみ行い、マージも worktree 掃除もしない。
+
 ---
 
 ## send（既存ペインへの送信）
