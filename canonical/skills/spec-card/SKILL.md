@@ -45,7 +45,7 @@ so:
 
 - **強 SO** = `peer-ai-review`（全レーン返却＋合意まで iterate・partial=再試行・0=不可）。高難易度/高リスク/不可逆に。
 - **弱 SO** = `so-compare` / `oe-refute` / `oe-review`（1 周可・partial=disclose して進む・**0=SO 未実施扱いで再試行/escalate＝最低 1 レーン必須="0 はなし"**）。低〜中難易度/可逆に。
-- レーン数・モデルは mode に焼かず都度指定（直交・既定ポリシーは `orchestration-toolkit`）。定義の正本は `docs/specs/document-format.md` §3.1。
+- レーン数・モデルは mode に焼かず都度指定（直交・既定ポリシーは `orchestration-toolkit`）。定義の正本は `docs/specs/document-format.md` の「SO モード」節〔§4.1〕。
 
 ### 文書型の選び方
 
@@ -78,7 +78,7 @@ print(ts + rand)
 "
 ```
 
-厳密に公式 ULID 仕様へ合わせる場合は `docs/specs/document-format.md` §4 のとおり `ulid` パッケージ利用を推奨。手書きスニペットは簡易実装のため厳密互換は保証しない。
+厳密に公式 ULID 仕様へ合わせる場合は `docs/specs/document-format.md` の「ULID 規約」節〔§5〕のとおり `ulid` パッケージ利用を推奨。手書きスニペットは簡易実装のため厳密互換は保証しない。
 
 ## 既存スキルとの関係
 
