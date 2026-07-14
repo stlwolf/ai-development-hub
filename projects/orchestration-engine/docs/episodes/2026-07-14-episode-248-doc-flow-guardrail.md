@@ -47,6 +47,31 @@ tags: [doc-flow, guardrail, skill, relocation, episode-248, epic-10]
 - **Step 6 CATALOG**: doc-flow-guardrail 行を追加（26→27）。
 - **Step 8 実装SO（gate 4・oe-review 2社）**: 初回 refuted（codex=error〔VERDICT 取得不可〕・cursor=survived）→ retry で cursor が material 指摘「`scripts/sync.sh --check` が新設 orchestration-spec を検証せず sync 欠落を検出できない堅牢性欠陥」。**指摘を fix**（check_target の claude/cursor/codex に `orchestration-spec` の `check_symlinks_dir` を追加・flat .md は rules と同型）→ shellcheck PASS → 再 review で **cursor=survived**（`--check` が orchestration-spec を検証と明記）。codex は3回とも error（大きな markdown diff で verdict 行を出せない機構問題＝指摘ではない）。conservative 集約は codex error ゆえ全体 refuted のままだが、実 review した cursor レーンは clean。弱 SO・advisory ゆえ **codex 機構 error を disclose して進行**（材料 material 指摘は解消済）。
 
-### closure（gate 5・マージ前・reconstructed でない = リアルタイム追記）
+### closure（gate 5・マージ前・リアルタイム追記＝reconstructed でない）
 
-（PR レビュー後・マージ前にここへ振り返りを追記する）
+tier = **heavy**（意図起動の外部SO〔oe-refute 設計 + oe-review 実装〕/ 実行中の失敗・修正〔sync.sh --check 欠陥→fix〕/ 非自明な設計判断〔DJ-A/B/C の棄却〕）。PR: https://github.com/stlwolf/ai-development-hub/pull/260 。
+
+**closure gate checklist**:
+
+- **Context/なぜ**: 冒頭に自己完結（フロー制御の暗黙知矛盾を枠として外部化）。✓
+- **次の消費者**: (1) 統括＝委譲 brief 作成時に固定節を貼る / (2) 新統括・新 repo＝cold-start / (3) #248 v1（固定節の機械注入）/ (4) doc-flow を触る実装子。
+- **status**: draft → **stable**（達成度=達成。マージは owner HG＝gate 6）。
+- **evidence anchor**: SO 出力（`tmp/oe-*`）は非永続ゆえ verdict/reason を本 episode + PR 本文へ転記済。Step4 出力は下記にリンク。
+
+**内容（出力型 × 消費チャネル）**:
+
+- **事実・失敗**: 設計SO=refuted（advisory・3/3）→ material 5点を plan 反映。実装SO=codex レーンが3回とも verdict 行を出せず error（大 markdown diff の機構問題）。cursor が `sync.sh --check` の orchestration-spec 未検証を指摘 → fix → 再 review で survived。branch prefix は brief 例 `feat/` から `docs/` へ変更（owner 追認）。選択的省略なし。
+- **決定と根拠**: DJ-A=case-C 統一解決規約（棄却: A=sync 先 dangling / B=command で破綻・型別非一貫 / D=cross-tool 破綻 / E-full=節精度喪失）。前提「単一 machine-path が存在」は偽と機構事実で確認。DJ-B=`doc-flow-guardrail` 維持。DJ-C=二ブロック分離・固定集合は SO F1 で拡張（本 brief-248 の規律節を経験的正本に採用）。
+- **わかったこと**: sync は canonical ツリーを mirror するが skills=ディレクトリ symlink で深さ不変・commands=basename フラット化で深さ変化 → 相対パスは skill でしか両立せず、case-C（注記）が唯一の型非依存解。codex lane は大 markdown diff で verdict 行を返せない（観測）。
+- **原則（pattern）**: **新 sync ターゲットを足したら `sync.sh --check` にも対応検証を足す**（sync と check は対）。anti-pattern＝sync だけ足して check を忘れると drift/欠落を検出できない（本 episode の実装SO 指摘が実例）。
+- **行動変更**: 委譲固定節の正本は `doc-flow-guardrail` ②（トリガ=委譲 brief 作成時・着地=固定/可変ブロック）。
+- **蒸留シグナル / 昇格候補**: 「sync=check 対」原則は小さく本 episode 留め（skill 化は過剰）。DJ-11 の plan-authoring 穴の dogfood は継続観測（受け入れ基準3 の第一号＝固定節は SO F1 で1回拡張＝過不足が実際に出た）。Decision 昇格は**なし**。
+
+**follow-up routing（全件行き先付与）**:
+
+- 非 canonical の旧パス参照 → frozen record（episode-238/249・decision-238・research audit）は **追わない**（point-in-time provenance）。生きた参照 = `context-foundation.md:129`（markdown 相対リンク）+ stocktake discussion の **`related.ref:9` と本文 `:33`「が正本」断定の2箇所**（同一 doc・living 扱いに統一）→ **owner 判断の follow-up**（本 PR scope 外・owner 指示で据置き）。Step4 で stocktake `:33` の計上漏れを是正した。
+- DJ-A 案G（SO モード/ULID を skill 本体へ inline してポインタを非 load-bearing 化）→ **v1+ follow-up**。
+- (b) work-routing/handoff 機構・(c) succession-recovery 機構 → **engine track（#238/#239）defer**。
+- codex lane の oe-review verdict 取得失敗（大 markdown diff）→ **engine track の観測課題**（oe-review/so-compare の頑健性・追う先=engine 側・本 issue では追わない）。
+
+**Step4 外部チェック（closure 品質・focused so-compare）**: codex=error（環境の CLI 機構問題・実装SO と同一で3回連続）/ claude=success。判定 — (1)失敗の選択的省略=なし・(3)揮発パス転記=済 は合格、(2)follow-up routing=合格（生きた参照の着地が軟らかいが owner-HG 上許容）、(4)back-propagation に **1件の計上漏れ**（stocktake `:33` 本文参照を「生きた」inventory から落としていた）→ 上記 follow-up 節で是正済。出力: `tmp/so-20260714-234914/claude-stdout.txt`。
