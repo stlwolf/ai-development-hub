@@ -75,3 +75,5 @@ tier = **heavy**（意図起動の外部SO〔oe-refute 設計 + oe-review 実装
 - codex lane の oe-review verdict 取得失敗（大 markdown diff）→ **engine track の観測課題**（oe-review/so-compare の頑健性・追う先=engine 側・本 issue では追わない）。
 
 **Step4 外部チェック（closure 品質・focused so-compare）**: codex=error（環境の CLI 機構問題・実装SO と同一で3回連続）/ claude=success。判定 — (1)失敗の選択的省略=なし・(3)揮発パス転記=済 は合格、(2)follow-up routing=合格（生きた参照の着地が軟らかいが owner-HG 上許容）、(4)back-propagation に **1件の計上漏れ**（stocktake `:33` 本文参照を「生きた」inventory から落としていた）→ 上記 follow-up 節で是正済。出力: `tmp/so-20260714-234914/claude-stdout.txt`。
+
+**Copilot 1ラウンド（closure 後・マージ前）**: 行コメント1件＝固定節の「single-quote」記述と例のダブルクォートが矛盾。妥当ゆえ対応（例を `oe-send "$PARENT_TMUX_PANE" '...'`＝pane は double-quote/メッセージは single-quote と明示・コミット `0ee874a`）→ スレッドへ返信。1ラウンドで停止（再リクエストは owner 明示時のみ）。
