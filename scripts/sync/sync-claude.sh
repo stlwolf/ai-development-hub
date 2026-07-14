@@ -321,35 +321,39 @@ main() {
     sync_md_files "${CANONICAL_DIR}/rules" "${TARGET_BASE}/rules" "rules"
     echo ""
 
-    # 2. Skills (directory symlinks, require SKILL.md)
+    # 2. Orchestration spec (cross-cutting spec; flat .md like rules)
+    sync_md_files "${CANONICAL_DIR}/orchestration-spec" "${TARGET_BASE}/orchestration-spec" "orchestration-spec"
+    echo ""
+
+    # 3. Skills (directory symlinks, require SKILL.md)
     sync_dirs "${CANONICAL_DIR}/skills" "${TARGET_BASE}/skills" "skills" "SKILL.md"
     echo ""
 
-    # 3. Agents
+    # 4. Agents
     sync_md_files "${CANONICAL_DIR}/agents" "${TARGET_BASE}/agents" "agents"
     echo ""
 
-    # 4. Commands
+    # 5. Commands
     sync_md_files "${CANONICAL_DIR}/commands" "${TARGET_BASE}/commands" "commands"
     echo ""
 
-    # 5. Hooks config (merge into settings.json)
+    # 6. Hooks config (merge into settings.json)
     sync_claude_hooks "${CANONICAL_DIR}/hooks/claude.hooks.json" "${TARGET_BASE}/settings.json" "hooks"
     echo ""
 
-    # 6. Hook scripts
+    # 7. Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
-    # 7. statusLine producer script (#239 PR-A: beat producer)
+    # 8. statusLine producer script (#239 PR-A: beat producer)
     sync_hook_scripts "${CANONICAL_DIR}/claude/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
     echo ""
 
-    # 8. statusLine config (non-destructive merge into settings.json)
+    # 9. statusLine config (non-destructive merge into settings.json)
     sync_claude_statusline "${CANONICAL_DIR}/claude/statusline/claude.statusline.json" "${TARGET_BASE}/settings.json" "statusLine"
     echo ""
 
-    # 9. MCP servers (merge into ~/.claude.json)
+    # 10. MCP servers (merge into ~/.claude.json)
     sync_mcp_servers "${CANONICAL_DIR}/mcp/claude.json" "${HOME}/.claude.json" "MCP servers"
     echo ""
 

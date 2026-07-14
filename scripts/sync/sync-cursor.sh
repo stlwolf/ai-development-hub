@@ -195,25 +195,29 @@ main() {
     fi
     echo ""
 
-    # 3. Rules (.mdc — Cursor-only User Rules)
+    # 3. Orchestration spec (cross-cutting spec; flat .md)
+    sync_md_files "${CANONICAL_DIR}/orchestration-spec" "${TARGET_BASE}/orchestration-spec" "orchestration-spec"
+    echo ""
+
+    # 4. Rules (.mdc — Cursor-only User Rules)
     if [[ -d "${CURSOR_DIR}/rules" ]]; then
         sync_md_files "${CURSOR_DIR}/rules" "${TARGET_BASE}/rules" "cursor rules" "*.mdc"
     fi
     echo ""
 
-    # 4. Agents
+    # 5. Agents
     sync_md_files "${CANONICAL_DIR}/agents" "${TARGET_BASE}/agents" "agents"
     echo ""
 
-    # 5. MCP config
+    # 6. MCP config
     sync_single_file "${CANONICAL_DIR}/mcp/cursor.json" "${TARGET_BASE}/mcp.json" "mcp.json"
     echo ""
 
-    # 6. Hooks config
+    # 7. Hooks config
     sync_single_file "${CANONICAL_DIR}/hooks/cursor.hooks.json" "${TARGET_BASE}/hooks.json" "hooks.json"
     echo ""
 
-    # 7. Hook scripts
+    # 8. Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 

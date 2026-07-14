@@ -274,6 +274,10 @@ main() {
     sync_dirs "${CANONICAL_DIR}/skills" "${TARGET_BASE}/skills" "skills" "SKILL.md"
     echo ""
 
+    # Orchestration spec (cross-cutting spec; flat .md)
+    sync_md_files "${CANONICAL_DIR}/orchestration-spec" "${TARGET_BASE}/orchestration-spec" "orchestration-spec"
+    echo ""
+
     # Codex pseudo command registry
     sync_md_files "${CANONICAL_CODEX_DIR}/commands-registry" "${TARGET_BASE}/commands-registry" "commands-registry"
     echo ""

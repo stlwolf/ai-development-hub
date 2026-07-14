@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (26)
+## Skills (27)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -20,6 +20,7 @@
 | conventional-commits | コミットメッセージをConventional Commits規約に従って生成する | `skills/conventional-commits/SKILL.md` | — |
 | delegate-task | 親子 Claude Code セッション間の委譲操作（delegate / send / list / report）を自然言語から判断して実行する。tmux 環境前提 | `skills/delegate-task/SKILL.md` | — |
 | diff-audit | PR diff全体を原則ベースでレビューする。4つの問いを軸に、チェックリスト外の問題も含めて拾う。既知パターンは各問いのヒントとして残す | `skills/diff-audit/SKILL.md` | — |
+| doc-flow-guardrail | ドキュメントフロー全体の地図・委譲固定節テンプレ・cold-start を注入する薄い枠（DJ-11 二層＝大原則1行 + routing 表のみ・中身は個別スキルへ routing） | `skills/doc-flow-guardrail/SKILL.md` | skill: spec-card, skill: delegate-task, skill: episode-retrospective, skill: predecision-exploration |
 | episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル・tier 判定） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
