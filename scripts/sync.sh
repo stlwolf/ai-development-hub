@@ -141,6 +141,7 @@ check_target() {
             local base="${HOME}/.cursor"
             check_symlinks_dir "${canonical}/commands" "${base}/commands" "*.md" "commands" has_diffs
             check_skill_dirs "${canonical}/skills" "${base}/skills" "skills" has_diffs
+            check_symlinks_dir "${canonical}/orchestration-spec" "${base}/orchestration-spec" "*.md" "orchestration-spec" has_diffs
             check_symlinks_dir "${canonical}/agents" "${base}/agents" "*.md" "agents" has_diffs
             check_symlink "${base}/mcp.json" "${canonical}/mcp/cursor.json" "mcp.json" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/cursor.hooks.json" "hooks.json" has_diffs
@@ -149,6 +150,7 @@ check_target() {
         claude)
             local base="${HOME}/.claude"
             check_symlinks_dir "${canonical}/rules" "${base}/rules" "*.md" "rules" has_diffs
+            check_symlinks_dir "${canonical}/orchestration-spec" "${base}/orchestration-spec" "*.md" "orchestration-spec" has_diffs
             check_skill_dirs "${canonical}/skills" "${base}/skills" "skills" has_diffs
             check_symlinks_dir "${canonical}/agents" "${base}/agents" "*.md" "agents" has_diffs
             check_symlinks_dir "${canonical}/commands" "${base}/commands" "*.md" "commands" has_diffs
@@ -166,6 +168,7 @@ check_target() {
         codex)
             local base="${HOME}/.codex"
             check_skill_dirs "${canonical}/skills" "${base}/skills" "skills" has_diffs
+            check_symlinks_dir "${canonical}/orchestration-spec" "${base}/orchestration-spec" "*.md" "orchestration-spec" has_diffs
             check_symlink "${base}/AGENTS.md" "${canonical}/codex/AGENTS.md" "AGENTS.md" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/codex.hooks.json" "hooks.json" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs

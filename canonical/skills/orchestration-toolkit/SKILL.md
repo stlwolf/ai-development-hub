@@ -16,12 +16,12 @@ oe-* ツール群を **1 つのパッケージとして一貫理解する**た�
 
 ## 駆動層規律（engine 作業の 1 サイクル）
 
-discussion/DJ → **設計SO** → 実装 → **実装SO** → Episode → PR →（Copilot）→ closure。設計SO/実装SO のツールは **`so` モード次第**（弱〔既定〕=`oe-refute`/`oe-review`・強=`peer-ai-review`。下記モード行参照）。
+駆動層の1サイクル（層・遷移・ゲートの全体地図）は **`doc-flow-guardrail`** を正本とする（重複を持たない）。本節は各ゲートで使う **oe-* ツール**だけを扱う。設計SO/実装SO のツールは **`so` モード次第**（弱〔既定〕=`oe-refute`/`oe-review`・強=`peer-ai-review`。下記モード行参照）。
 
 - **SO レーンポリシー（運用方針。verb 既定は `--lanes 2`）**: 設計SO=**`oe-refute --lanes 3` を明示**（3社=codex+cursor+claude。Claude/Opus を設計＝選択肢拡張に活かす）／実装SO=既定の **`oe-review`（2社=codex+cursor・実装者 Claude を抜き model 多様性で欠陥検出）**。観点が違うので**両方**実施（設計だけで実装SO を省略しない）。重い対象は都度 3社+3社 もありだが、なるべく分割して重くしない。※レーンの model（cursor=composer / claude=opus 等）は **so-compare 側の指定**で oe-* は固定しない。
-- **SO モード（強/弱・レーン軸と直交）**: **強 SO**=`peer-ai-review`（全レーン合意まで iterate・partial=再試行・0=不可）／**弱 SO**=`so-compare`/`oe-refute`/`oe-review`（1 周可・partial=disclose・**0=SO 未実施で再試行/escalate="0 はなし"**）。**設計段階に kickoff/plan の `so` frontmatter で選択**（正本 `docs/specs/document-format.md` の「SO モード」節〔§4.1〕）。レーン数（上記ポリシー）とモードは**直交**（別々に選ぶ）。
+- **SO モード（強/弱・レーン軸と直交）**: **強 SO**=`peer-ai-review`（全レーン合意まで iterate・partial=再試行・0=不可）／**弱 SO**=`so-compare`/`oe-refute`/`oe-review`（1 周可・partial=disclose・**0=SO 未実施で再試行/escalate="0 はなし"**）。**設計段階に kickoff/plan の `so` frontmatter で選択**（正本 `canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）。レーン数（上記ポリシー）とモードは**直交**（別々に選ぶ）。
 - 集約は **conservative**（1 レーンでも material な指摘 → 全体 refuted）。`refuted` は **exit 3（advisory・JSON が正本）**＝oe-* は機械的に PR/マージを止めない（確定保留は harness/運用判断）。
-- 蒸留パイプライン doc: discussion / kickoff / **episode（締めで必須・本文は随時追記・後追い再構成は `reconstructed` 明示）** / decision-ADR（任意・content 次第）。closure は `episode-retrospective`。
+- 蒸留パイプライン doc の型・入口・ライフサイクルは **`doc-flow-guardrail`**（フロー地図）と `document-format.md`〔文書型別テンプレート §8 / ライフサイクル規範 §12〕が正本。closure は `episode-retrospective`（マージ前・後追いは `reconstructed` 明示）。
 - **完全移譲**: 自律委譲子は discussion/設計SO から 実装→実装SO→Episode→PR→Copilot→closure まで**一気通貫**（親は巻き取らない）。
 - **自律委譲子の権限（運用・opt-in）**: `oe-delegate`/`oe-kick` は既定で permission-mode を付けない。自律子には `--claude-arg --permission-mode --claude-arg auto` を**明示的に渡す**。`bypassPermissions` は委譲子では即死するため `auto` を使う（実機学び・コード強制ではない）。auto/full 権限の自律子はガードレールでユーザー明示承認が要る。
 

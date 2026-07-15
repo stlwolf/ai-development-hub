@@ -7,7 +7,7 @@ depends:
 
 # SO Compare — セカンドオピニオン比較
 
-> **SO モード: 弱 SO**（強/弱の定義は `docs/specs/document-format.md` の「SO モード」節〔§4.1〕）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（**実返却が 1 レーン以上**）=**disclose して進む**（advisory）／**"0"（全レーン実返却なし）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。※`success_empty`〔exit0 だが空〕は機構上 partial（exit1）計上だが、**全レーンがこれ＝実返却ゼロなら "0" 扱い**（consumer 判定・`so-compare.sh` は success_empty を PARTIAL 集計）。機構: `SO_TIMEOUT`（既定 240）は**初回試行の基準**・`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
+> **SO モード: 弱 SO**（強/弱の定義は `canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（**実返却が 1 レーン以上**）=**disclose して進む**（advisory）／**"0"（全レーン実返却なし）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。※`success_empty`〔exit0 だが空〕は機構上 partial（exit1）計上だが、**全レーンがこれ＝実返却ゼロなら "0" 扱い**（consumer 判定・`so-compare.sh` は success_empty を PARTIAL 集計）。機構: `SO_TIMEOUT`（既定 240）は**初回試行の基準**・`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
 
 ## スクリプトの場所
 
