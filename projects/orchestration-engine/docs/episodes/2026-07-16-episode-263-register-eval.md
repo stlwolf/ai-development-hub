@@ -49,7 +49,7 @@ related:
 - 4 target doc を全読（doc1 episode-259 / doc2 discussion-succession / doc3 board / doc4 spec §11+§13）。
 - 評価入力を `.oe/eval-inputs/` に frozen（verbatim・再現性のため）。**全 eval-input を client 識別子スキャン済み＝CLEAN**。
   - doc1/doc3 は「全プローブを含む代表的抜粋」に絞った（プレーン化との apples-to-apples ＋ 内容 drift 低減 ＋ cursor timeout 回避）。doc2/doc4 は全文/節抜粋 verbatim。
-- **client 識別子の発見（surface）**: FULL board は L26/L57/L58/L68 に `attelu`/`biz-infra` を含む → 外部クラウドレーンへ raw 送信は漏洩。対処＝識別子を含まない抜粋に限定（scan CLEAN）。full board 使用時は sanitize 要（親判断・OPEN #1）。
+- **client 識別子の発見（surface）**: FULL board は複数箇所に別リポ（client）の org/リポ識別子2種（具体名は伏せる）を含む → 外部クラウドレーンへ raw 送信は漏洩。対処＝識別子を含まない抜粋に限定（scan CLEAN）。full board 使用時は sanitize 要（親判断・OPEN #1）。
 - プローブ = doc あたり5問（内容プローブ＝原文＋プレーン化両方 / 記号プローブ＝原文のみ）。正解キーに grounding（行/節）を付与し親 fact-check 可能に。
 - プレーン化版（doc1-plain / doc3-plain）作成: 内容不変・文体のみ（完全文化・記号解除・参照明示）。probe-critical facts の残存を機械確認済み。長さ増の交絡は caveat 明示（OPEN #8）。
 - 採点ルーブリック（○/△/×）+ 誤読の型分類（SYM/FRAG/NEST/REF/DROP/HALLUC/CONF）を定義。
@@ -81,7 +81,13 @@ related:
   - probes-and-keys.md の正解キー訂正 → **反映済み**（§8.5・back-propagation）。
 - **status 確定**: draft → **stable**（達成度=**達成**。受け入れ基準4件〔採点マトリクス残存・可搬性の方向・誤読の型分類・段階2材料〕を満たす。ノートは SO 反映後）。
 - **evidence anchor**: 採点マトリクスがノートに durable 転記済（生出力 `tmp/eval-*/` は gitignored 揮発）。SO verdict/指摘はノートと本 episode に転記。
-- **SO 証跡リンク**: 計測 = `tmp/eval-{doc1..doc4,*-plain}-{so,arena}/`（揮発）。実装SO = `tmp/so-note-263/`（codex/cursor stdout・揮発）。frozen 入力 = `.oe/eval-inputs/`・`.oe/probes/`・`.oe/probes-and-keys.md`。
+- **SO 証跡リンク**: 計測 = `tmp/eval-{doc1..doc4,*-plain}-{so,arena}/`（揮発）。実装SO の実 path = worktree の `tmp/so-note-263/`（`codex-stdout.txt` 10306B / `cursor-stdout.txt` 11122B・両レーン success・揮発ゆえ verdict/dissent は下記へ転記）。frozen 入力 = `.oe/eval-inputs/`・`.oe/probes/`・`.oe/probes-and-keys.md`。
+
+**弱 impl-SO（note 検証・codex/cursor・1周・2/2 返却）の verdict / dissent 転記（durable 化）**:
+- 出力実 path: `…ai-development-hub.docs-#263_register-eval/tmp/so-note-263/{codex,cursor}-stdout.txt`（gitignored・揮発。以下が要点の恒久転記）。
+- **codex verdict**: 「段階1 の探索ノートとしては保留付きで有用、段階2 の規範判断材料としては要修正」。material dissent: (a) 【CRITICAL】正解キーが `-w` で全レーン参照可能（leakage 交絡）/ (b) 【CRITICAL】doc4-P2 で codex 自身が偽前提 `〔§N〕` に「第N節」と意味を断定＝「全レーン記載なし」は誤り / (c) 非○セルは4でなく5（行数とセル数の取り違え）/ (d) doc3-P4 の gemini △ は grok/codex ○ と非対称 / (e) doc3-P2 の 〔〕 も usage 推論ゆえ SYM 断定不可 / (f) doc4-P2 は false-premise（hallucination-resistance 軸）/ (g) `[verified]` が compound/因果 claim に過剰 / (h) 「レーン差＝モデル固有」でなくモデル+ハーネス経路 / (i) 段階2「体言止め等 対象外」は非観測を無害と誤読。
+- **cursor verdict**: 「マトリクス転記と主要 failure の実出力裏取りは信頼できるが、非観測＝無害の飛躍・claude 対照の因果主張・verified タグ一部過剰・probe 設計の残存矛盾が弱点」。material dissent: 上記 (a)(c)(g) に加え、(j) 所見1/5 の飛躍（内容プローブは明示事実に偏り FRAG/NEST/DROP を叩いていない）/ (k) doc3-P4 grok も hedge ぎみで採点閾値ブレ / (l) doc2-P3 は in-doc 定義済み evidence 語彙で register proxy として弱い / (m) 5問バンドル非独立 / (n) ハーネス非対称 / (o) writer(Claude/Opus) home-advantage / (p) ceiling は記号側にもありうる。
+- **整合確認**: note への反映内容（正解キー参照可能性を最重要 caveat 化・doc4-P2 を △ HALLUC に訂正・非○5セルに訂正・doc3-P4 を ○ に対称化・verified タグ降格・claude 対照を補助に reframe・ハーネス非対称/非独立/home-advantage/ceiling を caveat 追加・段階2 の「体言止め等」を保留化）は上記 dissent と**矛盾なく整合**。両レーン material・弱SO 1周で全 material を反映済み（弱SO は 1周で終了可・partial なし＝2/2 返却）。
 
 **事実・失敗（SO で検出され反映した点）**:
 - **正解キー参照可能性（最重要交絡・自分が見落とし）**: `-w` で正解キー `.oe/probes-and-keys.md` が全レーンから読める状態だった。codex は trace で target-only を確認できたが、cursor/claude/gemini/grok は trace 不在で leakage 排除不能。→ ノート最重要 caveat に追加・再測定は workspace 外隔離。
