@@ -188,5 +188,18 @@ run_reg "%1" root --force
 ck "corrupt self root --force"  "0" "$RC"
 ck "force wrote valid root"     ""  "$(ent_parent %1)"
 
+echo "[16] 冪等再登録で --label/-w 省略時に既存 label/workspace を保つ（空で潰さない・実装SO cursor 指摘）"
+reset_state; export MOCK_LIVE_PANES="%1 %5"
+put_entry %5 %1 "#keep"        # 既存 label=#keep / workspace=/w / parent=%1（自分の子）
+run_reg "%1" link %5           # --label / -w 省略の再 link
+ck "re-link preserves label"     "#keep" "$(jq -r '.label' "$OE_DELEGATE_STATE_DIR/$(keyfor %5).json")"
+ck "re-link preserves workspace" "/w"    "$(jq -r '.workspace' "$OE_DELEGATE_STATE_DIR/$(keyfor %5).json")"
+run_reg "%1" link %5 --label "#new"   # 明示指定は更新
+ck "re-link updates label w/ --label" "#new" "$(jq -r '.label' "$OE_DELEGATE_STATE_DIR/$(keyfor %5).json")"
+# root 側: 既存 label を --label 無しで保持
+put_entry %1 "" "#sup"
+run_reg "%1" root
+ck "re-root preserves label" "#sup" "$(jq -r '.label' "$OE_DELEGATE_STATE_DIR/$(keyfor %1).json")"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

@@ -55,7 +55,11 @@ tags: [orchestration, delegate-registry, oe-register, role-derivation, episode-2
   - Critical: SELF（TMUX_PANE）が非空しか検証されず、stale/spoofed で root が GC で即消え・link が生存 target を死んだ親の下に orphan 登録して成功を装う。テストも常に self を live に含め未検出。
   - Warning: 既存 entry の JSON 読取失敗を `|| true` で空 parent 同一視 → live-parent guard が corrupt entry で fail-open。
 - **修正**: (a) `load_live_panes` を hoist し SELF の形式+生存を先に検証 / (b) `read_parent` を rc 保持にして corrupt entry は fail-closed（`--force` で上書き）/ (c) link は record 後に entry 存在を再確認し die-after-check を honest 失敗化 / (d) 並行 steal の窓は last-write-wins 基盤に内在（`oe-delegate:148` と同断面）として header に限界明記・原子的所有権（flock）は基盤課題として scope 外。テスト [14]（dead SELF）[15]（corrupt entry fail-closed / --force）を追加。test_oe_register 33→44・既存 spot-check 全 green・shellcheck PASS。
-- （次: 修正を再 SO で確認 → PR → closure → Copilot）
+- **gate 4 実装SO 再実行（round 2・hardened diff）→ verdict=refuted（2/2）**:
+  - cursor（新規 material）: 冪等再登録で `--label` 省略時に `oe_reg_record` が既存 label/workspace を空で上書き＝非冪等（受け入れ(3)違反）。test [6] は parent のみ検証で退行未検出。→ **修正**: `--label`/`-w` 省略時は既存 entry の値を保つ。test [16] 追加。cursor は全テストも実行し 44/0 green を確認。
+  - codex（再掲）: guard の read-check-write が非原子的 + post-check が所有者未検証 → 並行 link の横取り成功偽装。→ **ownership-aware post-check を追加**（record 後に parent==SELF を再確認し「勝てなかった」を honest 失敗化）。**原子的 race 防止（flock 等）は last-write-wins registry 基盤の限界＝oe-delegate と同断面・lib 変更を要し #259 の additive scope 外**（plan §10 で pre-register 済・owner 承認 plan に明記）。
+- **SO 終了判断**: 弱SO は 1 周が要件。2 周で fixable な指摘（SELF 生存 / fail-open / 冪等 / success-faking）は全て解消。残る codex の「原子的 race 防止」は scope 外の基盤課題で 3 周目は loop になる → **disclose して進む**（弱SO の partial 規約）。test_oe_register 48/0・全 suite green・shellcheck PASS。
+- （次: PR → closure → Copilot）
 
 ### closure（gate 5・マージ前）
 

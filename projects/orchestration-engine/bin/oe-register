@@ -23,7 +23,8 @@
 #   判定後の親/自ペイン終了は last-write-wins に内在する競合窓で、これは registry 基盤の性質＝
 #   oe-delegate（生存確認→record の同じ窓）と同断面。verb 側では (a) SELF の形式+生存確認、
 #   (b) target 生存確認、(c) record 後の entry 存在再確認（die-after-check の成功偽装を正直化）
-#   まで固め、原子的所有権（flock 等）は基盤課題として scope 外に置く。
+#   まで固め、加えて (d) 冪等再登録では --label/-w 省略時に既存 label/workspace を保つ（空で
+#   潰さない）。原子的所有権（flock 等）による race 防止は基盤課題として scope 外に置く。
 #
 # registry の write path（oe_reg_record）は無変更。本 verb はそれを呼ぶだけ（additive・#259）。
 # oe-tree の root 判定 = parent 空の entry を root 描画。self-parent は [cycle] 化するため空 parent が正。
@@ -69,6 +70,7 @@ esac
 
 # --- フラグ + 位置引数 ---
 LABEL=""
+LABEL_EXPLICIT=0
 WORKSPACE=""
 WS_EXPLICIT=0
 FORCE=0
@@ -82,7 +84,7 @@ while [[ $# -gt 0 ]]; do
       if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
         echo "oe-register: --label must be a single line (no newline)" >&2; exit 2
       fi
-      LABEL="$2"; shift 2 ;;
+      LABEL="$2"; LABEL_EXPLICIT=1; shift 2 ;;
     -w|--workspace)
       [[ $# -ge 2 ]] || { echo "oe-register: --workspace requires a value" >&2; exit 2; }
       WORKSPACE="$2"; WS_EXPLICIT=1; shift 2 ;;
@@ -152,7 +154,12 @@ if [[ "$MODE" == root ]]; then
       [[ "$FORCE" -eq 1 ]] || { echo "oe-register: cannot read existing entry for ${SELF} (corrupt/unreadable); refusing (use --force to override)" >&2; exit 1; }
     fi
   fi
-  [[ "$WS_EXPLICIT" -eq 1 ]] || WORKSPACE="$(pwd)"
+  # 冪等再登録: --label / -w 省略時は既存 entry の値を保つ（空で潰さない・実装SO cursor 指摘）
+  if entry_exists "$SELF"; then
+    [[ "$LABEL_EXPLICIT" -eq 1 ]] || LABEL="$(jq -r '.label // empty' "$(entry_file "$SELF")" 2>/dev/null || true)"
+    [[ "$WS_EXPLICIT" -eq 1 ]] || WORKSPACE="$(jq -r '.workspace // empty' "$(entry_file "$SELF")" 2>/dev/null || true)"
+  fi
+  [[ "$WS_EXPLICIT" -eq 1 || -n "$WORKSPACE" ]] || WORKSPACE="$(pwd)"
   record_or_die "$SELF" "$LABEL" "$WORKSPACE" ""
   echo "oe-register: registered ${SELF} as root${LABEL:+ (label: ${LABEL})}" >&2
   exit 0
@@ -175,16 +182,27 @@ if entry_exists "$TARGET"; then
   fi
 fi
 
+# 冪等再登録: --label 省略時は既存 label を保つ（空で潰さない・実装SO cursor 指摘）
+if [[ "$LABEL_EXPLICIT" -ne 1 ]] && entry_exists "$TARGET"; then
+  LABEL="$(jq -r '.label // empty' "$(entry_file "$TARGET")" 2>/dev/null || true)"
+fi
 if [[ "$WS_EXPLICIT" -ne 1 ]]; then
-  # 対象 pane の実 cwd を workspace とする（best-effort。取れなければ空）。
-  WORKSPACE="$(tmux display-message -p -t "$TARGET" '#{pane_current_path}' 2>/dev/null || true)"
+  # -w 省略時: 既存 entry の workspace を保つ（冪等）→ 無ければ対象 pane の実 cwd（best-effort）。
+  WORKSPACE=""
+  if entry_exists "$TARGET"; then WORKSPACE="$(jq -r '.workspace // empty' "$(entry_file "$TARGET")" 2>/dev/null || true)"; fi
+  [[ -n "$WORKSPACE" ]] || WORKSPACE="$(tmux display-message -p -t "$TARGET" '#{pane_current_path}' 2>/dev/null || true)"
 fi
 record_or_die "$TARGET" "$LABEL" "$WORKSPACE" "$SELF"
-# record 内の GC は非生存 pane の entry を消す。is_live 判定〜record の間に target が終了すると
-# entry が消え成功表示だけ残る（実装SO codex の success-faking 指摘）。書込後に存在を再確認し、
-# 消えていれば honest に失敗させる（並行 steal の窓は last-write-wins 基盤に内在＝§ヘッダ参照）。
+# post-check: entry が残り かつ 自分の所有（parent==SELF）であることを確認。GC 消去（die-after-check）
+# と並行上書き（steal race）を honest に失敗化する。原子的所有権は last-write-wins 基盤の限界＝
+# scope 外（§ヘッダ）。ここは防止でなく「勝てなかった」ことの検知に留める。
 if ! entry_exists "$TARGET"; then
   echo "oe-register: ${TARGET} entry did not persist after write (target likely exited); registration failed" >&2
+  exit 1
+fi
+postparent="$(read_parent "$TARGET" 2>/dev/null || true)"
+if [[ "$postparent" != "$SELF" ]]; then
+  echo "oe-register: ${TARGET} was concurrently re-registered under ${postparent:-?} (lost last-write-wins race); registration did not take effect" >&2
   exit 1
 fi
 echo "oe-register: linked ${TARGET} under ${SELF}${LABEL:+ (label: ${LABEL})}" >&2
