@@ -92,6 +92,8 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 
 ## ③ cold-start（新 repo / 新統括セッション）
 
+**統括 spawn の入口**: あなたが並列統括として起動された場合（`oe-delegate` で子登記後に `oe-register root --force` で並列 root へ自己昇格した、または spawn を経ず手動起動した）は、まずこのスキルを読んで cold-start（フロー地図・routing・固定節テンプレ・spec 解決規約）を立ち上げてから統括業務に入る。
+
 memory が無くても、このスキル1本を読めばフロー + 参照ポインタが立ち上がる:
 
 1. フロー地図（①）と routing 表（下記）で、いま居る層と次に通すゲートを掴む。

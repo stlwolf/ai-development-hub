@@ -73,6 +73,8 @@ BIN="$REPO/projects/orchestration-engine/bin"
 "$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N を実装して。リポジトリ: $REPO。実装規律は $REPO/canonical/skills/implementer-contract/SKILL.md を読んで従うこと"
 ```
 
+**統括（並列 root）を spawn する場合** — brief 冒頭で `doc-flow-guardrail` の cold-start ロードを明示する（実装子と違い固定節でなくフロー全体が要るため）。
+
 ### 改行制約
 
 - タスク引数・ad-hoc に **改行バイトを含めない**（`oe_send_line` が改行を検出すると送信を拒否する）。複数文は句点・セミコロンで区切る
