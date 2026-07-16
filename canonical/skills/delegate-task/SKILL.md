@@ -28,6 +28,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 | `oe-delegate` | 親 → 子 | 子ペインを起動（spawn）し、最初のキックを送る。registry に登録 |
 | `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / キックオフを送る汎用入口。宛先はラベル or `%N` |
 | `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
+| `oe-register` | — | 手動起動 pane を登記（`root`=自己 root / `link %N`=相手を自分の下に）。spawn を経ない pane を oe-tree / cockpit に現す |
 | `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは oe-send に一本化**（論点E で整理） |
 
 `oe-delegate` = spawn + `oe-send`（キック）の合成。送信の実体は `oe-send` に集約されている。
@@ -133,6 +134,24 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ---
 
+## register（手動起動 pane を登記・#259）
+
+`oe-delegate` を経ずに手動起動した pane は spawn registry に出ないため、`oe-tree` / cockpit（`oe-select` / `--pick`）に現れず、委譲関係も登記されない。`oe-register` で登記する。
+
+```bash
+# 手動起動した統括 pane を自分自身で root 登記（oe-tree に root として現す）
+"$BIN/oe-register" root --label "#N"
+
+# 既存の相手ペイン %N を自分の下に子として登記（spawn を経ない委譲の登記）
+"$BIN/oe-register" link "%37" --label "#150"
+```
+
+- `link` の guard: target 非生存 / `%self` / 生存する別親の子 → 拒否（他人の子の横取り防止・`--force` で reparent）。orphan（親 gone）は引き取り可・既に自分の子は冪等
+- `root` の guard: 生きた親を持つ委譲子の自己 root 化（cold-start 手順の誤実行など）は拒否（detach 防止・`--force` で明示 re-root）
+- 登記後は `oe-send "#N"` / `oe-list` / `oe-tree` が通常どおり解決する（registry の record を書くだけ・既存挙動は不変）
+
+---
+
 ## 戻し（子 → 親）
 
 delegate は report を内包しないので、**戻しは汎用の `oe-send` で行う**。子に渡っている
@@ -185,6 +204,7 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 - `projects/orchestration-engine/bin/oe-delegate` — 子ペイン起動 + キック（spawn + send）
 - `projects/orchestration-engine/bin/oe-send` — 既存ペインへの汎用送信
 - `projects/orchestration-engine/bin/oe-list` — 宛先候補の一覧
+- `projects/orchestration-engine/bin/oe-register` — 手動起動 pane の登記（自己 root / 既存 pane の委譲 link・#259）
 - `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは oe-send に一本化）
 - `projects/orchestration-engine/lib/delegate-send.sh` — 改行拒否の 1 行 safe-send
 - `projects/orchestration-engine/lib/delegate-registry.sh` — アドレッシング（record/resolve/list/gc）

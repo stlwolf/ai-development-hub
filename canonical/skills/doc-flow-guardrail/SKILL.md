@@ -97,6 +97,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 1. フロー地図（①）と routing 表（下記）で、いま居る層と次に通すゲートを掴む。
 2. 委譲するなら固定節テンプレ（②）を brief に貼り、可変節を埋める。
 3. spec の詳細は「spec 解決規約」で `document-format.md` を開く。
+4. 手動起動した統括ペインは `oe-register root` で自己登記する（spawn を経ないため registry に出ず oe-tree / cockpit `--pick` に現れない → 登記で root として可視化・jump 可）。既存 pane を自分の下へ委譲登記するなら `oe-register link %N`。
 
 **統括 succession の復旧は本スキルの範囲外**（engine track・#238/#239）。誤 close / resume からの復帰手順（board `現統括:` を新 pane へ張替 → 孤児 sidecar 掃除 → 検証。死んだ親の下へ再 parenting しない＝後継は並列 peer）は discussion `projects/orchestration-engine/docs/discussions/2026-07-13-discussion-supervisor-succession-recovery-and-observability.md`（§4-2 / §4-3 / §5(0)）を参照する。自動化 verb `oe-reseat` は仮称・未実装。
 

@@ -46,7 +46,7 @@ OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
 OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
 
 # _oe_event_ident <pane> — pane の識別子を read 時投影し "role<US>label<US>parent_pane" を返す。
-#   role  : parent（この pane を parent_pane に持つ子 entry が在る） > child（自身の spawn entry が在る） > ""
+#   role  : parent（この pane を parent_pane に持つ子 entry が在る） > child（自身の spawn entry が在り かつ parent_pane 非空・#259） > ""
 #   label : pane-issue(.name) 優先 → spawn-registry(.label)
 #   parent_pane : 自身の spawn entry の parent_pane（無ければ空）。message の report/kick 方向判定に使う。
 #   file 読みのみ・tmux 不要・best-effort（jq 不在は全空）。
@@ -64,8 +64,10 @@ _oe_event_ident() {
   fi
   own="${OE_DELEGATE_STATE_DIR}/${key}.json"
   if [[ -f "$own" ]]; then
-    is_child=1
     parent="$(jq -r '.parent_pane // empty' "$own" 2>/dev/null)" || parent=""
+    # role=child は「自 entry が在り かつ parent 非空」に限る（#259）。parent 空の自己 root entry
+    # を child と誤導出しない。既存 entry は全て parent 非空ゆえ既存データに挙動不変。
+    [[ -n "$parent" ]] && is_child=1
     [[ -z "$label" ]] && label="$(jq -r '.label // empty' "$own" 2>/dev/null)"
   fi
   # 現サーバ pid の子 entry を走査して parent 判定（別サーバの stale で pane-id 衝突しても誤検知しない）。

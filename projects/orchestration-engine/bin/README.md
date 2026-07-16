@@ -133,6 +133,23 @@ oe-list
 
 関連 lib: `delegate-registry.sh`
 
+## oe-register — 自己 root 登記 / 既存 pane の委譲 link（#259）
+
+手動起動した pane（spawn を経ないため registry に出ない）を登記し `oe-tree` / cockpit に現す。`root` で自分を root として、`link %N` で相手 %N を自分の下の子として登記する。
+
+```bash
+oe-register root [--label <#N|name>] [-w WORKSPACE] [--force]
+oe-register link <%N> [--label <#N|name>] [-w WORKSPACE] [--force]
+```
+
+- `root` … 自ペイン（`$TMUX_PANE`）を `parent_pane=""` の root entry として登記（手動起動の統括を可視化）
+- `link <%N>` … 相手 %N を自分の下の子として登記（spawn を経ない委譲関係の登記）
+- guard（verb 側・横取り/事故防止）: `link` は target 非生存 / `%self`（self-cycle）/ 生存する別親の子 → 拒否（`--force` で reparent）・orphan は引き取り可・既に自分の子は冪等。`root` は生きた親を持つ委譲子の自己 root 化を拒否（`--force` で明示 re-root）
+- `--label` は LF/CR を fail-fast 拒否。tmux 内必須（`TMUX_PANE`）・jq 必須
+- 既存 verb・lib の write path（`oe_reg_record`）は無変更。本 verb はそれを呼ぶだけ（additive）
+
+関連 lib: `delegate-registry.sh`（record/GC）。読取側 `oe-ident` / `event-bus.sh` の role 導出は「自 entry かつ parent_pane 非空」＝自己 root を `child` と誤導出しない（#259）
+
 ## oe-select — 宛先をインタラクティブに選んで送信
 
 `oe-list` と同一ソースの候補から fzf（無ければ番号 read）で 1 件選び、pane id を抽出して `oe-send` へ素通しする。既定で自ペインを候補から除外する。

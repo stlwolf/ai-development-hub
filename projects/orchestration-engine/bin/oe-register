@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# oe-register — 自分を root 登録 / 相手を自分の下に link する（親子委譲レジストリの登記 verb）
+#
+# usage:
+#   oe-register root [--label <#N|name>] [-w WORKSPACE] [--force]
+#   oe-register link <%N> [--label <#N|name>] [-w WORKSPACE] [--force]
+#
+# root: 自ペイン（$TMUX_PANE）を parent_pane="" の root entry として登記する。手動起動した
+#       統括 pane を oe-tree / cockpit に現す（spawn を経ないため今まで registry に出なかった）。
+# link: 既存の相手ペイン %N を自分（$TMUX_PANE）の下に子として登記する。手動起動 pane 間の
+#       委譲関係を登記する（spawn を経ない委譲の受け皿）。
+#
+# guard は verb 側に持つ（registry は pane ごと 1 ファイル・last-write-wins のため lib では持てない）:
+#   link: target %N が非生存 → 拒否（record 直後の GC で無言 no-op になるのを防ぐ）/ target==self
+#         （self-cycle・oe-tree で [cycle] 化）→ 拒否 / 既存 entry の parent が生存かつ別 pane →
+#         拒否（他人の子の横取り防止・--force で上書き）/ orphan（親 gone）→ 引き取り可 /
+#         既に自分の子 → 冪等。
+#   root: 自 entry が生きた親を持つ（委譲された子が cold-start 手順で誤って自己 root 化）→ 拒否
+#         （detach 防止・--force で明示 re-root）/ 既に root or orphan → 許可。
+#
+# registry の write path（oe_reg_record）は無変更。本 verb はそれを呼ぶだけ（additive・#259）。
+# oe-tree の root 判定 = parent 空の entry を root 描画。self-parent は [cycle] 化するため空 parent が正。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-register root [--label <#N|name>] [-w WORKSPACE] [--force]
+  oe-register link <%N> [--label <#N|name>] [-w WORKSPACE] [--force]
+
+  root                自ペイン（$TMUX_PANE）を root として登記（parent_pane="" で record）
+  link <%N>           相手ペイン %N を自分の下に子として登記（parent_pane=$TMUX_PANE で record）
+  --label <#N|name>   registry 登録ラベル（省略可。表示は pane-issue > registry.label > pane_title）
+  -w, --workspace DIR entry の workspace（root 既定=カレント / link 既定=対象 pane の cwd）
+  --force             guard を上書き（link: 生存別親の reparent / root: 生きた親からの re-root）
+  -h, --help          このヘルプを表示
+
+環境変数:
+  TMUX_PANE           tmux 内で自動設定される自ペイン ID（必須）
+EOF
+}
+
+# --- tmux / jq 前提 ---
+SELF="${TMUX_PANE:-}"
+[[ -n "$SELF" ]] || { echo "oe-register: TMUX_PANE is not set — must run inside a tmux session" >&2; exit 1; }
+command -v tmux >/dev/null 2>&1 || { echo "oe-register: tmux is required" >&2; exit 2; }
+command -v jq   >/dev/null 2>&1 || { echo "oe-register: jq is required" >&2; exit 2; }
+
+# --- subcommand ---
+MODE="${1:-}"
+case "$MODE" in
+  root|link) shift ;;
+  -h|--help) usage; exit 0 ;;
+  "")  echo "oe-register: subcommand required (root|link)" >&2; usage; exit 2 ;;
+  *)   echo "oe-register: unknown subcommand: ${MODE} (expected root|link)" >&2; usage; exit 2 ;;
+esac
+
+# --- フラグ + 位置引数 ---
+LABEL=""
+WORKSPACE=""
+WS_EXPLICIT=0
+FORCE=0
+TARGET=""   # link mode のみ
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --label)
+      [[ $# -ge 2 ]] || { echo "oe-register: --label requires a value" >&2; exit 2; }
+      # 改行を含むラベルは oe_reg_list 出力を複数行化し消費者の行パースに偽 %N 行を紛れ込ませ得る
+      # （oe-delegate --label と同じ fail-fast）。
+      if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
+        echo "oe-register: --label must be a single line (no newline)" >&2; exit 2
+      fi
+      LABEL="$2"; shift 2 ;;
+    -w|--workspace)
+      [[ $# -ge 2 ]] || { echo "oe-register: --workspace requires a value" >&2; exit 2; }
+      WORKSPACE="$2"; WS_EXPLICIT=1; shift 2 ;;
+    --force) FORCE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "oe-register: unknown option: $1" >&2; usage; exit 2 ;;
+    *)
+      if [[ "$MODE" == link && -z "$TARGET" ]]; then TARGET="$1"; shift
+      else echo "oe-register: unexpected argument: $1" >&2; usage; exit 2; fi ;;
+  esac
+done
+# `--` の後ろに残った link target を拾う
+if [[ "$MODE" == link && -z "$TARGET" && $# -ge 1 ]]; then TARGET="$1"; shift; fi
+[[ $# -eq 0 ]] || { echo "oe-register: unexpected extra arguments: $*" >&2; usage; exit 2; }
+
+# --- 生存ペイン一覧（list-panes 失敗は環境エラー exit 2・resolve/gc と同型） ---
+LIVE_PANES=""
+load_live_panes() {
+  # set -e 下では out="$(cmd)"; rc=$? が cmd 失敗時に代入行で即 exit(1) し rc 捕捉前に落ちる。
+  # `|| rc=$?` で失敗を compound 化して set -e を回避し、環境エラーを exit 2 に正しく倒す。
+  local out rc=0
+  out="$(tmux list-panes -a -F '#{pane_id}' 2>&1)" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "oe-register: tmux list-panes failed (rc=${rc}): ${out}" >&2; exit 2
+  fi
+  LIVE_PANES="$out"
+}
+is_live() { printf '%s\n' "$LIVE_PANES" | grep -qxF "$1"; }
+
+entry_file() { printf '%s/%s.json' "$OE_DELEGATE_STATE_DIR" "$(_oe_reg_key "$1")"; }
+entry_exists() { [[ -f "$(entry_file "$1")" ]]; }
+entry_parent() { jq -r '.parent_pane // empty' "$(entry_file "$1")" 2>/dev/null || true; }
+
+record_or_die() { # <pane> <label> <workspace> <parent>
+  oe_reg_record "$1" "$2" "$3" "$4" || { echo "oe-register: failed to record registry entry" >&2; exit 1; }
+}
+
+# ============================================================================
+if [[ "$MODE" == root ]]; then
+  load_live_panes
+  if entry_exists "$SELF"; then
+    parent="$(entry_parent "$SELF")"
+    if [[ -n "$parent" && "$parent" != "$SELF" ]] && is_live "$parent" && [[ "$FORCE" -ne 1 ]]; then
+      echo "oe-register: this pane is registered as a child of live parent ${parent}; refusing to self-root (use --force to re-root)" >&2
+      exit 1
+    fi
+    # parent 空（既に root）/ parent gone（orphan）/ --force → 許可
+  fi
+  [[ "$WS_EXPLICIT" -eq 1 ]] || WORKSPACE="$(pwd)"
+  record_or_die "$SELF" "$LABEL" "$WORKSPACE" ""
+  echo "oe-register: registered ${SELF} as root${LABEL:+ (label: ${LABEL})}" >&2
+  exit 0
+fi
+
+# ============================================================================
+# link
+[[ -n "$TARGET" ]] || { echo "oe-register: link requires a target pane %N" >&2; usage; exit 2; }
+[[ "$TARGET" =~ ^%[0-9]+$ ]] || { echo "oe-register: link target must be a raw pane id (%N), got: ${TARGET}" >&2; exit 2; }
+[[ "$TARGET" != "$SELF" ]] || { echo "oe-register: cannot link a pane to itself (${TARGET} == self)" >&2; exit 1; }
+
+load_live_panes
+is_live "$TARGET" || { echo "oe-register: target ${TARGET} is not a live pane (try: oe-list)" >&2; exit 1; }
+
+if entry_exists "$TARGET"; then
+  tparent="$(entry_parent "$TARGET")"
+  if [[ -n "$tparent" && "$tparent" != "$SELF" ]] && is_live "$tparent" && [[ "$FORCE" -ne 1 ]]; then
+    echo "oe-register: ${TARGET} is already a live child of ${tparent}; refusing to steal (use --force to reparent)" >&2
+    exit 1
+  fi
+  # tparent == self（冪等）/ tparent 空（元 root を adopt）/ tparent gone（orphan 引き取り）/ --force → 許可
+fi
+
+if [[ "$WS_EXPLICIT" -ne 1 ]]; then
+  # 対象 pane の実 cwd を workspace とする（best-effort。取れなければ空）。
+  WORKSPACE="$(tmux display-message -p -t "$TARGET" '#{pane_current_path}' 2>/dev/null || true)"
+fi
+record_or_die "$TARGET" "$LABEL" "$WORKSPACE" "$SELF"
+echo "oe-register: linked ${TARGET} under ${SELF}${LABEL:+ (label: ${LABEL})}" >&2
+exit 0

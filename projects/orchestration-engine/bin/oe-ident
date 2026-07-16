@@ -17,7 +17,7 @@
 #
 #   role 導出（registry 読取のみ・書込なし）:
 #     parent = この pane を parent_pane に持つ子 entry が在る（＝子を spawn した）
-#     child  = この pane 自身の spawn entry が在る（oe_reg_record が role:"child" で記録）
+#     child  = この pane 自身の spawn entry が在り かつ parent_pane 非空（#259: parent 空の自己 root は child でない）
 #     （両方なら parent を優先）
 #
 # 例: parent #202 pane-identity / child #179 / #204 toolkit（spawn 関係なし=role 無し） / （空）
@@ -53,7 +53,10 @@ fi
 own="${OE_DELEGATE_STATE_DIR}/${key}.json"
 is_child=0
 if [[ -f "$own" ]]; then
-  is_child=1
+  # role=child は「自 entry が在り かつ parent_pane 非空」に限る（#259）。parent 空の自己 root
+  # entry（oe-register root）を child と誤導出しない。既存 entry は全て parent 非空ゆえ既存データに挙動不変。
+  own_parent="$(jq -r '.parent_pane // empty' "$own" 2>/dev/null)"
+  [[ -n "$own_parent" ]] && is_child=1
   [[ -z "$label" ]] && label="$(jq -r '.label // empty' "$own" 2>/dev/null)"
 fi
 

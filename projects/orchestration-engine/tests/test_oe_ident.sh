@@ -77,5 +77,17 @@ rc=0; out="$(bash "$OE_IDENT" 2>/dev/null)" || rc=$?
 ck "missing arg empty" "" "$out"
 ck "missing arg exit0" "0" "$rc"
 
+echo "[10] 自己 root entry（parent_pane 空）-> role 中立・label のみ（#259 述語締め）"
+# oe-register root が書く形。parent 空なので is_child=0（子を spawn するまで child と誤導出しない）。
+jq -cn '{pane:"%20",label:"#259 supervisor",workspace:"/w",parent_pane:"",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %20).json"
+ck "self-root neutral (no child prefix)" "#259 supervisor" "$(run %20)"
+
+echo "[11] 自己 root が子を持つ -> parent（is_parent 判定は不変）"
+jq -cn '{pane:"%21",label:"#c",workspace:"/w",parent_pane:"%20",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %21).json"
+ck "self-root with child -> parent" "parent #259 supervisor" "$(run %20)"
+ck "existing-shape child unchanged" "child #c" "$(run %21)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
