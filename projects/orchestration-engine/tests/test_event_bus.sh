@@ -125,6 +125,21 @@ ck "from.role empty" "" "$(last | jq -r .from.role)"
 ck "to.role empty"   "" "$(last | jq -r .to.role)"
 ck "type"            "message_sent" "$(last | jq -r .type)"
 
+echo "[9b] 自己 root entry（parent 空）: _oe_event_ident の role は中立（child でない）・#259 述語締め"
+# 子を持つ前に評価する（is_parent 判定より先）。parent 空 → is_child=0 → role 空。
+jq -cn '{pane:"%90",label:"#259 sup",workspace:"/w",parent_pane:"",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %90).json"
+IFS=$'\037' read -r _r90 _l90 _p90 < <(_oe_event_ident "%90") || true
+ck "self-root role neutral"  ""         "$_r90"
+ck "self-root label kept"    "#259 sup" "$_l90"
+ck "self-root parent empty"  ""         "$_p90"
+
+echo "[9c] 既存形（parent 非空）は child のまま（既存データに bit-identical）"
+jq -cn '{pane:"%91",label:"#c",workspace:"/w",parent_pane:"%90",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %91).json"
+IFS=$'\037' read -r _r91 _ _ < <(_oe_event_ident "%91") || true
+ck "existing-shape still child" "child" "$_r91"
+
 echo "[10] 結線: oe-delegate を PATH-stub tmux で起動 → child_spawned が実 bin から emit"
 reset_events
 STUB_BIN="$_TMP_DIR/bin"; mkdir -p "$STUB_BIN"
