@@ -50,7 +50,12 @@ tags: [orchestration, delegate-registry, oe-register, role-derivation, episode-2
 - **テスト**: `tests/test_oe_register.sh`（33 checks・guard 3態 + SO 抜け3〔非生存 target / %self / detach〕 + 形式エラー + env エラー）。`test_oe_ident.sh`（+3: 自己 root neutral / 子持ち→parent / 既存形不変）・`test_event_bus.sh`（+4: `_oe_event_ident` の自己 root neutral / 既存形 child 不変）に述語テスト追加。
 - **gate（全 green + shellcheck）**: 新規 33 + 既存 tests/test_*.sh 全 green（test_delegate_registry 20/0・test_oe_delegate 20/0・test_oe_ident 14/0・test_event_bus 66/0・test_oe_tree ok 等）。shellcheck 新規/変更 6 ファイル PASS。
 - **doc**: `bin/README.md` に oe-register verb 節 / `delegate-task` skill に register 操作節 + 全体像表 + 関連 / `doc-flow-guardrail` cold-start に自己登記 1 行（#259 が予告した接続の完成）。
-- （次: gate 4 実装SO → PR → closure → Copilot）
+- **gate 4 実装SO（`oe-review --lanes 2 --base master`）→ verdict=refuted**（codex material・cursor=`timeout_empty`＝360s タイムアウトで verdict なし＝機構エラー）。codex 指摘3件（すべて一次コード確認で material 判定・自分の guard の堅牢性欠陥＝scope 内）:
+  - Critical: guard が read-check-write で非原子的（並行 link の横取り / die-after-check の成功偽装）。
+  - Critical: SELF（TMUX_PANE）が非空しか検証されず、stale/spoofed で root が GC で即消え・link が生存 target を死んだ親の下に orphan 登録して成功を装う。テストも常に self を live に含め未検出。
+  - Warning: 既存 entry の JSON 読取失敗を `|| true` で空 parent 同一視 → live-parent guard が corrupt entry で fail-open。
+- **修正**: (a) `load_live_panes` を hoist し SELF の形式+生存を先に検証 / (b) `read_parent` を rc 保持にして corrupt entry は fail-closed（`--force` で上書き）/ (c) link は record 後に entry 存在を再確認し die-after-check を honest 失敗化 / (d) 並行 steal の窓は last-write-wins 基盤に内在（`oe-delegate:148` と同断面）として header に限界明記・原子的所有権（flock）は基盤課題として scope 外。テスト [14]（dead SELF）[15]（corrupt entry fail-closed / --force）を追加。test_oe_register 33→44・既存 spot-check 全 green・shellcheck PASS。
+- （次: 修正を再 SO で確認 → PR → closure → Copilot）
 
 ### closure（gate 5・マージ前）
 

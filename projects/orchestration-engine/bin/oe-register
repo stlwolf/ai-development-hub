@@ -17,6 +17,13 @@
 #         既に自分の子 → 冪等。
 #   root: 自 entry が生きた親を持つ（委譲された子が cold-start 手順で誤って自己 root 化）→ 拒否
 #         （detach 防止・--force で明示 re-root）/ 既に root or orphan → 許可。
+#   corrupt: 既存 entry の JSON が読めなければ fail-closed（--force なしは拒否）。
+#
+# 限界（TOCTOU・実装SO で明示）: guard は read-check-write で非原子的。複数 link の同時実行や
+#   判定後の親/自ペイン終了は last-write-wins に内在する競合窓で、これは registry 基盤の性質＝
+#   oe-delegate（生存確認→record の同じ窓）と同断面。verb 側では (a) SELF の形式+生存確認、
+#   (b) target 生存確認、(c) record 後の entry 存在再確認（die-after-check の成功偽装を正直化）
+#   まで固め、原子的所有権（flock 等）は基盤課題として scope 外に置く。
 #
 # registry の write path（oe_reg_record）は無変更。本 verb はそれを呼ぶだけ（additive・#259）。
 # oe-tree の root 判定 = parent 空の entry を root 描画。self-parent は [cycle] 化するため空 parent が正。
@@ -108,22 +115,42 @@ is_live() { printf '%s\n' "$LIVE_PANES" | grep -qxF "$1"; }
 
 entry_file() { printf '%s/%s.json' "$OE_DELEGATE_STATE_DIR" "$(_oe_reg_key "$1")"; }
 entry_exists() { [[ -f "$(entry_file "$1")" ]]; }
-entry_parent() { jq -r '.parent_pane // empty' "$(entry_file "$1")" 2>/dev/null || true; }
+# read_parent <pane> — 既存 entry の parent_pane を stdout に。JSON が壊れて読めなければ jq が
+# rc≠0（fail-closed 判定用）。`|| true` で空 parent と同一視すると corrupt entry で live-parent
+# guard が fail-open し保護対象を上書きできる（実装SO codex 指摘）ため rc を握り潰さない。
+read_parent() { jq -r '.parent_pane // empty' "$(entry_file "$1")" 2>/dev/null; }
 
 record_or_die() { # <pane> <label> <workspace> <parent>
   oe_reg_record "$1" "$2" "$3" "$4" || { echo "oe-register: failed to record registry entry" >&2; exit 1; }
 }
 
+# --- link mode の cheap validation（tmux 前に形式を弾く） ---
+if [[ "$MODE" == link ]]; then
+  [[ -n "$TARGET" ]] || { echo "oe-register: link requires a target pane %N" >&2; usage; exit 2; }
+  [[ "$TARGET" =~ ^%[0-9]+$ ]] || { echo "oe-register: link target must be a raw pane id (%N), got: ${TARGET}" >&2; exit 2; }
+  [[ "$TARGET" != "$SELF" ]] || { echo "oe-register: cannot link a pane to itself (${TARGET} == self)" >&2; exit 1; }
+fi
+
+# --- 生存ペイン一覧を1回だけ取得し、SELF 自身の妥当性（形式 + 生存）を先に固める ---
+# stale/spoofed TMUX_PANE では root が GC で即消え・link が生存 target を死んだ親の下に orphan
+# 登録して成功を装う（実装SO codex 指摘）。self を live 起点にしてからでないと guard 全体が崩れる。
+load_live_panes
+[[ "$SELF" =~ ^%[0-9]+$ ]] || { echo "oe-register: TMUX_PANE is not a valid pane id (${SELF})" >&2; exit 1; }
+is_live "$SELF" || { echo "oe-register: this pane (${SELF}) is not a live tmux pane (stale TMUX_PANE?)" >&2; exit 1; }
+
 # ============================================================================
 if [[ "$MODE" == root ]]; then
-  load_live_panes
   if entry_exists "$SELF"; then
-    parent="$(entry_parent "$SELF")"
-    if [[ -n "$parent" && "$parent" != "$SELF" ]] && is_live "$parent" && [[ "$FORCE" -ne 1 ]]; then
-      echo "oe-register: this pane is registered as a child of live parent ${parent}; refusing to self-root (use --force to re-root)" >&2
-      exit 1
+    if sparent="$(read_parent "$SELF")"; then
+      if [[ -n "$sparent" && "$sparent" != "$SELF" ]] && is_live "$sparent" && [[ "$FORCE" -ne 1 ]]; then
+        echo "oe-register: this pane is registered as a child of live parent ${sparent}; refusing to self-root (use --force to re-root)" >&2
+        exit 1
+      fi
+      # parent 空（既に root）/ parent gone（orphan）/ --force → 許可
+    else
+      # entry はあるが JSON が読めない（corrupt）→ fail-closed（--force で明示上書き）
+      [[ "$FORCE" -eq 1 ]] || { echo "oe-register: cannot read existing entry for ${SELF} (corrupt/unreadable); refusing (use --force to override)" >&2; exit 1; }
     fi
-    # parent 空（既に root）/ parent gone（orphan）/ --force → 許可
   fi
   [[ "$WS_EXPLICIT" -eq 1 ]] || WORKSPACE="$(pwd)"
   record_or_die "$SELF" "$LABEL" "$WORKSPACE" ""
@@ -133,20 +160,19 @@ fi
 
 # ============================================================================
 # link
-[[ -n "$TARGET" ]] || { echo "oe-register: link requires a target pane %N" >&2; usage; exit 2; }
-[[ "$TARGET" =~ ^%[0-9]+$ ]] || { echo "oe-register: link target must be a raw pane id (%N), got: ${TARGET}" >&2; exit 2; }
-[[ "$TARGET" != "$SELF" ]] || { echo "oe-register: cannot link a pane to itself (${TARGET} == self)" >&2; exit 1; }
-
-load_live_panes
 is_live "$TARGET" || { echo "oe-register: target ${TARGET} is not a live pane (try: oe-list)" >&2; exit 1; }
 
 if entry_exists "$TARGET"; then
-  tparent="$(entry_parent "$TARGET")"
-  if [[ -n "$tparent" && "$tparent" != "$SELF" ]] && is_live "$tparent" && [[ "$FORCE" -ne 1 ]]; then
-    echo "oe-register: ${TARGET} is already a live child of ${tparent}; refusing to steal (use --force to reparent)" >&2
-    exit 1
+  if tparent="$(read_parent "$TARGET")"; then
+    if [[ -n "$tparent" && "$tparent" != "$SELF" ]] && is_live "$tparent" && [[ "$FORCE" -ne 1 ]]; then
+      echo "oe-register: ${TARGET} is already a live child of ${tparent}; refusing to steal (use --force to reparent)" >&2
+      exit 1
+    fi
+    # tparent == self（冪等）/ tparent 空（元 root を adopt）/ tparent gone（orphan 引き取り）/ --force → 許可
+  else
+    # entry はあるが JSON が読めない（corrupt）→ fail-closed（--force で明示上書き）
+    [[ "$FORCE" -eq 1 ]] || { echo "oe-register: cannot read existing entry for ${TARGET} (corrupt/unreadable); refusing (use --force to override)" >&2; exit 1; }
   fi
-  # tparent == self（冪等）/ tparent 空（元 root を adopt）/ tparent gone（orphan 引き取り）/ --force → 許可
 fi
 
 if [[ "$WS_EXPLICIT" -ne 1 ]]; then
@@ -154,5 +180,12 @@ if [[ "$WS_EXPLICIT" -ne 1 ]]; then
   WORKSPACE="$(tmux display-message -p -t "$TARGET" '#{pane_current_path}' 2>/dev/null || true)"
 fi
 record_or_die "$TARGET" "$LABEL" "$WORKSPACE" "$SELF"
+# record 内の GC は非生存 pane の entry を消す。is_live 判定〜record の間に target が終了すると
+# entry が消え成功表示だけ残る（実装SO codex の success-faking 指摘）。書込後に存在を再確認し、
+# 消えていれば honest に失敗させる（並行 steal の窓は last-write-wins 基盤に内在＝§ヘッダ参照）。
+if ! entry_exists "$TARGET"; then
+  echo "oe-register: ${TARGET} entry did not persist after write (target likely exited); registration failed" >&2
+  exit 1
+fi
 echo "oe-register: linked ${TARGET} under ${SELF}${LABEL:+ (label: ${LABEL})}" >&2
 exit 0

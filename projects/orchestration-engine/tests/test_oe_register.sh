@@ -161,5 +161,32 @@ reset_state
 RC=0; TMUX_PANE="" bash "$OE_REGISTER" root >/dev/null 2>&1 || RC=$?
 ck "no TMUX_PANE exit 1" "1" "$RC"
 
+echo "[14] SELF（TMUX_PANE）が非生存 -> 拒否（stale/spoofed TMUX_PANE・実装SO codex 指摘）"
+reset_state; export MOCK_LIVE_PANES="%5"        # %1(self) が live 一覧に居ない
+run_reg "%1" root
+ck "dead self root exit 1"  "1"  "$RC"
+ck "no root entry written"  "no" "$(ent_exists %1)"
+run_reg "%1" link %5
+ck "dead self link exit 1"  "1"  "$RC"
+ck "no link entry written"  "no" "$(ent_exists %5)"
+
+echo "[15] 既存 entry が corrupt -> fail-closed（--force で上書き・実装SO codex 指摘）"
+reset_state; export MOCK_LIVE_PANES="%1 %5"
+printf 'not-json{{{' > "$OE_DELEGATE_STATE_DIR/$(keyfor %5).json"
+run_reg "%1" link %5
+ck "corrupt target reject exit 1" "1"   "$RC"
+ck "corrupt entry not overwritten" "yes" "$(ent_exists %5)"
+run_reg "%1" link %5 --force
+ck "corrupt target --force exit 0" "0"  "$RC"
+ck "force wrote valid parent"      "%1" "$(ent_parent %5)"
+# root 側: 自 entry が corrupt
+reset_state; export MOCK_LIVE_PANES="%1"
+printf 'broken' > "$OE_DELEGATE_STATE_DIR/$(keyfor %1).json"
+run_reg "%1" root
+ck "corrupt self root reject"   "1" "$RC"
+run_reg "%1" root --force
+ck "corrupt self root --force"  "0" "$RC"
+ck "force wrote valid root"     ""  "$(ent_parent %1)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
