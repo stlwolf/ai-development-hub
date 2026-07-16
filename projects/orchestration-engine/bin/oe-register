@@ -22,7 +22,8 @@
 # 限界（TOCTOU・実装SO で明示）: guard は read-check-write で非原子的。複数 link の同時実行や
 #   判定後の親/自ペイン終了は last-write-wins に内在する競合窓で、これは registry 基盤の性質＝
 #   oe-delegate（生存確認→record の同じ窓）と同断面。verb 側では (a) SELF の形式+生存確認、
-#   (b) target 生存確認、(c) record 後の entry 存在再確認（die-after-check の成功偽装を正直化）
+#   (b) target 生存確認、(c) record 後の entry 存在+所有者（link=parent==SELF / root=parent 空）
+#   再確認（die-after-check / 並行上書きの成功偽装を正直化）
 #   まで固め、加えて (d) 冪等再登録では --label/-w 省略時に既存 label/workspace を保つ（空で
 #   潰さない）。原子的所有権（flock 等）による race 防止は基盤課題として scope 外に置く。
 #
@@ -161,6 +162,17 @@ if [[ "$MODE" == root ]]; then
   fi
   [[ "$WS_EXPLICIT" -eq 1 || -n "$WORKSPACE" ]] || WORKSPACE="$(pwd)"
   record_or_die "$SELF" "$LABEL" "$WORKSPACE" ""
+  # post-check（link と対称）: entry が残り かつ parent 空（＝root のまま）を確認。並行上書きを
+  # honest 検知（自ペイン実行ゆえ die-after-check は稀だが header 記述と非対称にしない・実装SO cursor 指摘）。
+  if ! entry_exists "$SELF"; then
+    echo "oe-register: ${SELF} entry did not persist after write; root registration failed" >&2
+    exit 1
+  fi
+  spost="$(read_parent "$SELF" 2>/dev/null || true)"
+  if [[ -n "$spost" ]]; then
+    echo "oe-register: ${SELF} was concurrently re-parented under ${spost} after write; root registration did not take effect" >&2
+    exit 1
+  fi
   echo "oe-register: registered ${SELF} as root${LABEL:+ (label: ${LABEL})}" >&2
   exit 0
 fi

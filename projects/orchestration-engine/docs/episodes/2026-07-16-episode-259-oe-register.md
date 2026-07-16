@@ -3,7 +3,7 @@ id: "01KXN127119AT8VSEMSKN5C1RZ"
 title: "#259 episode（heavy）— oe-register（自己登録 + 委譲 link）と role 導出述語の締め"
 date: 2026-07-16
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/259"
@@ -61,6 +61,47 @@ tags: [orchestration, delegate-registry, oe-register, role-derivation, episode-2
 - **SO 終了判断**: 弱SO は 1 周が要件。2 周で fixable な指摘（SELF 生存 / fail-open / 冪等 / success-faking）は全て解消。残る codex の「原子的 race 防止」は scope 外の基盤課題で 3 周目は loop になる → **disclose して進む**（弱SO の partial 規約）。test_oe_register 48/0・全 suite green・shellcheck PASS。
 - （次: PR → closure → Copilot）
 
-### closure（gate 5・マージ前）
+### closure（gate 5・マージ前・リアルタイム追記＝reconstructed でない）
 
-（PR レビュー後・マージ前に追記）
+**tier = heavy**（トリガ: 実行中の方針転回〔設計SO が v0 refuted・実装SO が 2 round refuted〕/ 意図的に起動した外部レビュー〔`oe-refute` 設計SO + `oe-review` 実装SO〕/ 非自明な設計判断〔DJ-1 述語締め・role:"root" 案を棄却〕/ 昇格候補あり〔role 導出の existence-based 性質〕）。PR: https://github.com/stlwolf/ai-development-hub/pull/261 。
+
+**closure gate checklist**:
+- **Context / なぜ**: 冒頭 Context 節に自己完結（手動起動 pane の登記手段不在・#257 §3 の `parent_pane` 焼き込み root cause）。
+- **次の消費者**: (1) owner（gate 6 マージ / issue close 判断 / canonical sync 配布）(2) #238 succession/topology クラスタ（role 導出が existence-based という知見の消費先）(3) 手動起動統括の運用者（cold-start で `oe-register root`）。
+- **follow-up routing**:
+  - 並行 link の原子的 race 防止（flock/CAS）→ **追わない（scope 外・基盤課題）**。last-write-wins registry の性質で `oe-delegate` と同断面。将来 registry substrate を触る時に併せて検討（engine track・issue 未起票）。
+  - role:"root" フィールドの forward-looking 導入 → **追わない（YAGNI）**。消費者が role 値を読む時点の follow-up。現状は述語（existence + parent 非空）で十分。
+  - oe-register の topology-change event 発行（link 時）→ **追わない（scope 外）**。QDD/plan に無く registration≠spawn。
+  - role 導出が existence-based という知見 → **昇格候補（discussion/decision）**。#238/#257 succession/topology クラスタへ。owner が gate 6 で判断。
+- **status 確定**: draft → **stable**（達成度=達成。受け入れ基準5条件すべて満たす・全 `tests/test_*.sh` green・shellcheck PASS・PR #261 作成済）。
+- **evidence anchor**: 主要 verdict / material 指摘は本文転記済（設計SO refuted・audit `20260716051325NHD2DNSKVKH8` / 実装SO round1・round2 とも refuted・reviewed SHA `da67c00`）。生出力（`.oe/`〔本 worktree に無く親 checkout 側〕・`tmp/oe-refute-*`・`tmp/oe-review-*`・`tmp/so-closure-259`）は gitignored の揮発アンカー。secondary risk の逐条（round-2 cursor full 等）は揮発ログにのみ残り、要点は本文の残課題へ routing 済。
+- **SO 証跡リンク**: 設計SO = `.oe/oe-refute-259.json`（verdict/dissent 本文転記）/ 実装SO = scratchpad（揮発・verdict/dissent 本文 + PR に転記）。
+
+**事実・失敗（SO で refute された点と対応）**:
+- 設計SO（round 1・refuted）: v0 前提「role field は moot」が崩れた。self entry の存在が oe-ident/event-bus を child 誤導出 → 述語締めで対応（DJ-1）。
+- 実装SO round 1（codex・refuted）: SELF 生存未検証 / corrupt entry で guard fail-open / guard 非原子。→ SELF 形式+生存検証・`read_parent` fail-closed・link post-record 存在確認を追加。
+- 実装SO round 2（cursor material / codex 再掲・refuted）: 冪等再登録が既存 label/workspace を空で上書き（非冪等）→ 既存値保持 + test[16]。codex の非原子 race → ownership-aware post-check（防止でなく検知）。
+- **Step 4 closure 監査（codex）が自 closure の欠陥を検出**: (i) round-2 cursor の full 出力に secondary 指摘（root post-record 欠如・root label 解決制約）があり dissent 1 行だけ見て routing 漏れ、(ii) closure に事実・失敗節なし・決定と根拠が round-1/2 の採否を欠く、(iii)「success-faking 全て解消」が root post-check 欠如で過大、(iv) evidence anchor の包括表現が過大。→ 本 closure で是正（下記）+ **root post-record ownership check を追加**（link と対称化）。dissent 要約だけで満足せず full 出力を読む教訓。
+
+**決定と根拠**:
+- DJ-1: role:"root" 案（optional 第5引数で lib 拡張）を**棄却**し「判定述語を締める」を採用。棄却理由 = readers は `.role` field を読まず entry 存在から role を導出するため role:"root" は無効・既存 entry は全て parent 非空ゆえ述語締めは既存データに bit-identical で lib write path も無変更。
+- SELF 生存確認 / corrupt entry fail-closed / 冪等時の label/workspace 保持 / link・root の ownership-aware post-check: いずれも「verb 側 guard の correctness・honesty を上げる」採用。既存 lib（`oe_reg_record`）は無変更を維持。
+- guard の原子性: flock/CAS を**棄却**（last-write-wins registry 基盤の変更＝additive scope 外）。verb 側は SELF/target 生存確認 + ownership-aware post-check で「勝てなかった」の honest 検知に留め、race **防止**は基盤課題へ defer。
+- F2「key と `.pane` 不整合」: guard は `_oe_reg_key` で引く（**key を信頼**）方針を採用（`.pane` 照合はしない）。oe-register 自身は key と `.pane` が常に一致する entry しか書かない（`oe_reg_record` の不変条件）。
+
+**わかったこと（W）**:
+- registry の role は `.role` field でなく **entry の存在**から read-time 導出される（`oe-ident:60-71` / `event-bus.sh:49,68-76`）。`parent_pane` 非空を足すと自己 root を child と誤導出しない。この「stored field でなく existence-derived」性質は #238 succession の topology 表現設計に直結。
+- `oe-review` の cursor レーンは大 diff で timeout しやすい（round1 で 360s `timeout_empty`）。round2 で返り idempotency 退行を検出。
+
+**原則（Pattern / Anti-pattern）**:
+- Anti-pattern: 「reader は field X を読まないから field 値は moot」→ reader が field でなく **entry の存在 / 形**から派生値を導出していないか確認する（existence 派生は field 追加で直らない）。
+- Pattern: last-write-wins state に verb 側 guard を足すとき、race 防止（原子性）は基盤の責務・verb は「勝てなかった」の honest 検知に留める（防止と検知を分ける）。
+
+**蒸留シグナル**: 昇格候補 = **discussion/decision**（role の existence-based 導出 → #238/#257 succession/topology クラスタ）。skill/rule 昇格は **なし**。
+
+**残課題**:
+- 原子的 race 防止 / role:"root" / topology event 発行 → follow-up routing 参照（「追わない」or「昇格候補」）。
+- **root の registry `--label` は他ペインから label 解決に使えない**（`oe_reg_resolve`/`oe_reg_list` が `parent_pane==$self` scope＝子のみ・root は parent 空で非該当。round-2 cursor 指摘）→ **追わない（lib 無変更の既存制約・oe-tree/cockpit で root は表示され jump 可なので実害小）**。root を label で send する需要が出たら lib 側で対応（engine track）。
+- die-after-check / 並行 steal / root 並行上書きの post-check は stateful mock が要り単体テスト未整備 → **追わない**（実運用の稀パス・機能は防止でなく honest 検知）。
+
+**Step 4（heavy 外部チェック・`so-compare` codex closure 監査）**: closure honesty の欠陥を検出 → 全て是正: (a) 事実・失敗節を新設、(b) 決定と根拠に round-1/2 の採否を追記、(c)「全て解消」の過大表現を訂正し **root post-record check を追加**（link と対称）、(d) root label 解決制約を routing、(e) evidence anchor を正確化。監査対象 = `tmp/so-closure-259/`（揮発）。**closure 監査が実 material 欠陥（routing 漏れ + code 非対称）を捕捉＝Step 4 の価値実証**。辞退せず実施して正解だった。
