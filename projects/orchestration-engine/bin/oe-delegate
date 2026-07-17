@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # oe-delegate — 子 Claude セッションを起動し、タスクをキックする
 #
-# usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+# usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 #
 # 子ペインを tmux split-window で起動し、キックは bin/oe-send 経由で注入する
 # （spawn + send の合成）。delegate は委譲（起動とキック）に専念し、戻し（report）の処理は
@@ -20,13 +20,14 @@ source "${BIN_DIR}/../lib/event-bus.sh" 2>/dev/null || true
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 
   <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
-                      --kickoff があれば省略可
+                      --brief があれば省略可
   -w, --workspace DIR 子セッションの作業ディレクトリ（デフォルト: カレントディレクトリ）
-  --kickoff <path>    キックオフ doc を子に読ませる（"<path> を読んで進めて。" を付加）。
+  --brief <path>      brief doc（委譲指示書）を子に読ませる（"<path> を読んで進めて。" を付加）。
                       子から読めるよう doc のディレクトリを --add-dir で開示する
+  --kickoff <path>    --brief の deprecated alias（後方互換・#255）。新規は --brief を使う
   --label <#N|name>   子を registry に登録する際のラベル（後で oe-send <label> で指す）。
                       省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
   --claude-arg <arg>  子 Claude 起動時に渡す追加引数（repeatable）。
@@ -43,7 +44,7 @@ EOF
 }
 
 WORKSPACE="$(pwd)"
-KICKOFF=""
+BRIEF=""
 LABEL=""
 CLAUDE_ARGS=()
 while [[ "${1:-}" == -* ]]; do
@@ -51,9 +52,11 @@ while [[ "${1:-}" == -* ]]; do
     -w|--workspace)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --workspace requires a value" >&2; exit 2; }
       WORKSPACE="$2"; shift 2 ;;
-    --kickoff)
-      [[ $# -ge 2 ]] || { echo "oe-delegate: --kickoff requires a value" >&2; exit 2; }
-      KICKOFF="$2"; shift 2 ;;
+    --brief|--kickoff)
+      # --kickoff は --brief の deprecated alias（後方互換・#255）。エラー文言は実際に
+      # 渡された flag（$1）を映す。
+      [[ $# -ge 2 ]] || { echo "oe-delegate: $1 requires a value" >&2; exit 2; }
+      BRIEF="$2"; shift 2 ;;
     --label)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --label requires a value" >&2; exit 2; }
       # 改行（LF/CR）を含むラベルは registry 経由で oe_reg_list 出力を複数行化し、消費者
@@ -78,15 +81,15 @@ while [[ "${1:-}" == -* ]]; do
 done
 
 TASK="${1:-}"
-# task は --kickoff があれば省略可。どちらも無ければエラー。
-if [[ -z "$TASK" && -z "$KICKOFF" ]]; then
-  echo "oe-delegate: task argument is required (or pass --kickoff)" >&2
+# task は --brief があれば省略可。どちらも無ければエラー。
+if [[ -z "$TASK" && -z "$BRIEF" ]]; then
+  echo "oe-delegate: task argument is required (or pass --brief)" >&2
   usage
 fi
 # task は 1 行。改行を含むなら spawn 前に弾く（送信は oe_send_line が拒否するため、
 # spawn 後に気づくと無キックの孤児ペインが残る。preflight で防ぐ）。
 if [[ "$TASK" == *$'\n'* || "$TASK" == *$'\r'* ]]; then
-  echo "oe-delegate: task must be a single line (no newline); 長文は --kickoff <path> で渡す" >&2
+  echo "oe-delegate: task must be a single line (no newline); 長文は --brief <path> で渡す" >&2
   exit 2
 fi
 
@@ -97,17 +100,17 @@ PARENT_PANE="${TMUX_PANE:-}"
   exit 1
 }
 
-# --kickoff を絶対パス化し、子（対話型 claude）が読めるよう doc のディレクトリを
+# --brief を絶対パス化し、子（対話型 claude）が読めるよう doc のディレクトリを
 # --add-dir で開示する。spawn.sh の envelope は claude -p + --add-dir /tmp で読ませているが、
 # こちらは素の対話型 claude のため明示開示が要る（so 指摘）。
-KICKOFF_ABS=""
-if [[ -n "$KICKOFF" ]]; then
-  [[ -f "$KICKOFF" ]] || { echo "oe-delegate: --kickoff file not found: ${KICKOFF}" >&2; exit 2; }
-  case "$KICKOFF" in
-    *\'*) echo "oe-delegate: --kickoff path must not contain a single quote" >&2; exit 2 ;;
+BRIEF_ABS=""
+if [[ -n "$BRIEF" ]]; then
+  [[ -f "$BRIEF" ]] || { echo "oe-delegate: --brief file not found: ${BRIEF}" >&2; exit 2; }
+  case "$BRIEF" in
+    *\'*) echo "oe-delegate: --brief path must not contain a single quote" >&2; exit 2 ;;
   esac
-  kdir="$(cd "$(dirname "$KICKOFF")" && pwd)"
-  KICKOFF_ABS="${kdir}/$(basename "$KICKOFF")"
+  kdir="$(cd "$(dirname "$BRIEF")" && pwd)"
+  BRIEF_ABS="${kdir}/$(basename "$BRIEF")"
 fi
 
 shell_quote() {
@@ -126,7 +129,7 @@ build_child_command() {
   for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
     cmd="${cmd} $(shell_quote "$arg")"
   done
-  if [[ -n "$KICKOFF" ]]; then
+  if [[ -n "$BRIEF" ]]; then
     cmd="${cmd} --add-dir $(shell_quote "$kdir")"
   fi
   printf '%s\n' "$cmd"
@@ -160,7 +163,7 @@ fi
 
 # キックを oe-send で注入する。delegate は report を内包しない（戻しは子が oe-send で行う）。
 SEND_ARGS=()
-if [[ -n "$KICKOFF_ABS" ]]; then SEND_ARGS+=(--kickoff "$KICKOFF_ABS"); fi
+if [[ -n "$BRIEF_ABS" ]]; then SEND_ARGS+=(--brief "$BRIEF_ABS"); fi
 SEND_ARGS+=(-- "$CHILD_PANE")
 if [[ -n "$TASK" ]]; then SEND_ARGS+=("$TASK"); fi
 "${BIN_DIR}/oe-send" "${SEND_ARGS[@]}"
