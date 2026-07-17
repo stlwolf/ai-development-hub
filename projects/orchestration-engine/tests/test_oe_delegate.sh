@@ -189,5 +189,89 @@ bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --brief >"${_TMP_DIR}/stdo
 ck "missing brief value rc=2" "2" "$rc"
 ck "missing brief error names --brief" "yes" "$(grep -qF -- '--brief requires a value' "${_TMP_DIR}/stderr.log" && echo yes || echo no)"
 
+echo "[16] --print-approval prints a digest and does NOT spawn (#262)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --reason "本番隣接 deploy" --print-approval "elevated task"
+ck "print-approval does not spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+ck "print-approval prints 16-hex digest" "yes" "$(grep -qE '承認ダイジェスト: [0-9a-f]{16}' "$_TMP_DIR/stdout.log" && echo yes || echo no)"
+ck "print-approval echoes --approved-digest" "yes" "$(grep -q -- '--approved-digest' "$_TMP_DIR/stdout.log" && echo yes || echo no)"
+
+echo "[17] --approved-digest matching -> spawns; binding holds (#262)"
+digest="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --print-approval "bind task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --approved-digest "$digest" "bind task"
+ck "matching digest spawns child" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+
+echo "[18] --approved-digest mismatch -> rc=3 and no spawn (#262)"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --approved-digest "deadbeefdeadbeef" "bind task" >"${_TMP_DIR}/stdout.log" 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "mismatch rc=3" "3" "$rc"
+ck "mismatch does not spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[19] --reason is excluded from the digest (annotation, not execution) (#262)"
+d1="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --reason "r1" --print-approval "same task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+d2="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --reason "r2 different" --print-approval "same task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+ck "reason change -> digest stable" "yes" "$( [[ -n "$d1" && "$d1" == "$d2" ]] && echo yes || echo no )"
+d3="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --print-approval "DIFFERENT task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+ck "task change -> digest differs" "yes" "$( [[ "$d1" != "$d3" ]] && echo yes || echo no )"
+
+echo "[20] relative --workspace is normalized to absolute in the package (#262 D1)"
+reset_logs
+expected_ws="$(cd "$_TMP_DIR/ws" && pwd)"
+absout="$(cd "$_TMP_DIR/ws" && bash "$PROJECT_DIR/bin/oe-delegate" -w . --print-approval "abs task" 2>/dev/null)"
+ck "relative -w shown as absolute" "yes" "$(printf '%s\n' "$absout" | grep -qF "作業ディレクトリ: ${expected_ws}" && echo yes || echo no)"
+
+echo "[21] empty --approved-digest still verifies (no skip) -> refuse (#262 D2)"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --approved-digest "" "t" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "empty digest rc=3" "3" "$rc"
+ck "empty digest no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[22] --elevated without --approved-digest is refused (#262 D3)"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto "t" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "elevated no-digest rc=3" "3" "$rc"
+ck "elevated no-digest no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[23] bypassPermissions is treated as elevated -> requires approval (#262 D3)"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg bypassPermissions "t" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "bypass no-digest rc=3" "3" "$rc"
+ck "bypass no-digest no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[24] --elevated with matching digest spawns (#262 D3 positive)"
+edig="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --print-approval "el task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --approved-digest "$edig" "el task"
+ck "elevated + matching digest spawns" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+
+echo "[25] --workspace with control chars is rejected before spawn (#262 D4/R2)"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w $'/tmp\nfake' --print-approval "t" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "newline workspace rc=2" "2" "$rc"
+ck "newline workspace no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w $'/tmp\x1b[2Kfake' --print-approval "t" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "ESC workspace rc=2" "2" "$rc"
+
+echo "[26] --elevated is bound in the digest — no escalation/downgrade via flag tamper (#262 R2)"
+nedig="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --print-approval "esc task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --approved-digest "$nedig" "esc task" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "escalation (add --elevated) rc=3" "3" "$rc"
+ck "escalation no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+eldig="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --print-approval "esc task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+reset_logs
+rc=0
+bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-mode --claude-arg auto --approved-digest "$eldig" "esc task" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "downgrade (drop --elevated) rc=3" "3" "$rc"
+ck "elevated toggles digest" "yes" "$( [[ "$nedig" != "$eldig" ]] && echo yes || echo no )"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

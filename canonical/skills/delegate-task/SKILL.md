@@ -95,6 +95,45 @@ BIN="$REPO/projects/orchestration-engine/bin"
 - **per-issue は end-to-end で子へ**: 各 issue の §0 洗い出し以降（設計 SO / 調査 / 実装）を統括が自分の会話で巻き取らず、issue ごとに子スレッドへ一気通貫で委譲する（親 lean）。§0 の一括 read-only 洗い出しだけは親 or 使い捨て subagent が担ってよい。
 - **マージ・worktree 掃除は親 / 人間（Human Gate、HG）**: 子は完了報告のみ行い、マージも worktree 掃除もしない。
 
+### elevated 子 spawn の owner 承認ハンドシェイク（#262）
+
+**いつ発火するか（限定）**: 子が **elevated**（`bypassPermissions`、または本番 / 機微アクセスを持つタスク）のときだけ。通常のローカル auto 委譲は対象外で従来どおり（ハンドシェイクを掛けない）。
+
+**なぜ要るか**: 親が elevated 子を spawn しようとすると、ハーネスの auto-mode classifier が**親の spawn tool-call を評価して block** する（解除は owner の直接アクションのみ・安全機構として正しい）。分類器は繰り返し block された後にしか in-TUI プロンプトを出さないので、親が叩き直すと #262 の「混乱した往復」になる。これを、owner が 1 アクションで判断できる**整形済み承認パッケージを spawn 前に先出し**することで断つ。**分類器は尊重する（変えない・迂回しない）**。
+
+**手順（3 ステップ）**:
+
+本番 / 機微アクセスの auto 子は `--elevated` を**必ず宣言する**（engine は本番アクセスを自動検知できないため。`--elevated` を付けると実 spawn は承認済みダイジェストを必須にする。`bypassPermissions` 子は宣言せずとも elevated 扱い）。
+
+```bash
+# 1. spawn せず承認パッケージ + ダイジェストを印字（print は子を作らないので classifier に block されない）
+"$BIN/oe-delegate" -w "$REPO" --label "#N" --elevated \
+  --claude-arg --permission-mode --claude-arg auto \
+  --reason "本番隣接の非対話 deploy が要る" \
+  --print-approval "タスク1行"
+# → owner 向けパッケージ（要求権限モード / elevated 宣言 / 対象子 / 理由 / 作業ディレクトリ /
+#    blast radius / 承認ダイジェスト）と、そのまま実行できる実 spawn コマンド（--approved-digest 付き）を印字。
+
+# 2. owner が 1 アクションで承認（表示された実 spawn を承認する / owner が自分で実行する）。
+
+# 3. 実 spawn（同じ引数 + 承認ダイジェスト）。oe-delegate が引数から digest を再計算して照合し、
+#    承認後にコマンドが変わっていれば拒否（exit 3）＝承認↔実行の binding。--elevated 宣言も digest に
+#    束縛されるので、非 elevated の承認に後から --elevated を付けて escalation することはできない。
+"$BIN/oe-delegate" -w "$REPO" --label "#N" --elevated \
+  --claude-arg --permission-mode --claude-arg auto \
+  --reason "本番隣接の非対話 deploy が要る" \
+  --approved-digest "<step1 のダイジェスト>" "タスク1行"
+```
+
+- **binding**: `--print-approval` が出すダイジェストは workspace 絶対パス / label / claude 引数 / brief 絶対パス + 内容 hash / task / elevated 宣言 から決定論計算する（`--reason` は注記なので含めない）。実 spawn 時に不一致なら spawn せず exit 3。親（モデル）が承認済みと違うコマンド（属性含む）を走らせる drift を機構で捕まえる。
+- **classifier は迂回しない**: 実 spawn 自体は従来どおり owner ゲート（分類器）を通る。ハンドシェイクは「owner が 1 アクションで判断するための情報とタイミング」を標準化するだけ。
+- **audit**: elevated spawn は `child_spawned` イベントに `permission_mode` + `elevated` を焼き込む（auto でも elevated 宣言の有無で通常 spawn と事後区別できる・registry は変更しない）。
+- **v0 の限界（plan §8・意図的な defer）**:
+  - ダイジェストは公開入力からの決定論チェックサムで、**owner 承認の暗号的証明ではない**（nonce / 期限 / 消費状態を持たない）。**authZ の実体はハーネスの分類器**（agent は elevated spawn の block を自己解除できない）で、ダイジェストは「owner が見た内容 = 実行内容」を保証する drift-guard。両者は別レイヤー。
+  - brief は承認時に内容 hash を束縛するが、spawn 後に子が読むまでの差し替え（read-time TOCTOU）までは束縛しない。
+  - `permission_mode` は CLI 引数からの best-effort 推定（継承 config は反映しない）。enforcement は明示 `--elevated` を主ゲートにするので本番ケースは mode 推定に依存しない。
+- 規範（なぜ owner 承認が要るか）は `orchestration-toolkit`、ゲート位置は `doc-flow-guardrail` の routing 表、engine フラグの詳細は `oe-delegate -h` を参照（3軸分離）。
+
 ---
 
 ## send（既存ペインへの送信）

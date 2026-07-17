@@ -57,6 +57,19 @@ ck "to.role"     "child"          "$(last | jq -r .to.role)"
 ck "to.label"    "#206 impl"      "$(last | jq -r .to.label)"
 ck "ts present"  "true"           "$(last | jq -r '(.ts|type=="string") and (.ts|length>0)')"
 
+echo "[1b] child_spawned: permission_mode / elevated を extra に焼き込む・省略時は無し（#262）"
+reset_events
+oe_event_child_spawned "%59" "%66" "#206 impl" "auto" "true"
+ck "permission_mode=auto"          "auto"  "$(last | jq -r '.permission_mode // "MISSING"')"
+ck "elevated=true"                 "true"  "$(last | jq -r '.elevated')"
+reset_events
+oe_event_child_spawned "%59" "%66" "#206 impl" "auto"
+ck "elevated 省略時は false"        "false" "$(last | jq -r '.elevated')"
+reset_events
+oe_event_child_spawned "%59" "%66" "#206 impl"
+ck "pmode/elevated 両省略で pmode 無し" "null" "$(last | jq -r '.permission_mode')"
+ck "両省略で elevated も無し"           "null" "$(last | jq -r '.elevated')"
+
 echo "[2] message_sent report（子→親）: 直接 parent リンクで from=child/to=parent に確定"
 reset_events
 oe_event_message_sent "%66" "%59" "実装完了しました" "none"

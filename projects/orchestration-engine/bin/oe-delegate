@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # oe-delegate — 子 Claude セッションを起動し、タスクをキックする
 #
-# usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+# usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>]
+#                    [--reason <text>] [--elevated] [--print-approval | --approved-digest <digest>] [--] <task>
+#
+# elevated（bypass / 本番アクセス）子の spawn 段 owner 承認ハンドシェイク（#262 v0）:
+#   --print-approval は spawn せず、正規化 argv のダイジェストと owner 向け承認パッケージを印字する
+#   （print は子を作らないので auto-mode classifier に block されない）。owner が承認したのち、
+#   同じ引数 + --approved-digest <digest> で実 spawn する。oe-delegate は spawn 直前にダイジェストを
+#   再計算して照合し、承認内容と実行が一致すること（binding）を機構的に保証する。実 spawn 自体は
+#   従来どおり owner ゲート（分類器）を通る——ハンドシェイクは分類器を迂回しない。
+#   --elevated（or bypassPermissions）を宣言した spawn は承認済みダイジェストを必須にする
+#   （承認を経ず到達する迂回を engine 側で塞ぐ）。通常のローカル auto 委譲は対象外・不変。
 #
 # 子ペインを tmux split-window で起動し、キックは bin/oe-send 経由で注入する
 # （spawn + send の合成）。delegate は委譲（起動とキック）に専念し、戻し（report）の処理は
@@ -20,7 +30,8 @@ source "${BIN_DIR}/../lib/event-bus.sh" 2>/dev/null || true
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>]
+                   [--reason <text>] [--elevated] [--print-approval | --approved-digest <digest>] [--] <task>
 
   <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
                       --brief があれば省略可
@@ -32,6 +43,16 @@ usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude
                       省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
   --claude-arg <arg>  子 Claude 起動時に渡す追加引数（repeatable）。
                       例: --claude-arg --permission-mode --claude-arg auto
+  --reason <text>     承認パッケージに載せる理由（1行・#262 elevated 承認ハンドシェイク用）。
+  --elevated          この子を elevated（本番 / 機微アクセス等）と宣言する。宣言すると実 spawn は
+                      owner 承認済みダイジェスト（--approved-digest）を必須にする（無ければ exit 3）。
+                      bypassPermissions 子は宣言せずとも elevated 扱い。通常のローカル auto 委譲は対象外。
+  --print-approval    spawn せず、正規化 argv のダイジェスト + owner 向け承認パッケージを印字。
+                      elevated 子の spawn 前に owner 承認を取るのに使う（print は子を作らないので block されない）。
+  --approved-digest <digest>
+                      実 spawn 時に承認済みダイジェストを渡す。oe-delegate が引数から再計算した
+                      ダイジェストと照合し、不一致なら spawn を拒否（承認↔実行の binding・不一致は exit 3）。
+                      渡された場合は空文字でも必ず照合する（照合スキップ迂回を塞ぐ）。
   -h, --help          このヘルプを表示
 
 環境変数:
@@ -47,6 +68,11 @@ WORKSPACE="$(pwd)"
 BRIEF=""
 LABEL=""
 CLAUDE_ARGS=()
+REASON=""
+PRINT_APPROVAL=""
+APPROVED_DIGEST=""
+APPROVED_DIGEST_SET=""
+ELEVATED=""
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -w|--workspace)
@@ -74,6 +100,25 @@ while [[ "${1:-}" == -* ]]; do
         exit 2
       fi
       CLAUDE_ARGS+=("$2"); shift 2 ;;
+    --reason)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --reason requires a value" >&2; exit 2; }
+      if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
+        echo "oe-delegate: --reason value must be a single line (no newline)" >&2
+        exit 2
+      fi
+      REASON="$2"; shift 2 ;;
+    --print-approval)
+      PRINT_APPROVAL=1; shift ;;
+    --elevated)
+      ELEVATED=1; shift ;;
+    --approved-digest)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --approved-digest requires a value" >&2; exit 2; }
+      if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
+        echo "oe-delegate: --approved-digest value must be a single line (no newline)" >&2
+        exit 2
+      fi
+      # フラグが渡されたこと自体を記録（空文字を渡して照合をスキップする迂回を塞ぐ・実装SO D2）。
+      APPROVED_DIGEST="$2"; APPROVED_DIGEST_SET=1; shift 2 ;;
     -h|--help) usage ;;
     --) shift; break ;;
     *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
@@ -93,12 +138,30 @@ if [[ "$TASK" == *$'\n'* || "$TASK" == *$'\r'* ]]; then
   exit 2
 fi
 
-# tmux 内でのみ実行可能
+# workspace を検証・絶対化する（実装SO D1/D4）。
+#   - 制御文字は承認パッケージ（owner 判断のセキュリティ表示）へ偽の「承認ダイジェスト:」行を注入し得る
+#     ため fail-fast 拒否（label 等と同方針）。
+#   - 相対パスは cwd 依存で、別 cwd から同じ相対 -w が同一 digest になり binding を迂回できる。
+#     絶対化して digest / パッケージ / spawn の -c を一致させる（DJ-2 の「workspace 絶対パス」担保）。
+if [[ "$WORKSPACE" =~ [[:cntrl:]] ]]; then
+  echo "oe-delegate: --workspace value must not contain control characters" >&2
+  exit 2
+fi
+if _ws_abs="$(cd "$WORKSPACE" 2>/dev/null && pwd)"; then
+  WORKSPACE="$_ws_abs"
+else
+  echo "oe-delegate: workspace directory not found: ${WORKSPACE}" >&2
+  exit 2
+fi
+
+# tmux 内でのみ実行可能（--print-approval は spawn しないため tmux 不要）
 PARENT_PANE="${TMUX_PANE:-}"
-[[ -n "$PARENT_PANE" ]] || {
-  echo "oe-delegate: TMUX_PANE is not set — must run inside a tmux session" >&2
-  exit 1
-}
+if [[ -z "$PRINT_APPROVAL" ]]; then
+  [[ -n "$PARENT_PANE" ]] || {
+    echo "oe-delegate: TMUX_PANE is not set — must run inside a tmux session" >&2
+    exit 1
+  }
+fi
 
 # --brief を絶対パス化し、子（対話型 claude）が読めるよう doc のディレクトリを
 # --add-dir で開示する。spawn.sh の envelope は claude -p + --add-dir /tmp で読ませているが、
@@ -109,6 +172,11 @@ if [[ -n "$BRIEF" ]]; then
   case "$BRIEF" in
     *\'*) echo "oe-delegate: --brief path must not contain a single quote" >&2; exit 2 ;;
   esac
+  # 制御文字は承認パッケージ表示への行/端末制御注入経路（実装SO D4/R2）。単一引用符に加えて拒否する。
+  if [[ "$BRIEF" =~ [[:cntrl:]] ]]; then
+    echo "oe-delegate: --brief path must not contain control characters" >&2
+    exit 2
+  fi
   kdir="$(cd "$(dirname "$BRIEF")" && pwd)"
   BRIEF_ABS="${kdir}/$(basename "$BRIEF")"
 fi
@@ -135,6 +203,147 @@ build_child_command() {
   printf '%s\n' "$cmd"
 }
 
+# --- #262 spawn 段 owner 承認ハンドシェイク（binding + approval package） ---
+
+# _sha256 — stdin を sha256 し hex を stdout（darwin=shasum / linux=sha256sum）。
+_sha256() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+  else return 1; fi
+}
+
+# _strip_cntrl — 表示用に制御文字を除去（ESC 等での承認表示 spoof を断つ・実装SO R2）。
+_strip_cntrl() { printf '%s' "$1" | tr -d '\000-\037\177'; }
+
+# extract_permission_mode — CLAUDE_ARGS から子の実効 permission mode を推定（audit / パッケージ用）。
+#   --permission-mode <v> / --permission-mode=<v> / --dangerously-skip-permissions を認識。無ければ default。
+extract_permission_mode() {
+  local arg prev="" mode="default"
+  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
+    case "$arg" in
+      --dangerously-skip-permissions) mode="bypassPermissions" ;;
+      --permission-mode=*) mode="${arg#--permission-mode=}" ;;
+    esac
+    [[ "$prev" == "--permission-mode" ]] && mode="$arg"
+    prev="$arg"
+  done
+  printf '%s' "$mode"
+}
+
+# compute_spawn_digest — 承認対象の正規化ダイジェスト（承認↔実行 binding 用）を stdout。
+#   実行される子コマンドの承認面（workspace 絶対パス / label / claude 引数列 / brief 絶対パス
+#   + その内容 hash / task / elevated 宣言）。ephemeral な PARENT_TMUX_PANE と注記の --reason は含めない。
+#   WORKSPACE は呼び出し前に絶対化済み（相対 -w のクロス cwd 迂回を防ぐ・実装SO D1）。
+#   brief は path だけでなく内容 hash も含め、承認後の内容差し替え（TOCTOU）を捕まえる。
+compute_spawn_digest() {
+  command -v jq >/dev/null 2>&1 || { echo "oe-delegate: jq is required for the approval digest" >&2; return 2; }
+  # claude 引数配列を JSON へ。値が --permission-mode 等の option 形なので jq --args は使わず
+  # （jq が option と誤認する）、--argjson で 1 要素ずつ安全に append する。
+  local args_json="[]" arg
+  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
+    args_json="$(jq -cn --argjson acc "$args_json" --arg a "$arg" '$acc + [$a]')" || return 1
+  done
+  local brief_hash=""
+  if [[ -n "$BRIEF_ABS" && -f "$BRIEF_ABS" ]]; then
+    brief_hash="$(_sha256 < "$BRIEF_ABS")" || return 1
+  fi
+  # elevated 宣言も束縛する（実装SO R2）。含めないと、非 elevated の承認 digest に後から
+  # --elevated を付けて escalation できる（逆に downgrade も）。digest に焼くことで、owner が
+  # 見た elevated 宣言と実 spawn の elevated 属性が一致しなければ照合が落ちる。
+  local elevated_json; elevated_json="$([[ -n "$ELEVATED" ]] && echo true || echo false)"
+  local canon
+  canon="$(jq -cn \
+    --arg ws "$WORKSPACE" --arg label "$LABEL" --arg brief "$BRIEF_ABS" \
+    --arg bh "$brief_hash" --arg task "$TASK" --argjson el "$elevated_json" \
+    --argjson ca "$args_json" \
+    '{workspace:$ws, label:$label, brief:$brief, brief_content:$bh, task:$task, elevated:$el, claude_args:$ca}')" || return 1
+  printf '%s' "$canon" | _sha256 | cut -c1-16
+}
+
+# build_approval_command — owner が承認 / 実行する実 spawn コマンドを正規順で再構成して stdout。
+build_approval_command() {
+  local d="$1" cmd arg
+  cmd="$(shell_quote "${BIN_DIR}/oe-delegate") -w $(shell_quote "$WORKSPACE")"
+  [[ -n "$LABEL" ]] && cmd="${cmd} --label $(shell_quote "$LABEL")"
+  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
+    cmd="${cmd} --claude-arg $(shell_quote "$arg")"
+  done
+  [[ -n "$BRIEF_ABS" ]] && cmd="${cmd} --brief $(shell_quote "$BRIEF_ABS")"
+  [[ -n "$REASON" ]] && cmd="${cmd} --reason $(shell_quote "$REASON")"
+  [[ -n "$ELEVATED" ]] && cmd="${cmd} --elevated"
+  cmd="${cmd} --approved-digest $(shell_quote "$d")"
+  [[ -n "$TASK" ]] && cmd="${cmd} -- $(shell_quote "$TASK")"
+  printf '%s' "$cmd"
+}
+
+# print_approval_package — spawn せず owner 向け承認パッケージ + ダイジェストを stdout。
+#   表示値は _strip_cntrl でサニタイズする（digest は raw 値で計算・表示は無害化）。
+#   WORKSPACE / BRIEF は入力段で制御文字を fail-fast 済み。
+print_approval_package() {
+  local digest pm task_summary is_elev="no" s_label s_task s_reason
+  digest="$(compute_spawn_digest)" || { echo "oe-delegate: failed to compute the approval digest" >&2; exit 2; }
+  pm="$(extract_permission_mode)"
+  { [[ -n "$ELEVATED" ]] || [[ "$pm" == "bypassPermissions" ]]; } && is_elev="yes"
+  task_summary="$TASK"
+  [[ -n "$task_summary" ]] || task_summary="(brief 参照: ${BRIEF_ABS:-none})"
+  s_label="$(_strip_cntrl "${LABEL:-(ラベル無し)}")"
+  s_task="$(_strip_cntrl "$task_summary")"
+  s_reason="$(_strip_cntrl "${REASON:-(呼び出し側が会話で補足)}")"
+  cat <<EOF
+========================================================================
+[spawn 承認要求] elevated な子セッションを起動します。owner の承認をお願いします。
+------------------------------------------------------------------------
+  対象の子        : ${s_label}
+  要求権限モード  : ${pm}
+  elevated 宣言   : ${is_elev}
+  作業ディレクトリ: ${WORKSPACE}
+  brief           : ${BRIEF_ABS:-(なし)}
+  タスク          : ${s_task}
+  理由            : ${s_reason}
+  blast radius    : auto 子は作業ディレクトリ内で権限プロンプトを自動承認しうる。
+                    破壊的コマンドは block-destructive hook が引き続き block する
+                    （限定的パターンブロッカーであり完全な sandbox ではない）。
+  承認ダイジェスト: ${digest}
+------------------------------------------------------------------------
+承認方法（owner の 1 アクション）: 下記コマンドを承認する / owner が実行する。
+実 spawn コマンド（承認内容と実行の一致をダイジェストで束縛）:
+
+  $(build_approval_command "$digest")
+
+注意: auto-mode classifier は実 spawn の段で評価する。この表示は spawn しない
+ため block されない。実 spawn は owner ゲートのまま（分類器は迂回しない）。
+========================================================================
+EOF
+}
+
+# --print-approval: spawn せず承認パッケージを印字して終了（enforcement より前＝承認取得のため）。
+if [[ -n "$PRINT_APPROVAL" ]]; then
+  print_approval_package
+  exit 0
+fi
+
+# elevated 判定: 明示 --elevated、または権限無効化モード（bypassPermissions）。通常のローカル
+# auto 委譲は elevated ではない（owner: 通常委譲は不変）。auto + 本番アクセスは engine から
+# 検知できないため呼び出し側が --elevated を宣言する（skill が指示・分類器が二重ゲート）。
+PERM_MODE="$(extract_permission_mode)"
+IS_ELEVATED=""
+{ [[ -n "$ELEVATED" ]] || [[ "$PERM_MODE" == "bypassPermissions" ]]; } && IS_ELEVATED=1
+
+# elevated spawn は owner 承認済みダイジェストを必須にする（承認を経ず到達する迂回を塞ぐ・実装SO D3）。
+if [[ -n "$IS_ELEVATED" && -z "$APPROVED_DIGEST_SET" ]]; then
+  echo "oe-delegate: elevated spawn には owner 承認済みダイジェストが必須 — 先に --print-approval で承認を取り、その --approved-digest を渡すこと" >&2
+  exit 3
+fi
+
+# --approved-digest が渡されたら（空文字でも）必ず照合する（-n で空をスキップさせない・実装SO D2）。
+if [[ -n "$APPROVED_DIGEST_SET" ]]; then
+  _computed="$(compute_spawn_digest)" || { echo "oe-delegate: failed to compute the approval digest" >&2; exit 2; }
+  if [[ "$_computed" != "$APPROVED_DIGEST" ]]; then
+    echo "oe-delegate: approved digest mismatch — the spawn command changed since approval (approved=${APPROVED_DIGEST} computed=${_computed}). 再度 --print-approval で承認を取り直すこと。" >&2
+    exit 3
+  fi
+fi
+
 # 子ペインを作成し claude を起動（PARENT_TMUX_PANE を env として渡す）。
 # split は親ペイン（$PARENT_PANE = oe-delegate を起動した pane）を -t で明示する。-t を省くと
 # tmux はフォーカス中ペインを分割するため、親が別ウィンドウを active にしている間に委譲すると
@@ -157,8 +366,10 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
 oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
 
 # 活動ログに child_spawned を best-effort emit（registry 登録後 ＝ 親 label 解決可）。本体は壊さない。
+# permission_mode + elevated を焼き込み、elevated spawn を通常 spawn と事後区別できるようにする
+# （#262・audit・実装SO D5＝auto でも elevated 宣言の有無で区別可能に）。
 if declare -F oe_event_child_spawned >/dev/null 2>&1; then
-  oe_event_child_spawned "$PARENT_PANE" "$CHILD_PANE" "$LABEL" || true
+  oe_event_child_spawned "$PARENT_PANE" "$CHILD_PANE" "$LABEL" "$PERM_MODE" "${IS_ELEVATED:+true}" || true
 fi
 
 # キックを oe-send で注入する。delegate は report を内包しない（戻しは子が oe-send で行う）。
