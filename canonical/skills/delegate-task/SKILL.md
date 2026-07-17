@@ -8,7 +8,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 ## いつ使うか
 
 - 別 Claude Code セッション（子）に作業を委譲したいとき（**delegate**）
-- 既に動いている別ペインへ追加指示・キックオフ・関連の薄い会話を投げたいとき（**send**）
+- 既に動いている別ペインへ追加指示・brief・関連の薄い会話を投げたいとき（**send**）
 - どのペインに何を任せているか宛先候補を確認したいとき（**list**）
 - 子セッションから親へ申し送り・レビュー依頼・完了報告を送るとき（**report**）
 
@@ -26,7 +26,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 | コマンド | 方向 | 役割 |
 |---------|------|------|
 | `oe-delegate` | 親 → 子 | 子ペインを起動（spawn）し、最初のキックを送る。registry に登録 |
-| `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / キックオフを送る汎用入口。宛先はラベル or `%N` |
+| `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / brief を送る汎用入口。宛先はラベル or `%N` |
 | `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
 | `oe-register` | — | 手動起動 pane を登記（`root`=自己 root / `link %N`=相手を自分の下に）。spawn を経ない pane を oe-tree / cockpit に現す |
 | `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは oe-send に一本化**（論点E で整理） |
@@ -58,14 +58,14 @@ BIN="$REPO/projects/orchestration-engine/bin"
 "$BIN/oe-delegate" -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
 ```
 
-**キックオフ doc を渡す（4層ドキュメント方式 / リッチな事前情報）**
+**brief doc（委譲指示書）を渡す（4層ドキュメント方式 / リッチな事前情報）**
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" --label "#N" --kickoff "$REPO/path/to/kickoff.md" "補足の要望があればここに1行で"
+"$BIN/oe-delegate" -w "$REPO" --label "#N" --brief "$REPO/path/to/brief.md" "補足の要望があればここに1行で"
 ```
 
-- `--kickoff <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する
-- doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/kickoff-*.md`）に書いてから `--kickoff` で渡す（`/tmp` は対話型 claude が読めないので避ける）。`.oe/` はこのリポジトリでは gitignore 済み。
+- `--brief <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する（旧 `--kickoff` は deprecated alias として存続・#255。新規は `--brief` を使う）
+- doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/brief-*.md`）に書いてから `--brief` で渡す（`/tmp` は対話型 claude が読めないので避ける）。`.oe/` はこのリポジトリでは gitignore 済み。
 
 **実装委譲（implementer-contract 併用）**
 
@@ -78,12 +78,12 @@ BIN="$REPO/projects/orchestration-engine/bin"
 ### 改行制約
 
 - タスク引数・ad-hoc に **改行バイトを含めない**（`oe_send_line` が改行を検出すると送信を拒否する）。複数文は句点・セミコロンで区切る
-- 改行が必要な長文は **issue/plan のパスや番号を渡して子に取得させる**か、`--kickoff` でパス渡しする
+- 改行が必要な長文は **issue/plan のパスや番号を渡して子に取得させる**か、`--brief` でパス渡しする
 
 ### delegate は report を内包しない
 
 `oe-delegate` は spawn + キックに専念し、戻し（report）を一切焼き付けない（Unix 哲学・単機能）。
-子に報告させたいなら、その指示は **task / kickoff の本文に自分で書く**。戻しの送信自体は子が
+子に報告させたいなら、その指示は **task / brief の本文に自分で書く**。戻しの送信自体は子が
 汎用の `oe-send "$PARENT_TMUX_PANE" "..."` で行う（下記「戻し」）。
 
 ### worktree 作成分担（子が自作・統括は hands-off）
@@ -99,7 +99,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ## send（既存ペインへの送信）
 
-`oe-delegate` で起動した子に限らず、**既に動いているペイン**へ 1 行やキックオフを送る。親→子の追加指示、関連の薄い側道会話、（必要なら）子→親の返しにも使える汎用入口。
+`oe-delegate` で起動した子に限らず、**既に動いているペイン**へ 1 行や brief を送る。親→子の追加指示、関連の薄い側道会話、（必要なら）子→親の返しにも使える汎用入口。
 
 ```bash
 # ラベルで送る（registry / pane-issue で解決）
@@ -108,16 +108,16 @@ BIN="$REPO/projects/orchestration-engine/bin"
 # 生のペインIDで送る（ラベルが無いペイン・側道会話）
 "$BIN/oe-send" "%37" "さっきの設計の続きだけど、TTL は 24h で合ってる？"
 
-# キックオフ doc を既存ペインに読ませる
-"$BIN/oe-send" --kickoff "$REPO/path/to/kickoff.md" "#142" "前提が変わったので読み直して"
+# brief doc を既存ペインに読ませる
+"$BIN/oe-send" --brief "$REPO/path/to/brief.md" "#142" "前提が変わったので読み直して"
 
 # Enter を撃たずに投入だけ（人間が読んでから送る／セッションを汚さない）
 "$BIN/oe-send" --no-enter "%37" "確認してほしい下書き"
 ```
 
-> `--kickoff` のパスは **対象ペインの可読ルート内**（cwd / `--add-dir` 済みの場所）に置く。
+> `--brief` のパスは **対象ペインの可読ルート内**（cwd / `--add-dir` 済みの場所）に置く。
 > 稼働中ペインには後付けで `--add-dir` できないため、ルート外だと子が権限プロンプトで止まる。
-> （`oe-delegate --kickoff` は起動時に doc dir を `--add-dir` 開示するので問題ない）
+> （`oe-delegate --brief` は起動時に doc dir を `--add-dir` 開示するので問題ない）
 
 ### 誤送信を防ぐ
 

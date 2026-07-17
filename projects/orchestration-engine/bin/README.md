@@ -77,13 +77,14 @@ oe-review [--lanes N] [--base <ref>] [--context <doc>]
 
 ## oe-delegate — 子セッション起動 + キック（親子委譲）
 
-子 Claude を `tmux split-window` で起動し、タスク（または kickoff doc）をキック（spawn + send の合成）。
+子 Claude を `tmux split-window` で起動し、タスク（または brief doc）をキック（spawn + send の合成）。
 
 ```bash
-oe-delegate [-w WORKSPACE] [--kickoff <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
 ```
 
-- `--kickoff <path>` … `"<path> を読んで進めて。"` を送り、doc のディレクトリを `--add-dir` で子に開示
+- `--brief <path>` … `"<path> を読んで進めて。"` を送り、doc のディレクトリを `--add-dir` で子に開示
+- `--kickoff <path>` … `--brief` の deprecated alias（後方互換・#255）。新規は `--brief` を使う
 - `--label <#N|name>` … registry 登録ラベル（後で `oe-send <label>` で指す）
 - `--claude-arg <arg>` … 子 Claude 起動時に追加引数を渡す（repeatable）。例: `--claude-arg --permission-mode --claude-arg auto`
 - tmux 内必須（`TMUX_PANE` から親ペイン取得、`PARENT_TMUX_PANE` を子へ継承）
@@ -113,10 +114,11 @@ oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
 親→子の追送、子→親の戻し、関連の薄い側道会話を一手に担う送信口。
 
 ```bash
-oe-send [--kickoff <path>] [--no-enter] [--] <target> [ad-hoc...]
+oe-send [--brief <path>] [--no-enter] [--] <target> [ad-hoc...]
 ```
 
 - `<target>` … 生ペインID（`%N`）または ラベル（`#N` / 任意名。registry で解決）
+- `--brief <path>` … `"<path> を読んで進めて。"` を payload 先頭に付ける（旧 `--kickoff` は deprecated alias・#255）
 - `--no-enter` … 投入のみ（ステージ＝人間が読んで Enter）
 - 子→親の戻し: `oe-send "$PARENT_TMUX_PANE" "申し送り..."`
 - payload は 1 行保証（改行は fail-fast で拒否）。自動 Enter 後に観測ベース finalize（`OE_SEND_FINALIZE=0` で無効）
