@@ -111,20 +111,29 @@ oe_event_emit() {
   return 0
 }
 
-# oe_event_child_spawned <parent_pane> <child_pane> [child_label]
+# oe_event_child_spawned <parent_pane> <child_pane> [child_label] [permission_mode] [elevated]
 #   oe-delegate が子 spawn + registry 登録の直後に呼ぶ。role は構築上 parent/child で確定。
+#   permission_mode / elevated（任意・#262）を渡すと extra に焼き込み、elevated spawn を通常
+#   spawn と事後区別できるようにする（append-only ログへの additive 追記・registry は変更しない）。
+#   permission_mode が auto でも elevated=true の有無で区別できる（実装SO D5）。起動コマンド自体は
+#   出さない（schema 方針の維持）。両方省略時は従来どおり extra={}。
 oe_event_child_spawned() {
   [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  local pp="${1:-}" cp="${2:-}" clabel="${3:-}"
-  local plabel clabel_r
+  local pp="${1:-}" cp="${2:-}" clabel="${3:-}" pmode="${4:-}" elevated="${5:-}"
+  local plabel clabel_r extra="{}"
   # role/parent は構築上 parent/child で確定するため捨てる（label だけ使う）。
   IFS=$'\037' read -r _ plabel _ < <(_oe_event_ident "$pp") || true
   if [[ -z "$clabel" ]]; then
     IFS=$'\037' read -r _ clabel_r _ < <(_oe_event_ident "$cp") || true
     clabel="$clabel_r"
   fi
-  oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "{}"
+  # permission_mode / elevated が来たら extra へ（encode 失敗は best-effort で extra={} に degrade）。
+  if [[ -n "$pmode" || -n "$elevated" ]]; then
+    extra="$(jq -cn --arg pm "$pmode" --argjson el "$([[ "$elevated" == "true" ]] && echo true || echo false)" \
+      '({} + (if $pm != "" then {permission_mode:$pm} else {} end) + {elevated:$el})' 2>/dev/null)" || extra="{}"
+  fi
+  oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "$extra"
 }
 
 # oe_event_message_sent <from_pane> <to_pane> <preview-text> [delivery_signal]

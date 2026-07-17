@@ -24,6 +24,7 @@ oe-* ツール群を **1 つのパッケージとして一貫理解する**た�
 - 蒸留パイプライン doc の型・入口・ライフサイクルは **`doc-flow-guardrail`**（フロー地図）と `document-format.md`〔文書型別テンプレート §8 / ライフサイクル規範 §12〕が正本。closure は `episode-retrospective`（マージ前・後追いは `reconstructed` 明示）。
 - **完全移譲**: 自律委譲子は discussion/設計SO から 実装→実装SO→Episode→PR→Copilot→closure まで**一気通貫**（親は巻き取らない）。
 - **自律委譲子の権限（運用・opt-in）**: `oe-delegate`/`oe-kick` は既定で permission-mode を付けない。自律子には `--claude-arg --permission-mode --claude-arg auto` を**明示的に渡す**。`bypassPermissions` は委譲子では即死するため `auto` を使う（実機学び・コード強制ではない）。auto/full 権限の自律子はガードレールでユーザー明示承認が要る。
+  - **elevated 子 spawn の owner 承認ハンドシェイク（#262）**: 子が elevated（bypass / 本番・機微アクセス）のとき、親は spawn 前に `oe-delegate --print-approval` で整形済み承認パッケージ + ダイジェストを owner へ先出しし、承認後に `--approved-digest` 付きで実 spawn する（承認↔実行を binding・分類器は迂回しない）。**規範はここ・操作手順は `delegate-task`・ゲート位置は `doc-flow-guardrail`**（3軸分離）。通常のローカル auto 委譲は対象外。
 
 ## malform hygiene（生 capture の会話混入を断つ）
 

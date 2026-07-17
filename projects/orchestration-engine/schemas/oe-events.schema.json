@@ -29,6 +29,14 @@
       "type": "string",
       "description": "message_sent のみ: payload 先頭 ~100 codepoint の切り詰め（情報過多回避・行を PIPE_BUF 内に保つ）。spawn の起動コマンドは出さない。"
     },
+    "permission_mode": {
+      "type": "string",
+      "description": "child_spawned のみ・任意（#262）: 子の実効 permission mode（auto / bypassPermissions / default 等）。elevated spawn を通常 spawn と事後区別するための additive フィールド。起動コマンド自体は出さない（preview と同方針）。省略時（従来イベント）は不明。"
+    },
+    "elevated": {
+      "type": "boolean",
+      "description": "child_spawned のみ・任意（#262）: この spawn が elevated（--elevated 宣言 or bypassPermissions）として owner 承認ハンドシェイクを通ったか。permission_mode が auto でも本フィールドで elevated 宣言の有無を事後区別できる。省略時（従来イベント）は不明。"
+    },
     "delivery_signal": {
       "type": "string",
       "description": "message_sent のみ: 配送シグナル。suspected_miss=finalize が未着候補を観測 / none=未着シグナル無し（delivered の確証ではない）。#144 信号を読むのみで reliability の再実装はしない。",

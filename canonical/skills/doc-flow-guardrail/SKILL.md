@@ -116,6 +116,9 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 | 4 | 実装 → PR | 実装SO（`so.impl`）+ テスト実行 + Copilot | `so-compare` / `peer-ai-review` + `copilot-review-response` |
 | 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed`）→ owner マージ | `episode-retrospective` |
 | 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定 | `branch-finish` + `document-format.md`〔§13〕 |
+| S | elevated 子 spawn 時（委譲操作軸・別軸） | owner 承認ハンドシェイク: 分類器 block を見越して整形済み承認パッケージ + ダイジェストを spawn 前に先出しし、承認↔実行を binding | `delegate-task`（手順）+ `orchestration-toolkit`（規範） |
+
+- 行 **S** は蒸留フロー軸（0-6・§11）ではなく**委譲操作軸**のゲート（§11 との 1:1 索引の対象外・番号を持たない）。子が **elevated**（`bypassPermissions` / 本番・機微アクセス）のときだけ発火し、通常のローカル auto 委譲は対象外。分類器は尊重する（迂回しない）。#262。
 
 ## 関連
 
