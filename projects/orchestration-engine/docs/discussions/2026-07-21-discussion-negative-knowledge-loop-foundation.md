@@ -44,6 +44,8 @@ related:
 
 owner × cockpit 統括の QDD（2026-07-19〜21）で確定した設計土台の正本。実装はしていない（設計材料 + 確定事項の記録）。個別の実装単位は本 doc の §6 未決論点を各自の QDD / plan / SO ゲートで解いてから着手する。
 
+正本化前に他族SO（弱・1周・codex `gpt-5.6-sol` + cursor `cursor-grok-4.5-high`・2026-07-22・両レーン実返却）を実施した。両レーンが独立に「このまま正本化しない」で一致し、収束した指摘を owner 承認のもと本版に反映済み（§2.3 援用射程の縮約 / DJ-3 の根拠縮約 / 段3・段5・段6 の改訂〔段6 は計測→制御へ差し替え・計測は横断計装へ〕/ §6 未決論点の追加 / §7 相補経路の新設）。書き手・調査検証・議論相手が同族（Claude）である構造への対処として実施したもので、初版は PR #271 の履歴に残る。
+
 ## 1. 背景 — なぜこのループか
 
 owner の課題設定: 「episode を元にしたラフループ（イテレーションが回る仕組み）を次のステップで入れられると、ハーネスの残りの部分が入る」。
@@ -89,10 +91,12 @@ arXiv:2604.25850。harness 改善の closed loop を3つの observability 柱で
 
 借用した2つの核:
 
-1. **Devin 型の保存スキーマ**: 「どの knowledge をいつ注入するか」を注入時に計算せず、**保存時に trigger 条件を knowledge に添付**して関連性マッチングを保存側スキーマで解く。→ 段1/段3 の形。
+1. **Devin 型の保存スキーマ**: 保存時に trigger 条件（＝適用条件の**仮説**）を knowledge に添付する。実行時の関連性判定を消すものではなく、判定材料を保存側に前置きする形（他族SO 指摘で縮約: Devin 自身も repo pin / folder / enable-disable を併用しており、trigger 単独でマッチングが解ける証明ではない）。→ 段1/段3 の形。
 2. **AHE の decision observability**: 注入・昇格に「効くはずだ」という予測を付け、次の結果で照合する。→ 段5 の形。
 
-チームスケールの伝統は Google SRE の postmortem 文化（blameless・action item 追跡・横展開）[unverified-summary] (https://sre.google/sre-book/postmortem-culture/)。製品側の実例は Devin の org スコープ既定。Cursor の「保存前の人間承認ゲート」は本リポジトリの owner-HG 文化と同型で、**store 側に人間ゲート・inject 側は機械**という分担の外部実例。
+チームスケールの伝統は Google SRE の postmortem 文化（blameless・action item 追跡・横展開）[unverified-summary] (https://sre.google/sre-book/postmortem-culture/)。製品側の実例は Devin の org スコープ既定。Cursor の「保存前の人間承認ゲート」は本リポジトリの owner-HG 文化と同型に見えるが、出典 URL が redirect して一次確認できていないため、DJ-5 の外部根拠には使わない。
+
+援用の射程（他族SO 指摘で追記・2026-07-22）: AHE の decision observability は標準化された反復評価・タスク結果差分・file 単位 rollback を含む完全形であり、本骨格の段5はその**縮約版**（名乗りも「観測記録」に弱める・DJ-3）。ACE の核心には Curator（統合・剪定・重複排除・helpful/harmful カウンタ）が含まれ、段6（制御）がこれに対応する。GEPA は評価関数と反復 rollout を持つ最適化器であり、異種タスクへ item を検索注入する memory 系とは別物（構造の参考に留める）。Reflexion の実証は同一タスク内の反復であり、横断タスクの trigger 検索の直接根拠ではない。
 
 ## 3. 初期構想への回帰
 
@@ -118,22 +122,28 @@ doc-flow-stocktake の soft-first 教義（soft で運用 → 効いた節だけ
 
 ### DJ-3: 検証契約は v0 の枠に最初から含める
 
-一周のフロー（検証段まで）は最初から構造として作る。**検証の「質」は薄く始めてよいが「枠」は土台として確定させる**。後から検証段を接ぎ木する形にしない（owner 確定 2026-07-21。外部根拠 = AHE の「検証なし編集ループは trial-and-error に崩壊」警告）。
+一周のフロー（検証段まで）は最初から構造として作る。**検証の「質」は薄く始めてよいが「枠」は土台として確定させる**。後から検証段を接ぎ木する形にしない（owner 確定 2026-07-21）。
+
+根拠と射程（他族SO 指摘で縮約・2026-07-22）: 主根拠は**後から検証段を接ぎ木する構造変更コストの回避**（スキーマ・イベント契約・骨格の再設計を避ける）。AHE の「検証なし編集ループは trial-and-error に崩壊」という警告は補助根拠だが、AHE のそれは反復評価・結果差分・rollback という成立条件込みの主張であり、v0 の self-report がそのまま decision observability を name できるわけではない。よって **v0 の段5は「検証」を名乗らず「観測記録（evaluation record）」とし、その結果を意思決定に使わない placeholder であることを明示する**。歯（客観 oracle・無効化・rollback）は §6 の未決論点として次段位で設計する。
 
 ### DJ-4: 6段骨格
 
+初版（2026-07-21 確定）の段6は「計測」だったが、他族SO の収束指摘（結果を書き戻すだけでは自己修正ループでなくログ循環・ACE の Curator 相当が欠段）を受け、**owner 承認（2026-07-22）で段6を「制御」に差し替え、計測は特定の段でなく横断計装に降ろした**（初版は PR #271 の履歴）。
+
 | 段 | やること | 担い手 | 既存資産への着地 |
 |---|---|---|---|
-| 1. 収穫 | episode closure 時に negative knowledge を型付き item として切り出す。スキーマ = **trigger 条件（必須）+ 短い本文 + 出典（episode への参照）+ 予測（効くはずの状況と期待効果）** | モデル + **保存前の人間ゲート** | episode-retrospective〔gate 5〕+ §13。生産側機構は #185 |
+| 1. 収穫 | episode closure 時に negative knowledge を型付き item として切り出す。スキーマ = **trigger 条件（必須・適用条件の仮説）+ 短い本文 + 出典（episode への参照）+ 予測（効くはずの状況と期待効果）** | モデル + **保存前の人間ゲート** | episode-retrospective〔gate 5〕+ §13。生産側機構は #185 |
 | 2. 保存 | committed の型付き置き場に格納。スキーマは機械検証 | 機械 | #62 Phase A + 検証ゲート（#19 系） |
-| 3. 突合 | 統括が brief を組む時、新タスクの属性と trigger 条件を機械照合して候補を提示 | 機械（候補列挙）+ 統括（採否の意味判断） | oe helper 新設（Devin 型） |
+| 3. 突合 | 統括が brief を組む時に候補を提示。**v0 は全件列挙 + 統括の採否 + 採否理由の記録**（false negative ゼロ・採否記録が後の matcher の教師データになる）。trigger 機械照合は件数・選別コストが閾値を超えてから導入 | 機械（列挙）+ 統括（採否の意味判断） | oe helper 新設 |
 | 4. 注入 | 採用した knowledge を brief の固定節に焼き込む | 統括 | doc-flow-guardrail テンプレに新 slot |
-| 5. 検証 | 子の完了時に「予測が当たったか（同じ失敗が再発しなかったか・knowledge が参照されたか）」を照合し、結果を knowledge item に書き戻す | v0 は薄く: self-report + 親 fact-check。hard 化は #24 へ | **AHE decision observability（新規）** |
-| 6. 計測 | 注入・検証結果をイベントとして流す（audit 痕） | 機械 | event-bus（`child_spawned.extra` 拡張と同型） |
+| 5. 観測記録 | 子の完了時に、注入した knowledge の帰結を状態語彙（`no_opportunity` / `injected_not_used` / `followed` / `contradicted` / `harmful` / `outcome_unknown` / `externally_verified` 等）で item に書き戻す。**v0 では hit/miss を意思決定に使わない（placeholder 明示・DJ-3）**。「再発しなかった」は適用機会があった場合のみ観測として数える | v0 は self-report + 親 fact-check。客観 oracle・歯は #24 / 次段位 | AHE decision observability の**縮約版**（射程は §2.3 注記） |
+| 6. 制御 | 観測記録を使って knowledge を改訂・統合（重複排除）・supersede・無効化・退役する。矛盾 item の優先決定・誤注入の rollback を含む | 機械（候補提示）+ 人間ゲート（改訂の採否） | ACE の Curator / grow-and-refine 対応（他族SO 指摘で追加） |
 
-### DJ-5: 人間ゲートは2箇所
+計測は横断計装とする: 収穫・採否・注入・適用機会・観測・制御の各遷移でイベントを流す（event-bus・`child_spawned.extra` 拡張と同型）。ただし現行 event-bus は best-effort（書き込み失敗も成功扱い）であり、効果測定の正本にする場合は欠損の扱い・安定 ID・照合可能性を次段位で設計する（§6）。
 
-保存時（段1・何を資産化するか）と採否（段3・何を今のタスクに効かせるか）。注入・計測は無人。Cursor の保存前承認ゲートと同型で、本リポジトリの owner-HG 文化に整合。
+### DJ-5: 人間ゲートは2箇所（+ 制御の採否）
+
+保存時（段1・何を資産化するか）と採否（段3・何を今のタスクに効かせるか）。注入と計装は無人。段6（制御）の改訂・退役の採否にも人間ゲートが入る。根拠は本リポジトリの owner-HG 文化への整合（外部製品の同型例は一次確認未了のため根拠にしない・§2.3 射程注記）。ゲート追加による総ゲート量とスキップ率（soft 昇格率問題の再来経路）は未決論点（§6）。
 
 ## 5. #263 との両輪関係
 
@@ -150,14 +160,34 @@ doc-flow-stocktake の soft-first 教義（soft で運用 → 効いた節だけ
 7. **個人 vs 共有前提の軸**: 個人開発のループをチーム・サービス開発へ持ち出すとき、ナレッジは流用できても仕組みは共有前提の全体最適が要る（owner 提起）。store のスコープ（personal / repo / org）と保存時ゲートの承認者設計に直結。SRE postmortem 文化と Devin org スコープが先行事例。
 8. **raw-log 長期ストアとの関係**: #185 の開放問題（raw-log の保全・SQLite 的長期ストア）とループの store を統合するか分離するか。
 
-## 7. 進め方
+以下 9〜16 は他族SO の指摘（2026-07-22）で追加:
+
+9. **着地先選択**: 失敗を NL knowledge として注入するか、実行可能な guard（test / lint / hook / rule）へコンパイルするか。失敗クラスごとの振り分け規則。§7 の相補経路と対。
+10. **効果の帰属と成功基準**: 「注入したから再発しなかった」の反事実（適用機会の有無・no-injection baseline・有効判定に要る最小標本数）。matcher 導入時の precision / recall と誤注入コスト。
+11. **lifecycle 制御の権限と履歴**: 段6の改訂権限・人間ゲートの設計。item 更新（version）後に過去の観測履歴をどう分離するか。
+12. **信頼境界（poisoning）**: episode 中の誤情報・prompt injection を knowledge へ昇格させない仕組み。secret / 個人情報 / 外部由来内容の扱い。knowledge 本文を命令として扱うか参考情報として扱うか。
+13. **注入予算と競合解決**: brief への最大注入件数 / token 予算。複数 item の優先順位・矛盾 item 同時ヒット時の規則（fail-closed / fail-open）・rule / task 指示 / knowledge の優先順位。
+14. **識別子とイベント契約**: item ID / version・task との因果リンク（matched / accepted / injected / opportunity / outcome を結ぶ契約）。event-bus の best-effort 性（欠損の扱い・照合可能性）。
+15. **並行更新**: 複数 worktree / 並列子が同じ committed store を書き換える競合と、書き戻しの atomicity。
+16. **cold-start・positive との非対称・ゲート負荷**: 0〜数件時の挙動（v0 の全件列挙が解く部分と残る部分）。negative のみ蓄積した場合の brief 肥大と positive knowledge（Decision / Context 側）との分担。HG 2箇所+制御採否の総ゲート量とスキップ率の観測設計。
+
+## 7. 相補経路 — 失敗の guard コンパイル（他族SO の収束提案・採否は次段位）
+
+他族SO の2レーン（codex / cursor）が独立に同方向の代替骨格を提案した: **機械判定可能な失敗クラスは、自然言語 knowledge として読ませるのではなく、実行可能な guard へコンパイルする**（detector / invariant + replay fixture + hook / CI への canary 配備 + 誤検知観測 + rollback / 退役）。この経路では「読んだ」と「効いた」の混同が構造的に消え、検証が replay で機械化できる。
+
+- 位置づけ: 6段の置き換えではなく**相補**。path / command / diff / schema 等の述語に落ちる失敗を NL 注入から分離する。自然言語でしか表現できない判断（文脈依存の教訓）は6段側に残る。
+- 露呈した隠れ前提: 「negative knowledge のアクチュエータは LLM の文脈である（読ませて初めて再利用できる）」。本リポジトリには hypothesis-gate（#78・advisory hook）という guard 系の先行実装が既にあり、この経路はその一般化にあたる。
+- 採否: 本 discussion では決めない。§6.9（着地先選択）として次の設計単位で、6段との振り分け規則とともに扱う。SO 生出力（レーン別の具体案・成立条件・棄却条件）は SO 証跡に保全。
+
+## 8. 進め方
 
 1. 本 doc の正本化（owner マージ）。
-2. issue 切り出し（正本化後・owner と確定）。候補の切り方: 段1+段2（収穫スキーマ + store = #62 Phase A の再起動 + #185 接続）/ 段3+段4（oe helper + guardrail slot）/ 段5+段6（検証照合 + event-bus）。各単位が独立に QDD / plan / 設計SO を通る。
+2. issue 切り出し（正本化後・owner と確定）。候補の切り方: 段1+段2（収穫スキーマ + store = #62 Phase A の再起動 + #185 接続）/ 段3+段4（v0 全件列挙の oe helper + guardrail slot）/ 段5+段6（観測記録 + 制御 + 横断計装の契約）。各単位が独立に QDD / plan / 設計SO を通る。
 3. 実装単位ごとに委譲（統括は hands-off・子が worktree 自作・plan-first）。
 
-## 8. 検証ステータス凡例
+## 9. 検証ステータス凡例と SO 証跡
 
 - [verified] = 出典を deep-research の3票敵対検証が confirmed、かつ中心論文（arXiv:2604.25850）は統括が直接 fetch で実在確認。
-- [unverified-summary] = 出典 URL 付きだが票が未成立（低リスクの製品ドキュメント系 claim）。採用判断に効く場合は着手時に一次確認する。
+- [unverified-summary] = 出典 URL 付きだが票が未成立（低リスクの製品ドキュメント系 claim）。採用判断に効く場合は着手時に一次確認する。Cursor Memories は出典 redirect につき本文の根拠から降格済み（§2.3）。
 - 本文中の repo 内事実（昇格率・hook 本数・#62 実装ゼロ等）は統括のリポジトリ一次調査（file:line 確認）に基づく。
+- 他族SO 証跡: 弱・1周・2レーン（codex `gpt-5.6-sol` / cursor `cursor-grok-4.5-high`）・2026-07-22・両レーン実返却。生出力は作業層（`tmp/so-271-nk-loop/`・gitignore）に保全し、収束指摘と代替骨格の要点は本文 §2.3 / DJ-3 / DJ-4 / §6.9〜16 / §7 に反映済み。レーン別の詳細は PR #271 のレビュー記録を参照。
