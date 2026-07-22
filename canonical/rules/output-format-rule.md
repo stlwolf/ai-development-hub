@@ -13,3 +13,9 @@
    - Also avoid English+する/させる (landing させる → 取り込む; validate します → 検証します) and needless abbreviation pile-ups that trade readability for density.
    - Scope: all Japanese output — chat replies and documents you generate (issue / PR / episode / discussion). Not: already-emitted text, existing docs, code identifiers, or the English rule files themselves.
    - Why documents too: AI-authored docs become the register the AI later mirrors — a feedback loop; applying this to generated docs starves it.
+9. Operator-facing prose: when the reader is the human operator, write so the meaning is clear on one read. This applies to the message the operator sees — chat replies and explanations, and any confirmation or human-gate request shown to them (including one relayed by a parent session).
+   - It applies only to that operator-visible message. It does not constrain internal reasoning or hidden working notes; those may use any register, including English.
+   - Do not compress prose into telegram style: noun-ending (体言止め) fragments, symbols used as sentence glue (→ ＝ ・ ★ 〔〕), nested parentheses that bury the main clause, or one dense line packing several points. Prefer complete sentences, one main point each. Normal Markdown structure (headings, `-` lists, inline code) and tables are fine; the ban is on symbols standing in for grammar.
+   - Vocabulary follows §8. Keeping English work-object names alongside a Japanese description is expected under §8 and is not "bad mixing"; do not switch languages merely to shorten a sentence.
+   - Check: can the operator act on the meaning after one read? If not, rewrite.
+   - Out of scope: agent-to-agent channels (brief, report, SO prompts) and the board's compact state-transfer register. Document register (issue, PR, episode) belongs with the skills that generate those documents; §8 still governs their Japanese vocabulary.

@@ -81,7 +81,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
 | implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
-| output-format-rule | Conclusion → evidence → steps → risks → links output structure; plain-Japanese wording (no decorative English, keep work-object names) | `rules/output-format-rule.md` |
+| output-format-rule | Conclusion → evidence → steps → risks → links output structure; plain-Japanese wording (§8: no decorative English, keep work-object names); operator-facing plain prose (§9: no telegram compression; chat + human-gate; reasoning / agent-channels / board exempt) | `rules/output-format-rule.md` |
 | reframe-on-stall-rule | Always-on soft floor under exhaustion-before-conclusion: when exploration stalls (no material new information, lateral repetition), consider a zero-base rebuild before continuing. Qualitative trigger via observable signs (not a count); reconcile against discarded premises; low-risk carve-out; model-dependent (hard gate #77 backs high-stakes once it lands) | `rules/reframe-on-stall-rule.md` |
 | skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
 | subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
