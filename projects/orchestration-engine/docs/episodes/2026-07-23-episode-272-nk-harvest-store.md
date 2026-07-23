@@ -144,3 +144,15 @@ owner 訂正: ai-hub には蒸留木が複数ある(トップレベル `docs/` �
 - 検証: 74/74 PASS(誤名 WARN テスト含む)・shellcheck PASS・canonical の bare `knowledge/<ULID>` 参照ゼロ・hazard clean。
 
 教訓（この round 自体の negative knowledge・ただし store には収穫しない=下記）: owner の「不要なら触らない」を額面で受け、items/ 撤去に伴う validator の silent-skip 化が F6(既承認の設計判断)を巻き戻した。**既承認の設計ゲート成果を後続変更が黙って緩める**のは典型的な回帰。親 fact-check が捕捉。この教訓は本 episode に記録するが、汎用 knowledge item 化は B1(本番 store に live sample を置かない)と過剰収穫回避により見送る。
+
+### Step 9: owner レビュー訂正3件目 — 置き場の関係ルール化 + 可搬性の物差し全掃(2026-07-24)
+
+owner 訂正: canonical(sync 配布)は hub 固有情報を剥がしても指示が立つべき。#272 で 3 回目の同種指摘（memory `feedback_canonical_skill_format_self_complete` に正本化）。修正:
+
+- (1) **置き場を関係ルール化**: 「item は**収穫元 episode が属する木**の `knowledge/items/` に置く(＝ `source.ref` と同じ木)」。複数木の曖昧さを repo 固有パスなしで解く。§3.4 / §2.5 / §13.3 / §2 一枚絵 / episode-retrospective(Step5・関連節) / spec-card を関係形へ書き換え。
+- (2) **hub 具体パス + 「正本は hub の engine scripts/」を synced 指示から除去**し、任意の dogfood / provenance へ降格。ai-hub 具体パスと validator 正本の所在は store README(hub 固有・非 sync)へ移設。木解決が要れば store README を見る、と規則側に明記。
+- (3) 検証はコマンド名 `validate-knowledge` のまま(既に達成)。sync-bin 配布パスの明記も synced 指示から除去(README に残す)。
+- (4) **物差し全掃**: #272 diff の canonical 追記全体を「hub 情報を剥がして指示が立つか」で再点検。store/検証/置き場/昇格経路すべて関係+コマンド名で自立。残る hub 参照は §2.5 の設計正本 discussion citation のみ(provenance・`(hub リポジトリ内)` 明示・operational でない)。sync-bin を参照する他ファイル(hooks/README・verification コマンド)は #272 diff 外につき不干渉。エンジン本体所在参照はスコープ外。
+- 検証: 74/74 PASS・shellcheck PASS・synced canonical に hub store-path / hub provenance ゼロ・hazard clean。
+
+達成度: 達成(段1+2 v0・置き場は関係ルール・canonical は self-complete)。

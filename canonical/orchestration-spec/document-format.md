@@ -81,7 +81,7 @@ committed 蒸留層（git 管理・正本）
     discussion → kickoff(opt) → plan → episode → decision
                         ↑ 昇格（§13・設計級 + durable な証拠/知見）
 committed 状態 store 層（git 管理・§2.5・#272）
-    projects/orchestration-engine/docs/knowledge/items/<ULID>.md : negative knowledge の型付き item（ai-hub 実体・文書でなく状態 store・型定義 §3.4）
+    <蒸留木>/knowledge/items/<ULID>.md : negative knowledge の型付き item（収穫元 episode と同じ木・文書でなく状態 store・型定義 §3.4）
 machine-local 作業層（gitignored・使い捨て）
     .oe/  : brief / report / claim / handoff / board / so-prompt / issue下書き / 作業層plan / 監査ワークベンチ / proposal
     tmp/  : SO・探索の生出力（so-*/ ・oe-refute の output_dir ・dj-N-tree ・hypothesis-NNN 等・さらに揮発的）
@@ -95,7 +95,7 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 蒸留5段とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
 
-- 実体（ai-hub）: `projects/orchestration-engine/docs/knowledge/items/<ULID>.md`（engine 蒸留木の `knowledge/items/`・1 item = 1 ファイル）。採用先向けの置き場規則・型定義・スキーマ・命名（ULID ファイル名）・検証はすべて §3.4。
+- 実体: 収穫元 episode が属する蒸留木の `knowledge/items/<ULID>.md`（1 item = 1 ファイル）。置き場規則（関係で解く）・型定義・スキーマ・命名（ULID ファイル名）・検証はすべて §3.4。dogfood の具体パスは各 store の README。
 - **蒸留 format 機構（§4〜§9・§15）は適用しない**（§3.4 の carve-out）。#19 検証ゲートの閉じた 5 型 enum（§3.1）にも加えない。
 - 昇格の第3経路: closure 時に収穫される negative knowledge の着地先（§13.3）。
 
@@ -146,7 +146,7 @@ N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留�
 
 ### 3.4 型付き knowledge 層（状態 store・#272）
 
-`knowledge` は negative knowledge store の item 型。**蒸留5段の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` へ配布・`scripts/sync/sync-bin.sh` が配布。正本は hub リポジトリ内の `projects/orchestration-engine/scripts/validate-knowledge.sh`）が担う（markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）。採用先では sync-bin 配布後に `validate-knowledge <item>` で呼ぶ。
+`knowledge` は negative knowledge store の item 型。**蒸留5段の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` に配布される・markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）が担う。
 
 - **文書ではなく状態 store**（§2.5）。段5 が `observations` を追記し段6 が `status` を書き換える。
 - **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5段のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
@@ -169,7 +169,7 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 
 本文 prose = 教訓（自己評価文の領域・空白トリム後に可視文字 ≥1）。エンベロープには文書体系に依存しない語彙のみを置く（出典は `source.ref`。「episode の」等の依存語彙を型に入れない）。
 
-**採用先（他リポジトリ）向けの置き場規則**: そのリポジトリの蒸留ドキュメント木のルート直下に `knowledge/` を置く（`decisions/` / `episodes/` / `plans/` の兄弟）。**型付き item（ULID 名）は `knowledge/items/` に隔離し、検証は `items/` を対象にする**。自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き、`items/` には混ぜない。README は `knowledge/README.md`。エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。**蒸留木が複数あるリポジトリでは store も木ごとに置く**（各木の `knowledge/items/`。段3 の列挙は各木の store を横断して見る）。ai-hub での実体は engine 木の `projects/orchestration-engine/docs/knowledge/items/`（README は `projects/orchestration-engine/docs/knowledge/README.md`）。トップレベル `docs/knowledge/` の自由記述ノートは別物で不干渉。検証コマンド `validate-knowledge` の directory mode は `items/` 内の全 `*.md` を検証し、ULID 名でない誤名 item は skip せず WARN + exit 1（すり抜けを黙って落とさない）。
+**置き場規則（関係で解く・repo 固有パス不要）**: 収穫した knowledge item は、**その収穫元 episode が属する蒸留木の `knowledge/items/`** に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。これで蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる。`knowledge/` は蒸留木ルート直下（`decisions/` / `episodes/` / `plans/` の兄弟）に置き、README は同じ木の `knowledge/README.md`。**型付き item（ULID 名）は `knowledge/items/` に隔離**し、自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き `items/` には混ぜない。エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。段3 の列挙は各木の store を横断して見る。採用先での木の具体的な解決や dogfood 例は各 store の README を参照する。検証コマンド `validate-knowledge` の directory mode は `items/` 内の全 `*.md` を検証し、ULID 名でない誤名 item は skip せず WARN + exit 1（すり抜けを黙って落とさない）。
 
 ## 4. 共通フロントマター
 
@@ -580,7 +580,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 - 確定した判断 → **decision**
 - 実行記録 → **episode**
 - durable な証拠・知見（監査・再現条件） → 文脈により episode / decision（該当タスクの episode 内、または独立の decision）
-- **negative knowledge（#62/#272）で収穫基準（非自明・再発しうる・行動を変える）を満たすもの → 型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§2.5/§3.4・ai-hub は `projects/orchestration-engine/docs/knowledge/items/`）へ収穫**。これが第3の昇格先。切り出しは episode closure 時に `episode-retrospective` の収穫 Step が担う（`validate-knowledge` を通して episode と同じブランチにコミット・保存 HG = owner マージ）。基準を満たさない negative knowledge は従来どおり episode 本文に残す
+- **negative knowledge（#62/#272）で収穫基準（非自明・再発しうる・行動を変える）を満たすもの → 型付き knowledge store（収穫元 episode が属する木の `knowledge/items/`・§2.5/§3.4）へ収穫**。これが第3の昇格先。切り出しは episode closure 時に `episode-retrospective` の収穫 Step が担う（`validate-knowledge` を通して episode と同じブランチにコミット・保存 HG = owner マージ）。基準を満たさない negative knowledge は従来どおり episode 本文に残す
 
 **作業層 plan の扱い**: 実装計画そのものは merged code + PR 各 doc が正本ゆえ再蒸留しない。plan に残る**設計級部分のみ**（棄却案・根拠）を discussion / decision へ（#250 の plan-stage1 判断＝再蒸留せず、残る設計級は arch discussion へ・実装詳細は張替で担保）。
 

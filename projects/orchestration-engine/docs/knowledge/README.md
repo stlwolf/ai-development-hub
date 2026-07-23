@@ -8,9 +8,9 @@
 
 ## 置き場規則（採用先一般）
 
-- 蒸留ドキュメント木のルート直下に `knowledge/` を置く（`decisions/` / `episodes/` / `plans/` の兄弟）。**型付き item（ULID 名）は `knowledge/items/` に隔離し、検証は `items/` を対象にする**。自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き、`items/` には混ぜない。README は `knowledge/README.md`。
-- **蒸留木が複数あるリポジトリでは、store も木ごとに置く**（各木の `knowledge/items/`）。段3（突合）の列挙は各木の store を横断して見る。
-- エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。ai-hub の実体はこの engine 木（`projects/orchestration-engine/docs/knowledge/items/`）。
+- **関係で解く（正本の規則）**: 収穫した item は、その収穫元 episode が属する蒸留木の `knowledge/items/` に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる（repo 固有パスの列挙は不要）。段3（突合）の列挙は各木の store を横断して見る。
+- 蒸留ドキュメント木のルート直下に `knowledge/` を置く（`decisions/` / `episodes/` / `plans/` の兄弟）。**型付き item（ULID 名）は `knowledge/items/` に隔離**。自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き、`items/` には混ぜない。README は `knowledge/README.md`。
+- **この repo（ai-hub）での木の解決（dogfood）**: 蒸留木が複数ある（トップレベル `docs/` と engine `projects/orchestration-engine/docs/`）。orchestration-engine 由来の収穫の実体はこの engine 木 `projects/orchestration-engine/docs/knowledge/items/`。トップレベル `docs/knowledge/` の自由記述ノートは別物で不干渉。
 
 ## 1 item = 1 ファイル（ファイル名 = ULID）
 

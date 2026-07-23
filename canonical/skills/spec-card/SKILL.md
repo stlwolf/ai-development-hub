@@ -73,8 +73,8 @@ YYYY-MM-DD-{type}-{topic}.md
 
 - frontmatter（必須9項）: `id`（ULID）/ `type: knowledge` / `status`（`active`\|`disabled`\|`superseded`\|`retired`・§6 の蒸留 status enum とは別）/ `date`（収穫日・不変）/ `trigger` / `prediction` / `source`（`.ref`）/ `landing`（`nl`\|`guard-candidate`）/ `observations`（v0 は `[]`）。任意 = `exclusions`（list）。本文 prose = 教訓。
 - **ファイル名 = `<ULID>.md`**（`YYYY-MM-DD-...` ではない）。並行収穫の衝突回避のための意図的逸脱。
-- 置き場 = 蒸留木ルート直下 `knowledge/items/`（item を ULID 名で置く・自由記述ノートは `knowledge/` 直下で `items/` に混ぜない・ai-hub は engine 木 `projects/orchestration-engine/docs/knowledge/items/`）。
-- 正本 = `canonical/orchestration-spec/document-format.md` の §2.5 / §3.4。検証 = コマンド `validate-knowledge`（`~/bin` 配布・正本は hub の engine `scripts/`）。作成手順は `episode-retrospective` の Step 5。
+- 置き場 = 収穫元 episode が属する蒸留木の `knowledge/items/`（source.ref と同じ木・item を ULID 名で置く・自由記述ノートは `knowledge/` 直下で `items/` に混ぜない）。
+- 正本 = `canonical/orchestration-spec/document-format.md` の §2.5 / §3.4。検証 = コマンド `validate-knowledge`（`~/bin` 配布）。作成手順は `episode-retrospective` の Step 5。
 
 ## ULID の生成方法
 
