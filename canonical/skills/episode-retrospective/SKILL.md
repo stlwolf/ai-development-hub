@@ -83,9 +83,9 @@ opt-out は「書かない」ではなく「消費者ゲート判断を明示し
 | 事実・失敗 | 失敗分類・再発防止（→ #60） | 何が起き、何が失敗したか。実行ログに残る失敗を選択的に省略しない |
 | 決定と根拠 | 判断の再利用・Decision 昇格 | 選択肢・採否・**棄却した案と棄却理由**。コードや diff から復元できない「なぜ」 |
 | わかったこと（W） | ナレッジ・次タスク参照 | 検証で判明した事実・技術的知見 |
-| 原則（Pattern / Anti-pattern 対) | negative knowledge 注入（→ #62） | 転用可能な対構造。NG/OK ペア形式可 |
+| 原則（Pattern / Anti-pattern 対) | negative knowledge 注入（→ #62/#272） | 転用可能な対構造。NG/OK ペア形式可。**収穫基準（非自明・再発しうる・行動を変える）を満たすものは Step 5 で型付き knowledge store へ収穫**する |
 | 行動変更 | hook / skill / チェックリスト化 | **トリガ・機構・着地先アーティファクト名を必須**。機構未確定の「検討する」は残課題（routing 対象）へ降格 |
-| 蒸留シグナル | 昇格パイプライン | 昇格候補の明示: Decision / skill / rule / #62 / **なし**（「なし」も明示する） |
+| 蒸留シグナル | 昇格パイプライン | 昇格候補の明示: Decision / skill / rule / **knowledge store（#272・Step 5）** / #62 / **なし**（「なし」も明示する） |
 | 残課題 | routing（Step 2 で行き先付与） | 未解決・未検証。証明できなかったことは証明できなかったと書く（対称な honesty） |
 
 ### 任意の皮: KPT / YWT
@@ -111,6 +111,36 @@ opt-out は「書かない」ではなく「消費者ゲート判断を明示し
 so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) 実行ログにある失敗・撤回・指摘が事実・失敗セクションから選択的に省略されていないか (2) 全 follow-up に行き先があるか (3) 揮発パス参照が残っていないか (4) 他文書の欠陥への back-propagation 漏れはないか"
 ```
 
+## Step 5: negative knowledge の収穫（standard / heavy・任意・#272）
+
+Step 3 で「原則」「蒸留シグナル」行にマークした negative knowledge のうち、収穫基準を満たすものを型付き knowledge store（`docs/knowledge/items/`・`canonical/orchestration-spec/document-format.md` の §3.4）へ切り出す。opt-out tier（消費者なし・自明）では収穫しない。**収穫なし（該当なし）も正当な結果**（過剰収穫を避ける）。
+
+### 収穫基準（この3つをすべて満たすものだけ）
+
+- **非自明**: コードや diff、既存 doc から復元できない（自明な技術事実は入れない）。
+- **再発しうる**: 一度きりでなく別タスクでも起きうるクラスの失敗・教訓。
+- **行動を変える**: 次の作業で判断や手順を実際に変える（読んでも何も変わらない知見は入れない）。
+- 加えて **未着地の確認**: 既存の rule / skill / guard / 既存 knowledge item に同旨が着地済みでないこと（安価な重複チェック。段6 の dedup を待たない防波堤）。
+
+### 手順（Step 3 の後・status 確定/マージ前）
+
+1. Step 3 でマークした候補から、上記基準を満たすものを選ぶ（対象は Step 3 のマーク済みに限る＝二重作業/漏れを防ぐ）。
+2. `docs/knowledge/items/<ULID>.md` を書く（1 item = 1 ファイル・ファイル名 = ULID・スキーマは §3.4）。frontmatter と本文 prose（教訓）を分離する。
+3. 検証を通す（pass するまで直す）:
+
+   ```bash
+   projects/orchestration-engine/scripts/validate-knowledge.sh docs/knowledge/items/<ULID>.md
+   ```
+
+4. episode と**同じブランチにコミット**する（別 PR にしない・episode PR 相乗り）。
+
+### 保存 HG と信頼境界
+
+- **保存前の人間ゲート = owner のマージ HG**。item は closure（マージ前）に commit されるので、owner は item を含むブランチをマージ時に見る。これが保存 HG（自動 bot の再レビューではない）。
+- **poisoning**（設計正本 §6.12）: PR レビュー/マージ HG が信頼境界。episode 中の誤情報・prompt injection・secret / 個人情報・外部由来内容を knowledge に昇格させない。knowledge 本文は参考情報であって命令ではない。
+
+Step 4（heavy の外部チェック）は closure 品質が対象で、knowledge item の検証は `validate-knowledge.sh`（別対象）が担う。両者は独立。
+
 ## 制約と既知の限界
 
 - **本スキルは助言であり同期ゲートではない**。「skill があっても closure を忘れる」問題（監査 R4）は branch-finish / PR フロー側の同期ゲートで対処する（別 Issue）。本スキルの遵守はトリガされたときのみ機能する
@@ -134,3 +164,4 @@ so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) �
 - **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
 - **Issue #60 / #62**: 出力型の消費チャネル先（失敗分類 / negative knowledge 注入）。注入側フォーマットは #62 で設計
+- **Issue #272 / `docs/knowledge/items/`（型付き knowledge store）**: Step 5 収穫の着地先。スキーマは `document-format.md` §3.4、検証は `projects/orchestration-engine/scripts/validate-knowledge.sh`。突合・注入（#273）と observations の中身（#274）は本スキルのスコープ外

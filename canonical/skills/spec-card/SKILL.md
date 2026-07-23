@@ -57,6 +57,8 @@ so:
 | `episode` | 実行記録・作業ログ | 中間（本文フリーフォーム + 性質ガイド）。closure 時は `episode-retrospective` skill を参照 |
 | `decision` | 意思決定の蒸留・ADR | 重い（コンテキスト / 決定 / 根拠 / 結果） |
 
+上表は蒸留5段（閉じた enum・#19 検証ゲート対象）。下記の `knowledge` は**この表には入らない**別種の型。
+
 ### ファイル命名
 
 ```
@@ -64,6 +66,15 @@ YYYY-MM-DD-{type}-{topic}.md
 ```
 
 例: `2026-04-05-decision-quality-gate-skip-prevention.md`
+
+### knowledge item（型付き状態 store・#272）— 上の共通規約は適用しない
+
+`knowledge` は negative knowledge store の item 型で、蒸留5段の閉じた enum とは別物。**本スキルの共通フロントマター表・共通命名規約（`YYYY-MM-DD-{type}-{topic}.md`）は適用しない**。混同して `title` を付けたり `status: stable` を使ったり日付ファイル名にしない。
+
+- frontmatter（必須9項）: `id`（ULID）/ `type: knowledge` / `status`（`active`\|`disabled`\|`superseded`\|`retired`・§6 の蒸留 status enum とは別）/ `date`（収穫日・不変）/ `trigger` / `prediction` / `source`（`.ref`）/ `landing`（`nl`\|`guard-candidate`）/ `observations`（v0 は `[]`）。任意 = `exclusions`（list）。本文 prose = 教訓。
+- **ファイル名 = `<ULID>.md`**（`YYYY-MM-DD-...` ではない）。並行収穫の衝突回避のための意図的逸脱。
+- 置き場 = 蒸留木ルート直下 `knowledge/items/`（ai-hub は `docs/knowledge/items/`）。
+- 正本 = `canonical/orchestration-spec/document-format.md` の §2.5 / §3.4。検証 = `projects/orchestration-engine/scripts/validate-knowledge.sh`。作成手順は `episode-retrospective` の Step 5。
 
 ## ULID の生成方法
 
