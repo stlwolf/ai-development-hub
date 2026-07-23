@@ -156,3 +156,7 @@ owner 訂正: canonical(sync 配布)は hub 固有情報を剥がしても指示
 - 検証: 74/74 PASS・shellcheck PASS・synced canonical に hub store-path / hub provenance ゼロ・hazard clean。
 
 達成度: 達成(段1+2 v0・置き場は関係ルール・canonical は self-complete)。
+
+### Step 10: Copilot 再レビュー1件 — テストの mktemp ガード追随(2026-07-24)
+
+Copilot 再レビュー(root id 3640049681)が妥当な指摘: `test_validate_knowledge.sh` の `_TMP_DIR="$(mktemp -d)"` が tests/ の確立規約(`test_oe_jump.sh` / `test_oe_tree.sh` の「mktemp 失敗→空パス→root 直下書き込み」ガード・過去の実装SO 由来)から外れていた。同じ2行ガード(`|| { echo FATAL; exit 1; }` + `[[ -n && -d ]] || { ...; exit 1; }`)+ 事故防止コメントを付けて追随。74/74 PASS・shellcheck PASS。1ラウンドで返信して完了(再レビュー再依頼なし)。

@@ -16,7 +16,9 @@ VALIDATOR="$PROJECT_DIR/scripts/validate-knowledge.sh"
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 command -v yq >/dev/null 2>&1 || { echo "SKIP: yq required"; exit 0; }
 
-_TMP_DIR="$(mktemp -d)"
+# mktemp 失敗時に空パスで継続して root 直下へ書き込む事故を防ぐ（実装SO 指摘・tests/ 確立規約）。
+_TMP_DIR="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
+[[ -n "$_TMP_DIR" && -d "$_TMP_DIR" ]] || { echo "FATAL: mktemp -d returned an invalid path: '${_TMP_DIR}'" >&2; exit 1; }
 trap 'rm -rf "$_TMP_DIR"' EXIT
 
 # source.ref の repo-root 基点を _TMP_DIR に固定し、存在する committed path 用のファイルを置く。
