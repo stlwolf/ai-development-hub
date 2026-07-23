@@ -132,3 +132,15 @@ owner 訂正: ai-hub には蒸留木が複数ある(トップレベル `docs/` �
 - 検証: 72/72 PASS(README skip の負例含む)・shellcheck PASS・canonical の docs/knowledge/items 参照ゼロ・hazard clean。
 
 達成度: 達成(段1+2 v0・store 実体は engine 木)。段3=#273/段5-6=#274 はスコープ外。
+
+### Step 8: 親 fact-check 差し戻し — items/ 隔離へ回帰(F6 すり抜け検知の復元)(2026-07-23)
+
+親 fact-check の指摘: Step 7 の flat 化 + 非 ULID silent skip は、gate 3 承認済み・設計SO F6 の「誤名 item のすり抜け検知」を巻き戻していた(誤名 item が黙って検証対象から外れる)。加えて §3.4 の「自由記述ノートの無い木を選ぶ」条項は未決定の採用先制約で削除すべき。**私(実装子)の設計ミスを親が捕捉**。修正:
+
+- store を `<engine 木>/docs/knowledge/items/`(ULID item のみ)へ回帰。README は `<engine 木>/docs/knowledge/README.md`(items/ の外)。engine 木の位置は Step 7 のとおり維持。cold-start は `items/.gitkeep`。
+- validator の directory mode を「items/ 内の全 `*.md` を検証・誤名(非 ULID)は skip でなく WARN + exit 1」へ回帰(F6 どおり)。実機で誤名 item が WARN + exit1、空 items/(.gitkeep のみ)が exit0 を確認。
+- テストを追随: skip 正当化テスト → **誤名 item の WARN テスト**([37])へ差し替え。README 同居テストは撤去(README は items/ の外)。
+- §3.4 は前版の「自由記述ノートがあれば `knowledge/` 直下・`items/` に混ぜない」形へ回帰 + 「木ごと store・段3 列挙は各木横断」の追記を維持。「無い木を選ぶ」条項は削除。§2 一枚絵/§2.5/§13.3/§13.6/episode-retrospective/spec-card の実体例を `items/` 付きへ追随。
+- 検証: 74/74 PASS(誤名 WARN テスト含む)・shellcheck PASS・canonical の bare `knowledge/<ULID>` 参照ゼロ・hazard clean。
+
+教訓（この round 自体の negative knowledge・ただし store には収穫しない=下記）: owner の「不要なら触らない」を額面で受け、items/ 撤去に伴う validator の silent-skip 化が F6(既承認の設計判断)を巻き戻した。**既承認の設計ゲート成果を後続変更が黙って緩める**のは典型的な回帰。親 fact-check が捕捉。この教訓は本 episode に記録するが、汎用 knowledge item 化は B1(本番 store に live sample を置かない)と過剰収穫回避により見送る。

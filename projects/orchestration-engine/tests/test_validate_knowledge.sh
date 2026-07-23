@@ -253,15 +253,13 @@ run "$_TMP_DIR/does-not-exist.md"
 ck  "exit 2"            "2" "$RUN_RC"
 ckc "not found メッセージ" "$RUN_OUT" "not found"
 
-echo "[26] directory mode: valid store（2 item + README 同居）→ exit 0（README は skip）"
+echo "[26] directory mode: valid store（items/ に 2 ULID item）→ exit 0"
 D="$_TMP_DIR/store"; mkdir -p "$D"
 U2="01J0ABCDEFGHJKMNPQRSTVWXY0"
 write_valid_item "$D/$ULID.md"
 write_valid_item "$_TMP_DIR/tmp2"; sed "s/$ULID/$U2/" "$_TMP_DIR/tmp2" > "$D/$U2.md"
-# store dir に同居する非 item ファイル（ULID 名でない）は directory mode で skip される
-printf '# store README\n\nfrontmatter なしの非 item ファイル。\n' > "$D/README.md"
 run "$D"
-ck  "exit 0（README skip）"  "0" "$RUN_RC"
+ck  "exit 0"  "0" "$RUN_RC"
 ckc "OK dir"  "$RUN_OUT" "OK: $D"
 
 echo "[27] directory mode: 1 件不正 → exit 1"
@@ -331,6 +329,15 @@ sed 's|^  ref: .*|  ref: "../../etc/passwd"|' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "exit 1"          "1" "$RUN_RC"
 ckc "WARN dotdot"     "$RUN_OUT" "'..' path segments"
+
+echo "[37] directory mode: 誤名（非 ULID）item は skip でなく WARN + exit 1（F6 すり抜け検知）"
+D="$_TMP_DIR/store3"; mkdir -p "$D"
+write_valid_item "$D/$ULID.md"
+# frontmatter は valid だがファイル名が ULID でない誤名 item → 黙って落とさず検出する
+write_valid_item "$D/misnamed.md"
+run "$D"
+ck  "exit 1"          "1" "$RUN_RC"
+ckc "WARN 誤名 item"  "$RUN_OUT" "filename must be <id>.md"
 
 # --- サマリ ---
 echo ""

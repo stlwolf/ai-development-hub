@@ -1,6 +1,6 @@
 # knowledge store — negative knowledge の型付き状態 store（#272）
 
-このディレクトリは negative knowledge ループ（設計正本は `../discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の型付き **状態 store**。ai-hub ではこの engine 蒸留木がストアの実体で、`decisions/` `episodes/` `plans/` `discussions/` の兄弟に置く。
+このディレクトリは negative knowledge ループ（設計正本は `../discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の型付き **状態 store**。ai-hub ではこの engine 蒸留木がストアの実体で、型付き item は `knowledge/`（`decisions/` `episodes/` `plans/` `discussions/` の兄弟）の下の `items/` に隔離し、README はこの `knowledge/` に置く。
 
 ## 「文書」ではなく「状態 store」
 
@@ -8,14 +8,13 @@
 
 ## 置き場規則（採用先一般）
 
-- 蒸留ドキュメント木のルート直下に `knowledge/` を置き、**型付き item（ULID 名）をこのディレクトリに直接置く**（`items/` サブディレクトリは作らない）。README もこのディレクトリに同居する。
-- **蒸留木が複数あるリポジトリでは、store も木ごとに置く**（各木の `knowledge/`）。ai-hub の実体はこの engine 木（`projects/orchestration-engine/docs/knowledge/`）。段3（突合）の列挙は各木の store を横断して見る。
-- エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。
-- 自由記述の knowledge ノートが別に存在する木（ai-hub のトップレベル `docs/knowledge/` など）とは無関係。store はそれらと混在しない木（本 engine 木）を実体に選ぶ。
+- 蒸留ドキュメント木のルート直下に `knowledge/` を置く（`decisions/` / `episodes/` / `plans/` の兄弟）。**型付き item（ULID 名）は `knowledge/items/` に隔離し、検証は `items/` を対象にする**。自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き、`items/` には混ぜない。README は `knowledge/README.md`。
+- **蒸留木が複数あるリポジトリでは、store も木ごとに置く**（各木の `knowledge/items/`）。段3（突合）の列挙は各木の store を横断して見る。
+- エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。ai-hub の実体はこの engine 木（`projects/orchestration-engine/docs/knowledge/items/`）。
 
 ## 1 item = 1 ファイル（ファイル名 = ULID）
 
-- `<ULID>.md`。ファイル名は ULID にする（蒸留5段の `YYYY-MM-DD-{type}-{topic}.md` 規約とは意図的に異なる）。並行収穫（複数 worktree / 並列子）でも衝突しないため。
+- `items/<ULID>.md`。ファイル名は ULID にする（蒸留5段の `YYYY-MM-DD-{type}-{topic}.md` 規約とは意図的に異なる）。並行収穫（複数 worktree / 並列子）でも衝突しないため。
 - frontmatter（型付きエンベロープ）と本文 prose（教訓）を分離する。エンベロープは文書体系に依存しない語彙のみ（出典は `source.ref` という汎用参照）。
 
 ## スキーマ（形式例）
@@ -49,10 +48,10 @@ exclusions:                        # 任意。効かない状況（文字列の�
 
 ```bash
 # 単一 item
-validate-knowledge projects/orchestration-engine/docs/knowledge/<ULID>.md
+validate-knowledge projects/orchestration-engine/docs/knowledge/items/<ULID>.md
 
-# store 全件（directory mode）。ULID 名の item のみ検証し、README 等の非 item ファイルは skip する
-validate-knowledge projects/orchestration-engine/docs/knowledge
+# store 全件（directory mode・items/ 内の全 *.md を検証）。ULID 名でない誤名 item も WARN + exit 1（黙って落とさない）
+validate-knowledge projects/orchestration-engine/docs/knowledge/items
 ```
 
 exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・usage）。

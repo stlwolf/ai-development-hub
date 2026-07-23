@@ -1,0 +1,2 @@
+# negative knowledge の型付き store（items/・ULID 名の item のみ）。
+# 詳細は ../README.md。検証: validate-knowledge projects/orchestration-engine/docs/knowledge/items
