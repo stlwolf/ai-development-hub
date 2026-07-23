@@ -3,7 +3,7 @@ id: "01KY6VTZPHWD0F23GKVCBGWJTT"
 title: "#272 negative knowledge ループ 段1+2 — 収穫スキーマと型付き store の実装"
 date: 2026-07-23
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/272"
@@ -69,6 +69,42 @@ negative knowledge ループ(episode の教訓を次の作業へ機械的に読�
   3. `docs/knowledge/README.md`: スキーマ例コメントの `.oe//tmp/` が区切りに見えない → 「`.oe/` と `tmp/`」に明確化 + `..` 不可も追記。
 - 72/72 PASS・shellcheck PASS。各スレッドへ対応内容 + コミット SHA で返信。
 
-### Step 5: closure(進行中)
+### Step 5: closure(2026-07-23・リアルタイム追記・reconstructed ではない)
 
-（ここから追記）
+**tier = heavy**（非自明な設計判断 = DJ-A/B/E の型体系・置き場・ULID 逸脱、意図的に起動した外部レビュー = 設計SO gate 2 + 実装SO gate 4）。
+
+#### closure gate checklist
+
+- **Context / なぜ**: 冒頭「Context」節に自己完結で記載済み（ループの消費側欠落を塞ぐ段1+2 の土台）。
+- **次の消費者**: #273（突合・注入）実装者 = この store から候補を列挙し brief に焼き込む / #274（observations 中身・段6 制御）実装者 = `observations` スロットと status 遷移を設計 / owner = PR #275 マージ判断。
+- **follow-up routing**: 下記「残課題」で各項目に行き先を付与。
+- **status 確定**: draft → stable（達成。段1+2 の v0 スキーマ + store + 検証 + 収穫手順が landing）。
+- **evidence anchor**: 検証結果（72/72 PASS・shellcheck PASS）と SO 判定（設計SO の F1〜F12 + B1/B2、実装SO の material なし、Copilot 3件対応）は本 episode 本文に転記済み。SO 生出力は `tmp/so-272-design/` `tmp/so-272-impl/`（gitignored・揮発）、differential は `.oe/so-272-design-findings.md`（gitignored）= breadcrumb。
+- **SO 証跡リンク**: 上記 tmp/ パス（揮発）。判定は本文に転記済み。
+
+#### 内容セクション
+
+- **事実・失敗**: (1) 検証テスト fixture のバグ（test[10] の sed 範囲削除 + prepend が frontmatter を破壊）を validator が正しく検出（validator は正常・テスト側の欠陥）→ awk 置換に修正。(2) so-compare のレーンが両ゲートで 1 本ずつ timeout（設計=claude、実装=codex）。弱 SO の partial（≥1 実返却で disclose・"0はなし"満たす）で前進。(3) Copilot が path traversal（`source.ref` の `..`）を指摘 = 実質的なセキュリティ欠陥を検出。
+- **決定と根拠**: DJ-B は独立サブ節（B2）で閉じた5型 enum に触れず #19 回帰を回避。B1 は本番 store に live `active` sample を置かず README スキーマ例 + fixture へ（段3 の全件列挙による store 汚染回避）。`observations` は v0 で空必須（前方互換より「予約の明示」を優先・設計SO F3）。ULID regex は §5 準拠で charset+length に留め、先頭 `[0-7]` 厳密化は将来拡張へ（既存規約踏襲）。
+- **わかったこと**: yq は無引用 `date` を `!!timestamp` 経由で JSON 文字列化する（grep でなく yq→JSON 変換してから jq 検査するのが型付き frontmatter 検証の素直な形）。malformed YAML は yq exit 1 で捕捉でき、schema 違反（exit 1）と環境エラー（exit 2）を分離できる。
+- **原則（Pattern）**: 「committed 状態 store」= 文書ではなく状態の永続化場所を蒸留5段と分けて型付ける、という層の切り分け。format 機構（§4〜§9）の carve-out を明示しないと spec-card の共通規約が誤適用される（設計SO F1 の穴）。
+- **行動変更**: episode closure に Step 5 収穫を追加（トリガ = closure・機構 = `validate-knowledge.sh` + 収穫基準・着地先 = `docs/knowledge/items/`）。
+- **蒸留シグナル**: 設計級は committed（document-format §2.5/§3.4）に landing 済み。独立の decision 昇格候補は **なし**（discussion 正本 + spec で足りる）。skill/rule 昇格候補 **なし**。
+- **残課題（routing）**:
+  - 突合・注入の oe helper → #273。
+  - `observations` の中身スキーマ・段6 制御・効果測定計装 → #274。
+  - ULID 先頭 `[0-7]` の厳密化 → document-format §5「将来拡張」（追わない宣言はしない・低優先）。
+  - `test_validate_knowledge.sh` の CI 配線 → 本スコープ外（他 OE テストと同様 standalone・別 issue 化は owner 判断）。
+  - so-compare レーンの timeout 頻発 → 観測のみ（本 issue の範囲外・SO 機構側）。
+
+#### Step 4（heavy 外部チェック）: 条件付き辞退
+
+Step4 辞退: 理由 = 本タスクで意図的 SO を 2 回（設計 gate 2 + 実装 gate 4）実施し substance に外部の目が入っており、closure 品質の4観点も客観的に確認できるため / 既存チェックで覆った観点: 失敗の選択的省略（事実・失敗節に test fixture バグ・SO timeout・Copilot 指摘を記載）/ routing 網羅（残課題に全行き先付与）/ evidence anchor（72/72・SO 判定を本文転記）/ back-propagation（doc 整合の指摘 F1/F2/B2 は本 PR 内で反映済み・外部 doc に残債なし）/ 未実施観点と判断: なし。
+
+#### Step 5 収穫: なし
+
+この episode から knowledge store への収穫は **なし**。理由: 得られた知見（yq→JSON 検証・carve-out・状態 store 層）は committed の document-format §2.5/§3.4 とテストに既に landing 済み（未着地の確認で除外）。汎用 negative knowledge として切り出せる形式例は B1 の決定どおり README + fixture で示し、本番 store に live item は置かない（cold-start のまま = 段3 汚染回避）。「なし」も正当な収穫結果（過剰収穫を避ける）。
+
+#### 達成度
+
+達成（段1+2 v0）。段3 以降は #273/#274 へ。
