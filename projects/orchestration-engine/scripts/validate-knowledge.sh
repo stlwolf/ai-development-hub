@@ -71,10 +71,17 @@ if [[ -z "$TARGET" ]]; then
   exit 2
 fi
 
-# source.ref（repo-root 相対の committed path）の存在確認の基点。既定はスクリプト位置から
-# 逆算した repo root（scripts/ → engine → projects → repo）。テストは env で上書きして決定化する。
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${OE_KNOWLEDGE_REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+# source.ref（repo-root 相対の committed path）の存在確認の基点 = item が属する repo の root。
+# 既定は TARGET の位置から git toplevel を引く。in-repo 実行でも、~/bin へ配布された
+# `validate-knowledge` コマンドとして別リポジトリで実行した場合でも、item の repo を正しく取れる
+# （スクリプト位置から逆算すると symlink 配布時に誤る）。git 外なら空のままにし存在確認をスキップする。
+# テストは OE_KNOWLEDGE_REPO_ROOT で上書きして決定化する。
+REPO_ROOT="${OE_KNOWLEDGE_REPO_ROOT:-}"
+if [[ -z "$REPO_ROOT" ]]; then
+  _rr_base="$TARGET"
+  [[ -f "$TARGET" ]] && _rr_base="$(dirname "$TARGET")"
+  REPO_ROOT="$(git -C "$_rr_base" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
 
 ULID_RE='^[0-9A-HJKMNP-TV-Z]{26}$'   # 26字・Crockford Base32（§5 準拠: charset+length のみ）
 DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
@@ -181,6 +188,8 @@ validate_item() {
       warn "$file" "source.ref must not point into a volatile working layer (.oe/ or tmp/): $ref"
     elif [[ "$ref" == ".." || "$ref" == ../* || "$ref" == */../* || "$ref" == */.. ]]; then
       warn "$file" "source.ref must not contain '..' path segments (repo escape): $ref"
+    elif [[ -z "$REPO_ROOT" ]]; then
+      : # repo root 不明（git 外）→ local path の存在確認はスキップ（string チェックは実施済み）
     elif [[ ! -e "$REPO_ROOT/$ref" ]]; then
       warn "$file" "source.ref (repo-relative committed path) does not exist: $ref"
     fi

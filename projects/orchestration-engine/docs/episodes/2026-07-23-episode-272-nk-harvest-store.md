@@ -108,3 +108,15 @@ Step4 辞退: 理由 = 本タスクで意図的 SO を 2 回（設計 gate 2 + �
 #### 達成度
 
 達成（段1+2 v0）。段3 以降は #273/#274 へ。
+
+### Step 6: owner レビュー差し戻し対応 — 可搬性(2026-07-23)
+
+owner レビューで、sync 配布される canonical 3ファイルに hub 固有パス `projects/orchestration-engine/scripts/validate-knowledge.sh` が operational 参照として混入し、sync 先の別リポジトリで解決不能になる欠陥を指摘。修正:
+
+- (1) `scripts/sync/sync-bin.sh` の配布対象に `validate-knowledge` を追加(oe-tree と同型・`~/bin` へ symlink)。これで採用先でも bare コマンド名で呼べる。
+- (2) canonical 3ファイル(document-format §3.4 / episode-retrospective の実行例含む / spec-card)の operational 参照をコマンド名 `validate-knowledge` に置換。hub の engine `scripts/` は「正本」provenance 注記として残す。document-format:96 の設計正本 discussion パスは「(hub リポジトリ内)」限定子を付与。
+- (3) store パスは置き場規則(蒸留木ルート直下 `knowledge/items/`)を主にし、`docs/knowledge/items/` は ai-hub の実体例示へ降格。
+- **追加で発見した派生欠陥**: validator の `REPO_ROOT` を**スクリプト位置**から逆算していた(`../../..`)。これは `~/bin/validate-knowledge` symlink として別リポジトリで実行すると誤る(可搬性の同族問題)。**item の git toplevel から引く**方式に変更(in-repo でも symlink 配布でも item の repo を正しく取る・git 外は存在確認をスキップ)。simulated `~/bin` symlink で source.ref 存在確認が正しく効くことを実機確認。
+- 検証: 72/72 PASS・shellcheck PASS(validator/sync-bin/tests)・canonical の残 hub パスは provenance 注記のみ。
+
+status は stable のまま(段1+2 の landing は不変・本 round は可搬性の精緻化)。

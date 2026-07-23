@@ -93,9 +93,9 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 ### 2.5 committed 状態 store 層（negative knowledge store・#272）
 
-蒸留5段とは別種の committed 層。negative knowledge ループ（設計正本 `projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
+蒸留5段とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
 
-- 実体: `docs/knowledge/items/<ULID>.md`（1 item = 1 ファイル）。型定義・スキーマ・命名（ULID ファイル名）・検証は §3.4。
+- 実体（ai-hub）: `docs/knowledge/items/<ULID>.md`（1 item = 1 ファイル）。採用先向けの置き場規則・型定義・スキーマ・命名（ULID ファイル名）・検証はすべて §3.4。
 - **蒸留 format 機構（§4〜§9・§15）は適用しない**（§3.4 の carve-out）。#19 検証ゲートの閉じた 5 型 enum（§3.1）にも加えない。
 - 昇格の第3経路: closure 時に収穫される negative knowledge の着地先（§13.3）。
 
@@ -146,7 +146,7 @@ N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留�
 
 ### 3.4 型付き knowledge 層（状態 store・#272）
 
-`knowledge` は negative knowledge store の item 型。**蒸留5段の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone スクリプト `projects/orchestration-engine/scripts/validate-knowledge.sh` が担う（markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）。
+`knowledge` は negative knowledge store の item 型。**蒸留5段の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` へ配布・`scripts/sync/sync-bin.sh` が配布。正本は hub リポジトリ内の `projects/orchestration-engine/scripts/validate-knowledge.sh`）が担う（markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）。採用先では sync-bin 配布後に `validate-knowledge <item>` で呼ぶ。
 
 - **文書ではなく状態 store**（§2.5）。段5 が `observations` を追記し段6 が `status` を書き換える。
 - **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5段のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
@@ -580,7 +580,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 - 確定した判断 → **decision**
 - 実行記録 → **episode**
 - durable な証拠・知見（監査・再現条件） → 文脈により episode / decision（該当タスクの episode 内、または独立の decision）
-- **negative knowledge（#62/#272）で収穫基準（非自明・再発しうる・行動を変える）を満たすもの → 型付き knowledge store（`docs/knowledge/items/`・§2.5/§3.4）へ収穫**。これが第3の昇格先。切り出しは episode closure 時に `episode-retrospective` の収穫 Step が担う（`validate-knowledge.sh` を通して episode と同じブランチにコミット・保存 HG = owner マージ）。基準を満たさない negative knowledge は従来どおり episode 本文に残す
+- **negative knowledge（#62/#272）で収穫基準（非自明・再発しうる・行動を変える）を満たすもの → 型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§2.5/§3.4・ai-hub は `docs/knowledge/items/`）へ収穫**。これが第3の昇格先。切り出しは episode closure 時に `episode-retrospective` の収穫 Step が担う（`validate-knowledge.sh` を通して episode と同じブランチにコミット・保存 HG = owner マージ）。基準を満たさない negative knowledge は従来どおり episode 本文に残す
 
 **作業層 plan の扱い**: 実装計画そのものは merged code + PR 各 doc が正本ゆえ再蒸留しない。plan に残る**設計級部分のみ**（棄却案・根拠）を discussion / decision へ（#250 の plan-stage1 判断＝再蒸留せず、残る設計級は arch discussion へ・実装詳細は張替で担保）。
 
@@ -601,7 +601,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 
 ガードレール固定節が参照できる1行版:
 
-> 設計級コンテンツは closure / 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。収穫基準を満たす negative knowledge は型付き knowledge store（`docs/knowledge/items/`）へ収穫する（第3経路・§13.3/§3.4）。
+> 設計級コンテンツは closure / 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。収穫基準を満たす negative knowledge は型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§3.4）へ収穫する（第3経路・§13.3）。
 
 詳細基準は本 §13 が正本。
 
