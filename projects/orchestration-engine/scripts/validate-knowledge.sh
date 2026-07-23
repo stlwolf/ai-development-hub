@@ -233,13 +233,17 @@ validate_item() {
 
 # --- 入力の解決（単一ファイル / directory mode）---
 if [[ -d "$TARGET" ]]; then
-  log "directory mode: $TARGET/*.md (non-recursive)"
+  # directory mode: 直下 *.md のうち ULID 名の item のみ検証（非再帰）。
+  # README.md 等の非 item ファイルは store dir に同居しうるため skip する（item はファイル名 = ULID）。
+  log "directory mode: $TARGET/*.md (non-recursive・ULID 名の item のみ検証)"
   shopt -s nullglob
   files=("$TARGET"/*.md)
-  if [[ "${#files[@]}" -eq 0 ]]; then
-    log "no .md files directly under $TARGET (empty store is valid)"
-  fi
   for f in "${files[@]}"; do
+    _b="$(basename "$f")"; _b="${_b%.md}"
+    if [[ ! "$_b" =~ $ULID_RE ]]; then
+      log "skip non-item file (basename is not a ULID): $f"
+      continue
+    fi
     validate_item "$f"
   done
 elif [[ -f "$TARGET" ]]; then

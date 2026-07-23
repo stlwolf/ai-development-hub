@@ -120,3 +120,15 @@ owner レビューで、sync 配布される canonical 3ファイルに hub 固�
 - 検証: 72/72 PASS・shellcheck PASS(validator/sync-bin/tests)・canonical の残 hub パスは provenance 注記のみ。
 
 status は stable のまま(段1+2 の landing は不変・本 round は可搬性の精緻化)。
+
+### Step 7: owner レビュー訂正 — store 実体を engine 木へ移設(2026-07-23)
+
+owner 訂正: ai-hub には蒸留木が複数ある(トップレベル `docs/` と engine `projects/orchestration-engine/docs/`)。store の実体はループの持ち主である engine 木に置くのが筋。移設:
+
+- (1) store を `docs/knowledge/items/` から **`projects/orchestration-engine/docs/knowledge/`** へ移設。`items/` サブディレクトリは作らず item(ULID 名)を直下に置く。README も同ディレクトリへ。トップレベル `docs/knowledge/` の自由記述ノート2本は不変(不干渉)。旧 `docs/knowledge/items/.gitkeep` と旧 README は削除。
+- (2) document-format の置き場規則に「**蒸留木が複数あるリポジトリでは store も木ごと**(実体例 = engine 木)・段3 の列挙は各木の store を横断」を明記。§2 一枚絵 / §2.5 実体 / §3.4 規則 / §13.3 / §13.6 / episode-retrospective / spec-card の実体例パスを engine 木へ追随(規則主・例示従は維持)。
+- (3) #273 への申し送り(列挙は各蒸留木の store を横断して見る＝複数木なら複数 store)を episode-retrospective のスコープ外注記に1行 surface + PR 本文にも記載。
+- **validator の必要変更**: store dir に README が item と同居するため、directory mode を「ULID 名の item のみ検証・非 item(README 等)は skip」に変更(owner の「パス非依存＝不要なら触らない」に対し、同居により変更が必要になった旨を surface)。実 engine store dir(README のみ・item ゼロ)で README skip + exit 0 を実機確認。
+- 検証: 72/72 PASS(README skip の負例含む)・shellcheck PASS・canonical の docs/knowledge/items 参照ゼロ・hazard clean。
+
+達成度: 達成(段1+2 v0・store 実体は engine 木)。段3=#273/段5-6=#274 はスコープ外。

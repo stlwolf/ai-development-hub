@@ -253,13 +253,15 @@ run "$_TMP_DIR/does-not-exist.md"
 ck  "exit 2"            "2" "$RUN_RC"
 ckc "not found メッセージ" "$RUN_OUT" "not found"
 
-echo "[26] directory mode: valid store（2 件）→ exit 0"
+echo "[26] directory mode: valid store（2 item + README 同居）→ exit 0（README は skip）"
 D="$_TMP_DIR/store"; mkdir -p "$D"
 U2="01J0ABCDEFGHJKMNPQRSTVWXY0"
 write_valid_item "$D/$ULID.md"
 write_valid_item "$_TMP_DIR/tmp2"; sed "s/$ULID/$U2/" "$_TMP_DIR/tmp2" > "$D/$U2.md"
+# store dir に同居する非 item ファイル（ULID 名でない）は directory mode で skip される
+printf '# store README\n\nfrontmatter なしの非 item ファイル。\n' > "$D/README.md"
 run "$D"
-ck  "exit 0"  "0" "$RUN_RC"
+ck  "exit 0（README skip）"  "0" "$RUN_RC"
 ckc "OK dir"  "$RUN_OUT" "OK: $D"
 
 echo "[27] directory mode: 1 件不正 → exit 1"

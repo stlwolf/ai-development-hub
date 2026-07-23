@@ -113,7 +113,7 @@ so-compare -w "$(pwd)" "episode <path> の closure 振り返りを検証: (1) �
 
 ## Step 5: negative knowledge の収穫（standard / heavy・任意・#272）
 
-Step 3 で「原則」「蒸留シグナル」行にマークした negative knowledge のうち、収穫基準を満たすものを型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・置き場規則は `canonical/orchestration-spec/document-format.md` の §3.4・ai-hub の実体は `docs/knowledge/items/`）へ切り出す。opt-out tier（消費者なし・自明）では収穫しない。**収穫なし（該当なし）も正当な結果**（過剰収穫を避ける）。
+Step 3 で「原則」「蒸留シグナル」行にマークした negative knowledge のうち、収穫基準を満たすものを型付き knowledge store（蒸留木ルート直下 `knowledge/`・置き場規則は `canonical/orchestration-spec/document-format.md` の §3.4・ai-hub の実体は engine 木 `projects/orchestration-engine/docs/knowledge/`）へ切り出す。opt-out tier（消費者なし・自明）では収穫しない。**収穫なし（該当なし）も正当な結果**（過剰収穫を避ける）。
 
 ### 収穫基準（この3つをすべて満たすものだけ）
 
@@ -125,11 +125,11 @@ Step 3 で「原則」「蒸留シグナル」行にマークした negative kno
 ### 手順（Step 3 の後・status 確定/マージ前）
 
 1. Step 3 でマークした候補から、上記基準を満たすものを選ぶ（対象は Step 3 のマーク済みに限る＝二重作業/漏れを防ぐ）。
-2. 蒸留木ルート直下の `knowledge/items/<ULID>.md` を書く（ai-hub は `docs/knowledge/items/`・1 item = 1 ファイル・ファイル名 = ULID・スキーマは §3.4）。frontmatter と本文 prose（教訓）を分離する。
+2. 蒸留木ルート直下の `knowledge/<ULID>.md` を書く（`items/` サブディレクトリは作らず直置き・ai-hub は `projects/orchestration-engine/docs/knowledge/`・1 item = 1 ファイル・ファイル名 = ULID・スキーマは §3.4）。frontmatter と本文 prose（教訓）を分離する。
 3. 検証を通す（pass するまで直す）。`validate-knowledge` は `~/bin` へ配布されるコマンド（正本は hub の `projects/orchestration-engine/scripts/validate-knowledge.sh`・`scripts/sync/sync-bin.sh` が配布）:
 
    ```bash
-   validate-knowledge <蒸留木ルート>/knowledge/items/<ULID>.md   # ai-hub では docs/knowledge/items/<ULID>.md
+   validate-knowledge <蒸留木ルート>/knowledge/<ULID>.md   # ai-hub では projects/orchestration-engine/docs/knowledge/<ULID>.md
    ```
 
 4. episode と**同じブランチにコミット**する（別 PR にしない・episode PR 相乗り）。
@@ -164,4 +164,4 @@ Step 4（heavy の外部チェック）は closure 品質が対象で、knowledg
 - **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
 - **Issue #60 / #62**: 出力型の消費チャネル先（失敗分類 / negative knowledge 注入）。注入側フォーマットは #62 で設計
-- **Issue #272 / 型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・ai-hub は `docs/knowledge/items/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布・正本は hub の engine `scripts/`）。突合・注入（#273）と observations の中身（#274）は本スキルのスコープ外
+- **Issue #272 / 型付き knowledge store（蒸留木ルート直下 `knowledge/`・ai-hub は engine 木 `projects/orchestration-engine/docs/knowledge/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布・正本は hub の engine `scripts/`）。突合・注入（#273・**列挙は各蒸留木の store を横断して見る**＝複数木なら複数 store）と observations の中身（#274）は本スキルのスコープ外
