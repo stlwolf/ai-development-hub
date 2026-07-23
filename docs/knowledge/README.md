@@ -22,7 +22,7 @@
 
 ```yaml
 ---
-id: "01J0KNOWLEDGEITEMEXAMPLE00"   # ULID(26字・Crockford Base32)。ファイル名 = <id>.md
+id: "01KY6X5CKE0SVYZRMXHH74XDS4"   # ULID(26字・Crockford Base32・I/L/O/U 無し)。ファイル名 = <id>.md
 type: knowledge                    # 固定
 status: active                     # active | disabled | superseded | retired（段6 制御の語彙）
 date: 2026-07-23                   # 収穫日（不変。段5/6 の状態更新でも変えない）

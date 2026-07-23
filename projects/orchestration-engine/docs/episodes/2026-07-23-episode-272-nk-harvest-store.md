@@ -53,6 +53,13 @@ negative knowledge ループ(episode の教訓を次の作業へ機械的に読�
 - `canonical/skills/spec-card/SKILL.md`: 5型表に1行足さず、独立 knowledge item 節を追加(共通規約非適用・必須9項・ULID ファイル名)。
 - 検証: 61/61 PASS・shellcheck PASS・hazard clean(制御バイト/pane ID/絶対パスなし)。
 
-### Step 3: gate 4(実装SO + Copilot)+ closure(進行中)
+### Step 3: gate 4 実装SO(2026-07-23)
+
+- 弱 SO・実装2レーン(codex + cursor)。cursor 返却・codex timeout(1/2 partial・disclose・"0はなし"満たす)。証跡 `tmp/so-272-impl/`。
+- cursor 結論: **material な欠陥なし**。exit 分離(malformed=1)・bash 3.2 互換・doc↔validator 整合・回帰なし(閉じた5型 enum/#19/§11 番号不変)・hazard clean・70(当時 61)/61 PASS を確認。
+- 非 material の cheap fix を採用: (1) README のスキーマ例 ULID が `O`/`I` を含み Crockford 非準拠 → 有効な ULID に差し替え(コピペ摩擦の除去)。(2) doc↔validator drift(exclusions 要素の string 型が未検証)→ validator に要素 string チェックを追加。
+- coverage 追加: null 必須キー / tmp/ 揮発 ref / source 空 map(ref 欠落) / exclusions 非文字列要素 / directory 非再帰(nested 無視)。→ 70/70 PASS・shellcheck PASS。
+
+### Step 4: PR + Copilot(進行中)
 
 （ここから追記）

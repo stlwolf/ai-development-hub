@@ -207,6 +207,8 @@ validate_item() {
     et="$(jq -r '.exclusions | type' <<<"$json" 2>/dev/null || true)"
     if [[ "$et" != "array" ]]; then
       warn "$file" "exclusions, if present, must be an array (list of strings)"
+    elif [[ "$(jq -r '[.exclusions[] | type] | all(. == "string")' <<<"$json")" != "true" ]]; then
+      warn "$file" "exclusions elements must all be strings"
     fi
   fi
 

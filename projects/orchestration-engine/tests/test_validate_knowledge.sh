@@ -291,6 +291,42 @@ run
 ck  "exit 2"       "2" "$RUN_RC"
 ckc "usage 出力"   "$RUN_OUT" "Usage:"
 
+echo "[31] 必須キーが null（id: null）→ exit 1 / WARN null"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+sed 's/^id: .*/id: null/' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 1"      "1" "$RUN_RC"
+ckc "WARN null"   "$RUN_OUT" "required key is null: id"
+
+echo "[32] source.ref が tmp/ 揮発 → exit 1"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+sed 's|^  ref: .*|  ref: "tmp/scratch.md"|' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 1"          "1" "$RUN_RC"
+ckc "WARN volatile"   "$RUN_OUT" "volatile working layer"
+
+echo "[33] source が空 map（ref 欠落）→ exit 1"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+awk '/^source:/{print "source: {}"; skip=1; next} skip && /^  ref:/{skip=0; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 1"          "1" "$RUN_RC"
+ckc "WARN ref empty"  "$RUN_OUT" "source.ref must be a non-empty string"
+
+echo "[34] exclusions 要素が非文字列（数値）→ exit 1"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+awk '/^exclusions:/{print "exclusions:"; print "  - 42"; skip=1; next} skip && /^  - /{next} {skip=0; print}' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 1"               "1" "$RUN_RC"
+ckc "WARN excl element"    "$RUN_OUT" "exclusions elements must all be strings"
+
+echo "[35] directory mode は非再帰: items/nested/ の不正 item を無視 → exit 0"
+D="$_TMP_DIR/store2"; mkdir -p "$D/nested"
+write_valid_item "$D/$ULID.md"
+# nested に不正 item（status 不正）を置くが、非再帰なので検証されない
+write_valid_item "$_TMP_DIR/tmpN"; sed 's/^status: .*/status: bogus/' "$_TMP_DIR/tmpN" > "$D/nested/$ULID.md"
+run "$D"
+ck  "exit 0（nested は無視）"  "0" "$RUN_RC"
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
