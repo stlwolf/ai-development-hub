@@ -29,7 +29,7 @@ date: 2026-07-23                   # 収穫日（不変。段5/6 の状態更新
 trigger: "この教訓が効く状況の仮説（必須）"
 prediction: "効くはずの状況と期待効果（段5 の照合先）"
 source:
-  ref: "https://github.com/org/repo/issues/123"   # 汎用参照（committed path か URL）。.oe//tmp/ 揮発層・絶対パスは不可
+  ref: "https://github.com/org/repo/issues/123"   # 汎用参照（committed path か URL）。`.oe/` と `tmp/` の揮発層・絶対パス・`..` を含むパスは不可
 landing: nl                        # nl | guard-candidate（§6.9 の記録のみ）
 observations: []                   # v0 は空配列で予約（中身の設計は #274）
 exclusions:                        # 任意。効かない状況（文字列の配列）

@@ -190,11 +190,7 @@ ckc "WARN obs not array"    "$RUN_OUT" "observations must be an array"
 
 echo "[19] exclusions が scalar → exit 1 / list なら valid（[1] で既に確認）"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
-# exclusions ブロック（見出し + 2 list 行）を scalar に置換
-sed '/^exclusions:/,/使わない"$/d' "$F" > "$F.t"
-{ head -n "$(grep -n '^exclusions:' "$F" | head -1 | cut -d: -f1)" "$F" | grep -v '^exclusions:' ; } >/dev/null 2>&1 || true
-# 単純化: valid を書き直して exclusions を scalar 化
-write_valid_item "$F"
+# exclusions（見出し + list 行）を 1 行の scalar に潰す
 awk '/^exclusions:/{print "exclusions: \"scalar\""; skip=1; next} skip && /^  - /{next} {skip=0; print}' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "exit 1"             "1" "$RUN_RC"
@@ -326,6 +322,13 @@ write_valid_item "$D/$ULID.md"
 write_valid_item "$_TMP_DIR/tmpN"; sed 's/^status: .*/status: bogus/' "$_TMP_DIR/tmpN" > "$D/nested/$ULID.md"
 run "$D"
 ck  "exit 0（nested は無視）"  "0" "$RUN_RC"
+
+echo "[36] source.ref に .. を含む（repo escape）→ exit 1（Copilot 指摘）"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+sed 's|^  ref: .*|  ref: "../../etc/passwd"|' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 1"          "1" "$RUN_RC"
+ckc "WARN dotdot"     "$RUN_OUT" "'..' path segments"
 
 # --- サマリ ---
 echo ""

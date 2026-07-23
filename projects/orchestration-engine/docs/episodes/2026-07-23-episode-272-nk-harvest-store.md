@@ -60,6 +60,15 @@ negative knowledge ループ(episode の教訓を次の作業へ機械的に読�
 - 非 material の cheap fix を採用: (1) README のスキーマ例 ULID が `O`/`I` を含み Crockford 非準拠 → 有効な ULID に差し替え(コピペ摩擦の除去)。(2) doc↔validator drift(exclusions 要素の string 型が未検証)→ validator に要素 string チェックを追加。
 - coverage 追加: null 必須キー / tmp/ 揮発 ref / source 空 map(ref 欠落) / exclusions 非文字列要素 / directory 非再帰(nested 無視)。→ 70/70 PASS・shellcheck PASS。
 
-### Step 4: PR + Copilot(進行中)
+### Step 4: PR + Copilot(2026-07-23)
+
+- PR #275 作成(Refs #272・title 正規化・本文テンプレ)。Copilot をレビュアーに依頼。
+- Copilot レビュー(1 summary + 3 inline)。3件とも妥当につき1ラウンドで対応(review-loop autonomy):
+  1. `validate-knowledge.sh`: `source.ref` の相対パスに `..` が通りパストラバーサル(`../../etc/passwd`)が成立 → `..` セグメントを明示拒否。負例テスト[36]追加。
+  2. `test_validate_knowledge.sh`[19]: exclusions scalar 化 fixture のデッドコード(sed + head|grep が後続 write_valid_item に上書きされる)を削除して簡略化。
+  3. `docs/knowledge/README.md`: スキーマ例コメントの `.oe//tmp/` が区切りに見えない → 「`.oe/` と `tmp/`」に明確化 + `..` 不可も追記。
+- 72/72 PASS・shellcheck PASS。各スレッドへ対応内容 + コミット SHA で返信。
+
+### Step 5: closure(進行中)
 
 （ここから追記）

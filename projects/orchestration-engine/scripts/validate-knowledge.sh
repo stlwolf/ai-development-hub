@@ -179,6 +179,8 @@ validate_item() {
       warn "$file" "source.ref must not be an absolute path: $ref"
     elif [[ "$ref" == .oe/* || "$ref" == tmp/* || "$ref" == */.oe/* || "$ref" == */tmp/* ]]; then
       warn "$file" "source.ref must not point into a volatile working layer (.oe/ or tmp/): $ref"
+    elif [[ "$ref" == ".." || "$ref" == ../* || "$ref" == */../* || "$ref" == */.. ]]; then
+      warn "$file" "source.ref must not contain '..' path segments (repo escape): $ref"
     elif [[ ! -e "$REPO_ROOT/$ref" ]]; then
       warn "$file" "source.ref (repo-relative committed path) does not exist: $ref"
     fi
