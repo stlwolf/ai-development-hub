@@ -80,10 +80,38 @@ if [[ -n "${OE_HEARTBEAT_WRAP_CMD:-}" ]]; then
   # wrap 失敗時は最小行へフォールバック（表示を空にしない）。
 fi
 
-# 最小 statusLine（model + context%）。
+# 最小 statusLine（model + context% [+ プラン消費% 7d/5h]）。
+#
+# 人間が /usage で見ているプラン消費率を statusLine に載せる（#276）。stdin JSON の
+# rate_limits.{seven_day,five_hour}（used_percentage / resets_at）を使う。これらは
+# Pro/Max 等のサブスク認証時・初回 API 応答後のみ載る（API 利用時などは欠落）。
+#   - 7d（週次）  : 常時表示・パーセントのみ。context% の右隣。
+#   - 5h（5時間枠）: used_percentage >= 閾値（既定 80・OE_STATUSLINE_5H_THRESHOLD で上書き可）の
+#                    ときだけ、7d の右にリセット残り時間つきで表示（出るときは最右）。
+# 欠落・非数値・rate_limits 非提供では当該セグメントを黙って出さない（表示は壊さない）。
+# context% は既存どおり "N% ctx" を連続文字列で保つ（表示アサートは部分一致）。
 if command -v jq >/dev/null 2>&1; then
+  # プラン消費% セグメント用パラメータ（既定はインライン宣言・env で上書き可: lib idiom）。
+  _now="$(date +%s 2>/dev/null)"; [[ "$_now" =~ ^[0-9]+$ ]] || _now=0
+  _th="${OE_STATUSLINE_5H_THRESHOLD:-80}"; [[ "$_th" =~ ^[0-9]+([.][0-9]+)?$ ]] || _th=80
   line="$(printf '%s' "$input" \
-    | jq -r '"[\(.model.display_name // "?")] \(.context_window.used_percentage // 0)% ctx"' 2>/dev/null)" || line=""
+    | jq -r --argjson now "$_now" --argjson th "$_th" '
+        def n($x): ($x | if type=="number" then . else (tonumber? // null) end);
+        def remain($resets):
+          (($resets - $now) | floor) as $d
+          | if $d <= 0 then "0m"
+            elif (($d / 3600) | floor) > 0 then "\(($d/3600)|floor)h\((($d%3600)/60)|floor)m"
+            else "\(($d/60)|floor)m" end;
+        ("[\(.model.display_name // "?")] \(.context_window.used_percentage // 0)% ctx") as $base
+        | (n(.rate_limits.seven_day.used_percentage?))  as $d7
+        | (n(.rate_limits.five_hour.used_percentage?))  as $d5
+        | (n(.rate_limits.five_hour.resets_at?))        as $r5
+        | ($base
+           + (if $d7 != null then " · 7d \($d7|round)%" else "" end)
+           + (if ($d5 != null and $d5 >= $th)
+                then " · 5h \($d5|round)%" + (if $r5 != null then " (\(remain($r5)))" else "" end)
+                else "" end))
+      ' 2>/dev/null)" || line=""
   if [[ -n "$line" ]]; then
     printf '%s\n' "$line"
   else
