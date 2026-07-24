@@ -27,6 +27,7 @@ PASS=0; FAIL=0
 ck()  { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
 ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3] in [$2])"; FAIL=$((FAIL+1)); fi; }
 ncc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
+ckr() { if printf '%s' "$2" | grep -qE -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (no match /$3/ in [$2])"; FAIL=$((FAIL+1)); fi; }
 
 # 隔離した sidecar dir を都度用意
 HBDIR=""
@@ -128,6 +129,57 @@ OUT="$(printf '%s' '{"session_id":"01WFAIL","model":{"display_name":"Opus"},"con
 ck  "wrap 失敗でも exit 0" "0" "$rc"
 ckc "最小行へフォールバック" "$OUT" "3% ctx"
 ck  "wrap 失敗でも beat は書く" "3" "$(field 01WFAIL '.context_pct')"
+
+echo "[13] プラン消費%（#276）: 7d 常時・5h は閾値超え時のみ・7d の右（最右）・リセット残り時間つき"
+mkhb f13
+_now=$(date +%s); _reset=$((_now + 6420))  # +1h47m
+
+# rate_limits 無し → セグメント無し（従来どおり）
+OUT="$(run '{"session_id":"01R0","model":{"display_name":"Opus 4.8"},"context_window":{"used_percentage":34}}' '%1')"
+ckc "base: context% は出る" "$OUT" "34% ctx"
+ncc "rate_limits 無し → 7d 出さない" "$OUT" "7d"
+ncc "rate_limits 無し → 5h 出さない" "$OUT" "5h"
+
+# 7d あり・5h < 80 → 7d のみ（5h 非表示）
+OUT="$(run '{"session_id":"01R1","model":{"display_name":"Opus 4.8"},"context_window":{"used_percentage":34},"rate_limits":{"seven_day":{"used_percentage":41},"five_hour":{"used_percentage":50}}}' '%1')"
+ckc "7d は常時表示" "$OUT" "· 7d 41%"
+ncc "5h < 80 → 非表示" "$OUT" "5h"
+
+# 5h >= 80 + resets_at → 7d の右に 5h・残り時間つき・最右
+OUT="$(run "{\"session_id\":\"01R2\",\"model\":{\"display_name\":\"Opus 4.8\"},\"context_window\":{\"used_percentage\":34},\"rate_limits\":{\"seven_day\":{\"used_percentage\":41},\"five_hour\":{\"used_percentage\":83,\"resets_at\":$_reset}}}" '%1')"
+ckc "5h >= 80 で表示" "$OUT" "· 5h 83%"
+ckc "順序: 7d の右に 5h（最右）" "$OUT" "· 7d 41% · 5h 83%"
+ckr "5h にリセット残り時間 (XhYm)" "$OUT" '· 5h 83% \([0-9hm]+\)'
+
+# 5h >= 80 だが resets_at 欠落 → % のみ・時間なし（graceful）
+OUT="$(run '{"session_id":"01R3","model":{"display_name":"Opus 4.8"},"context_window":{"used_percentage":34},"rate_limits":{"five_hour":{"used_percentage":83}}}' '%1')"
+ckc "resets_at 欠落でも 5h% は出す" "$OUT" "· 5h 83%"
+ncc "resets_at 欠落 → 括弧の時間は出さない" "$OUT" "5h 83% ("
+
+# float % は round（41.6→42・82.4→82）context% は従来どおり保持
+OUT="$(run "{\"session_id\":\"01R4\",\"model\":{\"display_name\":\"Opus 4.8\"},\"context_window\":{\"used_percentage\":23.5},\"rate_limits\":{\"seven_day\":{\"used_percentage\":41.6},\"five_hour\":{\"used_percentage\":82.4,\"resets_at\":$_reset}}}" '%1')"
+ckc "context% は保持（23.5）" "$OUT" "23.5% ctx"
+ckc "7d 41.6 → 42（round）" "$OUT" "· 7d 42%"
+ckc "5h 82.4 → 82（round）" "$OUT" "· 5h 82%"
+
+# 閾値 env 上書き（OE_STATUSLINE_5H_THRESHOLD=40 で 5h 50% を出す）
+OUT="$(printf '%s' "{\"session_id\":\"01R5\",\"model\":{\"display_name\":\"Opus 4.8\"},\"context_window\":{\"used_percentage\":34},\"rate_limits\":{\"five_hour\":{\"used_percentage\":50,\"resets_at\":$_reset}}}" \
+  | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE='%1' OE_STATUSLINE_5H_THRESHOLD=40 bash "$PRODUCER")"
+ckc "閾値 env 上書きで 5h 表示" "$OUT" "· 5h 50%"
+
+# rate_limits があっても sidecar 契約は不変（{ts,context_pct,pane}・context_pct のみ）
+ck  "sidecar キーは従来どおり" "context_pct pane ts" "$(field 01R2 'keys_unsorted | sort | join(" ")')"
+ck  "sidecar context_pct=34（rate_limits 混入なし）" "34" "$(field 01R2 '.context_pct')"
+
+echo "[14] now 取得不可（date 失敗）→ 5h% は出すが残り時間は抑止（Copilot 指摘・誤値回避）"
+mkhb f14
+# date が失敗する stub を PATH 先頭に置く（jq/mktemp 等は元 PATH で解決される）。
+STUB="$_TMP_DIR/stub-bin"; mkdir -p "$STUB"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$STUB/date"; chmod +x "$STUB/date"
+OUT="$(printf '%s' "{\"session_id\":\"01R6\",\"model\":{\"display_name\":\"Opus 4.8\"},\"context_window\":{\"used_percentage\":34},\"rate_limits\":{\"five_hour\":{\"used_percentage\":83,\"resets_at\":9999999999}}}" \
+  | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE='%1' PATH="$STUB:$PATH" bash "$PRODUCER")"
+ckc "date 失敗でも 5h% は出す" "$OUT" "· 5h 83%"
+ncc "now 欠落 → 残り時間の括弧は出さない" "$OUT" "5h 83% ("
 
 # ============================================================================
 echo ""
