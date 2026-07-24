@@ -171,6 +171,16 @@ ckc "閾値 env 上書きで 5h 表示" "$OUT" "· 5h 50%"
 ck  "sidecar キーは従来どおり" "context_pct pane ts" "$(field 01R2 'keys_unsorted | sort | join(" ")')"
 ck  "sidecar context_pct=34（rate_limits 混入なし）" "34" "$(field 01R2 '.context_pct')"
 
+echo "[14] now 取得不可（date 失敗）→ 5h% は出すが残り時間は抑止（Copilot 指摘・誤値回避）"
+mkhb f14
+# date が失敗する stub を PATH 先頭に置く（jq/mktemp 等は元 PATH で解決される）。
+STUB="$_TMP_DIR/stub-bin"; mkdir -p "$STUB"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$STUB/date"; chmod +x "$STUB/date"
+OUT="$(printf '%s' "{\"session_id\":\"01R6\",\"model\":{\"display_name\":\"Opus 4.8\"},\"context_window\":{\"used_percentage\":34},\"rate_limits\":{\"five_hour\":{\"used_percentage\":83,\"resets_at\":9999999999}}}" \
+  | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE='%1' PATH="$STUB:$PATH" bash "$PRODUCER")"
+ckc "date 失敗でも 5h% は出す" "$OUT" "· 5h 83%"
+ncc "now 欠落 → 残り時間の括弧は出さない" "$OUT" "5h 83% ("
+
 # ============================================================================
 echo ""
 echo "=== RESULT: PASS=$PASS FAIL=$FAIL ==="

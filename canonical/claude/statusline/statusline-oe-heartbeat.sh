@@ -92,7 +92,8 @@ fi
 # context% は既存どおり "N% ctx" を連続文字列で保つ（表示アサートは部分一致）。
 if command -v jq >/dev/null 2>&1; then
   # プラン消費% セグメント用パラメータ（既定はインライン宣言・env で上書き可: lib idiom）。
-  _now="$(date +%s 2>/dev/null)"; [[ "$_now" =~ ^[0-9]+$ ]] || _now=0
+  # now が取れないと残り時間が誤値になる。取得失敗時は _now=null を渡し、jq 側で時間表示を抑止する。
+  _now="$(date +%s 2>/dev/null)"; [[ "$_now" =~ ^[0-9]+$ ]] || _now=null
   _th="${OE_STATUSLINE_5H_THRESHOLD:-80}"; [[ "$_th" =~ ^[0-9]+([.][0-9]+)?$ ]] || _th=80
   line="$(printf '%s' "$input" \
     | jq -r --argjson now "$_now" --argjson th "$_th" '
@@ -102,6 +103,9 @@ if command -v jq >/dev/null 2>&1; then
           | if $d <= 0 then "0m"
             elif (($d / 3600) | floor) > 0 then "\(($d/3600)|floor)h\((($d%3600)/60)|floor)m"
             else "\(($d/60)|floor)m" end;
+        # resets_at と now が両方揃うときだけ残り時間を出す（now 欠落時の誤表示を回避）。
+        def reset_suffix($resets):
+          if ($resets != null and $now != null) then " (\(remain($resets)))" else "" end;
         ("[\(.model.display_name // "?")] \(.context_window.used_percentage // 0)% ctx") as $base
         | (n(.rate_limits.seven_day.used_percentage?))  as $d7
         | (n(.rate_limits.five_hour.used_percentage?))  as $d5
@@ -109,7 +113,7 @@ if command -v jq >/dev/null 2>&1; then
         | ($base
            + (if $d7 != null then " · 7d \($d7|round)%" else "" end)
            + (if ($d5 != null and $d5 >= $th)
-                then " · 5h \($d5|round)%" + (if $r5 != null then " (\(remain($r5)))" else "" end)
+                then " · 5h \($d5|round)%" + reset_suffix($r5)
                 else "" end))
       ' 2>/dev/null)" || line=""
   if [[ -n "$line" ]]; then
