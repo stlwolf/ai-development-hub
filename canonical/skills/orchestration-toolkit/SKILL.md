@@ -13,6 +13,7 @@ oe-* ツール群を **1 つのパッケージとして一貫理解する**た�
 - **親子委譲**: `oe-delegate`（子セッション起動 + 最初のキック）/ `oe-kick`（`#N` or kickoff パスを 1 引数で受け `oe-delegate` のフラグ列へ展開するワンショットラッパー）/ `oe-send`（既存ペインへ 1 行/キックオフ送信・戻しもこれ）/ `oe-list`（宛先候補を source 列付きで列挙）/ `oe-report`（legacy・戻しは oe-send に一本化）。詳細手順 → `delegate-task` スキル。
 - **SO ゲート**: `oe-refute`（**設計SO**・確定前の同期反証・`--rubric exploration|consensus`）/ `oe-review`（**実装SO**・reviewed diff バインドのコード欠陥レビュー・`lens=impl`）。いずれも `so-compare` を wrap。※engine 内の `verify`（単一 reviewer の compliance review）とは**別物**（同名注意）。
 - **選択 / 観測**: `oe-select`（`oe-list`+fzf で対話選択→`oe-send` 委譲する UX。preview で `tmux capture-pane` を読む）/ `oe-status`（**read-only 俯瞰**: engine の audit-terminal reducer 由来 state ＋ delegate liveness。**ペイン出力は読まない＝検出しない**）。
+- **negative knowledge store（standalone・`oe-` 無し・sync-bin 配布）**: `knowledge-list`（段3 突合＝store の item を蒸留木横断で read-only 列挙・`--strict`/`--json`/`--include-uncommitted`）/ `validate-knowledge`（item スキーマ検証・advisory）。列挙 → 採否 → 注入の手順は `doc-flow-guardrail`「negative knowledge 注入」節、コマンド詳細は store の `knowledge/README.md`。
 
 ## 駆動層規律（engine 作業の 1 サイクル）
 

@@ -56,6 +56,42 @@ validate-knowledge projects/orchestration-engine/docs/knowledge/items
 
 exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・usage）。
 
+## 列挙（段3 突合）
+
+`knowledge-list` は store の item を蒸留木横断で列挙する read-only コマンド（`~/bin` へ配布・正本は hub の `projects/orchestration-engine/scripts/knowledge-list.sh`・`scripts/sync/sync-bin.sh` が配布）。統括が brief を組む時に候補を一望するためのもの（段3 突合）。検証ではない（それは `validate-knowledge`）。
+
+```bash
+# 既定: git HEAD tree（committed の item）を repo root 起点で蒸留木横断列挙
+knowledge-list
+
+# 段3 の突合は完全性のため常に --strict（崩れ item があれば exit 1）
+knowledge-list --strict
+
+# JSON（schema_version / source / head / listed / skipped / items / malformed）。パイプ・将来の matcher 用
+# （head = git-head モードで固定した HEAD の SHA。他モードでは null）
+knowledge-list --json
+
+# disk（未 commit 含む）を filesystem find で列挙（.oe/ tmp/ node_modules は prune）
+knowledge-list --include-uncommitted
+
+# 明示指定（単一木・テスト・git 外）。items/ dir か item file を渡す
+knowledge-list docs/knowledge/items
+```
+
+- **発見**: 既定は `git ls-tree HEAD` で **committed の item のみ**を列挙する（index/working-tree でなく commit tree ＝ staged-but-uncommitted は含めない・「committed 状態 store」の意味に一致）。対象は `knowledge/items/` 直下の ULID `.md` のみ（非再帰・厳密 regex）で、`validate-knowledge` の directory mode と**同じ発見規則**（items/ 直下 ULID `.md`）を使う。したがって **committed 状態**の同じ store に対しては両者の対象集合が一致する（＝列挙した集合を検証できる）。段3 の突合は committed 状態に対して行う前提で、未 commit の追加/削除がある作業中は lister（HEAD snapshot）と validator（作業ツリー上の指定 path）が別 snapshot を見るため一時的にズレるのは設計どおり。
+- **malformed / 非 ULID**: 崩れ item・非 ULID 名の `.md`・閉じ `---` 欠落は **stdout に flagged row（`MALFORMED`・path・ファイル名から復元した id）で surface** し `skipped` に数える（黙って落とさない）。末尾に `listed: N / skipped: M / source: <mode>`（git-head モードでは `source: git-head @ <HEAD SHA>`）を出す。
+- **既知の限界（v0）**: `excerpt` は本文先頭行の preview で意味要約ではない（正本は item 本体）。非 UTF-8 ロケール（`LC_ALL=C` 等）では切詰め時に末尾 1 文字が jq で U+FFFD に置換されうる（crash や exit 契約違反は起きない）。配備ロケールは UTF-8。
+- **この repo（ai-hub）での木の解決（dogfood）**: 蒸留木が複数ある（トップレベル `docs/` と engine `projects/orchestration-engine/docs/`）。`knowledge-list` は repo root 起点で両木の `knowledge/items/` を自動で横断するので、木ごとのパス指定は不要。
+- **exit code（`validate-knowledge` との整合）**:
+
+  | exit | `knowledge-list` | `validate-knowledge` |
+  |------|------------------|----------------------|
+  | 0 | 列挙成功（skipped があっても既定は 0） | valid |
+  | 1 | `--strict` かつ skipped > 0（完全性信号） | schema 違反 |
+  | 2 | 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / usage） | 環境エラー |
+
+- **列挙 → 採否 → 注入** の手順は `doc-flow-guardrail` の「negative knowledge 注入」節（brief 固定節の slot）を参照する。
+
 ## 収穫と保存 HG
 
 knowledge item は episode の closure 時に `episode-retrospective` スキルの収穫 Step で切り出し、`validate-knowledge` を通してから episode と同じブランチにコミットする。**保存前の人間ゲート = owner のマージ HG**（item を含むブランチを owner がマージ時に見る）。episode 中の誤情報・prompt injection・secret / 個人情報・外部由来内容を knowledge に昇格させない（信頼境界は PR レビュー/マージ HG）。

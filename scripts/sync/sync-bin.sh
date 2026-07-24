@@ -42,7 +42,7 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-CMD_NAMES=("so-compare" "arena-compare" "wez" "wt-pane-issue" "oe-tree" "validate-knowledge")
+CMD_NAMES=("so-compare" "arena-compare" "wez" "wt-pane-issue" "oe-tree" "validate-knowledge" "knowledge-list")
 CMD_SOURCES=(
     "${REPO_ROOT}/scripts/so-compare.sh"
     "${REPO_ROOT}/projects/arena-compare/arena-compare.sh"
@@ -50,6 +50,7 @@ CMD_SOURCES=(
     "${REPO_ROOT}/scripts/wt/wt-pane-issue.sh"
     "${REPO_ROOT}/projects/orchestration-engine/bin/oe-tree"
     "${REPO_ROOT}/projects/orchestration-engine/scripts/validate-knowledge.sh"
+    "${REPO_ROOT}/projects/orchestration-engine/scripts/knowledge-list.sh"
 )
 
 main() {
