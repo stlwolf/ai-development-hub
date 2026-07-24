@@ -77,6 +77,17 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - **SO を通す**: gate 2（設計SO）・gate 4（実装SO）は常に必須（「通すか」は固定。モード / レーンは可変＝下記）。
 - 参照: `implementer-contract`（実装委譲時は必読契約）/ `doc-flow-guardrail`（本スキル・フロー全体）/ `document-format.md`「ゲート配置」節〔§11〕。
 
+## negative knowledge（採用 item・可変・無ければ「採用なし（列挙完了・候補 N 件確認）」）
+
+<!-- 手順は本スキル「negative knowledge 注入」節。列挙 → 採否 → 採用分だけ 1 item を複数行で貼る。本文 verbatim は貼らない（正本は store）。 -->
+
+- `<item id>`
+  - 適用理由: [今回のタスクとの具体的な接点]
+  - 教訓（行動変更）: [「〜するな」「〜を確認せよ」の一行]
+  - trigger: [効く状況] / landing: [nl | guard-candidate]
+  - item: [repo-root 相対の item path（教訓全文への導線）]
+  - source: [source.ref（出典＝収穫元 episode / PR / URL。教訓本文ではない）]
+
 ## タスク（可変・埋める）
 
 - issue: #[N]
@@ -89,6 +100,15 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 ````
 
 **固定 vs 可変の境界**: 「SO を通すか」「昇格するか」「報告の形」はタスクに依らず固定。「SO のモード / レーン」「scope」「受け入れ基準」はタスク risk 依存で可変。
+
+## negative knowledge 注入（段3 突合 → 段4 注入）
+
+brief 組立時に、過去の失敗から蒸留した negative knowledge を突合・注入する（消費側の輪を閉じる）。枠は薄く保ち、コマンドの詳細は routing 先（store の README・`orchestration-toolkit`）に委ねる。
+
+1. **列挙（段3）**: `knowledge-list` で store の item を蒸留木横断で列挙する（read-only・全件）。段3 は完全性のため常に `--strict` を付ける（崩れ item を skip したまま成功扱いにしない）。store の置き場は関係で解く（item は収穫元 episode と同じ蒸留木の `knowledge/items/` ＝ item の `source.ref` と同じ木）。特定の repo パスを覚える必要はない。
+2. **採否（段3）**: 統括が列挙を見て、今のタスクに効く item を選ぶ（v0 は全件列挙 + 統括の意味判断・機械 matcher なし）。`landing: guard-candidate` の item は NL として注入せず guard 経路の候補として扱う。採否は brief の slot（作業層）に残し、item の `observations` には書かない（`observations` は段5 の担当・境界を保つ）。
+3. **注入（段4）**: 採用分を上の「negative knowledge」slot に貼る。教訓の一行は「次にどう行動を変えるか」を書く。教訓の全文へは `item`（item path）で辿り、出典へは `source`（`source.ref`）で辿る（両者は別物）。矛盾する item を同時に採用しない。
+4. コマンドのオプション・exit code・snapshot の意味論は store の `knowledge/README.md`（+ `orchestration-toolkit`）を参照する（枠にコマンド詳細を焼かない）。
 
 ## ③ cold-start（新 repo / 新統括セッション）
 

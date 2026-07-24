@@ -66,6 +66,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 - `--brief <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する（旧 `--kickoff` は deprecated alias として存続・#255。新規は `--brief` を使う）
 - doc が無い軽いケースは、親で組み立てた内容を **workspace 配下**（例 `<workspace>/.oe/brief-*.md`）に書いてから `--brief` で渡す（`/tmp` は対話型 claude が読めないので避ける）。`.oe/` はこのリポジトリでは gitignore 済み。
+- **brief 組立時の negative knowledge 突合・注入**は `doc-flow-guardrail`「negative knowledge 注入」節に従う（`knowledge-list` で列挙 → 採否 → 固定節 slot に注入）。手順の実体は guardrail 側に置き、ここでは複製しない（3軸分離）。
 
 **実装委譲（implementer-contract 併用）**
 
