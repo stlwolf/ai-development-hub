@@ -164,10 +164,65 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 | `prediction` | 必須 | string | 自由文 | 効くはずの状況と期待効果（段5 の照合先） |
 | `source` | 必須 | map | `source.ref`（汎用参照） | 出典。`ref` は committed path か URL。`.oe/`/`tmp/` 揮発層・絶対パスは不可（§13.4 と同型） |
 | `landing` | 必須 | string | `nl` \| `guard-candidate` | 着地先の記録のみ（設計正本 §6.9） |
-| `observations` | 必須 | list | v0 は `[]`（空）必須 | 段5 書き戻し用の予約スロット（中身の設計は #274） |
+| `observations` | 必須 | list | 要素 = `{date, ref, state, note?}`（下の「observations 要素スキーマ」） | 段5 の観測台帳（append-only・収穫時は `[]`） |
 | `exclusions` | 任意 | list | 文字列の配列 | 効かない状況 |
 
 本文 prose = 教訓（自己評価文の領域・空白トリム後に可視文字 ≥1）。エンベロープには文書体系に依存しない語彙のみを置く（出典は `source.ref`。「episode の」等の依存語彙を型に入れない）。
+
+#### observations 要素スキーマ（段5 の観測記録）
+
+注入された knowledge の帰結を記録する台帳。**書き手は、注入を受けた子が自分の closure 時**に、work と同じブランチへコミットする（手順は `episode-retrospective` の観測書き戻し Step）。要素は次の4フィールドで、**これ以外のキーは拒否**する（書き手の身元フィールドは持たない — `ref` の先が語る）。
+
+| フィールド | 必須 | 型 | 形式 | 意味 |
+|-----------|------|-----|------|------|
+| `date` | 必須 | string | `YYYY-MM-DD`（暦として妥当） | 観測日。一度書いたら変えない |
+| `ref` | 必須 | string | **許可する3形だけ**（下記 allow-list）。既定は issue 番号（closure は PR 作成前なので PR 番号が未確定なことがある） | どの作業での観測か。path は書かない（作業単位の参照であって場所の参照ではない） |
+| `state` | 必須 | string | 下の enum 7値 | 帰結 |
+| `note` | 任意 | string | 1行（LF / CR とも不可）・空でない | 短い補足。長い証拠は `ref` の先に置く。**書かないならキーを省く**（`note: null` / 空文字 / 空白のみ / 改行入りは検証で弾く） |
+
+`ref` の形（**closed allow-list**）: 前後の空白を落としたうえで、次の3形の**いずれかに合致するものだけ**を許可する。合致しないものはすべて検証で弾く。
+
+| 許可する形 | 例 | 用途 |
+|-----------|----|------|
+| `#<数字>` | `#274` | 同じ repo の issue / PR |
+| `<owner>/<repo>#<数字>` | `owner/repo#274` | 別 repo の issue / PR（スラッシュは1つ・各セグメントは英数字始まり） |
+| `<scheme>://<空白を含まない1文字以上>` | `https://github.com/org/repo/pull/282` | URL |
+
+- **禁止形を数え上げるのではなく、許可形を列挙する**（deny-list ではなく allow-list）。未知の形は既定で弾かれるので、検査の漏れが「通ってしまう」方向に出ない。
+- 引き換えに、**自由文の `ref`（`PR #274 の再現手順は …`）と repo 相対 path（`docs/…/x.md`）は弾かれる**。`observations.ref` は作業単位の参照であって場所の参照ではない。committed path を許すのは `source`（収穫元の出典）の側の規則で、そちらとは別である。
+- 実装では行頭行末ではなく**文字列全体のアンカー**で判定する（改行を含む値の先頭行だけが合致する抜け道を塞ぐ）。
+- 残る曖昧さ（機構の限界）: `tmp/scratch.md#2` のような文字列は「repo 名が `scratch.md` の cross-repo 参照」と**同形**なので通る。GitHub の repo 名はドットを含めるため、形だけでは意味のある参照と区別できない。緩和はレビューが担う。
+
+`state` の enum と、同時に当てはまるときの**優先順位**（1 item = 1 レコードなので最も強いものを1つ選ぶ）:
+
+1. `harmful` — 従ったことで害が出た
+2. `contradicted` — 教訓に反する事実が出た
+3. `externally_verified` — 外部の判定（テスト・レビュー・CI）が**予測の効果**を確認した。単なるビルド成功はこれに当たらない
+4. `followed` — 教訓どおりに判断や手順を実際に変えた（変えた証拠を示せるときだけ。示せないなら `outcome_unknown`）
+5. `injected_not_used` — 適用機会はあったが使わなかった
+6. `no_opportunity` — trigger の状況に一度も当たらなかった（「再発しなかった」を効果として数えない側）
+7. `outcome_unknown` — 判定できない
+
+台帳の規約（**機械検査されないもの**を含む）:
+
+- **append-only**: 過去のレコードは書き換えない。退役後も履歴として残す。明示の version フィールドは持たず、**git 履歴が版台帳**（改訂も観測も commit なので時系列で復元できる）。
+- **配列の順序に意味を持たせない**: 末尾に足すだけで、時系列昇順は強制しない（並行ブランチの merge で古いブランチの正当な追記が後ろに来る）。順序が必要なら読む側で並べ替える。
+- 検証コマンド `validate-knowledge` は各要素の**形**（必須3・enum・暦妥当性・`ref` の hygiene・`note` の1行・未知キー）を検査する。**append-only と順序は検査しない**（規約であって機械保証ではない）。
+- **省略と自己申告は機械では検知できない**: 「注入された全 item に1レコード」の完全性、`followed` の妥当性は、レビュー（親の fact-check / owner のマージ）が唯一の歯である。v0 の観測は意思決定に使わない placeholder として扱う。
+
+集計と制御候補の提示（段6 の機械側）:
+
+- 列挙コマンド `knowledge-list` が state ごとの件数を集計し、**`status: active` かつ `harmful` / `contradicted` の観測を持つ item に制御候補フラグ**を立てる。要素スキーマを満たさないレコードは集計の `invalid` に数え、**そこから候補は立てない**。
+- フラグは「adverse な観測が過去に一度でもあった印」であって未処理キューではない。誤観測を訂正する語彙は enum に無いため、**一度立った候補は消えない**（v0 の既知の制約。候補の総数を運用指標に使わない）。
+- **二段チェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
+
+#### status 遷移規則（段6 の制御）
+
+- **いつ**: 制御候補フラグが立った item を `disabled` の候補として検討する。件数の閾値は置かず、**機械は提示までで status を書き換えない**。
+- **誰が**: 提案は誰でもできる（子・統括・owner）。採否は**マージの人間ゲート**。curation 専用の承認機構は作らない。
+- **どう**: frontmatter の `status` を編集した**通常の PR**。`observations` は書き換えない（append-only）。`date`（収穫日）も変えない。
+- **遷移先**: `active` → `disabled`（効かない・害があった）/ `superseded`（後継 item に置き換えた）/ `retired`（状況が消滅し、もう起きない）。復帰（`disabled` → `active`）は誤検知だったときにマージゲートで戻せる（機械規則は置かない）。
+- **supersede**: 後継 item の id を**本文 prose に1行** `superseded by <後継 id>` として書く（frontmatter のスキーマは変えない・grep で辿れる）。**昇格条件**: 後継チェーンの機械照会が必要になったら typed フィールド `superseded_by` へ昇格する（`observations` の version と同じ YAGNI の扱い）。
 
 **置き場規則（関係で解く・repo 固有パス不要）**: 収穫した knowledge item は、**その収穫元 episode が属する蒸留木の `knowledge/items/`** に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。これで蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる。`knowledge/` は蒸留木ルート直下（`decisions/` / `episodes/` / `plans/` の兄弟）に置き、README は同じ木の `knowledge/README.md`。**型付き item（ULID 名）は `knowledge/items/` に隔離**し、自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き `items/` には混ぜない。エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。段3 の列挙は各木の store を横断して見る。採用先での木の具体的な解決や dogfood 例は各 store の README を参照する。検証コマンド `validate-knowledge` の directory mode は `items/` 内の全 `*.md` を検証し、ULID 名でない誤名 item は skip せず WARN + exit 1（すり抜けを黙って落とさない）。
 

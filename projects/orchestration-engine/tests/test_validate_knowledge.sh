@@ -64,6 +64,23 @@ grep 単体ではネストしたキーや配列要素を確実に捕捉できな
 EOF
 }
 
+# observations 要素スキーマ（#274 段5）用の fixture。observations 以外は valid な item を書き、
+# observations には渡された YAML 断片（"observations:" の行を含む）をそのまま置く。
+write_item_with_obs() {
+  local file="$1" obs="$2"
+  {
+    printf -- '---\n'
+    printf 'id: "%s"\n' "$ULID"
+    printf 'type: knowledge\nstatus: active\ndate: 2026-07-25\n'
+    printf 'trigger: "注入した knowledge の帰結を書き戻すとき"\n'
+    printf 'prediction: "要素スキーマ検証が形の崩れを commit 前に落とす"\n'
+    printf 'source:\n  ref: "https://github.com/stlwolf/ai-development-hub/issues/274"\n'
+    printf 'landing: nl\n'
+    printf '%s\n' "$obs"
+    printf -- '---\n\n観測レコードの形式例（実データではない）。\n'
+  } > "$file"
+}
+
 # ============================================================================
 echo "[1] valid item → exit 0 / OK"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
@@ -118,7 +135,42 @@ F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
 sed 's/^date: .*/date: 2026-13-40/' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "exit 1"          "1" "$RUN_RC"
-ckc "WARN calendar"   "$RUN_OUT" "not a parseable calendar date"
+ckc "WARN calendar"   "$RUN_OUT" "date is not a valid calendar date"
+
+# top-level date の暦厳密化（#274 裁定3）。jq の strptime は存在しない日を翌月へ正規化して通すため
+# 純 jq の cal_ok で検査する。月13 だけを見る [8] では検出できない穴を固定する。
+echo "[8b] top-level date が存在しない日（2026-02-29 / 2026-04-31）→ exit 1・閏年（2024-02-29）は valid"
+for bad_date in 2026-02-29 2026-04-31; do
+  F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+  sed "s/^date: .*/date: $bad_date/" "$F" > "$F.t" && mv "$F.t" "$F"
+  run "$F"
+  ck  "exit 1 ($bad_date)"        "1" "$RUN_RC"
+  ckc "WARN calendar ($bad_date)" "$RUN_OUT" "date is not a valid calendar date: $bad_date"
+done
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+sed 's/^date: .*/date: 2024-02-29/' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "exit 0（閏年 2024-02-29 は valid）" "0" "$RUN_RC"
+
+echo "[8c] jq の評価失敗は環境エラー（exit 2）で落ちる — データ不備（exit 1）に丸めない（Copilot 指摘・#274）"
+# cal_ok を含む jq プログラムだけ失敗する stub を PATH 先頭に置き、他の jq 呼び出しは実 jq に委譲させる。
+# これで「環境側で jq の評価が失敗した」状況だけを再現できる（jq 本体を壊す必要がない）。
+_REAL_JQ="$(command -v jq)"
+_STUB_DIR="$_TMP_DIR/stubbin"; mkdir -p "$_STUB_DIR"
+{
+  printf '#!/usr/bin/env bash\n'
+  # stub の中身は literal で出す（$@ を呼び出し側で展開させない）。
+  # shellcheck disable=SC2016
+  printf 'for a in "$@"; do case "$a" in *cal_ok*) exit 5 ;; esac; done\n'
+  printf 'exec %s "$@"\n' "$_REAL_JQ"
+} > "$_STUB_DIR/jq"
+chmod +x "$_STUB_DIR/jq"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+_STUB_RC=0
+_STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
+ck  "exit 2（環境エラー）"     "2" "$_STUB_RC"
+ckc "ERROR メッセージ"        "$_STUB_OUT" "failed to evaluate the calendar-validity filter with jq"
+ncc "WARN に丸めていない"      "$_STUB_OUT" "date is not a valid calendar date"
 
 echo "[9] trigger 空 → exit 1"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
@@ -176,12 +228,47 @@ run "$F"
 ck  "exit 1"          "1" "$RUN_RC"
 ckc "WARN landing"    "$RUN_OUT" "landing not in enum"
 
-echo "[17] observations 非空 → exit 1"
-F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
-sed 's/^observations: .*/observations: ["x"]/' "$F" > "$F.t" && mv "$F.t" "$F"
-run "$F"
-ck  "exit 1"              "1" "$RUN_RC"
-ckc "WARN observations"   "$RUN_OUT" "observations must be empty"
+echo "[17] observations 要素スキーマ 正例（空配列 / note なし / note あり / 複数件 / 7 state 全部）→ exit 0"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations: []'
+run "$F"; ck "exit 0（空配列＝収穫時の既定）" "0" "$RUN_RC"
+
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed'
+run "$F"; ck "exit 0（1件・note なし）" "0" "$RUN_RC"
+
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+    note: "brief slot の item に従い argv でなく stdin で渡した"'
+run "$F"; ck "exit 0（1件・note あり）" "0" "$RUN_RC"
+
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: no_opportunity
+  - date: 2026-07-25
+    ref: "owner/repo#274"
+    state: injected_not_used
+  - date: 2026-07-25
+    ref: "https://github.com/org/repo/pull/280"
+    state: followed
+  - date: 2026-07-25
+    ref: "#281"
+    state: contradicted
+  - date: 2026-07-25
+    ref: "#282"
+    state: harmful
+  - date: 2026-07-25
+    ref: "#283"
+    state: outcome_unknown
+  - date: 2026-07-25
+    ref: "#284"
+    state: externally_verified'
+run "$F"; ck "exit 0（7 state 全部・複数件）" "0" "$RUN_RC"
 
 echo "[18] observations が配列でない → exit 1"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
@@ -340,6 +427,288 @@ write_valid_item "$D/misnamed.md"
 run "$D"
 ck  "exit 1"          "1" "$RUN_RC"
 ckc "WARN 誤名 item"  "$RUN_OUT" "filename must be <id>.md"
+
+# ============================================================================
+# observations 要素スキーマの負例（#274 段5・gate 2 設計SO で確定した契約）
+# ============================================================================
+
+echo "[38] 要素が map でない → exit 1（以降のキー検査はしない）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - "not-a-map"'
+run "$F"
+ck  "exit 1"        "1" "$RUN_RC"
+ckc "WARN non-map"  "$RUN_OUT" "observations[0]: element must be a map"
+ncc "date 検査はしない" "$RUN_OUT" "observations[0].date is required"
+
+echo "[39] 必須キー欠落（date / ref / state を個別に落とす）→ exit 1"
+for miss in date ref state; do
+  F="$_TMP_DIR/$ULID.md"
+  case "$miss" in
+    date)  write_item_with_obs "$F" 'observations:
+  - ref: "#274"
+    state: followed' ;;
+    ref)   write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    state: followed' ;;
+    state) write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"' ;;
+  esac
+  run "$F"
+  ck  "exit 1 ($miss 欠落)"   "1" "$RUN_RC"
+  ckc "WARN $miss required"   "$RUN_OUT" "observations[0].$miss is required"
+done
+
+echo "[40] 必須キーが null → 欠落と同じ扱い → exit 1"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: null
+    ref: "#274"
+    state: followed'
+run "$F"
+ck  "exit 1"              "1" "$RUN_RC"
+ckc "WARN null は欠落扱い" "$RUN_OUT" "observations[0].date is required"
+
+echo "[41] state が enum 外 → exit 1（enum を WARN に列挙）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: helpful_typo'
+run "$F"
+ck  "exit 1"          "1" "$RUN_RC"
+ckc "WARN state enum" "$RUN_OUT" "observations[0].state not in enum"
+ckc "enum 値を出す"    "$RUN_OUT" "externally_verified"
+
+echo "[42] date の形式不正 / 暦不正 → exit 1・閏年は valid"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: "2026/07/25"
+    ref: "#274"
+    state: followed'
+run "$F"
+ck  "exit 1（形式不正）"   "1" "$RUN_RC"
+ckc "WARN date 形式"      "$RUN_OUT" "observations[0].date must be a valid calendar date"
+for bad_date in 2026-02-29 2026-04-31 2026-13-01; do
+  write_item_with_obs "$F" "observations:
+  - date: $bad_date
+    ref: \"#274\"
+    state: followed"
+  run "$F"
+  ck  "exit 1 (暦不正 ${bad_date})" "1" "$RUN_RC"
+done
+write_item_with_obs "$F" 'observations:
+  - date: 2024-02-29
+    ref: "#274"
+    state: followed'
+run "$F"
+ck  "exit 0（閏年 2024-02-29）" "0" "$RUN_RC"
+
+echo "[43] ref が空 / 空白のみ → exit 1"
+for empty_ref in '""' '"   "'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: $empty_ref
+    state: followed"
+  run "$F"
+  ck  "exit 1 (ref=$empty_ref)"  "1" "$RUN_RC"
+  ckc "WARN ref 非空"            "$RUN_OUT" "observations[0].ref must be a non-empty string"
+done
+
+echo "[44] ref allow-list 非合致は reject（旧 deny-list の禁止形・迂回形をまとめて固定）"
+# owner 決定（2026-07-25）で deny-list（禁止パターンの列挙）から closed allow-list へ倒した。
+# 旧 deny で拒否していた形と、gate 4 / closure で見つかった迂回形は、いずれも「許可形に合致しない」
+# 一本の理由で reject される（禁止を数え上げないので、未知の形も既定で reject）。
+for bad_ref in '.oe/plan-274.md' 'tmp/scratch.md' '/Users/x/evidence.md' '../evidence.md' 'docs/../../etc/passwd' \
+               '../../repo#274' '/tmp/evidence.md#274' '/tmp/evidence.md://x' '.oe/brief-274.md#1' \
+               ' .oe/plan.md' './tmp/scratch.md' './/tmp/x' 'C:/Windows/system32/x.md' '//server/share/x.md'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"$bad_ref\"
+    state: harmful"
+  run "$F"
+  ck  "exit 1 (ref=$bad_ref)"  "1" "$RUN_RC"
+  ckc "WARN allow-list"        "$RUN_OUT" "observations[0].ref must be one of the allowed durable work-reference forms"
+done
+
+echo "[44b] allow-list へ倒した結果 reject になる形（自由文・repo 相対 path・部分形）"
+# deny-list 時代は「偽陽性を避ける」ために通していた形。allow-list ではいずれも reject になる
+# （owner 決定の引き換え条件として明示的に固定する）。observations.ref は作業単位の参照であって
+# path ではない。repo 相対 path を許すのは source.ref 側の規則で、そちらは変更していない。
+for reject_ref in 'PR #274 の再現手順は foo/tmp/bar 参照' 'tmp-spec/foo.md' 'docs/knowledge/items/X.md' \
+                  '#' '#abc' 'http://' 'owner/repo#' 'a/b/c#274' '-owner/repo#274'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"$reject_ref\"
+    state: followed"
+  run "$F"
+  ck  "exit 1 (ref=$reject_ref)" "1" "$RUN_RC"
+done
+
+echo "[45pre] allow-list に内在する曖昧さ: <owner>/<repo>#<数字> と同形なら通る（既知・regex では区別不能）"
+# `tmp/scratch.md#2` は「repo 名が scratch.md の cross-repo 参照」と同形。GitHub の repo 名はドットを
+# 含めるので（例 owner/foo.js#12）、形だけでは意味のある参照と区別できない。allow-list は「形」を
+# 検査する機構なので、この曖昧さは残す（緩和はレビューが担う）。path として解決する消費者は居ない。
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "tmp/scratch.md#2"
+    state: followed'
+run "$F"
+ck  "exit 0（形が合致するので通る・既知の曖昧さ）" "0" "$RUN_RC"
+
+echo "[45] allow-list の正例3形（#<数字> / <owner>/<repo>#<数字> / <scheme>://URL・trim 後に判定）"
+for ok_ref in '#274' ' #274 ' 'owner/repo#274' 'stlwolf/ai-development-hub#274' \
+              'https://github.com/org/repo/pull/282' 'https://github.com/org/repo/pull/274/files#path=.oe/brief' \
+              'https://example.com/projects/.oe/plan.md'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"$ok_ref\"
+    state: followed"
+  run "$F"
+  ck  "exit 0 (ref=$ok_ref)" "0" "$RUN_RC"
+done
+
+echo "[45b] 改行を含む ref は先頭行だけの合致で通さない（\\A / \\z アンカー）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274\nevil/repo#1"
+    state: harmful'
+run "$F"
+ck  "exit 1（改行入り ref）" "1" "$RUN_RC"
+ckc "WARN allow-list"        "$RUN_OUT" "observations[0].ref must be one of the allowed"
+
+echo "[46] note が非 string / 改行を含む → exit 1（改行入りでも WARN は 1 行）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+    note: 42'
+run "$F"
+ck  "exit 1（非 string）"   "1" "$RUN_RC"
+ckc "WARN note string"     "$RUN_OUT" "observations[0].note, if present, must be a string"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+    note: "line1\nline2"'
+run "$F"
+ck  "exit 1（改行あり）"        "1" "$RUN_RC"
+ckc "WARN note 1行"            "$RUN_OUT" "observations[0].note must be a single line"
+ck  "WARN は 1 行（tojson でエスケープ）" "1" "$(printf '%s' "$RUN_OUT" | grep -c 'observations\[0\].note must be a single line')"
+
+echo "[46b] note が present-but-null（null / 空値）→ exit 1（gate 4 実装SO 指摘・#274）"
+# 「書かない」なら *キーを省く*。null を省略と同一視すると、書き手が note を書いたつもりで
+# 空になった記録が黙って valid になる（spec は「任意・存在時は string」）。
+for null_note in 'note: null' 'note:'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"#274\"
+    state: harmful
+    $null_note"
+  run "$F"
+  ck  "exit 1 (${null_note})"  "1" "$RUN_RC"
+  ckc "WARN note null"         "$RUN_OUT" "observations[0].note must be a string when present"
+done
+
+echo "[46c] note が空 / 空白のみ / CR 改行 → exit 1（実装SO 指摘・#274）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: ""'
+run "$F"
+ck  "exit 1（空文字）"    "1" "$RUN_RC"
+ckc "WARN note empty"    "$RUN_OUT" "observations[0].note must not be empty when present"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: "   "'
+run "$F"
+ck  "exit 1（空白のみ）"  "1" "$RUN_RC"
+# CR のみの改行は LF 検査だけでは通り抜ける
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: "line1\rline2"'
+run "$F"
+ck  "exit 1（CR 改行）"        "1" "$RUN_RC"
+ckc "WARN note single line"   "$RUN_OUT" "observations[0].note must be a single line"
+
+echo "[47] 未知キーを拒否 → exit 1（キー名を出す・空白入りキーでも 1 違反 1 行）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+    author: "child"'
+run "$F"
+ck  "exit 1"            "1" "$RUN_RC"
+ckc "WARN unknown key"  "$RUN_OUT" "unknown key(s) not allowed"
+ckc "キー名を出す"       "$RUN_OUT" "author"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+    "weird key": "x"'
+run "$F"
+ck  "exit 1（空白入りキー）"  "1" "$RUN_RC"
+ck  "WARN は 1 行"           "1" "$(printf '%s' "$RUN_OUT" | grep -c 'unknown key(s) not allowed')"
+
+echo "[48] 1 要素に複数違反 → 違反ごとに WARN・index は 0 始まりで決定的"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-02-29
+    ref: ".oe/x.md"
+    state: bogus
+    note: 7
+    extra: y
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed'
+run "$F"
+ck  "exit 1"                     "1" "$RUN_RC"
+ck  "WARN 5 件（date/ref/state/note/未知キー）" "5" "$(printf '%s' "$RUN_OUT" | grep -c 'observations\[0\]')"
+ncc "valid な 2 番目は WARN なし" "$RUN_OUT" "observations[1]"
+
+echo "[49] 2 番目の要素だけ不正 → index 1 で報告（0 始まりの決定性）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: followed
+  - date: 2026-07-25
+    ref: "#275"
+    state: bogus'
+run "$F"
+ck  "exit 1"              "1" "$RUN_RC"
+ckc "index 1 で報告"       "$RUN_OUT" "observations[1].state not in enum"
+ncc "index 0 は報告しない"  "$RUN_OUT" "observations[0]"
+
+echo "[50] 巨大な observations 配列（400 件）→ exit 0・argv 落ち（exit 126）しない"
+F="$_TMP_DIR/$ULID.md"
+{
+  printf 'observations:\n'
+  i=0
+  while [[ "$i" -lt 400 ]]; do
+    printf '  - date: 2026-07-25\n    ref: "#%s"\n    state: followed\n    note: "%s"\n' "$i" "$(printf 'x%.0s' $(seq 1 200))"
+    i=$((i + 1))
+  done
+} > "$_TMP_DIR/obs-big.yaml"
+write_item_with_obs "$F" "$(cat "$_TMP_DIR/obs-big.yaml")"
+run "$F"
+ck  "exit 0（stdin 経由・argv 落ちしない）" "0" "$RUN_RC"
 
 # --- サマリ ---
 echo ""

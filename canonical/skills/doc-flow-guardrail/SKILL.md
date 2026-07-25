@@ -108,7 +108,9 @@ brief 組立時に、過去の失敗から蒸留した negative knowledge を突
 1. **列挙（段3）**: `knowledge-list` で store の item を蒸留木横断で列挙する（read-only・全件）。段3 は完全性のため常に `--strict` を付ける（崩れ item を skip したまま成功扱いにしない）。store の置き場は関係で解く（item は収穫元 episode と同じ蒸留木の `knowledge/items/` ＝ item の `source.ref` と同じ木）。特定の repo パスを覚える必要はない。
 2. **採否（段3）**: 統括が列挙を見て、今のタスクに効く item を選ぶ（v0 は全件列挙 + 統括の意味判断・機械 matcher なし）。`landing: guard-candidate` の item は NL として注入せず guard 経路の候補として扱う。採否は brief の slot（作業層）に残し、item の `observations` には書かない（`observations` は段5 の担当・境界を保つ）。
 3. **注入（段4）**: 採用分を上の「negative knowledge」slot に貼る。教訓の一行は「次にどう行動を変えるか」を書く。教訓の全文へは `item`（item path）で辿り、出典へは `source`（`source.ref`）で辿る（両者は別物）。矛盾する item を同時に採用しない。
-4. コマンドのオプション・exit code・snapshot の意味論は store の `knowledge/README.md`（+ `orchestration-toolkit`）を参照する（枠にコマンド詳細を焼かない）。
+4. **往復の締め（段5 への引き渡し）**: slot に載せた item の集合が、そのまま観測の対象集合になる。委譲先の子は closure 時に slot の**全 item** へ観測を1レコードずつ書き戻す（手順は `episode-retrospective` の観測書き戻し Step・機会が無ければ `no_opportunity`）。統括は完了報告の fact-check で「slot の item id == 観測を足した id」を照合する。
+5. **二段チェック**: `--strict` が見るのは「item を列挙できたか」だけで、観測台帳のスキーマ完全性は見ない。列挙のあとに `validate-knowledge` を items ディレクトリへ回す（列挙 verb は validator ではない）。列挙が制御候補フラグや `integrity` を出した item は、この二段目で中身を確かめる。
+6. コマンドのオプション・exit code・snapshot の意味論は store の `knowledge/README.md`（+ `orchestration-toolkit`）を参照する（枠にコマンド詳細を焼かない）。
 
 ## ③ cold-start（新 repo / 新統括セッション）
 

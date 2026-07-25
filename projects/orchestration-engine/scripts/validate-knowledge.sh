@@ -30,7 +30,15 @@ set -euo pipefail
 #
 # yq/jq の用途:
 #   frontmatter（YAML）→ JSON 変換に yq（mikefarah）を使い、フィールド検査は jq。date のカレンダー
-#   妥当性チェックに jq strptime|mktime を使う（BSD/GNU date のパース差を避ける可搬な方法）。
+#   妥当性は純 jq（cal_ok）で検査する。jq の strptime は暦不正を通す（gate 2 SO 実測: jq 1.7.1/1.8.0 で
+#   2026-02-29 / 2026-04-31 が accepted＝翌月へ正規化される）ため、閏年と月別最大日数を自前で見る。
+#   jq の date 関数は C library 依存でもあり、純 jq のほうが可搬（#274 gate 2 設計SO）。
+#
+# observations（段5 の観測台帳・#274）:
+#   要素は {date, ref, state, note?}。本 validator は各要素の「形」だけを検査する。
+#   検査しないもの（規約であって機械検査ではない・検査済みに見せない）:
+#     - append-only（過去レコードを書き換えていないこと）＝ git 履歴の差分検査が必要
+#     - 配列の順序（時系列昇順を強制しない。並行 branch の merge で古い branch の正当な追記が後ろに来る）
 
 VERBOSE=0
 TARGET=""
@@ -85,6 +93,52 @@ fi
 
 ULID_RE='^[0-9A-HJKMNP-TV-Z]{26}$'   # 26字・Crockford Base32（§5 準拠: charset+length のみ）
 DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+
+# jq 側の共有定義（top-level date と observations の両方で使う。knowledge-list.sh 側の同名定義と
+# 同じ述語であることは tests/test_knowledge_list.sh の contract テストが固定する）。
+#   cal_ok  : "YYYY-MM-DD" 文字列 → 暦として妥当か（閏年・月別最大日数）
+#   states  : observations.state の enum（宣言順。表示順もこれに合わせる）
+#   known   : observations 要素の既知キー（これ以外は拒否）
+#   ref_trim/ref_ok : observations.ref の hygiene。**closed allow-list**（owner 決定 2026-07-25・#274）。
+#             trim 後に「良い形」だけを許可し、それ以外は WARN にする。許可する形は3つだけ:
+#               (1) #<数字>                     … 同一 repo の issue / PR 参照
+#               (2) <owner>/<repo>#<数字>        … 別 repo の issue / PR 参照（スラッシュは1つ）
+#               (3) <scheme>://<空白なし1文字以上> … URL
+#             deny-list（禁止パターンの列挙）から倒した理由: gate 4 実装SO の3ラウンドのうち2ラウンドが
+#             同じ family の迂回（判定順・未正規化）を実測し、closure 外部チェックでさらに1クラス
+#             （ドライブレター絶対パス）が残っていた。禁止を数え上げる方式は原理的に漏れる。
+#             許可形の列挙に倒すと、未知の形は既定で reject になる（漏れの方向が反転する）。
+#             引き換えに、自由文の ref（"PR #274 の再現手順は …"）や repo 相対 path は reject になる。
+#             アンカーは \A / \z を使う（^ $ は行頭行末に当たるため、改行を含む値で先頭行だけが
+#             合致する抜け道ができる）。
+#             **scope は observations.ref のみ**。source.ref（#272・repo 相対の committed path を許す）は
+#             別の規則のままで、この allow-list は適用しない。
+# shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
+JQ_KNOWLEDGE_DEFS='
+def cal_ok:
+  if (type != "string") then false
+  elif (test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) then false
+  else
+    (.[0:4] | tonumber) as $y
+    | (.[5:7] | tonumber) as $m
+    | (.[8:10] | tonumber) as $d
+    | if ($m < 1) or ($m > 12) or ($d < 1) then false
+      else
+        (if $m == 2 then (if ((($y % 4) == 0) and (($y % 100) != 0)) or (($y % 400) == 0) then 29 else 28 end)
+         elif ($m == 4) or ($m == 6) or ($m == 9) or ($m == 11) then 30
+         else 31 end) as $max
+        | $d <= $max
+      end
+  end;
+def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
+def known: ["date","ref","state","note"];
+def ref_trim: gsub("^[[:space:]]+"; "") | gsub("[[:space:]]+$"; "");
+def ref_ok:
+  ref_trim
+  | test("\\A#[0-9]+\\z")
+    or test("\\A[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*#[0-9]+\\z")
+    or test("\\A[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]+\\z");
+'
 
 # validate_item <file> — 1 件の knowledge item を検査し WARN を積む。
 validate_item() {
@@ -157,8 +211,20 @@ validate_item() {
   dv="$(jq -r '.date // empty' <<<"$json")"
   if [[ ! "$dv" =~ $DATE_RE ]]; then
     warn "$file" "date must be YYYY-MM-DD: ${dv:-<none>}"
-  elif ! jq -n --arg d "$dv" '$d | strptime("%Y-%m-%d") | mktime' >/dev/null 2>&1; then
-    warn "$file" "date is not a parseable calendar date: $dv"
+  else
+    # strptime は 2026-02-29 / 2026-04-31 を通す（翌月へ正規化）ため純 jq の cal_ok で見る（#274）。
+    # jq 評価そのものの失敗（jq が古い/機能不足など環境側の問題）は item の不備ではないので、
+    # データ不備（exit 1）へ丸めずに環境エラー（exit 2）で落とす。`|| echo false` で false に
+    # 潰すと「日付が不正」という誤った診断になり、呼び出し側が item を直そうとする（Copilot 指摘）。
+    # observations の要素スキーマフィルタと同じ扱いに揃える。
+    local cal_ok_out
+    if ! cal_ok_out="$(jq -rn --arg d "$dv" "$JQ_KNOWLEDGE_DEFS"' $d | cal_ok' 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the calendar-validity filter with jq (jq too old or unsupported?)" >&2
+      exit 2
+    fi
+    if [[ "$cal_ok_out" != "true" ]]; then
+      warn "$file" "date is not a valid calendar date: $dv"
+    fi
   fi
 
   # --- trigger / prediction: 非空 string ---
@@ -203,13 +269,62 @@ validate_item() {
     *) warn "$file" "landing not in enum (nl|guard-candidate): ${lv:-<none>}" ;;
   esac
 
-  # --- observations: 空配列 [] 必須（v0 予約・中身は #274）---
+  # --- observations: 配列 + 各要素のスキーマ検証（段5 の観測台帳・#274）---
+  # 空配列 [] は収穫時の既定として valid。要素検査は jq 1 パスで「違反1件 = 1行」を出し、bash が warn に
+  # 積む（要素数に比例した jq 起動を避ける）。受け取りは here-string にする — パイプで渡すと warn() が
+  # subshell で走り TOTAL_WARN の加算が失われて exit code 契約が壊れる（gate 2 SO で bash 3.2/5.x 実測）。
+  # 診断へ値を埋めるときは tojson で囲み、改行を含む値でも「1違反 = 1行」を壊さない。index は 0 始まり。
   local ot
   ot="$(jq -r '.observations | type' <<<"$json" 2>/dev/null || true)"
   if [[ "$ot" != "array" ]]; then
     warn "$file" "observations must be an array"
-  elif [[ "$(jq -r '.observations | length' <<<"$json")" != "0" ]]; then
-    warn "$file" "observations must be empty [] in v0 (contents are #274 scope)"
+  else
+    local obs_viol
+    if ! obs_viol="$(jq -r "$JQ_KNOWLEDGE_DEFS"'
+        .observations
+        | to_entries
+        | map(
+            .key as $i
+            | .value as $o
+            | if ($o | type) != "object" then
+                ["observations[\($i)]: element must be a map with keys date/ref/state (+ optional note)"]
+              else
+                (if ($o | has("date") | not) or ($o.date == null) then ["observations[\($i)].date is required"]
+                 elif ($o.date | type) != "string" then ["observations[\($i)].date must be a string"]
+                 elif ($o.date | cal_ok | not) then ["observations[\($i)].date must be a valid calendar date (YYYY-MM-DD): \($o.date | tojson)"]
+                 else [] end)
+                +
+                (if ($o | has("ref") | not) or ($o.ref == null) then ["observations[\($i)].ref is required"]
+                 elif ($o.ref | type) != "string" then ["observations[\($i)].ref must be a string"]
+                 elif (($o.ref | gsub("\\s"; "")) == "") then ["observations[\($i)].ref must be a non-empty string"]
+                 elif (($o.ref | ref_ok) | not) then ["observations[\($i)].ref must be one of the allowed durable work-reference forms (#<number> | <owner>/<repo>#<number> | <scheme>://<url>): \($o.ref | tojson)"]
+                 else [] end)
+                +
+                (if ($o | has("state") | not) or ($o.state == null) then ["observations[\($i)].state is required"]
+                 elif ($o.state | type) != "string" then ["observations[\($i)].state must be a string"]
+                 elif ((states | index($o.state)) == null) then ["observations[\($i)].state not in enum (\(states | join("|"))): \($o.state | tojson)"]
+                 else [] end)
+                +
+                (if ($o | has("note") | not) then []
+                 elif ($o.note == null) then ["observations[\($i)].note must be a string when present (omit the key instead of writing null)"]
+                 elif ($o.note | type) != "string" then ["observations[\($i)].note, if present, must be a string"]
+                 elif (($o.note | gsub("[[:space:]]"; "")) == "") then ["observations[\($i)].note must not be empty when present (omit the key instead): \($o.note | tojson)"]
+                 elif ($o.note | test("[\n\r]")) then ["observations[\($i)].note must be a single line (no line break): \($o.note | tojson)"]
+                 else [] end)
+                +
+                (if ((($o | keys) - known) | length) > 0 then ["observations[\($i)]: unknown key(s) not allowed: \((($o | keys) - known) | tojson)"] else [] end)
+              end
+          )
+        | flatten
+        | .[]
+      ' <<<"$json" 2>/dev/null)"; then
+      # jq filter 自体の失敗（環境の jq 能力不足等）は item の不備ではないので環境エラーにする。
+      echo "ERROR: failed to evaluate the observations schema filter with jq (jq too old or unsupported?)" >&2
+      exit 2
+    fi
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && warn "$file" "$line"
+    done <<<"$obs_viol"
   fi
 
   # --- exclusions（任意）: 存在時は list ---

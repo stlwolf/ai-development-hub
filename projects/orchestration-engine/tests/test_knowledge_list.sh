@@ -50,7 +50,9 @@ git_init() { git -C "$1" init -q; git -C "$1" config user.email t@example.com; g
 git_commit() { git -C "$1" add -A; git -C "$1" commit -qm "${2:-c}"; }
 
 write_item() {
-  # write_item <path> <ulid> <status> <landing> <bodyfirst>
+  # write_item <path> <ulid> <status> <landing> <bodyfirst> [observations-yaml]
+  # 第6引数は "observations:" の行を含む YAML 断片（既定は空配列）。#274 の集計テスト用に足した
+  # 任意引数で、既存の呼び出し（5 引数）は挙動が変わらない。
   mkdir -p "$(dirname "$1")"
   cat > "$1" <<EOF
 ---
@@ -63,7 +65,7 @@ prediction: "prediction for $2"
 source:
   ref: "https://github.com/org/repo/issues/272"
 landing: $4
-observations: []
+${6:-observations: []}
 exclusions:
   - "自明な知見には使わない"
 ---
@@ -294,6 +296,192 @@ R23="$_TMP_DIR/r23"; mkdir -p "$R23/docs/knowledge/items"
 write_item "$R23/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "x."
 OUT="$(env OE_KNOWLEDGE_REPO_ROOT="$R23/" "$BASH" "$LISTER" --json "$R23/docs/knowledge/items")"
 ck  "item_ref は repo 相対（先頭 / でない）" "docs/knowledge/items/$ULID1.md" "$(jq -r '.items[0].item_ref' <<<"$OUT")"
+
+# ============================================================================
+# observations の集計と制御候補（#274 段5/段6・gate 2 設計SO で確定した契約）
+# ============================================================================
+
+# 観測レコードの YAML 断片を作る（flow 形式で 1 レコード 1 行）。
+obs_yaml() {
+  # obs_yaml <state> [<state> ...] — date/ref は固定、state だけ変える
+  local i=0 out="observations:"
+  local s
+  for s in "$@"; do
+    out="$out
+  - {date: 2026-07-25, ref: \"#$((100 + i))\", state: $s}"
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
+echo "[24] 観測付き item: human に集計行（宣言順・0 件 state は省略）+ control-candidate"
+R24="$_TMP_DIR/r24"; mkdir -p "$R24"; git_init "$R24"
+write_item "$R24/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "adverse あり。" \
+  "$(obs_yaml no_opportunity followed followed harmful)"
+write_item "$R24/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "観測ゼロ。"
+git_commit "$R24"
+run "$R24"
+ck  "exit 0" "0" "$RC"
+ckc "集計行（宣言順）"        "$OUT" "observations: 4 (no_opportunity:1 followed:2 harmful:1)"
+ckc "control-candidate 表示"  "$OUT" "control-candidate: harmful"
+ckc "footer に候補件数"       "$OUT" "control-candidates: 1"
+ncc "0 件 state は出さない"    "$OUT" "outcome_unknown:0"
+
+echo "[25] 観測ゼロの item は observations 行を出さない（#273 出力との回帰ゼロ）"
+R25="$_TMP_DIR/r25"; mkdir -p "$R25"; git_init "$R25"
+write_item "$R25/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "観測ゼロ。"
+git_commit "$R25"
+run "$R25"
+ck  "exit 0" "0" "$RC"
+ncc "observations 行なし"      "$OUT" "observations:"
+ncc "footer に候補行なし"       "$OUT" "control-candidates:"
+ncc "footer に integrity なし"  "$OUT" "integrity-issues:"
+ck  "footer は #273 と同形"     "listed: 1 / skipped: 0 / source: git-head @ $(git -C "$R25" rev-parse HEAD)" \
+    "$(printf '%s' "$OUT" | tail -1)"
+
+echo "[26] --json: 集計フィールドと meta（control_candidates / integrity_issues）"
+run "$R24" --json
+ck  "exit 0" "0" "$RC"
+ck  "observations_count"  "4" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_count' <<<"$OUT")"
+ck  "by_state followed"   "2" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_by_state.followed' <<<"$OUT")"
+ck  "by_state harmful"    "1" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_by_state.harmful' <<<"$OUT")"
+ck  "0 件 state はキーなし" "null" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_by_state.outcome_unknown' <<<"$OUT")"
+ck  "control_candidate"   "true" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .control_candidate' <<<"$OUT")"
+ck  "reasons"             "harmful" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .control_candidate_reasons | join(",")' <<<"$OUT")"
+ck  "malformed false"     "false" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_malformed' <<<"$OUT")"
+ck  "観測ゼロ item は count 0" "0" "$(jq -r '.items[] | select(.id == "'"$ULID2"'") | .observations_count' <<<"$OUT")"
+ck  "観測ゼロ item は候補外"   "false" "$(jq -r '.items[] | select(.id == "'"$ULID2"'") | .control_candidate' <<<"$OUT")"
+ck  "meta control_candidates" "1" "$(jq -r '.control_candidates' <<<"$OUT")"
+ck  "meta integrity_issues"   "0" "$(jq -r '.integrity_issues' <<<"$OUT")"
+ck  "schema_version は据え置き（additive）" "1" "$(jq -r '.schema_version' <<<"$OUT")"
+
+echo "[27] status が active でない item は候補にしない（制御済みを毎回候補にしない・SO C2）"
+R27="$_TMP_DIR/r27"; mkdir -p "$R27"; git_init "$R27"
+write_item "$R27/docs/knowledge/items/$ULID1.md" "$ULID1" disabled nl "既に無効化済み。" "$(obs_yaml harmful)"
+write_item "$R27/docs/knowledge/items/$ULID2.md" "$ULID2" superseded nl "後継あり。" "$(obs_yaml contradicted)"
+git_commit "$R27"
+run "$R27" --json
+ck  "disabled は候補外"    "false" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .control_candidate' <<<"$OUT")"
+ck  "superseded は候補外"  "false" "$(jq -r '.items[] | select(.id == "'"$ULID2"'") | .control_candidate' <<<"$OUT")"
+ck  "meta 候補 0 件"       "0" "$(jq -r '.control_candidates' <<<"$OUT")"
+run "$R27"
+ckc "集計自体は出す"        "$OUT" "observations: 1 (harmful:1)"
+ncc "候補表示は出さない"     "$OUT" "control-candidate:"
+
+echo "[28] スキーマ違反レコードは invalid に数え、そこから候補を立てない（SO C3）"
+R28="$_TMP_DIR/r28"; mkdir -p "$R28"; git_init "$R28"
+# 1 件目は未知キーつき harmful（validator では違反）→ invalid 扱いで候補にしない
+write_item "$R28/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "壊れたレコードあり。" 'observations:
+  - {date: 2026-07-25, ref: "#101", state: harmful, author: child}
+  - {date: 2026-07-25, ref: "#102", state: followed}'
+# enum 外 state も invalid
+write_item "$R28/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "enum 外。" 'observations:
+  - {date: 2026-07-25, ref: "#103", state: helpful_typo}'
+git_commit "$R28"
+run "$R28" --json
+ck  "exit 0（列挙は止めない）" "0" "$RC"
+ck  "invalid に数える"         "1" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_by_state.invalid' <<<"$OUT")"
+ck  "valid な followed は集計"  "1" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_by_state.followed' <<<"$OUT")"
+ck  "invalid harmful から候補を立てない" "false" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .control_candidate' <<<"$OUT")"
+ck  "malformed true"           "true" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .observations_malformed' <<<"$OUT")"
+ck  "enum 外も invalid"        "1" "$(jq -r '.items[] | select(.id == "'"$ULID2"'") | .observations_by_state.invalid' <<<"$OUT")"
+ck  "meta integrity_issues"    "2" "$(jq -r '.integrity_issues' <<<"$OUT")"
+run "$R28"
+ckc "human に invalid を出す"   "$OUT" "invalid:1"
+ckc "human に integrity 注記"   "$OUT" "integrity: 1 invalid record(s); run validate-knowledge"
+ckc "footer に integrity 件数"  "$OUT" "integrity-issues: 2"
+echo "  → --strict でも exit 0（#273 の skipped>0 契約を広げない・スキーマ完全性は validate-knowledge）"
+run "$R28" --strict
+ck  "exit 0（--strict の契約不変）" "0" "$RC"
+
+echo "[29] observations が配列でない → human 行は必ず出す（黙殺しない）・count は null"
+R29="$_TMP_DIR/r29"; mkdir -p "$R29"; git_init "$R29"
+write_item "$R29/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "非配列。" 'observations: "nope"'
+git_commit "$R29"
+run "$R29"
+ck  "exit 0" "0" "$RC"
+ckc "human に MALFORMED 行"  "$OUT" "observations: MALFORMED (not a list; run validate-knowledge)"
+run "$R29" --json
+ck  "count は null"          "null" "$(jq -r '.items[0].observations_count' <<<"$OUT")"
+ck  "malformed true"         "true" "$(jq -r '.items[0].observations_malformed' <<<"$OUT")"
+ck  "by_state は空"          "0" "$(jq -r '.items[0].observations_by_state | length' <<<"$OUT")"
+ck  "skipped には数えない"    "0" "$(jq -r '.skipped' <<<"$OUT")"
+
+echo "[30] followed のみは候補外 / harmful+contradicted は reasons を宣言順で出す"
+R30="$_TMP_DIR/r30"; mkdir -p "$R30"; git_init "$R30"
+write_item "$R30/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "従っただけ。" "$(obs_yaml followed externally_verified)"
+write_item "$R30/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "両方あり。" "$(obs_yaml harmful contradicted)"
+git_commit "$R30"
+run "$R30" --json
+ck  "followed のみは候補外" "false" "$(jq -r '.items[] | select(.id == "'"$ULID1"'") | .control_candidate' <<<"$OUT")"
+ck  "reasons は宣言順（contradicted,harmful）" "contradicted,harmful" \
+    "$(jq -r '.items[] | select(.id == "'"$ULID2"'") | .control_candidate_reasons | join(",")' <<<"$OUT")"
+
+echo "[31] JSON 回帰: #273 の既存キー集合が不変で、追加は additive のみ（SO C5）"
+run "$R25" --json
+ck  "meta の既存キーが不変" "head items listed malformed schema_version skipped source" \
+    "$(jq -r '. | keys - ["control_candidates","integrity_issues"] | sort | join(" ")' <<<"$OUT")"
+ck  "item の既存キーが不変" "date excerpt exclusions id item_ref landing prediction source_ref status trigger" \
+    "$(jq -r '.items[0] | keys - ["observations_count","observations_by_state","observations_malformed","control_candidate","control_candidate_reasons"] | sort | join(" ")' <<<"$OUT")"
+ck  "既存キーの値も不変（trigger）" "trigger for $ULID1" "$(jq -r '.items[0].trigger' <<<"$OUT")"
+ck  "新キーが存在する"      "true" "$(jq -r '.items[0] | has("observations_count") and has("control_candidate")' <<<"$OUT")"
+
+echo "[31b] allow-list 非合致の ref から制御候補を立てない（旧 deny 迂回形の回帰も含む・#274）"
+R31B="$_TMP_DIR/r31b"; mkdir -p "$R31B"; git_init "$R31B"
+write_item "$R31B/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "allow 非合致 ref + harmful。" 'observations:
+  - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}
+  - {date: 2026-07-25, ref: "../../repo#274", state: contradicted}
+  - {date: 2026-07-25, ref: " .oe/plan.md", state: harmful}
+  - {date: 2026-07-25, ref: "docs/knowledge/items/X.md", state: harmful}'
+git_commit "$R31B"
+run "$R31B" --json
+ck  "invalid に数える（4 件）"        "4" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "adverse として集計しない"        "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
+ck  "制御候補にしない"                "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
+ck  "malformed として surface する"   "true" "$(jq -r '.items[0].observations_malformed' <<<"$OUT")"
+
+echo "[31c] note: null の harmful から制御候補を立てない（gate 4 実装SO 指摘・#274）"
+R31C="$_TMP_DIR/r31c"; mkdir -p "$R31C"; git_init "$R31C"
+write_item "$R31C/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "note が null / 空 / CR。" 'observations:
+  - {date: 2026-07-25, ref: "#274", state: harmful, note: null}
+  - {date: 2026-07-25, ref: "#275", state: harmful, note: ""}
+  - {date: 2026-07-25, ref: "#276", state: contradicted, note: "a\rb"}'
+git_commit "$R31C"
+run "$R31C" --json
+ck  "invalid に数える（3 件）" "3" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "adverse に数えない"    "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
+ck  "制御候補にしない"      "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
+
+echo "[32] contract: lister が integrity 判定する集合 == validator が exit 1 にする集合（述語の二重化を縛る）"
+R32="$_TMP_DIR/r32"; mkdir -p "$R32/docs/knowledge/items"
+# valid（空・1件・7 state 相当）と invalid（未知キー・enum 外・暦不正・ref 揮発・非配列）を混在させる
+write_item "$R32/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid 空。"
+write_item "$R32/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "valid 1件。" "$(obs_yaml followed)"
+write_item "$R32/docs/knowledge/items/$ULID3.md" "$ULID3" active nl "invalid 未知キー。" 'observations:
+  - {date: 2026-07-25, ref: "#101", state: followed, author: child}'
+ULID4="01J0ABCDEFGHJKMNPQRSTVWX22"
+ULID5="01J0ABCDEFGHJKMNPQRSTVWX33"
+write_item "$R32/docs/knowledge/items/$ULID4.md" "$ULID4" active nl "invalid 暦不正。" 'observations:
+  - {date: 2026-02-29, ref: "#102", state: followed}'
+write_item "$R32/docs/knowledge/items/$ULID5.md" "$ULID5" active nl "invalid ref（allow 非合致）。" 'observations:
+  - {date: 2026-07-25, ref: ".oe/plan.md", state: followed}'
+ULID6="01J0ABCDEFGHJKMNPQRSTVWX44"
+ULID7="01J0ABCDEFGHJKMNPQRSTVWX55"
+write_item "$R32/docs/knowledge/items/$ULID6.md" "$ULID6" active nl "invalid note null。" 'observations:
+  - {date: 2026-07-25, ref: "#103", state: harmful, note: null}'
+write_item "$R32/docs/knowledge/items/$ULID7.md" "$ULID7" active nl "invalid allow 非合致 ref。" 'observations:
+  - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}'
+lister_flagged="$(env OE_KNOWLEDGE_REPO_ROOT="$R32" "$BASH" "$LISTER" --json "$R32/docs/knowledge/items" \
+  | jq -r '[.items[] | select(.observations_malformed == true) | .id] | sort | join(" ")')"
+validator_flagged=""
+for f in "$R32/docs/knowledge/items"/*.md; do
+  if ! env OE_KNOWLEDGE_REPO_ROOT="$R32" "$BASH" "$VALIDATOR" "$f" >/dev/null 2>&1; then
+    bn="${f##*/}"; validator_flagged="$validator_flagged ${bn%.md}"
+  fi
+done
+validator_flagged="$(printf '%s' "$validator_flagged" | tr ' ' '\n' | grep -v '^$' | sort | tr '\n' ' ' | sed 's/ $//')"
+ck  "両コマンドの判定集合が一致" "$validator_flagged" "$lister_flagged"
+ck  "flagged は 5 件"            "5" "$(printf '%s' "$lister_flagged" | wc -w | tr -d ' ')"
 
 # --- サマリ ---
 echo ""
