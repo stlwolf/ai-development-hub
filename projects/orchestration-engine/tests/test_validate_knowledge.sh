@@ -497,38 +497,54 @@ for empty_ref in '""' '"   "'; do
   ckc "WARN ref 非空"            "$RUN_OUT" "observations[0].ref must be a non-empty string"
 done
 
-echo "[44] ref hygiene 真陽性（揮発層 / 絶対パス / .. セグメント）→ exit 1"
-for bad_ref in '.oe/plan-274.md' 'tmp/scratch.md' '/Users/x/evidence.md' '../evidence.md' 'docs/../../etc/passwd'; do
+echo "[44] ref allow-list 非合致は reject（旧 deny-list の禁止形・迂回形をまとめて固定）"
+# owner 決定（2026-07-25）で deny-list（禁止パターンの列挙）から closed allow-list へ倒した。
+# 旧 deny で拒否していた形と、gate 4 / closure で見つかった迂回形は、いずれも「許可形に合致しない」
+# 一本の理由で reject される（禁止を数え上げないので、未知の形も既定で reject）。
+for bad_ref in '.oe/plan-274.md' 'tmp/scratch.md' '/Users/x/evidence.md' '../evidence.md' 'docs/../../etc/passwd' \
+               '../../repo#274' '/tmp/evidence.md#274' '/tmp/evidence.md://x' '.oe/brief-274.md#1' \
+               ' .oe/plan.md' './tmp/scratch.md' './/tmp/x' 'C:/Windows/system32/x.md' '//server/share/x.md'; do
   F="$_TMP_DIR/$ULID.md"
   write_item_with_obs "$F" "observations:
   - date: 2026-07-25
     ref: \"$bad_ref\"
-    state: followed"
+    state: harmful"
   run "$F"
   ck  "exit 1 (ref=$bad_ref)"  "1" "$RUN_RC"
-  ckc "WARN ref hygiene"       "$RUN_OUT" "observations[0].ref must be a durable work reference"
+  ckc "WARN allow-list"        "$RUN_OUT" "observations[0].ref must be one of the allowed durable work-reference forms"
 done
 
-echo "[44b] ref hygiene の迂回路がない（gate 4 実装SO で実測された回帰・#274）"
-# issue/PR 形式や "://" を hygiene より先に免除すると、末尾に #N を付けるだけで揮発層・絶対パス・
-# .. が通り抜け、その ref を持つ harmful レコードが「valid な adverse 観測」として制御候補になった。
-for bypass_ref in '../../repo#274' '/tmp/evidence.md#274' '/tmp/evidence.md://x' '.oe/brief-274.md#1' 'tmp/scratch.md#2' \
-                  ' .oe/plan.md' '  tmp/scratch.md' './tmp/scratch.md' '.oe/plan.md ' ' ../evidence.md' './/tmp/x' \
-                  'C:/Windows/system32/x.md' '//server/share/x.md'; do
+echo "[44b] allow-list へ倒した結果 reject になる形（自由文・repo 相対 path・部分形）"
+# deny-list 時代は「偽陽性を避ける」ために通していた形。allow-list ではいずれも reject になる
+# （owner 決定の引き換え条件として明示的に固定する）。observations.ref は作業単位の参照であって
+# path ではない。repo 相対 path を許すのは source.ref 側の規則で、そちらは変更していない。
+for reject_ref in 'PR #274 の再現手順は foo/tmp/bar 参照' 'tmp-spec/foo.md' 'docs/knowledge/items/X.md' \
+                  '#' '#abc' 'http://' 'owner/repo#' 'a/b/c#274' '-owner/repo#274'; do
   F="$_TMP_DIR/$ULID.md"
   write_item_with_obs "$F" "observations:
   - date: 2026-07-25
-    ref: \"$bypass_ref\"
-    state: harmful"
+    ref: \"$reject_ref\"
+    state: followed"
   run "$F"
-  ck  "exit 1 (迂回 ref=$bypass_ref)" "1" "$RUN_RC"
-  ckc "WARN ref hygiene"              "$RUN_OUT" "observations[0].ref must be a durable work reference"
+  ck  "exit 1 (ref=$reject_ref)" "1" "$RUN_RC"
 done
 
-echo "[45] ref hygiene 偽陽性なし（issue / PR 参照・URL・自由文・tmp- 接頭の別語）→ exit 0"
-# source.ref の */tmp/* 部分一致をそのまま写すと誤爆する集合（gate 2 設計SO C1）。
-for ok_ref in '#274' 'owner/repo#274' 'https://github.com/org/repo/pull/274/files#path=.oe/brief' \
-              'https://example.com/projects/.oe/plan.md' 'PR #274 の再現手順は foo/tmp/bar 参照' 'tmp-spec/foo.md'; do
+echo "[45pre] allow-list に内在する曖昧さ: <owner>/<repo>#<数字> と同形なら通る（既知・regex では区別不能）"
+# `tmp/scratch.md#2` は「repo 名が scratch.md の cross-repo 参照」と同形。GitHub の repo 名はドットを
+# 含めるので（例 owner/foo.js#12）、形だけでは意味のある参照と区別できない。allow-list は「形」を
+# 検査する機構なので、この曖昧さは残す（緩和はレビューが担う）。path として解決する消費者は居ない。
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "tmp/scratch.md#2"
+    state: followed'
+run "$F"
+ck  "exit 0（形が合致するので通る・既知の曖昧さ）" "0" "$RUN_RC"
+
+echo "[45] allow-list の正例3形（#<数字> / <owner>/<repo>#<数字> / <scheme>://URL・trim 後に判定）"
+for ok_ref in '#274' ' #274 ' 'owner/repo#274' 'stlwolf/ai-development-hub#274' \
+              'https://github.com/org/repo/pull/282' 'https://github.com/org/repo/pull/274/files#path=.oe/brief' \
+              'https://example.com/projects/.oe/plan.md'; do
   F="$_TMP_DIR/$ULID.md"
   write_item_with_obs "$F" "observations:
   - date: 2026-07-25
@@ -537,6 +553,16 @@ for ok_ref in '#274' 'owner/repo#274' 'https://github.com/org/repo/pull/274/file
   run "$F"
   ck  "exit 0 (ref=$ok_ref)" "0" "$RUN_RC"
 done
+
+echo "[45b] 改行を含む ref は先頭行だけの合致で通さない（\\A / \\z アンカー）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274\nevil/repo#1"
+    state: harmful'
+run "$F"
+ck  "exit 1（改行入り ref）" "1" "$RUN_RC"
+ckc "WARN allow-list"        "$RUN_OUT" "observations[0].ref must be one of the allowed"
 
 echo "[46] note が非 string / 改行を含む → exit 1（改行入りでも WARN は 1 行）"
 F="$_TMP_DIR/$ULID.md"

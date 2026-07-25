@@ -99,17 +99,20 @@ DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 #   cal_ok  : "YYYY-MM-DD" 文字列 → 暦として妥当か（閏年・月別最大日数）
 #   states  : observations.state の enum（宣言順。表示順もこれに合わせる）
 #   known   : observations 要素の既知キー（これ以外は拒否）
-#   ref_bad : observations.ref が拒否対象か。判定順が肝で、**hygiene を先に見る**。scheme 始まりの
-#             URL だけを対象外にし、残りは「絶対パス・先頭一致の揮発層・.. セグメント」を拒否する。
-#             部分一致（source.ref の */tmp/*）は使わない — 自由文 ref や URL 断片を誤爆するため
-#             （gate 2 設計SO C1）。issue/PR 参照（#274 / owner/repo#274）は hygiene に触れないので
-#             免除の分岐を持たない。持たせると `.oe/x#1` や `../../repo#274` が hygiene を迂回する
-#             （gate 4 実装SO で実測・迂回する ref を持つ harmful レコードが制御候補になっていた）。
-#   ref_norm: hygiene の判定前に正規化する。前後の空白・`\` 区切り・先頭の `./` を落とす。これが無いと
-#             ` .oe/plan.md` や `./tmp/x` が先頭一致を外して通り抜けた（gate 4 実装SO 3round 目に
-#             2レーンが独立に実測）。記録される値は原文のままで、正規化は判定にだけ使う。
-#             絶対パスは POSIX の `/` 始まりに加えドライブレター（`C:/`・`\` 正規化後の `C:\`）も拒否する
-#             （3round 目の codex が Windows 形式にも触れていたため family を閉じる）。
+#   ref_trim/ref_ok : observations.ref の hygiene。**closed allow-list**（owner 決定 2026-07-25・#274）。
+#             trim 後に「良い形」だけを許可し、それ以外は WARN にする。許可する形は3つだけ:
+#               (1) #<数字>                     … 同一 repo の issue / PR 参照
+#               (2) <owner>/<repo>#<数字>        … 別 repo の issue / PR 参照（スラッシュは1つ）
+#               (3) <scheme>://<空白なし1文字以上> … URL
+#             deny-list（禁止パターンの列挙）から倒した理由: gate 4 実装SO の3ラウンドのうち2ラウンドが
+#             同じ family の迂回（判定順・未正規化）を実測し、closure 外部チェックでさらに1クラス
+#             （ドライブレター絶対パス）が残っていた。禁止を数え上げる方式は原理的に漏れる。
+#             許可形の列挙に倒すと、未知の形は既定で reject になる（漏れの方向が反転する）。
+#             引き換えに、自由文の ref（"PR #274 の再現手順は …"）や repo 相対 path は reject になる。
+#             アンカーは \A / \z を使う（^ $ は行頭行末に当たるため、改行を含む値で先頭行だけが
+#             合致する抜け道ができる）。
+#             **scope は observations.ref のみ**。source.ref（#272・repo 相対の committed path を許す）は
+#             別の規則のままで、この allow-list は適用しない。
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
 def cal_ok:
@@ -129,19 +132,12 @@ def cal_ok:
   end;
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
-def ref_norm:
-  gsub("^[[:space:]]+"; "")
-  | gsub("[[:space:]]+$"; "")
-  | gsub("\\\\"; "/")
-  | gsub("^(\\./)+"; "");
-def ref_bad:
-  ref_norm
-  | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
-  elif test("^/") then true
-  elif test("^[A-Za-z]:/") then true
-  elif test("^\\.oe/") or test("^tmp/") then true
-  elif test("(^|/)\\.\\.(/|$)") then true
-  else false end;
+def ref_trim: gsub("^[[:space:]]+"; "") | gsub("[[:space:]]+$"; "");
+def ref_ok:
+  ref_trim
+  | test("\\A#[0-9]+\\z")
+    or test("\\A[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*#[0-9]+\\z")
+    or test("\\A[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]+\\z");
 '
 
 # validate_item <file> — 1 件の knowledge item を検査し WARN を積む。
@@ -290,7 +286,7 @@ validate_item() {
                 (if ($o | has("ref") | not) or ($o.ref == null) then ["observations[\($i)].ref is required"]
                  elif ($o.ref | type) != "string" then ["observations[\($i)].ref must be a string"]
                  elif (($o.ref | gsub("\\s"; "")) == "") then ["observations[\($i)].ref must be a non-empty string"]
-                 elif ($o.ref | ref_bad) then ["observations[\($i)].ref must be a durable work reference (no volatile .oe/ or tmp/ path, no absolute path, no '\''..'\'' segment): \($o.ref | tojson)"]
+                 elif (($o.ref | ref_ok) | not) then ["observations[\($i)].ref must be one of the allowed durable work-reference forms (#<number> | <owner>/<repo>#<number> | <scheme>://<url>): \($o.ref | tojson)"]
                  else [] end)
                 +
                 (if ($o | has("state") | not) or ($o.state == null) then ["observations[\($i)].state is required"]

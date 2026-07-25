@@ -47,7 +47,7 @@ exclusions:                        # 任意。効かない状況（文字列の�
 ```yaml
 observations:                        # append-only。末尾に足すだけで過去のレコードは書き換えない
   - date: 2026-07-25                 # 観測日（暦として妥当な YYYY-MM-DD）
-    ref: "#274"                      # durable な作業単位参照。既定は issue 番号（closure は PR 作成前）
+    ref: "#274"                      # 許可形は3つだけ（#<数字> / <owner>/<repo>#<数字> / <scheme>://URL）
     state: followed                  # enum 7値（下の「観測記録」節）
     note: "argv でなく stdin で渡した"   # 任意・1行
   - date: 2026-07-25
@@ -55,7 +55,7 @@ observations:                        # append-only。末尾に足すだけで過
     state: no_opportunity            # 適用機会が無かったことも正直に記録する（省略しない）
 ```
 
-要素は `{date, ref, state, note?}` の4フィールドのみで、**未知のキーは検証で弾かれる**。スキーマ・state の優先順位・遷移規則の正本は `canonical/orchestration-spec/document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。
+要素は `{date, ref, state, note?}` の4フィールドのみで、**未知のキーは検証で弾かれる**。`ref` は closed allow-list で、`#<数字>` / `<owner>/<repo>#<数字>` / `<scheme>://URL` の3形だけが通る（自由文や repo 相対 path は弾かれる。この store の item では issue 番号を既定にする）。スキーマ・state の優先順位・遷移規則の正本は `canonical/orchestration-spec/document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。
 
 ## 検証
 

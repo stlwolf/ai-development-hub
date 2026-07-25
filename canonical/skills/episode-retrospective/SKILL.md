@@ -159,7 +159,7 @@ Step 5 が**生産側**（この作業から出た教訓を store へ収穫す�
 1. **期待集合を durable に残す**: 注入された item の id を episode（または PR 本文）に1行書く。brief は作業層なので消える。**マージ後に「何件注入されたか」の分母を復元できる場所は、この1行だけ**である。
 2. **slot に載っていた全 item に1レコードずつ**書き戻す（`landing: guard-candidate` の item も slot に載せたなら対象）。適用機会が無かったものは `no_opportunity` を正直に書く（書かないで済ませない）。
 3. レコードは `{date: 観測日, ref: durable な作業単位参照, state: enum, note: 任意の1行}` を item の `observations` **末尾に足す**。既存レコードは書き換えない（append-only）。スキーマと state の優先順位は `document-format.md` の knowledge 節（「observations 要素スキーマ」）に従う。
-   - `ref` は closure 時点で確定している durable 参照にする。closure は PR 作成前なので、**既定は issue 番号**。
+   - `ref` は closure 時点で確定している durable 参照にする。closure は PR 作成前なので、**既定は issue 番号**。許可される形は `#<数字>` / `<owner>/<repo>#<数字>` / `<scheme>://<url>` の3つだけで（closed allow-list）、自由文や path は検証で弾かれる。
 4. **`followed` を安売りしない**: 教訓どおりに判断や手順を実際に変えた証拠（diff・手順の変更）を示せるときだけ `followed` にする。示せないなら `outcome_unknown`。`externally_verified` は外部の判定が**予測の効果**を確認した場合だけで、単なるビルド成功は当たらない。
 5. 検証を通す（pass するまで直す）。`validate-knowledge` は `~/bin` に配布されるコマンド:
 

@@ -48,6 +48,8 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 
 - 2026-07-25: Copilot レビュー（PR #282）で2件の指摘。(1) episode の `derived_from` が作業層 `.oe/` の plan を指していて dead pointer になる → PR URL へ張り替えた。(2) spec の `ref` hygiene が「揮発層のパスは不可」としか書いておらず、URL や自由文まで禁止に読める → 適用範囲（path 形状にだけ当たる・正規化後の先頭一致だけ・途中一致では弾かない）を3項目の規則として明記した。どちらも妥当な指摘で、コミット `e8dd147` で対応し両スレッドへ返信した。
 
+- 2026-07-25: closure 後、**owner 決定で `observations.ref` を deny-list から closed allow-list へ倒した**（closure で surface した論点への裁定）。trim 後に `#<数字>` / `<owner>/<repo>#<数字>` / `<scheme>://URL` の3形だけを許可し、他は WARN。`ref_norm` と deny 分岐（絶対パス・揮発層・`..`・ドライブレター）は削除した。scope は `observations.ref` のみで、`source.ref`（#272 の repo 相対 committed path を許す規則）は触っていない。アンカーは `^ $` ではなく `\A \z` を使い、改行を含む値の先頭行だけが合致する抜け道を塞いだ。**引き換えに自由文の ref と repo 相対 path は弾かれる**ようになった（deny-list 時代は偽陽性回避のため通していた形で、テストでは正例から負例へ移した）。残る曖昧さとして `tmp/scratch.md#2` のような文字列は「repo 名が `scratch.md` の cross-repo 参照」と同形なので通る（GitHub の repo 名はドットを含むため形では区別できない・spec に既知として明記）。この転回で、3ラウンド繰り返した迂回の family は「未知の形は既定で reject」という構造に置き換わった。
+
 ## closure
 
 ### tier 判定

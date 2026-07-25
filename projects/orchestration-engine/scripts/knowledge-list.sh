@@ -88,8 +88,8 @@ ITEM_PATH_RE='(^|/)knowledge/items/[^/]+\.md$'      # items/ 直下の .md（非
 # ライブラリを持たない。述語の二重化は同一 fixture を両方に流すテストで縛る）。
 #   cal_ok    : 暦妥当性（jq の strptime は 2026-02-29 等を通すため純 jq で見る）
 #   states    : state の enum（宣言順。集計の表示順もこれに合わせる）
-#   ref_bad   : ref の hygiene（scheme 始まりの URL のみ対象外。残りは絶対パス・先頭一致の揮発層・
-#               .. セグメントを拒否。issue/PR 参照の免除分岐は持たない＝hygiene の迂回路になるため）
+#   ref_ok    : ref の hygiene。closed allow-list（trim 後に #<数字> / <owner>/<repo>#<数字> /
+#               <scheme>://URL の3形だけ許可し、他は不合致＝invalid 扱い。owner 決定 2026-07-25）
 #   obs_valid : 要素が完全にスキーマを満たすか（集計・候補判定に使うのはこれが true のものだけ）
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
@@ -110,24 +110,17 @@ def cal_ok:
   end;
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
-def ref_norm:
-  gsub("^[[:space:]]+"; "")
-  | gsub("[[:space:]]+$"; "")
-  | gsub("\\\\"; "/")
-  | gsub("^(\\./)+"; "");
-def ref_bad:
-  ref_norm
-  | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
-  elif test("^/") then true
-  elif test("^[A-Za-z]:/") then true
-  elif test("^\\.oe/") or test("^tmp/") then true
-  elif test("(^|/)\\.\\.(/|$)") then true
-  else false end;
+def ref_trim: gsub("^[[:space:]]+"; "") | gsub("[[:space:]]+$"; "");
+def ref_ok:
+  ref_trim
+  | test("\\A#[0-9]+\\z")
+    or test("\\A[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*#[0-9]+\\z")
+    or test("\\A[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]+\\z");
 def obs_valid:
   . as $o
   | (($o | type) == "object")
     and ($o | has("date")) and (($o.date | type) == "string") and ($o.date | cal_ok)
-    and ($o | has("ref")) and (($o.ref | type) == "string") and (($o.ref | gsub("\\s"; "")) != "") and (($o.ref | ref_bad) | not)
+    and ($o | has("ref")) and (($o.ref | type) == "string") and (($o.ref | gsub("\\s"; "")) != "") and ($o.ref | ref_ok)
     and ($o | has("state")) and (($o.state | type) == "string") and ((states | index($o.state)) != null)
     and (if ($o | has("note")) then (($o.note | type) == "string") and (($o.note | test("\n")) | not) else true end)
     and (((($o | keys) - known) | length) == 0);

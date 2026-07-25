@@ -426,13 +426,13 @@ ck  "item の既存キーが不変" "date excerpt exclusions id item_ref landing
 ck  "既存キーの値も不変（trigger）" "trigger for $ULID1" "$(jq -r '.items[0].trigger' <<<"$OUT")"
 ck  "新キーが存在する"      "true" "$(jq -r '.items[0] | has("observations_count") and has("control_candidate")' <<<"$OUT")"
 
-echo "[31b] ref hygiene の迂回路から制御候補を立てない（gate 4 実装SO で実測された回帰・#274）"
+echo "[31b] allow-list 非合致の ref から制御候補を立てない（旧 deny 迂回形の回帰も含む・#274）"
 R31B="$_TMP_DIR/r31b"; mkdir -p "$R31B"; git_init "$R31B"
-write_item "$R31B/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "迂回 ref + harmful。" 'observations:
+write_item "$R31B/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "allow 非合致 ref + harmful。" 'observations:
   - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}
   - {date: 2026-07-25, ref: "../../repo#274", state: contradicted}
   - {date: 2026-07-25, ref: " .oe/plan.md", state: harmful}
-  - {date: 2026-07-25, ref: "./tmp/scratch.md", state: harmful}'
+  - {date: 2026-07-25, ref: "docs/knowledge/items/X.md", state: harmful}'
 git_commit "$R31B"
 run "$R31B" --json
 ck  "invalid に数える（4 件）"        "4" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
@@ -461,13 +461,13 @@ ULID4="01J0ABCDEFGHJKMNPQRSTVWX22"
 ULID5="01J0ABCDEFGHJKMNPQRSTVWX33"
 write_item "$R32/docs/knowledge/items/$ULID4.md" "$ULID4" active nl "invalid 暦不正。" 'observations:
   - {date: 2026-02-29, ref: "#102", state: followed}'
-write_item "$R32/docs/knowledge/items/$ULID5.md" "$ULID5" active nl "invalid ref 揮発。" 'observations:
+write_item "$R32/docs/knowledge/items/$ULID5.md" "$ULID5" active nl "invalid ref（allow 非合致）。" 'observations:
   - {date: 2026-07-25, ref: ".oe/plan.md", state: followed}'
 ULID6="01J0ABCDEFGHJKMNPQRSTVWX44"
 ULID7="01J0ABCDEFGHJKMNPQRSTVWX55"
 write_item "$R32/docs/knowledge/items/$ULID6.md" "$ULID6" active nl "invalid note null。" 'observations:
   - {date: 2026-07-25, ref: "#103", state: harmful, note: null}'
-write_item "$R32/docs/knowledge/items/$ULID7.md" "$ULID7" active nl "invalid 迂回 ref。" 'observations:
+write_item "$R32/docs/knowledge/items/$ULID7.md" "$ULID7" active nl "invalid allow 非合致 ref。" 'observations:
   - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}'
 lister_flagged="$(env OE_KNOWLEDGE_REPO_ROOT="$R32" "$BASH" "$LISTER" --json "$R32/docs/knowledge/items" \
   | jq -r '[.items[] | select(.observations_malformed == true) | .id] | sort | join(" ")')"
