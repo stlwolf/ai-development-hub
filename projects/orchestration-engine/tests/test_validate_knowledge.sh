@@ -509,6 +509,20 @@ for bad_ref in '.oe/plan-274.md' 'tmp/scratch.md' '/Users/x/evidence.md' '../evi
   ckc "WARN ref hygiene"       "$RUN_OUT" "observations[0].ref must be a durable work reference"
 done
 
+echo "[44b] ref hygiene の迂回路がない（gate 4 実装SO で実測された回帰・#274）"
+# issue/PR 形式や "://" を hygiene より先に免除すると、末尾に #N を付けるだけで揮発層・絶対パス・
+# .. が通り抜け、その ref を持つ harmful レコードが「valid な adverse 観測」として制御候補になった。
+for bypass_ref in '../../repo#274' '/tmp/evidence.md#274' '/tmp/evidence.md://x' '.oe/brief-274.md#1' 'tmp/scratch.md#2'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"$bypass_ref\"
+    state: harmful"
+  run "$F"
+  ck  "exit 1 (迂回 ref=$bypass_ref)" "1" "$RUN_RC"
+  ckc "WARN ref hygiene"              "$RUN_OUT" "observations[0].ref must be a durable work reference"
+done
+
 echo "[45] ref hygiene 偽陽性なし（issue / PR 参照・URL・自由文・tmp- 接頭の別語）→ exit 0"
 # source.ref の */tmp/* 部分一致をそのまま写すと誤爆する集合（gate 2 設計SO C1）。
 for ok_ref in '#274' 'owner/repo#274' 'https://github.com/org/repo/pull/274/files#path=.oe/brief' \

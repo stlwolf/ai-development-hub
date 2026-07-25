@@ -88,7 +88,8 @@ ITEM_PATH_RE='(^|/)knowledge/items/[^/]+\.md$'      # items/ 直下の .md（非
 # ライブラリを持たない。述語の二重化は同一 fixture を両方に流すテストで縛る）。
 #   cal_ok    : 暦妥当性（jq の strptime は 2026-02-29 等を通すため純 jq で見る）
 #   states    : state の enum（宣言順。集計の表示順もこれに合わせる）
-#   ref_bad   : ref の hygiene（URL と issue/PR 参照は対象外・path 形状のみ先頭一致で拒否）
+#   ref_bad   : ref の hygiene（scheme 始まりの URL のみ対象外。残りは絶対パス・先頭一致の揮発層・
+#               .. セグメントを拒否。issue/PR 参照の免除分岐は持たない＝hygiene の迂回路になるため）
 #   obs_valid : 要素が完全にスキーマを満たすか（集計・候補判定に使うのはこれが true のものだけ）
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
@@ -110,9 +111,7 @@ def cal_ok:
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
 def ref_bad:
-  if test("://") then false
-  elif test("^#[0-9]+$") then false
-  elif test("^[A-Za-z0-9._/-]+#[0-9]+$") then false
+  if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true

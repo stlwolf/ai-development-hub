@@ -99,9 +99,12 @@ DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 #   cal_ok  : "YYYY-MM-DD" 文字列 → 暦として妥当か（閏年・月別最大日数）
 #   states  : observations.state の enum（宣言順。表示順もこれに合わせる）
 #   known   : observations 要素の既知キー（これ以外は拒否）
-#   ref_bad : observations.ref が拒否対象か。URL と issue/PR 参照は path でないので対象外にし、
-#             path 形状のものだけ「先頭一致の揮発層・絶対パス・.. セグメント」を拒否する
-#             （source.ref の */tmp/* 部分一致を写すと自由文 ref や URL 断片を誤爆する・gate 2 SO C1）
+#   ref_bad : observations.ref が拒否対象か。判定順が肝で、**hygiene を先に見る**。scheme 始まりの
+#             URL だけを対象外にし、残りは「絶対パス・先頭一致の揮発層・.. セグメント」を拒否する。
+#             部分一致（source.ref の */tmp/*）は使わない — 自由文 ref や URL 断片を誤爆するため
+#             （gate 2 設計SO C1）。issue/PR 参照（#274 / owner/repo#274）は hygiene に触れないので
+#             免除の分岐を持たない。持たせると `.oe/x#1` や `../../repo#274` が hygiene を迂回する
+#             （gate 4 実装SO で実測・迂回する ref を持つ harmful レコードが制御候補になっていた）。
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
 def cal_ok:
@@ -122,9 +125,7 @@ def cal_ok:
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
 def ref_bad:
-  if test("://") then false
-  elif test("^#[0-9]+$") then false
-  elif test("^[A-Za-z0-9._/-]+#[0-9]+$") then false
+  if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true

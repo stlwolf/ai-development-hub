@@ -426,6 +426,18 @@ ck  "item の既存キーが不変" "date excerpt exclusions id item_ref landing
 ck  "既存キーの値も不変（trigger）" "trigger for $ULID1" "$(jq -r '.items[0].trigger' <<<"$OUT")"
 ck  "新キーが存在する"      "true" "$(jq -r '.items[0] | has("observations_count") and has("control_candidate")' <<<"$OUT")"
 
+echo "[31b] ref hygiene の迂回路から制御候補を立てない（gate 4 実装SO で実測された回帰・#274）"
+R31B="$_TMP_DIR/r31b"; mkdir -p "$R31B"; git_init "$R31B"
+write_item "$R31B/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "迂回 ref + harmful。" 'observations:
+  - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}
+  - {date: 2026-07-25, ref: "../../repo#274", state: contradicted}'
+git_commit "$R31B"
+run "$R31B" --json
+ck  "invalid に数える（2 件）"        "2" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "adverse として集計しない"        "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
+ck  "制御候補にしない"                "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
+ck  "malformed として surface する"   "true" "$(jq -r '.items[0].observations_malformed' <<<"$OUT")"
+
 echo "[32] contract: lister が integrity 判定する集合 == validator が exit 1 にする集合（述語の二重化を縛る）"
 R32="$_TMP_DIR/r32"; mkdir -p "$R32/docs/knowledge/items"
 # valid（空・1件・7 state 相当）と invalid（未知キー・enum 外・暦不正・ref 揮発・非配列）を混在させる
