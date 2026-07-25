@@ -73,6 +73,7 @@ opt-out は「書かない」ではなく「消費者ゲート判断を明示し
 - [ ] **status 確定**: frontmatter の status を draft → stable / deprecated へ。据え置く場合は理由を 1 行。達成度（達成 / 部分 / 未達）を 1 語添える
 - [ ] **（条件付き）evidence anchor**: 本文が `tmp/` 等の揮発パスや別リポの匿名化情報を参照している場合、要点（数値・結論・hash）を本文へ転記、または永続する代替アンカーを置いたか
 - [ ] **（条件付き）SO 証跡リンク**: 外部チェック（Step 4）を実施した場合、その出力パスまたは要約を episode にリンクしたか
+- [ ] **（条件付き）観測の書き戻し**: brief に negative knowledge が注入されていた場合、slot に載っていた**全 item**に1レコードずつ観測を書き戻し（機会が無ければ `no_opportunity`）、注入された item id を episode か PR 本文に残したか（Step 6）
 
 ## Step 3: 内容セクション — 出力型 × 消費チャネル
 
@@ -147,6 +148,34 @@ Step 3 で「原則」「蒸留シグナル」行にマークした negative kno
 
 Step 4（heavy の外部チェック）は closure 品質が対象で、knowledge item の検証は `validate-knowledge.sh`（別対象）が担う。両者は独立。
 
+## Step 6: 注入された knowledge への観測の書き戻し（段5）
+
+Step 5 が**生産側**（この作業から出た教訓を store へ収穫する）なら、本 Step は**消費側**（この作業に注入された教訓の帰結を store へ返す）。両者は対象もトリガも別なので混ぜない。
+
+**トリガ**: この作業の brief に negative knowledge の slot があり、item が載っていた場合だけ実行する。注入が無ければ何もしない（「注入なし」を書き足さない）。
+
+### 手順（Step 5 と同じく status 確定/マージ前・work と同じブランチ）
+
+1. **期待集合を durable に残す**: 注入された item の id を episode（または PR 本文）に1行書く。brief は作業層なので消える。**マージ後に「何件注入されたか」の分母を復元できる場所は、この1行だけ**である。
+2. **slot に載っていた全 item に1レコードずつ**書き戻す（`landing: guard-candidate` の item も slot に載せたなら対象）。適用機会が無かったものは `no_opportunity` を正直に書く（書かないで済ませない）。
+3. レコードは `{date: 観測日, ref: durable な作業単位参照, state: enum, note: 任意の1行}` を item の `observations` **末尾に足す**。既存レコードは書き換えない（append-only）。スキーマと state の優先順位は `document-format.md` の knowledge 節（「observations 要素スキーマ」）に従う。
+   - `ref` は closure 時点で確定している durable 参照にする。closure は PR 作成前なので、**既定は issue 番号**。
+4. **`followed` を安売りしない**: 教訓どおりに判断や手順を実際に変えた証拠（diff・手順の変更）を示せるときだけ `followed` にする。示せないなら `outcome_unknown`。`externally_verified` は外部の判定が**予測の効果**を確認した場合だけで、単なるビルド成功は当たらない。
+5. 検証を通す（pass するまで直す）。`validate-knowledge` は `~/bin` に配布されるコマンド:
+
+   ```bash
+   validate-knowledge <この item の path>
+   ```
+
+6. work と**同じブランチにコミット**する（別 PR にしない）。親 / レビュアーが fact-check で「期待集合の id == 観測を足した id」と `followed` の妥当性を見る。
+7. **`status` は触らない**。無効化・supersede・退役は段6 の別 PR（規則は spec の「status 遷移規則」）。closure では観測を足すだけ。
+8. **並行追記の conflict**: 複数の作業が同じ item に同時に追記して conflict したら、**両方のレコードを残して**解決する（append-only なので落とさない）。
+
+### 限界（正直に書く）
+
+- 書き戻しの**省略は機械では検知できない**。`followed` の自己申告の甘さも同じで、レビューが唯一の歯である。本 Step は助言であって同期ゲートではない。
+- v0 の観測は**意思決定に使わない placeholder**。集計や制御候補フラグ（列挙コマンド `knowledge-list`）は提示までで、status を機械が書き換えることはない。
+
 ## 制約と既知の限界
 
 - **本スキルは助言であり同期ゲートではない**。「skill があっても closure を忘れる」問題（監査 R4）は branch-finish / PR フロー側の同期ゲートで対処する（別 Issue）。本スキルの遵守はトリガされたときのみ機能する
@@ -170,4 +199,5 @@ Step 4（heavy の外部チェック）は closure 品質が対象で、knowledg
 - **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
 - **Issue #60 / #62**: 出力型の消費チャネル先（失敗分類 / negative knowledge 注入）。注入側フォーマットは #62 で設計
-- **Issue #272 / 型付き knowledge store（収穫元 episode が属する木の `knowledge/items/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布）。突合・注入（#273・**列挙は各蒸留木の store を横断して見る**＝複数木なら複数 store）と observations の中身（#274）は本スキルのスコープ外
+- **Issue #272 / 型付き knowledge store（収穫元 episode が属する木の `knowledge/items/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布）。突合・注入（#273・**列挙は各蒸留木の store を横断して見る**＝複数木なら複数 store）は本スキルのスコープ外
+- **Issue #274 / 観測の書き戻し（段5）**: Step 6 が消費側の輪。要素スキーマ・state の優先順位・status 遷移規則は `document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。注入 slot の側は `doc-flow-guardrail`、集計と制御候補の提示は列挙コマンド `knowledge-list`

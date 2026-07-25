@@ -34,6 +34,18 @@ set -euo pipefail
 #   frontmatter が壊れた / 非 ULID 名の item は stdout に flagged row（status=MALFORMED・path・
 #   ULID ファイル名から復元した id）で surface し skipped に数える。stderr のみに出さないのは、
 #   stdout を消費するモデル統括に見落としを可視化するため（段3 の false-negative-zero 方針）。
+#
+# observations の集計と制御候補（段6 v0・#274）:
+#   各 item の observations を集計し（state ごとの件数）、制御候補（status: active かつ harmful /
+#   contradicted の観測を持つ）を提示する。read-only で item は書き換えない。status 遷移は人間が
+#   別 PR で行う（規則は canonical spec の knowledge 節）。以下は gate 2 設計SO（#274）の確定事項:
+#     - 集計と候補判定に使うのは要素スキーマを満たすレコードのみ。満たさないものは invalid に数える
+#       （壊れたレコードから制御候補を立てない）。
+#     - observations が壊れている item は、件数に関係なく human に必ず 1 行出す（黙殺しない）。
+#     - --strict の exit 契約は変えない（skipped>0 のみ。skipped は「item を列挙できなかった」信号）。
+#       台帳の壊れは meta の integrity_issues と human 行で可視化し、スキーマ完全性は二段目の
+#       validate-knowledge が見る（列挙のあとに検証を回す二段チェック）。
+#     - --json は additive（既存キーは不変・schema_version は breaking change のときだけ上げる）。
 
 JSON=0
 STRICT=0
@@ -70,6 +82,50 @@ done
 
 ULID_RE='^[0-9A-HJKMNP-TV-Z]{26}$'                  # 26字・Crockford Base32（§5 準拠）
 ITEM_PATH_RE='(^|/)knowledge/items/[^/]+\.md$'      # items/ 直下の .md（非再帰・厳密）
+
+# observations 要素スキーマの述語（#274）。validate-knowledge.sh の同名定義と同じ判定であることは
+# tests/test_knowledge_list.sh の contract テストが固定する（2 コマンドは standalone 配布のため共有
+# ライブラリを持たない。述語の二重化は同一 fixture を両方に流すテストで縛る）。
+#   cal_ok    : 暦妥当性（jq の strptime は 2026-02-29 等を通すため純 jq で見る）
+#   states    : state の enum（宣言順。集計の表示順もこれに合わせる）
+#   ref_bad   : ref の hygiene（URL と issue/PR 参照は対象外・path 形状のみ先頭一致で拒否）
+#   obs_valid : 要素が完全にスキーマを満たすか（集計・候補判定に使うのはこれが true のものだけ）
+# shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
+JQ_KNOWLEDGE_DEFS='
+def cal_ok:
+  if (type != "string") then false
+  elif (test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) then false
+  else
+    (.[0:4] | tonumber) as $y
+    | (.[5:7] | tonumber) as $m
+    | (.[8:10] | tonumber) as $d
+    | if ($m < 1) or ($m > 12) or ($d < 1) then false
+      else
+        (if $m == 2 then (if ((($y % 4) == 0) and (($y % 100) != 0)) or (($y % 400) == 0) then 29 else 28 end)
+         elif ($m == 4) or ($m == 6) or ($m == 9) or ($m == 11) then 30
+         else 31 end) as $max
+        | $d <= $max
+      end
+  end;
+def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
+def known: ["date","ref","state","note"];
+def ref_bad:
+  if test("://") then false
+  elif test("^#[0-9]+$") then false
+  elif test("^[A-Za-z0-9._/-]+#[0-9]+$") then false
+  elif test("^/") then true
+  elif test("^\\.oe/") or test("^tmp/") then true
+  elif test("(^|/)\\.\\.(/|$)") then true
+  else false end;
+def obs_valid:
+  . as $o
+  | (($o | type) == "object")
+    and ($o | has("date")) and (($o.date | type) == "string") and ($o.date | cal_ok)
+    and ($o | has("ref")) and (($o.ref | type) == "string") and (($o.ref | gsub("\\s"; "")) != "") and (($o.ref | ref_bad) | not)
+    and ($o | has("state")) and (($o.state | type) == "string") and ((states | index($o.state)) != null)
+    and (if ($o | has("note")) and ($o.note != null) then (($o.note | type) == "string") and (($o.note | test("\n")) | not) else true end)
+    and (((($o | keys) - known) | length) == 0);
+'
 
 # --- repo root（発見の基点）---
 REPO_ROOT="${OE_KNOWLEDGE_REPO_ROOT:-}"
@@ -117,6 +173,8 @@ ITEMS_JSON=()      # 正常 item の JSON オブジェクト
 MALFORMED_JSON=()  # 崩れ item の JSON オブジェクト
 LISTED=0
 SKIPPED=0
+CONTROL_CANDIDATES=0  # 制御候補（status: active + adverse な観測）の item 数（#274）
+INTEGRITY_ISSUES=0    # observations 台帳が壊れている item 数（非配列 or invalid なレコードあり）
 
 # excerpt: 本文の先頭「内容行」を返す（見出しは skip・引用/箇条書き marker は剥がす・意味要約ではない）。
 # 文字数上限で必ず切り詰める（空白の有無に依らず）。無制限だと巨大 1 行が jq の argv 上限を超え
@@ -201,11 +259,22 @@ process_item() {
   # フィールド抽出（欠落は null・list はそのまま）。id は frontmatter 優先・無ければ filename。
   # frontmatter JSON は stdin（here-string）で渡す。argv（--argjson）で渡すと巨大 frontmatter
   # （例 2MB の prediction）で ARG_MAX を超え exit 126 になり exit 契約を破るため（実装SO 指摘）。
-  ITEMS_JSON+=("$(jq \
+  # observations の集計（#274）: 集計・候補判定に使うのは obs_valid を満たすレコードだけで、満たさない
+  # ものは invalid に数える（壊れたレコードから制御候補を立てない）。既存キーは不変で追加は additive。
+  local item_json
+  item_json="$(jq \
     --arg ref "$item_ref" \
     --arg id_name "$id_from_name" \
     --arg excerpt "$excerpt" \
-    '{
+    "$JQ_KNOWLEDGE_DEFS"'
+    (if ((.observations | type) == "array") then .observations else null end) as $obs
+    | (if $obs == null then {}
+       else ($obs | map(if obs_valid then .state else "invalid" end) | group_by(.) | map({key: .[0], value: length}) | from_entries)
+       end) as $counts
+    | (($obs == null) or ((($counts["invalid"]) // 0) > 0)) as $malformed
+    | (["contradicted","harmful"] | map(select((($counts[.]) // 0) > 0))) as $adverse
+    | (((.status // "") == "active") and (($adverse | length) > 0)) as $cand
+    | {
       id: ((.id // $id_name) | tostring),
       item_ref: $ref,
       status: (.status // null),
@@ -215,8 +284,19 @@ process_item() {
       prediction: (.prediction // null),
       exclusions: (if (.exclusions|type)=="array" then (.exclusions|map(tostring)) else [] end),
       excerpt: $excerpt,
-      source_ref: (if ((.source)|type)=="object" then (.source.ref // null) else null end)
-    }' <<<"$json")")
+      source_ref: (if ((.source)|type)=="object" then (.source.ref // null) else null end),
+      observations_count: (if $obs == null then null else ($obs | length) end),
+      observations_by_state: $counts,
+      observations_malformed: $malformed,
+      control_candidate: $cand,
+      control_candidate_reasons: (if $cand then $adverse else [] end)
+    }' <<<"$json")"
+  ITEMS_JSON+=("$item_json")
+  # footer 用の件数は item JSON から読む（同じ判定を bash 側で書き直さない）。
+  local cand_flag mal_flag
+  IFS=' ' read -r cand_flag mal_flag <<<"$(jq -r '"\(.control_candidate) \(.observations_malformed)"' <<<"$item_json")"
+  if [[ "$cand_flag" == "true" ]]; then CONTROL_CANDIDATES=$((CONTROL_CANDIDATES + 1)); fi
+  if [[ "$mal_flag" == "true" ]]; then INTEGRITY_ISSUES=$((INTEGRITY_ISSUES + 1)); fi
   LISTED=$((LISTED + 1))
 }
 
@@ -300,7 +380,10 @@ if [[ "$JSON" -eq 1 ]]; then
     --arg head "$HEAD_SHA" \
     --argjson listed "$LISTED" \
     --argjson skipped "$SKIPPED" \
-    '{schema_version:1, source:$source, head:(if $head=="" then null else $head end), listed:$listed, skipped:$skipped, items:.[0], malformed:.[1]}'
+    '{schema_version:1, source:$source, head:(if $head=="" then null else $head end), listed:$listed, skipped:$skipped,
+      control_candidates: ([.[0][] | select(.control_candidate == true)] | length),
+      integrity_issues: ([.[0][] | select(.observations_malformed == true)] | length),
+      items:.[0], malformed:.[1]}'
 else
   if [[ "${#ITEMS_JSON[@]}" -gt 0 ]]; then
     for obj in "${ITEMS_JSON[@]}"; do
@@ -308,6 +391,19 @@ else
         "- " + (.id|tostring),
         "    item:       " + (.item_ref|tostring),
         "    status:     " + ((.status // "-")|tostring) + "   landing: " + ((.landing // "-")|tostring) + "   date: " + ((.date // "-")|tostring),
+        # observations 行（#274）: 観測が 1 件以上あるか、台帳が壊れているときだけ出す。観測ゼロで
+        # 健全な item の出力は #273 時点と完全に同じにする（回帰ゼロ）。
+        ((.observations_by_state // {}) as $c
+         | ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified","invalid"] as $ord
+         | if ((.observations_count // 0) > 0) or (.observations_malformed == true) then
+             "    observations: " + (
+               if .observations_count == null then "MALFORMED (not a list; run validate-knowledge)"
+               else (.observations_count|tostring)
+                    + " (" + ($ord | map(select((($c[.]) // 0) > 0) | . + ":" + (($c[.])|tostring)) | join(" ")) + ")"
+                    + (if .control_candidate then "   control-candidate: " + (.control_candidate_reasons | join(",")) else "" end)
+                    + (if .observations_malformed then "   integrity: " + ((($c["invalid"]) // 0)|tostring) + " invalid record(s); run validate-knowledge" else "" end)
+               end)
+           else empty end),
         "    trigger:    " + ((.trigger // "-")|tostring),
         "    prediction: " + ((.prediction // "-")|tostring),
         (if ((.exclusions // [])|length) > 0 then "    exclusions: " + ((.exclusions|map(tostring))|join("; ")) else empty end),
@@ -322,10 +418,18 @@ else
     done
     echo ""
   fi
+  # footer の追加項は 0 件のときは出さない（観測ゼロ・健全 store の出力を #273 と同一に保つ）。
+  FOOTER_EXTRA=""
+  if [[ "$CONTROL_CANDIDATES" -gt 0 ]]; then
+    FOOTER_EXTRA="$FOOTER_EXTRA / control-candidates: $CONTROL_CANDIDATES"
+  fi
+  if [[ "$INTEGRITY_ISSUES" -gt 0 ]]; then
+    FOOTER_EXTRA="$FOOTER_EXTRA / integrity-issues: $INTEGRITY_ISSUES"
+  fi
   if [[ -n "$HEAD_SHA" ]]; then
-    echo "listed: $LISTED / skipped: $SKIPPED / source: $SOURCE_LABEL @ $HEAD_SHA"
+    echo "listed: $LISTED / skipped: $SKIPPED / source: $SOURCE_LABEL @ $HEAD_SHA$FOOTER_EXTRA"
   else
-    echo "listed: $LISTED / skipped: $SKIPPED / source: $SOURCE_LABEL"
+    echo "listed: $LISTED / skipped: $SKIPPED / source: $SOURCE_LABEL$FOOTER_EXTRA"
   fi
 fi
 
