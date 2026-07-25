@@ -108,6 +108,8 @@ DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 #   ref_norm: hygiene の判定前に正規化する。前後の空白・`\` 区切り・先頭の `./` を落とす。これが無いと
 #             ` .oe/plan.md` や `./tmp/x` が先頭一致を外して通り抜けた（gate 4 実装SO 3round 目に
 #             2レーンが独立に実測）。記録される値は原文のままで、正規化は判定にだけ使う。
+#             絶対パスは POSIX の `/` 始まりに加えドライブレター（`C:/`・`\` 正規化後の `C:\`）も拒否する
+#             （3round 目の codex が Windows 形式にも触れていたため family を閉じる）。
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
 def cal_ok:
@@ -136,6 +138,7 @@ def ref_bad:
   ref_norm
   | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
+  elif test("^[A-Za-z]:/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true
   else false end;

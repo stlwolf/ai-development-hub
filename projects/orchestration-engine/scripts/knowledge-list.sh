@@ -119,6 +119,7 @@ def ref_bad:
   ref_norm
   | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
+  elif test("^[A-Za-z]:/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true
   else false end;
