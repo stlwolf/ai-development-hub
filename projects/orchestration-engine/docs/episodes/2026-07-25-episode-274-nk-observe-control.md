@@ -37,4 +37,7 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 - 2026-07-25: 実測での確認。テストは `test_validate_knowledge` 138 assertion / `test_knowledge_list` 117 assertion がすべて green。`shellcheck` は 4 ファイルとも clean（jq プログラムの単一引用は SC2016 を意図的に disable）。本番 store に対する human 出力は master 版と **byte 一致**（`diff` で確認）、`--json` も追加5フィールドを除けば master と一致した。本番 store の実 item 3件には観測を書き込んでいない。
 - 2026-07-25: 途中で踏んだ非自明な失敗を2件記録する。(1) テスト内で `"exit 1（暦不正 $bad_date）"` のように**変数名の直後に全角括弧**を置くと `set -u` 下で「未割り当ての変数」として落ちた（`${bad_date}` で回避）。(2) 最初に書いた smoke fixture が閉じ `---` と本文を欠いており、validator の「frontmatter block not found」を実装バグと誤読しかけた（fixture 側の不備だった）。
 
-（以降、gate 4 実装SO・Copilot・closure の記録を追記する）
+- 2026-07-25: gate 4 実装SO（`oe-review` 弱・2レーン・diff バインド・reviewed_sha `3b34810`）。**verdict は refuted**（codex が material 検出・cursor は survived。conservative 集約で全体 refuted）。codex の指摘は正しく、実測で再現した: `ref_bad` が URL と issue/PR 形式の免除を絶対パス・揮発層・`..` の検査より**先**に見ていたため、末尾に `#N` を付けるだけで hygiene を迂回できた（`../../repo#274` / `/tmp/evidence.md#274` / `/tmp/evidence.md://x`）。その ref を持つ harmful レコードが「valid な adverse 観測」として集計され、**誤った制御候補**を生成できていた。gate 2 設計SO で C1（対称コピーの偽陽性）を直した結果、逆側に穴が空いていたことになる。
+- 2026-07-25: 修正。判定順を入れ替え、scheme 始まりの URL だけを hygiene 対象外にして、残りは絶対パス・先頭一致の揮発層・`..` セグメントで拒否する形にした。issue/PR 参照は hygiene のどの条件にも触れないので**免除分岐そのものが不要**で、持たせること自体が迂回路だった。迂回入力5件を validator（exit 1）と lister（invalid 集計・候補を立てない）の両方に回帰として固定し、148 + 121 assertion green。修正後の diff で実装SO を再実行した。
+
+（以降、Copilot・closure の記録を追記する）

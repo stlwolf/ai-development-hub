@@ -286,7 +286,8 @@ validate_item() {
                  elif ((states | index($o.state)) == null) then ["observations[\($i)].state not in enum (\(states | join("|"))): \($o.state | tojson)"]
                  else [] end)
                 +
-                (if ($o | has("note") | not) or ($o.note == null) then []
+                (if ($o | has("note") | not) then []
+                 elif ($o.note == null) then ["observations[\($i)].note must be a string when present (omit the key instead of writing null)"]
                  elif ($o.note | type) != "string" then ["observations[\($i)].note, if present, must be a string"]
                  elif ($o.note | test("\n")) then ["observations[\($i)].note must be a single line (no newline): \($o.note | tojson)"]
                  else [] end)

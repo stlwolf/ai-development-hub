@@ -438,6 +438,16 @@ ck  "adverse として集計しない"        "null" "$(jq -r '.items[0].observa
 ck  "制御候補にしない"                "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
 ck  "malformed として surface する"   "true" "$(jq -r '.items[0].observations_malformed' <<<"$OUT")"
 
+echo "[31c] note: null の harmful から制御候補を立てない（gate 4 実装SO 指摘・#274）"
+R31C="$_TMP_DIR/r31c"; mkdir -p "$R31C"; git_init "$R31C"
+write_item "$R31C/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "note が null。" 'observations:
+  - {date: 2026-07-25, ref: "#274", state: harmful, note: null}'
+git_commit "$R31C"
+run "$R31C" --json
+ck  "invalid に数える"      "1" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "adverse に数えない"    "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
+ck  "制御候補にしない"      "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
+
 echo "[32] contract: lister が integrity 判定する集合 == validator が exit 1 にする集合（述語の二重化を縛る）"
 R32="$_TMP_DIR/r32"; mkdir -p "$R32/docs/knowledge/items"
 # valid（空・1件・7 state 相当）と invalid（未知キー・enum 外・暦不正・ref 揮発・非配列）を混在させる
@@ -451,6 +461,12 @@ write_item "$R32/docs/knowledge/items/$ULID4.md" "$ULID4" active nl "invalid 暦
   - {date: 2026-02-29, ref: "#102", state: followed}'
 write_item "$R32/docs/knowledge/items/$ULID5.md" "$ULID5" active nl "invalid ref 揮発。" 'observations:
   - {date: 2026-07-25, ref: ".oe/plan.md", state: followed}'
+ULID6="01J0ABCDEFGHJKMNPQRSTVWX44"
+ULID7="01J0ABCDEFGHJKMNPQRSTVWX55"
+write_item "$R32/docs/knowledge/items/$ULID6.md" "$ULID6" active nl "invalid note null。" 'observations:
+  - {date: 2026-07-25, ref: "#103", state: harmful, note: null}'
+write_item "$R32/docs/knowledge/items/$ULID7.md" "$ULID7" active nl "invalid 迂回 ref。" 'observations:
+  - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}'
 lister_flagged="$(env OE_KNOWLEDGE_REPO_ROOT="$R32" "$BASH" "$LISTER" --json "$R32/docs/knowledge/items" \
   | jq -r '[.items[] | select(.observations_malformed == true) | .id] | sort | join(" ")')"
 validator_flagged=""
@@ -461,7 +477,7 @@ for f in "$R32/docs/knowledge/items"/*.md; do
 done
 validator_flagged="$(printf '%s' "$validator_flagged" | tr ' ' '\n' | grep -v '^$' | sort | tr '\n' ' ' | sed 's/ $//')"
 ck  "両コマンドの判定集合が一致" "$validator_flagged" "$lister_flagged"
-ck  "flagged は 3 件"            "3" "$(printf '%s' "$lister_flagged" | wc -w | tr -d ' ')"
+ck  "flagged は 5 件"            "5" "$(printf '%s' "$lister_flagged" | wc -w | tr -d ' ')"
 
 # --- サマリ ---
 echo ""

@@ -556,6 +556,21 @@ ck  "exit 1（改行あり）"        "1" "$RUN_RC"
 ckc "WARN note 1行"            "$RUN_OUT" "observations[0].note must be a single line"
 ck  "WARN は 1 行（tojson でエスケープ）" "1" "$(printf '%s' "$RUN_OUT" | grep -c 'observations\[0\].note must be a single line')"
 
+echo "[46b] note が present-but-null（null / 空値）→ exit 1（gate 4 実装SO 指摘・#274）"
+# 「書かない」なら *キーを省く*。null を省略と同一視すると、書き手が note を書いたつもりで
+# 空になった記録が黙って valid になる（spec は「任意・存在時は string」）。
+for null_note in 'note: null' 'note:'; do
+  F="$_TMP_DIR/$ULID.md"
+  write_item_with_obs "$F" "observations:
+  - date: 2026-07-25
+    ref: \"#274\"
+    state: harmful
+    $null_note"
+  run "$F"
+  ck  "exit 1 (${null_note})"  "1" "$RUN_RC"
+  ckc "WARN note null"         "$RUN_OUT" "observations[0].note must be a string when present"
+done
+
 echo "[47] 未知キーを拒否 → exit 1（キー名を出す・空白入りキーでも 1 違反 1 行）"
 F="$_TMP_DIR/$ULID.md"
 write_item_with_obs "$F" 'observations:

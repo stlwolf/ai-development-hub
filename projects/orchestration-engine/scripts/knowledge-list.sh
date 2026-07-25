@@ -122,7 +122,7 @@ def obs_valid:
     and ($o | has("date")) and (($o.date | type) == "string") and ($o.date | cal_ok)
     and ($o | has("ref")) and (($o.ref | type) == "string") and (($o.ref | gsub("\\s"; "")) != "") and (($o.ref | ref_bad) | not)
     and ($o | has("state")) and (($o.state | type) == "string") and ((states | index($o.state)) != null)
-    and (if ($o | has("note")) and ($o.note != null) then (($o.note | type) == "string") and (($o.note | test("\n")) | not) else true end)
+    and (if ($o | has("note")) then (($o.note | type) == "string") and (($o.note | test("\n")) | not) else true end)
     and (((($o | keys) - known) | length) == 0);
 '
 
