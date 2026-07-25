@@ -105,6 +105,9 @@ DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 #             （gate 2 設計SO C1）。issue/PR 参照（#274 / owner/repo#274）は hygiene に触れないので
 #             免除の分岐を持たない。持たせると `.oe/x#1` や `../../repo#274` が hygiene を迂回する
 #             （gate 4 実装SO で実測・迂回する ref を持つ harmful レコードが制御候補になっていた）。
+#   ref_norm: hygiene の判定前に正規化する。前後の空白・`\` 区切り・先頭の `./` を落とす。これが無いと
+#             ` .oe/plan.md` や `./tmp/x` が先頭一致を外して通り抜けた（gate 4 実装SO 3round 目に
+#             2レーンが独立に実測）。記録される値は原文のままで、正規化は判定にだけ使う。
 # shellcheck disable=SC2016  # jq プログラムなので単一引用が正しい（shell 展開させない）
 JQ_KNOWLEDGE_DEFS='
 def cal_ok:
@@ -124,8 +127,14 @@ def cal_ok:
   end;
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
+def ref_norm:
+  gsub("^[[:space:]]+"; "")
+  | gsub("[[:space:]]+$"; "")
+  | gsub("\\\\"; "/")
+  | gsub("^(\\./)+"; "");
 def ref_bad:
-  if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
+  ref_norm
+  | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true

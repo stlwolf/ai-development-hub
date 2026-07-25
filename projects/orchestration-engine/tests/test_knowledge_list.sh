@@ -430,10 +430,12 @@ echo "[31b] ref hygiene の迂回路から制御候補を立てない（gate 4 �
 R31B="$_TMP_DIR/r31b"; mkdir -p "$R31B"; git_init "$R31B"
 write_item "$R31B/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "迂回 ref + harmful。" 'observations:
   - {date: 2026-07-25, ref: "/tmp/evidence.md#274", state: harmful}
-  - {date: 2026-07-25, ref: "../../repo#274", state: contradicted}'
+  - {date: 2026-07-25, ref: "../../repo#274", state: contradicted}
+  - {date: 2026-07-25, ref: " .oe/plan.md", state: harmful}
+  - {date: 2026-07-25, ref: "./tmp/scratch.md", state: harmful}'
 git_commit "$R31B"
 run "$R31B" --json
-ck  "invalid に数える（2 件）"        "2" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "invalid に数える（4 件）"        "4" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
 ck  "adverse として集計しない"        "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
 ck  "制御候補にしない"                "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
 ck  "malformed として surface する"   "true" "$(jq -r '.items[0].observations_malformed' <<<"$OUT")"

@@ -40,4 +40,7 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 - 2026-07-25: gate 4 実装SO（`oe-review` 弱・2レーン・diff バインド・reviewed_sha `3b34810`）。**verdict は refuted**（codex が material 検出・cursor は survived。conservative 集約で全体 refuted）。codex の指摘は正しく、実測で再現した: `ref_bad` が URL と issue/PR 形式の免除を絶対パス・揮発層・`..` の検査より**先**に見ていたため、末尾に `#N` を付けるだけで hygiene を迂回できた（`../../repo#274` / `/tmp/evidence.md#274` / `/tmp/evidence.md://x`）。その ref を持つ harmful レコードが「valid な adverse 観測」として集計され、**誤った制御候補**を生成できていた。gate 2 設計SO で C1（対称コピーの偽陽性）を直した結果、逆側に穴が空いていたことになる。
 - 2026-07-25: 修正。判定順を入れ替え、scheme 始まりの URL だけを hygiene 対象外にして、残りは絶対パス・先頭一致の揮発層・`..` セグメントで拒否する形にした。issue/PR 参照は hygiene のどの条件にも触れないので**免除分岐そのものが不要**で、持たせること自体が迂回路だった。迂回入力5件を validator（exit 1）と lister（invalid 集計・候補を立てない）の両方に回帰として固定し、148 + 121 assertion green。修正後の diff で実装SO を再実行した。
 
+- 2026-07-25: 実装SO 2周目（reviewed_sha `28a18d3`）も **refuted**。codex が「`note: null` が要素スキーマをすり抜け、不正な harmful/contradicted レコードから制御候補を生成できる」と指摘（cursor は survived）。実測で確かめると、**両コマンドの判定は一致していた**（validator も lister も valid 扱い）ので、指摘にあった「契約の分裂」ではなかった。ただし spec の文言は「任意・存在時は string」であり present-but-null はそれに反するので、**厳しくする側に倒した**（書き手が note を書いたつもりで空になった記録が黙って通る余地を消す）。両方を同時に直し、contract テストの fixture に `note: null` を足して判定集合の一致で縛った。
+- 2026-07-25: 実装SO 3周目を修正後の diff（`note` 修正込み）で実行。**iterate はここで止める**方針を先に決めた（弱 SO の終了条件は1周で足り、レーンが毎周新しい nit を出す構造に引きずられない）。3周目でさらに material が出た場合は自分で直さず親へ上げる。
+
 （以降、Copilot・closure の記録を追記する）

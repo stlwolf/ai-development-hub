@@ -110,8 +110,14 @@ def cal_ok:
   end;
 def states: ["no_opportunity","injected_not_used","followed","contradicted","harmful","outcome_unknown","externally_verified"];
 def known: ["date","ref","state","note"];
+def ref_norm:
+  gsub("^[[:space:]]+"; "")
+  | gsub("[[:space:]]+$"; "")
+  | gsub("\\\\"; "/")
+  | gsub("^(\\./)+"; "");
 def ref_bad:
-  if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
+  ref_norm
+  | if test("^[A-Za-z][A-Za-z0-9+.-]*://") then false
   elif test("^/") then true
   elif test("^\\.oe/") or test("^tmp/") then true
   elif test("(^|/)\\.\\.(/|$)") then true
