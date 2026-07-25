@@ -6,8 +6,8 @@ type: episode
 status: draft
 related:
   - type: derived_from
-    ref: ".oe/plan-274-nk-observe-control.md"
-    reason: "本実装の plan（gate 3 owner 承認済み・DJ-F は owner 裁定で確定）"
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/282"
+    reason: "本実装の PR（plan は作業層 `.oe/` にあり非永続なので、確定内容と SO の要点は PR 本文と本 episode へ転記した）"
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/274"
     reason: "実装対象 issue（段5 観測記録 + 段6 制御）"
@@ -42,5 +42,8 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 
 - 2026-07-25: 実装SO 2周目（reviewed_sha `28a18d3`）も **refuted**。codex が「`note: null` が要素スキーマをすり抜け、不正な harmful/contradicted レコードから制御候補を生成できる」と指摘（cursor は survived）。実測で確かめると、**両コマンドの判定は一致していた**（validator も lister も valid 扱い）ので、指摘にあった「契約の分裂」ではなかった。ただし spec の文言は「任意・存在時は string」であり present-but-null はそれに反するので、**厳しくする側に倒した**（書き手が note を書いたつもりで空になった記録が黙って通る余地を消す）。両方を同時に直し、contract テストの fixture に `note: null` を足して判定集合の一致で縛った。
 - 2026-07-25: 実装SO 3周目を修正後の diff（`note` 修正込み）で実行。**iterate はここで止める**方針を先に決めた（弱 SO の終了条件は1周で足り、レーンが毎周新しい nit を出す構造に引きずられない）。3周目でさらに material が出た場合は自分で直さず親へ上げる。
+
+- 2026-07-25: 実装SO 3周目（reviewed_sha `564b91c`）は **2/2 レーンが独立に同じ欠陥へ収束**した。`ref_bad` が生の文字列に先頭一致をかけていたため、先頭に空白を入れるか `./` を付けるだけで揮発層の検査を外せた。実測で ` .oe/plan.md` / `  tmp/scratch.md` / `./tmp/scratch.md` はいずれも validator が exit 0 になり、その harmful レコードが制御候補として立っていた。判定前に `ref_norm`（前後の空白除去・`\` を `/` へ・先頭 `./` 除去）を通す形にし、正規化は判定にだけ使って記録値は原文のままにした。偽陽性が増えていないことも実測で再確認した。
+- 2026-07-25: 宣言どおり4周目は回さず、gate 4 を閉じた。テストは 164 + 124 assertion green、shellcheck clean。PR #282 を作成し Copilot にレビュー依頼を出した。
 
 （以降、Copilot・closure の記録を追記する）
