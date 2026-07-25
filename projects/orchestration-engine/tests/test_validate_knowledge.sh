@@ -152,6 +152,26 @@ sed 's/^date: .*/date: 2024-02-29/' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "exit 0（閏年 2024-02-29 は valid）" "0" "$RUN_RC"
 
+echo "[8c] jq の評価失敗は環境エラー（exit 2）で落ちる — データ不備（exit 1）に丸めない（Copilot 指摘・#274）"
+# cal_ok を含む jq プログラムだけ失敗する stub を PATH 先頭に置き、他の jq 呼び出しは実 jq に委譲させる。
+# これで「環境側で jq の評価が失敗した」状況だけを再現できる（jq 本体を壊す必要がない）。
+_REAL_JQ="$(command -v jq)"
+_STUB_DIR="$_TMP_DIR/stubbin"; mkdir -p "$_STUB_DIR"
+{
+  printf '#!/usr/bin/env bash\n'
+  # stub の中身は literal で出す（$@ を呼び出し側で展開させない）。
+  # shellcheck disable=SC2016
+  printf 'for a in "$@"; do case "$a" in *cal_ok*) exit 5 ;; esac; done\n'
+  printf 'exec %s "$@"\n' "$_REAL_JQ"
+} > "$_STUB_DIR/jq"
+chmod +x "$_STUB_DIR/jq"
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+_STUB_RC=0
+_STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
+ck  "exit 2（環境エラー）"     "2" "$_STUB_RC"
+ckc "ERROR メッセージ"        "$_STUB_OUT" "failed to evaluate the calendar-validity filter with jq"
+ncc "WARN に丸めていない"      "$_STUB_OUT" "date is not a valid calendar date"
+
 echo "[9] trigger 空 → exit 1"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
 sed 's/^trigger: .*/trigger: ""/' "$F" > "$F.t" && mv "$F.t" "$F"

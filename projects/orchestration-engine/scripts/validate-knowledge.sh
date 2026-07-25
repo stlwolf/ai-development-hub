@@ -211,9 +211,20 @@ validate_item() {
   dv="$(jq -r '.date // empty' <<<"$json")"
   if [[ ! "$dv" =~ $DATE_RE ]]; then
     warn "$file" "date must be YYYY-MM-DD: ${dv:-<none>}"
-  elif [[ "$(jq -rn --arg d "$dv" "$JQ_KNOWLEDGE_DEFS"' $d | cal_ok' 2>/dev/null || echo false)" != "true" ]]; then
+  else
     # strptime は 2026-02-29 / 2026-04-31 を通す（翌月へ正規化）ため純 jq の cal_ok で見る（#274）。
-    warn "$file" "date is not a valid calendar date: $dv"
+    # jq 評価そのものの失敗（jq が古い/機能不足など環境側の問題）は item の不備ではないので、
+    # データ不備（exit 1）へ丸めずに環境エラー（exit 2）で落とす。`|| echo false` で false に
+    # 潰すと「日付が不正」という誤った診断になり、呼び出し側が item を直そうとする（Copilot 指摘）。
+    # observations の要素スキーマフィルタと同じ扱いに揃える。
+    local cal_ok_out
+    if ! cal_ok_out="$(jq -rn --arg d "$dv" "$JQ_KNOWLEDGE_DEFS"' $d | cal_ok' 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the calendar-validity filter with jq (jq too old or unsupported?)" >&2
+      exit 2
+    fi
+    if [[ "$cal_ok_out" != "true" ]]; then
+      warn "$file" "date is not a valid calendar date: $dv"
+    fi
   fi
 
   # --- trigger / prediction: 非空 string ---

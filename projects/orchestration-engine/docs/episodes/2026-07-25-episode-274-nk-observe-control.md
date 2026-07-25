@@ -53,6 +53,9 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 - 2026-07-25: allow-list 転回後の実装SO（`oe-review` 弱・2レーン・codex `gpt-5.6-sol` + cursor `cursor-grok-4.5-high`・reviewed_sha `dccdc95`）は **2/2 レーンが refuted**。指摘は2件とも正しく、どちらも実測で確認して直した。(1) **私が #273 の episode の frontmatter を壊していた** — back-propagation の置換で閉じ引用符が落ち、`yq` が parse 失敗する状態で commit していた（`docs` コミットのつもりで committed 文書を壊すのが最も avoid したい形）。修復し、変更した committed doc 全件に frontmatter の parse チェックを回して確認した。(2) `note` の1行検査が LF だけを見ていたので **CR のみの改行が通り**、さらに**空文字 / 空白のみの note も受理**していた。`note: null` を弾く判断と整合しないので、両方を弾く側へ揃えた（validator と lister の述語を同時に更新・spec の note 行も更新）。
 - 2026-07-25: この allow-list 転回で「deny-list は漏れる」という収穫済み item の教訓が実地で効いた形になった。一方で **SO が毎周何かを見つける状態は続いている**（今回は自分が持ち込んだ frontmatter 破壊と、note 検査の取りこぼし）。ここでも指摘の修正自体は SO を通していない（最終 diff は `dccdc95` 以降が未 SO）。
 
+- 2026-07-26: Copilot の最終指摘（PR #282）に対応。top-level date の暦チェックが `jq … || echo false` で **jq 評価の失敗（環境エラー）をデータ不備（exit 1）に丸めていた**。呼び出し側は「日付が不正」という誤った診断を受けて item を直そうとするので、observations の要素スキーマフィルタと同じ扱いに揃え、jq 評価失敗は明示的に exit 2（環境エラー）で落とす形にした。`cal_ok` を含む jq プログラムだけ失敗する stub を PATH 先頭に置く形で「環境側の jq 失敗」を再現し、exit 2 と ERROR メッセージ、そして WARN に丸めていないことをテストで固定した（jq 本体を壊さずに再現できる）。
+- 2026-07-26: **surface（この単位では直さない）**: 同じ「jq 失敗をデータ不備に丸める」形が validator の他の3〜4箇所（`jq -r 'type'` を `|| true` で受けている frontmatter root / source / observations / exclusions の型読み）にも残っている。owner の指示は date の1箇所に scoped されていたので実装せず、次に同ファイルを触る単位への申し送りとして記録する。これらは yq→json が成功した後の型読みなので、date の暦チェックより失敗確率は低い。
+
 ## closure
 
 ### tier 判定
