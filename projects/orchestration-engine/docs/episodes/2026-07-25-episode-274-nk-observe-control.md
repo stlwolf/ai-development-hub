@@ -50,6 +50,9 @@ negative knowledge ループ（収穫 → 保存 → 突合 → 注入 → 観�
 
 - 2026-07-25: closure 後、**owner 決定で `observations.ref` を deny-list から closed allow-list へ倒した**（closure で surface した論点への裁定）。trim 後に `#<数字>` / `<owner>/<repo>#<数字>` / `<scheme>://URL` の3形だけを許可し、他は WARN。`ref_norm` と deny 分岐（絶対パス・揮発層・`..`・ドライブレター）は削除した。scope は `observations.ref` のみで、`source.ref`（#272 の repo 相対 committed path を許す規則）は触っていない。アンカーは `^ $` ではなく `\A \z` を使い、改行を含む値の先頭行だけが合致する抜け道を塞いだ。**引き換えに自由文の ref と repo 相対 path は弾かれる**ようになった（deny-list 時代は偽陽性回避のため通していた形で、テストでは正例から負例へ移した）。残る曖昧さとして `tmp/scratch.md#2` のような文字列は「repo 名が `scratch.md` の cross-repo 参照」と同形なので通る（GitHub の repo 名はドットを含むため形では区別できない・spec に既知として明記）。この転回で、3ラウンド繰り返した迂回の family は「未知の形は既定で reject」という構造に置き換わった。
 
+- 2026-07-25: allow-list 転回後の実装SO（`oe-review` 弱・2レーン・codex `gpt-5.6-sol` + cursor `cursor-grok-4.5-high`・reviewed_sha `dccdc95`）は **2/2 レーンが refuted**。指摘は2件とも正しく、どちらも実測で確認して直した。(1) **私が #273 の episode の frontmatter を壊していた** — back-propagation の置換で閉じ引用符が落ち、`yq` が parse 失敗する状態で commit していた（`docs` コミットのつもりで committed 文書を壊すのが最も avoid したい形）。修復し、変更した committed doc 全件に frontmatter の parse チェックを回して確認した。(2) `note` の1行検査が LF だけを見ていたので **CR のみの改行が通り**、さらに**空文字 / 空白のみの note も受理**していた。`note: null` を弾く判断と整合しないので、両方を弾く側へ揃えた（validator と lister の述語を同時に更新・spec の note 行も更新）。
+- 2026-07-25: この allow-list 転回で「deny-list は漏れる」という収穫済み item の教訓が実地で効いた形になった。一方で **SO が毎周何かを見つける状態は続いている**（今回は自分が持ち込んだ frontmatter 破壊と、note 検査の取りこぼし）。ここでも指摘の修正自体は SO を通していない（最終 diff は `dccdc95` 以降が未 SO）。
+
 ## closure
 
 ### tier 判定

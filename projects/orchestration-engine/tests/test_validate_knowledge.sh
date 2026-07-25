@@ -599,6 +599,33 @@ for null_note in 'note: null' 'note:'; do
   ckc "WARN note null"         "$RUN_OUT" "observations[0].note must be a string when present"
 done
 
+echo "[46c] note が空 / 空白のみ / CR 改行 → exit 1（実装SO 指摘・#274）"
+F="$_TMP_DIR/$ULID.md"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: ""'
+run "$F"
+ck  "exit 1（空文字）"    "1" "$RUN_RC"
+ckc "WARN note empty"    "$RUN_OUT" "observations[0].note must not be empty when present"
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: "   "'
+run "$F"
+ck  "exit 1（空白のみ）"  "1" "$RUN_RC"
+# CR のみの改行は LF 検査だけでは通り抜ける
+write_item_with_obs "$F" 'observations:
+  - date: 2026-07-25
+    ref: "#274"
+    state: harmful
+    note: "line1\rline2"'
+run "$F"
+ck  "exit 1（CR 改行）"        "1" "$RUN_RC"
+ckc "WARN note single line"   "$RUN_OUT" "observations[0].note must be a single line"
+
 echo "[47] 未知キーを拒否 → exit 1（キー名を出す・空白入りキーでも 1 違反 1 行）"
 F="$_TMP_DIR/$ULID.md"
 write_item_with_obs "$F" 'observations:

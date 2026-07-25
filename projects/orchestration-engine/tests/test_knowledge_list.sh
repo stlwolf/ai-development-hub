@@ -442,11 +442,13 @@ ck  "malformed として surface する"   "true" "$(jq -r '.items[0].observatio
 
 echo "[31c] note: null の harmful から制御候補を立てない（gate 4 実装SO 指摘・#274）"
 R31C="$_TMP_DIR/r31c"; mkdir -p "$R31C"; git_init "$R31C"
-write_item "$R31C/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "note が null。" 'observations:
-  - {date: 2026-07-25, ref: "#274", state: harmful, note: null}'
+write_item "$R31C/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "note が null / 空 / CR。" 'observations:
+  - {date: 2026-07-25, ref: "#274", state: harmful, note: null}
+  - {date: 2026-07-25, ref: "#275", state: harmful, note: ""}
+  - {date: 2026-07-25, ref: "#276", state: contradicted, note: "a\rb"}'
 git_commit "$R31C"
 run "$R31C" --json
-ck  "invalid に数える"      "1" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
+ck  "invalid に数える（3 件）" "3" "$(jq -r '.items[0].observations_by_state.invalid' <<<"$OUT")"
 ck  "adverse に数えない"    "null" "$(jq -r '.items[0].observations_by_state.harmful' <<<"$OUT")"
 ck  "制御候補にしない"      "false" "$(jq -r '.items[0].control_candidate' <<<"$OUT")"
 

@@ -297,7 +297,8 @@ validate_item() {
                 (if ($o | has("note") | not) then []
                  elif ($o.note == null) then ["observations[\($i)].note must be a string when present (omit the key instead of writing null)"]
                  elif ($o.note | type) != "string" then ["observations[\($i)].note, if present, must be a string"]
-                 elif ($o.note | test("\n")) then ["observations[\($i)].note must be a single line (no newline): \($o.note | tojson)"]
+                 elif (($o.note | gsub("[[:space:]]"; "")) == "") then ["observations[\($i)].note must not be empty when present (omit the key instead): \($o.note | tojson)"]
+                 elif ($o.note | test("[\n\r]")) then ["observations[\($i)].note must be a single line (no line break): \($o.note | tojson)"]
                  else [] end)
                 +
                 (if ((($o | keys) - known) | length) > 0 then ["observations[\($i)]: unknown key(s) not allowed: \((($o | keys) - known) | tojson)"] else [] end)

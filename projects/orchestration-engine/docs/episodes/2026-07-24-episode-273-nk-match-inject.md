@@ -7,7 +7,7 @@ status: stable
 related:
   - type: derived_from
     ref: "https://github.com/stlwolf/ai-development-hub/pull/278"
-    reason: "本実装の PR（plan は作業層 `.oe/` にあり非永続。§9 の確定内容の要点は本文「gate 2 設計SO で確定した DJ」節へ転記済み）
+    reason: "本実装の PR（plan は作業層 `.oe/` にあり非永続。§9 の確定内容の要点は本文「gate 2 設計SO で確定した DJ」節へ転記済み）"
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/273"
     reason: "実装対象 issue（段3 突合 + 段4 注入）"
