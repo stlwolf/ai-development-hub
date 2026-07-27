@@ -1,6 +1,6 @@
 ---
 name: episode-retrospective
-description: Episode の closure 時に構造化振り返りを適用する。closure gate checklist（消費者明示・routing・status 確定）、出力型×消費チャネルの内容プロンプト、tier 判定（opt-out / standard / heavy）を含む。Episode を閉じるとき、Decision/ADR への昇格を検討するときに使用する。
+description: Episode の closure 時に構造化振り返りを適用する。closure gate checklist（消費者明示・routing・status 確定）、構造化 FB セクション向けの内容プロンプト（出力型×消費チャネル）、tier 判定（opt-out / standard / heavy）、本文と closure の read/write 契約（再掲でなく pointer で足りる）を含む。Episode を閉じるとき、Decision/ADR への昇格を検討するときに使用する。本文の書き方そのものは担当外。
 ---
 
 # Episode Retrospective — closure 時の構造化振り返り
