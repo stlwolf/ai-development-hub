@@ -65,7 +65,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 
 - **plan-first**: 実装前に計画だけ作って STOP・plan doc のパスを親へ報告する（owner HG まで実装・commit・PR に着手しない）。
 - **worktree は子が自作**（`branch-naming` に従う）・統括は hands-off（事前作成しない）。
-- **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。
+- **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。**追記は closure から指せる形で残す** — 判断の why・失敗と撤回の経緯・棄却した選択肢・tier のトリガに当たる出来事は、起きたその場で節を立てて書く。closure ではそれを再掲せず本文を指す（`episode-retrospective` の read/write 契約）。
 - **昇格規則**: 設計級 / durable な知見は closure・worktree 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（詳細 `document-format.md`「昇格義務」節〔§13〕・1行版〔§13.6〕）。
 - **報告2段構え**: file が正本・`oe-send "$PARENT_TMUX_PANE" '...'` はポインタ（pane 引数は変数展開のため double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**）。
 - **malform hygiene**: 子ペインの生 capture を会話へ貼らない。要約するか path（ファイル/ログの場所）で渡す。

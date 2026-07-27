@@ -458,7 +458,9 @@ tags: [tags]
 
 > 冒頭に「なぜこの作業が始まったか」を 1〜2 文で自己完結して書く（Context / なぜ。リンク先参照のみにしない）。各 Step の記録は、後から読んだ人がやりとりの流れを追跡できるように書く。特に問題発生→原因特定→対処の連鎖は省略しない。羅列で終わらせず、転用可能な知見・教訓があれば節を立てて残す。
 
-構造化 FB セクション（Episode 末尾、任意）:
+性質ガイドは**本文層**（作業中に随時追記する層）に属する。下記の構造化 FB セクションは**振り返り層**（closure が書く層）に属し、両者は別の層である。本文はフリーフォーム（目的指示）、FB セクションは構造化（手段指示）という置き分けを崩さない。
+
+構造化 FB セクション（Episode 末尾、任意）— **振り返り層**:
 
 ```markdown
 ## フィードバック
@@ -469,7 +471,9 @@ tags: [tags]
 - follow-up の行き先（Issue / ADR / 別doc / 追わない宣言）:
 ```
 
-うち「次の消費者」「follow-up の行き先」は closure 時の必須項目（他は該当時のみ。空欄の機械的穴埋めはしない）。closure（status 確定・振り返り）の手順は `episode-retrospective` skill を参照。
+上記5項目は**形式の例示**であり、項目の正本は `episode-retrospective` が持つ（本節と skill 側で項目が1対1である必要はない）。うち「次の消費者」「follow-up の行き先」はこの5項目のなかで closure 時の必須項目（他は該当時のみ。空欄の機械的穴埋めはしない）。closure の必須項目の全体は `episode-retrospective` の closure gate checklist を参照。closure（status 確定・振り返り）の手順も同 skill を参照。
+
+closure の各項目は本文の再掲でなく**本文への pointer** で足りる（`episode-retrospective` の read/write 契約）。本文と closure に同じ内容を2度書かない。
 
 ### Decision / ADR
 
@@ -591,7 +595,7 @@ YYYY-MM-DD-{type}-{topic}.md
 episode を中心とした文書の生き死にの規範。**規範をここに置き、機械強制（hook・oe 結合）は #185 に残す**（規範と機構の分離）。
 
 - **着手時に枠を作る**: episode はタスク着手時に枠を作成する（closure 時に一から書き起こさない）。
-- **リアルタイム追記を原則**とする: 作業の進行に合わせて追記する。後追いで再構成した場合は冒頭に `reconstructed` を明示する（追記ログと証拠価値が違う）。
+- **リアルタイム追記を原則**とする: 作業の進行に合わせて追記する。後追いで再構成した場合は冒頭に `reconstructed` を明示する（追記ログと証拠価値が違う）。追記した本文は closure から pointer で参照される（再掲しない）ので、closure が指せる形で節を立てて書く（`episode-retrospective` の read/write 契約）。
 - **closure はマージ前**: episode の closure（status 確定・振り返り）は PR レビュー後・**マージ前**に行う（ゲート5）。
 - **tier は痕跡価値で決める**: opt-out / standard / heavy の判定は `episode-retrospective` に従う（痕跡の価値＝非自明な文脈の繋がりがあるか）。
 

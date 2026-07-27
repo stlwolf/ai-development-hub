@@ -21,7 +21,7 @@
 | delegate-task | 親子 Claude Code セッション間の委譲操作（delegate / send / list / report）を自然言語から判断して実行する。tmux 環境前提 | `skills/delegate-task/SKILL.md` | — |
 | diff-audit | PR diff全体を原則ベースでレビューする。4つの問いを軸に、チェックリスト外の問題も含めて拾う。既知パターンは各問いのヒントとして残す | `skills/diff-audit/SKILL.md` | — |
 | doc-flow-guardrail | ドキュメントフロー全体の地図・委譲固定節テンプレ・cold-start を注入する薄い枠（DJ-11 二層＝大原則1行 + routing 表のみ・中身は個別スキルへ routing） | `skills/doc-flow-guardrail/SKILL.md` | skill: spec-card, skill: delegate-task, skill: episode-retrospective, skill: predecision-exploration |
-| episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル・tier 判定） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
+| episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル〔構造化 FB セクション向け〕・tier 判定・本文と closure の read/write 契約＝pointer 許容で二重執筆を止める） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | kickoff-to-plan | Kickoff Documentを実行可能なプランに忠実変換する | `skills/kickoff-to-plan/SKILL.md` | skill: adversarial-review |
