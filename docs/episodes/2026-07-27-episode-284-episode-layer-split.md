@@ -99,6 +99,21 @@ reviewed_sha = `c6038d7`。cursor は **survived**、codex が material 2件。*
 2. **契約の適用範囲が狭すぎた（こちらが重い）**。`document-format.md` は closure の「各項目」を pointer 化すると書いたのに、P1 と Step 3 は **「事実・失敗」だけ**に pointer を要求していた。つまり「決定と根拠」「わかったこと」「残課題」は再掲しても契約違反にならず、**測定で観測した二重執筆を塞げていなかった**（#263 の重複は 決定と根拠 4/4、#262 も 決定と根拠 だった）。→ 契約を Step 3 の**全出力型**に広げた。
    - 原因は自分の混同である。**契約の適用範囲**（何を pointer にするか）と **Step 4 の確認範囲**（どこで省略を突合するか）を同じものだと思っていた。前者は全出力型、後者は事実・失敗節のまま、が正しい。skill にこの区別を明文で足した。
 
+### 2026-07-27 検証と PR
+
+Step 8 の検証を全項目実行した（PR 作成前）。
+
+- markdown 規約（箇条書きは `-` のみ・制御バイトなし）: PASS
+- 触った canonical への hub 固有パスの新規混入: ゼロ
+- 新スキル未作成の確認: 追加ファイルは本 episode の1件のみ
+- 既存スキル2本が名指しする型名（「決定と根拠」「事実・失敗」）の宛先保持: 保持されている（Step 3 の表を動かしていないため）
+- 見出しの一意性（本 episode 自身が pointer 先になるため）: 重複なし
+- `./scripts/sync.sh` は**実行していない**（worktree から sync すると `~/.claude` の symlink が worktree を指し、worktree 削除で dangling になる既知の footgun）。配布はマージ後に master worktree で行う＝親 / owner の領分
+
+PR: https://github.com/stlwolf/ai-development-hub/pull/285 （Copilot をレビュアーに依頼）。
+
+なお `gh pr edit --add-reviewer @copilot` は成功したように見えて `reviewRequests` が空のままだった。bot slug への `gh api -X POST .../requested_reviewers` で登録し直して反映を確認した。gh 2.93.0 でも `@copilot` 経路は当てにならない場合がある。
+
 ### 2026-07-27 実装中に気づいた自己適用の失敗（記録）
 
 本 episode 自身が、いま書いている契約に違反していた。closure でこの節を書くときに気づいた。
