@@ -54,7 +54,7 @@ so:
 | `discussion` | 探索・ブレスト・調査メモ | 最小（frontmatter のみ） |
 | `kickoff` | スコープ確定・方針の言語化 | 重い（セクションテンプレートあり） |
 | `plan` | 実行可能な粒度まで分解 | 重い（kickoff-to-plan 出力と整合） |
-| `episode` | 実行記録・作業ログ | 中間（本文フリーフォーム + 性質ガイド）。closure 時は `episode-retrospective` skill を参照 |
+| `episode` | 実行記録・作業ログ | 中間（本文フリーフォーム + 性質ガイド）。作業中の追記は closure から指せる形で残す（`doc-flow-guardrail` の委譲固定節）。closure 時は `episode-retrospective` skill を参照 |
 | `decision` | 意思決定の蒸留・ADR | 重い（コンテキスト / 決定 / 根拠 / 結果） |
 
 上表は蒸留5段（閉じた enum・#19 検証ゲート対象）。下記の `knowledge` は**この表には入らない**別種の型。
