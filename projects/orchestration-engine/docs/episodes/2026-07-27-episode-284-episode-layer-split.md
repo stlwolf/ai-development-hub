@@ -174,6 +174,7 @@ PR: https://github.com/stlwolf/ai-development-hub/pull/285 （Copilot をレビ�
   - **Anti-pattern**: 「歯止め」を主張する述語の**向き**を確かめない。closure→本文の参照整合性は、本文→closure の網羅性を保証しない。→ **Pattern**: 完全性を主張する述語は、母集団の側から書く。
 - **行動変更**: closure で本文の事実を再掲しない（トリガ = closure・機構 = `episode-retrospective` の read/write 契約と pointer 形式・着地先 = 同 skill と `document-format.md`）。
 - **蒸留シグナル**: 下記 Step 5 を参照。**Decision / ADR 昇格は なし**（設計判断の正本は本 episode と PR 本文で足り、独立した decision doc を切るほどの汎用性が無い）。**skill / rule 昇格は なし**（`episode-retrospective` と `doc-flow-guardrail` の更新が本ユニットの成果物そのもの）。
+  - **後追いの訂正（2026-07-28）**: この「Decision / ADR 昇格は なし」の判定は owner が覆した。設計判断の正本は `projects/orchestration-engine/docs/decisions/2026-07-28-decision-episode-layer-read-write-contract.md` へ昇格した。昇格の過程で、本 episode だけでは棄却案の探索木が復元できないことが判明している（詳細は昇格先の「復元できなかったこと」節）。
 - **残課題**: 上記 follow-up routing を参照（すべて行き先つき）。
 
 ### 自己適用の結果（契約が使えるかの実地確認）
