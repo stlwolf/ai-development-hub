@@ -8,7 +8,11 @@ prediction: "参照整合性の述語（書いたものが正しい先を指し�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-27-episode-284-episode-layer-split.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-07-29
+    ref: "#292"
+    state: followed
+    note: "母集団をゲート表の側から導く形を保った。加えて出力側にも同じ区別が要ると気づけた（not-applicable を空欄と区別・not-yet-due を not-applicable に畳まない）。当初は母集団側だけに適用しており、設計SO が出力側の欠落を突いた"
 exclusions:
   - "完全性を主張していないチェック（参照が壊れていないことだけを見ると明示しているもの）"
   - "母集団が機械的に列挙できる場合（enum・スキーマのフィールド集合など）。この場合は素直に母集団側から書ける"

@@ -3,11 +3,11 @@ id: "01KYPDMT4PP4FKSF8EZS33MCKD"
 title: "#289 v0 — 委譲の完了前に未達ゲートを確かめる層（検出層 + 規律2層）の実装"
 date: 2026-07-29
 type: episode
-status: draft
+status: stable
 related:
   - type: derived_from
-    ref: ".oe/plan-289-blind-gate-check.md"
-    reason: "gate 3 で owner が承認した v0（Step 1〜6）の実装。plan は作業層にあるため I8 の昇格判定で committed 層への昇格を検討する"
+    ref: "projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md"
+    reason: "設計単位の探索・棄却理由・構造的発見の昇格先。gate 3 で owner が承認した v0 の設計根拠はここが正本（昇格元の作業層 plan と探索木は gitignored のため I8 で張り替えた）"
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/289"
     reason: "本 issue。v0 は pilot なので keep-open"
@@ -151,10 +151,82 @@ brief は「既存スキルの中身の変更は symlink 経由で live なの�
 
 行 C を §11 の 1:1 索引外に置く構成と薄い枠からの routing の分担 / 起動非保証・pilot・keep-open の書きぶりが誠実で誤読リスクが低いこと / `adversarial-review` との入力契約が逆向きであることの説明 / 追加行に hub 固有パスが無いこと / episode の why の追跡性。
 
+### bot レビューの指摘4件（すべて妥当・反映済み）
+
+自動レビューから4件。うち3件は**出力契約の記述漏れ**で、同じ欠陥が3箇所に散っていた。
+
+- **`invalid-baseline` が出力契約の記述から漏れていた（3箇所）** — 判定は5値と書いていたが、baseline 不一致時は `invalid-baseline` のみを返して判定に入らない経路がある。description・routing 表の行 C・CATALOG のいずれも5値だけを書いており、**読者が「必ず5値が返る」と誤解しうる状態だった**。3箇所すべてに併記した。1箇所を直せば済む話ではなく、同じ契約を3箇所に重複して書いていたことが原因である（重複が drift の温床になった）。
+- **変更内訳の誤記1件** — 下記「自己申告の訂正」節。
+
 ### 自己申告の訂正（codex が指摘）
 
 I1 の記録に「新スキル1本 + 既存スキル3本 + rule 1本」と書いていたが、**実差分に rule の変更は無い**（I3 で `implementation-gate-rule` へ置かない判断をしたため）。5件目は `CATALOG.md` の登録である。I1 の該当箇所を訂正した。**plan の記述をそのまま書き写して実差分と突合していなかったことが原因である**（NK `01KYMRE1NC7XX6N66RQ0MGGHF1` が効くべき場面で効かなかった1件）。
 
 ## I8 — gate 5 closure と昇格判定
 
-（closure 時に記入）
+### 昇格判定（掃除の前に実施）
+
+昇格元は作業層の `.oe/plan-289-blind-gate-check.md` と `.oe/tree-289-dj-exploration.md`（どちらも gitignored）。**設計級の内容が3種類ある**——棄却した案とその理由（DJ-1〜7）、反証4パスで崩れた主張と撤回の経緯、構造的発見（スコープ内に非循環な発火位置は存在しない・候補空間は3分類で尽きる）。いずれも実装差分からは復元できない。
+
+**昇格先の型は discussion を選んだ。** `document-format.md`「昇格義務」節の型選択では「探索・却下・軌跡が主 → discussion」「確定した判断 → decision」であり、内容の大半が探索木と棄却理由である。実装で確定した判断そのものは canonical のスキル群と PR #292 が正本なので**再蒸留しない**（同節の作業層 plan の扱い）。
+
+昇格先: `projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md`
+
+**dead-pointer の張替を実施した。** 本 episode の frontmatter `related.derived_from.ref` は作業層 plan（gitignored）を指していたので、昇格先の discussion へ張り替えた。張り替えないと worktree の掃除で恒久 dead-end 化する（§13.4）。substance が昇格先に実在することは執筆時に確認済み。
+
+### closure gate checklist
+
+- **Context / なぜ**: 冒頭に自己完結で記載（`本文: Context（なぜこの作業が始まったか）`）。
+- **次の消費者**: (1) **#291 を実装する人** — 本 episode の I7 節が「起動保証層に何が必要か」の一次材料になる（境界の申告受け取りが実害を生む筋・due の割当規則・baseline の対象4つ）。(2) **`unmet-gate-check` を初めて起動する統括** — 限界（起動を保証しない）と適用範囲を先に読む必要がある。(3) **pilot の観測を集計する人** — 観測4項目の定義が PR #292 本文にある。
+- **follow-up routing**: 下記「follow-up」の全項目に行き先を付与した。行き先なしの箇条書きは無い。
+- **status 確定**: `draft` → `stable`（**達成**。plan §4 の v0 Step 1〜6 をすべて実装し、gate 4 の反証と Copilot 指摘を反映した）。
+- **evidence anchor**: SO の出力は `tmp/` 配下（揮発）なので、**結論と撤回の内容を本文 I7 節へ転記済み**。パスだけに頼っていない。
+- **SO 証跡リンク**: gate 4 = `tmp/so-20260729-170100/`（codex 252s exit 0 / cursor 254s exit 0・両レーン `request-changes`）。設計単位の gate 1/2 の証跡は昇格先 discussion §4 に転記。
+- **観測の書き戻し**: 下記「注入された negative knowledge」節（Step 6）で3件すべてに書き戻した。
+
+### 構造化フィードバック
+
+- **事実・失敗**: 反証で自分の設計が崩れた経緯（撤回3件）と、汚染経路を実装で開け直した再発1件（`本文: I7 — gate 4 実装SO + PR + Copilot`）。bot レビューの指摘4件——出力契約の記述漏れ3箇所と変更内訳の誤記1件（`本文: bot レビューの指摘4件（すべて妥当・反映済み）` / `本文: 自己申告の訂正（codex が指摘）`）。**Step 4 の外部チェックで、この bot 指摘のうち3件を episode に記録していない選択的省略が見つかり、上記の節を足して埋めた**（`本文: Step 4 の結果`）。
+- **決定と根拠**: branch prefix の選択（`本文: 判断: branch prefix を brief の feat/ から docs/ に変えた（why）`）/ digest の置き場を brief の2候補から変えた判断（`本文: 判断: brief が挙げた2つの置き場をどちらも採らなかった（why）`）/ スキル名の変更（`本文: スキル名の確定`）。設計単位の DJ と棄却理由は昇格先 discussion §3 が正本。
+- **わかったこと**: 3ツールの sync は skill 単位の symlink でメイン worktree を指すため、既存スキルの変更はマージ後に自動で live・新スキルだけ sync が要る（`本文: sync 要否は実測で確かめた（前提を検証してから結論した）`）。`adversarial-review` の Compliance Review が完了報告を必須入力に取るため、本スキルと統合すると盲検が構造的に壊れる（`本文: DJ-GATE の結果（先に通した）`）。
+- **原則（Pattern / Anti-pattern 対）**: **汚染経路を1つの層で閉じたら、下流の層が同じ情報を slot や引数として受け取る口を持たないかを確かめる。** この arc で同型の再発が2回起きた（設計段階で letter 行の循環を棄却したのに v0 の発火位置で再導入・実装段階で起動テンプレの「この境界」slot として再導入）。閉じた経路は、別の層で名前を変えて戻ってくる。→ Step 5 の収穫候補（下記）。
+- **行動変更**: 完了扱いの前に `unmet-gate-check` を起動する（トリガ = 人間の承認ゲートを越えた委譲アークの終端 / 機構 = routing 表の行 C / 着地先 = `canonical/skills/unmet-gate-check/SKILL.md`）。ただし**起動の保証は無い**ので、行動変更としての強度は限定的である（`本文: I5`）。
+- **蒸留シグナル**: discussion へ昇格済み（上記）。**negative knowledge の収穫候補1件**（上の「原則」）— brief が「実行は指示があってから」と指定しているので、**本単位では item 化せず候補として surface する**。
+- **残課題**: 下記 follow-up。
+
+### 注入された negative knowledge（Step 6・期待集合の durable な記録）
+
+注入された item id は3件: `01KYJ76D7CS7EBY3WDYY1NS9Y2` / `01KYJ76D830XME16ZFXC2XRPZZ` / `01KYMRE1NC7XX6N66RQ0MGGHF1`。**この3件すべてに観測を1レコードずつ書き戻した**（brief は作業層なので消える。マージ後に分母を復元できるのはこの行である）。
+
+| item | 効き | どこで |
+|---|---|---|
+| `01KYJ76D7CS7EBY3WDYY1NS9Y2` | **効いた** | 規範の適用範囲（誰のどの委譲に効くか）と検査ゲートの範囲（どのゲートを母集団に含めるか）を別々に書いた。I3 で枠が持つのは「承認時に digest を記録する義務」だけ、照合手順はスキル側という責務分割にできたのはこの分離のため |
+| `01KYJ76D830XME16ZFXC2XRPZZ` | **効いた** | 母集団をゲート表の側から導く形を保った。加えて**出力側にも同じ区別が要ると気づけた**（`not-applicable` を空欄と区別・`not-yet-due` を畳まない）。当初は母集団側だけに適用していて、SO が出力側の欠落を突いた |
+| `01KYMRE1NC7XX6N66RQ0MGGHF1` | **効いた（ただし1件取りこぼした）** | plan が「暫定・未実証」と書いた箇所を canonical でも同じ強さで書いた（子側ガードの有効性・起動非保証）。**一方で I1 の変更内訳は plan の記述をそのまま書き写し、実差分と突合しなかったため誤記した**（Copilot が検出）。同じ item が効くべき場面で効かなかった1件である |
+
+### follow-up（すべて行き先つき）
+
+- **起動を保証する層**（本 v0 の最大の限界）→ **#291**（park 済み）。本 episode の I7 節と昇格先 discussion §2 が一次材料。
+- **委譲時の書面のゲート順序誤りを承認時に弾く**（現在どの層でも捕まらない）→ **#291 に含める**（承認時の義務コンパイルが受け皿。discussion §6 で推奨として明示）。
+- **新スキルの sync** → **行き先 = PR #292 本文の「sync 要否」節**（そこに手順と危険側の注意を durable に記載済み）。実行は**マージ後にメイン worktree で**、担い手は親 / owner の gate 6。worktree から走らせると全リンクが張り替わり掃除時に dangling になる。issue は立てない（マージ直後の1手順で、追跡単位を作るほどの粒度ではない）。
+- **pilot の観測4項目** → **行き先 = PR #292 本文**（観測項目の定義を記載済み）。集計結果の消費先は **#291 の要件定義**。
+- **negative knowledge の収穫候補1件**（汚染経路の再導入パターン）→ **行き先 = 本 episode の「原則」項目と昇格先 discussion §4**（教訓の内容はこの2箇所に durable に記録済みなので、item 化されなくても失われない）。**store への item 化は owner 判断**（brief が「実行は指示があってから」と指定。承認されれば別 PR で収穫する）。
+
+Step 4 の指摘を受けて、上記3件の行き先を「実行者と時期」から「durable な記録先」へ書き直した。「親と owner の判断待ち」は行き先ではなくタスク境界の宣言であり、それだけでは disposition が確定しない。
+- **`oe-undelivered` が cron 可と書かれているのに未スケジュール** → **追わない**（本単位のスコープ外。#289 v0 とも独立で、engine track の別論点。設計単位の plan §11 に記録済みで、そこから #291 の着手時に拾える）。
+- **検証ゲート（`lib/verify.sh`）が engine の1経路にしか配線されていない** → **追わない**（同上。engine track）。
+
+### Step 4 の結果（heavy tier の外部チェック・実施した）
+
+tier は **heavy**（実行中の撤回あり / 意図的に外部レビューレーンを起動 / 非自明な設計判断で選択肢を棄却 / 昇格候補あり）。したがって外部チェックを辞退せず実施した。**設計SO と実装SO は検証対象が別（設計とコード）なので、closure 品質のチェックを代替しない。**
+
+`so-compare --with codex,cursor`（出力 `tmp/so-20260729-173027/`）。codex が実返却（132s・exit 0）、cursor は `timeout_empty`（280s・0 bytes）。実返却1レーンの partial なので disclose して進む（弱 SO の終了条件）。確認対象は4観点に絞った。
+
+**指摘2件（どちらも妥当・修正済み）**
+
+1. **選択的省略があった。** bot レビュー指摘4件のうち、`invalid-baseline` の記述漏れ3件が **episode のどこにも記録されていなかった**（コミットと PR 履歴にはあるが episode には無い）。記録していたのは「変更内訳の誤記」1件だけで、**残り3件を落としていた**。→ 「bot レビューの指摘4件」節を足して埋めた。**pointer で指していたから省略ではない、という言い分は立たない**（pointer 先の I7 にも書いていなかった）。
+2. **follow-up 2件の行き先が未着地だった。** 「マージ後にメイン worktree で実行」「親と owner の判断待ち」は実行者と時期であって、Issue / 別doc / 追わない のいずれでもない。→ durable な記録先（PR #292 本文 / 本 episode と discussion）へ書き直した。
+
+**指摘なし2件**: 揮発パス参照（SO の結論は I7 へ転記済み）/ back-propagation（`derived_from` の dead-pointer 張替が済み、張替先に substance が実在することも確認された）。
+
+**この2件は自己チェックでは出なかった。** closure gate checklist を自分で埋めた時点では「省略なし・routing 済み」と判断していた。自己評価が甘いという Step 4 の前提が、この単位でも実測として再現した。
