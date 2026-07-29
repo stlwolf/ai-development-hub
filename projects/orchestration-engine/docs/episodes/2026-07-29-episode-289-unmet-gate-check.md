@@ -32,7 +32,7 @@ tags: [orchestration, delegation, gate, canonical-skill, negative-knowledge]
 
 ### 判断: branch prefix を brief の `feat/` から `docs/` に変えた（why）
 
-brief は `feat/#289_<slug>` と書いていたが、同じ行が「`branch-naming` に従い自分で決める」と委譲していた。`branch-naming` は prefix を**最も比率の高いコミット型**に合わせると定めている。本単位の変更は canonical の markdown（新スキル1本 + 既存スキル3本 + rule 1本）だけで、実行コードを含まない。
+brief は `feat/#289_<slug>` と書いていたが、同じ行が「`branch-naming` に従い自分で決める」と委譲していた。`branch-naming` は prefix を**最も比率の高いコミット型**に合わせると定めている。本単位の変更は canonical の markdown（新スキル1本 + 既存スキル3本 + `CATALOG.md`）だけで、実行コードを含まない。
 
 リポジトリの実績を照合したところ、**canonical のスキル追加・変更は `docs/` + `docs(skill):`**、`feat/` は engine コード（`oe-*`）に使われていた。直接の前例は PR #260 `docs/#248_doc-flow-guardrail`（**新スキルの追加**）で、他に #285 / #267 / #258 も同型である。したがって `docs/#289_unmet-gate-check` を採った。
 
@@ -55,7 +55,7 @@ brief は `feat/#289_<slug>` と書いていたが、同じ行が「`branch-nami
 | 入力に完了報告を含むか | **含む**（必須入力 (2)「完了報告: サブエージェントの返答テキスト」・SKILL.md:67） | **含まない**（DJ-3 が汚染と定義する対象そのもの） |
 | 判定対象 | 要件の**意図**を満たすか（Missing / Extra / Misunderstanding・SKILL.md:76-86）＝**含意判定** | ゲートと step が**履行されたか**＝**履行の有無** |
 | 何を疑うか | 実装者（子）の報告（「実装者の報告を信用するな」・SKILL.md:72） | **親の終端認識** |
-| 出力 | Spec Compliant / Issues Found の2値 | 4値（`fulfilled` / `unmet` / `unknown` / `not-applicable`） |
+| 出力 | Spec Compliant / Issues Found の2値 | 5値（`fulfilled` / `unmet` / `unknown` / `not-yet-due` / `not-applicable`）。baseline 不一致時は `invalid-baseline` のみ返して判定に入らない |
 
 **この発見は DJ-2（手順は新スキルに置く）を弱めるのではなく強めた。** Compliance Review は完了報告を**必須入力として要求する**ので、本スキルと統合すると盲検が構造的に壊れる。統合できないことが入力契約から出る。
 

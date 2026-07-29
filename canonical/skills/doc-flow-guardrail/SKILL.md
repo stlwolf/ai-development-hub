@@ -140,7 +140,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 | 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed`）→ owner マージ | `episode-retrospective` |
 | 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定 | `branch-finish` + `document-format.md`〔§13〕 |
 | S | elevated 子 spawn 時（委譲操作軸・別軸） | owner 承認ハンドシェイク: 分類器 block を見越して整形済み承認パッケージ + ダイジェストを spawn 前に先出しし、承認↔実行を binding | `delegate-task`（手順）+ `orchestration-toolkit`（規範） |
-| C | 委譲を完了扱いにする前（委譲操作軸・別軸） | 未達のゲートと step を経緯抜きで照合（plan・委譲時の書面・ゲート表・観測可能な状態のみ／会話履歴・完了報告・ACK の散文は渡さない・境界は書面から導出し申告で受けない）。判定は5値・`unknown` を `fulfilled` に、`not-yet-due` を `not-applicable` に畳まない | `unmet-gate-check` |
+| C | 委譲を完了扱いにする前（委譲操作軸・別軸） | 未達のゲートと step を経緯抜きで照合（plan・委譲時の書面・ゲート表・観測可能な状態のみ／会話履歴・完了報告・ACK の散文は渡さない・境界は書面から導出し申告で受けない）。判定は5値・`unknown` を `fulfilled` に、`not-yet-due` を `not-applicable` に畳まない。baseline 不一致時は `invalid-baseline` のみで判定に入らない | `unmet-gate-check` |
 
 - 行 **S** は蒸留フロー軸（0-6・§11）ではなく**委譲操作軸**のゲート（§11 との 1:1 索引の対象外・番号を持たない）。子が **elevated**（`bypassPermissions` / 本番・機微アクセス）のときだけ発火し、通常のローカル auto 委譲は対象外。分類器は尊重する（迂回しない）。#262。
 - 行 **C** も蒸留フロー軸ではなく**委譲操作軸**のゲート（§11 との 1:1 索引の対象外・番号を持たない）。人間の承認ゲートを越えた委譲アークの終わりに発火し、調査・plan 単位は対象外（終端が書面1箇所で足るため）。**この行は routing 上の位置であって発火機構ではない。** 起動を依頼側が覚えている必要がある限り、依頼側が完了扱いを誤る故障では同じ依頼側が起動も省略できる（規範と機械強制の分離は `document-format.md`「ライフサイクル規範」節を参照）。**起動を保証する層は #291 に park 済みで、行 C はそれを代替しない。** #289。
