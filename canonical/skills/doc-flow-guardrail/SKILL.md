@@ -70,6 +70,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - **報告2段構え**: file が正本・`oe-send "$PARENT_TMUX_PANE" '...'` はポインタ（pane 引数は変数展開のため double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**）。
 - **malform hygiene**: 子ペインの生 capture を会話へ貼らない。要約するか path（ファイル/ログの場所）で渡す。
 - **out-of-scope は実装せず surface**（`implementer-contract`。完了判断・レビューに影響するもののみ）。
+- **指示矛盾ガード**: 親の指示が brief の終端定義または plan の step 構成と矛盾する場合は、**従う前に**矛盾を指摘して確認を取る（順序は「指摘 → 確認 → 従う」・不服従ではなく確認要求）。**step ID の位置指定は矛盾ではない**。矛盾に当たるのは (a) 終端の再定義 (b) step の飛び越し（正本と弁別子は `implementer-contract`）。
 - **マージ・worktree 掃除・issue close はしない**（親 / owner の Human Gate＝gate 6）。
 - **ephemeral-ID hygiene**: 揮発的なローカル文脈の識別子（tmux pane ID 等）を、commit され共有される成果物（4層 doc・issue・PR・commit・comment）に durable な参照として焼き込まない。role / issue / PR / SHA を使う（例外＝gitignored 作業層 / 形式例示 / 計測 evidence / verbatim raw-log）。
 - **work-routing / handoff**: 委譲 work の handoff 先を brief で明示する。ad-hoc subagent で work を stranded にしない（pipeline: plan → episode → 昇格 に乗せる）。
@@ -139,8 +140,11 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 | 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed`）→ owner マージ | `episode-retrospective` |
 | 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定 | `branch-finish` + `document-format.md`〔§13〕 |
 | S | elevated 子 spawn 時（委譲操作軸・別軸） | owner 承認ハンドシェイク: 分類器 block を見越して整形済み承認パッケージ + ダイジェストを spawn 前に先出しし、承認↔実行を binding | `delegate-task`（手順）+ `orchestration-toolkit`（規範） |
+| C | 委譲を完了扱いにする前（委譲操作軸・別軸） | 未達のゲートと step を経緯抜きで照合（plan・ゲート表・観測可能な状態のみ／会話履歴・完了報告・ACK の散文は渡さない）。判定は4値・`unknown` を `fulfilled` に畳まない | `unmet-gate-check` |
 
 - 行 **S** は蒸留フロー軸（0-6・§11）ではなく**委譲操作軸**のゲート（§11 との 1:1 索引の対象外・番号を持たない）。子が **elevated**（`bypassPermissions` / 本番・機微アクセス）のときだけ発火し、通常のローカル auto 委譲は対象外。分類器は尊重する（迂回しない）。#262。
+- 行 **C** も蒸留フロー軸ではなく**委譲操作軸**のゲート（§11 との 1:1 索引の対象外・番号を持たない）。人間の承認ゲートを越えた委譲アークの終わりに発火し、調査・plan 単位は対象外（終端が書面1箇所で足るため）。**この行は routing 上の位置であって発火機構ではない。** 起動を依頼側が覚えている必要がある限り、依頼側が完了扱いを誤る故障では同じ依頼側が起動も省略できる（規範と機械強制の分離は `document-format.md`「ライフサイクル規範」節を参照）。**起動を保証する層は #291 に park 済みで、行 C はそれを代替しない。** #289。
+- **gate 3 の digest 記録（委譲時のみ・委譲操作軸・§11 との 1:1 索引の対象外）**: 委譲アークで owner HG を通すとき、統括は**承認した plan の digest を記録する**（`shasum` 等・記録先は承認の記録が残る場所）。承認後に plan の step が削られると、完了前の照合が**縮小された母集団を忠実に照合して「未達なし」を返す**ため、母集団の同一性を承認時に固定する。照合手順と不一致時の扱い（`invalid-baseline` で判定に入らない）は `unmet-gate-check` が持つ。**gate 3 そのものの性質（owner HG）は変わらない**（§11 は不変）。#289。
 
 ## 関連
 

@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (27)
+## Skills (28)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -37,6 +37,7 @@
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude/Cursor）を取得し比較する。**弱 SO**（1周可・partial=disclose・0はなし）。強 SO は `peer-ai-review` | `skills/so-compare/SKILL.md` | cli: so-compare |
 | spec-card | 蒸留パイプラインのドキュメントフォーマット適用ガイド（frontmatter・ULID・status） | `skills/spec-card/SKILL.md` | — |
+| unmet-gate-check | 委譲を完了扱いにする前に未達のゲートと step を経緯抜きで照合する検出層。plan（path）+ ゲート表 + 観測可能な状態のみを渡し、会話履歴・完了報告・ACK の散文を遮断。判定は4値（fulfilled/unmet/unknown/not-applicable）で `unknown` を `fulfilled` に畳まない。**起動は保証しない**（強制層は #291） | `skills/unmet-gate-check/SKILL.md` | skill: doc-flow-guardrail, skill: delegate-task, skill: implementer-contract |
 | worktrunk-worktrees | Worktrunk (wt) ベースの worktree 運用 | `skills/worktrunk-worktrees/SKILL.md` | skill: branch-naming, cli: wt |
 
 ## Workflow Chains

@@ -1,0 +1,118 @@
+---
+id: "01KYPDMT4PP4FKSF8EZS33MCKD"
+title: "#289 v0 — 委譲の完了前に未達ゲートを確かめる層（検出層 + 規律2層）の実装"
+date: 2026-07-29
+type: episode
+status: draft
+related:
+  - type: derived_from
+    ref: ".oe/plan-289-blind-gate-check.md"
+    reason: "gate 3 で owner が承認した v0（Step 1〜6）の実装。plan は作業層にあるため I8 の昇格判定で committed 層への昇格を検討する"
+  - type: refs
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/289"
+    reason: "本 issue。v0 は pilot なので keep-open"
+  - type: refs
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/291"
+    reason: "起動を保証する層（engine 増分）を park 済み。本単位のスコープ外"
+tags: [orchestration, delegation, gate, canonical-skill, negative-knowledge]
+---
+
+# #289 v0 — 委譲の完了前に未達ゲートを確かめる層の実装
+
+## Context（なぜこの作業が始まったか）
+
+同じ週に2人の統括が独立に同じ穴を踏んだ。委譲アークが終端したときに、plan と brief の両方に書かれていた義務（実装SO → PR、昇格確認）が未履行のまま誰も気づかなかった。原因は「約束（書面）で守ろうとして守れていない」ことにあり、履行を確かめる主体が居なかった。前の単位（P1〜P5）が設計と plan を作り、owner の gate 3 で v0 が承認された。本単位はその v0 を実装する。
+
+**前の単位で出た中心の結論**: #289 が指定したスコープ（skill と運用・engine の大きな改造はしない）の内側に、非循環かつ事例1 を構造的に捕まえる発火位置は存在しない。届くのは**規律層（予防）と検出層（起動されれば効く）**までである。起動を保証する層は #291 に park された。**したがって v0 は pilot であり、#289 は keep-open である。**
+
+## I1 — worktree と episode 枠
+
+- worktree: `ai-development-hub.docs-#289_unmet-gate-check`（branch `docs/#289_unmet-gate-check`・master 84df31a から作成）
+- episode: 本ファイル（着手時に枠を作成・以後は判断と撤回をその場で書く）
+
+### 判断: branch prefix を brief の `feat/` から `docs/` に変えた（why）
+
+brief は `feat/#289_<slug>` と書いていたが、同じ行が「`branch-naming` に従い自分で決める」と委譲していた。`branch-naming` は prefix を**最も比率の高いコミット型**に合わせると定めている。本単位の変更は canonical の markdown（新スキル1本 + 既存スキル3本 + rule 1本）だけで、実行コードを含まない。
+
+リポジトリの実績を照合したところ、**canonical のスキル追加・変更は `docs/` + `docs(skill):`**、`feat/` は engine コード（`oe-*`）に使われていた。直接の前例は PR #260 `docs/#248_doc-flow-guardrail`（**新スキルの追加**）で、他に #285 / #267 / #258 も同型である。したがって `docs/#289_unmet-gate-check` を採った。
+
+これは brief の終端定義にも step 構成にも矛盾しないので、子側ガード（指摘 → 確認 → 従う）の対象ではないと判断した。brief が明示的に skill へ委譲した判断である。**ただし brief の字面と違う選択なので I8 の報告に含める。**
+
+## I2 — Step 1 新スキルを作る
+
+### DJ-GATE の結果（先に通した）
+
+**名前衝突: 無し。** `canonical/CATALOG.md` への `completion` / `delegation-` は0件だった。**0件を不在と読む前に対照を通した**（同じ grep で `delegate-task`=3件・`episode`=5件・`doc-flow-guardrail`=1件がヒットする＝grep は機能している）。既存スキル27本の中に近い名前も無い。
+
+**description マッチの重なり: 2本が隣接していた。うち1本は同一タイミングで発火する。** これは親の下調べに無かった発見である。
+
+`adversarial-review` の **Compliance Review** は「サブエージェントが完了報告をした後、結果をマージ/承認する前」に発火する。**本スキルとタイミングが同じである。** しかし中身は2軸で正反対だった。
+
+| 軸 | `adversarial-review`（Compliance Review） | 本スキル |
+|---|---|---|
+| 入力に完了報告を含むか | **含む**（必須入力 (2)「完了報告: サブエージェントの返答テキスト」・SKILL.md:67） | **含まない**（DJ-3 が汚染と定義する対象そのもの） |
+| 判定対象 | 要件の**意図**を満たすか（Missing / Extra / Misunderstanding・SKILL.md:76-86）＝**含意判定** | ゲートと step が**履行されたか**＝**履行の有無** |
+| 何を疑うか | 実装者（子）の報告（「実装者の報告を信用するな」・SKILL.md:72） | **親の終端認識** |
+| 出力 | Spec Compliant / Issues Found の2値 | 4値（`fulfilled` / `unmet` / `unknown` / `not-applicable`） |
+
+**この発見は DJ-2（手順は新スキルに置く）を弱めるのではなく強めた。** Compliance Review は完了報告を**必須入力として要求する**ので、本スキルと統合すると盲検が構造的に壊れる。統合できないことが入力契約から出る。
+
+さらにこの2本の分担は、claim doc §5 が確定した分割（未達ゲートの照合は委譲できる / 含意判定つき fact-check は親に残る）とそのまま対応する。`adversarial-review` は含意判定の側（経緯を知っている方が効率的）で、本スキルは履行照合の側（経緯を知ると汚染される）である。**両者は相補であり競合ではない。** スキル本文の「境界」節にこれを明記した。
+
+`branch-finish`（「ブランチ完了判定フロー」）も名前が近いが、扱うのは**ブランチの処分**（テスト検証 → マージ/PR/保留/破棄の4択 → 掃除）であって、ゲート母集団の照合ではない。重ならない。
+
+### スキル名の確定
+
+`delegation-completion-check`（plan の仮名）から **`unmet-gate-check`** に変えた。理由は2つある。`completion` を名前に入れると `adversarial-review` の Compliance Review と description 上で競合しやすいこと（上表のとおり発火タイミングが同じなので、名前でも紛れると routing が不安定になる）。もう1つは、このスキルが答えるのは「完了したか」ではなく「**未達はどれか**」という開いた問いだからである（DJ-4 が問いの形を開いた形に固定している）。名前を述語に合わせた。
+
+## I3 — Step 2 gate 3 の digest 束縛
+
+### 判断: brief が挙げた2つの置き場をどちらも採らなかった（why）
+
+brief と plan は「`implementation-gate-rule` の gate 3 手順」か「`doc-flow-guardrail` の gate 3 行」を候補に挙げていた。実体を読んで、**どちらもそのままでは問題があった**。
+
+- **`implementation-gate-rule`**: always-on の一般ルールで、英語で書かれた6行の簡潔な規範である。扱うのは「plan の承認なしに実装へ進むな」という一般則で、委譲に限らない**単独作業にも適用される**。digest の記録が意味を持つのは「その plan を後から盲検の照合役が読み直すアーク」＝委譲アークだけなので、ここに置くと適用範囲が過剰に広がる（`behavioral-rule` §4）。手順の詳細を足すとルールの register も崩れる。
+- **`doc-flow-guardrail` の gate 3 行**: この表は自身を「正本は `document-format.md`〔§11〕。**本表はその索引（1:1）**」と宣言している（SKILL.md:130）。行 3 のセルに §11 に無い義務を足すと **1:1 の宣言が壊れる**。しかし §11 の変更は本単位のスコープ外であり、受け入れ基準にも「`document-format.md` の差分が0行」がある。
+
+**採った置き場**: 表の直下にある**委譲操作軸の注記ゾーン**（行 S が「§11 との 1:1 索引の対象外」として確立した場所）に、委譲時限定の義務として書いた。これで3つの制約が同時に満たされる。§11 は不変、1:1 の宣言も真のまま（委譲操作軸は既に対象外）、義務は委譲アークだけに掛かる。
+
+**責務の分割**（NK `01KYJ76D7CS7EBY3WDYY1NS9Y2` の要求＝規範の適用範囲と検査の範囲を別々に書く）: 枠（`doc-flow-guardrail`）が持つのは「承認時に digest を記録する」という**義務**だけで、照合手順と不一致時の扱い（`invalid-baseline` で判定に入らない）は**スキル側**に置いた。枠を薄く保つ DJ-2 の方針を崩していない。
+
+## I4 — Step 3 + Step 4 子側ガードと ACK 規律
+
+`implementer-contract` に指示矛盾ガードを**主**として置き（子が自分の義務として読む文書なので、親が組み立てる brief に貼り忘れても立つ）、`delegate-task` の `send` 節に ACK 規律3点を置いた。
+
+**報告フォーマットには足さなかった。** 設計SO の層分離指摘に従った判断である。子の自己申告は確かめ役とは別の層なので、確かめ役の代替として報告フォーマットに足すと2つの層が混ざる。
+
+過発火の弁別子（step ID の位置指定は矛盾ではない・矛盾は (a) 終端の再定義と (b) step の飛び越し）は、前段の単位で子が実際に下した判断をそのまま規範化したものである（発明ではない）。
+
+**未実証であることを明記した**（NK `01KYMRE1NC7XX6N66RQ0MGGHF1`）。plan が「暫定・未実証」と書いた箇所を canonical で断定に格上げしないという要求に従い、「有効性は未実証・発動機会が無く誤発火もしていない」と同じ強さで書いた。
+
+## I5 — Step 5 doc-flow-guardrail の最小変更
+
+routing 表に**行 C**（委譲を完了扱いにする前）を追加し、行 S と同じ「委譲操作軸・§11 との 1:1 索引の対象外」の注記を付けた。固定節には指示矛盾ガードの1行（**従**・正本は `implementer-contract`）を足した。手順は書かず `unmet-gate-check` へ routing した（枠を薄く保つ DJ-2）。
+
+**行 C の注記に「これは routing 上の位置であって発火機構ではない」と明記した。** 設計SO の要求であり、構造的発見（起動を依頼側が覚えている必要がある限り循環が残る）をここで正直に書いておかないと、行が表にあることが「仕組みが入った」と読まれてしまう。#291 を代替しない旨も併記した。
+
+**GATE 通過**: `document-format.md` の差分は0（`git diff --numstat` の対象ファイル 0 件）。
+
+## I6 — Step 6 可搬性の検査と sync 要否
+
+**可搬性 PASS**: 追加した行に hub 固有パスは0件、新スキル本体も0件だった。既存ファイルに3件ヒットしたが、いずれも master に既存の行である（`doc-flow-guardrail` の層図の `.oe/` 1件、`delegate-task` の `<workspace>/.oe/` 例と `pane-title` の出力例 2件）。新スキルは操作を規則と関係で書き、ツールをコマンド名（`shasum`）で書いたので、hub のパスを焼いていない。
+
+### sync 要否は実測で確かめた（前提を検証してから結論した）
+
+brief は「既存スキルの中身の変更は symlink 経由で live なので再 sync 不要、新スキルの追加は要る」という前提を実測で確かめよと指定した。確かめた結果、前提は正しかった。
+
+- 3ツール（`~/.claude` / `~/.cursor` / `~/.codex`）はいずれも **skill 単位の symlink** を張っており、リンク先は**メイン worktree** のパスである。したがって既存スキル3本の変更は**マージ後に自動で live** になり、再 sync は要らない。
+- `~/.claude/skills` は27件で **`unmet-gate-check` は不在**。新スキルは symlink が無いので **sync が必要**である。
+
+**重要な副作用（危険側）**: リンク先がメイン worktree なので、**この worktree から `sync` を走らせてはいけない**。走らせると全リンクがこの worktree へ張り替わり、worktree を掃除した時点で dangling になってフックが無言で止まる。**したがって sync はマージ後にメイン worktree で実行する作業であり、本単位（マージ前）では実行しない。** 親 / owner の gate 6 側へ申し送る。
+
+## I7 — gate 4 実装SO + PR + Copilot
+
+（作業中に追記）
+
+## I8 — gate 5 closure と昇格判定
+
+（closure 時に記入）
