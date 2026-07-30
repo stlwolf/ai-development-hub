@@ -8,7 +8,11 @@ prediction: "「裏が取れなかった」と確認し、その事実を作業�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-28-episode-284-decision-backfill.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-07-29
+    ref: "#292"
+    state: followed
+    note: "plan が「暫定・未実証」と書いた箇所を canonical でも同じ強さで書いた（子側ガードの有効性・起動を保証しないこと）。ただし変更内訳は plan の記述をそのまま書き写して実差分と突合せず誤記し、bot レビューが検出した。同じ item が効くべき場面で1件取りこぼしている"
 exclusions:
   - "上流の断定を一次資料で裏付けられたケース（この場合は断定のまま書いてよい）"
   - "上流が明示的に「未確認の推測である」と断って渡しているケース（強さの調整が既に済んでいる）"

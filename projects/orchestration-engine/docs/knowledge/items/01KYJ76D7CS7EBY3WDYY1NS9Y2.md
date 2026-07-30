@@ -8,7 +8,11 @@ prediction: "規範の適用範囲とゲートの検査範囲を同じものだ�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-27-episode-284-episode-layer-split.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-07-29
+    ref: "#292"
+    state: followed
+    note: "規範の適用範囲（誰のどの委譲に効くか）と検査ゲートの範囲（どのゲートを母集団に含めるか）を別々の節に分けて書いた。分けた結果、枠には承認時の記録義務だけを置き照合手順はスキル側に持たせる責務分割ができた"
 exclusions:
   - "規範とゲートが定義上一致しているケース（ゲートが規範の全条項を機械検査する設計だと明示されている場合）"
   - "規範を新設せず、既存規範のゲートだけを調整するケース"
