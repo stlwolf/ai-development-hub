@@ -191,7 +191,7 @@ I1 の記録に「新スキル1本 + 既存スキル3本 + rule 1本」と書い
 - **わかったこと**: 3ツールの sync は skill 単位の symlink でメイン worktree を指すため、既存スキルの変更はマージ後に自動で live・新スキルだけ sync が要る（`本文: sync 要否は実測で確かめた（前提を検証してから結論した）`）。`adversarial-review` の Compliance Review が完了報告を必須入力に取るため、本スキルと統合すると盲検が構造的に壊れる（`本文: DJ-GATE の結果（先に通した）`）。
 - **原則（Pattern / Anti-pattern 対）**: **汚染経路を1つの層で閉じたら、下流の層が同じ情報を slot や引数として受け取る口を持たないかを確かめる。** この arc で同型の再発が2回起きた（設計段階で letter 行の循環を棄却したのに v0 の発火位置で再導入・実装段階で起動テンプレの「この境界」slot として再導入）。閉じた経路は、別の層で名前を変えて戻ってくる。→ Step 5 の収穫候補（下記）。
 - **行動変更**: 完了扱いの前に `unmet-gate-check` を起動する（トリガ = 人間の承認ゲートを越えた委譲アークの終端 / 機構 = routing 表の行 C / 着地先 = `canonical/skills/unmet-gate-check/SKILL.md`）。ただし**起動の保証は無い**ので、行動変更としての強度は限定的である（`本文: I5`）。
-- **蒸留シグナル**: discussion へ昇格済み（上記）。**negative knowledge の収穫候補1件**（上の「原則」）— brief が「実行は指示があってから」と指定しているので、**本単位では item 化せず候補として surface する**。
+- **蒸留シグナル**: discussion へ昇格済み（上記）。**negative knowledge の収穫候補1件**（上の「原則」）— brief が「実行は指示があってから」と指定しているので、**本単位では item 化せず候補として surface する**。→ **その後 owner が item 化を承認し、同じ PR に `knowledge/items/01KYSKQHDT86GZW87E8EDMSE46.md` として収めた**（この行は closure 時点の判断として残す。現在の状態は下記 follow-up を参照）。
 - **残課題**: 下記 follow-up。
 
 ### 注入された negative knowledge（Step 6・期待集合の durable な記録）
