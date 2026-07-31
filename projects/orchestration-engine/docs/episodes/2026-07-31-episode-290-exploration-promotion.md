@@ -96,4 +96,8 @@ closure 品質の focused check を `so-compare`（他族2レーン）で実施�
 
 ### Step 6 — 注入 NK への観測書き戻し（期待集合の durable 記録）
 
-本単位の brief に注入された NK は3件: `01KYMRE1NE4HSGZR7T4XPA9JW8` / `01KYMRE1NC7XX6N66RQ0MGGHF1` / `01KYJ76D830XME16ZFXC2XRPZZ`。3件とも observations に1レコードずつ書き戻した（ref = #290・in-PR）。W3 で行った `01KYSKQHDT86GZW87E8EDMSE46` への書き戻し（A 系単位の観測）と合わせ、本 PR の書き戻しは計4 item。
+本単位の brief に注入された NK は3件: `01KYMRE1NE4HSGZR7T4XPA9JW8` / `01KYMRE1NC7XX6N66RQ0MGGHF1` / `01KYJ76D830XME16ZFXC2XRPZZ`。3件とも observations に1レコードずつ書き戻した（ref = #290・in-PR・全件 `followed` = 効いた。機会なしは0件。ただし NE4H は語尾で・NC7X は転記1文で漏れが出て SO が捕捉した — note に記録済み）。W3 で行った `01KYSKQHDT86GZW87E8EDMSE46` への書き戻し（A 系単位の観測）と合わせ、本 PR の書き戻しは計4 item。
+
+### 終端定義と子側ガードの試用結果（W 系単位）
+
+終端定義（W6・マージ/掃除/close は親と owner）は効いた — closure check の指摘反映後に「そのままマージまで進めたい」誘惑の局面は構造的に生じず、停止が明確だった。子側ガードは発動機会なし（親の追加指示なし）。単位開始時の照合（前単位 V5 終端済み・新単位 W 系・基準は増える方向 = 非矛盾）は実行した。8単位連続で発動なし・照合実行の記録は4単位連続。
