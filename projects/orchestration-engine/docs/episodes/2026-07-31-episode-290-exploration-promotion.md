@@ -47,7 +47,7 @@ tags: [orchestration, canon-verification, negative-knowledge, promotion]
 - 出力: `tmp/so-290-w4/`（worktree 側・codex `exit 0` 8,516 bytes〔初回 timeout → リトライ成功〕 / cursor `exit 0` 6,864 bytes）。判定は **codex `conditional-yes` / cursor `conditional-yes`**。0レーンでない。
 - **最重要の指摘（cursor・必須）**: §7.2 の「生き残り」括弧に**撤回29 の部分撤回（「どの spawn が succession かの分類が要らない」）が生きたまま残っていた** — 本単位の最大リスク（撤回済み主張の復活）そのものを、昇格 doc が1箇所で再演していた。修正済み。
 - **同型の言い切りの検出（codex）**: §5「賢くしても・教育しても消えなかった」（測定していない語への拡張）/「個体の能力が変わったのではなく、位置が変わった」（因果の確定）/ §9 C1「書き手の外の集合」（撤回18 の再混同）/ §9 訂正3要素「自己申告でなく集計可能」（記録の正確性という成立条件の欠落）/ §0「併記してある」（自己認証）/ NK prediction・exclusions・「毎ラウンドこれで捕まった」。**全て修正済み**（観測語への置換・成立条件の併記・方針宣言への降格）。
-- **事実誤認2件（両レーン）**: episode の「gate 0 決定は board にしか無い」（正: board と委譲 brief）と「NE4H は brief 採用リストに無い」（正: 採用1件目に明記）。**修正済み・後者は本文に検出経緯ごと残した**。
+- **事実誤認（正確には3件）**: episode の「gate 0 決定は board にしか無い」（正: board と委譲 brief）・「NE4H は brief 採用リストに無い」（正: 採用1件目に明記・両レーン検出）・discussion frontmatter の「境界を §7 に保全」（正: §6.2・cursor 検出）。**3件とも修正済み**。あわせて `01KYSKQHDT` の観測 note の並び（followed の根拠を先頭に）も codex 指摘で修正した。※当初この節は2件としか記録しておらず、**W6 の closure check が記録漏れを捕まえたため追記**。
 - 崩れなかったもの（両レーンが明示）: §5 冒頭の範囲固定・brief 候補6件のカバレッジ・gate 0 転記の追加保全・NK trigger の非重複（全14件突合）・`followed` の state 選択・`.oe/` への根拠依存なし。
 - 位置に付く失敗の型の**7例目に相当する再演が本単位でも起きかけた**（§7.2 の復活 + 言い切り群）ことは、新 NK item の prediction を裏書きする実測として本 episode に記録する。今回も自己検出はゼロで、捕まえたのは外部の2レーンである。
 
@@ -74,6 +74,7 @@ heavy トリガ該当: 意図的に起動した外部レビュー（W4 の実装
   - 書き込み時独立検証子の再評価 → discussion §11 に未探索として記録済み。#290 keep-open の再開時材料。**この単位では追わない**。
   - イベントログへの succession type / server identity 付与 → discussion §7.2 に設計案として記録済み。**行き先 = #291 の gate 0**。
   - `so-compare` がレーンの解決モデルを記録しない件 → brief スコープ外指定。統括が別 issue 化を検討中。**この単位では追わない**。
+  - discussion §11 の未探索4項目（発行済みコメントの定期走査 / state 文書の分割 / カタログの型追加率・無印率の実測 / 6例の範囲外再現） → **行き先 = discussion §11 に固定記録・#290 keep-open が受け皿**（個別 issue は起こさない。再開時の gate 0 が取捨する）。
 - **status 確定**: draft → **stable**。達成度: **達成**（brief 受け入れ基準10件のうち、マージ後にしか確定しないもの〔keep-open の維持〕を除き全て充足。canonical 変更0行は `git diff origin/master...HEAD --stat -- canonical/` = 空で機械確認済み）。
 - evidence anchor: SO 出力は worktree の `tmp/so-290-w4/`（揮発）だが、判定の要点と修正内容は `本文: W4 — 実装SO（弱・他族2レーン・1ラウンド）` に転記済み。
 - SO 証跡リンク: `tmp/so-290-w4/`（codex 8,516B / cursor 6,864B）+ Step 4 の closure check は `tmp/so-290-w6-closure/`（下記）。
@@ -81,7 +82,7 @@ heavy トリガ該当: 意図的に起動した外部レビュー（W4 の実装
 
 ### Step 3 — 内容セクション（出力型 × 消費チャネル）
 
-- **事実・失敗**: W4 で撤回29 の復活・言い切り群・事実誤認2件を外部2レーンに捕まった（`本文: W4 — 実装SO（弱・他族2レーン・1ラウンド）`）。自己検出は本単位でもゼロ。
+- **事実・失敗**: W4 で撤回29 の復活・言い切り群・事実誤認3件を外部2レーンに捕まった（`本文: W4 — 実装SO（弱・他族2レーン・1ラウンド）`）。Copilot 指摘1件（プレースホルダ節が committed に入っていた）に対応（`本文: W5 — PR + Copilot`）。W6 の closure check でも4観点中3観点で漏れが出た（`本文: Step 4 — heavy の外部チェック`）。自己検出は本単位でもゼロ。
 - **決定と根拠**: 選別の判定表と落とした側の理由は discussion §1 が正本（`本文: W2 — discussion の起草`）。逐条撤回リストを落とす判断の根拠は W4 指摘で言い直した。
 - **わかったこと**: gate 0 決定が issue 未正本化で作業層にしか無かった（`本文: W2 — discussion の起草`）。validate-knowledge の observations.ref は durable 形限定（`本文: W3 — NK item + 観測の書き戻し`）。
 - **原則 / 蒸留シグナル**: 新 NK item 1件を収穫済み（in-PR・`本文: W3 — NK item + 観測の書き戻し`）。追加の昇格なし。
@@ -89,9 +90,9 @@ heavy トリガ該当: 意図的に起動した外部レビュー（W4 の実装
 
 ### Step 4 — heavy の外部チェック
 
-closure 品質の focused check を `so-compare`（他族2レーン）で実施。確認対象 = 失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation の4観点のみ。結果は本節末尾に追記する（W4 の実装SO は doc 内容の検証であって closure 品質の検証ではないため、辞退条件を満たさないと判断して実施する — 本 arc の中心観測〔書き手の位置では自己検出が働かない〕を closure を書いた自分自身に適用する）。
+closure 品質の focused check を `so-compare`（他族2レーン）で実施。確認対象 = 失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation の4観点のみ（W4 の実装SO は doc 内容の検証であって closure 品質の検証ではないため、辞退条件を満たさないと判断して実施した — 本 arc の中心観測〔書き手の位置では自己検出が働かない〕を closure を書いた自分自身に適用）。
 
-（結果追記）
+**結果**（出力 `tmp/so-290-w6-closure/`・codex 5,531B / cursor 4,102B・両レーン実返却）: **4観点中3観点で問題あり** — (1) 選択的省略: Copilot 指摘が事実・失敗節に項目として無かった (2) routing: cursor は問題なし・codex は discussion §11 の未探索4項目への明示 routing を要求 (3) evidence anchor: 本節自身が「（結果追記）」のまま揮発パスを指していた (4) back-propagation: discussion §2 見出しの旧形「board にしか無い」・NK item 本文末尾の広い言い切り「既存ゲートが代替」・PR 本文の stale。**全件を本コミットで反映した**（本節の実体化を含む）。closure の自己チェック単独では3観点で漏れた — Step 4 を辞退しなかった判断の直接の裏付けであり、新 NK item の prediction の追加観測でもある。
 
 ### Step 6 — 注入 NK への観測書き戻し（期待集合の durable 記録）
 

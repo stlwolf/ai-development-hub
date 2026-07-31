@@ -45,7 +45,7 @@ tags: [orchestration, canon-verification, supervisor, negative-knowledge, blind-
 | 候補空間の分類（#289 の3分類） | **落とす** | issue #291 本文が committed で持っている |
 | SO 各ラウンドの生出力 | **落とす** | 判定の要点（各ラウンドの verdict・反例・撤回の型）は §4・§7 に転記済みで、brief の指定粒度（型と経緯の要約）を満たす。生出力は gitignored で消える前提の層にあり、将来の復元可能性を落とす根拠には数えない |
 
-## 2. 前提の転記 — gate 0 の決定（board にしか無いため、ここが昇格先）
+## 2. 前提の転記 — gate 0 の決定（board と委譲 brief にしか無いため、ここが昇格先）
 
 #290 の gate 0（owner・2026-07-31）で確定した4件。探索はこの前提の内側で行われた。
 
