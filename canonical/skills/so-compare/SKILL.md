@@ -117,10 +117,10 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-raw.json     # Claude の生 JSON（jq がある場合のみ。回答本文はここから取り出される）
 ├── claude-stderr.txt   # Claude の stderr
-├── claude-meta.txt     # メタデータ（model_requested, effort_requested, model_resolved, models_all, body_source を含む）
+├── claude-meta.txt     # メタデータ（model_requested, effort_requested, model_resolved, models_all, model_resolved_source, body_source を含む）
 ├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
 ├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
-└── cursor-meta.txt     # メタデータ（model_requested, model_resolved 含む。--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（model_requested, model_resolved, model_resolved_source 含む。--cursor 時のみ）
 ```
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）

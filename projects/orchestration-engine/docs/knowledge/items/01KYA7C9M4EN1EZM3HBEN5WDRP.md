@@ -8,7 +8,11 @@ prediction: "consumer の早期終了が producer に SIGPIPE を送り、pipefa
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-24-episode-273-nk-match-inject.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-01
+    ref: "#295"
+    state: followed
+    note: "検証に書いた printf | grep -q を bash 正規表現へ、手動手順の head を awk NR==1 へ置き換えた"
 exclusions:
   - "入力が小さく、producer が consumer の早期終了より前に書き終わるケース（テストが緑でも本番の巨大入力で壊れる）"
   - "pipefail を使っていない、または早期終了する consumer がいないパイプ"
