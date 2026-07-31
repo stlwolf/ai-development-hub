@@ -135,17 +135,28 @@ SO の判定は plan / episode / discussion から証跡リンクで引かれ、
 | `model_resolved` | 解決後のモデル ID、または `unavailable:<種別>` |
 | `model_resolved_source` | `model_resolved` の出所。値の確からしさがレーンごとに違うので明示する |
 | `models_all` | claude のみ。その実行で使われた全モデル ID（補助モデルを含む） |
-| `body_source` | claude のみ。回答本文をどこから取り出したか |
+| `body_source` | claude のみ。回答本文をどこから取り出したか。`json-result`（JSON の `.result` から取り出した）／`direct`（`jq` が無く従来の text 形式で受けた）／`extract-failed`（取り出せず `claude-stdout.txt` は空。生の出力は `claude-raw.json` に残る） |
 
 ### レーンごとの確からしさ（同じ `model_resolved` でも強さが違う）
 
 | レーン | `model_resolved_source` | 意味 |
 |---|---|---|
-| claude | `cli-json` | **実際に使われたモデルの観測値。** `--output-format json` の `.modelUsage` は使用実績をモデル ID ごとに持つので、エイリアス解決の結果がそのまま出る |
+| claude | `cli-json` | `--output-format json` の `.modelUsage` 由来。**どのモデルが動いたかは観測値**で、エイリアス解決の結果がそのまま出る。ただし下記のとおり `model_resolved` 単体は推定を含む |
 | codex | `config` | **観測値ではない。** 要求値がそれならその値、無ければ `~/.codex/config.toml` の `model` を読んだ値である。実行後に確認したわけではないので、設定と実際が食い違えば嘘になる |
 | cursor | `none` | 取得していない（下記） |
 
 **codex の `model_resolved` を「実行されたモデルの記録」として引用しないこと。** 証跡として引くときは claude より一段弱い値である。
+
+### claude の `model_resolved` は観測と推定が混ざっている
+
+同じ claude レーンの中でも、2 つのキーで強さが違う。
+
+- **`models_all` は観測値である。** その実行で実際に使われたモデル ID がすべて並ぶ。claude は補助用途で別のモデル（haiku 等）を併用するため、通常は複数になる。
+- **`model_resolved` は推定である。** 複数のうち「回答を書いた主モデルはどれか」を、トークン投入量（input + cache 読み + cache 作成）が最大のキー、という規則で選んでいる。CLI が「これが主モデルだ」と言っているわけではない。
+
+この推定が外れる条件がある。補助モデルが何度も呼ばれて累積量が主モデルを超えた場合、cache 生成を別のモデルが担った場合、実行途中でモデルが切り替わった場合、合計が同点の場合などである。
+
+**証跡として厳密に引くときは `models_all` を併記すること。** `model_resolved` だけを引いて「このモデルが答えた」と断定しない。
 
 ### `unavailable` の種別（空欄にはしない）
 
@@ -154,11 +165,14 @@ SO の判定は plan / episode / discussion から証跡リンクで引かれ、
 | 値 | 意味 |
 |---|---|
 | `unavailable:cli-not-exposed` | CLI が解決後のモデルを出力しない（cursor が常にこれ） |
-| `unavailable:query-failed` | `jq` が無い、または動作しない。**環境エラー** |
+| `unavailable:query-failed` | `jq` が無い、または実行に失敗した。**環境エラー** |
 | `unavailable:parse-failed` | 出力が JSON として読めなかった（タイムアウトで途中で切れた場合など） |
 | `unavailable:no-modelusage` | JSON は読めたが `.modelUsage` が無かった。**データ不在**であって失敗ではない |
+| `unavailable:schema-unexpected` | `.modelUsage` はあるが中身が想定の形でなく、モデル ID を取り出せなかった |
 
-`query-failed`（環境エラー）と `no-modelusage`（データ不在）は意図的に別の値である。ここを混ぜると、取得できなかった理由が読めなくなる。
+この 4 つ（`cli-not-exposed` を除く）は意図的に別の値にしてある。**環境エラー・データ不在・形の不一致は、原因も対処も違う。** ひとつの `unavailable` に潰すと、取得できなかった理由が読めなくなり、記録漏れとの区別もつかなくなる。
+
+判定は `jq` の終了コードで機械的に分けている。判定式が正常に `false` を返した場合（終了コード 1）だけがデータ不在で、実行そのものが失敗した場合（終了コード 2 以上）は環境エラーとして扱う。両者をまとめて「非ゼロ」として扱わない。
 
 ### cursor の解決後モデルを手で調べる手順
 

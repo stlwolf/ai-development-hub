@@ -498,17 +498,27 @@ extract_claude_models() {
         return 0
     fi
 
-    # JSON としては読めた。.modelUsage が無いのはデータ不在であって失敗ではない。
+    # JSON としては読めた。次は .modelUsage の有無を見る。
+    # jq -e は「判定が false」なら 1、「実行に失敗」なら 2 以上を返す。この差が
+    # そのままデータ不在と環境エラーの差なので、まとめて非ゼロ扱いにしない。
     rc=0
     jq -e 'has("modelUsage") and (.modelUsage | type == "object") and (.modelUsage | length > 0)' \
         "$raw" >/dev/null 2>>"$errf" || rc=$?
-    if [[ $rc -ne 0 ]]; then
+    if [[ $rc -eq 1 ]]; then
+        # 判定が正常に false を返した = データ不在
         CLAUDE_MODEL_RESOLVED="unavailable:no-modelusage"
         CLAUDE_MODELS_ALL="unavailable:no-modelusage"
         return 0
+    elif [[ $rc -ne 0 ]]; then
+        # jq の実行自体が失敗した = 環境エラー
+        CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+        CLAUDE_MODELS_ALL="unavailable:query-failed"
+        return 0
     fi
 
-    # 主モデル = トークン投入量が最大のキー。
+    # ここから先は .modelUsage が存在することが確定している。したがって以降の
+    # 失敗はデータ不在ではなく、想定した形になっていないことを意味する。
+    # 例: inputTokens が数値でないと max_by が加算に失敗する。
     local primary="" all=""
     rc=0
     primary="$(jq -r '
@@ -522,15 +532,27 @@ extract_claude_models() {
         | .key
     ' "$raw" 2>>"$errf")" || rc=$?
     if [[ $rc -ne 0 || -z "$primary" || "$primary" == "null" ]]; then
-        CLAUDE_MODEL_RESOLVED="unavailable:no-modelusage"
-        CLAUDE_MODELS_ALL="unavailable:no-modelusage"
+        CLAUDE_MODEL_RESOLVED="unavailable:schema-unexpected"
+        CLAUDE_MODELS_ALL="unavailable:schema-unexpected"
         return 0
     fi
 
     rc=0
     all="$(jq -r '.modelUsage | keys | join(",")' "$raw" 2>>"$errf")" || rc=$?
     if [[ $rc -ne 0 || -z "$all" ]]; then
-        all="$primary"
+        # 主モデルで代用すると失敗が消えるので、失敗は失敗として残す
+        all="unavailable:schema-unexpected"
+    fi
+
+    # meta は 1 行 key=value で読まれる（grep '^key=' | cut -d= -f2）。値に = や
+    # 改行や空白が混ざると行が壊れるので、書く前に形を確かめる。モデル ID は
+    # 外部から来る文字列であり、こちらで保証できるものではない。
+    # パイプで grep へ渡すと早期終了 consumer になるため、bash の正規表現で完結させる。
+    if [[ ! "$primary" =~ ^[A-Za-z0-9._:+-]+$ ]]; then
+        primary="unavailable:schema-unexpected"
+    fi
+    if [[ "$all" != unavailable:* && ! "$all" =~ ^[A-Za-z0-9._:+,-]+$ ]]; then
+        all="unavailable:schema-unexpected"
     fi
 
     CLAUDE_MODEL_RESOLVED="$primary"
@@ -544,16 +566,21 @@ extract_claude_models() {
 # 抽出する入力であり、skill / command からも回答本文として読まれる。したがって
 # 出力形式を json にしても、このファイルは平文の本文でなければならない。
 #
-# 取り出しに失敗したら生の出力をそのまま複写する。タイムアウトで json が途中で
-# 切れた場合に本文が丸ごと消え、timeout_partial が timeout_empty に化けて
-# 余計なリトライを誘発するのを防ぐ。
-# 戻り値: 0 = 取り出せた / 1 = 生出力へ退避した
+# 取り出せなかった場合、stdout は空のままにする。生の json をここへ複写しては
+# いけない。理由が2つある。
+#  1. 生 json をここへ書くと、この平文契約が破れたまま so-verdict.sh の入力になる。
+#  2. 途中で切れた json は非空なので classify_result が timeout_partial と判定し、
+#     timeout_empty 限定のリトライが起きなくなる。text 形式のころの部分出力は
+#     そのまま読める回答だったが、壊れた json は回答として使えない。使えない
+#     ものを「部分的に成功」と扱うと、再取得の機会まで失う。
+# 生の出力は claude-raw.json に残るので、内容が失われるわけではない。
+# 戻り値: 0 = 取り出せた / 1 = 取り出せなかった（stdout は空）
 extract_claude_body() {
     local raw="$1" dest="$2" errf="$3"
     local rc=0
 
+    : > "$dest"
     if ! command -v jq &>/dev/null || [[ ! -s "$raw" ]]; then
-        cp "$raw" "$dest" 2>>"$errf" || : > "$dest"
         return 1
     fi
 
@@ -566,7 +593,6 @@ extract_claude_body() {
     fi
 
     rm -f "${dest}.tmp"
-    cp "$raw" "$dest" 2>>"$errf" || : > "$dest"
     return 1
 }
 
@@ -676,7 +702,10 @@ run_claude() {
         if extract_claude_body "$claude_capture" "$OUT_DIR/claude-stdout.txt" "$claude_errmeta"; then
             body_source="json-result"
         else
-            body_source="raw-fallback"
+            # 本文は取り出せなかった。stdout は空なので classify_result は
+            # success_empty / timeout_empty 側へ落ち、リトライ判定も正しく働く。
+            # 生の出力は claude-raw.json に残っている。
+            body_source="extract-failed"
         fi
         extract_claude_models "$claude_capture" "$claude_errmeta"
         # 診断が出ていなければ空ファイルを残さない
