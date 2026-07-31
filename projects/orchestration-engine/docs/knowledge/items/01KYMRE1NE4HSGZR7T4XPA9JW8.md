@@ -8,7 +8,11 @@ prediction: "根拠を実際より強い証拠クラス（実測・計測・検�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-28-episode-284-decision-backfill.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-07-31
+    ref: "#290"
+    state: followed
+    note: "当事者（6例目を犯した本人）が「失敗の型は位置に付く」の昇格 doc を書く単位。教訓どおり6例の同一性（同一 arc・同一問題領域・同一観測者系統）を明示し一般法則として書かなかった — 範囲固定そのものは実装SO 両レーンが「守られている」と確認。ただし要約文の語（賢くしても・教育しても）と因果の確定（能力でなく位置）が観測を超えており SO が捕捉・観測語へ縮約した。帰属の規律は骨格では効き、語尾で漏れた"
 exclusions:
   - "実際に実測・計測から出た項目（帰属が正しいケース）"
   - "証拠クラスを区別しない軽い作業メモ（成果物として消費されないもの）"

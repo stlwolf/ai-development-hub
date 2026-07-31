@@ -51,14 +51,48 @@ tags: [orchestration, canon-verification, negative-knowledge, promotion]
 - 崩れなかったもの（両レーンが明示）: §5 冒頭の範囲固定・brief 候補6件のカバレッジ・gate 0 転記の追加保全・NK trigger の非重複（全14件突合）・`followed` の state 選択・`.oe/` への根拠依存なし。
 - 位置に付く失敗の型の**7例目に相当する再演が本単位でも起きかけた**（§7.2 の復活 + 言い切り群）ことは、新 NK item の prediction を裏書きする実測として本 episode に記録する。今回も自己検出はゼロで、捕まえたのは外部の2レーンである。
 
-## W5 — PR + Copilot（追記中）
+## W5 — PR + Copilot
 
-（実行時に追記する）
+- PR #294（`docs(oe): #290 探索の昇格 — 反証史・位置に付く失敗の型・第5境界候補（規範は積まない）`・Refs #290 #291・close しない・assignee 自分）。本文に選別方針と「規範は積んでいない」を明記した。
+- Copilot レビュー: 1ラウンド・COMMENTED・インライン指摘1件 —「episode の W5/W6/Closure 節が『追記中』プレースホルダのまま committed に入っており、未記録の範囲が機械的に確認できない」。**妥当と判定して対応**: 本節と Closure を実体で埋めた（closure はマージ前実施が規定なので、このラウンドで完了させる形が正で、プレースホルダを precise化するより強い対応になる）。返信済み・再レビュー依頼はしない（1ラウンド規律）。
 
 ## 蒸留シグナル / 昇格候補
 
-- 本単位そのものが昇格であるため、さらなる昇格は原則不要（brief の W6 規定）。新たに出た設計級があればここに追記する。
+- 本単位そのものが昇格であるため、さらなる昇格は不要。新たに出た設計級は無し（W4 で出た知見は既存 doc への修正として反映済み・新 NK item は W3 で収穫済み = in-PR）。
 
-## Closure（W6 で記入）
+## Closure（W6・マージ前）
 
-（マージ前に `episode-retrospective` に従って記入する）
+### Step 1 — tier 判定: **heavy**
+
+heavy トリガ該当: 意図的に起動した外部レビュー（W4 の実装SO）/ 実行中に撤回・修正があった（W4 で言い切り群と事実誤認2件）/ 昇格そのものが主成果。
+
+### Step 2 — closure gate checklist
+
+- Context / なぜ: 冒頭 Context 節に自己完結の2文あり（`本文: Context（なぜこの作業が始まったか）`）。
+- **次の消費者**: (1) #290 を将来再開する単位（discussion §8/§9 が出発点）(2) #291 の gate 0（discussion §7 が境界設計の材料）(3) NK store の消費者（brief 段3 列挙で新 item が出る）。
+- **follow-up routing（全件・行き先つき）**:
+  - 書き込み時独立検証子の再評価 → discussion §11 に未探索として記録済み。#290 keep-open の再開時材料。**この単位では追わない**。
+  - イベントログへの succession type / server identity 付与 → discussion §7.2 に設計案として記録済み。**行き先 = #291 の gate 0**。
+  - `so-compare` がレーンの解決モデルを記録しない件 → brief スコープ外指定。統括が別 issue 化を検討中。**この単位では追わない**。
+- **status 確定**: draft → **stable**。達成度: **達成**（brief 受け入れ基準10件のうち、マージ後にしか確定しないもの〔keep-open の維持〕を除き全て充足。canonical 変更0行は `git diff origin/master...HEAD --stat -- canonical/` = 空で機械確認済み）。
+- evidence anchor: SO 出力は worktree の `tmp/so-290-w4/`（揮発）だが、判定の要点と修正内容は `本文: W4 — 実装SO（弱・他族2レーン・1ラウンド）` に転記済み。
+- SO 証跡リンク: `tmp/so-290-w4/`（codex 8,516B / cursor 6,864B）+ Step 4 の closure check は `tmp/so-290-w6-closure/`（下記）。
+- 観測の書き戻し: 下記 Step 6。
+
+### Step 3 — 内容セクション（出力型 × 消費チャネル）
+
+- **事実・失敗**: W4 で撤回29 の復活・言い切り群・事実誤認2件を外部2レーンに捕まった（`本文: W4 — 実装SO（弱・他族2レーン・1ラウンド）`）。自己検出は本単位でもゼロ。
+- **決定と根拠**: 選別の判定表と落とした側の理由は discussion §1 が正本（`本文: W2 — discussion の起草`）。逐条撤回リストを落とす判断の根拠は W4 指摘で言い直した。
+- **わかったこと**: gate 0 決定が issue 未正本化で作業層にしか無かった（`本文: W2 — discussion の起草`）。validate-knowledge の observations.ref は durable 形限定（`本文: W3 — NK item + 観測の書き戻し`）。
+- **原則 / 蒸留シグナル**: 新 NK item 1件を収穫済み（in-PR・`本文: W3 — NK item + 観測の書き戻し`）。追加の昇格なし。
+- **残課題**: Step 2 の routing 欄のとおり（全件行き先つき）。
+
+### Step 4 — heavy の外部チェック
+
+closure 品質の focused check を `so-compare`（他族2レーン）で実施。確認対象 = 失敗の選択的省略 / routing 網羅 / evidence anchor / back-propagation の4観点のみ。結果は本節末尾に追記する（W4 の実装SO は doc 内容の検証であって closure 品質の検証ではないため、辞退条件を満たさないと判断して実施する — 本 arc の中心観測〔書き手の位置では自己検出が働かない〕を closure を書いた自分自身に適用する）。
+
+（結果追記）
+
+### Step 6 — 注入 NK への観測書き戻し（期待集合の durable 記録）
+
+本単位の brief に注入された NK は3件: `01KYMRE1NE4HSGZR7T4XPA9JW8` / `01KYMRE1NC7XX6N66RQ0MGGHF1` / `01KYJ76D830XME16ZFXC2XRPZZ`。3件とも observations に1レコードずつ書き戻した（ref = #290・in-PR）。W3 で行った `01KYSKQHDT86GZW87E8EDMSE46` への書き戻し（A 系単位の観測）と合わせ、本 PR の書き戻しは計4 item。
