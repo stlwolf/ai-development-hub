@@ -3,7 +3,7 @@ id: "01KYW0BPJK8HG58WWYNT9YAAHX"
 title: "#290 探索の昇格 — 5ラウンドの反証史と「失敗の型は位置に付く」観測の保全（規範は積まない）"
 date: 2026-07-31
 type: episode
-status: draft
+status: stable
 related:
   - type: derived_from
     ref: "projects/orchestration-engine/docs/discussions/2026-07-31-discussion-290-canon-verification-exploration.md"
