@@ -584,7 +584,9 @@ extract_claude_body() {
         return 1
     fi
 
-    jq -r 'if has("result") and (.result != null) then .result else empty end' \
+    # .result が文字列のときだけ受け取る。object や array を jq -r に渡すと
+    # JSON を整形して出力してしまい、平文のはずの stdout.txt が JSON になる。
+    jq -r 'if has("result") and (.result | type == "string") then .result else empty end' \
         "$raw" > "${dest}.tmp" 2>>"$errf" || rc=$?
 
     if [[ $rc -eq 0 && -s "${dest}.tmp" ]]; then
@@ -813,7 +815,10 @@ for tool in codex claude cursor; do
         echo ""
         echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
         # 元の結果をバックアップ
-        for suffix in meta.txt stdout.txt stderr.txt; do
+        # raw.json も退避する。claude は生出力をここに置いており、これが
+        # 上書きされると1回目の証跡が消える（#295 は証跡を残すための変更である）。
+        # 他のレーンには存在しないが、その場合 cp が失敗するだけで害はない。
+        for suffix in meta.txt stdout.txt stderr.txt raw.json; do
             cp "$OUT_DIR/${tool}-${suffix}" "$OUT_DIR/${tool}-${suffix}.attempt1" 2>/dev/null || true
         done
         # 同期リトライ（延長タイムアウト）

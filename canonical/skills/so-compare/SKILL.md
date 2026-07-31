@@ -133,7 +133,7 @@ SO の判定は plan / episode / discussion から証跡リンクで引かれ、
 |---|---|
 | `model_requested` | 起動時に要求した値。従来どおりで変わらない |
 | `model_resolved` | 解決後のモデル ID、または `unavailable:<種別>` |
-| `model_resolved_source` | `model_resolved` の出所。値の確からしさがレーンごとに違うので明示する |
+| `model_resolved_source` | `model_resolved` を**どこから取ろうとしたか**。値の確からしさがレーンごとに違うので明示する。`model_resolved` が `unavailable:*` のときは何も取れていない（出所が書いてあること自体は取得成功を意味しない） |
 | `models_all` | claude のみ。その実行で使われた全モデル ID（補助モデルを含む） |
 | `body_source` | claude のみ。回答本文をどこから取り出したか。`json-result`（JSON の `.result` から取り出した）／`direct`（`jq` が無く従来の text 形式で受けた）／`extract-failed`（取り出せず `claude-stdout.txt` は空。生の出力は `claude-raw.json` に残る） |
 
