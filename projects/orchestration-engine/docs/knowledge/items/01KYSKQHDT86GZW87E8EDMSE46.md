@@ -8,7 +8,11 @@ prediction: "上流で遮断を決めたので塞がったと思い込み、下�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-29-episode-289-unmet-gate-check.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-07-31
+    ref: "#290"
+    state: followed
+    note: "#290 の盲検監査委譲で新しい変種を観測。brief が「gate 0 の決定（確かめる主体）を独立解の確定まで伏せる」と宣言したが、その決定は既存規範に従って board の in-flight 節と隣接 issue #293 本文へ正本化済みで、監査者への読了指定リスト自体が下流の口になった（2経路）。slot・引数でなく「読ませる資料の一覧」が受け口だった点が既知2例からの拡張。item を注入されていた監査者が入力の汚染を自分で検出し A1 冒頭で開示して監査は成立（教訓に従った側の実働）。適用形 =「盲検委譲では、伏せる情報がその決定の正本化先に既に書かれていないかを brief 発行前に機械的に確かめる」（同 discussion §10）"
 exclusions:
   - "遮断した経路が単一の層で完結し、下流に呼び出し口が存在しないケース"
   - "下流の口が機械的に列挙・検証できるケース（slot の allow-list を validator が強制できる形なら、NL の注意ではなく guard 側で塞ぐ）"
