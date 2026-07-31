@@ -113,14 +113,86 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, model_resolved_source, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
+├── claude-raw.json     # Claude の生 JSON（jq がある場合のみ。回答本文はここから取り出される）
 ├── claude-stderr.txt   # Claude の stderr
-├── claude-meta.txt     # メタデータ（model_requested, effort_requested を含む）
+├── claude-meta.txt     # メタデータ（model_requested, effort_requested, model_resolved, models_all, body_source を含む）
 ├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
 ├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
-└── cursor-meta.txt     # メタデータ（model_requested 含む。--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（model_requested, model_resolved 含む。--cursor 時のみ）
 ```
+
+## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
+
+SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor の既定は `auto` で実行時に選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
+
+各レーンの meta には次のキーが入る。
+
+| キー | 意味 |
+|---|---|
+| `model_requested` | 起動時に要求した値。従来どおりで変わらない |
+| `model_resolved` | 解決後のモデル ID、または `unavailable:<種別>` |
+| `model_resolved_source` | `model_resolved` の出所。値の確からしさがレーンごとに違うので明示する |
+| `models_all` | claude のみ。その実行で使われた全モデル ID（補助モデルを含む） |
+| `body_source` | claude のみ。回答本文をどこから取り出したか |
+
+### レーンごとの確からしさ（同じ `model_resolved` でも強さが違う）
+
+| レーン | `model_resolved_source` | 意味 |
+|---|---|---|
+| claude | `cli-json` | **実際に使われたモデルの観測値。** `--output-format json` の `.modelUsage` は使用実績をモデル ID ごとに持つので、エイリアス解決の結果がそのまま出る |
+| codex | `config` | **観測値ではない。** 要求値がそれならその値、無ければ `~/.codex/config.toml` の `model` を読んだ値である。実行後に確認したわけではないので、設定と実際が食い違えば嘘になる |
+| cursor | `none` | 取得していない（下記） |
+
+**codex の `model_resolved` を「実行されたモデルの記録」として引用しないこと。** 証跡として引くときは claude より一段弱い値である。
+
+### `unavailable` の種別（空欄にはしない）
+
+取得できなかった場合もキーは必ず書かれる。空欄にすると「記録し忘れた」のか「取得できなかった」のかが区別できなくなるためである。種別は理由ごとに分かれている。
+
+| 値 | 意味 |
+|---|---|
+| `unavailable:cli-not-exposed` | CLI が解決後のモデルを出力しない（cursor が常にこれ） |
+| `unavailable:query-failed` | `jq` が無い、または動作しない。**環境エラー** |
+| `unavailable:parse-failed` | 出力が JSON として読めなかった（タイムアウトで途中で切れた場合など） |
+| `unavailable:no-modelusage` | JSON は読めたが `.modelUsage` が無かった。**データ不在**であって失敗ではない |
+
+`query-failed`（環境エラー）と `no-modelusage`（データ不在）は意図的に別の値である。ここを混ぜると、取得できなかった理由が読めなくなる。
+
+### cursor の解決後モデルを手で調べる手順
+
+**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（既定の `auto` では `Auto Balance` としか出ない）。
+
+具体名は Cursor 内部の SQLite に残っており、手で辿れば取得できる。**ただしこれは公開された形式ではなく、Cursor の更新で変わりうる。** 自動記録がこれに依存していないのは意図的な判断である（内部形式への無言の依存を作らないため）。
+
+必要になったときは次の手順で辿る。`--output-format json` か `stream-json` で走らせて `session_id` を得ることが前提になる。
+
+```bash
+# 1. session_id を得る（text 形式では出ないので json 系で走らせる）
+SID=$(jq -r 'select(.session_id) | .session_id' <cursor の生出力> | awk 'NR==1')
+
+# 2. session_id からセッションの保管場所を引く
+D=$(find ~/.cursor/chats -maxdepth 2 -type d -name "$SID" -print -quit)
+
+# 3. 具体的なモデル ID を取り出す
+sqlite3 "$D/store.db" "select data from blobs;" | grep -oE '"modelName":"[^"]+"' | sort -u
+```
+
+### `auto` は実行ごとに解決先が変わる（レーンの多様性を読むときの注意）
+
+同一プロンプト・同一条件で `auto` を3回走らせ、解決先を上の手順で確認した実測がある。
+
+| 実行 | 解決先 |
+|---|---|
+| 1回目（`auto`） | `cursor-grok-4.5-high` |
+| 2回目（`auto`） | `cursor-grok-4.5-high` |
+| 3回目（`auto`） | `composer-2.5` |
+
+**同じ `model_requested=auto` でも実行ごとに違うモデルへ解決される。** ここから2つ言える。
+
+- 過去の SO 出力について、`model_requested=auto` から解決先を事後に推測してはいけない。記録が無ければ分からない、が正しい。
+- **「他族レーンを混ぜた」という多様性の主張は、tool の別までしか保証しない。** cursor が実際に何に解決されたかを確認していない限り、別のレーンと同じ基盤モデルだった可能性は否定できない。多様性を根拠にするなら、上の手動手順で確認するか、主張の強さを落とすこと。
 
 ## 結果読み込み手順
 

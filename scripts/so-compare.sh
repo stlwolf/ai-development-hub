@@ -298,6 +298,14 @@ if $RUN_CURSOR && ! command -v "$CURSOR_CMD" &>/dev/null; then
     exit 1
 fi
 
+# claude の解決後モデル記録（#295）は --output-format json と jq に依存する。
+# jq が無ければ従来どおり text 形式で実行する。モデル記録は付随情報であり、
+# そのために回答本文の取得を落とすことはしない。
+CLAUDE_JSON_MODE=true
+if ! command -v jq &>/dev/null; then
+    CLAUDE_JSON_MODE=false
+fi
+
 # --- ワークスペースパスをプロンプトに追記 ---
 if [[ -n "$WORKSPACE" ]]; then
     PROMPT="${PROMPT}"$'\n\nワークスペース: '"$WORKSPACE"$'\n上記パス配下のファイルを参照して回答してください。'
@@ -436,6 +444,132 @@ resolve_codex_model() {
     fi
 }
 
+# --- claude の解決後モデル抽出（#295） ---
+#
+# claude の --output-format json は .modelUsage を返す。これは「実際に使われた
+# モデル ID」をキーに持つオブジェクトで、エイリアス（opus / sonnet 等）と CLI 既定が
+# 解決された後の値である。要求値からは確定できない情報がここで確定する。
+#
+# 注意が2点ある。
+#  1. .modelUsage は補助用途のモデル（haiku 等）を含む複数キーを持つ。回答を書いた
+#     主モデルを選ぶ必要があるので、トークン投入量（input + cache 読み + cache 作成）が
+#     最大のものを主モデルとする。選定が経験則である以上 models_all も併記し、
+#     後から検証できるようにする。
+#  2. 取得できなかった場合、環境エラー（jq が動かない）とデータ不在（.modelUsage が
+#     無い）を別種別として記録する。ここを潰すと「記録漏れ」と「取得不能」が
+#     区別できなくなり、#295 が塞ごうとしている穴を実装側で再生産する。
+#
+# 結果は以下のグローバルへ格納する。
+#   CLAUDE_MODEL_RESOLVED : 解決後モデル ID または unavailable:<種別>
+#   CLAUDE_MODELS_ALL     : 使われた全モデル ID（カンマ区切り）または unavailable:<種別>
+extract_claude_models() {
+    local raw="$1" errf="$2"
+    local rc=0
+
+    CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+    CLAUDE_MODELS_ALL="unavailable:parse-failed"
+
+    if ! command -v jq &>/dev/null; then
+        CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+        CLAUDE_MODELS_ALL="unavailable:query-failed"
+        return 0
+    fi
+    if [[ ! -s "$raw" ]]; then
+        CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+        CLAUDE_MODELS_ALL="unavailable:parse-failed"
+        return 0
+    fi
+
+    # 入力が JSON として読めるか確認する。読めない場合、それが「出力が壊れている」のか
+    # 「jq 自体が動かない」のかを canary で切り分ける。推測で種別を決めない。
+    jq -e 'type == "object"' "$raw" >/dev/null 2>>"$errf" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        local canary_rc=0
+        printf '{}' | jq -e 'type == "object"' >/dev/null 2>>"$errf" || canary_rc=$?
+        if [[ $canary_rc -ne 0 ]]; then
+            # jq は存在するが正常に動作していない = 環境エラー
+            CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+            CLAUDE_MODELS_ALL="unavailable:query-failed"
+        else
+            # jq は動く。つまり入力側が JSON として壊れている
+            CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+            CLAUDE_MODELS_ALL="unavailable:parse-failed"
+        fi
+        return 0
+    fi
+
+    # JSON としては読めた。.modelUsage が無いのはデータ不在であって失敗ではない。
+    rc=0
+    jq -e 'has("modelUsage") and (.modelUsage | type == "object") and (.modelUsage | length > 0)' \
+        "$raw" >/dev/null 2>>"$errf" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        CLAUDE_MODEL_RESOLVED="unavailable:no-modelusage"
+        CLAUDE_MODELS_ALL="unavailable:no-modelusage"
+        return 0
+    fi
+
+    # 主モデル = トークン投入量が最大のキー。
+    local primary="" all=""
+    rc=0
+    primary="$(jq -r '
+        .modelUsage
+        | to_entries
+        | max_by(
+            ((.value.inputTokens // 0)
+             + (.value.cacheReadInputTokens // 0)
+             + (.value.cacheCreationInputTokens // 0))
+          )
+        | .key
+    ' "$raw" 2>>"$errf")" || rc=$?
+    if [[ $rc -ne 0 || -z "$primary" || "$primary" == "null" ]]; then
+        CLAUDE_MODEL_RESOLVED="unavailable:no-modelusage"
+        CLAUDE_MODELS_ALL="unavailable:no-modelusage"
+        return 0
+    fi
+
+    rc=0
+    all="$(jq -r '.modelUsage | keys | join(",")' "$raw" 2>>"$errf")" || rc=$?
+    if [[ $rc -ne 0 || -z "$all" ]]; then
+        all="$primary"
+    fi
+
+    CLAUDE_MODEL_RESOLVED="$primary"
+    CLAUDE_MODELS_ALL="$all"
+    return 0
+}
+
+# claude の json 出力から回答本文だけを取り出して stdout.txt へ書く。
+#
+# <tool>-stdout.txt は so-verdict.sh（oe-refute / oe-review）が VERDICT / REASON を
+# 抽出する入力であり、skill / command からも回答本文として読まれる。したがって
+# 出力形式を json にしても、このファイルは平文の本文でなければならない。
+#
+# 取り出しに失敗したら生の出力をそのまま複写する。タイムアウトで json が途中で
+# 切れた場合に本文が丸ごと消え、timeout_partial が timeout_empty に化けて
+# 余計なリトライを誘発するのを防ぐ。
+# 戻り値: 0 = 取り出せた / 1 = 生出力へ退避した
+extract_claude_body() {
+    local raw="$1" dest="$2" errf="$3"
+    local rc=0
+
+    if ! command -v jq &>/dev/null || [[ ! -s "$raw" ]]; then
+        cp "$raw" "$dest" 2>>"$errf" || : > "$dest"
+        return 1
+    fi
+
+    jq -r 'if has("result") and (.result != null) then .result else empty end' \
+        "$raw" > "${dest}.tmp" 2>>"$errf" || rc=$?
+
+    if [[ $rc -eq 0 && -s "${dest}.tmp" ]]; then
+        mv "${dest}.tmp" "$dest"
+        return 0
+    fi
+
+    rm -f "${dest}.tmp"
+    cp "$raw" "$dest" 2>>"$errf" || : > "$dest"
+    return 1
+}
+
 # --- 実行関数 ---
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
@@ -473,6 +607,10 @@ run_codex() {
         echo "tool=codex"
         echo "model_requested=${CODEX_MODEL:-default}"
         echo "model_resolved=$model_resolved"
+        # codex の model_resolved は resolve_codex_model() が要求値または
+        # ~/.codex/config.toml を読んで組み立てた値であり、実行後の観測ではない。
+        # レーンによって model_resolved の確からしさが違うので出所を明示する（#295）。
+        echo "model_resolved_source=config"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -498,14 +636,27 @@ run_claude() {
     if [[ -n "$WORKSPACE" ]]; then
         claude_args+=("--add-dir" "$WORKSPACE")
     fi
-    claude_args+=("--output-format" "text")
+    # 解決後モデルを記録するため json で受ける（#295）。jq が無い環境では
+    # 従来どおり text で受け、モデル記録だけを諦める。
+    if $CLAUDE_JSON_MODE; then
+        claude_args+=("--output-format" "json")
+    else
+        claude_args+=("--output-format" "text")
+    fi
     if $CLAUDE_WEB; then
         # -p (print) モードは対話的承認ができないため、WebFetch を明示許可する必要がある
         claude_args+=("--allowed-tools=WebFetch")
     fi
 
+    local claude_capture="$OUT_DIR/claude-stdout.txt"
+    local claude_errmeta="$OUT_DIR/claude-modelmeta-stderr.txt"
+    if $CLAUDE_JSON_MODE; then
+        claude_capture="$OUT_DIR/claude-raw.json"
+        : > "$claude_errmeta"
+    fi
+
     if timeout "$tool_timeout" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
-        > "$OUT_DIR/claude-stdout.txt" 2> "$OUT_DIR/claude-stderr.txt"; then
+        > "$claude_capture" 2> "$OUT_DIR/claude-stderr.txt"; then
         exit_code=0
     else
         exit_code=$?
@@ -513,6 +664,24 @@ run_claude() {
 
     end=$(date +%s)
     elapsed=$((end - start))
+
+    # 本文の取り出しとモデル抽出は classify_result より前に行う。
+    # classify_result は claude-stdout.txt の非空判定に依存しているため。
+    local body_source="direct"
+    local model_source="none"
+    CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+    CLAUDE_MODELS_ALL="unavailable:query-failed"
+    if $CLAUDE_JSON_MODE; then
+        model_source="cli-json"
+        if extract_claude_body "$claude_capture" "$OUT_DIR/claude-stdout.txt" "$claude_errmeta"; then
+            body_source="json-result"
+        else
+            body_source="raw-fallback"
+        fi
+        extract_claude_models "$claude_capture" "$claude_errmeta"
+        # 診断が出ていなければ空ファイルを残さない
+        [[ -s "$claude_errmeta" ]] || rm -f "$claude_errmeta"
+    fi
 
     local timeout_status
     timeout_status=$(classify_result "claude" "$exit_code")
@@ -523,6 +692,10 @@ run_claude() {
         echo "tool=claude"
         echo "model_requested=${CLAUDE_MODEL:-default}"
         echo "effort_requested=${CLAUDE_EFFORT:-default}"
+        echo "model_resolved=$CLAUDE_MODEL_RESOLVED"
+        echo "models_all=$CLAUDE_MODELS_ALL"
+        echo "model_resolved_source=$model_source"
+        echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -564,6 +737,14 @@ run_cursor() {
     {
         echo "tool=cursor"
         echo "model_requested=${CURSOR_MODEL:-default}"
+        # cursor CLI は解決後のモデルを出力しない。json / stream-json に出る model は
+        # 表示名（既定の auto では "Auto Balance"）であって具体的なモデル ID ではない。
+        # 具体名は Cursor 内部の SQLite（~/.cursor/chats/**/store.db）にあるが、
+        # 非公開の内部形式なので自動では依存しない（owner 判断・#295）。
+        # 手動で辿る手順は canonical/skills/so-compare/SKILL.md に記載している。
+        # 空欄にはしない。空欄だと記録漏れと取得不能が区別できなくなる。
+        echo "model_resolved=unavailable:cli-not-exposed"
+        echo "model_resolved_source=none"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
