@@ -86,6 +86,16 @@ SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_CLAUDE_TIMEOUT="${SO_CLAUDE_TIMEOUT:-1200}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
 
+# タイムアウト値は timeout コマンドと awk の両方へ渡る。非数値だと awk が 0 を返し、
+# リトライが `timeout 0`（＝無制限）になって永久に待つ。入口で弾く。
+for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
+    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: ${_t_var} は正の整数（秒）で指定してください: ${!_t_var}" >&2
+        exit 1
+    fi
+done
+unset _t_var
+
 # レーンごとの基準タイムアウト。リトライ時間の算出にも使う。
 base_timeout_for() {
     case "$1" in
