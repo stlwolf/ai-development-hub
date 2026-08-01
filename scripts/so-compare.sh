@@ -37,8 +37,9 @@ Options:
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
   SO_TIMEOUT       codex / cursor のタイムアウト秒数（整数、デフォルト: 240）
-  SO_CLAUDE_TIMEOUT claude のタイムアウト秒数（整数、デフォルト: 900）
-                   claude は同じプロンプトでも他レーンの2倍以上かかるため既定を分けている
+  SO_CLAUDE_TIMEOUT claude のタイムアウト秒数（整数、デフォルト: 1200）
+                   レビュー級の課題では claude が他レーンより大幅に長くかかる実測が
+                   あるため既定を分けている（詳細は so-compare skill）
   SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
   SO_CLAUDE_MODEL  Claude のデフォルトモデル（--claude-model で上書き可）
   SO_CODEX_MODEL   Codex のデフォルトモデル（--codex-model で上書き可）
@@ -86,8 +87,14 @@ SO_TIMEOUT="${SO_TIMEOUT:-240}"
 SO_CLAUDE_TIMEOUT="${SO_CLAUDE_TIMEOUT:-1200}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
 
-# タイムアウト値は timeout コマンドと awk の両方へ渡る。非数値だと awk が 0 を返し、
-# リトライが `timeout 0`（＝無制限）になって永久に待つ。入口で弾く。
+# タイムアウト値は timeout コマンドと awk の両方へ渡るので、入口で正の整数だけを通す。
+# 実際に到達しうる壊れ方は次の2つである（いずれも実機で確認した）。
+#   - `0` は timeout(1) では「制限なし」の意味なので、初回から無制限に待つ。
+#   - `5m` / `300s` / `0.1` は timeout(1) が受理する一方、awk では別の値になる。
+#     `5m * 1.5` は数値5と未初期化変数 m の連接で "50"、`0.1 * 1.5` は %.0f で 0。
+#     クラッシュせず黙ってリトライ秒数が化けるので、こちらのほうが質が悪い。
+# なお非数値（`abc` 等）は timeout(1) が exit 125 で即座に落ち、classify_result が
+# timeout_empty とみなすのは exit 124 だけなので、リトライにも awk にも届かない。
 for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
     if [[ ! "${!_t_var}" =~ ^[1-9][0-9]*$ ]]; then
         echo "Error: ${_t_var} は正の整数（秒）で指定してください: ${!_t_var}" >&2
@@ -102,6 +109,22 @@ base_timeout_for() {
         claude) printf '%s\n' "$SO_CLAUDE_TIMEOUT" ;;
         *)      printf '%s\n' "$SO_TIMEOUT" ;;
     esac
+}
+
+# リトライ時のタイムアウト。
+# codex / cursor は初回の基準がきつめなので ×1.5 の逃し弁を残す（実際、初回が
+# timeout_empty でリトライに救われる例が観測されている）。
+# claude は初回の基準を実測から十分に取ってある。そこで出力ゼロだったなら
+# 「深く考えている」より「止まっている」公算が高く、さらに1.5倍を張る根拠が無い。
+# 同じ基準でもう一度だけ試し、最悪待ち時間が膨らむのを抑える。
+retry_timeout_for() {
+    local tool="$1" base
+    base="$(base_timeout_for "$tool")"
+    if [[ "$tool" == "claude" ]]; then
+        printf '%s\n' "$base"
+    else
+        awk "BEGIN {printf \"%.0f\", $base * $SO_RETRY_TIMEOUT_FACTOR}"
+    fi
 }
 
 # --- カラー出力（tty 時のみ） ---
@@ -632,7 +655,7 @@ extract_claude_body() {
 # --- 実行関数 ---
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for codex)}"
     echo "[Codex] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -680,7 +703,7 @@ run_codex() {
 
 # shellcheck disable=SC2120
 run_claude() {
-    local tool_timeout="${1:-$SO_CLAUDE_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for claude)}"
     echo "[Claude] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -768,7 +791,7 @@ run_claude() {
 
 # shellcheck disable=SC2120
 run_cursor() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for cursor)}"
     echo "[Cursor] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -842,7 +865,7 @@ for tool in codex claude cursor; do
     [[ -f "$meta" ]] || continue
     status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
     if [[ "$status" == "timeout_empty" ]]; then
-        retry_timeout=$(awk "BEGIN {printf \"%.0f\", $(base_timeout_for "$tool") * $SO_RETRY_TIMEOUT_FACTOR}")
+        retry_timeout=$(retry_timeout_for "$tool")
         echo ""
         echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
         # 元の結果をバックアップ
