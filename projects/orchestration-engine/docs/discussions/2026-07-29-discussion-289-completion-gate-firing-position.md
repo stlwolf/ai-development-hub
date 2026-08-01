@@ -16,7 +16,7 @@ related:
     reason: "本 discussion の構造的発見から park された後続（起動を保証する層・engine 増分）"
   - type: refs
     ref: "projects/orchestration-engine/docs/discussions/2026-08-01-discussion-293-brief-transport-verification.md"
-    reason: "後続 #293。本 discussion の「受け皿は承認時の義務コンパイルだけ」を受け渡し経路という別の位置で覆せるか試し、覆せなかった記録。三つの arc の収束は同 doc §10"
+    reason: "後続 #293。本 discussion の「受け皿は承認時の義務コンパイルだけ」を受け渡し経路という別の位置で覆せるか試し、覆せなかった記録。#289 / #290 / #293 の3 arc は「規範と規律の層では届かない」という否定側で一致する一方、肯定側の答えは割れている（#290 だけは義務コンパイルに到達していない）— その整理は同 doc §10"
 tags: [orchestration, delegation, gate, exploration, negative-knowledge]
 ---
 
