@@ -220,7 +220,7 @@ tier: **heavy**。実行中に撤回があり（`本文: N5: 実装SO で自分�
 - **Context / なぜ**: `本文: 前提（この単位に入る前に決まっていたこと）` に自己完結で記載。
 - **次の消費者**: (1) SO の判定を証跡として引くすべての作業 — `model_resolved` の強さがレーンで違うことを知る必要がある。(2) #263（4層ドキュメントの文体をモデル差で実測する調査）— どのモデルが何を言ったかが主題なので、この記録が前提になる。(3) `canonical/` の sync を回す人 — SKILL.md が変わったので配布が要る。
 - **status**: draft → stable。達成度は **達成**（受け入れ基準は #295 の4条件すべてを実機証跡つきで満たした。ただし cursor の自動取得は owner 判断で範囲外なので、「取得不能を記録する」形での達成である）。
-- **evidence anchor**: SO の生出力は `tmp/so-295-impl/`・`tmp/so-295-impl-cursor/`・検証は `tmp/so-295-verify/` に出したが、**`tmp/` は gitignored で消える**。したがって要点は本文と PR #296 本文へ転記済み（3レーンの meta 実測値、`TOTAL_LANES=3 SURVIVED=3`、engine テスト `pass=63` / `pass=64`、SO 指摘6件の内訳）。パスは再現用の記録であって参照先ではない。
+- **evidence anchor**: SO の生出力は `tmp/so-295-impl/`・`tmp/so-295-impl-cursor/`・検証は `tmp/so-295-verify/` に出したが、**`tmp/` は gitignored で消える**。したがって要点は本文と PR #296 本文へ転記済み（3レーンの meta 実測値、`TOTAL_LANES=3 SURVIVED=3`、engine テスト2本がいずれも失敗ゼロ（`test_oe_refute.sh` = `pass=63 fail=0`、`test_oe_review.sh` = `pass=64 fail=0`。master でも同じ）、SO 指摘6件の内訳）。パスは再現用の記録であって参照先ではない。
 - **SO 証跡**: 実装SO は `本文: N5: 実装SO で自分の設計の穴が2つ出た` に指摘と対応を転記。
 - **Step4（closure の外部チェック）**: 実施した。`so-compare --codex-only` で closure 節だけを対象に、選択的省略 / routing 網羅 / 揮発パス / back-propagation の4点を確認させた（145 秒・`gpt-5.6-sol`）。**結果は「問題あり」で、2件の不備を検出された。** (1)「事実・失敗」節が指摘・撤回を pointer 付き2行に畳んでおり、6件の SO 指摘のうち実質2件しか項目として現れていなかった。(2)「残課題」の sync 項目の行き先が担当者と時期の記述にとどまり、指定された3形式（Issue / 別 doc / 追わない宣言）のいずれでもなかった。**どちらもこの closure で修正済み。** 揮発パスと back-propagation は問題なしと判定された。生出力は `tmp/so-295-closure/` にあるが `tmp/` は消えるので、要点はこの項目に転記した。
 - **注入された knowledge の id**: `01KYA7C9NN4VDM7H2NYXZB2PSX` / `01KYA7C9M4EN1EZM3HBEN5WDRP`。両方に観測を1レコードずつ書き戻した（`#295`・`externally_verified` / `followed`）。`validate-knowledge` は両方 pass。
