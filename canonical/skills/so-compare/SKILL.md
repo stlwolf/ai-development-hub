@@ -7,7 +7,7 @@ depends:
 
 # SO Compare — セカンドオピニオン比較
 
-> **SO モード: 弱 SO**（強/弱の定義は `canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（**実返却が 1 レーン以上**）=**disclose して進む**（advisory）／**"0"（全レーン実返却なし）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。※`success_empty`〔exit0 だが空〕は機構上 partial（exit1）計上だが、**全レーンがこれ＝実返却ゼロなら "0" 扱い**（consumer 判定・`so-compare.sh` は success_empty を PARTIAL 集計）。機構: `SO_TIMEOUT`（既定 240）は**初回試行の基準**・`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
+> **SO モード: 弱 SO**（強/弱の定義は `canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（**実返却が 1 レーン以上**）=**disclose して進む**（advisory）／**"0"（全レーン実返却なし）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。※`success_empty`〔exit0 だが空〕は機構上 partial（exit1）計上だが、**全レーンがこれ＝実返却ゼロなら "0" 扱い**（consumer 判定・`so-compare.sh` は success_empty を PARTIAL 集計）。機構: `SO_TIMEOUT`（既定 240・codex / cursor）と `SO_CLAUDE_TIMEOUT`（既定 1200・claude）が**初回試行の基準**・`timeout_empty` 時のみ **そのレーンの基準の** `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。**claude だけ既定が長い理由は「レーンごとの所要時間」節を見よ**。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
 
 ## スクリプトの場所
 
@@ -48,7 +48,8 @@ so-compare [OPTIONS] "プロンプト"
 
 | 変数 | 説明 | デフォルト |
 |------|------|-----------|
-| `SO_TIMEOUT` | 各ツールのタイムアウト秒数 | `240` |
+| `SO_TIMEOUT` | codex / cursor のタイムアウト秒数 | `240` |
+| `SO_CLAUDE_TIMEOUT` | claude のタイムアウト秒数（claude だけ既定が長い。下記「レーンごとの所要時間」を見よ） | `1200` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
 | `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `auto` |
 | `SO_CLAUDE_MODEL` | Claude のデフォルトモデル（`--claude-model` で上書き可） | CLI 既定 |
@@ -113,14 +114,100 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, model_resolved_source, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
 ├── claude-stdout.txt   # Claude の回答
+├── claude-raw.json     # Claude の生 JSON（jq がある場合のみ。回答本文はここから取り出される）
 ├── claude-stderr.txt   # Claude の stderr
-├── claude-meta.txt     # メタデータ（model_requested, effort_requested を含む）
+├── claude-meta.txt     # メタデータ（model_requested, effort_requested, model_resolved, models_all, model_resolved_source, body_source を含む）
 ├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
 ├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
-└── cursor-meta.txt     # メタデータ（model_requested 含む。--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（model_requested, model_resolved, model_resolved_source 含む。--cursor 時のみ）
 ```
+
+## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
+
+SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor の既定は `auto` で実行時に選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
+
+各レーンの meta には次のキーが入る。
+
+| キー | 意味 |
+|---|---|
+| `model_requested` | 起動時に要求した値。従来どおりで変わらない |
+| `model_resolved` | 解決後のモデル ID、または `unavailable:<種別>` |
+| `model_resolved_source` | `model_resolved` を**どこから取ろうとしたか**。値の確からしさがレーンごとに違うので明示する。`model_resolved` が `unavailable:*` のときは何も取れていない（出所が書いてあること自体は取得成功を意味しない） |
+| `models_all` | claude のみ。その実行で使われた全モデル ID（補助モデルを含む） |
+| `body_source` | claude のみ。回答本文をどこから取り出したか。`json-result`（JSON の `.result` から取り出した）／`direct`（`jq` が無く従来の text 形式で受けた）／`extract-failed`（取り出せず `claude-stdout.txt` は空。生の出力は `claude-raw.json` に残る） |
+
+### レーンごとの確からしさ（同じ `model_resolved` でも強さが違う）
+
+| レーン | `model_resolved_source` | 意味 |
+|---|---|---|
+| claude | `cli-json` | `--output-format json` の `.modelUsage` 由来。**どのモデルが動いたかは観測値**で、エイリアス解決の結果がそのまま出る。ただし下記のとおり `model_resolved` 単体は推定を含む |
+| codex | `config` | **観測値ではない。** 要求値がそれならその値、無ければ `~/.codex/config.toml` の `model` を読んだ値である。実行後に確認したわけではないので、設定と実際が食い違えば嘘になる |
+| cursor | `none` | 取得していない（下記） |
+
+**codex の `model_resolved` を「実行されたモデルの記録」として引用しないこと。** 証跡として引くときは claude より一段弱い値である。
+
+### claude の `model_resolved` は観測と推定が混ざっている
+
+同じ claude レーンの中でも、2 つのキーで強さが違う。
+
+- **`models_all` は観測値である。** その実行で実際に使われたモデル ID がすべて並ぶ。claude は補助用途で別のモデル（haiku 等）を併用するため、通常は複数になる。
+- **`model_resolved` は推定である。** 複数のうち「回答を書いた主モデルはどれか」を、トークン投入量（input + cache 読み + cache 作成）が最大のキー、という規則で選んでいる。CLI が「これが主モデルだ」と言っているわけではない。
+
+この推定が外れる条件がある。補助モデルが何度も呼ばれて累積量が主モデルを超えた場合、cache 生成を別のモデルが担った場合、実行途中でモデルが切り替わった場合、合計が同点の場合などである。
+
+**証跡として厳密に引くときは `models_all` を併記すること。** `model_resolved` だけを引いて「このモデルが答えた」と断定しない。
+
+### `unavailable` の種別（空欄にはしない）
+
+取得できなかった場合もキーは必ず書かれる。空欄にすると「記録し忘れた」のか「取得できなかった」のかが区別できなくなるためである。種別は理由ごとに分かれている。
+
+| 値 | 意味 |
+|---|---|
+| `unavailable:cli-not-exposed` | CLI が解決後のモデルを出力しない（cursor が常にこれ） |
+| `unavailable:query-failed` | `jq` が無い、または実行に失敗した。**環境エラー** |
+| `unavailable:parse-failed` | 出力が JSON として読めなかった（タイムアウトで途中で切れた場合など） |
+| `unavailable:no-modelusage` | JSON は読めたが `.modelUsage` が無かった。**データ不在**であって失敗ではない |
+| `unavailable:schema-unexpected` | `.modelUsage` はあるが中身が想定の形でなく、モデル ID を取り出せなかった |
+
+この 4 つ（`cli-not-exposed` を除く）は意図的に別の値にしてある。**環境エラー・データ不在・形の不一致は、原因も対処も違う。** ひとつの `unavailable` に潰すと、取得できなかった理由が読めなくなり、記録漏れとの区別もつかなくなる。
+
+判定は `jq` の終了コードで機械的に分けている。判定式が正常に `false` を返した場合（終了コード 1）だけがデータ不在で、実行そのものが失敗した場合（終了コード 2 以上）は環境エラーとして扱う。両者をまとめて「非ゼロ」として扱わない。
+
+### cursor の解決後モデルを手で調べる手順
+
+**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（既定の `auto` では `Auto Balance` としか出ない）。
+
+具体名は Cursor 内部の SQLite に残っており、手で辿れば取得できる。**ただしこれは公開された形式ではなく、Cursor の更新で変わりうる。** 自動記録がこれに依存していないのは意図的な判断である（内部形式への無言の依存を作らないため）。
+
+必要になったときは次の手順で辿る。`--output-format json` か `stream-json` で走らせて `session_id` を得ることが前提になる。
+
+```bash
+# 1. session_id を得る（text 形式では出ないので json 系で走らせる）
+SID=$(jq -r 'select(.session_id) | .session_id' <cursor の生出力> | awk 'NR==1')
+
+# 2. session_id からセッションの保管場所を引く
+D=$(find ~/.cursor/chats -maxdepth 2 -type d -name "$SID" -print -quit)
+
+# 3. 具体的なモデル ID を取り出す
+sqlite3 "$D/store.db" "select data from blobs;" | grep -oE '"modelName":"[^"]+"' | sort -u
+```
+
+### `auto` は実行ごとに解決先が変わる（レーンの多様性を読むときの注意）
+
+同一プロンプト・同一条件で `auto` を3回走らせ、解決先を上の手順で確認した実測がある。
+
+| 実行 | 解決先 |
+|---|---|
+| 1回目（`auto`） | `cursor-grok-4.5-high` |
+| 2回目（`auto`） | `cursor-grok-4.5-high` |
+| 3回目（`auto`） | `composer-2.5` |
+
+**同じ `model_requested=auto` でも実行ごとに違うモデルへ解決される。** ここから2つ言える。
+
+- 過去の SO 出力について、`model_requested=auto` から解決先を事後に推測してはいけない。記録が無ければ分からない、が正しい。
+- **「他族レーンを混ぜた」という多様性の主張は、tool の別までしか保証しない。** cursor が実際に何に解決されたかを確認していない限り、別のレーンと同じ基盤モデルだった可能性は否定できない。多様性を根拠にするなら、上の手動手順で確認するか、主張の強さを落とすこと。
 
 ## 結果読み込み手順
 
@@ -135,6 +222,57 @@ tmp/so-YYYYMMDD-HHMMSS/
 | 修正方針 | ... | ... | ... | ✅/❌ |
 | リスク対応 | ... | ... | ... | ✅/❌ |
 ```
+
+## レーンごとの所要時間（claude だけ既定タイムアウトが長い理由）
+
+**「この環境では claude レーンは返らない」は誤りである。** 返らなかったのは環境が非対応だからではなく、共通の既定タイムアウト（240秒）が claude には短すぎたためである。
+
+### 実測値
+
+レビュー級のプロンプト2件について、同一プロンプトを各レーンへ投げたときの所要時間である。
+
+| プロンプト | codex | cursor | claude |
+|---|---|---|---|
+| 設計レビュー（7.4KB） | 296秒 | 254秒 | **652秒** |
+| 実装レビュー（1.4KB） | 241秒 | 334秒 | **777秒 / 739秒**（2回） |
+
+読み取れることが4つある。
+
+- **観測した範囲では claude が他レーンの2〜3倍（最大3.2倍）かかった。** ただし実測はこの環境・この日・CLI 既定モデルでのプロンプト2種・claude 側3点にすぎない。モデルや effort、時間帯で比率は動くので、**「claude は常に2〜3倍遅い」と一般化しない**。軽い質問では claude が最速である（下記）。言えるのは「レビュー級の課題では大幅に長かった」までである。
+- **所要時間はプロンプトの大きさに比例しない。** 小さいほうのプロンプト（1.4KB）のほうが長くかかっている。要求される分析の深さが効いていると考えられるが、**この3点から因果を確定はできない**（推測）。いずれにせよ入力量からは見積もれない。
+- **軽い質問なら claude は速い。** 1行の確認では8秒で返っている。遅いのはレビュー級の課題のときだけである。
+- **同じプロンプトでも実行ごとに5%ほど振れる**（777秒と739秒）。実測の最大値ぎりぎりに既定を置くと足りなくなる。
+
+### 通説ができた仕組み
+
+既定の240秒では**3レーンとも返らない**。ところがリトライ（`timeout_empty` のときだけ ×1.5 = 360秒）は codex（296秒）と cursor（254秒）には届き、claude（652〜777秒）には届かない。
+
+その結果、**codex と cursor はリトライで救われ、claude だけが構造的に取り残される**。これが「claude だけ返らない」という観測になり、環境の非対応と解釈されていた。原因は環境ではなく、リトライ幅が2レーンにだけ届いていたことである。
+
+**この誤解には実害が出ている。** 「claude は返らない」という前提で SO を組んだ単位があり、他族2レーンのつもりが事実上2レーンではなく、レーンの多様性の主張が1レーン分弱っていた。
+
+### 対応
+
+claude だけ既定を分けた（`SO_CLAUDE_TIMEOUT` = 1200秒。`SO_TIMEOUT` = 240秒は codex / cursor 用のまま）。
+
+- 一律に引き上げなかったのは、360秒で足りている codex と cursor の失敗検出まで遅くする理由が無いためである。
+- リトライ幅を広げる案を採らなかったのは、初回の240秒を捨ててから長い2回目に入ることになり、成功までの総時間が最も長くなるためである。claude は初回から長くしたほうが速い。
+- 1200秒は最大実測（777秒）に対して約54%の余裕である。
+- **claude のリトライは基準を増やさない**（もう一度1200秒）。codex / cursor の `×1.5` は初回基準がきつい分の逃し弁だが、claude は初回を実測から十分に取ってあるため、そこで出力ゼロなら「遅い」より「止まっている」公算が高く、さらに1.5倍を張る根拠が無い。最悪待ち時間の膨張も抑えられる。
+
+### 未解決: codex / cursor 側の既定（240秒）も実は足りていない
+
+**このタイムアウト分離では codex / cursor の既定を変えていないが、実測はそこにも問題があることを示している。**
+
+上の表のレビュー級4点（codex 296 / 254、cursor 254 / 334）は**すべて240秒を超えている**。つまりレビュー級の SO では、codex と cursor は「240秒を捨ててからリトライ（360秒）で成功する」のが既定の経路になっている。実際、本変更のレビュー時にも codex が初回241秒で `timeout_empty` になり、リトライで返っている。
+
+さらに **cursor の334秒はリトライ上限360秒に対して余裕7%しかない**。同じプロンプトでも5%程度は振れるので、claude で直したばかりの「リトライにも届かず構造的に落ちる」故障モードは、cursor では一歩手前にある。
+
+**レビュー級の SO を投げるときは `SO_TIMEOUT` の引き上げ（400〜480秒程度）を検討すること。** 既定を変えていないのは本 issue の scope 外だからであって、240秒で足りているからではない。
+
+**観測したレビュー級のプロンプトでは、既定のままで claude レーンが返っている。** タイムアウトを手で指定する必要はなかった。環境変数を一切設定せずレビュー級のプロンプトを投げ、`timeout_status=success` / 739秒 / 11748 bytes / リトライなしで返ることを確かめた。
+
+**ただし「必ず返る」保証ではない。** 3点の実測では分布の裾は縛れない。より深い課題で 1200秒 を超えることはありうる。その場合は弱 SO の "0 はなし" フロア（再試行 / escalate）が受け皿になる。**既定の 1200秒 で `timeout_empty` が一度でも観測されたら、既定値を測り直すこと。**
 
 ## プロンプト設計原則
 
@@ -202,5 +340,5 @@ SO 実行前に以下を確認する:
 
 - 実行には `codex` CLI と `claude-safe` が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）
 - Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時はエラー終了）
-- `SO_TIMEOUT` のデフォルトは240秒。大きなプロンプトでタイムアウトする場合は値を増やす
+- `SO_TIMEOUT` のデフォルトは240秒（codex / cursor）。claude は `SO_CLAUDE_TIMEOUT` の1200秒で、既定が分かれている。理由は下記「レーンごとの所要時間」
 - 出力は `tmp/` 配下で gitignore 対象

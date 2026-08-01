@@ -84,7 +84,7 @@ so-compare.sh --with claude,cursor -w "$(pwd)" "プロンプト"
 | `-o DIR` | 出力ディレクトリ指定 |
 | `--prev DIR` | 前回出力を追記（イテレーション用） |
 
-環境変数: `SO_TIMEOUT`（デフォルト: 240秒）、`PREV_MAX_BYTES`（デフォルト: 4000）
+環境変数: `SO_TIMEOUT`（codex / cursor 用。デフォルト: 240秒）、`SO_CLAUDE_TIMEOUT`（claude 用。デフォルト: 1200秒）、`PREV_MAX_BYTES`（デフォルト: 4000）
 
 関連スキル: `canonical/skills/so-compare/SKILL.md`
 

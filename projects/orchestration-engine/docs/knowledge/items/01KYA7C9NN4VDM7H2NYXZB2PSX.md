@@ -8,7 +8,11 @@ prediction: "IO / 環境の失敗（object 欠損・権限・partial clone・フ
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-24-episode-273-nk-match-inject.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-01
+    ref: "#295"
+    state: externally_verified
+    note: "入口だけ切り分け後段の jq 失敗を全部データ不在に落としており、実装SO が予測どおりの誤分類を検出した"
 exclusions:
   - "失敗と空出力が意味的に等価で、区別する必要がないケース"
 ---

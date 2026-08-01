@@ -274,7 +274,7 @@ so:                                     # SO モード（plan で必須・§4.1 
 | **弱 SO** | `so-compare` / `oe-refute` / `oe-review` | 1 周で終了可（iteration は推奨だが任意） | 許容＝**disclose して進む**（advisory） | **不可＝SO 未実施扱い・再試行/escalate**（最低 1 レーン実返却必須＝"0 はなし"） |
 
 - **レーン数・モデル多様性は mode に焼かない**＝都度オプションで指定（直交）。既定のレーンポリシー（設計=3社 codex+cursor+claude / 実装=2社 codex+cursor 等）は `orchestration-toolkit` スキル参照。
-- 機構層（`SO_TIMEOUT`[既定 240]は**初回試行の基準**＝`timeout_empty` 時のみ `×1.5` に延長して**1回リトライ**・#22 の exit 0/1/2 分離・#196 の conservative 集約＝verdict 取れないレーンは `error` で survived を阻む）の上に乗る **consumer ルール**。「timeout で実質 SO をパスできる」を弱 SO の "0 はなし" フロアで塞ぐ。
+- 機構層（`SO_TIMEOUT`[既定 240・codex/cursor]と `SO_CLAUDE_TIMEOUT`[既定 1200・claude]が**初回試行の基準**＝`timeout_empty` 時のみ**1回リトライ**〔codex/cursor は `×1.5`・claude は同じ基準でもう一度〕・#22 の exit 0/1/2 分離・#196 の conservative 集約＝verdict 取れないレーンは `error` で survived を阻む）の上に乗る **consumer ルール**。「timeout で実質 SO をパスできる」を弱 SO の "0 はなし" フロアで塞ぐ。
 - 補足（機構境界）: exit0＋空（`success_empty`）は機構上 **partial に計上**されるため、「最低 1 レーン**実返却**」の担保は機構 exit code でなく **consumer ルール側**が負う。また `oe-refute`/`oe-review` の集約は #196 conservative＝**error レーンがあれば全体 `refuted`（保留）**で、弱 SO の generic partial=disclose より**厳しい側に倒す**（error は disclose せず保留）。
 
 ## 5. ULID 規約

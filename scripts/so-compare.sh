@@ -36,7 +36,10 @@ Options:
 
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
-  SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
+  SO_TIMEOUT       codex / cursor のタイムアウト秒数（整数、デフォルト: 240）
+  SO_CLAUDE_TIMEOUT claude のタイムアウト秒数（整数、デフォルト: 1200）
+                   レビュー級の課題では claude が他レーンより大幅に長くかかる実測が
+                   あるため既定を分けている（詳細は so-compare skill）
   SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
   SO_CLAUDE_MODEL  Claude のデフォルトモデル（--claude-model で上書き可）
   SO_CODEX_MODEL   Codex のデフォルトモデル（--codex-model で上書き可）
@@ -71,7 +74,58 @@ CLAUDE_MODEL="${SO_CLAUDE_MODEL:-}"
 CODEX_MODEL="${SO_CODEX_MODEL:-}"
 CLAUDE_EFFORT="${SO_CLAUDE_EFFORT:-}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
+# claude は同じプロンプトでも他レーンの2〜3倍の時間を要する（実測値は
+# canonical/skills/so-compare/SKILL.md に記載）。共通の既定（240秒）では初回も
+# リトライ（×1.5 = 360秒）も届かないため、claude だけが構造的に返らず、
+# 「この環境では claude レーンは返らない」という誤った通説ができていた。
+# 環境が非対応なのではなく、単にタイムアウトが短かった（#295）。
+#
+# 既定 1200秒 の根拠: レビュー級のプロンプト2件で 652秒 と 777秒 を実測した。
+# 所要はプロンプトの大きさではなく要求される分析の深さで決まり（小さいほうの
+# プロンプトが長くかかった）、事前に読みにくい。最大実測 777秒 に対して約54%の
+# 余裕を取っている。
+SO_CLAUDE_TIMEOUT="${SO_CLAUDE_TIMEOUT:-1200}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
+
+# タイムアウト値は timeout コマンドと awk の両方へ渡るので、入口で正の整数だけを通す。
+# 実際に到達しうる壊れ方は次の2つである（いずれも実機で確認した）。
+#   - `0` は timeout(1) では「制限なし」の意味なので、初回から無制限に待つ。
+#   - `5m` / `300s` / `0.1` は timeout(1) が受理する一方、awk では別の値になる。
+#     `5m * 1.5` は数値5と未初期化変数 m の連接で "50"、`0.1 * 1.5` は %.0f で 0。
+#     クラッシュせず黙ってリトライ秒数が化けるので、こちらのほうが質が悪い。
+# なお非数値（`abc` 等）は timeout(1) が exit 125 で即座に落ち、classify_result が
+# timeout_empty とみなすのは exit 124 だけなので、リトライにも awk にも届かない。
+for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
+    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: ${_t_var} は正の整数（秒）で指定してください: ${!_t_var}" >&2
+        exit 1
+    fi
+done
+unset _t_var
+
+# レーンごとの基準タイムアウト。リトライ時間の算出にも使う。
+base_timeout_for() {
+    case "$1" in
+        claude) printf '%s\n' "$SO_CLAUDE_TIMEOUT" ;;
+        *)      printf '%s\n' "$SO_TIMEOUT" ;;
+    esac
+}
+
+# リトライ時のタイムアウト。
+# codex / cursor は初回の基準がきつめなので ×1.5 の逃し弁を残す（実際、初回が
+# timeout_empty でリトライに救われる例が観測されている）。
+# claude は初回の基準を実測から十分に取ってある。そこで出力ゼロだったなら
+# 「深く考えている」より「止まっている」公算が高く、さらに1.5倍を張る根拠が無い。
+# 同じ基準でもう一度だけ試し、最悪待ち時間が膨らむのを抑える。
+retry_timeout_for() {
+    local tool="$1" base
+    base="$(base_timeout_for "$tool")"
+    if [[ "$tool" == "claude" ]]; then
+        printf '%s\n' "$base"
+    else
+        awk "BEGIN {printf \"%.0f\", $base * $SO_RETRY_TIMEOUT_FACTOR}"
+    fi
+}
 
 # --- カラー出力（tty 時のみ） ---
 if [[ -t 1 ]]; then
@@ -298,6 +352,14 @@ if $RUN_CURSOR && ! command -v "$CURSOR_CMD" &>/dev/null; then
     exit 1
 fi
 
+# claude の解決後モデル記録（#295）は --output-format json と jq に依存する。
+# jq が無ければ従来どおり text 形式で実行する。モデル記録は付随情報であり、
+# そのために回答本文の取得を落とすことはしない。
+CLAUDE_JSON_MODE=true
+if ! command -v jq &>/dev/null; then
+    CLAUDE_JSON_MODE=false
+fi
+
 # --- ワークスペースパスをプロンプトに追記 ---
 if [[ -n "$WORKSPACE" ]]; then
     PROMPT="${PROMPT}"$'\n\nワークスペース: '"$WORKSPACE"$'\n上記パス配下のファイルを参照して回答してください。'
@@ -369,7 +431,7 @@ fi
 if $RUN_CLAUDE && [[ -n "$CLAUDE_MODEL$CLAUDE_EFFORT" ]]; then
     echo "Claude:${CLAUDE_MODEL:+ model=$CLAUDE_MODEL}${CLAUDE_EFFORT:+ effort=$CLAUDE_EFFORT}"
 fi
-echo "タイムアウト: ${SO_TIMEOUT}秒"
+echo "タイムアウト: codex/cursor=${SO_TIMEOUT}秒 claude=${SO_CLAUDE_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
 echo ""
 
@@ -436,10 +498,164 @@ resolve_codex_model() {
     fi
 }
 
+# --- claude の解決後モデル抽出（#295） ---
+#
+# claude の --output-format json は .modelUsage を返す。これは「実際に使われた
+# モデル ID」をキーに持つオブジェクトで、エイリアス（opus / sonnet 等）と CLI 既定が
+# 解決された後の値である。要求値からは確定できない情報がここで確定する。
+#
+# 注意が2点ある。
+#  1. .modelUsage は補助用途のモデル（haiku 等）を含む複数キーを持つ。回答を書いた
+#     主モデルを選ぶ必要があるので、トークン投入量（input + cache 読み + cache 作成）が
+#     最大のものを主モデルとする。選定が経験則である以上 models_all も併記し、
+#     後から検証できるようにする。
+#  2. 取得できなかった場合、環境エラー（jq が動かない）とデータ不在（.modelUsage が
+#     無い）を別種別として記録する。ここを潰すと「記録漏れ」と「取得不能」が
+#     区別できなくなり、#295 が塞ごうとしている穴を実装側で再生産する。
+#
+# 結果は以下のグローバルへ格納する。
+#   CLAUDE_MODEL_RESOLVED : 解決後モデル ID または unavailable:<種別>
+#   CLAUDE_MODELS_ALL     : 使われた全モデル ID（カンマ区切り）または unavailable:<種別>
+extract_claude_models() {
+    local raw="$1" errf="$2"
+    local rc=0
+
+    CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+    CLAUDE_MODELS_ALL="unavailable:parse-failed"
+
+    if ! command -v jq &>/dev/null; then
+        CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+        CLAUDE_MODELS_ALL="unavailable:query-failed"
+        return 0
+    fi
+    if [[ ! -s "$raw" ]]; then
+        CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+        CLAUDE_MODELS_ALL="unavailable:parse-failed"
+        return 0
+    fi
+
+    # 入力が JSON として読めるか確認する。読めない場合、それが「出力が壊れている」のか
+    # 「jq 自体が動かない」のかを canary で切り分ける。推測で種別を決めない。
+    jq -e 'type == "object"' "$raw" >/dev/null 2>>"$errf" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        local canary_rc=0
+        printf '{}' | jq -e 'type == "object"' >/dev/null 2>>"$errf" || canary_rc=$?
+        if [[ $canary_rc -ne 0 ]]; then
+            # jq は存在するが正常に動作していない = 環境エラー
+            CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+            CLAUDE_MODELS_ALL="unavailable:query-failed"
+        else
+            # jq は動く。つまり入力側が JSON として壊れている
+            CLAUDE_MODEL_RESOLVED="unavailable:parse-failed"
+            CLAUDE_MODELS_ALL="unavailable:parse-failed"
+        fi
+        return 0
+    fi
+
+    # JSON としては読めた。次は .modelUsage の有無を見る。
+    # jq -e は「判定が false」なら 1、「実行に失敗」なら 2 以上を返す。この差が
+    # そのままデータ不在と環境エラーの差なので、まとめて非ゼロ扱いにしない。
+    rc=0
+    jq -e 'has("modelUsage") and (.modelUsage | type == "object") and (.modelUsage | length > 0)' \
+        "$raw" >/dev/null 2>>"$errf" || rc=$?
+    if [[ $rc -eq 1 ]]; then
+        # 判定が正常に false を返した = データ不在
+        CLAUDE_MODEL_RESOLVED="unavailable:no-modelusage"
+        CLAUDE_MODELS_ALL="unavailable:no-modelusage"
+        return 0
+    elif [[ $rc -ne 0 ]]; then
+        # jq の実行自体が失敗した = 環境エラー
+        CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+        CLAUDE_MODELS_ALL="unavailable:query-failed"
+        return 0
+    fi
+
+    # ここから先は .modelUsage が存在することが確定している。したがって以降の
+    # 失敗はデータ不在ではなく、想定した形になっていないことを意味する。
+    # 例: inputTokens が数値でないと max_by が加算に失敗する。
+    local primary="" all=""
+    rc=0
+    primary="$(jq -r '
+        .modelUsage
+        | to_entries
+        | max_by(
+            ((.value.inputTokens // 0)
+             + (.value.cacheReadInputTokens // 0)
+             + (.value.cacheCreationInputTokens // 0))
+          )
+        | .key
+    ' "$raw" 2>>"$errf")" || rc=$?
+    if [[ $rc -ne 0 || -z "$primary" || "$primary" == "null" ]]; then
+        CLAUDE_MODEL_RESOLVED="unavailable:schema-unexpected"
+        CLAUDE_MODELS_ALL="unavailable:schema-unexpected"
+        return 0
+    fi
+
+    rc=0
+    all="$(jq -r '.modelUsage | keys | join(",")' "$raw" 2>>"$errf")" || rc=$?
+    if [[ $rc -ne 0 || -z "$all" ]]; then
+        # 主モデルで代用すると失敗が消えるので、失敗は失敗として残す
+        all="unavailable:schema-unexpected"
+    fi
+
+    # meta は 1 行 key=value で読まれる（grep '^key=' | cut -d= -f2）。値に = や
+    # 改行や空白が混ざると行が壊れるので、書く前に形を確かめる。モデル ID は
+    # 外部から来る文字列であり、こちらで保証できるものではない。
+    # パイプで grep へ渡すと早期終了 consumer になるため、bash の正規表現で完結させる。
+    if [[ ! "$primary" =~ ^[A-Za-z0-9._:+-]+$ ]]; then
+        primary="unavailable:schema-unexpected"
+    fi
+    if [[ "$all" != unavailable:* && ! "$all" =~ ^[A-Za-z0-9._:+,-]+$ ]]; then
+        all="unavailable:schema-unexpected"
+    fi
+
+    CLAUDE_MODEL_RESOLVED="$primary"
+    CLAUDE_MODELS_ALL="$all"
+    return 0
+}
+
+# claude の json 出力から回答本文だけを取り出して stdout.txt へ書く。
+#
+# <tool>-stdout.txt は so-verdict.sh（oe-refute / oe-review）が VERDICT / REASON を
+# 抽出する入力であり、skill / command からも回答本文として読まれる。したがって
+# 出力形式を json にしても、このファイルは平文の本文でなければならない。
+#
+# 取り出せなかった場合、stdout は空のままにする。生の json をここへ複写しては
+# いけない。理由が2つある。
+#  1. 生 json をここへ書くと、この平文契約が破れたまま so-verdict.sh の入力になる。
+#  2. 途中で切れた json は非空なので classify_result が timeout_partial と判定し、
+#     timeout_empty 限定のリトライが起きなくなる。text 形式のころの部分出力は
+#     そのまま読める回答だったが、壊れた json は回答として使えない。使えない
+#     ものを「部分的に成功」と扱うと、再取得の機会まで失う。
+# 生の出力は claude-raw.json に残るので、内容が失われるわけではない。
+# 戻り値: 0 = 取り出せた / 1 = 取り出せなかった（stdout は空）
+extract_claude_body() {
+    local raw="$1" dest="$2" errf="$3"
+    local rc=0
+
+    : > "$dest"
+    if ! command -v jq &>/dev/null || [[ ! -s "$raw" ]]; then
+        return 1
+    fi
+
+    # .result が文字列のときだけ受け取る。object や array を jq -r に渡すと
+    # JSON を整形して出力してしまい、平文のはずの stdout.txt が JSON になる。
+    jq -r 'if has("result") and (.result | type == "string") then .result else empty end' \
+        "$raw" > "${dest}.tmp" 2>>"$errf" || rc=$?
+
+    if [[ $rc -eq 0 && -s "${dest}.tmp" ]]; then
+        mv "${dest}.tmp" "$dest"
+        return 0
+    fi
+
+    rm -f "${dest}.tmp"
+    return 1
+}
+
 # --- 実行関数 ---
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for codex)}"
     echo "[Codex] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -473,6 +689,10 @@ run_codex() {
         echo "tool=codex"
         echo "model_requested=${CODEX_MODEL:-default}"
         echo "model_resolved=$model_resolved"
+        # codex の model_resolved は resolve_codex_model() が要求値または
+        # ~/.codex/config.toml を読んで組み立てた値であり、実行後の観測ではない。
+        # レーンによって model_resolved の確からしさが違うので出所を明示する（#295）。
+        echo "model_resolved_source=config"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -483,7 +703,7 @@ run_codex() {
 
 # shellcheck disable=SC2120
 run_claude() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for claude)}"
     echo "[Claude] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -498,14 +718,27 @@ run_claude() {
     if [[ -n "$WORKSPACE" ]]; then
         claude_args+=("--add-dir" "$WORKSPACE")
     fi
-    claude_args+=("--output-format" "text")
+    # 解決後モデルを記録するため json で受ける（#295）。jq が無い環境では
+    # 従来どおり text で受け、モデル記録だけを諦める。
+    if $CLAUDE_JSON_MODE; then
+        claude_args+=("--output-format" "json")
+    else
+        claude_args+=("--output-format" "text")
+    fi
     if $CLAUDE_WEB; then
         # -p (print) モードは対話的承認ができないため、WebFetch を明示許可する必要がある
         claude_args+=("--allowed-tools=WebFetch")
     fi
 
+    local claude_capture="$OUT_DIR/claude-stdout.txt"
+    local claude_errmeta="$OUT_DIR/claude-modelmeta-stderr.txt"
+    if $CLAUDE_JSON_MODE; then
+        claude_capture="$OUT_DIR/claude-raw.json"
+        : > "$claude_errmeta"
+    fi
+
     if timeout "$tool_timeout" "$CLAUDE_CMD" "${claude_args[@]}" "$PROMPT" \
-        > "$OUT_DIR/claude-stdout.txt" 2> "$OUT_DIR/claude-stderr.txt"; then
+        > "$claude_capture" 2> "$OUT_DIR/claude-stderr.txt"; then
         exit_code=0
     else
         exit_code=$?
@@ -513,6 +746,27 @@ run_claude() {
 
     end=$(date +%s)
     elapsed=$((end - start))
+
+    # 本文の取り出しとモデル抽出は classify_result より前に行う。
+    # classify_result は claude-stdout.txt の非空判定に依存しているため。
+    local body_source="direct"
+    local model_source="none"
+    CLAUDE_MODEL_RESOLVED="unavailable:query-failed"
+    CLAUDE_MODELS_ALL="unavailable:query-failed"
+    if $CLAUDE_JSON_MODE; then
+        model_source="cli-json"
+        if extract_claude_body "$claude_capture" "$OUT_DIR/claude-stdout.txt" "$claude_errmeta"; then
+            body_source="json-result"
+        else
+            # 本文は取り出せなかった。stdout は空なので classify_result は
+            # success_empty / timeout_empty 側へ落ち、リトライ判定も正しく働く。
+            # 生の出力は claude-raw.json に残っている。
+            body_source="extract-failed"
+        fi
+        extract_claude_models "$claude_capture" "$claude_errmeta"
+        # 診断が出ていなければ空ファイルを残さない
+        [[ -s "$claude_errmeta" ]] || rm -f "$claude_errmeta"
+    fi
 
     local timeout_status
     timeout_status=$(classify_result "claude" "$exit_code")
@@ -523,6 +777,10 @@ run_claude() {
         echo "tool=claude"
         echo "model_requested=${CLAUDE_MODEL:-default}"
         echo "effort_requested=${CLAUDE_EFFORT:-default}"
+        echo "model_resolved=$CLAUDE_MODEL_RESOLVED"
+        echo "models_all=$CLAUDE_MODELS_ALL"
+        echo "model_resolved_source=$model_source"
+        echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -533,7 +791,7 @@ run_claude() {
 
 # shellcheck disable=SC2120
 run_cursor() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$(base_timeout_for cursor)}"
     echo "[Cursor] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -564,6 +822,14 @@ run_cursor() {
     {
         echo "tool=cursor"
         echo "model_requested=${CURSOR_MODEL:-default}"
+        # cursor CLI は解決後のモデルを出力しない。json / stream-json に出る model は
+        # 表示名（既定の auto では "Auto Balance"）であって具体的なモデル ID ではない。
+        # 具体名は Cursor 内部の SQLite（~/.cursor/chats/**/store.db）にあるが、
+        # 非公開の内部形式なので自動では依存しない（owner 判断・#295）。
+        # 手動で辿る手順は canonical/skills/so-compare/SKILL.md に記載している。
+        # 空欄にはしない。空欄だと記録漏れと取得不能が区別できなくなる。
+        echo "model_resolved=unavailable:cli-not-exposed"
+        echo "model_resolved_source=none"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -599,11 +865,14 @@ for tool in codex claude cursor; do
     [[ -f "$meta" ]] || continue
     status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
     if [[ "$status" == "timeout_empty" ]]; then
-        retry_timeout=$(awk "BEGIN {printf \"%.0f\", $SO_TIMEOUT * $SO_RETRY_TIMEOUT_FACTOR}")
+        retry_timeout=$(retry_timeout_for "$tool")
         echo ""
         echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
         # 元の結果をバックアップ
-        for suffix in meta.txt stdout.txt stderr.txt; do
+        # raw.json も退避する。claude は生出力をここに置いており、これが
+        # 上書きされると1回目の証跡が消える（#295 は証跡を残すための変更である）。
+        # 他のレーンには存在しないが、その場合 cp が失敗するだけで害はない。
+        for suffix in meta.txt stdout.txt stderr.txt raw.json; do
             cp "$OUT_DIR/${tool}-${suffix}" "$OUT_DIR/${tool}-${suffix}.attempt1" 2>/dev/null || true
         done
         # 同期リトライ（延長タイムアウト）
@@ -682,7 +951,7 @@ fi
 if (( FAILED_COUNT > 0 && SUCCEEDED + PARTIAL == 0 )); then
     echo ""
     echo -e "${C_RED}[ERROR] 全プロバイダ失敗。以下を確認してください:${C_RESET}"
-    echo "  - SO_TIMEOUT を増やす（現在: ${SO_TIMEOUT}秒）"
+    echo "  - SO_TIMEOUT / SO_CLAUDE_TIMEOUT を増やす（現在: codex/cursor=${SO_TIMEOUT}秒 claude=${SO_CLAUDE_TIMEOUT}秒）"
     echo "  - ネットワーク接続・API キーの状態"
     echo "  - -w でワークスペースパスを渡す方式に切り替え"
 fi
