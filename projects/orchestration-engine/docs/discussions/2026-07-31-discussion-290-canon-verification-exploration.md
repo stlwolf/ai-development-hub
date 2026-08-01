@@ -14,6 +14,9 @@ related:
   - type: refs
     ref: "projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md"
     reason: "先行 #289 の構造的発見（発火位置の非存在）。本 arc の結論との型の違い（空間の主張 vs プロセスの主張）を §4 で対比する"
+  - type: refs
+    ref: "projects/orchestration-engine/docs/discussions/2026-08-01-discussion-293-brief-transport-verification.md"
+    reason: "隣接 #293。本 doc §5「失敗の型は位置に付く」の追加事例（統括の gate 0 の内部矛盾）を同 doc §9 が足し、三つの arc の収束を同 doc §10 が1箇所にまとめる。加えて、本 doc が「この環境の既知症状」として必須に数えなかった claude レーンが、実は 480 秒では足りず 652 秒で返るという実測が同 doc §8 にある（本 doc の反証が事実上2レーンだったことの読み替えに関わる）"
 tags: [orchestration, canon-verification, supervisor, negative-knowledge, blind-audit]
 ---
 
