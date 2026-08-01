@@ -36,7 +36,9 @@ Options:
 
 Environment:
   PREV_MAX_BYTES   --prev で追記する回答の上限バイト数（デフォルト: 4000）
-  SO_TIMEOUT       各ツールのタイムアウト秒数（整数、デフォルト: 240）
+  SO_TIMEOUT       codex / cursor のタイムアウト秒数（整数、デフォルト: 240）
+  SO_CLAUDE_TIMEOUT claude のタイムアウト秒数（整数、デフォルト: 900）
+                   claude は同じプロンプトでも他レーンの2倍以上かかるため既定を分けている
   SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
   SO_CLAUDE_MODEL  Claude のデフォルトモデル（--claude-model で上書き可）
   SO_CODEX_MODEL   Codex のデフォルトモデル（--codex-model で上書き可）
@@ -71,7 +73,26 @@ CLAUDE_MODEL="${SO_CLAUDE_MODEL:-}"
 CODEX_MODEL="${SO_CODEX_MODEL:-}"
 CLAUDE_EFFORT="${SO_CLAUDE_EFFORT:-}"
 SO_TIMEOUT="${SO_TIMEOUT:-240}"
+# claude は同じプロンプトでも他レーンの2〜3倍の時間を要する（実測値は
+# canonical/skills/so-compare/SKILL.md に記載）。共通の既定（240秒）では初回も
+# リトライ（×1.5 = 360秒）も届かないため、claude だけが構造的に返らず、
+# 「この環境では claude レーンは返らない」という誤った通説ができていた。
+# 環境が非対応なのではなく、単にタイムアウトが短かった（#295）。
+#
+# 既定 1200秒 の根拠: レビュー級のプロンプト2件で 652秒 と 777秒 を実測した。
+# 所要はプロンプトの大きさではなく要求される分析の深さで決まり（小さいほうの
+# プロンプトが長くかかった）、事前に読みにくい。最大実測 777秒 に対して約54%の
+# 余裕を取っている。
+SO_CLAUDE_TIMEOUT="${SO_CLAUDE_TIMEOUT:-1200}"
 SO_RETRY_TIMEOUT_FACTOR=1.5
+
+# レーンごとの基準タイムアウト。リトライ時間の算出にも使う。
+base_timeout_for() {
+    case "$1" in
+        claude) printf '%s\n' "$SO_CLAUDE_TIMEOUT" ;;
+        *)      printf '%s\n' "$SO_TIMEOUT" ;;
+    esac
+}
 
 # --- カラー出力（tty 時のみ） ---
 if [[ -t 1 ]]; then
@@ -377,7 +398,7 @@ fi
 if $RUN_CLAUDE && [[ -n "$CLAUDE_MODEL$CLAUDE_EFFORT" ]]; then
     echo "Claude:${CLAUDE_MODEL:+ model=$CLAUDE_MODEL}${CLAUDE_EFFORT:+ effort=$CLAUDE_EFFORT}"
 fi
-echo "タイムアウト: ${SO_TIMEOUT}秒"
+echo "タイムアウト: codex/cursor=${SO_TIMEOUT}秒 claude=${SO_CLAUDE_TIMEOUT}秒"
 echo "プロンプト長: $(echo "$PROMPT" | wc -c | tr -d ' ') bytes"
 echo ""
 
@@ -649,7 +670,7 @@ run_codex() {
 
 # shellcheck disable=SC2120
 run_claude() {
-    local tool_timeout="${1:-$SO_TIMEOUT}"
+    local tool_timeout="${1:-$SO_CLAUDE_TIMEOUT}"
     echo "[Claude] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
     start=$(date +%s)
@@ -811,7 +832,7 @@ for tool in codex claude cursor; do
     [[ -f "$meta" ]] || continue
     status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
     if [[ "$status" == "timeout_empty" ]]; then
-        retry_timeout=$(awk "BEGIN {printf \"%.0f\", $SO_TIMEOUT * $SO_RETRY_TIMEOUT_FACTOR}")
+        retry_timeout=$(awk "BEGIN {printf \"%.0f\", $(base_timeout_for "$tool") * $SO_RETRY_TIMEOUT_FACTOR}")
         echo ""
         echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
         # 元の結果をバックアップ
@@ -897,7 +918,7 @@ fi
 if (( FAILED_COUNT > 0 && SUCCEEDED + PARTIAL == 0 )); then
     echo ""
     echo -e "${C_RED}[ERROR] 全プロバイダ失敗。以下を確認してください:${C_RESET}"
-    echo "  - SO_TIMEOUT を増やす（現在: ${SO_TIMEOUT}秒）"
+    echo "  - SO_TIMEOUT / SO_CLAUDE_TIMEOUT を増やす（現在: codex/cursor=${SO_TIMEOUT}秒 claude=${SO_CLAUDE_TIMEOUT}秒）"
     echo "  - ネットワーク接続・API キーの状態"
     echo "  - -w でワークスペースパスを渡す方式に切り替え"
 fi
