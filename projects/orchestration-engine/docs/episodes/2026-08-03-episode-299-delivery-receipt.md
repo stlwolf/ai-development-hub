@@ -88,7 +88,7 @@ plan §4 P0 が「同じ `fin_rc==3` が3つのものを駆動している」と
 
 送信側（`lib/delegate-send.sh`）が payload の末尾へ相関 ID を載せる。受け手側（`canonical/hooks/scripts/oe-prompt-receipt.sh`・`UserPromptSubmit` hook）が、それを自分のターンとして取り込んだ瞬間に `prompt_received` を追記する。
 
-- **nonce**: `[oe:<ULID 26桁>]`。`_oe_send_nonce` が外部コマンドなしで払い出す（1000 回で衝突なし・Crockford 文字集合内であることを実測）。
+- **nonce**: `[oe:<26 桁>]`。`_oe_send_nonce` が外部コマンドなしで払い出す（1000 回で衝突なし・Crockford base32 の文字集合内であることを実測）。**厳密な ULID 仕様互換ではない**（`$RANDOM` 由来なので「一意な 26 桁」までを主張する）。
 - **冪等**: 書き込み側では重複を潰さない（append-only の不変条件を崩さないため）。同じ nonce の受領は **read 側で 1 件に畳む。**
 - **`report_received` を上書きしない**: 別イベントにした。`prompt_received` は `covers_*` を持たない。`report_received`（読んだ）と `prompt_received`（1 ターンとして取り込んだ）は別物である。
 - **`--no-enter`（ステージのみ）には nonce を載せない。** `message_sent` を emit しないので、載せると突き合わせ先の無い受領印を作ってしまう。
@@ -104,6 +104,8 @@ hook は Claude Code の契約（イベント名・stdin の `.prompt`・`$TMUX_
 
 **P1 が入ると、2026-06-09 に置いた「transport 据え置き」の判断を再判定できるようになる。** 当時の据え置きは「clean 環境で再現不能 → 比較計測が不能 → 賭けない」という三段の理由だった。受領印は実トラフィックでの到達率を出すので、**transport を替えたときの前後比較ができる。** 本単位では替えない（owner 判断で P1 の後）。
 
+> **この節の書き方は E5 で撤回した。** 実装SO が「前後比較ができる」を過大と判定した（ベースライン不在・欠測の交絡・計測自体が payload を伸ばす）。確定形は `本文: E5. gate 4 — 実装SO + テスト` の「反証で直したもの（言い切り）」を見ること。
+
 ### P3 の形（`bin/oe-selfcheck`）
 
 対象は画面 scrape だけではない。**hook 契約・transcript の JSONL 形式・pane↔session の橋・保持期間**も同じ版依存であり、同じ壊れ方をする。
@@ -112,7 +114,9 @@ hook は Claude Code の契約（イベント名・stdin の `.prompt`・`$TMUX_
 
 画面 scrape の検査は「いま目印が見えるか」では見ない（idle と区別できないため）。**目印は入力欄より上に描かれる**という構造を使い、入力欄が画面下3行に入っているペインでは目印が走査窓に決して入らない、と決定論的に判定する。
 
-現時点の実行結果は `screen-marker=broken`（既知・P2-b は owner 判断で採らない）、`hook-contract=broken`（sync 前なので配線が無い＝正しい報告）、残り3つは `ok`。
+この時点の実行結果は `screen-marker=broken`（既知・P2-b は owner 判断で採らない）、`hook-contract=broken`（sync 前なので配線が無い＝正しい報告）、残り3つは `ok`。
+
+> **判定の作りは E5 で3か所直した**（`hook-contract` を直近窓へ・`transcript-format` を JSON 解析へ・`retention-horizon` を `info` へ）。確定形は `本文: E5. gate 4 — 実装SO + テスト`。
 
 ### この段で踏んだ失敗（3件）
 
@@ -132,7 +136,7 @@ hook は Claude Code の契約（イベント名・stdin の `.prompt`・`$TMUX_
 | 2. shadow mode | **既定を shadow にした。** stdout には出すが owner へは通知しない。`--notify` を明示したときだけ ping |
 | 3. 受領印基準の表示 | 「未ack」から「受領印が無い」へ。nonce の無い送信は `判定不可` と出し、**未着とは呼ばない** |
 | 4. メッセージ単位 | 抑止キーを `<child>\|<parent>\|<ts>\|<idx>` にした。関係単位だと ack が来ない限り最古未ack の ts が動かず、**同じ関係の新しい未達が永久に抑止されていた** |
-| 5. 生存絞り | 既定で相手のペインが消えている行を伏せる。伏せた件数は毎回告げる。liveness が判定できない（tmux 不在）行は落とさない |
+| 5. 生存絞り | 既定で相手のペインが消えている行を伏せる。伏せた件数は毎回告げる。liveness が判定できない（tmux 不在）行は落とさない ／ **→ E5 で既定を反転した**（`本文: E5. gate 4 — 実装SO + テスト`） |
 
 ### 反転表示の解消
 
@@ -140,7 +144,9 @@ hook は Claude Code の契約（イベント名・stdin の `.prompt`・`$TMUX_
 
 ### 実測での効き方
 
-master 時点では 87 行の恒久バックログを吐いていた。変更後は、既定（shadow・生存絞り・起点なし）で **32 行**になる。`--include-gone` を付けると 331 行で、これはメッセージ単位へ移した分だけ増えている。運用は「起点を置いてから見る」で、そうすると新しいぶんだけが出る。
+master 時点では 87 行の恒久バックログを吐いていた。この時点の実装では、既定（shadow・生存絞り・起点なし）で **32 行**、`--alive-only` を外すと 331 行だった（メッセージ単位へ移した分だけ増える）。
+
+> **既定はこのあと E5 で反転した。** 生存絞りを既定にすると `oe-undelivered` の主目的が隠れるためである。運用は「起点（watermark）を置いてから見る」で、そうすると新しいぶんだけが出る。
 
 ### `oe-ack` の位置づけ
 
