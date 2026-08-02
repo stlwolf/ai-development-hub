@@ -43,3 +43,7 @@ tmp/
 # orchestration-engine runtime output (audit log / session state; .gitkeep stays tracked)
 projects/orchestration-engine/audit/*.jsonl
 projects/orchestration-engine/state/*.state.json
+
+# Python bytecode cache
+__pycache__/
+*.pyc
