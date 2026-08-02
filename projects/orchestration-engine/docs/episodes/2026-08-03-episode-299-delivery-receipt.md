@@ -3,7 +3,7 @@ id: "01KZ1VQA1979K4S2MMH5YY24ZJ"
 title: "#299 配送シグナルの反転を止め、受け手側の受領印へ置き換える — 実行記録（E 系単位）"
 date: 2026-08-03
 type: episode
-status: draft
+status: stable
 related:
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/299"
@@ -248,6 +248,7 @@ Copilot の指摘は**1件**で、妥当だったので対応した。
 - **Context / なぜ**: 冒頭の Context 節に自己完結で書いた（`本文: Context（なぜこの作業が始まったか）`）。
 - **次の消費者**: (1) この PR をレビューする owner。(2) transport の入れ替えを判断する単位（受領印がその材料になる）。(3) `oe-selfcheck` の定期実行を配線する単位。(4) `oe-activity` の反転表示を是正する単位。
 - **status**: `stable`（達成）。scope の P0 / P1 / P3 / P4 / `oe-ack` はすべて入り、テストと実機で確認した。
+- **最終のテスト**: engine 全体で **945 pass / 0 fail**（Copilot 対応の回帰テスト2件を含む）。基準値 `test_oe_refute.sh` pass=63 / `test_oe_review.sh` pass=64 は master と同値。
 - **evidence anchor**: SO 出力は `tmp/so-e5-impl/`（gitignored・揮発）なので、**判定・所要・分量・指摘の要点を本文へ転記済み**（`本文: E5. gate 4 — 実装SO + テスト`）。実機確認の結果も数値ごと本文にある。
 
 ### follow-up の routing
@@ -268,6 +269,7 @@ Copilot の指摘は**1件**で、妥当だったので対応した。
 - **自分のテストが別の理由で通っていた**のを2回作った。1回目は fixture の hook 配置ミス、2回目は nonce タグで mock と実送信が食い違い「Enter 1回」が別の理由で成立していた（`本文: E3. P1 + P3 — 受け手側の受領印と、前提の健全性検査` / `本文: E4. P4（1〜5・shadow mode）と oe-ack の位置づけ`）。
 - **実機で初めて分かった設計の誤り**: 受領印は `message_sent` より先に書かれるので、hook 側の送信元 lookup は成功しない（`本文: E5. gate 4 — 実装SO + テスト`）。
 - **言い切りを4件、外部レビューに名指しされて撤回した**（`本文: E5. gate 4 — 実装SO + テスト`）。
+- **Copilot が実質的な指摘を1件出し、対応した**（診断行の JSON エスケープ不足・`本文: E6. PR + Copilot`）。**手作りの JSON を書く経路を作ったのに escape を忘れていた** — 診断ファイルは後段の集計対象なので、壊れた行を1つ書くと存在意義が消える。
 - **`Write` が制御バイトを生のまま埋める罠を2回踏んだ**（`本文: E3. P1 + P3 — 受け手側の受領印と、前提の健全性検査`。episode 本文でも1回）。
 
 ### 決定と根拠（棄却した案を含む）
