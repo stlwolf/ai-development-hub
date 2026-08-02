@@ -8,7 +8,11 @@ prediction: "計測器そのものを疑わず不在を結論する。実際は�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-28-episode-284-decision-backfill.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-03
+    ref: "#299"
+    state: followed
+    note: "oe-selfcheck を3値+info にし、各検査へ陽性対照を置いた。受領印 0 件でも送信が 0 件なら indeterminate にして「0 件」を不在の証拠にしない"
 exclusions:
   - "不在そのものが目的でない探索（ヒットしたものだけを使い、ゼロなら単に次へ進むケース）"
   - "同じ経路で既にヒットを確認済みのコマンドを、条件だけ変えて再実行するケース（計測器の健全性が直前に実証されている）"

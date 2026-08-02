@@ -8,7 +8,11 @@ prediction: "値が ARG_MAX を超えると exec 時に `Argument list too long`
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-24-episode-273-nk-match-inject.md"
 landing: guard-candidate
-observations: []
+observations:
+  - date: 2026-08-03
+    ref: "#299"
+    state: followed
+    note: "hook は大きな prompt を argv へ載せず変数のまま jq の stdin へ流した。oe-selfcheck では find|xargs ls を捨て date -r の1パス走査にしてバッチ分割も避けた"
 exclusions:
   - "渡す値が定数、または明確に小さい（サイズ上限が入力に依らず保証できる）ケース"
 ---

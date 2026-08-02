@@ -8,7 +8,11 @@ prediction: "禁止パターンを1つ直しても同じ family の迂回路が�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-25-episode-274-nk-observe-control.md"
 landing: guard-candidate
-observations: []
+observations:
+  - date: 2026-08-03
+    ref: "#299"
+    state: no_opportunity
+    note: "検査を deny-list 型にしなかった（oe-selfcheck は前提ごとの陽性対照方式）ので迂回路の論点が立たなかった"
 exclusions:
   - "検証結果が下流の判断に使われず、表示や警告だけに留まるケース（迂回のコストが低い）"
   - "入力が閉じた集合（enum・数値・機械生成 ID）で、自由文を許していないフィールド"

@@ -13,6 +13,10 @@ observations:
     ref: "#295"
     state: externally_verified
     note: "入口だけ切り分け後段の jq 失敗を全部データ不在に落としており、実装SO が予測どおりの誤分類を検出した"
+  - date: 2026-08-03
+    ref: "#299"
+    state: followed
+    note: "受領印 hook で環境エラー（jq 不在・pane 不在・書込失敗・.prompt 契約変更）を診断ファイルへ、データ不在（タグ無し）を無音へ分けた。nonce の形不正も黙って落とさず warn を出す"
 exclusions:
   - "失敗と空出力が意味的に等価で、区別する必要がないケース"
 ---
