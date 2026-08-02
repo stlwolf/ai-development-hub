@@ -58,13 +58,27 @@ event_dir="${OE_EVENT_DIR:-${home}/.claude/state}"
 event_file="${event_dir}/oe-events.jsonl"
 diag_file="${event_dir}/oe-receipt-diag.jsonl"
 
+# JSON 文字列として安全な形へ escape する。この経路は jq が無いときにも通るので素の shell で行う。
+# 診断ファイルは後段の集計対象なので、1 行でも壊れた JSONL を書くと以後読めなくなる（Copilot 指摘）。
+# **バックスラッシュを最初に処理する** — 後にすると自分が入れた `\` を二重に escape してしまう。
+_json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
 # 環境エラーを診断ファイルへ記録する。ここが no-op になると「印が無い理由」が読めなくなるので、
 # jq が無い場合でも素の printf で 1 行残す（診断だけは最後まで落とさない）。
 note_env_error() {
   local reason="$1" detail="${2:-}"
   mkdir -p "$event_dir" 2>/dev/null || return 0
   printf '{"ts":"%s","hook":"oe-prompt-receipt","kind":"env-error","reason":"%s","detail":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$reason" "${detail//\"/}" >> "$diag_file" 2>/dev/null || true
+    "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$(_json_escape "$reason")" "$(_json_escape "$detail")" \
+    >> "$diag_file" 2>/dev/null || true
   echo "oe-prompt-receipt: ${reason}${detail:+ (${detail})}" >&2
 }
 

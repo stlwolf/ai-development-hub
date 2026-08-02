@@ -235,5 +235,21 @@ if [[ -x "$SELFCHECK" ]]; then
      "$(printf '%s' "$out" | jq -r '.[] | select(.check=="hook-contract") | .verdict')"
 fi
 
+
+echo "[14] 診断行は JSON として壊れない（detail にバックスラッシュ・改行・引用符が入っても）"
+new_env
+# detail に危険な文字が入る経路を作る: OE_EVENT_DIR を書けない場所にして append-failed を起こす
+EVIL_DIR="$_TMP_DIR/ev-\"evil\\path"$'\n'"line2"
+mkdir -p "$EVIL_DIR"
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVIL_DIR" env -u TMUX_PANE bash "$HOOK" >/dev/null 2>&1
+DIAG2="$EVIL_DIR/oe-receipt-diag.jsonl"
+if [[ -s "$DIAG2" ]]; then
+  ck "診断行が JSON として読める" "1" "$(jq -rs 'length' "$DIAG2" 2>/dev/null || echo 0)"
+  ck "kind は env-error"          "env-error" "$(jq -rs '.[0].kind' "$DIAG2" 2>/dev/null)"
+else
+  echo "  FAIL: 診断行が書かれていない"; FAIL=$((FAIL+1))
+fi
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
