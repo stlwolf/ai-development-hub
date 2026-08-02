@@ -14,8 +14,8 @@
     },
     "type": {
       "type": "string",
-      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加。追加種別は additive に拡張する。",
-      "enum": ["child_spawned", "message_sent", "report_received"]
+      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
+      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received"]
     },
     "from": {
       "$ref": "#/definitions/endpoint",
@@ -23,7 +23,7 @@
     },
     "to": {
       "$ref": "#/definitions/endpoint",
-      "description": "宛先（child_spawned=子 / message_sent=宛先 / report_received=報告元=受領した message の送信側）。pane/role/label を emit 時に焼き込む。"
+      "description": "宛先（child_spawned=子 / message_sent=宛先 / report_received=報告元=受領した message の送信側 / prompt_received=送信元だが emit 時には引けないため常に空・read 時に nonce で解決する）。pane/role/label を emit 時に焼き込む。"
     },
     "preview": {
       "type": "string",
@@ -39,8 +39,26 @@
     },
     "delivery_signal": {
       "type": "string",
-      "description": "message_sent のみ: 配送シグナル。suspected_miss=finalize が未着候補を観測 / none=未着シグナル無し（delivered の確証ではない）。#144 信号を読むのみで reliability の再実装はしない。",
-      "enum": ["suspected_miss", "none"]
+      "description": "message_sent のみ: 送信側 finalize の観測。delivered は名乗らない（#144 信号を読むのみで reliability の再実装はしない）。到達そのものは delivery_receipt（受け手側・#299）を見る。値: unknown=finalize は観測したが、その観測は配送の成否を判別しない（#299 以降このパスが書く既定値） / none=未着シグナル無し（delivered の確証ではない・#299 より前の既定値。現在も finalize が rc=0 のときに書かれる） / suspected_miss=【非推奨・書き込み停止】#299 以前に finalize が rc=3 で付けていた値。実測でこの値は配送失敗と逆を指していた（最も厳しい突合で 244/250=97.6% が到達確認・none 側は 162/217=74.7%）ため書き込みを止めた。過去レコードにのみ残る。この値を未着の根拠に使ってはならない。",
+      "enum": ["unknown", "suspected_miss", "none"]
+    },
+    "delivery_receipt": {
+      "type": "object",
+      "description": "message_sent のみ・任意（#299）: 送信側が payload に埋めた相関 ID（nonce）。受け手側の UserPromptSubmit hook が同じ nonce で prompt_received を emit するため、送信と受領を1対1で突き合わせられる。送信側は受領を主張しない — このフィールドが在ることは「受領印を照合できる形で送った」までを意味する。",
+      "required": ["nonce"],
+      "additionalProperties": false,
+      "properties": {
+        "nonce": {
+          "type": "string",
+          "description": "この送信に一意な相関 ID（ULID)。payload 末尾のタグとして受け手へ渡り、prompt_received.nonce と一致する。",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        }
+      }
+    },
+    "nonce": {
+      "type": "string",
+      "description": "prompt_received のみ（#299）: 取り込んだ prompt に埋まっていた相関 ID。message_sent.delivery_receipt.nonce と1対1で突き合わせる。同じ nonce の prompt_received が複数来ても受領は1件として畳む（冪等）。",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
     },
     "covers_count": {
       "type": "integer",
@@ -89,6 +107,13 @@
       "then": {
         "required": ["covers_count", "covers_last_ts"],
         "description": "report_received は covers_count と covers_last_ts（frontier snapshot）を必須とする。"
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "prompt_received" } } },
+      "then": {
+        "required": ["nonce"],
+        "description": "prompt_received（#299）は nonce を必須とする。from=取り込んだ側（受け手ペイン・hook が $TMUX_PANE から焼く）。to.pane は常に空である — 送信側は finalize の窓が閉じてから message_sent を書くので、受領印が書かれる時点ではまだ nonce がログに無く、emit 時に送信元を引けない（実機で確認）。送信元は read 時に nonce で message_sent と突き合わせて解決する。covers_* は持たない — report_received（読んだ）の意味を継がないため。"
       }
     }
   ]

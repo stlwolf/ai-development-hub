@@ -6,9 +6,18 @@
 #   oe-undelivered -h | --help
 #
 # 目的（mode3 チャネル脆弱の検知）: 委譲子が親へ送った報告（child→parent の message_sent）のうち、
-#   親が受領印（report_received・#220/#206A）を打っておらず（未ack）、かつ最古の未ack報告が時間窓 W を
-#   越えて放置されているものを検出し、owner に ping する。統括死亡 / send 無言失敗で報告が虚空へ消える
-#   経路（#239 mode3）を「#220 の frontier（未ack）＋時間次元」で決定論的に拾う。
+#   受け取られた形跡が無いまま時間窓 W を越えたものを検出する。統括死亡 / send 無言失敗で報告が
+#   虚空へ消える経路（#239 mode3）を決定論的に拾う。
+#
+# 「受け取られた形跡」の定義（#299 で変えた）: 次のどちらかが在れば出さない。
+#   (a) 親が受領印（report_received・#220/#206A）を打っている（frontier 規則）
+#   (b) **宛先ペイン自身**から取り込み印（prompt_received・#299 P1）が出ている
+#   nonce を載せていない送信は (b) を判定できないので `判定不可` と出す（未着とは呼ばない）。
+#   (b) で nonce の一致だけを見て宛先を見ないと、別ペインが同じタグを submit しただけで未達が
+#   消える（marker と同型の「届いていないのに届いた扱い」）ので、ペインまで一致を要求する。
+#
+# 単位はメッセージである（#299 P4-4。旧実装は関係単位で、ack が来ない限り抑止キーが動かず
+# 同じ関係の新しい未達を永久に抑止していた）。既定は shadow（通知しない）。
 #
 # 位置づけ（read-only 観測 family = oe-status / oe-activity / oe-ident と同群）:
 #   - engine state（oe-events.jsonl / delegate-registry / session-state）を一切 mutate しない。
@@ -21,12 +30,13 @@
 #     report_received / role / known-parent の複合で解決する（departed で role 空になる子＝mode3 の
 #     主対象を取りこぼさないため）。
 #
-# 検知（2条件）: pending > 0（未ack）かつ age = now - (最古未ack報告の ts) > W。
+# 検知（2条件）: 受け取られた形跡が無い かつ age = now - (その報告の ts) > W かつ ts > 起点。
 # 出力:
-#   - stdout: 現在 FLAG 中の全件（cron ログ / 手動確認の durable な signal）。
-#   - owner ping: `wez notify`（best-effort）。二重通知抑止（D-b）: verb 固有の seen cache
-#     （${OE_EVENT_DIR}/oe-undelivered/seen・キー "<child>|<parent>|<oldest_ts>"）に無い新規キーのみ
-#     notify し、cache へ追記する。cache は verb 自身の bookkeeping で engine state ではない。
+#   - stdout: 該当する全件（cron ログ / 手動確認の durable な signal）。
+#   - owner ping: **`--notify` を明示したときだけ** `wez notify`（既定は shadow で撃たない）。
+#     二重通知抑止（D-b）: verb 固有の seen cache（${OE_EVENT_DIR}/oe-undelivered/seen・キー
+#     "<child>|<parent>|<ts>|<idx>"＝メッセージ単位）に無い新規キーのみ notify し cache へ追記する。
+#     cache は verb 自身の bookkeeping で engine state ではない。
 # exit code: 常に 0（observer）。usage エラーのみ 2 / 投影失敗のみ 1。
 #
 # 既知の制約（新規導入でなく event モデル由来・開示）:
@@ -52,20 +62,35 @@ err() { echo "oe-undelivered: $*" >&2; }
 usage() {
   cat >&2 <<'EOF'
 usage:
-  oe-undelivered [--window <sec>]   報告未達（未ack かつ age>W）を検出し owner に ping
+  oe-undelivered [options]          受け取られた形跡の無い報告を出す（既定は shadow・通知しない）
   oe-undelivered -h | --help
 
-  --window <sec>   時間窓 W（秒）。既定 1800（30分）。環境変数 OE_UNDELIVERED_WINDOW_SEC でも指定可
-                   （--window が優先）。
+  --window <sec>          時間窓 W（秒）。既定 1800（30分）。OE_UNDELIVERED_WINDOW_SEC でも可
+  --notify                owner へ ping する（既定は撃たない）
+  --alive-only            相手が生存している行だけに絞る（既定は gone も出す＝統括死亡の検出）
+  --start-after <e|now>   この実行だけ観測の起点を置く（0 で全期間）
+  --set-start-after <e|now>  起点を保存して終了する（過去のイベントは消さない）
 
+判定: 親の受領印（report_received）か、宛先ペイン自身の取り込み印（prompt_received・#299）が
+      在れば出さない。nonce を載せていない送信は RECEIPT=判定不可（未着ではない）。
 read-only: oe-events.jsonl と tmux ペイン存在のみを読む（capture・engine state 変更はしない）。
-owner ping は wez notify（best-effort）。二重通知は verb 固有の seen cache で抑止する。
-cron 例: */15 * * * * /path/to/oe-undelivered >> "$HOME/.claude/state/oe-undelivered/cron.log" 2>&1
+cron 例: */15 * * * * /path/to/oe-undelivered --notify >> "$HOME/.claude/state/oe-undelivered/cron.log" 2>&1
 EOF
 }
 
 DEFAULT_WINDOW=1800
 WINDOW="${OE_UNDELIVERED_WINDOW_SEC:-$DEFAULT_WINDOW}"
+# #299 P4-2: 既定は shadow（owner へ通知しない）。stdout には出すので観測はできる。
+# 何が鳴るかを先に見てから通知を入れる、という順序を既定側に置く。
+NOTIFY=0
+# #299 P4-5 の再判断: 既定では相手が消えている行も出す。
+# plan は「生存している相手だけに絞る」と書いていたが、**それはこの verb の主目的を隠す**。
+# 検出したいのは「統括が死んで報告が虚空へ消えた」経路（#239 mode3）であり、そこでは親ペインが
+# まさに gone になる。絞ると主目的が既定で見えなくなる（実装SO codex 指摘）。
+# ノイズ制御は起点（--start-after）で行う。狭く見たいときは --alive-only を明示する。
+ALIVE_ONLY=0
+START_AFTER=""
+SET_START_AFTER=""
 
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
@@ -74,6 +99,19 @@ while [[ "${1:-}" == -* ]]; do
       [[ -n "${1:-}" ]] || { err "--window は秒数（正の整数）が必要です"; usage; exit 2; }
       WINDOW="$1"; shift ;;
     --window=*) WINDOW="${1#--window=}"; shift ;;
+    --notify) NOTIFY=1; shift ;;
+    --alive-only) ALIVE_ONLY=1; shift ;;
+    --include-gone) shift ;;   # 旧フラグ: 既定になったので受理するだけ（no-op）
+    --start-after)
+      shift
+      [[ -n "${1:-}" ]] || { err "--start-after は epoch 秒 か now が必要です"; usage; exit 2; }
+      START_AFTER="$1"; shift ;;
+    --start-after=*) START_AFTER="${1#--start-after=}"; shift ;;
+    --set-start-after)
+      shift
+      [[ -n "${1:-}" ]] || { err "--set-start-after は epoch 秒 か now が必要です"; usage; exit 2; }
+      SET_START_AFTER="$1"; shift ;;
+    --set-start-after=*) SET_START_AFTER="${1#--set-start-after=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     *) err "unknown option: $1"; usage; exit 2 ;;
@@ -137,12 +175,51 @@ seen_has() {
   grep -qxF -- "$1" "$SEEN_FILE" 2>/dev/null
 }
 
+# --- #299 P4-1: 観測の起点（watermark）---
+# 過去のイベントは消さない。**観測者が「ここから先を見る」と宣言する目印**を別に持つ。
+# 消すのでなく起点を置くので、遡って調べ直すことができる（`--start-after 0` で全期間）。
+START_FILE="${SEEN_DIR}/start-after"
+resolve_epoch() {  # resolve_epoch <epoch|now> → epoch 秒 / 不正なら空
+  local v="$1"
+  [[ "$v" == "now" ]] && { printf '%s' "$NOW_EPOCH"; return 0; }
+  [[ "$v" =~ ^[0-9]+$ ]] && { printf '%s' "$v"; return 0; }
+  return 1
+}
+if [[ -n "$SET_START_AFTER" ]]; then
+  if ! _sa="$(resolve_epoch "$SET_START_AFTER")"; then
+    err "--set-start-after は epoch 秒 か now: got [$SET_START_AFTER]"; exit 2
+  fi
+  if ! mkdir -p "$SEEN_DIR" 2>/dev/null; then
+    err "起点を書けません（${SEEN_DIR} を作成できない）"; exit 2
+  fi
+  if ! printf '%s\n' "$_sa" > "$START_FILE" 2>/dev/null; then
+    err "起点を書けません（${START_FILE}）"; exit 2
+  fi
+  echo "oe-undelivered: 観測の起点を ${_sa} に置きました（これ以前の送信は出しません。過去は消していません）"
+  exit 0
+fi
+AFTER=0
+if [[ -n "$START_AFTER" ]]; then
+  if ! AFTER="$(resolve_epoch "$START_AFTER")"; then
+    err "--start-after は epoch 秒 か now: got [$START_AFTER]"; exit 2
+  fi
+elif [[ -r "$START_FILE" ]]; then
+  # 保存された起点が壊れている場合は全期間（0）で続行し、そのことを stderr で告げる。
+  # 黙って 0 にはしない（--notify と組み合わせると過去全件を鳴らしうるため、必ず知らせる）。
+  _saved="$(cat "$START_FILE" 2>/dev/null || true)"
+  if [[ "$_saved" =~ ^[0-9]+$ ]]; then
+    AFTER="$_saved"
+  else
+    err "保存された起点が壊れています（${START_FILE}）— 全期間を対象にします"
+  fi
+fi
+
 # --- 投影（jq・slurp）: FLAG 行 1 件 1 行（US \u001f 区切り・空フィールド保持）---
 # 列: child_pane, parent_pane, child_label, parent_label, pending, oldest_ts, age_sec, miss_unacked, preview
 # 壊れた JSONL 行は前段 `jq -R 'fromjson? // empty'` で黙ってスキップ（oe-activity と同じ degrade）。
 project() {
   jq -R 'fromjson? // empty' "$OE_EVENT_FILE" \
-  | jq -rs --argjson now "$NOW_EPOCH" --argjson window "$WINDOW" '
+  | jq -rs --argjson now "$NOW_EPOCH" --argjson window "$WINDOW" --argjson after "$AFTER" '
     # ISO-8601（event-bus は常に +00:00）を epoch へ。parse 不能は null（後段で skip）。
     def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
     # 受領数の read 時導出（frontier snapshot・#206A/#220 と同一規則）:
@@ -178,35 +255,53 @@ project() {
               or (($known_parents | has($m.to.pane)) and (($known_parents | has($m.from.pane)) | not))
             )
           | { idx:$idx, c:$m.from.pane, p:$m.to.pane, ts:$m.ts,
-              deliv:($m.delivery_signal // "none"),
+              # #299: delivery_signal は判定にも表示にも使わない（実測で反転していた）。
+              # 代わりに受領印との突き合わせ鍵（nonce）を持つ。
+              nonce:($m.delivery_receipt.nonce // ""),
               clab_m:($m.from.label // ""), plab_m:($m.to.label // ""),
               prev:(($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } ] ) as $reports
+    # #299 P4-4: 単位を「関係」から「メッセージ」へ移す。
+    #   旧実装は関係ごとに1行出し、二重通知の抑止キーに「最古未ack の ts」を含めていた。ack が
+    #   来ない限りこの ts は動かないので、**同じ関係で新しく未達が起きても通知が出なかった**。
+    #   メッセージ単位にすると新しい未達は必ず新しいキーになるので再飽和しない。
+    #
+    # #299 P4-3: 「未ack」だけでなく「受領印が無い」を判定に使う。
+    #   受領印（prompt_received・受け手側が撃つ）が在れば、その message は取り込まれている。
+    #   nonce を載せていない送信は判定できないので、未着と呼ばず receipt="判定不可" と出す。
+    # 受領印は nonce だけでなく**受け取ったペイン**まで見る。nonce の一致だけで消すと、
+    # 別のペインが同じタグを（引用・貼り付け・誤配送で）submit しただけで未達が消える
+    # ＝ marker と同型の「届いていないのに届いた扱い」を作ってしまう（実装SO cursor 指摘）。
+    | ( reduce ( .[] | select(.type=="prompt_received") | select((.nonce // "") != "") ) as $r
+          ({}; .[$r.nonce] = ((.[$r.nonce] // []) + [$r.from.pane // ""])) ) as $rcpt_panes
     | [ ($reports | group_by([.c, .p]))[]
         | ( sort_by(.ts, .idx) ) as $g
         | $g[0].c as $c | $g[0].p as $p
         | received_of($acks; $p; $c; $g) as $recv
-        | (($g | length) - $recv) as $pending0
-        | (if $pending0 < 0 then 0 else $pending0 end) as $pending
-        | select($pending > 0)
-        # 未ack = 先頭 $recv 件（frontier は ts 単調）を除いた残り。最古未ack = $g[$recv]。
-        | ($g[$recv:]) as $unacked
-        | $unacked[0] as $oldest
-        | ts_epoch($oldest.ts) as $ots
-        | select($ots != null)
-        | ($now - $ots) as $age
+        # ack がカバーする先頭 $recv 件を除いた残りが未ack（frontier は ts 単調）。
+        | ($g[$recv:])[]
+        | . as $m
+        # 受領印が「宛先ペイン自身から」出ていれば取り込まれているので出さない。
+        # 報告（子 $c → 親 $p）なので、印を打つべきは $p である。
+        | select(($m.nonce == "") or ((($rcpt_panes[$m.nonce] // []) | index($p)) == null))
+        | ts_epoch($m.ts) as $mts
+        | select($mts != null)
+        | select($mts > $after)
+        | ($now - $mts) as $age
         | select($age > $window)
         | { c:$c, p:$p,
             # label も stdout / wez notify（会話到達面）へ出るため cntrl を畳む（prev と同扱い・
             # US 区切り protocol 防御も兼ねる）。full な無害化は bash 側 oe_sanitize_conversation。
-            clab: ((($clabel[$c]) // $oldest.clab_m // "") | gsub("[[:cntrl:]]"; " ")),
-            plab: ((($plabel[$p]) // $oldest.plab_m // "") | gsub("[[:cntrl:]]"; " ")),
-            pending: $pending,
-            ots: $oldest.ts,
+            clab: ((($clabel[$c]) // $m.clab_m // "") | gsub("[[:cntrl:]]"; " ")),
+            plab: ((($plabel[$p]) // $m.plab_m // "") | gsub("[[:cntrl:]]"; " ")),
+            idx: $m.idx,
+            ts: $m.ts,
             age: $age,
-            miss: ([ $unacked[] | select(.deliv=="suspected_miss") ] | length),
-            prev: $oldest.prev } ]
+            # #299 P0: 反転していた delivery_signal は判定にも表示にも使わない。
+            # 代わりに受領印の状態を出す。nonce の無い送信は「未着」ではなく「判定不可」である。
+            receipt: (if $m.nonce == "" then "判定不可" else "受領印なし" end),
+            prev: $m.prev } ]
     | sort_by(.age) | reverse
-    | .[] | [ .c, .p, .clab, .plab, (.pending|tostring), .ots, (.age|tostring), (.miss|tostring), .prev ]
+    | .[] | [ .c, .p, .clab, .plab, (.idx|tostring), .ts, (.age|tostring), .receipt, .prev ]
     | join("\u001f")
   '
 }
@@ -214,16 +309,21 @@ project() {
 rows="$(project 2>/dev/null)" || { err "failed to project ${OE_EVENT_FILE} (corrupt jsonl?)"; exit 1; }
 
 if [[ -z "$rows" ]]; then
-  echo "oe-undelivered: no undelivered reports (pending>0 かつ age>${WINDOW}s は無し)"
+  echo "oe-undelivered: 表示対象なし（起点=${AFTER} 以降・window=${WINDOW}s で受領印の無い報告は無し）"
   exit 0
 fi
 
 # --- FLAG 行を stdout へ（durable signal）+ 新規キーを収集 ---
 new_keys=()
 notify_lines=()
-printf '=== undelivered reports (read-only · window=%ss) ===\n' "$WINDOW"
-printf '%-6s  %-7s  %-8s  %-4s  %-26s  %-34s  %s\n' "PLIVE" "PENDING" "AGE" "MISS" "OLDEST_TS" "CHILD → PARENT" "PREVIEW"
-while IFS=$'\037' read -r c p clab plab pending ots age miss prev; do
+shown=0
+skipped_gone=0
+mode_disp="shadow（owner へ通知しない）"
+[[ "$NOTIFY" -eq 1 ]] && mode_disp="notify"
+printf '=== 受領印の無い報告 (read-only · window=%ss · mode=%s · 起点=%s) ===\n' \
+  "$WINDOW" "$mode_disp" "$AFTER"
+printf '%-6s  %-8s  %-26s  %-12s  %-34s  %s\n' "PLIVE" "AGE" "TS" "RECEIPT" "CHILD → PARENT" "PREVIEW"
+while IFS=$'\037' read -r c p clab plab idx ts age receipt prev; do
   [[ -n "$c" || -n "$p" ]] || continue
   prev="$(oe_sanitize_conversation "$prev")"
   # #224/#233: label も会話到達面（stdout / wez notify body）へ出るため preview と同様に無害化する
@@ -231,28 +331,48 @@ while IFS=$'\037' read -r c p clab plab pending ots age miss prev; do
   clab="$(oe_sanitize_conversation "$clab")"
   plab="$(oe_sanitize_conversation "$plab")"
   plive="$(liveness_of "$p")"
+  # --alive-only のときだけ gone を伏せる。liveness が '?'（tmux 不在）のときは落とさない
+  # — 判定できないものを黙って捨てないため。
+  if [[ "$ALIVE_ONLY" -eq 1 && "$plive" == "gone" ]]; then
+    skipped_gone=$((skipped_gone + 1)); continue
+  fi
+  shown=$((shown + 1))
   age_disp="$(fmt_age "$age")"
   crel="$(disp "$c" "$clab")"
   prel="$(disp "$p" "$plab")"
   relation="${crel} → ${prel}"
-  miss_disp="${miss:-0}"
-  printf '%-6s  %-7s  %-8s  %-4s  %-26s  %-34s  %s\n' \
-    "$plive" "$pending" "$age_disp" "$miss_disp" "$ots" "$relation" "$prev"
-  key="${c}|${p}|${ots}"
+  printf '%-6s  %-8s  %-26s  %-12s  %-34s  %s\n' \
+    "$plive" "$age_disp" "$ts" "$receipt" "$relation" "$prev"
+  # #299 P4-4: 抑止キーはメッセージ単位（ts + ログ内 index）。関係単位だった旧キーは
+  # 最古未ack の ts を含むため、ack が来ない限り同じ関係の新しい未達を永久に抑止していた。
+  key="${c}|${p}|${ts}|${idx}"
   if ! seen_has "$key"; then
     new_keys+=("$key")
-    line="${relation} · pending=${pending} · age=${age_disp} · parent=${plive}"
-    [[ "$miss_disp" != "0" ]] && line="${line} · miss=${miss_disp}"
-    notify_lines+=("$line")
+    # 「判定不可」は未着と呼ばないと決めた対象なので owner ping には載せない（stdout には出す）。
+    # 未着と呼ばないものを鳴らすと、また判別力の無い警報になる（実装SO codex 指摘）。
+    if [[ "$receipt" == "受領印なし" ]]; then
+      notify_lines+=("${relation} · age=${age_disp} · receipt=${receipt} · parent=${plive}")
+    fi
   fi
 done <<< "$rows"
+
+if [[ "$skipped_gone" -gt 0 ]]; then
+  printf '（--alive-only により、相手のペインが消えている %d 件を伏せました。統括死亡の検出はこの中に居ます）\n' "$skipped_gone"
+fi
+if [[ "$shown" -eq 0 ]]; then
+  echo "oe-undelivered: 表示対象なし（起点=${AFTER} 以降・window=${WINDOW}s・生存する相手のみ）"
+  exit 0
+fi
+printf 'RECEIPT の読み方: 受領印なし=nonce を載せた送信に受領印が来ていない / 判定不可=nonce が無く判定できない（未着ではない）\n'
 
 # --- 新規キーのみ owner へ ping（二重通知抑止）---
 # seen cache は「実際に owner へ通知できた」ときだけ追記する。wez 不在 / notify 失敗 / 中断時に
 # 先行追記すると、通知していないのにキーが seen となり owner ping が永続的に抑止される
 # （実装SO cursor 指摘）。通知経路が無い・失敗なら記録せず次回再通知する（stdout は毎回 durable に
 # 表示済み・wez 復帰時に通知される）。stdout 出力が durable な signal で wez notify は best-effort。
-if [[ "${#new_keys[@]}" -gt 0 ]] && command -v wez >/dev/null 2>&1; then
+# #299 P4-2: 既定は shadow。--notify を明示したときだけ owner へ ping する。
+# 何が鳴るかを stdout で先に見てから通知を入れる、という順序を既定側に置いた。
+if [[ "$NOTIFY" -eq 1 ]] && [[ "${#new_keys[@]}" -gt 0 ]] && command -v wez >/dev/null 2>&1; then
   body="$(printf '%s\n' "${notify_lines[@]}")"
   if wez notify "oe watchdog: undelivered report(s)" "$body" 2>/dev/null; then
     # 通知成功時のみ seen cache 追記（verb 固有 state・best-effort。追記失敗は次回再通知になるだけ）

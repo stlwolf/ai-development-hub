@@ -68,6 +68,10 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/session-name.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/oe-prompt-receipt.sh"
           }
         ]
       }

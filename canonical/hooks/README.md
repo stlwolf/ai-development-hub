@@ -32,6 +32,7 @@
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
 | セッション命名 | — | `UserPromptSubmit` → session-name.sh | — |
+| 取り込み印（#299） | — | `UserPromptSubmit` → oe-prompt-receipt.sh | — |
 | 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） → notify.sh | `[tui] notifications=["approval-requested"]` + `notification_method="osc9"`（ネイティブ）※ |
 
 ※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は対話で承認プロンプトが出ても**発火しないことを実機確認**）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）で出る。入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"]`(osc9) を設定するが、**Codex は OSC を tmux passthrough で包まないため tmux 環境では通知が出ない（実機確認＝既知ギャップ）**。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。

@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3）
 
 ---
 
@@ -123,7 +123,23 @@ oe-send [--brief <path>] [--no-enter] [--] <target> [ad-hoc...]
 - 子→親の戻し: `oe-send "$PARENT_TMUX_PANE" "申し送り..."`
 - payload は 1 行保証（改行は fail-fast で拒否）。自動 Enter 後に観測ベース finalize（`OE_SEND_FINALIZE=0` で無効）
 
-関連 lib: `delegate-send.sh`（`oe_send_line`）/ `delegate-registry.sh`
+### 到達の確認（#299）
+
+送信のたびに相関 ID（nonce）を payload 末尾へ `[oe:<ULID>]` として載せる（`OE_SEND_NONCE=0` で無効）。受け手のセッションでは `UserPromptSubmit` hook（`canonical/hooks/scripts/oe-prompt-receipt.sh`）が、それを 1 ターンとして取り込んだ瞬間に `prompt_received` を追記する。**送信と受領を nonce で突き合わせる。** 鍵は送信ごとに一意なので原理的には 1 対 1 だが、**そう言えるのは read 側が nonce と宛先ペインの両方を見る場合に限る**（`oe-undelivered` はそうしている）。nonce だけを見ると、別のペインが同じタグを submit しただけで受領扱いになる。
+
+- 受領印は**受け手の `$TMUX_PANE` に束縛される**。ただし取り違えが防げるのは、read 側がその束縛を照合する場合だけである。送信側の画面 scrape は使わない（実測で逆を指していた・#299 P0）。
+- 言えるのは「そのセッションが 1 ターンとして取り込んだ」までである。読んだ・実行した、ではない（それは `report_received` / `oe-ack` の層）。
+- **これは Claude Code の hook 契約への依存である。免疫があるとは言わない — 壊れ方がましだと言っている。** 失効した画面の目印は静かに嘘の値を出し続けたが、hook 契約が壊れた場合は印が出なくなる。
+- **「ましだ」が成り立つ条件を書く。** (a) `oe-selfcheck` が**実行されること**（定期実行は未配線・下記）、(b) read 側が宛先ペインまで照合すること、(c) `.prompt` が取れない契約変更が診断へ残ること。いずれも実装してあるが、(a) は人が打つまで動かない。**そこが埋まるまで「marker よりまし」は条件付きの主張である。**
+- **`oe-selfcheck` 自身に定期実行の配線が無い。** 壊れたことに気づく仕掛けを、気づかれないまま放置できてしまう。cron / launchd への登録は owner 環境依存なので本 issue では行わない（surface のみ）。
+- `--no-enter`（ステージのみ）には nonce を載せない（`message_sent` を emit しないため、突き合わせ先の無い受領印を作らないため）。
+- **副作用として payload が約 32 文字伸びる。** 長文はもともと入力欄で折り返すと finalize の照合が外れる（#299 で判明した機構）ので、境界付近の送信がわずかに折返し側へ寄る。P2-b（折返し対応）は owner 判断で採っていない。
+
+**これで transport 凍結の再判定に必要な材料が揃う。** 2026-06-09 の「transport 据え置き」は「clean 環境で症状を再現できない → 比較計測が不能 → 賭けない」という三段の理由で決まった（`docs/plans/2026-06-09-plan-oe-send-ingestion-rootfix.md` §2〜§3）。受領印は実トラフィックでの取り込み率を出すので、**当時の三段目（比較計測が不能）の前提が崩れる。**
+
+**ただし「前後比較ができる」とまでは言わない。** 成立条件が3つある。(a) 旧 transport 側の受領印ベースラインが存在しない（「前」が無い。これから貯める必要がある）。(b) 受領印の欠落は transport 未達だけでなく、hook 未発火・契約変更・書き込み失敗・rotation・nonce 生成失敗とも混同する。(c) タグで payload が約 32 文字伸びるので、計測の導入自体が対象の挙動をわずかに変える。**替えるかどうかの判断は #299 の範囲外**（owner 判断で P1 の後）。
+
+関連 lib: `delegate-send.sh`（`oe_send_line` / `_oe_send_nonce`）/ `delegate-registry.sh`
 
 ## oe-list — 宛先候補の一覧
 
@@ -311,7 +327,8 @@ oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行�
 
 - 出す情報は 5 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
   - `TRIPS` … 関係内の `message_sent` 数（往復回数）
-  - `DELIVERY` … 直近 message の `delivery_signal`（`suspected_miss`|`none`・`delivered` は名乗らない・`(×N)` は suspected_miss 件数）
+  - `DELIVERY` … 直近 message の `delivery_signal`（`unknown`|`none`・`delivered` は名乗らない）
+  - **【#299 注意】`MISS` 列と `suspected_miss` を未着の根拠に使わないこと。** 実測でこの値は配送失敗と**逆**を指していた（最も厳しい突合で `suspected_miss` 側 244/250=97.6% が到達確認・`none` 側 162/217=74.7%）。#299 P0 で書き込みは止めたが、**過去レコードには 342 件残っており本ビューはそれを数え続ける。** 到達を見るなら `oe-undelivered`（受領印基準・#299 P4）を使う。この列の是正は #299 のスコープ外（surface のみ）
   - `PREVIEW` … 直近 message 先頭 ~100 字
   - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
   - `PENDING`（inbox・#206A） … 自分宛て message のうち**未受領**の数（0=すべて受領済み）。`report_received` の frontier snapshot（`covers_count`/`covers_last_ts`）から read 時導出: `K = min(covers_count, |ts ≤ covers_last_ts|)` の先頭 K 件が received・複数 ack は max K（単調・巻き戻りなし）。受領は推論しない — actor が `oe-ack` で打った印だけを数える
@@ -422,19 +439,63 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 子→親の報告（`message_sent`）のうち、親が受領印（`report_received`・#220/#206A）を打っておらず（未ack）、かつ最古の未ack報告が**時間窓 W を越えた**ものを検出し、owner に ping する read-only 観測 verb。統括死亡 / send 無言失敗で報告が虚空へ消える経路（#239 mode3・チャネル脆弱）を、**#220 の frontier（未ack）＋時間次元**で決定論的に拾う（ペイン出力は capture しない）。
 
 ```bash
-oe-undelivered                  # 既定窓 30 分（1800s）で報告未達を検出し owner ping
-oe-undelivered --window 3600    # 窓を 1 時間へ
+oe-undelivered                        # 既定: shadow（通知しない）・gone も出す・窓 30 分
+oe-undelivered --window 3600          # 窓を 1 時間へ
+oe-undelivered --notify               # owner へ ping する（既定は撃たない）
+oe-undelivered --alive-only           # 相手が生存している行だけに絞る
+oe-undelivered --start-after now      # この実行だけ起点を今に置く
+oe-undelivered --set-start-after now  # 起点を保存する（過去は消さない・0 で全期間に戻る）
 oe-undelivered -h | --help
 ```
 
+**#299 で判定と単位を変えた。** 変更点は4つある。
+
+- **判定を受領印基準にした（P4-3）。** 「未ack」だけでなく「受け手側の取り込み印（`prompt_received`）が無い」を見る。nonce を載せていない送信は判定できないので `RECEIPT=判定不可` と出し、**未着とは呼ばない。**
+- **単位を関係からメッセージへ移した（P4-4）。** 旧実装の抑止キーは `<child>|<parent>|<最古未ackのts>` で、ack が来ない限りこの ts が動かないため、**同じ関係で新しく未達が起きても通知が出なかった。** メッセージ単位にした。**ただし「再飽和しない」と言えるのは、ログが安定していて（rotate されず）単一実行の間だけ**である。抑止キーはログ内の index を含むので、rotate 後は同じメッセージの index が変わりうる。並行実行の排他も無い。
+- **既定を shadow にした（P4-2）。** stdout には出すが owner へは通知しない。何が鳴るかを先に見てから `--notify` を足す。
+- **相手が消えている行は既定で出す（P4-5 は実装時に判断を変えた）。** plan は「生存している相手だけに絞る」と書いていたが、**それはこの verb の主目的を隠す**。検出したいのは「統括が死んで報告が虚空へ消えた」経路（#239 mode3）で、そこでは親ペインがまさに gone になるからである（実装SO codex 指摘）。ノイズ制御は起点（`--start-after`）で行い、狭く見たいときだけ `--alive-only` を打つ。liveness が判定できない（tmux 不在）行は落とさない。
+- **観測の起点を持てるようにした（P4-1）。** 過去のイベントは消さず、`start-after` の目印だけを置く。`--start-after 0` でいつでも全期間へ戻せる。
+- **`MISS` 列を廃止した。** `suspected_miss` は実測で配送失敗と逆を指していたので、判定にも表示にも使わない。
+
+**`判定不可` は owner ping に載せない。** 未着と呼ばないと決めた対象を鳴らすと、また判別力の無い警報になる（stdout には出す）。
+
+**依然として捕まらないもの（開示）**: 親→子の kick は対象外である（判定が報告方向に限定されている）。ゲートの母集団も見ない。これは #299 のスコープ外で、plan がそう決めている。
+
 - **検知（2条件）**: `pending>0`（未ack）かつ `age = now - 最古未ack報告の ts > W`。`$TMUX_PANE` に依存せず**全 (child→parent) ペアを横断**する（`oe-activity --inbox` の self 中心と違う）。親子の向きは `child_spawned` / `report_received` / role / known-parent の複合で解決し、departed で role 空になる子（mode3 主対象）も取りこぼさない。
 - **frontier**: `oe-ack` / `oe-activity` と**同一の read 規則**（`K = min(covers_count, |ts ≤ covers_last_ts|)`・複数 ack は max・巻き戻りなし）。ack ループ本体は再構築しない（`report_received` を consume）。
-- **出力**: stdout に FLAG 全件（cron ログ / 手動確認の durable signal）。owner ping は `wez notify`（best-effort）。**二重通知抑止**: verb 固有の seen cache（`${OE_EVENT_DIR}/oe-undelivered/seen`・キー `<child>|<parent>|<oldest_ts>`）に無い新規キーのみ notify。cache は verb 自身の bookkeeping で engine state ではない。
+- **出力**: stdout に全件（cron ログ / 手動確認の durable signal）。owner ping は `--notify` 指定時のみ `wez notify`（best-effort）。**二重通知抑止**: verb 固有の seen cache（`${OE_EVENT_DIR}/oe-undelivered/seen`・キー `<child>|<parent>|<ts>|<idx>`＝**メッセージ単位**）に無い新規キーのみ notify。cache は verb 自身の bookkeeping で engine state ではない。
 - **read-only / 非検出**: 触れるのは `oe-events.jsonl` と tmux ペイン存在（mux query）のみ。engine state（events/registry/session-state）は mutate しない。exit は常に 0（observer）・usage エラーのみ 2。
 - **cron 例**（登録は owner 環境依存・自動化しない）: `*/15 * * * * /path/to/oe-undelivered >> "$HOME/.claude/state/oe-undelivered/cron.log" 2>&1`。cron 間隔と W は独立に調律する。
 - **注記**: `wez notify` の cron（no TTY / mux socket）到達性は未検証 → stdout が durable な signal。frontier read 規則は `oe-ack` / `oe-activity` に続く3つ目の copy（共有 lib 統合は follow-up）。
 
 関連: `schemas/oe-events.schema.json`（`report_received` の `covers_*`）/ `bin/oe-ack`（受領印の writer・`_ack_scan`）/ `bin/oe-activity`（PENDING の reader・`received_of`）。
+
+---
+
+## oe-selfcheck — 版に固定された前提の点検（#299 P3・read-only）
+
+外部の版に固定された前提が今も成り立つかを見る read-only 検査。何も書き換えない。
+
+**なぜ要るか。** #144 は「処理中の画面に `esc to interrupt` が出る」ことを 2026-06-09 の実機 capture で確かめ `verified` として計画書に記録した。ところが claude の更新でこの文字列は消え、**判定は静かに嘘の値を出し続けた。** #299 で実測するまで約2か月、誰も気づかなかった。同じ形の依存を一覧にして、崩れたら気づけるようにする。
+
+```bash
+oe-selfcheck          # 表形式（broken が1つでもあれば exit 1）
+oe-selfcheck --json   # 機械可読
+```
+
+**判定は3値である。** ここが本 verb の肝で、`ok` / `broken` に加えて **`indeterminate`（検査自体が成立しなかった。`ok` ではない）** を持つ。「0 件だったから異常なし」と読ませないためである。各検査は**同じ経路で陽性を1つ示せるか**を先に見て、示せないときは `ok` を名乗らない。
+
+| 検査 | 見るもの | 陽性対照 |
+|---|---|---|
+| `screen-marker` | 処理中の目印が finalize の走査窓（画面下3行）に入りうるか | 入力欄を持つ生存ペインが1枚以上。目印は入力欄より上に描かれるので、入力欄が下3行に在れば idle/busy に依らず「届かない」と決定論的に言える |
+| `hook-contract` | 受領印 hook が配線され、実際に印を出しているか | nonce 付きの送信が1件以上。送信が無ければ受領印 0 件を異常と読めない |
+| `transcript-format` | 受け手の記録から `promptSource=typed` を取り出せるか | 最新 transcript から1件以上 |
+| `pane-session-bridge` | heartbeat sidecar が pane を持つか | sidecar が1件以上 |
+| `retention-horizon` | 受け手側の記録をどこまで遡れるか | 値の報告のみ（良し悪しを判定しない） |
+
+**この検査は「気づく」だけで「直す」ことはしない。** また検査自体も同じ版依存を持つので、免疫があるとは言わない。
+
+関連: `canonical/hooks/scripts/oe-prompt-receipt.sh`（受領印 hook）/ `bin/oe-undelivered`（受領印を消費する側）/ `lib/delegate-send.sh`（nonce の払い出し）。
 
 ---
 
