@@ -8,7 +8,11 @@ prediction: "対象が途中で死んでも、過去の成功実績のせいで�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-03-episode-299-delivery-receipt.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-03
+    ref: "#304"
+    state: followed
+    note: "検査でなく doc を書く単位だったので、字義どおりの適用機会（合格条件を書く場面）は無い。効いたのは一般形のほう — validate-knowledge が3種の呼び方すべてで exit 0 でも、それを item の質の証拠として扱わず実装SO を通した。3レーンが両 item に成立する指摘を出し、実質的な書き直しになった。緑は「検証器が通した」までの証拠であって対象が健全である証拠ではない、という本 item の型をそのまま自分の成果物へ当てた形。同じ arc から収穫した item を、次の単位で自分が適用する側に回った"
 ---
 
 検査の陽性判定を「全期間の累計で1件でもあれば ok」にしてはならない。**直近の窓で見る。**
