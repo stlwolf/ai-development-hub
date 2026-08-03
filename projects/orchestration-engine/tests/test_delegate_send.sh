@@ -115,6 +115,12 @@ cap_calls()   { cat "$CAP_CALLSFILE"; }
 cancel_fired() { printf '%s' "$MOCK_SENDKEYS_LOG" | grep -q -- '-X cancel' && echo yes || echo no; }
 reset_fin() { MOCK_SENDKEYS_LOG=""; echo 0 > "$CAP_IDXFILE"; echo 0 > "$CAP_CALLSFILE"; MOCK_CAP_FAIL=""; MOCK_PANE_IN_MODE=0; MOCK_SENDKEYS_FAIL=""; }
 
+# #299: 以降の finalize 系テストは「回復の状態機械」を見るもので、nonce タグとは直交する。
+# タグを付けたまま走らせると、mock が返す画面（元 payload のみ）と実際に送る文字列（タグ込み）が
+# 食い違い staged が一致しなくなる。**その結果テストが「Enter 1回」を別の理由で通してしまう**ので、
+# ここではタグを切る。タグ経路そのものは末尾の [25][26] で別に検証する。
+export OE_SEND_NONCE=0
+
 echo "[7] finalize: staged_idle（窓終端までstaged・baseline idle）→ Enter を1回再送"
 reset_fin
 MOCK_CAP_SEQ=( "$(scr_empty)" "$(scr_staged 'PAY7')" )
@@ -248,6 +254,28 @@ ck "stdout に payload を出さない" "" "$(printf '%s' "$guard_out" | grep -F
 reset_fin
 guard_out2="$(oe_send_line "%5" "GUARDPAY24B" "0" 2>/dev/null)"
 ck "--no-enter でも stdout に payload を出さない" "" "$(printf '%s' "$guard_out2" | grep -F 'GUARDPAY24B' || true)"
+
+
+echo "[25] #299 P1: nonce タグは画面へ流す文字列の末尾に付く（本文は保つ）"
+reset_fin
+OE_SEND_NONCE=1 oe_send_line "%5" "TAGGED" >/dev/null 2>&1
+sent="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -o 'send-keys -l -t %5 -- .*' | head -1)"
+if printf '%s' "$sent" | grep -qE '\[oe:[0-9A-HJKMNP-TV-Z]{26}\]$'; then
+  echo "  PASS: 末尾に ULID タグが付く"; pass=$((pass+1))
+else
+  echo "  FAIL: タグが付かない (got=[$sent])"; fail=$((fail+1))
+fi
+ck "本文はそのまま残る" "TAGGED" "$(printf '%s' "$sent" | grep -o 'TAGGED')"
+
+echo "[26] #299 P1: --no-enter にはタグを付けない（突き合わせ先の無い受領印を作らない）"
+reset_fin
+OE_SEND_NONCE=1 oe_send_line "%5" "STAGED-ONLY" 0 >/dev/null 2>&1
+sent="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -o 'send-keys -l -t %5 -- .*' | head -1)"
+if printf '%s' "$sent" | grep -q '\[oe:'; then
+  echo "  FAIL: --no-enter にタグが付いている (got=[$sent])"; fail=$((fail+1))
+else
+  echo "  PASS: --no-enter にはタグを付けない"; pass=$((pass+1))
+fi
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

@@ -13,6 +13,10 @@ observations:
     ref: "#295"
     state: followed
     note: "検証に書いた printf | grep -q を bash 正規表現へ、手動手順の head を awk NR==1 へ置き換えた"
+  - date: 2026-08-03
+    ref: "#299"
+    state: externally_verified
+    note: "oe-selfcheck 初版が pipefail 下の find|xargs ls|head -1 で SIGPIPE を踏み、後続の代入フォールバックが正しく取れていた値を消して transcript を「無い」と誤判定した。実測で再現し date -r の1パス走査へ書き換えた"
 exclusions:
   - "入力が小さく、producer が consumer の早期終了より前に書き終わるケース（テストが緑でも本番の巨大入力で壊れる）"
   - "pipefail を使っていない、または早期終了する consumer がいないパイプ"

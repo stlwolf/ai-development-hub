@@ -262,5 +262,67 @@ reset_events
 oe_event_message_sent "%66" "%59" "$(printf 'あ%.0s' {1..150})" "none"
 ck "still 100+… after sanitize" "101" "$(last | jq -r '.preview|length')"
 
+echo "[20] #299 P0: delivery_signal の enum に unknown を additive 追加（none は上書きしない）"
+reset_events
+oe_event_message_sent "%66" "%59" "u" "unknown"
+ck "unknown を受理して書く"        "unknown"        "$(last | jq -r .delivery_signal)"
+oe_event_message_sent "%66" "%59" "n" "none"
+ck "none は従来どおり"             "none"           "$(last | jq -r .delivery_signal)"
+# suspected_miss は #299 P0 で書き込みを止めたが、正規化の受理値としては残す（呼び出し側が渡した
+# 事実を黙って none へ潰さない）。書き込みを止めたのは delegate-send 側であり、ここではない。
+oe_event_message_sent "%66" "%59" "s" "suspected_miss"
+ck "suspected_miss は受理値に残す" "suspected_miss" "$(last | jq -r .delivery_signal)"
+oe_event_message_sent "%66" "%59" "b" "bogus"
+ck "未知値は none へ正規化"        "none"           "$(last | jq -r .delivery_signal)"
+
+echo "[21] #299: delivery_receipt.nonce（送信側の相関 ID・任意）"
+reset_events
+NONCE_OK="01KZ1VQA1979K4S2MMH5YY24ZJ"
+oe_event_message_sent "%66" "%59" "with-nonce" "unknown" "$NONCE_OK"
+ck "nonce を焼く"           "$NONCE_OK" "$(last | jq -r '.delivery_receipt.nonce')"
+oe_event_message_sent "%66" "%59" "no-nonce" "unknown"
+ck "nonce 省略時は付けない" "null"      "$(last | jq -r '.delivery_receipt // "null"')"
+# 壊れた nonce は「黙って捨てる」のでなく warn を出してから落とす（環境エラーとデータ不在を分ける）。
+_err="$(oe_event_message_sent "%66" "%59" "bad-nonce" "unknown" "not-a-ulid" 2>&1 >/dev/null)"
+ck "壊れた nonce は warn を出す"          "1"    "$(printf '%s' "$_err" | grep -c 'ULID の形ではない')"
+ck "壊れた nonce では receipt を付けない" "null" "$(last | jq -r '.delivery_receipt // "null"')"
+ck "壊れた nonce でも message_sent は残る" "message_sent" "$(last | jq -r .type)"
+
+echo "[22] #299 P1: prompt_received は report_received と別イベント（意味を継がない）"
+# [16] が registry GC を模擬して spawn entry を消しているので、role 解決を見る本ブロックでは
+# fixture を張り直す（緩めるのでなく前提を戻す）。
+jq -cn '{pane:"%66",label:"#206 impl",workspace:"/w",parent_pane:"%59",role:"child"}' \
+  > "$OE_DELEGATE_STATE_DIR/$(keyfor %66).json"
+reset_events
+# from=取り込んだ側（子 %66）/ to=送信元（親 %59）。関係で role を確定する。
+oe_event_prompt_received "%66" "%59" "$NONCE_OK"
+ck "type"                      "prompt_received" "$(last | jq -r .type)"
+ck "nonce"                     "$NONCE_OK"       "$(last | jq -r .nonce)"
+ck "from=取り込んだ側"          "%66"             "$(last | jq -r .from.pane)"
+ck "from.role"                 "child"           "$(last | jq -r .from.role)"
+ck "to=送信元"                  "%59"             "$(last | jq -r .to.pane)"
+ck "to.role"                   "parent"          "$(last | jq -r .to.role)"
+# covers_* を持たない = report_received（読んだ）の意味を継がない。
+ck "covers_count を持たない"    "null" "$(last | jq -r '.covers_count // "null"')"
+ck "covers_last_ts を持たない"  "null" "$(last | jq -r '.covers_last_ts // "null"')"
+ck "1 行だけ"                   "1"    "$(nlines)"
+
+echo "[23] #299 P1: nonce 無し/壊れは emit しない（無しは無音・壊れは warn）"
+reset_events
+_err="$(oe_event_prompt_received "%66" "%59" "" 2>&1 >/dev/null)"
+ck "nonce 無しは emit しない" "0" "$(nlines)"
+ck "nonce 無しは無音（人の手打ちで stderr を鳴らさない）" "" "$_err"
+_err="$(oe_event_prompt_received "%66" "%59" "not-a-ulid" 2>&1 >/dev/null)"
+ck "壊れた nonce は emit しない" "0" "$(nlines)"
+ck "壊れた nonce は warn を出す" "1" "$(printf '%s' "$_err" | grep -c 'ULID の形ではない')"
+
+echo "[24] #299 P1: 同じ nonce の重複は write 側で潰さない（append-only を保つ・畳むのは read 側）"
+reset_events
+oe_event_prompt_received "%66" "%59" "$NONCE_OK"
+oe_event_prompt_received "%66" "%59" "$NONCE_OK"
+ck "2 行とも追記される" "2" "$(nlines)"
+ck "read 側で畳めば受領は 1 件" "1" \
+  "$(jq -rs '[.[] | select(.type=="prompt_received") | .nonce] | unique | length' "$EVENTS")"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

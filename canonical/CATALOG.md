@@ -99,6 +99,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | CC 形式チェック | `hooks/scripts/cc-lint.sh` | `git commit -m` の Conventional Commits 形式を検証（3ツール共通） |
 | コミットゲート | `hooks/scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（Claude Code のみ） |
 | 仮説ゲート | `hooks/scripts/hypothesis-gate.sh` | バグ調査で `tmp/hypothesis-*.md` が N=3 に達したら外部要因の結論前にコードパス未読確認を advisory 通知（Claude Code PostToolUse・ブロックしない・#78 code-path-exhaustion） |
+| 取り込み印 | `hooks/scripts/oe-prompt-receipt.sh` | 注入された 1 行を受け手セッションが取り込んだ瞬間に、ペインに束縛された受領印（`prompt_received`）を活動ログへ追記（Claude Code UserPromptSubmit・stdout を汚さない・#299 P1） |
 | 通知 | `hooks/scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory、並走時のポーリング解消）。loc にセッション名を表示 |
 | セッション命名 | `hooks/scripts/session-name.sh` | セッション名を自動設定（Claude Code のみ・UserPromptSubmit）。worktree は `#<issue> <slug>`（`scripts/wt/wt-pane-issue.sh`＝worktrunk post-switch と連携）、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト・非git→リポ名）でブランチ変化に追従。並列セッション識別用 |
 

@@ -68,7 +68,8 @@ projects/orchestration-engine/
 │   └── e2e_real_agent/        # 実 agent (cursor-agent + claude) で 1 サイクル E2E 検証（Step 4-4 で新設）
 ├── scripts/
 │   ├── validate-envelope.sh   # エンベロープ JSON 検証
-│   └── validate-session-state.sh  # KVS 状態 JSON 検証（verification map 含む）
+│   ├── validate-session-state.sh  # KVS 状態 JSON 検証（verification map 含む）
+│   └── measure-delivery-arrival.py  # 到達率の測定器（transport 前後比較の基準・#299）
 ├── audit/                     # 監査ログ JSONL 出力先（runtime）
 ├── state/                     # セッション状態 KVS 出力先（runtime。委譲レジストリは ~/.claude/state/ 配下）
 └── docs/

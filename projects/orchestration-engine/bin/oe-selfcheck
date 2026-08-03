@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+# oe-selfcheck — 版に固定された前提が今も成り立つかを見る read-only 検査（#299 P3）
+#
+# なぜ要るか:
+#   #144 は「処理中の画面に `esc to interrupt` が出る」ことを 2026-06-09 の実機 capture で確かめ、
+#   `verified` として計画書に記録した。ところが claude の更新でこの文字列は画面から消え、
+#   **判定は静かに嘘の値を出し続けた**。#299 で実測するまで約2か月、誰も気づかなかった。
+#
+#   本 verb は同じ形の依存を一覧にして、前提が崩れたら気づけるようにする。対象は画面 scrape
+#   だけではない。hook 契約・transcript の JSONL 形式・pane↔session の橋・記録の保持期間も
+#   同じ「外部の版に固定された前提」であり、同じ壊れ方をする。
+#
+# 判定は3値である（ここが本 verb の肝）:
+#   ok            前提は成り立っている
+#   broken        前提が崩れている（直すか、依存している判定を止める）
+#   indeterminate 検査自体が成立しなかった（**ok ではない**）
+#   info          判定ではなく値の報告（良し悪しの基準を持たない）
+#
+#   「0 件だったから異常なし」と読まないために indeterminate を分けてある。検出できる対象が
+#   そもそも無い状態と、対象が在るのに検出できない状態は別物である。各検査は「同じ経路で
+#   陽性を1つ示せるか」を先に見て、示せないときは ok を名乗らず indeterminate を返す。
+#
+# read-only: 何も書き換えない。
+# exit: broken が1つでもあれば 1 / broken は無いが indeterminate が在れば 2 / 全部 ok なら 0。
+#   **indeterminate を exit 0 にしない。** 機械監視から見て成功に見えるなら「ok ではない」は
+#   画面上の言葉でしかなくなる（実装SO codex 指摘）。
+#
+set -uo pipefail
+
+HOME_DIR="${HOME:-}"
+EVENT_DIR="${OE_EVENT_DIR:-${HOME_DIR}/.claude/state}"
+EVENT_FILE="${EVENT_DIR}/oe-events.jsonl"
+BEAT_DIR="${OE_HEARTBEAT_DIR:-${HOME_DIR}/.claude/state/oe-heartbeat}"
+PROJ_DIR="${OE_TRANSCRIPT_DIR:-${HOME_DIR}/.claude/projects}"
+SETTINGS="${OE_CLAUDE_SETTINGS:-${HOME_DIR}/.claude/settings.json}"
+MARKER="${OE_SEND_PROC_MARKER:-esc to interrupt}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-selfcheck [--json] [-h|--help]
+
+版に固定された前提が今も成り立つかを見る（read-only・何も書き換えない）。
+
+判定:
+  ok             前提は成り立っている
+  broken         前提が崩れている
+  indeterminate  検査自体が成立しなかった（ok ではない）
+  info           判定ではなく値の報告
+
+exit: broken≥1 → 1 / broken=0 かつ indeterminate≥1 → 2 / 全部 ok → 0
+      （indeterminate は成功にしない）
+EOF
+  exit 1
+}
+
+JSON=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --json) JSON=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "oe-selfcheck: unknown option: $1" >&2; usage ;;
+  esac
+done
+
+command -v jq >/dev/null 2>&1 || { echo "oe-selfcheck: jq が必要です" >&2; exit 2; }
+
+ROWS=()
+BROKEN=0
+INDET=0
+add() { # add <name> <verdict> <detail>
+  ROWS+=("$1"$'\037'"$2"$'\037'"$3")
+  [[ "$2" == "broken" ]] && BROKEN=$((BROKEN + 1))
+  [[ "$2" == "indeterminate" ]] && INDET=$((INDET + 1))
+  return 0
+}
+
+# --- 1. 画面 scrape: 処理中の目印が finalize の走査窓（画面下 3 行）に入るか ---
+#
+# **初版はここで「目印は入力欄より上に描かれる」という前提を置いていたが、これは誤りだった。**
+# リポジトリ自身の fixture（tests/test_delegate_send.sh の scr_proc）は目印を最終行に描くし、
+# #144 の計画書 S1 は実機 capture を根拠に「`❯` 行と別行（**最下部** status 行）」と記録している。
+# つまり設計時の版では目印は入力欄より**下**だった。いま観測できる版で上に見えるのは、
+# その版の描画にすぎない。**版に固定された前提を検出する検査器が、自分で版に固定された前提を
+# 置いていた**（実装SO claude レーン指摘）。しかもその前提で先に broken を返すため ok へ到達できず、
+# 検査として情報を持っていなかった。
+#
+# 直した形: 位置を仮定しない。見えた事実だけで判定する。
+#   目印が走査窓（下3行）の中に在るのを観測できた        → ok
+#   目印は画面のどこかに在るが走査窓には一度も入らない    → broken（窓が届いていない）
+#   稼働中のペインが在るのに目印をどこにも観測できない    → broken（この版に目印が無い）
+#   稼働中のペインが無い                                  → indeterminate（陽性対照が取れない）
+#
+# 陽性対照は「稼働中のペインが在ること」に置く。目印に依存せず版にも依存しない形として、
+# **短い間隔で 2 回 capture して内容が変わったペイン**を稼働中とみなす（出力が動いている＝処理中）。
+# これが無いと「目印が見えない」を「全ペインが idle」と区別できない。
+check_marker_window() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    add "screen-marker" "indeterminate" "tmux が無いので画面を見られない"; return
+  fi
+  local panes p cap1 cap2 total=0 active=0 seen_anywhere=0 in_window=0
+  panes="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)" || {
+    add "screen-marker" "indeterminate" "tmux list-panes が失敗した"; return; }
+  [[ -n "$panes" ]] || { add "screen-marker" "indeterminate" "生存ペインが無い"; return; }
+  local -a boxed_panes=()
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    cap1="$(tmux capture-pane -p -t "$p" 2>/dev/null)" || continue
+    printf '%s\n' "$cap1" | grep -q '^[[:space:]]*❯' || continue   # claude の入力欄が無いペインは対象外
+    total=$((total + 1))
+    boxed_panes+=("$p")
+    printf '%s\n' "$cap1" | grep -qF -- "$MARKER" && seen_anywhere=$((seen_anywhere + 1))
+    printf '%s\n' "$cap1" | tail -n 3 | grep -qF -- "$MARKER" && in_window=$((in_window + 1))
+    printf '%s' "$cap1" > "${TMPDIR:-/tmp}/oe-selfcheck-cap.$$.${p//[^0-9]/}" 2>/dev/null || true
+  done <<< "$panes"
+  if [[ "$total" -eq 0 ]]; then
+    add "screen-marker" "indeterminate" "入力欄を持つ生存ペインが無い（陽性対照を取れない）"; return
+  fi
+  # 2 回目の capture で「動いているペイン」を数える（稼働中の陽性対照）。
+  sleep "${OE_SELFCHECK_ACTIVITY_INTERVAL:-1.2}"
+  for p in "${boxed_panes[@]}"; do
+    cap2="$(tmux capture-pane -p -t "$p" 2>/dev/null)" || continue
+    printf '%s\n' "$cap2" | grep -qF -- "$MARKER" && seen_anywhere=$((seen_anywhere + 1))
+    printf '%s\n' "$cap2" | tail -n 3 | grep -qF -- "$MARKER" && in_window=$((in_window + 1))
+    local f="${TMPDIR:-/tmp}/oe-selfcheck-cap.$$.${p//[^0-9]/}"
+    if [[ -r "$f" ]] && ! printf '%s' "$cap2" | cmp -s - "$f"; then active=$((active + 1)); fi
+    rm -f "$f" 2>/dev/null || true
+  done
+  if [[ "$in_window" -gt 0 ]]; then
+    add "screen-marker" "ok" "目印が走査窓（下3行）の中に在るのを ${in_window} 回観測した（対象 ${total} 枚・稼働中 ${active} 枚）"
+    return
+  fi
+  if [[ "$seen_anywhere" -gt 0 ]]; then
+    add "screen-marker" "broken" "目印は画面に在る（${seen_anywhere} 回観測）が、finalize が見る下3行には一度も入らない（対象 ${total} 枚）"
+    return
+  fi
+  if [[ "$active" -gt 0 ]]; then
+    add "screen-marker" "broken" "稼働中のペインが ${active} 枚あるのに目印 '${MARKER}' を画面のどこにも観測できない（この版に目印が無い。対象 ${total} 枚）"
+    return
+  fi
+  add "screen-marker" "indeterminate" "${total} 枚を見たが稼働中のペインが無く、目印も観測できない（版に目印が無いのか全ペインが idle なのか区別できない）"
+}
+
+# --- 2. hook 契約: 受領印 hook が配線され、いまも印を出しているか ---
+# 陽性対照: **直近の** nonce 付き送信（既定 20 件・猶予 60 秒を過ぎたもの）。
+#
+# 初版は「全期間で受領印が 1 件でもあれば ok」にしていた。これは marker が踏んだのと**同じ罠**で、
+# 一度でも成功していればその後 hook が死んでも永久に緑のままになる（実装SO cursor 指摘）。
+# 検査器自身が「静かに嘘を吐く」側へ回るので、直近の窓で見る形へ直した。
+#
+# 猶予を置く理由: 送った直後は受領印がまだ来ていないのが正常なので、それを broken と読まない。
+check_hook_contract() {
+  local wired=0 script="${HOME_DIR}/.claude/hooks/oe-prompt-receipt.sh"
+  if [[ -r "$SETTINGS" ]]; then
+    wired="$(jq -r '[ (.hooks.UserPromptSubmit // [])[] | (.hooks // [])[] | .command // "" ]
+                    | map(select(test("oe-prompt-receipt"))) | length' "$SETTINGS" 2>/dev/null)" || wired=0
+  fi
+  case "$wired" in ''|*[!0-9]*) wired=0 ;; esac
+  if [[ "$wired" -eq 0 ]]; then
+    add "hook-contract" "broken" "settings.json に oe-prompt-receipt.sh の UserPromptSubmit 配線が無い"; return
+  fi
+  if [[ ! -x "$script" ]]; then
+    add "hook-contract" "broken" "配線はあるが ${script} が実行可能でない（sync 未実行の可能性）"; return
+  fi
+  if [[ ! -r "$EVENT_FILE" ]]; then
+    add "hook-contract" "indeterminate" "活動ログを読めないので発火を確認できない: ${EVENT_FILE}"; return
+  fi
+  local recent grace now_epoch stat
+  recent="${OE_SELFCHECK_RECENT_SENDS:-20}"
+  grace="${OE_SELFCHECK_RECEIPT_GRACE_SEC:-60}"
+  now_epoch="${OE_SELFCHECK_NOW_EPOCH:-$(date +%s)}"
+  case "$recent" in ''|*[!0-9]*) recent=20 ;; esac
+  case "$grace" in ''|*[!0-9]*) grace=60 ;; esac
+  case "$now_epoch" in ''|*[!0-9]*) now_epoch="$(date +%s)" ;; esac
+  # 直近 N 件の nonce 付き送信のうち、猶予を過ぎたものを母集団にし、そのうち
+  # **宛先ペイン自身から**受領印が出ている件数を数える（nonce 一致だけでは取り違えを潰せない）。
+  stat="$(jq -R 'fromjson? // empty' "$EVENT_FILE" 2>/dev/null \
+    | jq -rs --argjson n "$recent" --argjson grace "$grace" --argjson now "$now_epoch" '
+        def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
+        ( reduce ( .[] | select(.type=="prompt_received") | select((.nonce // "") != "") ) as $r
+            ({}; .[$r.nonce] = ((.[$r.nonce] // []) + [$r.from.pane // ""])) ) as $rcpt
+        | [ .[] | select(.type=="message_sent") | select((.delivery_receipt.nonce // "") != "") ]
+        | .[-$n:]
+        | [ .[] | . as $m | ts_epoch($m.ts) as $t | select($t != null) | select(($now - $t) > $grace)
+            | { got: ((($rcpt[$m.delivery_receipt.nonce] // []) | index($m.to.pane // "")) != null) } ]
+        | [ (length|tostring), ([ .[] | select(.got) ] | length | tostring) ] | join(" ")
+      ' 2>/dev/null)" || stat=""
+  local total got
+  total="${stat%% *}"; got="${stat##* }"
+  case "$total" in ''|*[!0-9]*) add "hook-contract" "indeterminate" "直近の送信を集計できなかった"; return ;; esac
+  case "$got" in ''|*[!0-9]*) got=0 ;; esac
+  if [[ "$total" -eq 0 ]]; then
+    add "hook-contract" "indeterminate" "猶予（${grace}秒）を過ぎた nonce 付き送信が直近 ${recent} 件の中に無い（陽性対照が無いので受領印 0 件を異常と読めない）"; return
+  fi
+  if [[ "$got" -eq 0 ]]; then
+    add "hook-contract" "broken" "直近の nonce 付き送信 ${total} 件すべてに宛先ペインからの受領印が無い（hook が発火していない）"; return
+  fi
+  add "hook-contract" "ok" "直近の nonce 付き送信 ${total} 件中 ${got} 件に宛先ペインからの受領印がある"
+}
+
+# transcript を 1 回だけ走査して最新と最古を求める（検査 3 と 5 が共有する）。
+#
+# `find ... | xargs ls -t | head -1` を使わない。理由が2つある。
+#   - pipefail の下で head が早期終了すると上流が SIGPIPE で落ち、パイプライン全体が非 0 になる。
+#     `|| var=""` を付けていると、**正しく取れていた値を消す**（本 verb の初版が実際にこれで
+#     transcript を「無い」と誤判定した。持ち越し NK 01KYA7C9M4EN1EZM3HBEN5WDRP）。
+#   - xargs は入力が多いと複数回に分割して起動するので、`ls -t` の結果はバッチ内の順序でしかない。
+#     先頭行が全体の最新である保証が無い（ARG_MAX 由来・NK 01KYA7C9MWDKQK79FGDWRC8W6H と同根）。
+# `date -r <file> +%s` は BSD / GNU どちらでも使えるので、素直に 1 パスで比較する。
+TS_OLDEST_FILE=""; TS_NEWEST=0; TS_OLDEST=0; TS_COUNT=0
+TS_RECENT=()   # 新しい順のパス（検査 3 が先頭数本を見る）
+scan_transcripts() {
+  [[ -d "$PROJ_DIR" ]] || return 0
+  local f m line
+  local -a pairs=()
+  while IFS= read -r -d '' f; do
+    m="$(date -r "$f" +%s 2>/dev/null)" || continue
+    case "$m" in ''|*[!0-9]*) continue ;; esac
+    TS_COUNT=$((TS_COUNT + 1))
+    pairs+=("${m} ${f}")
+    if [[ "$m" -gt "$TS_NEWEST" ]]; then TS_NEWEST="$m"; fi
+    if [[ "$TS_OLDEST" -eq 0 || "$m" -lt "$TS_OLDEST" ]]; then TS_OLDEST="$m"; TS_OLDEST_FILE="$f"; fi
+  done < <(find "$PROJ_DIR" -name '*.jsonl' -type f -print0 2>/dev/null)
+  [[ "${#pairs[@]}" -gt 0 ]] || return 0
+  # sort は数値降順。パスに改行は入らない置き場なので行区切りで足りる。
+  while IFS= read -r line; do TS_RECENT+=("${line#* }"); done < <(printf '%s\n' "${pairs[@]}" | sort -rn)
+  return 0
+}
+
+# --- 3. transcript の JSONL 形式: typed な user ターンを取り出せるか ---
+# 陽性対照は「user ターンを持つ transcript が在ること」に置く。最新 1 本だけを見る初版は、
+# **プロンプトを 1 度も受けていない新しいセッション**を掴んだだけで broken を出した（誤爆を実測）。
+# 新しい順に数本を見て、user ターンを持つ本が在るのに typed が 1 件も無いときだけ broken とする。
+check_transcript_format() {
+  [[ -d "$PROJ_DIR" ]] || { add "transcript-format" "indeterminate" "transcript の置き場が無い: ${PROJ_DIR}"; return; }
+  if [[ "$TS_COUNT" -eq 0 ]]; then
+    add "transcript-format" "indeterminate" "transcript が 0 件（陽性対照を取れない）"; return
+  fi
+  local n="${OE_SELFCHECK_RECENT_TRANSCRIPTS:-5}" f with_user=0 with_typed=0 typed_total=0 c
+  case "$n" in ''|*[!0-9]*) n=5 ;; esac
+  for f in "${TS_RECENT[@]:0:$n}"; do
+    [[ -r "$f" ]] || continue
+    # 文字列 grep だと、プロンプト本文や tool 出力にその文字列が含まれるだけで ok になる
+    # （実装SO codex 指摘）。JSON として読み、user ターンの promptSource を見る。
+    local u
+    u="$(jq -rs '[ .[] | select(.type=="user") ] | length' < <(jq -R 'fromjson? // empty' "$f" 2>/dev/null) 2>/dev/null)" || u=0
+    case "$u" in ''|*[!0-9]*) u=0 ;; esac
+    [[ "$u" -gt 0 ]] || continue
+    with_user=$((with_user + 1))
+    c="$(jq -rs '[ .[] | select(.type=="user") | select(.promptSource=="typed") ] | length' < <(jq -R 'fromjson? // empty' "$f" 2>/dev/null) 2>/dev/null)" || c=0
+    case "$c" in ''|*[!0-9]*) c=0 ;; esac
+    if [[ "$c" -gt 0 ]]; then with_typed=$((with_typed + 1)); typed_total=$((typed_total + c)); fi
+  done
+  if [[ "$with_user" -eq 0 ]]; then
+    add "transcript-format" "indeterminate" "新しい ${n} 本に user ターンが無い（陽性対照を取れない）"; return
+  fi
+  if [[ "$with_typed" -eq 0 ]]; then
+    add "transcript-format" "broken" "user ターンを持つ ${with_user} 本すべてに promptSource=typed が無い（形式が変わった疑い）"; return
+  fi
+  add "transcript-format" "ok" "新しい ${n} 本のうち ${with_typed} 本から typed ターンを計 ${typed_total} 件取れる"
+}
+
+# --- 4. pane↔session の橋: heartbeat sidecar が pane を持っているか ---
+# 陽性対照: sidecar が1つでも在ること。1つも無ければ indeterminate。
+check_pane_bridge() {
+  [[ -d "$BEAT_DIR" ]] || { add "pane-session-bridge" "indeterminate" "sidecar の置き場が無い: ${BEAT_DIR}"; return; }
+  local total=0 withpane=0 f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    total=$((total + 1))
+    [[ -n "$(jq -r '.pane // ""' "$f" 2>/dev/null)" ]] && withpane=$((withpane + 1))
+  done < <(find "$BEAT_DIR" -name '*.json' -type f 2>/dev/null)
+  if [[ "$total" -eq 0 ]]; then
+    add "pane-session-bridge" "indeterminate" "sidecar が 0 件（statusLine が動いていない可能性と区別できない）"; return
+  fi
+  if [[ "$withpane" -eq 0 ]]; then
+    add "pane-session-bridge" "broken" "sidecar は ${total} 件あるが pane がすべて空（\$TMUX_PANE が伝播していない）"; return
+  fi
+  add "pane-session-bridge" "ok" "${total} 件中 ${withpane} 件が pane を持つ"
+}
+
+# --- 5. 保持期間: 受け手側の記録をどこまで遡れるか ---
+# **これは判定ではなく情報である。** 良し悪しの基準が無いのに ok を出すと、他の検査の ok と
+# 並んで「健全性を確認した」と誤読される（実装SO codex 指摘）。verdict は info にする。
+check_retention_horizon() {
+  [[ -d "$PROJ_DIR" ]] || { add "retention-horizon" "indeterminate" "transcript の置き場が無い"; return; }
+  if [[ "$TS_COUNT" -eq 0 || -z "$TS_OLDEST_FILE" ]]; then
+    add "retention-horizon" "indeterminate" "transcript が無い"; return
+  fi
+  local mt
+  mt="$(date -r "$TS_OLDEST_FILE" -u +%Y-%m-%d 2>/dev/null)" || mt=""
+  [[ -n "$mt" ]] || { add "retention-horizon" "indeterminate" "最終更新時刻を取れない"; return; }
+  add "retention-horizon" "info" "最も古い transcript の最終更新は ${mt}（受け手側の記録はこれより前へ遡れない。良し悪しは判定していない）"
+}
+
+scan_transcripts
+check_marker_window
+check_hook_contract
+check_transcript_format
+check_pane_bridge
+check_retention_horizon
+
+if [[ "$JSON" -eq 1 ]]; then
+  printf '%s\n' "${ROWS[@]}" \
+    | jq -Rs 'split("\n") | map(select(length>0) | split("\u001f") | {check:.[0], verdict:.[1], detail:.[2]})'
+else
+  printf '=== oe-selfcheck（read-only・版に固定された前提の点検）===\n'
+  printf '%-22s  %-14s  %s\n' "CHECK" "VERDICT" "DETAIL"
+  local_row=""
+  for local_row in "${ROWS[@]}"; do
+    IFS=$'\037' read -r n v d <<< "$local_row"
+    printf '%-22s  %-14s  %s\n' "$n" "$v" "$d"
+  done
+  printf '\n判定の読み方: indeterminate は ok ではない（検査が成立しなかった）。\n'
+fi
+
+if [[ "$BROKEN" -gt 0 ]]; then exit 1; fi
+if [[ "$INDET" -gt 0 ]]; then exit 2; fi
+exit 0

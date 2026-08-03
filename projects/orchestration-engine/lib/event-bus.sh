@@ -136,13 +136,14 @@ oe_event_child_spawned() {
   oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "$extra"
 }
 
-# oe_event_message_sent <from_pane> <to_pane> <preview-text> [delivery_signal]
-#   oe_send_line が送信成功後に呼ぶ。delivery_signal は suspected_miss|none（delivered は名乗らない）。
+# oe_event_message_sent <from_pane> <to_pane> <preview-text> [delivery_signal] [nonce]
+#   oe_send_line が送信成功後に呼ぶ。delivery_signal は unknown|none（#299 P0 以降 suspected_miss は
+#   書かない。delivered は名乗らない）。nonce（#299・任意）を渡すと delivery_receipt.nonce を焼く。
 #   preview は先頭 ~100 codepoint に jq で切り詰め（マルチバイトを壊さず行を小さく保つ）。
 oe_event_message_sent() {
   [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  local fp="${1:-}" tp="${2:-}" preview="${3:-}" delivery="${4:-none}"
+  local fp="${1:-}" tp="${2:-}" preview="${3:-}" delivery="${4:-none}" nonce="${5:-}"
   local frole flabel fparent trole tlabel tparent
   IFS=$'\037' read -r frole flabel fparent < <(_oe_event_ident "$fp") || true
   IFS=$'\037' read -r trole tlabel tparent < <(_oe_event_ident "$tp") || true
@@ -157,8 +158,18 @@ oe_event_message_sent() {
   # 非数値の OE_EVENT_PREVIEW_MAX だと `jq --argjson n` が失敗し emit 丸ごと no-op になる
   # （best-effort のはずがサイレント no-op になる・Copilot 指摘）。非数値は 100 へ落として warn を出す。
   case "$maxc" in ''|*[!0-9]*) echo "oe_event_message_sent: OE_EVENT_PREVIEW_MAX='${maxc}' は非数値 → 100 を使用" >&2; maxc=100 ;; esac
-  # delivery_signal を suspected_miss|none に正規化（未知値は none）。
-  case "$delivery" in suspected_miss|none) ;; *) delivery="none" ;; esac
+  # delivery_signal を enum へ正規化（未知値は none）。#299 で unknown を additive 追加した。
+  # suspected_miss は書き込みを止めた（#299 P0・過去レコードにのみ残る）が、正規化の受理値としては
+  # 残す。呼び出し側が渡してきた値を黙って none へ潰すと、渡された事実が消えるためである。
+  case "$delivery" in unknown|suspected_miss|none) ;; *) delivery="none" ;; esac
+  # #299: nonce は ULID（Crockford base32・26 桁）のみ受理する。形が違えば delivery_receipt を
+  # 付けないが、**黙って捨てずに warn を出す**。呼び出し側の生成不具合を「受領印なし」へ無言で
+  # 縮退させると、受領印が付かない理由が「送っていない」のか「壊れていた」のか読めなくなる
+  # （採用 NK 01KYA7C9NN4VDM7H2NYXZB2PSX: 環境エラーとデータ不在を別に記録する）。
+  if [[ -n "$nonce" && ! "$nonce" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
+    echo "oe_event_message_sent: nonce が ULID の形ではないため delivery_receipt を付けない: ${nonce}" >&2
+    nonce=""
+  fi
   # #224: 会話到達面（oe-activity/oe-ack が読む preview）へ載る前に write-time で無害化する。
   # ここ1箇所で全 read consumer を drift なくカバーする（DJ-4=write-time）。tool-call タグ列・
   # box-drawing・制御文字・行頭孤立 court を無害化。この後の 100cp truncate は preview 長の
@@ -167,9 +178,47 @@ oe_event_message_sent() {
   # best-effort: サニタイズが万一失敗しても emit を落とさず raw preview で続行（set -e 下でも安全）。
   local _san
   if _san="$(oe_sanitize_conversation "$preview")"; then preview="$_san"; fi
-  extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --argjson n "$maxc" \
-    '{preview: (if ($p|length) > $n then ($p[0:$n] + "…") else $p end), delivery_signal: $d}' 2>/dev/null)" || return 0
+  extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --arg nc "$nonce" --argjson n "$maxc" \
+    '{preview: (if ($p|length) > $n then ($p[0:$n] + "…") else $p end), delivery_signal: $d}
+     + (if $nc != "" then {delivery_receipt: {nonce: $nc}} else {} end)' 2>/dev/null)" || return 0
   oe_event_emit "message_sent" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
+}
+
+# oe_event_prompt_received <from_pane(取り込んだ側=受け手)> <to_pane(送信元)> <nonce>
+#   取り込み印（#299 P1）。受け手セッションの UserPromptSubmit hook が、注入された 1 行を
+#   自分のターンとして取り込んだ瞬間に撃つ。from は hook が $TMUX_PANE から焼くので、
+#   **ペインに束縛された一次記録**になる（送信側の推測ではない）。
+#
+#   report_received（#206A・「読んだ」）とは別イベントである。意味を継がないので covers_* を
+#   持たない。prompt_received が言うのは「そのセッションが 1 ターンとして取り込んだ」までで、
+#   読んだ・実行した・作業に反映した、ではない。両者を同じ語で扱ってはならない。
+#
+#   冪等: 同じ nonce の prompt_received が複数行あっても、read 側は受領 1 件として畳む
+#   （書き込み側で重複排除しない ＝ append-only の不変条件を崩さない。write は常に追記のみ）。
+oe_event_prompt_received() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local fp="${1:-}" tp="${2:-}" nonce="${3:-}"
+  # nonce 無しの取り込み印は突き合わせ先が無く受領印として意味を成さないので emit しない。
+  # ここは「データ不在」（タグの無い通常のプロンプト）であって環境エラーではないため warn を出さない
+  # ＝ 人が手で打ったプロンプトのたびに stderr が鳴るのを避ける。形が壊れている場合だけ下で warn する。
+  [[ -n "$nonce" ]] || return 0
+  if [[ ! "$nonce" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
+    echo "oe_event_prompt_received: nonce が ULID の形ではないため emit しない: ${nonce}" >&2
+    return 0
+  fi
+  local frole flabel fparent trole tlabel tparent
+  IFS=$'\037' read -r frole flabel fparent < <(_oe_event_ident "$fp") || true
+  IFS=$'\037' read -r trole tlabel tparent < <(_oe_event_ident "$tp") || true
+  # message_sent と同じ関係上書き: 直接の親子リンクで役割を honest に確定する。
+  if [[ -n "$fparent" && "$fparent" == "$tp" ]]; then
+    frole="child"; trole="parent"
+  elif [[ -n "$tparent" && "$tparent" == "$fp" ]]; then
+    frole="parent"; trole="child"
+  fi
+  local extra
+  extra="$(jq -cn --arg nc "$nonce" '{nonce: $nc}' 2>/dev/null)" || return 0
+  oe_event_emit "prompt_received" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
 }
 
 # oe_event_report_received <from_pane(受領者=ackした側)> <to_pane(報告元)> <covers_count> <covers_last_ts>

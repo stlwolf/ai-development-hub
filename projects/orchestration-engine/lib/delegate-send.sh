@@ -122,6 +122,36 @@ _oe_send_finalize() {
   return 0
 }
 
+# _oe_send_nonce
+#   この送信に一意な相関 ID（ULID・Crockford base32 26 桁）を stdout へ返す。#299 P1。
+#   payload 末尾のタグとして受け手へ渡り、受け手側の UserPromptSubmit hook が同じ ID で
+#   prompt_received を撃つ。送信と受領を1対1で突き合わせるための鍵である。
+#
+#   外部コマンドに依存しない（`ulid` / `uuidgen` を要求しない）。時刻 48bit + 乱数 80bit を
+#   bash の算術と $RANDOM で組む。厳密な ULID 仕様互換ではなく「一意な 26 桁」で足りる用途。
+#   生成に失敗したら空を返す — 呼び出し側は「タグ無しで送る」へ縮退し、受領印が付かないだけで
+#   送信自体は落とさない（best-effort）。
+_oe_send_nonce() {
+  local c="0123456789ABCDEFGHJKMNPQRSTVWXYZ" out="" ms i v
+  # epoch ミリ秒。date +%s%3N は BSD date で使えないので秒 + 3 桁乱数で代用する
+  # （単調性は要らない。要るのは衝突しないことだけである）。
+  ms="$(( $(date +%s) * 1000 + RANDOM % 1000 ))" || return 0
+  for ((i = 9; i >= 0; i--)); do
+    v=$(( (ms >> (i * 5)) & 31 ))
+    out+="${c:$v:1}"
+  done
+  for ((i = 0; i < 16; i++)); do
+    v=$(( RANDOM % 32 ))
+    out+="${c:$v:1}"
+  done
+  # 26 桁に満たなければ壊れた ID を流さず空を返す（黙って短い ID を後段へ渡さない）。
+  if [[ ${#out} -ne 26 ]]; then
+    echo "oe_send_line: nonce の生成に失敗した（タグ無しで送る）" >&2
+    return 0
+  fi
+  printf '%s' "$out"
+}
+
 # oe_send_line <pane_id> <text> [send_enter]
 #   <text> に改行（LF / CR）が含まれていれば送信せず非 0 で失敗する（途中送信の根本封じ）。
 #   対象ペインが存在しなければ非 0 で失敗する（死んだペインへの無言送信を防ぐ）。
@@ -194,11 +224,25 @@ oe_send_line() {
     fi
   fi
 
+  # #299 P1: 相関 ID（nonce）を payload 末尾のタグとして載せる。受け手側の UserPromptSubmit
+  # hook が同じ ID で prompt_received を撃つので、送信と受領が1対1で突き合う。
+  #
+  # 自動送信（Enter を撃つ）ときだけ載せる。`--no-enter`（ステージのみ）は message_sent を
+  # emit しないため、タグだけ載せると突き合わせ先の無い受領印（dangling）を作ってしまう。
+  #
+  # 画面へ流す文字列（wire_text）と、ログの preview に残す文字列（text）を分ける。preview は
+  # 人が読む面なのでタグを載せない。nonce は delivery_receipt として構造化フィールドに入る。
+  local wire_text="$text" nonce=""
+  if [[ "$send_enter" != "0" && "${OE_SEND_NONCE:-1}" != "0" ]]; then
+    nonce="$(_oe_send_nonce)"
+    [[ -n "$nonce" ]] && wire_text="${text} [oe:${nonce}]"
+  fi
+
   # -- で text のオプション誤解釈を防ぐ。-l はリテラル送信。Enter は別途発火（任意）。
   # transport は据え置き（#144: 機構未確定ゆえ送信経路は賭けない）。
   # 呼び出し側が `oe_send_line ... || rc=$?` で受けると関数内 set -e が無効化されるため、
   # transport 失敗（送信中の pane 死など）は errexit に頼らず明示伝播する（silent 化防止・#154 SO 指摘）。
-  if ! tmux send-keys -l -t "$pane" -- "$text"; then
+  if ! tmux send-keys -l -t "$pane" -- "$wire_text"; then
     echo "oe_send_line: tmux send-keys (literal) failed on ${pane}" >&2
     return 2
   fi
@@ -219,11 +263,26 @@ oe_send_line() {
     local delivery_signal="none"
     if [[ "$fin_on" == "1" ]]; then
       local fin_rc=0
-      _oe_send_finalize "$pane" "$text" "$base_proc" "$base_staged" || fin_rc=$?
-      [[ "$fin_rc" == "3" ]] && delivery_signal="suspected_miss"
+      # finalize は画面を見るので、実際に流した文字列（タグ込み）で照合する。
+      _oe_send_finalize "$pane" "$wire_text" "$base_proc" "$base_staged" || fin_rc=$?
+      # #299 P0: rc=3 に `suspected_miss` を焼くのを止め、`unknown` を書く。
+      # 実測でこの観測は配送の成否と逆を指していた（最も厳しい突合＝typed 限定 + 宛先ペイン束縛 +
+      # 1対1排他割当で、rc=3 側は 244/250=97.6% が到達確認・rc=0 側は 162/217=74.7%）。原因は
+      # (a) finalize が Enter の後から観測を始める (b) marker が現行 claude の画面に無い
+      # (c) 折返した payload が `❯` 行と全文一致しない、の3点。いずれも P0 では直さない。
+      #
+      # **止めるのはここ1点だけである。** 次の2点は意図して据え置く（別判断・#299 に含めない）:
+      #   - OE_SEND_SIGNAL_MISS=1 のときの rc=4（呼び出し側のフォールバック）
+      #   - finalize の回復状態機械そのもの（staged_idle の Enter 撃ち直し）
+      #
+      # `none` は上書きしない（「未着シグナル無し」の意味を静かに変えないため）。rc=0 は従来どおり
+      # `none` を書き、rc=3 だけが `unknown` になる。到達の判定は受け手側の prompt_received
+      # （#299 P1）を見ること。rc=3 が拾えていた真の stage miss（母集団で 6 件）は `unknown` の
+      # 中に残るが、`unknown` は未着を意味しない — 判別には受領印が要る。
+      [[ "$fin_rc" == "3" ]] && delivery_signal="unknown"
       # 活動ログ（#206）: 送信を message_sent として best-effort emit（rc は不変・常に成功扱い）。
       if declare -F oe_event_message_sent >/dev/null 2>&1; then
-        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" || true
+        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" "$nonce" || true
       fi
       if [[ "$fin_rc" == "3" && "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
         echo "oe_send_line: signaling suspected non-delivery (stage miss) on ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
@@ -232,7 +291,7 @@ oe_send_line() {
     else
       # finalize 無効時は配送を観測しないため none（未着シグナル無し ＝ delivered の確証ではない）。
       if declare -F oe_event_message_sent >/dev/null 2>&1; then
-        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" || true
+        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" "$nonce" || true
       fi
     fi
   fi
