@@ -251,5 +251,73 @@ else
   echo "  FAIL: 診断行が書かれていない"; FAIL=$((FAIL+1))
 fi
 
+
+# --- #299 3レーン目の指摘に対する回帰 -----------------------------------------
+
+# stub tmux を作る。capture の内容を呼び出し回数で切り替えられるようにして、
+# 「稼働中（内容が変わる）」も模擬できるようにする。
+mk_tmux_stub() { # mk_tmux_stub <dir> <cap1-file> [cap2-file]
+  local d="$1" c1="$2" c2="${3:-$2}"
+  mkdir -p "$d"
+  cat > "$d/tmux" <<STUB
+#!/usr/bin/env bash
+case "\$1" in
+  list-panes) printf '%%1\n'; exit 0 ;;
+  capture-pane)
+    n=\$(cat "$d/.n" 2>/dev/null || echo 0); echo \$((n+1)) > "$d/.n"
+    if [ "\$n" -eq 0 ]; then cat "$c1"; else cat "$c2"; fi
+    exit 0 ;;
+esac
+exit 0
+STUB
+  chmod +x "$d/tmux"; rm -f "$d/.n"
+}
+sc_run() { # sc_run <stubdir> — 空の state で selfcheck を回し screen-marker の verdict を返す
+  local d="$1"
+  PATH="$d:$PATH" OE_EVENT_DIR="$d/none" OE_HEARTBEAT_DIR="$d/none" \
+    OE_TRANSCRIPT_DIR="$d/none" OE_CLAUDE_SETTINGS="$d/none.json" \
+    OE_SELFCHECK_ACTIVITY_INTERVAL=0.05 \
+    "$SELFCHECK" --json 2>/dev/null | jq -r '.[] | select(.check=="screen-marker") | .verdict'
+}
+
+echo "[15] #299: screen-marker は目印の位置を仮定しない（fixture が示す「入力欄より下」でも ok になる）"
+if [[ -x "$SELFCHECK" ]]; then
+  SD="$_TMP_DIR/sc"; mkdir -p "$SD"
+  # (a) 目印が最下部（走査窓の中）= リポジトリの scr_proc と同じ配置 → ok
+  printf '── ws ──\n❯ \n──────\n  esc to interrupt\n' > "$_TMP_DIR/cap_bottom"
+  mk_tmux_stub "$SD" "$_TMP_DIR/cap_bottom"
+  ck "目印が下3行に在れば ok（初版はここへ到達できなかった）" "ok" "$(sc_run "$SD")"
+
+  # (b) 目印が入力欄より上（走査窓の外）→ broken
+  printf '  esc to interrupt\n(a)\n(b)\n(c)\n── ws ──\n❯ \n──────\n' > "$_TMP_DIR/cap_top"
+  mk_tmux_stub "$SD" "$_TMP_DIR/cap_top"
+  ck "目印が窓の外なら broken" "broken" "$(sc_run "$SD")"
+
+  # (c) 目印が無く、画面も動かない（idle）→ indeterminate（不在の証拠にしない）
+  printf '── ws ──\n❯ \n──────\n  ? for shortcuts\n' > "$_TMP_DIR/cap_idle"
+  mk_tmux_stub "$SD" "$_TMP_DIR/cap_idle"
+  ck "目印が無く idle なら indeterminate" "indeterminate" "$(sc_run "$SD")"
+
+  # (d) 目印は無いが画面が動いている（稼働中）→ broken（この版に目印が無い）
+  printf '── ws ──\n❯ \n──────\n  spinner A\n' > "$_TMP_DIR/cap_act1"
+  printf '── ws ──\n❯ \n──────\n  spinner B\n' > "$_TMP_DIR/cap_act2"
+  mk_tmux_stub "$SD" "$_TMP_DIR/cap_act1" "$_TMP_DIR/cap_act2"
+  ck "稼働中なのに目印が無ければ broken" "broken" "$(sc_run "$SD")"
+fi
+
+echo "[16] #299: 測定器は delivery_signal の実在値を全部出す（unknown を落とさない）"
+MEASURE="$PROJECT_DIR/scripts/measure-delivery-arrival.py"
+if [[ -r "$MEASURE" ]] && command -v python3 >/dev/null 2>&1; then
+  MD="$_TMP_DIR/measure"; mkdir -p "$MD/ev" "$MD/beat" "$MD/proj/p"
+  jq -cn '{ts:"2026-07-10T00:00:00+00:00",type:"message_sent",from:{pane:"%1",role:"",label:""},to:{pane:"%2",role:"",label:""},preview:"UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU",delivery_signal:"unknown"}' > "$MD/ev/oe-events.jsonl"
+  jq -cn '{ts:"2026-07-10T00:02:00+00:00",type:"message_sent",from:{pane:"%1",role:"",label:""},to:{pane:"%2",role:"",label:""},preview:"短いkick",delivery_signal:"unknown"}' >> "$MD/ev/oe-events.jsonl"
+  jq -cn '{ts:1,context_pct:0,pane:"%2"}' > "$MD/beat/s1.json"
+  : > "$MD/proj/p/s1.jsonl"
+  OUT_M="$(OE_MEASURE_EVENTS="$MD/ev/oe-events.jsonl" OE_MEASURE_TRANSCRIPTS="$MD/proj" \
+           OE_MEASURE_HEARTBEAT="$MD/beat" OE_MEASURE_CUT=2026-07-01 python3 "$MEASURE" 2>&1)"
+  ck "unknown の行が出る"               "1" "$(printf '%s\n' "$OUT_M" | grep -c 'unknown ')"
+  ck "短文で落ちた件数を可視化する"      "1" "$(printf '%s\n' "$OUT_M" | grep -c '本文が短く突合鍵を作れない=1')"
+fi
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

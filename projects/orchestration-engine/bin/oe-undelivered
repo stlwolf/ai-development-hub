@@ -314,8 +314,11 @@ if [[ -z "$rows" ]]; then
 fi
 
 # --- FLAG 行を stdout へ（durable signal）+ 新規キーを収集 ---
-new_keys=()
+# 通知対象の行と、その行のキーを対にして持つ。**通知しなかった行のキーを seen へ焼かない。**
+# 初版は「新規キー全部」を seen へ書いていたので、通知していない行まで既読にしていた。
 notify_lines=()
+notify_keys=()
+new_rows=0
 shown=0
 skipped_gone=0
 mode_disp="shadow（owner へ通知しない）"
@@ -347,11 +350,12 @@ while IFS=$'\037' read -r c p clab plab idx ts age receipt prev; do
   # 最古未ack の ts を含むため、ack が来ない限り同じ関係の新しい未達を永久に抑止していた。
   key="${c}|${p}|${ts}|${idx}"
   if ! seen_has "$key"; then
-    new_keys+=("$key")
+    new_rows=$((new_rows + 1))
     # 「判定不可」は未着と呼ばないと決めた対象なので owner ping には載せない（stdout には出す）。
     # 未着と呼ばないものを鳴らすと、また判別力の無い警報になる（実装SO codex 指摘）。
     if [[ "$receipt" == "受領印なし" ]]; then
       notify_lines+=("${relation} · age=${age_disp} · receipt=${receipt} · parent=${plive}")
+      notify_keys+=("$key")
     fi
   fi
 done <<< "$rows"
@@ -372,12 +376,17 @@ printf 'RECEIPT の読み方: 受領印なし=nonce を載せた送信に受領�
 # 表示済み・wez 復帰時に通知される）。stdout 出力が durable な signal で wez notify は best-effort。
 # #299 P4-2: 既定は shadow。--notify を明示したときだけ owner へ ping する。
 # 何が鳴るかを stdout で先に見てから通知を入れる、という順序を既定側に置いた。
-if [[ "$NOTIFY" -eq 1 ]] && [[ "${#new_keys[@]}" -gt 0 ]] && command -v wez >/dev/null 2>&1; then
+# **guard は notify_lines に掛ける。** 初版は new_keys（＝通知対象かどうかに関係ない新規行）に
+# 掛けていたため、全行が「判定不可」でも guard を通り、**空 body の通知が飛んで seen に全件が
+# 焼かれた**（実装SO claude レーン指摘・実測で再現）。既存ログの送信は nonce を持たないので
+# 全行が判定不可であり、実ログへの初回 --notify がまさにこの経路に当たっていた。
+if [[ "$NOTIFY" -eq 1 ]] && [[ "${#notify_lines[@]}" -gt 0 ]] && command -v wez >/dev/null 2>&1; then
   body="$(printf '%s\n' "${notify_lines[@]}")"
   if wez notify "oe watchdog: undelivered report(s)" "$body" 2>/dev/null; then
     # 通知成功時のみ seen cache 追記（verb 固有 state・best-effort。追記失敗は次回再通知になるだけ）
     if mkdir -p "$SEEN_DIR" 2>/dev/null; then
-      for k in "${new_keys[@]}"; do
+      # 通知した行のキーだけを焼く（通知していない行を既読にしない）。
+      for k in "${notify_keys[@]}"; do
         printf '%s\n' "$k" >> "$SEEN_FILE" 2>/dev/null || true
       done
     else

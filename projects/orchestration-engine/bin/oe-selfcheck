@@ -74,51 +74,70 @@ add() { # add <name> <verdict> <detail>
   return 0
 }
 
-# --- 1. 画面 scrape: 処理中の目印が finalize の走査窓（画面下 3 行）に入りうるか ---
-# 陽性対照: claude の入力欄（`❯` 行）を持つ生存ペインが1枚でもあること。
-# 1枚も無ければ「目印が無い」ことを異常と断定できない（indeterminate）。
+# --- 1. 画面 scrape: 処理中の目印が finalize の走査窓（画面下 3 行）に入るか ---
 #
-# 判定は「いま目印が見えるか」ではなく構造で見る。目印は入力欄より上に描かれるので、
-# `❯` 行が画面下 3 行に入っているなら、処理中であっても目印は tail -n 3 に決して入らない。
-# こうすると idle か busy かに依存せず決定論的に判定できる。
+# **初版はここで「目印は入力欄より上に描かれる」という前提を置いていたが、これは誤りだった。**
+# リポジトリ自身の fixture（tests/test_delegate_send.sh の scr_proc）は目印を最終行に描くし、
+# #144 の計画書 S1 は実機 capture を根拠に「`❯` 行と別行（**最下部** status 行）」と記録している。
+# つまり設計時の版では目印は入力欄より**下**だった。いま観測できる版で上に見えるのは、
+# その版の描画にすぎない。**版に固定された前提を検出する検査器が、自分で版に固定された前提を
+# 置いていた**（実装SO claude レーン指摘）。しかもその前提で先に broken を返すため ok へ到達できず、
+# 検査として情報を持っていなかった。
+#
+# 直した形: 位置を仮定しない。見えた事実だけで判定する。
+#   目印が走査窓（下3行）の中に在るのを観測できた        → ok
+#   目印は画面のどこかに在るが走査窓には一度も入らない    → broken（窓が届いていない）
+#   稼働中のペインが在るのに目印をどこにも観測できない    → broken（この版に目印が無い）
+#   稼働中のペインが無い                                  → indeterminate（陽性対照が取れない）
+#
+# 陽性対照は「稼働中のペインが在ること」に置く。目印に依存せず版にも依存しない形として、
+# **短い間隔で 2 回 capture して内容が変わったペイン**を稼働中とみなす（出力が動いている＝処理中）。
+# これが無いと「目印が見えない」を「全ペインが idle」と区別できない。
 check_marker_window() {
   if ! command -v tmux >/dev/null 2>&1; then
     add "screen-marker" "indeterminate" "tmux が無いので画面を見られない"; return
   fi
-  local panes p cap total=0 boxed=0 seen_marker=0 in_window=0
+  local panes p cap1 cap2 total=0 active=0 seen_anywhere=0 in_window=0
   panes="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)" || {
     add "screen-marker" "indeterminate" "tmux list-panes が失敗した"; return; }
   [[ -n "$panes" ]] || { add "screen-marker" "indeterminate" "生存ペインが無い"; return; }
+  local -a boxed_panes=()
   while IFS= read -r p; do
     [[ -n "$p" ]] || continue
-    cap="$(tmux capture-pane -p -t "$p" 2>/dev/null)" || continue
-    printf '%s\n' "$cap" | grep -q '^[[:space:]]*❯' || continue   # claude の入力欄が無いペインは対象外
+    cap1="$(tmux capture-pane -p -t "$p" 2>/dev/null)" || continue
+    printf '%s\n' "$cap1" | grep -q '^[[:space:]]*❯' || continue   # claude の入力欄が無いペインは対象外
     total=$((total + 1))
-    printf '%s\n' "$cap" | tail -n 3 | grep -q '^[[:space:]]*❯' && boxed=$((boxed + 1))
-    printf '%s\n' "$cap" | grep -qF -- "$MARKER" && seen_marker=1
-    printf '%s\n' "$cap" | tail -n 3 | grep -qF -- "$MARKER" && in_window=$((in_window + 1))
+    boxed_panes+=("$p")
+    printf '%s\n' "$cap1" | grep -qF -- "$MARKER" && seen_anywhere=$((seen_anywhere + 1))
+    printf '%s\n' "$cap1" | tail -n 3 | grep -qF -- "$MARKER" && in_window=$((in_window + 1))
+    printf '%s' "$cap1" > "${TMPDIR:-/tmp}/oe-selfcheck-cap.$$.${p//[^0-9]/}" 2>/dev/null || true
   done <<< "$panes"
   if [[ "$total" -eq 0 ]]; then
     add "screen-marker" "indeterminate" "入力欄を持つ生存ペインが無い（陽性対照を取れない）"; return
   fi
-  if [[ "$boxed" -gt 0 ]]; then
-    # 目印は入力欄より上に描かれる。入力欄が画面下3行に入っているペインでは、処理中であっても
-    # 目印は tail -n 3 に決して入らない ＝ idle か busy かに依らず決定論的に「届かない」と言える。
-    add "screen-marker" "broken" \
-      "入力欄が画面下3行に在るペインが ${total} 枚中 ${boxed} 枚あり、そこでは目印が走査窓に決して入らない（目印は入力欄より上に描かれるため。目印文字列を画面のどこかに確認できたペイン数=${seen_marker}）"
+  # 2 回目の capture で「動いているペイン」を数える（稼働中の陽性対照）。
+  sleep "${OE_SELFCHECK_ACTIVITY_INTERVAL:-1.2}"
+  for p in "${boxed_panes[@]}"; do
+    cap2="$(tmux capture-pane -p -t "$p" 2>/dev/null)" || continue
+    printf '%s\n' "$cap2" | grep -qF -- "$MARKER" && seen_anywhere=$((seen_anywhere + 1))
+    printf '%s\n' "$cap2" | tail -n 3 | grep -qF -- "$MARKER" && in_window=$((in_window + 1))
+    local f="${TMPDIR:-/tmp}/oe-selfcheck-cap.$$.${p//[^0-9]/}"
+    if [[ -r "$f" ]] && ! printf '%s' "$cap2" | cmp -s - "$f"; then active=$((active + 1)); fi
+    rm -f "$f" 2>/dev/null || true
+  done
+  if [[ "$in_window" -gt 0 ]]; then
+    add "screen-marker" "ok" "目印が走査窓（下3行）の中に在るのを ${in_window} 回観測した（対象 ${total} 枚・稼働中 ${active} 枚）"
     return
   fi
-  if [[ "$seen_marker" -eq 0 ]]; then
-    add "screen-marker" "indeterminate" "${total} 枚を見たが目印 '${MARKER}' を画面のどこにも確認できない（全ペインが idle の可能性と区別できない）"
+  if [[ "$seen_anywhere" -gt 0 ]]; then
+    add "screen-marker" "broken" "目印は画面に在る（${seen_anywhere} 回観測）が、finalize が見る下3行には一度も入らない（対象 ${total} 枚）"
     return
   fi
-  # 目印が「画面のどこかに在る」だけでは ok にしない。finalize が見るのは tail -n 3 だけなので、
-  # **走査窓の中に在ること**まで確かめる（実装SO codex 指摘）。
-  if [[ "$in_window" -eq 0 ]]; then
-    add "screen-marker" "broken" "目印は画面に在るが、finalize が見る下3行には 1 枚も入っていない（${total} 枚を確認）"
+  if [[ "$active" -gt 0 ]]; then
+    add "screen-marker" "broken" "稼働中のペインが ${active} 枚あるのに目印 '${MARKER}' を画面のどこにも観測できない（この版に目印が無い。対象 ${total} 枚）"
     return
   fi
-  add "screen-marker" "ok" "${total} 枚中 ${in_window} 枚で目印が走査窓（下3行）の中に在る"
+  add "screen-marker" "indeterminate" "${total} 枚を見たが稼働中のペインが無く、目印も観測できない（版に目印が無いのか全ペインが idle なのか区別できない）"
 }
 
 # --- 2. hook 契約: 受領印 hook が配線され、いまも印を出しているか ---

@@ -35,7 +35,15 @@
 ```bash
 python3 projects/orchestration-engine/scripts/measure-delivery-arrival.py
 OE_MEASURE_CUT=2026-09-01 python3 .../measure-delivery-arrival.py   # 起点を変える
+
+# 保存しておいた過去のログに対して同じ方法で測り直す（前後比較の「前」を再現する）
+OE_MEASURE_EVENTS=/path/oe-events.jsonl \
+OE_MEASURE_TRANSCRIPTS=/path/projects \
+OE_MEASURE_HEARTBEAT=/path/oe-heartbeat \
+  python3 .../measure-delivery-arrival.py
 ```
+
+入力先の差し替えは**突合の方法を変えない**。前後比較のために同じ方法を保存済みログへ当てるための口である。
 
 `OE_MEASURE_CUT` は集計の起点（この日付以降の送信だけを母集団にする）。既定の `2026-07-03` は
 #299 の調査時に決めた値で、**それより前は受け手側の記録が送信数に足りず分母として使えない**
@@ -51,6 +59,11 @@ OE_MEASURE_CUT=2026-09-01 python3 .../measure-delivery-arrival.py   # 起点を�
   母集団から落ちる（出力の「橋で解決できず除外」に件数が出る）。
 - **同じ本文を再送すると 1 件の到達に複数の送信が当たりうる。** 排他割当で緩和しているが、
   完全には潰せない。
+- **本文が短い送信は母集団に入らない。** 正規化後 KEY_LEN（50）文字未満は突合鍵を作れないので、
+  到達確認にも未確認にも入らない。短い kick がここへ落ちる。**件数は出力の
+  「本文が短く突合鍵を作れない」に出す**（黙って消さない）。率を読むときはこの件数を併せて見ること。
+- **`delivery_signal` の値ごとに分けて出す。** ログに実在する値を全部列挙するので、
+  #299 P0 で入った `unknown` も出る。値を決め打ちすると新しい regime が丸ごと見えなくなる。
 - **Claude Code の transcript JSONL 形式に依存する。** 形式が変われば黙って 0 件になりうるので、
   `oe-selfcheck` の `transcript-format` を併せて見ること。
 
@@ -74,9 +87,14 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 
-EVENTS = os.path.expanduser("~/.claude/state/oe-events.jsonl")
-PROJ = os.path.expanduser("~/.claude/projects")
-BEAT = os.path.expanduser("~/.claude/state/oe-heartbeat")
+# 入力先は env で差し替えられる。**突合の方法は変えない** — 差し替えは、保存しておいた過去の
+# ログに対して同じ方法で測り直せるようにするためのものである（前後比較の「前」を再現するのに要る）。
+EVENTS = os.environ.get(
+    "OE_MEASURE_EVENTS", os.path.expanduser("~/.claude/state/oe-events.jsonl"))
+PROJ = os.environ.get(
+    "OE_MEASURE_TRANSCRIPTS", os.path.expanduser("~/.claude/projects"))
+BEAT = os.environ.get(
+    "OE_MEASURE_HEARTBEAT", os.path.expanduser("~/.claude/state/oe-heartbeat"))
 KEY_LEN = 50
 WIN_BEFORE, WIN_AFTER = 60, 3600
 # 受信側の記録が送信数に足りている期間だけを母集団にする（plan §2.4）。
@@ -158,6 +176,7 @@ def main():
         by_key[t[2]].append(t)
 
     msgs = []
+    dropped_short = defaultdict(int)
     with open(EVENTS) as fh:
         for line in fh:
             try:
@@ -171,6 +190,9 @@ def main():
                 prev = prev[:-1]
             k = key(prev)
             if not k:
+                # 正規化後 KEY_LEN 未満は突合鍵を作れないので母集団に入れられない。
+                # **黙って落とさず数える。** 短い kick がここに入る（実装SO claude レーン指摘）。
+                dropped_short[o.get("delivery_signal", "none")] += 1
                 continue
             o["_k"], o["_e"] = k, epoch(o["ts"])
             msgs.append(o)
@@ -195,16 +217,28 @@ def main():
             res[sig]["未確認"] += 1
 
     print(f"=== 到達確認（{CUT} 以降・typed 限定・宛先束縛・排他割当）===")
-    for sig in ("suspected_miss", "none"):
-        r = res[sig]
-        n = r["母集団"]
+    # **ログに実在する値を全部出す。** 初版は ("suspected_miss", "none") を決め打ちしていたので、
+    # #299 P0 で導入した `unknown` が出力に一切現れず、前後比較の「後」が丸ごと見えなかった
+    # （実装SO claude レーン指摘・実測で再現）。決め打ちをやめて実在値を列挙する。
+    seen_sigs = sorted(set(res) | set(dropped_short))
+    if not seen_sigs:
+        print("  対象なし（この起点以降に message_sent が無い）")
+    for sig in seen_sigs:
+        rr = res[sig]
+        n = rr["母集団"]
+        drop = dropped_short[sig]
         if not n:
-            print(f"  {sig}: 母集団 0")
+            print(f"  {sig:15s} 母集団 0"
+                  f"  [橋で解決できず除外={rr['宛先を橋で解決できない']}"
+                  f" / 本文が短く突合鍵を作れない={drop}]")
             continue
-        print(f"  {sig:15s} 母集団={n:4d}  到達確認={r['到達確認']:4d} "
-              f"({100 * r['到達確認'] / n:5.1f}%)  未確認={r['未確認']:4d} "
-              f"({100 * r['未確認'] / n:5.1f}%)  [橋で解決できず除外={r['宛先を橋で解決できない']}]")
+        print(f"  {sig:15s} 母集団={n:4d}  到達確認={rr['到達確認']:4d} "
+              f"({100 * rr['到達確認'] / n:5.1f}%)  未確認={rr['未確認']:4d} "
+              f"({100 * rr['未確認'] / n:5.1f}%)  [橋で解決できず除外={rr['宛先を橋で解決できない']}"
+              f" / 本文が短く突合鍵を作れない={drop}]")
     print("\n注意: 「未確認」は未着ではない。突合の取りこぼしを含む点推定である。")
+    print("      「本文が短く突合鍵を作れない」は到達確認にも未確認にも入っていない"
+          f"（正規化後 {KEY_LEN} 文字未満。短い kick がここへ落ちる）。")
     return 0
 
 

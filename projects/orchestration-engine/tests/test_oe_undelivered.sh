@@ -148,11 +148,14 @@ OUT="$(run 1782996000)"
 first_row="$(printf '%s\n' "$OUT" | sed -n '3p')"   # 1=title 2=header 3=first data
 ckc "age 降順: 先頭=最古(12:02)" "$first_row" "OLDER-1202"
 
+# #299: fixture に nonce を持たせて「受領印なし」経路を通す。nonce 無しは判定不可となり
+# 通知対象にならないので、それでは dedup / 通知本文 / 再飽和の試験が成立しない
+# （初版はそこを見落として、通知経路のテストが1つも無かった・実装SO claude レーン指摘）。
 echo "[9] dedup(D-b): 2 回目は notify 抑止・stdout は継続表示"
 mkfix f9
 cat > "$EVFILE" <<'EOF'
 {"ts":"2026-07-02T12:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"}}
-{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"DEDUP-R","delivery_signal":"none"}
+{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"DEDUP-R","delivery_signal":"unknown","delivery_receipt":{"nonce":"01KZ1VQA1979K4S2MMH5YY24ZR"}}
 EOF
 : > "$WEZ_LOG"
 # #299 P4-2: 既定は shadow。--notify を明示したときだけ owner へ ping する。
@@ -175,7 +178,7 @@ echo "[10] wez notify 本文にペア要約（best-effort）"
 mkfix f10
 cat > "$EVFILE" <<'EOF'
 {"ts":"2026-07-02T12:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"}}
-{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"NOTIFY-BODY","delivery_signal":"none"}
+{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"#206A"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"NOTIFY-BODY","delivery_signal":"unknown","delivery_receipt":{"nonce":"01KZ1VQA1979K4S2MMH5YY24ZS"}}
 EOF
 : > "$WEZ_LOG"
 run 1782996000 --notify >/dev/null
@@ -366,16 +369,41 @@ echo "[23] #299 P4-4: 同じ関係で新しい未達が起きたら再び通知�
 mkfix f18
 cat > "$EVFILE" <<'EOF'
 {"ts":"2026-07-02T12:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"}}
-{"ts":"2026-07-02T12:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"FIRST-R","delivery_signal":"none"}
+{"ts":"2026-07-02T12:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"FIRST-R","delivery_signal":"unknown","delivery_receipt":{"nonce":"01KZ1VQA1979K4S2MMH5YY24ZS"}}
 EOF
 : > "$WEZ_LOG"
 run 1782996000 --notify >/dev/null
 ck "1件目で通知" "1" "$(awk 'END{print NR}' "$WEZ_LOG")"
 # 同じ関係へ 2 件目の未達を足す（ack は来ない＝最古未ack の ts は動かない）
-printf '%s\n' '{"ts":"2026-07-02T12:02:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"SECOND-R","delivery_signal":"none"}' >> "$EVFILE"
+printf '%s\n' '{"ts":"2026-07-02T12:02:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"SECOND-R","delivery_signal":"unknown","delivery_receipt":{"nonce":"01KZ1VQA1979K4S2MMH5YY24ZT"}}' >> "$EVFILE"
 : > "$WEZ_LOG"
 run 1782996000 --notify >/dev/null
 ck "2件目も通知される（関係単位キーなら抑止されていた）" "1" "$(awk 'END{print NR}' "$WEZ_LOG")"
+
+
+echo "[24] #299: 全行が 判定不可 のとき、空 body の通知を飛ばさず seen も焼かない"
+mkfix f24
+cat > "$EVFILE" <<'EOF'
+{"ts":"2026-07-02T12:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss"},"to":{"pane":"%66","role":"child","label":"#206A"}}
+{"ts":"2026-07-02T12:05:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"c"},"to":{"pane":"%59","role":"parent","label":"boss"},"preview":"NO-NONCE-ONLY","delivery_signal":"none"}
+EOF
+: > "$WEZ_LOG"
+OUT="$(run 1782996000 --notify)"
+ckc "stdout には出る（durable signal）" "$OUT" "NO-NONCE-ONLY"
+ck  "判定不可だけなら通知 0 回（空 body を飛ばさない）" "0" "$(awk 'END{print NR}' "$WEZ_LOG")"
+ck  "判定不可だけなら seen へ焼かない" "0" \
+    "$([[ -f "$EVDIR/oe-undelivered/seen" ]] && wc -l < "$EVDIR/oe-undelivered/seen" | tr -d '[:space:]' || echo 0)"
+
+echo "[25] #299: 受領印なしの行があるときだけ通知し、seen はその行のキーだけ焼く"
+N4=01KZ1VQA1979K4S2MMH5YY24ZQ
+printf '{"ts":"2026-07-02T12:06:00+00:00","type":"message_sent","from":{"pane":"%%66","role":"child","label":"c"},"to":{"pane":"%%59","role":"parent","label":"boss"},"preview":"NEEDS-RECEIPT","delivery_signal":"unknown","delivery_receipt":{"nonce":"%s"}}\n' "$N4" >> "$EVFILE"
+: > "$WEZ_LOG"
+OUT="$(run 1782996000 --notify)"
+ck  "通知は 1 回" "1" "$(awk 'END{print NR}' "$WEZ_LOG")"
+ckc "body は空でない（受領印なしの行が載る）" "$(cat "$WEZ_LOG")" "受領印なし"
+ck  "seen は通知した 1 件だけ（判定不可の行を焼かない）" "1" \
+    "$(wc -l < "$EVDIR/oe-undelivered/seen" | tr -d '[:space:]')"
+ckc "seen に焼かれたのは 12:06 の行" "$(cat "$EVDIR/oe-undelivered/seen")" "2026-07-02T12:06:00+00:00"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
