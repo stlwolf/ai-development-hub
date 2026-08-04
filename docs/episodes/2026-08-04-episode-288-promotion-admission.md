@@ -3,7 +3,7 @@ id: "01KZ6EYW7VQQ9GMX3BD0QZ36GP"
 title: "#288 昇格の判定を closure の必須項目に置く — 縮んだ範囲の実装（M 系単位）"
 date: 2026-08-04
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/288"
