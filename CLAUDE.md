@@ -19,7 +19,7 @@ AI駆動開発のための統合リポジトリ。複数AIツール（Cursor / C
 ./scripts/sync/sync-cursor.sh          # canonical + cursor-specific → ~/.cursor/
 ./scripts/sync/sync-claude.sh          # canonical → ~/.claude/
 ./scripts/sync/sync-codex.sh           # canonical → ~/.codex/
-./scripts/sync/sync-bin.sh             # so-compare, arena-compare, wez → ~/bin/
+./scripts/sync/sync-bin.sh             # CLI 8件（so-compare, wez, oe-tree, oe-hookfire 等・正本は CMD_NAMES）→ ~/bin/
 
 # agent-verification-flow: API検証ツール
 cd projects/agent-verification-flow

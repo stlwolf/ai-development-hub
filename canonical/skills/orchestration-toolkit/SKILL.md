@@ -39,7 +39,7 @@ oe-* ツール群を **1 つのパッケージとして一貫理解する**た�
 
 ## 重要な不変条件 / gotcha
 
-- `oe` / `oe-*` は **PATH 未登録** → `projects/orchestration-engine/bin/` のパスで起動（`so-compare`/`wez` 等は `~/bin` に sync 済で PATH 上）。
+- **`oe` / `oe-*` は原則 PATH 未登録** → engine の `bin/` ディレクトリのパスで起動する（hub では `projects/orchestration-engine/bin/`）。**ただし bin sync の配布対象に入れた verb は例外で、sync を実行した環境では PATH 上にある**（本稿執筆時点の配布対象は `oe-tree` と `oe-hookfire` の2本。`so-compare` / `wez` / `knowledge-list` / `validate-knowledge` 等の standalone スクリプトも同じ経路）。**配布対象であることと、その環境に配備済みであることは別である。** 一覧も配布対象が増えれば古くなるので、起動方法を決める前に `command -v <verb>` で確かめること（配布対象の正本は bin sync スクリプトの配列）。
 - SO の audit は本体 per-session（`audit/{id}.jsonl`）と別系統: **`oe-refute.jsonl`（`event_type=oe_refute`・`rubric`）/ `oe-review.jsonl`（`event_type=oe_review`・`lens=impl`・diff バインド）**。`oe-status` の ENGINE 区画には SO audit は出ない（別 viewer）。
 - engine の state KVS は **初回=target 完了（`@@OE_EXIT` 検出）時に作成**・verify は完了後に同 KVS へ追記。**実行中 / CB timeout は KVS 不在**（観測は audit-tail から導く）。
 

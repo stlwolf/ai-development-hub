@@ -6,7 +6,7 @@ scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
 
 ---
 
@@ -498,6 +498,31 @@ oe-selfcheck --json   # 機械可読
 **この検査は「気づく」だけで「直す」ことはしない。** また検査自体も同じ版依存を持つので、免疫があるとは言わない。
 
 関連: `canonical/hooks/scripts/oe-prompt-receipt.sh`（受領印 hook）/ `bin/oe-undelivered`（受領印を消費する側）/ `lib/delegate-send.sh`（nonce の払い出し）。
+
+---
+
+## oe-hookfire — 止める側のフックの発火記録を読む（#309・read-only）
+
+止める側のフック3本（`block-destructive` / `block-force-push` / `cc-lint`）が直近の窓で発火したかを見る read-only 検査。何も書き換えない。
+
+**なぜ要るか。** この3本は発火したことを1行も記録していなかった。そのため強制点が本当に効いたかを当事者以外が確かめる手段が無かった。3本が tally を書くようになったので、本 verb はそれを読んで判定する。
+
+```bash
+oe-hookfire              # 表形式
+oe-hookfire --days 30    # 窓を 30 日へ（既定 7）
+oe-hookfire --json       # 機械可読
+```
+
+**判定は3値である**（`oe-selfcheck` と同じ契約）。`ok` / `broken` に加えて **`indeterminate`（検査自体が成立しなかった。`ok` ではない）** を持ち、判定ではなく値を報告する行は `info` で出る。
+
+- **累計で `ok` を出さない。** tally は「1バイト以上あり、かつ mtime が窓の中」のときだけ `ok` にする。サイズ 0 を発火と読むと touch / truncate で緑になるためである。`deny.jsonl` と `diag.jsonl` は**行の ts** で窓を切る（ファイルの mtime で切ると、大昔の1件が今日の別イベントで蘇る）。
+- **「記録が 0 件」を「発火しなかった」と読まない。** 未配備・エージェントが Bash を使っていない・trust されず silent skip、のどれでも 0 になる。区別できるのは意図的に撃つプローブだけなので、陽性対照の手順と併せて読む。
+- 記録先は `HOOK_FIRING_DIR`（既定 `~/.claude/state/hook-firing`）。期待するツール軸は `OE_HOOKFIRE_TOOLS`（既定 `claude cursor codex`）で、軸が丸ごと欠けた場合を `indeterminate` として出す。窓の既定日数は `OE_HOOKFIRE_DAYS`。
+- exit は `broken` が1つでもあれば 1 / `broken` は無いが `indeterminate` が在れば 2 / 全部 `ok` なら 0。**`indeterminate` を exit 0 にしない。**
+- **前回との比較（サイズ後退の検出）は行わない。** それには読み出しが状態を持つ必要があり、本 verb は read-only を保つ側に倒した。単発で分かるのはサイズ 0 までである。
+- **この台帳の値打ちは、読み手が実際に走ることに条件付けられている。** 定期実行の配線は #301 で未着手で、人が打つまで動かない。bin sync の配布対象には入れたので、sync 実行後は `oe-hookfire` の名前で打てる。
+
+関連: `canonical/hooks/README.md`（3本の記録契約と陽性対照の手順）/ `bin/oe-selfcheck`（同じ3値契約の姉妹 verb）。
 
 ---
 
