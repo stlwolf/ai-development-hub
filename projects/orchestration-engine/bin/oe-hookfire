@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# oe-hookfire — 止める側のフックが直近の窓で発火したかを見る read-only 検査（#309）
+#
+# なぜ要るか:
+#   止める側のフック3本（block-destructive / block-force-push / cc-lint）は、
+#   発火したことを1行も記録していなかった。そのため「強制点が本当に発火したか」を
+#   当事者以外が確かめる手段が無く、#305 のアンカー設計が3ラウンド続けて反証された。
+#   3本が tally を書くようになったので、本 verb はそれを読んで判定する。
+#
+# 判定は3値である（oe-selfcheck と同じ契約）:
+#   ok            直近の窓で発火している
+#   broken        前提が崩れている（記録が失敗している・内部エラーが出ている）
+#   indeterminate 検査自体が成立しなかった（**ok ではない**）
+#   info          判定ではなく値の報告
+#
+# **累計で ok を出さない。** 「これまでに1件でもあれば ok」にすると、フックが停止した
+#   後も永久に緑を返す。判定は必ず mtime が窓の中にあるかで行う。
+#
+# **「記録が0件」を「発火しなかった」と読まないこと。** 0件は (a) フックが動いていない
+#   (b) エージェントが Bash を使っていない（idle）(c) Codex が trust されず黙って
+#   skip している、のどれでも起きる。区別できるのは意図的に撃つプローブだけなので、
+#   本 verb が返す ok / indeterminate はプローブと併せて読む（手順は canonical/hooks/README.md）。
+#
+# **この台帳の値打ちは、読み手が実際に走ることに条件付けられている。** 定期実行の配線は
+#   #301 で未着手であり、人が打つまで本 verb は動かない。溜まっているだけの台帳は
+#   Sensor が埋まったことを意味しない。先例（oe-prompt-receipt.sh のヘッダ）と同じ但し書きである。
+#
+# read-only: 何も書き換えない。
+# exit: broken が1つでもあれば 1 / broken は無いが indeterminate が在れば 2 / 全部 ok なら 0。
+#   **indeterminate を exit 0 にしない。**
+#
+set -uo pipefail
+
+HOME_DIR="${HOME:-}"
+FIRE_DIR="${HOOK_FIRING_DIR:-${HOME_DIR}/.claude/state/hook-firing}"
+TALLY_DIR="${FIRE_DIR}/tally"
+DENY_LOG="${FIRE_DIR}/deny.jsonl"
+DIAG_LOG="${FIRE_DIR}/diag.jsonl"
+HOOKS="block-destructive block-force-push cc-lint"
+DAYS="${OE_HOOKFIRE_DAYS:-7}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: oe-hookfire [--days N] [--json] [-h|--help]
+
+止める側のフックが直近の窓で発火したかを見る（read-only・何も書き換えない）。
+
+判定:
+  ok             直近の窓で発火している
+  broken         前提が崩れている（記録の失敗・内部エラー）
+  indeterminate  検査自体が成立しなかった（ok ではない）
+  info           判定ではなく値の報告
+
+exit: broken≥1 → 1 / broken=0 かつ indeterminate≥1 → 2 / 全部 ok → 0
+      （indeterminate は成功にしない）
+
+「0 件 = 発火しなかった」とは読めない。idle と silent skip でも 0 になる。
+配備物を通したプローブと併せて読むこと（canonical/hooks/README.md の陽性対照）。
+EOF
+  exit 1
+}
+
+JSON=0
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --days) DAYS="${2:-7}"; shift 2 ;;
+    --days=*) DAYS="${1#--days=}"; shift ;;
+    --json) JSON=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "oe-hookfire: unknown option: $1" >&2; usage ;;
+  esac
+done
+case "$DAYS" in ''|*[!0-9]*) echo "oe-hookfire: --days は整数" >&2; exit 2 ;; esac
+
+ROWS=()
+BROKEN=0
+INDET=0
+add() { # add <name> <verdict> <detail>
+  ROWS+=("$1"$'\037'"$2"$'\037'"$3")
+  [[ "$2" == "broken" ]] && BROKEN=$((BROKEN + 1))
+  [[ "$2" == "indeterminate" ]] && INDET=$((INDET + 1))
+  return 0
+}
+
+# サイズは wc -c で取る。stat は BSD（-f %z）と GNU（-c %s）で非互換なので分岐が要る。
+size_of() { wc -c < "$1" 2>/dev/null | tr -d ' ' || printf '0'; }
+
+# mtime が直近 $DAYS 日の中か。find -newermt は GNU 依存なので使わない。
+fresh() { [ -n "$(find "$1" -type f -mtime "-${DAYS}" 2>/dev/null)" ]; }
+
+# --- 1. 記録機構そのものが在るか（陽性対照が取れる状態か）---
+if [ ! -d "$TALLY_DIR" ]; then
+  add "tally-store" "indeterminate" \
+    "${TALLY_DIR} が無い。フックが一度も発火していないか、配備されていない。0 件を「危険な操作が無かった」と読まないこと"
+else
+  found="$(find "$TALLY_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$found" = "0" ]; then
+    add "tally-store" "indeterminate" "tally が1件も無い。検査が成立しない"
+  else
+    add "tally-store" "ok" "${found} 個の tally がある"
+  fi
+fi
+
+# --- 2. ツール × フックごとの発火（窓で判定する）---
+if [ -d "$TALLY_DIR" ]; then
+  for tool_dir in "$TALLY_DIR"/*; do
+    [ -d "$tool_dir" ] || continue
+    tool="$(basename "$tool_dir")"
+    for hook in $HOOKS; do
+      a="${tool_dir}/${hook}.allow"
+      d="${tool_dir}/${hook}.deny"
+      if [ ! -e "$a" ] && [ ! -e "$d" ]; then
+        add "fire/${tool}/${hook}" "indeterminate" "このツールでの記録が無い"
+        continue
+      fi
+      na=0; nd=0
+      [ -f "$a" ] && na="$(size_of "$a")"
+      [ -f "$d" ] && nd="$(size_of "$d")"
+      if { [ -f "$a" ] && fresh "$a"; } || { [ -f "$d" ] && fresh "$d"; }; then
+        add "fire/${tool}/${hook}" "ok" "直近 ${DAYS} 日に発火（累計 allow=${na} deny=${nd}）"
+      else
+        add "fire/${tool}/${hook}" "indeterminate" \
+          "直近 ${DAYS} 日の発火が無い（累計 allow=${na} deny=${nd}）。停止か idle か skip かはこれだけでは決まらない"
+      fi
+    done
+  done
+fi
+
+# --- 3. unknown へ落ちていないか ---
+# $0 によるツール判別は、ホストが解決済みの絶対パスで起動する形に変われば静かに
+# unknown へ落ちる。**静かに消えるのが本 issue の敵**なので、件数を必ず表に出す。
+if [ -d "${TALLY_DIR}/unknown" ]; then
+  n="$(find "${TALLY_DIR}/unknown" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  tot=0
+  # プロセス置換で読む。パイプにすると while が subshell に入って tot が戻らない。
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    tot=$(( tot + $(size_of "$f") ))
+  done < <(find "${TALLY_DIR}/unknown" -type f 2>/dev/null)
+  add "tool-attribution" "broken" \
+    "ツール不明の記録が ${n} ファイル・計 ${tot} 件ある。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
+else
+  add "tool-attribution" "ok" "unknown へ落ちた記録は無い"
+fi
+
+# --- 4. 記録そのものが失敗していないか ---
+if [ -f "$DIAG_LOG" ] && fresh "$DIAG_LOG"; then
+  n="$(wc -l < "$DIAG_LOG" 2>/dev/null | tr -d ' ')"
+  add "record-health" "broken" \
+    "直近 ${DAYS} 日に記録の失敗がある（diag.jsonl 累計 ${n} 行）。この間の tally は過小なので ok の根拠に使えない"
+elif [ -f "$DIAG_LOG" ]; then
+  add "record-health" "ok" "直近 ${DAYS} 日の記録失敗は無い（diag.jsonl は在るが古い）"
+else
+  add "record-health" "ok" "記録の失敗は記録されていない"
+fi
+
+# --- 5. 内部エラーが deny へ収束していないか（trap の発火率）---
+if [ -f "$DENY_LOG" ]; then
+  # grep -c は「0 件」でも 0 を印字したうえで exit 1 を返す。`|| printf '0'` を足すと
+  # 0 が二重に出て変数に改行が混ざり、以降の比較も表示も壊れる（実測で踏んだ）。
+  n="$(grep -c '"rule":"internal-error"' "$DENY_LOG" 2>/dev/null)"
+  [ -n "$n" ] || n=0
+  if [ "$n" != "0" ] && fresh "$DENY_LOG"; then
+    add "internal-error" "broken" \
+      "内部エラーで deny へ収束した記録が累計 ${n} 件あり、deny.jsonl は直近 ${DAYS} 日に更新されている。フックが壊れている疑い"
+  else
+    add "internal-error" "ok" "内部エラーによる収束は累計 ${n} 件（直近の更新なし）"
+  fi
+else
+  add "internal-error" "indeterminate" "deny.jsonl が無い。deny が一度も起きていないだけかもしれない"
+fi
+
+# --- 6. 3本の allow が揃っているか（設定を読まずに脱落を局在化する）---
+# 3本は同じイベントに配線されているので allow はほぼ同数になるはず。
+# ただし deny 後の短絡や逐次/並行の違いでズレうるため、判定は info に留める。
+if [ -d "$TALLY_DIR" ]; then
+  for tool_dir in "$TALLY_DIR"/*; do
+    [ -d "$tool_dir" ] || continue
+    tool="$(basename "$tool_dir")"
+    counts=""; min=""; max=""
+    for hook in $HOOKS; do
+      f="${tool_dir}/${hook}.allow"
+      c=0; [ -f "$f" ] && c="$(size_of "$f")"
+      counts="${counts}${hook}=${c} "
+      [ -z "$min" ] && { min="$c"; max="$c"; }
+      [ "$c" -lt "$min" ] && min="$c"
+      [ "$c" -gt "$max" ] && max="$c"
+    done
+    add "cross-check/${tool}" "info" "allow の内訳: ${counts}(最小 ${min} / 最大 ${max})"
+  done
+fi
+
+# --- 出力 ---
+if [ "$JSON" = "1" ]; then
+  printf '['
+  first=1
+  for row in "${ROWS[@]}"; do
+    IFS=$'\037' read -r n v d <<< "$row"
+    [ "$first" = "1" ] || printf ','
+    first=0
+    if command -v jq >/dev/null 2>&1; then
+      jq -cn --arg n "$n" --arg v "$v" --arg d "$d" '{name:$n,verdict:$v,detail:$d}' | tr -d '\n'
+    else
+      printf '{"name":"%s","verdict":"%s"}' "$n" "$v"
+    fi
+  done
+  printf ']\n'
+else
+  printf '窓: 直近 %s 日 / 記録先: %s\n\n' "$DAYS" "$FIRE_DIR"
+  for row in "${ROWS[@]}"; do
+    IFS=$'\037' read -r n v d <<< "$row"
+    printf '  %-14s %-28s %s\n' "$v" "$n" "$d"
+  done
+  printf '\n'
+  if [ "$BROKEN" -gt 0 ]; then
+    printf '判定: broken %s 件。前提が崩れている\n' "$BROKEN"
+  elif [ "$INDET" -gt 0 ]; then
+    printf '判定: indeterminate %s 件。検査が成立していない（ok ではない）\n' "$INDET"
+  else
+    printf '判定: すべて ok\n'
+  fi
+  printf '注意: 0 件は「発火しなかった」ではない。idle と silent skip でも 0 になる。\n'
+  printf '      配備物を通したプローブと併せて読むこと（canonical/hooks/README.md の陽性対照）。\n'
+fi
+
+[ "$BROKEN" -gt 0 ] && exit 1
+[ "$INDET" -gt 0 ] && exit 2
+exit 0
