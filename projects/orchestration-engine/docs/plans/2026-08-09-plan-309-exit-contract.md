@@ -41,7 +41,7 @@ so:
 | gate 1（ゼロベース探索） | **実行済み・3レーン全返却で refuted** → `.oe/tree-B-dj-exploration.md` / `tmp/oe-refute-20260809130721H1PP65QAANJB` |
 | gate 2（設計SO） | **実行済み・3レーン全返却。ただし合意には至らず（F1 が2・F4 が1）** → §6 / `tmp/so-B-gate2`（codex・cursor）＋ `tmp/so-B-gate2-claude`（claude） |
 | gate 3（owner HG） | **裁定済み（2026-08-10）** → `.oe/addendum-B-gate3.md`。**範囲を縮める形で、私の推奨（F1）とは違う。**差分は §0 に限定 |
-| gate 4（実装SO） | 実装後に通す（弱・2レーン） |
+| gate 4（実装SO） | **実行済み・2レーンとも `survived`** → §14 / `tmp/oe-review-20260809181951PQHWZ0Z16Q9G` |
 
 ## 0. rev.1 → rev.2 の差分（owner の gate 3 裁定）
 
@@ -324,7 +324,22 @@ so:
 6. **`--help` の出力先が stderr のままである。** exit が 0 になったので `oe-hookfire --help | less` は空になる。stdout へ移すのが筋だが、gate 3 の裁定に含まれなかったので本単位では触らない。
 7. **他の5本（`oe` / `oe-ack` / `oe-delegate` / `oe-report` / `oe-send`）の `--help`→1。** 3値契約を持たないので「嘘」ではなく不作法であり、別 PR。
 
-## 14. 自分の失敗の記録
+## 14. gate 4（実装SO）の結果
+
+`oe-review --lanes 2 --base origin/master --context .oe/so-context-B-gate4.md`（`SO_TIMEOUT=480`）。**前回の失敗を踏まえてバックグラウンドで回した。**
+
+- `verdict`: **survived**（`reason`: 全2レーンがレビューしたが material な欠陥は見つからなかった）
+- `reviewed_sha`: `c782e6749cdde96c94e3f0d2974988dba42947ca` / `audit_id`: `20260809181951PQHWZ0Z16Q9G`
+- `output_dir`: `tmp/oe-review-20260809181951PQHWZ0Z16Q9G`（**永続しないので内容を以下に転記する**）
+
+| レーン | 判定 | note |
+|---|---|---|
+| codex | survived | usage の全呼び出し経路、残余引数検査、境界入力、既存判定帯、文書との整合を反証的に確認したが、マージを阻む material な欠陥は見つからなかった |
+| cursor | survived | usage 後の exit 漏れ・残余引数取りこぼし・境界入力の誤番号は実装と実測で否定でき、契約文書も一致し material な欠陥は見つからなかった |
+
+**重点として渡した5点（`usage()` から exit を外したことによる exit 漏れ / 位置引数の検査の置き場所 / 境界入力 / 後方互換の範囲 / 文書と実装の整合）は、いずれも否定された。** 自分でも独立に測っている（`--` / `-` / `--days=` / `--json extra` / `-h extra` / `--days 7 --json` で無限ループ無し、`usage` の全呼び出し点に明示の `exit` あり、`-h extra`→0 は姉妹 verb と同じ挙動）。
+
+## 15. 自分の失敗の記録
 
 **設計SO を、自分が設定した実行タイムアウトで切ってしまい、claude レーンを一度失った。**
 
