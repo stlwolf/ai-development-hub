@@ -30,7 +30,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-TARGET_DIR="${HOME}/bin"
+# TARGET_DIR は main() 内で解決する。トップレベルで "${HOME}/bin" を
+# 展開すると set -u 下で HOME 未設定の環境が即エラーになり、配置を伴わない
+# --list まで巻き添えで実行不能になるため。
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -92,6 +94,8 @@ else
 fi
 
 main() {
+    local TARGET_DIR="${HOME}/bin"
+
     info "Target: ${TARGET_DIR}"
     echo ""
 
