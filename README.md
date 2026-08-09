@@ -77,7 +77,7 @@ ai-development-hub/
 ./scripts/sync.sh --list             # 利用可能ターゲット一覧
 ```
 
-`bin` は `so-compare` / `arena-compare` を `~/bin/` に配置（実体は `scripts/so-compare.sh` と `projects/arena-compare/arena-compare.sh`）。
+`bin` は CLI スクリプトを `~/bin/` に配置します。対象は `so-compare` / `arena-compare` / `wez` / `wt-pane-issue` / `oe-tree` / `oe-hookfire` / `validate-knowledge` / `knowledge-list` の8件で、リンク名と実体の対応は `scripts/sync/sync-bin.sh` の配列が正本です。
 
 - シンボリックリンクなので、どちら側から編集しても同じファイルが変更される
 - リポジトリ側でバージョン管理が可能

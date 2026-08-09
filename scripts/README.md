@@ -36,7 +36,7 @@ scripts/
 | `sync-cursor.sh` | `canonical/{commands,skills,agents}` + `canonical/cursor/` 固有 + `canonical/mcp/cursor.json` | `~/.cursor/` |
 | `sync-claude.sh` | `canonical/{rules,skills,agents,commands}` | `~/.claude/` |
 | `sync-codex.sh` | `canonical/skills/` + `canonical/codex/{AGENTS.md,commands-registry}` + `canonical/agents`(toml生成) | `~/.codex/` |
-| `sync-bin.sh` | `scripts/so-compare.sh`, `projects/arena-compare/arena-compare.sh` | `~/bin/` |
+| `sync-bin.sh` | CLI スクリプト8件（`so-compare` / `arena-compare` / `wez` / `wt-pane-issue` / `oe-tree` / `oe-hookfire` / `validate-knowledge` / `knowledge-list`。リンク名と実体の対応は同スクリプトの `CMD_NAMES` / `CMD_SOURCES`） | `~/bin/` |
 
 `sync-codex.sh` は実行前に `check-codex-guardrails.sh` を呼び出し、`canonical/rules` と `canonical/codex/AGENTS.md` の整合を検証する。
 
