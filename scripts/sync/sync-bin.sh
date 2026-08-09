@@ -6,6 +6,7 @@
 #
 # Usage:
 #   ./scripts/sync/sync-bin.sh
+#   ./scripts/sync/sync-bin.sh --list
 #
 # Description:
 #   so-compare.sh, arena-compare.sh, wez 等のスクリプトを
@@ -15,9 +16,14 @@
 #
 #   既にシンボリックリンクでないファイルが存在する場合はスキップします。
 #
+#   --list は配布対象のコマンド名（CMD_NAMES）を1行1件で印字して終了します
+#   （配置はしません）。ドキュメント側の列挙を置き換えるものではなく、
+#   突き合わせて確かめるための出力です。
+#
 # Example:
 #   cd ~/work/repos/github.com/stlwolf/ai-development-hub
 #   ./scripts/sync/sync-bin.sh
+#   ./scripts/sync/sync-bin.sh --list
 #
 
 set -euo pipefail
@@ -53,6 +59,13 @@ CMD_SOURCES=(
     "${REPO_ROOT}/projects/orchestration-engine/scripts/validate-knowledge.sh"
     "${REPO_ROOT}/projects/orchestration-engine/scripts/knowledge-list.sh"
 )
+
+list_cmds() {
+    printf '%s\n' "${CMD_NAMES[@]}"
+    exit 0
+}
+
+[[ "${1:-}" == "--list" ]] && list_cmds
 
 main() {
     info "Target: ${TARGET_DIR}"
