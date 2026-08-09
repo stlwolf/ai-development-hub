@@ -42,7 +42,11 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 usage() {
-    sed -n '/^# Usage:/,/^set -euo pipefail/p' "$0" | head -n -1 | sed 's/^# \?//'
+    # BSD/macOS 互換にするため GNU 拡張を2か所やめている。
+    #   末尾1行（set -euo pipefail）の除去: head -n -1 → sed '$d'
+    #   行頭 '# ' の除去:                    s/^# \?// → 2つの s コマンド
+    # （BSD の基本正規表現は \? を「直前の要素は省略可」と解釈しない）
+    sed -n '/^# Usage:/,/^set -euo pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
     exit 0
 }
 
@@ -73,14 +77,19 @@ if [[ $# -gt 1 ]]; then
     exit 2
 fi
 
-case "${1:-}" in
-    "")     ;;  # 引数なし = 配置を実行
-    --list) list_cmds ;;
-    *)
-        error "不明なオプション: $1（使えるのは --list / -h / --help、または引数なし）"
-        exit 2
-        ;;
-esac
+# 引数そのものが無い場合だけ配置を実行する。空文字列 '' は「引数を渡した」
+# ことになるので、黙って配置へ落とさず不正として扱う。
+if [[ $# -eq 0 ]]; then
+    :
+else
+    case "$1" in
+        --list) list_cmds ;;
+        *)
+            error "不明なオプション: '$1'（使えるのは --list / -h / --help、または引数なし）"
+            exit 2
+            ;;
+    esac
+fi
 
 main() {
     info "Target: ${TARGET_DIR}"
