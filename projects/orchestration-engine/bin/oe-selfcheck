@@ -69,6 +69,10 @@ while [[ "${1:-}" == -* ]]; do
     *) echo "oe-selfcheck: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+# **残余引数を黙って捨てない。** ループはハイフンで始まらない引数で抜けるので、
+# 検査しないと `oe-selfcheck foo --bogus` が --bogus を読まずに判定表を出す
+# （help も同様に効かない）。呼び方の誤りが正当な観測に化ける経路なので弾く。
+[ "$#" -eq 0 ] || { echo "oe-selfcheck: unexpected argument: $1" >&2; usage; exit 2; }
 
 command -v jq >/dev/null 2>&1 || { echo "oe-selfcheck: jq が必要です" >&2; exit 2; }
 

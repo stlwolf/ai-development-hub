@@ -89,6 +89,10 @@ while [[ "${1:-}" == -* ]]; do
     *) echo "oe-hookfire: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+# **残余引数を黙って捨てない。** ループはハイフンで始まらない引数で抜けるので、
+# 検査しないと `oe-hookfire foo --bogus` が --bogus を読まずに判定表を出す
+# （help も同様に効かない）。呼び方の誤りが正当な観測に化ける経路なので弾く。
+[ "$#" -eq 0 ] || { echo "oe-hookfire: unexpected argument: $1" >&2; usage; exit 2; }
 case "$DAYS" in ''|*[!0-9]*) echo "oe-hookfire: --days は整数" >&2; exit 2 ;; esac
 
 # 窓の下限を ISO 8601 の日付で作る。ts は ISO なので文字列比較で足りる。
