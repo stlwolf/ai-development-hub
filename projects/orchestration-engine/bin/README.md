@@ -2,11 +2,13 @@
 
 orchestration-engine の実行可能エントリの簡易リファレンス（AI エージェント / 人間向け）。背景は親 [`../README.md`](../README.md)、詳細は各スクリプト冒頭のコメントと `docs/` を参照。
 
-scripts は 2 系統に分かれる（[`../README.md`](../README.md) 「2 系統」節）:
+scripts は役割別に次の 22 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
+- **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195）
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
+- **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
 ---
 
