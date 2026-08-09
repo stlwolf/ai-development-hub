@@ -42,13 +42,20 @@ projects/orchestration-engine/
 │   ├── oe-kick                # #N / kickoff パスを 1 引数で受ける oe-delegate の薄いワンショットラッパー（#178）
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
+│   ├── oe-register            # 手動起動ペインの自己 root 登記 / 既存ペインの委譲 link（#259）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
+│   ├── oe-jump                # 通知/ラベルから対象 tmux ペインへ focus（--record で直近 target を replay・#179）
+│   ├── oe-view                # 生成 doc のビューア入口（md→viewer ペインで glow / 非 md→open・#210）
 │   ├── oe-report              # 親へ申し送り/レビュー依頼（legacy・戻しは oe-send に一本化。送信は oe_send_line 経由=活動ログに載る）
 │   ├── oe-ack                 # 自分宛て報告への受領印（report_received）を打つ actor verb（#206A・frontier snapshot）
 │   ├── oe-status              # cockpit 観測UI: read-only 俯瞰（ENGINE=audit-terminal state / DELEGATE=liveness）+ 監査ログ閲覧（#177）
+│   ├── oe-ident               # ペインのオーケストレーション識別子を read 時投影（pane-border-format 用・#202）
 │   ├── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
 │   ├── oe-tree                # spawn トポロジ（親→子→孫）の read-only 罫線ツリー表示 + --watch live 表示 + --pick 対話ナビ（選択→jump+最大化）（registry 現 server スナップショット・#221/#223/#227）
-│   └── oe-hookfire            # 止める側のフック3本の発火記録を直近の窓で読む read-only 検査（3値判定・#309）
+│   ├── oe-undelivered         # 報告未達検知 watchdog（未ack × 時間窓 × 受領印・read-only・cron 可・#239 段階0）
+│   ├── oe-selfcheck           # 版に固定された前提の点検（3値判定・read-only・#299 P3）
+│   ├── oe-hookfire            # 止める側のフック3本の発火記録を直近の窓で読む read-only 検査（3値判定・#309）
+│   └── oe-vitals              # 統括 vital 監視 watchdog（拍動鮮度 + context% 閾値・read-only・cron 可・#239 段階1）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
 │   ├── event-bus.sh           # 親子活動ログ emit プリミティブ（child_spawned / message_sent / report_received・best-effort・#206）
@@ -63,13 +70,18 @@ projects/orchestration-engine/
 │   ├── session.sh             # セッション ID 生成
 │   ├── delegate-registry.sh   # 親子委譲の宛先アドレッシング（spawn registry + pane-issue の union 解決）
 │   ├── delegate-send.sh       # 1 行 safe-send（改行 fail-fast）+ 観測ベース finalize（Enter 吸収の回復・#144）
-│   └── so-verdict.sh          # SO の VERDICT 抽出/集約/dissent/exit（oe-refute / oe-review が共有・#197）
-├── schemas/                   # JSON Schema 5 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy）
+│   ├── so-verdict.sh          # SO の VERDICT 抽出/集約/dissent/exit（oe-refute / oe-review が共有・#197）
+│   ├── sanitize.sh            # 会話到達面（event-bus preview 等）の制御文字サニタイズ（write+read 両側・#224）
+│   └── oe-viewer.sh           # viewer ペイン解決（argv-spawn replace モデル・oe-view が使用・#210）
+├── schemas/                   # JSON Schema 6 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy / oe-events）
 ├── tests/                     # mock テスト suite（delegate registry / send 等の単体を含む）
 │   └── e2e_real_agent/        # 実 agent (cursor-agent + claude) で 1 サイクル E2E 検証（Step 4-4 で新設）
 ├── scripts/
 │   ├── validate-envelope.sh   # エンベロープ JSON 検証
 │   ├── validate-session-state.sh  # KVS 状態 JSON 検証（verification map 含む）
+│   ├── validate-board.sh      # board（統括の盤面 doc）のスキーマ検証（#238）
+│   ├── validate-knowledge.sh  # negative knowledge item のスキーマ検証（observations 要素を含む・advisory）
+│   ├── knowledge-list.sh      # negative knowledge store の item を蒸留木横断で read-only 列挙
 │   └── measure-delivery-arrival.py  # 到達率の測定器（transport 前後比較の基準・#299）
 ├── audit/                     # 監査ログ JSONL 出力先（runtime）
 ├── state/                     # セッション状態 KVS 出力先（runtime。委譲レジストリは ~/.claude/state/ 配下）
