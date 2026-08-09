@@ -35,6 +35,8 @@ PROJ_DIR="${OE_TRANSCRIPT_DIR:-${HOME_DIR}/.claude/projects}"
 SETTINGS="${OE_CLAUDE_SETTINGS:-${HOME_DIR}/.claude/settings.json}"
 MARKER="${OE_SEND_PROC_MARKER:-esc to interrupt}"
 
+# usage は表示だけを担う。**exit は呼び出し側が決める。**
+# help は成功（0）、呼び方の誤りは 2 で、どちらも判定の帯（1）とは別に置く。
 usage() {
   cat >&2 <<'EOF'
 usage: oe-selfcheck [--json] [-h|--help]
@@ -47,18 +49,24 @@ usage: oe-selfcheck [--json] [-h|--help]
   indeterminate  検査自体が成立しなかった（ok ではない）
   info           判定ではなく値の報告
 
-exit: broken≥1 → 1 / broken=0 かつ indeterminate≥1 → 2 / 全部 ok → 0
-      （indeterminate は成功にしない）
+exit: 0 → 全部 ok（-h / --help もここ）
+      1 → broken≥1
+      2 → 呼び方の誤り（unknown option・余分な引数）・必須の jq 不在
+           または broken=0 かつ indeterminate≥1
+
+**2 を見て自動で再試行しないこと。** 2 は「呼び方が違う」「前提コマンドが無い」と
+「検査が成立しなかった」を兼ねている。前者2つは人が直すまで永久に再発するので、
+再試行は空振りし続ける。どちらなのかは stderr と --json にしか出ない。
+判定の分離（indeterminate を別の番号へ）は #301 で決める。
 EOF
-  exit 1
 }
 
 JSON=0
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --json) JSON=1; shift ;;
-    -h|--help) usage ;;
-    *) echo "oe-selfcheck: unknown option: $1" >&2; usage ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "oe-selfcheck: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
