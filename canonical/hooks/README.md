@@ -4,7 +4,7 @@
 
 ## 前提条件
 
-- `jq` が必要（Homebrew で管理: `etc/init/assets/brew/Brewfile`）
+- `jq` と `grep` が必要（Homebrew で管理: `etc/init/assets/brew/Brewfile`）。**満たさないとどうなるかが #309 / #310 で変わった** — 以前は止める側の3本が非 0 で落ち、Claude Code と Codex では non-blocking なので**素通り**していた。現在は内部エラーとして `deny`（exit 2）へ収束するので、3ツールすべてで**ブロック**になる。詳細は「発火記録」節
 - Codex は hooks 機能が必要（実験的機能）。`config.toml` の `[features].hooks = true`。旧名 `codex_hooks` は現行版（v0.135 で確認）では `hooks` の legacy alias で、`codex_hooks = true` のままでも有効だが非推奨警告が出る。`sync-codex.sh` → `apply-codex-notify-config.sh` が `[features].hooks = true` を冪等適用し、旧 `codex_hooks` を自動で `hooks` へ移行する（手動編集は不要）
 - 通知フック（`notify.sh`）の配信は **WezTerm の OSC 777 通知**を主とする（tmux 内は DCS passthrough で `#{pane_tty}` へ直書き、非 tmux は `/dev/tty`）。**前提: tmux は `set -g allow-passthrough on`（3.3+, dotfiles の `tmux.conf`）、WezTerm.app に macOS 通知許可**。非 WezTerm / headless 環境では `terminal-notifier`（dotfiles の Brewfile で管理）→ `osascript` にフォールバックする
   - 背景: macOS では CLI/フック文脈から `osascript`/`terminal-notifier` を叩いても通知が表示されないことがある（GUI 権限を持つアプリが出す必要がある）。WezTerm は GUI アプリなので OSC を受けて通知を出せる。詳細は `docs/research/2026-03-30-ai-tool-hooks-specification-survey.md` の追記参照
@@ -18,6 +18,7 @@
 | コミットゲート | `scripts/commit-gate.sh` | タスク完了時に未コミット変更があれば通知（advisory、ブロックしない） |
 | 仮説ゲート | `scripts/hypothesis-gate.sh` | バグ調査で `tmp/hypothesis-*.md` が N=3 に初めて達したら、外部要因の結論前にコードパス未読確認を 1 回 advisory 通知（Claude のみ・ブロックしない・#78 code-path-exhaustion） |
 | CC 形式チェック | `scripts/cc-lint.sh` | `git commit -m` のメッセージが Conventional Commits 形式に準拠しているかチェック |
+| 発火記録 | 止める側3本に内蔵（`hfr`）＋ `projects/orchestration-engine/bin/oe-hookfire` | 発火したことを1イベント1バイトで記録し、直近 N 日で発火したかに答える（#309）。読み出しは read-only の3値検査 |
 | 通知 | `scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory）。並走時のポーリング解消が目的 |
 | セッション命名 | `scripts/session-name.sh` ＋ リポジトリルートの `scripts/wt/wt-pane-issue.sh` | セッション名を自動設定し並列セッションを識別（Claude のみ・advisory）。`wt switch` の worktree は `#<issue> <slug>`、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト→リポ名）でブランチ変化に追従 |
 
@@ -213,6 +214,80 @@ shell 専用イベントで誤爆が少なく、コマンド抽出が単純（`.
 
 - **Cursor**: `failClosed: true` を設定済み。フック失敗時もブロックする
 - **Claude Code / Codex**: fail-close 機構がない。exit code 0/2 以外は non-blocking（fail-open）。スクリプト内で `set -euo pipefail` + 明示的な exit 制御で対処
+- **止める側の3本は `trap` で内部エラーを `deny` へ収束させる（#309）。** 実際にブロックするのは exit 2 だけなので、内部エラーで 1 や 127 を返すと Claude Code と Codex では素通りしていた。現在は3ツールとも止まる
+- **記録の失敗でブロックが解除されてはならない（要求Aの鏡）。** 記録は判定経路に影響しない best-effort だが、`deny()` が `exit 2` に到達できなくなる形の失敗だけは別で、これは「止めるべきものが通る」方向の静かな故障になる。だから記録の追記先が通常ファイルでないときは触らない（FIFO を置かれると `open` がブロックし `exit 2` に到達しない）
+- **ハングは封じ込められない。** `( ... ) || :` が捨てるのは終了した子の exit code であって、子が終わらなければ親も進まない。hot path をローカル FS の builtin 追記だけに限って面を最小化しているが、固まったネットワーク FS 上では残る。**deny 優先**で受け入れている
+
+## 発火記録（#309）
+
+止める側の3本が、発火したことを記録する。**「強制点が本当に発火したか」を当事者以外が確かめられるようにするため**の Sensor である。
+
+### 何をどこに書くか
+
+```text
+${HOOK_FIRING_DIR:-$HOME/.claude/state/hook-firing}/
+├── tally/<tool>/<hook>.allow    # 通した（1イベント1バイト）
+├── tally/<tool>/<hook>.deny     # 止めた（trap 収束ぶんを含む）
+├── deny.jsonl                   # deny の詳細（rule / argv0 / cmd_len）
+└── diag.jsonl                   # 記録そのものが失敗したときの環境エラー
+```
+
+- ファイルサイズが件数、`mtime` が最終発火時刻。1 Bash コマンドあたり3バイトなので100万コマンドで約 3MB に収まり、**ローテーションは要らない**。
+- `<tool>` は `$0`（ホストが使った呼び出しパス）から `codex` / `cursor` / `claude` / `unknown` を判別する。環境変数（`CURSOR_PROJECT_DIR` / `CLAUDE_PROJECT_DIR`）だと Codex を識別できず、いちばん恐れている故障型を名指しできないため。
+- **コマンドの生文字列は残さない。** `deny.jsonl` は発火した規則・先頭トークン・長さだけを持つ。全文は `user_message` としてエージェントの transcript に既にある。
+- **この記録は当事者が書ける場所にある。** 改ざん耐性は保証しない（そう書かない）。
+
+### 読み方
+
+```bash
+projects/orchestration-engine/bin/oe-hookfire --days 7
+```
+
+`ok` / `broken` / `indeterminate` / `info` の3値 + 報告で返す（`oe-selfcheck` と同じ契約）。exit は broken≥1 → 1 / indeterminate≥1 → 2 / 全部 ok → 0。**`indeterminate` を成功にしない。**
+
+### 欠測と非発火を区別する（陽性対照）
+
+**「記録が0件」を「発火しなかった」と読んではいけない。** 0件は次のどれでも起きる。
+
+- フックが動いていない（未登録・dangling symlink・Codex が trust されず黙って skip）
+- エージェントがそもそも Bash を使っていない（idle）
+- 記録機構だけが壊れている
+
+区別できるのは**意図的に撃つプローブ**だけである。allow の流量は受動的な傍証にとどめる。
+
+プローブは**2段**で撃つ。1段目だけで済ませない。
+
+**1段目（配備物を直接叩く・弱い）** — 3配備パスすべてを対象にする。
+
+| フック | 対照コマンド | フックが死んでいた場合 |
+|--------|------------|--------------------|
+| `block-destructive.sh` | SQL の `DROP TABLE` 文を含む `echo` | `echo` が文字列を表示するだけ |
+| `block-force-push.sh` | `git push --force` に存在しない remote 名 | git が未知の remote でエラー終了する |
+| `cc-lint.sh` | 使い捨て repo で非 CC 形式のメッセージで `git commit` | 使い捨て repo なので実害なし |
+
+```bash
+for root in ~/.cursor ~/.claude ~/.codex; do
+  jq -cn '{tool_input:{command:"echo hello"}}' | bash "$root/hooks/block-destructive.sh" >/dev/null; echo "$root rc=$?"
+done
+```
+
+**対照コマンドを検査スクリプトの外側のコマンド行に置かないこと。** 生きているフックが検査コマンド自体をブロックする（実際に踏んだ）。payload はファイルの中で組み立てる。
+
+**1段目で確かめられないもの**（ここを曖昧にすると「緑なのに死んでいる」を作る）: `~/.claude/settings.json` への登録、Cursor の `hooks.json`、Codex の `hooks.json`、matcher、フックの順序と short-circuit、dispatcher が実際にフックを起動すること、Codex の workspace trust。
+
+**2段目（ツール自身にシェルを撃たせる・強い）** — 各ツールのセッションから実際に対照コマンドを実行し、前後の tally 差と操作結果の両方を見る。dispatcher を通る唯一の形なので、これが本来の陽性対照である。Codex の trust は **workspace 単位**なので、ある trusted workspace で成功しても別 workspace の silent skip を否定できない。
+
+### 成立条件（正直に書く）
+
+- **この台帳の値打ちは「読み手が実際に走ること」に条件付けられている。** 定期実行の配線は #301 で未着手で、人が `oe-hookfire` を打つまで動かない。溜まっているだけの台帳は Sensor が埋まったことを意味しない。
+- `O_APPEND` の原子性はローカルの通常ファイルでの実測である。NFS / FUSE / 同期ドライブ上では件数性が崩れる。`fsync` していないのでクラッシュ時の耐久性も保証しない。
+- `trap` は「走ったが途中で死んだ」を捕まえるが「**そもそも走らなかった**」は捕まえられない。走らないフックに trap は張れないので、そこは tally とプローブが担う。
+
+### 保持方針
+
+- **tally は truncate しない。** 伸ばし続ける（1ツール・100万コマンドで約 3MB）。読み出しがサイズ後退を検出したら `indeterminate` を返す。
+- `deny.jsonl` / `diag.jsonl` は低頻度。上限が要るなら日付分割にし、`copytruncate` は使わない（追記中のファイルを切ると件数が壊れる）。rename して次回追記で新規作成させる。
+- **保守処理はフックの中に入れない。** 読み出し／保守の側に置く（hot path に失敗要因を足さない）。
 
 ### Claude Code の手動 hooks について
 
