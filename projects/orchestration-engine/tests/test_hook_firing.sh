@@ -197,5 +197,30 @@ out="$(HOOK_FIRING_DIR="$ONE" bash "$OE_HOOKFIRE" 2>&1 || true)"
 n_missing="$(printf '%s\n' "$out" | grep -c 'fire/cursor\|fire/codex' || true)"
 ck "欠落した cursor / codex が行として出る" "2" "$n_missing"
 
+echo "[18] exit 契約: help と呼び方の誤りを判定の帯から分ける（#309 残件）"
+# **番号を表として固定する。** 判定の分離（indeterminate を別番号へ）は #301 で
+# 決まるので、そのとき何が動くのかを機械で分かる形にしておく。
+OE_SELFCHECK="$(cd "$SCRIPT_DIR/.." && pwd)/bin/oe-selfcheck"
+rc_of() { # rc_of <script> [args...] — exit code だけを返す
+  bash "$@" >/dev/null 2>&1 && printf '0' || printf '%s' "$?"
+}
+for v in "$OE_HOOKFIRE" "$OE_SELFCHECK"; do
+  n="$(basename "$v")"
+  [[ -x "$v" ]] || { echo "  SKIP: $n 不在"; continue; }
+  ck "$n --help は 0（成功であって broken ではない）" "0" "$(rc_of "$v" --help)"
+  ck "$n -h は 0"                              "0" "$(rc_of "$v" -h)"
+  ck "$n unknown option は 2"                  "2" "$(rc_of "$v" --bogus)"
+  ck "$n 余分な位置引数は 2"                    "2" "$(rc_of "$v" extra)"
+  # 位置引数の後ろの option が読まれずに判定へ進む経路を塞いだことの確認。
+  ck "$n 位置引数の後ろに --help があっても 2"  "2" "$(rc_of "$v" extra --help)"
+done
+ck "oe-hookfire --days 値なしは 2" "2" "$(rc_of "$OE_HOOKFIRE" --days)"
+ck "oe-hookfire --days 非整数は 2" "2" "$(rc_of "$OE_HOOKFIRE" --days xyz)"
+# 判定の帯は据え置き（#301 へ保留した争点）。[12] が indeterminate→2 を固定しており、
+# ここではそれが CLI 衛生の変更で動いていないことだけを見る。
+E2="$_TMP_DIR/empty-contract"; mkdir -p "$E2"
+ck "oe-hookfire 記録なし（indeterminate）は 2 のまま" "2" \
+   "$(HOOK_FIRING_DIR="$E2" bash "$OE_HOOKFIRE" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

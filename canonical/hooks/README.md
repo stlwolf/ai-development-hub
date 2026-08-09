@@ -247,6 +247,8 @@ projects/orchestration-engine/bin/oe-hookfire --days 7
 
 `ok` / `broken` / `indeterminate` / `info` の3値 + 報告で返す（`oe-selfcheck` と同じ契約）。exit は broken≥1 → 1 / indeterminate≥1 → 2 / 全部 ok → 0。**`indeterminate` を成功にしない。**
 
+**呼び方の誤りは判定の帯に入らない。** `-h` / `--help` は 0、unknown option・余分な位置引数・`--days` の非整数は 2 である。**`2` を見て自動で再試行しないこと**（「呼び方が違う」と「検査が成立しなかった」を兼ねており、前者は人が直すまで永久に再発する）。区別は stderr と `--json` にしか出ない。
+
 ### 欠測と非発火を区別する（陽性対照）
 
 **「記録が0件」を「発火しなかった」と読んではいけない。** 0件は次のどれでも起きる。
