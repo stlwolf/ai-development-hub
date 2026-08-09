@@ -65,7 +65,22 @@ list_cmds() {
     exit 0
 }
 
-[[ "${1:-}" == "--list" ]] && list_cmds
+# 引数の検証（-h / --help は上で処理済みなのでここには来ない）。
+# 読み取り専用のつもりの誤記（--lis 等）が黙って配置処理へ落ちないよう、
+# 既知のもの以外は受け付けない。
+if [[ $# -gt 1 ]]; then
+    error "引数が多すぎます: $*（1つだけ、または引数なし）"
+    exit 2
+fi
+
+case "${1:-}" in
+    "")     ;;  # 引数なし = 配置を実行
+    --list) list_cmds ;;
+    *)
+        error "不明なオプション: $1（使えるのは --list / -h / --help、または引数なし）"
+        exit 2
+        ;;
+esac
 
 main() {
     info "Target: ${TARGET_DIR}"
