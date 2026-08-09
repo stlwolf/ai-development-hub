@@ -42,6 +42,8 @@ TALLY_DIR="${FIRE_DIR}/tally"
 DENY_LOG="${FIRE_DIR}/deny.jsonl"
 DIAG_LOG="${FIRE_DIR}/diag.jsonl"
 HOOKS="block-destructive block-force-push cc-lint"
+# 3本は3ツールすべてへ配られる。期待する軸を明示して、丸ごと欠けた場合を検出する。
+EXPECTED_TOOLS="${OE_HOOKFIRE_TOOLS:-claude cursor codex}"
 DAYS="${OE_HOOKFIRE_DAYS:-7}"
 
 usage() {
@@ -68,7 +70,11 @@ EOF
 JSON=0
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
-    --days) DAYS="${2:-7}"; shift 2 ;;
+    --days)
+      # 値が無いまま shift 2 すると bash は「out of range」でシフトせず非 0 を返す。
+      # -e が無いので実行は続き、$1 が --days のまま残って無限ループになる（実測で踏んだ）。
+      [ "$#" -ge 2 ] || { echo "oe-hookfire: --days に値がありません" >&2; usage; }
+      DAYS="$2"; shift 2 ;;
     --days=*) DAYS="${1#--days=}"; shift ;;
     --json) JSON=1; shift ;;
     -h|--help) usage ;;
@@ -94,7 +100,14 @@ add() { # add <name> <verdict> <detail>
 }
 
 # サイズは wc -c で取る。stat は BSD（-f %z）と GNU（-c %s）で非互換なので分岐が要る。
-size_of() { wc -c < "$1" 2>/dev/null | tr -d ' ' || printf '0'; }
+# **読めなかったことを 0 に潰さない。** 空ファイルと読めないファイルは別物で、
+# 潰すと「読めないが mtime は新しい」tally を「0 件」と報告してしまう。
+# 読めないときは空文字を返し、呼び出し側が indeterminate に振る。
+size_of() {
+  local v
+  v="$(wc -c < "$1" 2>/dev/null)" || { printf ''; return 1; }
+  printf '%s' "${v// /}"
+}
 
 # mtime が直近 $DAYS 日の中か。find -newermt は GNU 依存なので使わない。
 fresh() { [ -n "$(find "$1" -type f -mtime "-${DAYS}" 2>/dev/null)" ]; }
@@ -113,6 +126,23 @@ else
 fi
 
 # --- 2. ツール × フックごとの発火（窓で判定する）---
+# **存在するディレクトリだけを回さない。** それだと Cursor / Codex が丸ごと未配備でも
+# 行が1つも出ず exit 0 に到達する（＝いちばん恐れている silent skip が緑になる）。
+# 期待するツールを先に列挙し、無ければ無いことを indeterminate として言う。
+TOOLS_SEEN=""
+if [ -d "$TALLY_DIR" ]; then
+  for tool_dir in "$TALLY_DIR"/*; do
+    [ -d "$tool_dir" ] || continue
+    TOOLS_SEEN="${TOOLS_SEEN}$(basename "$tool_dir") "
+  done
+fi
+for tool in $EXPECTED_TOOLS; do
+  case " $TOOLS_SEEN " in
+    *" $tool "*) ;;
+    *) add "fire/${tool}" "indeterminate" \
+         "このツールの記録が1件も無い。未配備・未登録・trust されず skip・単にそのツールを使っていない、のどれかは これだけでは決まらない" ;;
+  esac
+done
 if [ -d "$TALLY_DIR" ]; then
   for tool_dir in "$TALLY_DIR"/*; do
     [ -d "$tool_dir" ] || continue
@@ -124,9 +154,15 @@ if [ -d "$TALLY_DIR" ]; then
         add "fire/${tool}/${hook}" "indeterminate" "このツールでの記録が無い"
         continue
       fi
-      na=0; nd=0
-      [ -f "$a" ] && na="$(size_of "$a")"
-      [ -f "$d" ] && nd="$(size_of "$d")"
+      na=0; nd=0; unreadable=0
+      if [ -f "$a" ]; then na="$(size_of "$a")" || unreadable=1; fi
+      if [ -f "$d" ]; then nd="$(size_of "$d")" || unreadable=1; fi
+      [ -n "$na" ] || { na=0; unreadable=1; }
+      [ -n "$nd" ] || { nd=0; unreadable=1; }
+      if [ "$unreadable" = "1" ]; then
+        add "fire/${tool}/${hook}" "indeterminate" "tally を読めなかった（権限・IO）。0 件と区別できない"
+        continue
+      fi
       # **サイズ 0 を「発火した」と読まない。** mtime だけで判定すると、truncate や
       # touch でセンサーが緑になる。1バイト以上あって、かつ mtime が窓の中のときだけ ok。
       if [ $(( na + nd )) -eq 0 ]; then
@@ -151,7 +187,9 @@ if [ -d "${TALLY_DIR}/unknown" ]; then
   # プロセス置換で読む。パイプにすると while が subshell に入って tot が戻らない。
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    tot=$(( tot + $(size_of "$f") ))
+    sz="$(size_of "$f")" || sz=0
+    [ -n "$sz" ] || sz=0
+    tot=$(( tot + sz ))
   done < <(find "${TALLY_DIR}/unknown" -type f 2>/dev/null)
   add "tool-attribution" "broken" \
     "ツール不明の記録が ${n} ファイル・計 ${tot} 件ある。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
@@ -208,7 +246,7 @@ if [ -d "$TALLY_DIR" ]; then
     counts=""; min=""; max=""
     for hook in $HOOKS; do
       f="${tool_dir}/${hook}.allow"
-      c=0; [ -f "$f" ] && c="$(size_of "$f")"
+      c=0; if [ -f "$f" ]; then c="$(size_of "$f")" || c=0; fi; [ -n "$c" ] || c=0
       counts="${counts}${hook}=${c} "
       [ -z "$min" ] && { min="$c"; max="$c"; }
       [ "$c" -lt "$min" ] && min="$c"

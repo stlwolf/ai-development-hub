@@ -51,6 +51,20 @@ case "$0" in
 esac
 HFR_BASE="${HFR_DIR}/tally/${HFR_TOOL}/${HFR_HOOK}"
 
+# 追記先が「存在するのに通常ファイルでない」なら触らない。
+# FIFO への `>>` は reader が現れるまで open(2) でブロックし、`set +e` でも隔離でも解けない。
+# ブロックすると deny が exit 2 に到達せず、Claude Code / Codex では**止めるべきものが通る**。
+# **tally だけでなく deny.jsonl / diag.jsonl にも通すこと**（実装SO の2レーンが独立に指摘し、
+# 実測でも deny のハングと allow のハングを再現した）。HOOK_FIRING_DIR は差し替え可能なので、
+# ここを抜くと記録機構そのものが fail-open のレバーになる。
+# `[ ... ] && [ ... ] && return 0` と書かないこと（偽のとき非 0 を返し set -e が発動する）。
+hfr_appendable() {
+  if [ -e "$1" ] && [ ! -f "$1" ]; then
+    return 1
+  fi
+  return 0
+}
+
 # 記録は判定経路に影響してはならない。呼び出しは必ず `hfr allow` / `hfr deny` の
 # リテラル引数で行う（呼び出し側で変数を展開すると、展開が隔離の外で起きて set -u に殺される）。
 hfr() {
@@ -59,13 +73,7 @@ hfr() {
   [ -n "$HFR_DIR" ] || return 0
   # スロット名を白名簿で縛る。引数を忘れると末尾がドットのファイルへ静かに追記し続ける。
   case "$slot" in allow|deny) ;; *) return 0 ;; esac
-  # 追記先が通常ファイルでないなら触らない。FIFO への追記は open がブロックし、
-  # deny が exit 2 に到達しなくなる。HOOK_FIRING_DIR は差し替え可能なので、
-  # このガードが無いと fail-open のレバーになる。
-  # `[ ... ] && [ ... ] && return 0` と書かないこと（偽のとき非 0 を返し set -e が発動する）。
-  if [ -e "${HFR_BASE}.${slot}" ] && [ ! -f "${HFR_BASE}.${slot}" ]; then
-    return 0
-  fi
+  hfr_appendable "${HFR_BASE}.${slot}" || return 0
   # fast path は builtin 1つだけ。fork も exec もしない。
   # 2>/dev/null は >> より前に置く（逆だと open 失敗のシェルエラーが stderr へ漏れる）。
   # これは握り潰しではない — 失敗は直後の || が捕まえ、fallback が診断を残す。
@@ -73,6 +81,7 @@ hfr() {
     ( set +e +u
       mkdir -p "${HFR_DIR}/tally/${HFR_TOOL}" 2>/dev/null
       printf 'x' 2>/dev/null >> "${HFR_BASE}.${slot}" && exit 0
+      hfr_appendable "${HFR_DIR}/diag.jsonl" || exit 0
       printf '{"ts":"%s","hook":"%s","tool":"%s","kind":"env-error","reason":"tally-append-failed","slot":"%s"}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "$HFR_HOOK" "$HFR_TOOL" "$slot" \
         2>/dev/null >> "${HFR_DIR}/diag.jsonl"
@@ -89,6 +98,7 @@ hfr() {
 # 第2引数に exit code を渡すと `"exit":N` を足す（trap 収束のとき何で落ちたかを残すため）。
 hfr_deny_detail() {
   [ -n "$HFR_DIR" ] || return 0
+  hfr_appendable "${HFR_DIR}/deny.jsonl" || return 0
   ( set +e +u
     rule="${1:-unknown}"
     ec="${2:-}"
