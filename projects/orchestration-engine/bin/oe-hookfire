@@ -14,7 +14,12 @@
 #   info          判定ではなく値の報告
 #
 # **累計で ok を出さない。** 「これまでに1件でもあれば ok」にすると、フックが停止した
-#   後も永久に緑を返す。判定は必ず mtime が窓の中にあるかで行う。
+#   後も永久に緑を返す。tally は「1バイト以上あり、かつ mtime が窓の中」のときだけ ok に
+#   する（サイズ 0 を発火と読むと touch / truncate で緑になる）。deny.jsonl と diag.jsonl は
+#   **行の ts** で窓を切る（ファイルの mtime で切ると、大昔の1件が今日の別イベントで蘇る）。
+#
+# **前回との比較（サイズ後退の検出）は行わない。** それには読み出しが状態を持つ必要があり、
+#   本 verb は read-only を保つ側に倒した。単発で分かるのはサイズ 0 までである。
 #
 # **「記録が0件」を「発火しなかった」と読まないこと。** 0件は (a) フックが動いていない
 #   (b) エージェントが Bash を使っていない（idle）(c) Codex が trust されず黙って
@@ -72,6 +77,12 @@ while [[ "${1:-}" == -* ]]; do
 done
 case "$DAYS" in ''|*[!0-9]*) echo "oe-hookfire: --days は整数" >&2; exit 2 ;; esac
 
+# 窓の下限を ISO 8601 の日付で作る。ts は ISO なので文字列比較で足りる。
+# date の相対指定は BSD（-v-Nd）と GNU（-d 'N days ago'）で非互換なので両方試す。
+CUTOFF="$(date -u -v-"${DAYS}"d +%Y-%m-%dT00:00:00Z 2>/dev/null \
+          || date -u -d "${DAYS} days ago" +%Y-%m-%dT00:00:00Z 2>/dev/null \
+          || printf '0000-01-01T00:00:00Z')"
+
 ROWS=()
 BROKEN=0
 INDET=0
@@ -116,7 +127,12 @@ if [ -d "$TALLY_DIR" ]; then
       na=0; nd=0
       [ -f "$a" ] && na="$(size_of "$a")"
       [ -f "$d" ] && nd="$(size_of "$d")"
-      if { [ -f "$a" ] && fresh "$a"; } || { [ -f "$d" ] && fresh "$d"; }; then
+      # **サイズ 0 を「発火した」と読まない。** mtime だけで判定すると、truncate や
+      # touch でセンサーが緑になる。1バイト以上あって、かつ mtime が窓の中のときだけ ok。
+      if [ $(( na + nd )) -eq 0 ]; then
+        add "fire/${tool}/${hook}" "indeterminate" \
+          "記録ファイルは在るが中身が 0 件。truncate されたか、書き込みに失敗している"
+      elif { [ -s "$a" ] && fresh "$a"; } || { [ -s "$d" ] && fresh "$d"; }; then
         add "fire/${tool}/${hook}" "ok" "直近 ${DAYS} 日に発火（累計 allow=${na} deny=${nd}）"
       else
         add "fire/${tool}/${hook}" "indeterminate" \
@@ -144,30 +160,42 @@ else
 fi
 
 # --- 4. 記録そのものが失敗していないか ---
-if [ -f "$DIAG_LOG" ] && fresh "$DIAG_LOG"; then
-  n="$(wc -l < "$DIAG_LOG" 2>/dev/null | tr -d ' ')"
-  add "record-health" "broken" \
-    "直近 ${DAYS} 日に記録の失敗がある（diag.jsonl 累計 ${n} 行）。この間の tally は過小なので ok の根拠に使えない"
-elif [ -f "$DIAG_LOG" ]; then
-  add "record-health" "ok" "直近 ${DAYS} 日の記録失敗は無い（diag.jsonl は在るが古い）"
-else
+if [ ! -f "$DIAG_LOG" ]; then
   add "record-health" "ok" "記録の失敗は記録されていない"
+elif ! command -v jq >/dev/null 2>&1; then
+  add "record-health" "indeterminate" "jq が無いので ts で窓を切れない"
+else
+  n="$(jq -rR --arg cut "$CUTOFF" 'fromjson? | select((.ts? // "") >= $cut) | .ts' "$DIAG_LOG" 2>/dev/null | wc -l | tr -d ' ')"
+  [ -n "$n" ] || n=0
+  if [ "$n" -gt 0 ]; then
+    add "record-health" "broken" \
+      "直近 ${DAYS} 日に記録の失敗が ${n} 件ある。この間の tally は過小なので ok の根拠に使えない"
+  else
+    add "record-health" "ok" "直近 ${DAYS} 日の記録失敗は 0 件"
+  fi
 fi
 
 # --- 5. 内部エラーが deny へ収束していないか（trap の発火率）---
-if [ -f "$DENY_LOG" ]; then
-  # grep -c は「0 件」でも 0 を印字したうえで exit 1 を返す。`|| printf '0'` を足すと
-  # 0 が二重に出て変数に改行が混ざり、以降の比較も表示も壊れる（実測で踏んだ）。
-  n="$(grep -c '"rule":"internal-error"' "$DENY_LOG" 2>/dev/null)"
-  [ -n "$n" ] || n=0
-  if [ "$n" != "0" ] && fresh "$DENY_LOG"; then
-    add "internal-error" "broken" \
-      "内部エラーで deny へ収束した記録が累計 ${n} 件あり、deny.jsonl は直近 ${DAYS} 日に更新されている。フックが壊れている疑い"
-  else
-    add "internal-error" "ok" "内部エラーによる収束は累計 ${n} 件（直近の更新なし）"
-  fi
-else
+# **窓は行の ts で切る。** ファイルの mtime + 累計件数で判定すると、大昔の1件が
+# 残ったまま今日の通常 deny で mtime が新しくなるだけで broken を出し続ける（実測で踏んだ）。
+if [ ! -f "$DENY_LOG" ]; then
   add "internal-error" "indeterminate" "deny.jsonl が無い。deny が一度も起きていないだけかもしれない"
+elif ! command -v jq >/dev/null 2>&1; then
+  add "internal-error" "indeterminate" "jq が無いので ts で窓を切れない"
+else
+  # fromjson? で壊れた行は黙って飛ばす（1行の破損で以降が読めなくなるのを避ける）。
+  n="$(jq -rR --arg cut "$CUTOFF" \
+        'fromjson? | select((.rule? == "internal-error") and (.ts? // "") >= $cut) | .ts' \
+        "$DENY_LOG" 2>/dev/null | wc -l | tr -d ' ')"
+  [ -n "$n" ] || n=0
+  tot="$(jq -rR 'fromjson? | select(.rule? == "internal-error") | .ts' "$DENY_LOG" 2>/dev/null | wc -l | tr -d ' ')"
+  [ -n "$tot" ] || tot=0
+  if [ "$n" -gt 0 ]; then
+    add "internal-error" "broken" \
+      "直近 ${DAYS} 日に内部エラーで deny へ収束した記録が ${n} 件ある（累計 ${tot} 件）。フックが壊れている疑い"
+  else
+    add "internal-error" "ok" "直近 ${DAYS} 日の内部エラーは 0 件（累計 ${tot} 件）"
+  fi
 fi
 
 # --- 6. 3本の allow が揃っているか（設定を読まずに脱落を局在化する）---

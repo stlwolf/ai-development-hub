@@ -34,7 +34,12 @@ allow() {
 #
 # HOME が無いときに /tmp へ落とさない。world-writable な場所を記録先にすると、
 # 先に FIFO を置かれて deny が exit 2 に到達できなくなる（下の [ -f ] ガード参照）。
-HFR_DIR="${HOOK_FIRING_DIR:-${HOME:-}/.claude/state/hook-firing}"
+# HOME も HOOK_FIRING_DIR も無いなら **記録を諦める**（空にする）。
+# ${HOME:-}/... と書くと HOME 空のとき /.claude/... へ書きに行ってしまう（実測で踏んだ）。
+if   [ -n "${HOOK_FIRING_DIR:-}" ]; then HFR_DIR="$HOOK_FIRING_DIR"
+elif [ -n "${HOME:-}" ];           then HFR_DIR="${HOME}/.claude/state/hook-firing"
+else                                    HFR_DIR=""
+fi
 
 # ツール判別は $0 で行う。$0 は「ホストが使った呼び出しパス」であって symlink の
 # 解決先ではないので、~/.codex/hooks/... と ~/.cursor/hooks/... を見分けられる。
@@ -52,6 +57,8 @@ HFR_BASE="${HFR_DIR}/tally/${HFR_TOOL}/${HFR_HOOK}"
 # リテラル引数で行う（呼び出し側で変数を展開すると、展開が隔離の外で起きて set -u に殺される）。
 hfr() {
   local slot="${1:-}"
+  # 記録先が決まらなかった（HOME も HOOK_FIRING_DIR も無い）なら記録しない。
+  [ -n "$HFR_DIR" ] || return 0
   # スロット名を白名簿で縛る。引数を忘れると末尾がドットのファイルへ静かに追記し続ける。
   case "$slot" in allow|deny) ;; *) return 0 ;; esac
   # 追記先が通常ファイルでないなら触らない。FIFO への追記は open がブロックし、
@@ -81,17 +88,34 @@ hfr() {
 # deny の詳細を1行残す。deny は稀なので date の exec を許す。
 # コマンドの生文字列は残さない（発火した規則・先頭トークン・長さだけ）。
 # 全文はエージェントの transcript に user_message として既に残るので二重に持たない。
+# 第2引数に exit code を渡すと `"exit":N` を足す（trap 収束のとき何で落ちたかを残すため）。
 hfr_deny_detail() {
+  [ -n "$HFR_DIR" ] || return 0
   ( set +e +u
     rule="${1:-unknown}"
+    ec="${2:-}"
     c="${cmd:-}"
     argv0="${c%% *}"
     argv0="${argv0//[^A-Za-z0-9._\/-]/}"
-    printf '{"ts":"%s","hook":"%s","tool":"%s","rule":"%s","argv0":"%s","cmd_len":%s}\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "$HFR_HOOK" "$HFR_TOOL" "$rule" "$argv0" "${#c}" \
+    extra=""
+    case "$ec" in ''|*[!0-9]*) ;; *) extra=",\"exit\":${ec}" ;; esac
+    printf '{"ts":"%s","hook":"%s","tool":"%s","rule":"%s","argv0":"%s","cmd_len":%s%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "$HFR_HOOK" "$HFR_TOOL" "$rule" "$argv0" "${#c}" "$extra" \
       2>/dev/null >> "${HFR_DIR}/deny.jsonl"
   ) >/dev/null || :
   return 0
+}
+
+# 前提コマンドの検査。jq 不在は trap でも rc=2 へ収束するが、それだと利用者に出る
+# メッセージが「hook internal error (exit 127)」という汎用文になる。入口で明示的に
+# 検査して何が足りないかを伝える（trap は backstop として残す）。
+# **deny() は使えない** — あれは jq で JSON を組むので、jq 不在ではそれ自体が落ちる。
+require_jq() {
+  command -v jq >/dev/null 2>&1 && return 0
+  emit_deny_literal "hook prerequisite missing: jq is required. Blocked conservatively."
+  hfr deny
+  hfr_deny_detail "missing-jq"
+  exit 2
 }
 
 # jq に頼らない deny の出力。trap の収束先はこれを使う。
@@ -118,7 +142,7 @@ on_unexpected_exit() {
   set +e +u                               # ここから先は何があっても止まらない
   emit_deny_literal "hook internal error (exit ${ec}); blocked conservatively"
   hfr deny
-  hfr_deny_detail "internal-error"
+  hfr_deny_detail "internal-error" "$ec"
   exit 2
 }
 trap on_unexpected_exit EXIT
@@ -157,6 +181,8 @@ parse_rm() {
 
 main() {
   local input cmd cmd_clean
+
+  require_jq
 
   input="$(cat)"
   cmd="$(jq -r '.tool_input.command // .command' <<< "$input")"
