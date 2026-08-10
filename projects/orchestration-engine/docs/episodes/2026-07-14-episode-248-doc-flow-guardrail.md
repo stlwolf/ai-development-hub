@@ -3,7 +3,7 @@ id: "01KXG72Q80H538X6HVM3VRR9YR"
 title: "#248 episode（heavy）— ドキュメントフロー・ガードレール枠 v0（doc-flow-guardrail skill + document-format.md relocation）"
 date: 2026-07-14
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/248"

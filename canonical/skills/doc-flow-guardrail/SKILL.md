@@ -68,7 +68,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。**追記は closure から指せる形で残す** — 判断の why・失敗と撤回の経緯・棄却した選択肢・tier のトリガに当たる出来事は、起きたその場で節を立てて書く。closure ではそれを再掲せず本文を指す（`episode-retrospective` の read/write 契約）。
 - **昇格の印**: 「これは昇格を考えるべきかもしれない」と思った**その場で**、本文に `昇格の印: <1行>` を**行頭の裸行**として置く（**囲むと印にならない**）。規約は `document-format.md`「ライフサイクル規範」節。印は候補であって判定ではないので、迷ったら置く。
 - **昇格規則**: 設計級 / durable な知見は closure・worktree 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（詳細 `document-format.md`「昇格義務」節〔§13〕・1行版〔§13.6〕）。
-- **報告2段構え**: file が正本・`oe-send "$PARENT_TMUX_PANE" '...'` はポインタ（pane 引数は変数展開のため double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**）。
+- **報告2段構え**: file が正本・`oe-send` の1行はポインタ。**起動方法を決める前に `command -v oe-send` で確かめる** — PATH に在ればそのまま呼べるが、無ければ engine の `bin/` のパスで呼ぶ（hub では `projects/orchestration-engine/bin/oe-send "$PARENT_TMUX_PANE" '...'`）。**PATH に無いのに素の名前で呼ぶと `exit 127` になり、送れていないのに送ったつもりで止まる**ので、送信後に exit code を確かめる。pane 引数は変数展開のため double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**。
 - **malform hygiene**: 子ペインの生 capture を会話へ貼らない。要約するか path（ファイル/ログの場所）で渡す。
 - **out-of-scope は実装せず surface**（`implementer-contract`。完了判断・レビューに影響するもののみ）。
 - **指示矛盾ガード**: 親の指示が brief の終端定義または plan の step 構成と矛盾する場合は、**従う前に**矛盾を指摘して確認を取る（順序は「指摘 → 確認 → 従う」・不服従ではなく確認要求）。矛盾に当たるのは (a) 終端の再定義 (b) 未達 step の飛び越し (c) step の要件の弱体化。**step ID が書かれていること自体は免責にならない**（指された位置までの義務が履行済みかで判断する。履行済みの位置への指定・差し戻しは矛盾ではない）。正本と弁別子は `implementer-contract`。
