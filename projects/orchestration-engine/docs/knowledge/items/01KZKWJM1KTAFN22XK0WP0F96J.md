@@ -8,7 +8,11 @@ prediction: "1枚の画面の表示と、累積 CPU 時間の変化量に寄る�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-10-episode-239-child-liveness-recipe.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-10
+    ref: "#291"
+    state: followed
+    note: "累積 CPU 変化量を避けて絶対値で組み、存在判定は list-panes の集合所属にした。同族の罠を1件新規に踏んだ（display-message は不在ペインでも rc=0 と空を返す）。標的の子は既にペイン消滅済みで信号 a/b が引けず、このレシピが効くのは live な子に限ると分かった"
 exclusions:
   - "委譲先が同一プロセス内のサブエージェントで、完了が戻り値として返る構成（状態を推定する必要がない）"
   - "終端が単一の機械可読な成果物で、その存在だけで判定でき、稼働中かどうかを知る必要がない場合"
