@@ -85,7 +85,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 `oe-delegate` は spawn + キックに専念し、戻し（report）を一切焼き付けない（Unix 哲学・単機能）。
 子に報告させたいなら、その指示は **task / brief の本文に自分で書く**。戻しの送信自体は子が
-汎用の `oe-send "$PARENT_TMUX_PANE" "..."` で行う（下記「戻し」）。
+汎用の `oe-send` を `$BIN` 付きのパスで呼んで行う（形は下記「戻し」・PATH に在るかは `command -v` で確かめる）。
 
 ### worktree 作成分担（子が自作・統括は hands-off）
 
