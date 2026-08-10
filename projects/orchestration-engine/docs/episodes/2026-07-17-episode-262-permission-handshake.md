@@ -3,7 +3,7 @@ id: "01KXQPRSZTVM4H55DNXCZHZT7V"
 title: "#262 v0 — spawn 段 owner 承認ハンドシェイク（binding + audit + 3軸 doc）"
 date: 2026-07-17
 type: episode
-status: draft
+status: stable
 related:
   - type: derived_from
     ref: ".oe/plan-262-permission-handshake.md"
