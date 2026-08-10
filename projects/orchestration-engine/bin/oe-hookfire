@@ -46,6 +46,9 @@ HOOKS="block-destructive block-force-push cc-lint"
 EXPECTED_TOOLS="${OE_HOOKFIRE_TOOLS:-claude cursor codex}"
 DAYS="${OE_HOOKFIRE_DAYS:-7}"
 
+# usage は表示だけを担う。**exit は呼び出し側が決める。**
+# help は成功（0）、呼び方の誤りは 2 で、どちらも broken の帯（1）とは別に置く。
+# **2 は indeterminate の帯でもあるので、そこは共有したまま残る**（分離は #301 で決める）。
 usage() {
   cat >&2 <<'EOF'
 usage: oe-hookfire [--days N] [--json] [-h|--help]
@@ -58,13 +61,19 @@ usage: oe-hookfire [--days N] [--json] [-h|--help]
   indeterminate  検査自体が成立しなかった（ok ではない）
   info           判定ではなく値の報告
 
-exit: broken≥1 → 1 / broken=0 かつ indeterminate≥1 → 2 / 全部 ok → 0
-      （indeterminate は成功にしない）
+exit: 0 → 全部 ok（-h / --help もここ）
+      1 → broken≥1
+      2 → 呼び方の誤り（unknown option・余分な引数・--days が非整数）
+           または broken=0 かつ indeterminate≥1
+
+**2 を見て自動で再試行しないこと。** 2 は「呼び方が違う」と「検査が成立
+しなかった」を兼ねている。前者は人が直すまで永久に再発するので、再試行は
+空振りし続ける。どちらなのかは stderr と --json にしか出ない。
+判定の分離（indeterminate を別の番号へ）は #301 で決める。
 
 「0 件 = 発火しなかった」とは読めない。idle と silent skip でも 0 になる。
 配備物を通したプローブと併せて読むこと（canonical/hooks/README.md の陽性対照）。
 EOF
-  exit 1
 }
 
 JSON=0
@@ -73,14 +82,18 @@ while [[ "${1:-}" == -* ]]; do
     --days)
       # 値が無いまま shift 2 すると bash は「out of range」でシフトせず非 0 を返す。
       # -e が無いので実行は続き、$1 が --days のまま残って無限ループになる（実測で踏んだ）。
-      [ "$#" -ge 2 ] || { echo "oe-hookfire: --days に値がありません" >&2; usage; }
+      [ "$#" -ge 2 ] || { echo "oe-hookfire: --days に値がありません" >&2; usage; exit 2; }
       DAYS="$2"; shift 2 ;;
     --days=*) DAYS="${1#--days=}"; shift ;;
     --json) JSON=1; shift ;;
-    -h|--help) usage ;;
-    *) echo "oe-hookfire: unknown option: $1" >&2; usage ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "oe-hookfire: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+# **残余引数を黙って捨てない。** ループはハイフンで始まらない引数で抜けるので、
+# 検査しないと `oe-hookfire foo --bogus` が --bogus を読まずに判定表を出す
+# （help も同様に効かない）。呼び方の誤りが正当な観測に化ける経路なので弾く。
+[ "$#" -eq 0 ] || { echo "oe-hookfire: unexpected argument: $1" >&2; usage; exit 2; }
 case "$DAYS" in ''|*[!0-9]*) echo "oe-hookfire: --days は整数" >&2; exit 2 ;; esac
 
 # 窓の下限を ISO 8601 の日付で作る。ts は ISO なので文字列比較で足りる。

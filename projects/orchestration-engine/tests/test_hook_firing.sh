@@ -197,5 +197,36 @@ out="$(HOOK_FIRING_DIR="$ONE" bash "$OE_HOOKFIRE" 2>&1 || true)"
 n_missing="$(printf '%s\n' "$out" | grep -c 'fire/cursor\|fire/codex' || true)"
 ck "欠落した cursor / codex が行として出る" "2" "$n_missing"
 
+echo "[18] exit 契約: help と呼び方の誤りを broken（1）の帯から外す（#309 残件）"
+# **これは「全部の判定帯から切り離した」ではない。** 2 はいまも indeterminate の帯で
+# あり、呼び方の誤りはそこへ相乗りする（共有は承知のうえの妥協で、分離は #301 待ち）。
+# 下の assertion もそう読むこと。2 を期待している行は「broken ではない」までしか
+# 言っておらず、「indeterminate と区別できる」とは言っていない。
+# **番号を表として固定する。** 分離が #301 で決まったとき何が動くのかを機械で分かる
+# 形にしておく。
+OE_SELFCHECK="$(cd "$SCRIPT_DIR/.." && pwd)/bin/oe-selfcheck"
+rc_of() { # rc_of <script> [args...] — exit code だけを返す
+  bash "$@" >/dev/null 2>&1 && printf '0' || printf '%s' "$?"
+}
+for v in "$OE_HOOKFIRE" "$OE_SELFCHECK"; do
+  n="$(basename "$v")"
+  [[ -x "$v" ]] || { echo "  SKIP: $n 不在"; continue; }
+  ck "$n --help は 0（成功であって broken ではない）" "0" "$(rc_of "$v" --help)"
+  ck "$n -h は 0"                              "0" "$(rc_of "$v" -h)"
+  ck "$n unknown option は 2"                  "2" "$(rc_of "$v" --bogus)"
+  ck "$n 余分な位置引数は 2"                    "2" "$(rc_of "$v" extra)"
+  # 位置引数の後ろの option が読まれずに判定へ進む経路を塞いだことの確認。
+  ck "$n 位置引数の後ろに --help があっても 2"  "2" "$(rc_of "$v" extra --help)"
+done
+ck "oe-hookfire --days 値なしは 2" "2" "$(rc_of "$OE_HOOKFIRE" --days)"
+ck "oe-hookfire --days 非整数は 2" "2" "$(rc_of "$OE_HOOKFIRE" --days xyz)"
+# indeterminate の帯（2）は据え置き（#301 へ保留した争点）。[12] が indeterminate→2 を
+# 固定しており、ここではそれが CLI 衛生の変更で動いていないことだけを見る。
+# **この行が 2 を期待するのと、上で呼び方の誤りが 2 を期待するのは、同じ番号である。**
+# それが共有された帯の実体で、区別が要るなら stderr か --json を読む必要がある。
+E2="$_TMP_DIR/empty-contract"; mkdir -p "$E2"
+ck "oe-hookfire 記録なし（indeterminate）は 2 のまま" "2" \
+   "$(HOOK_FIRING_DIR="$E2" bash "$OE_HOOKFIRE" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
