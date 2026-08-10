@@ -47,7 +47,8 @@ EXPECTED_TOOLS="${OE_HOOKFIRE_TOOLS:-claude cursor codex}"
 DAYS="${OE_HOOKFIRE_DAYS:-7}"
 
 # usage は表示だけを担う。**exit は呼び出し側が決める。**
-# help は成功（0）、呼び方の誤りは 2 で、どちらも判定の帯（1）とは別に置く。
+# help は成功（0）、呼び方の誤りは 2 で、どちらも broken の帯（1）とは別に置く。
+# **2 は indeterminate の帯でもあるので、そこは共有したまま残る**（分離は #301 で決める）。
 usage() {
   cat >&2 <<'EOF'
 usage: oe-hookfire [--days N] [--json] [-h|--help]
