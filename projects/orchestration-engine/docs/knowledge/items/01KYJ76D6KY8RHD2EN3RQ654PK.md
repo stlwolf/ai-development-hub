@@ -8,7 +8,11 @@ prediction: "「機械判定できない」と結論して自己申告や人手�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-27-episode-284-episode-layer-split.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-10
+    ref: "#291"
+    state: followed
+    note: "別の場所を2件見つけた（brief path は message_sent.preview に durable・branch slug は pane-issue state に残る）。ただし見つけた先の保持期間を確かめず遡及性を過大に主張し SO に反証された（pane-issue は24時間 GC）。この教訓には「その場所はいつまで残るか」の確認が対で要る"
 exclusions:
   - "証拠の所在を一通り当たったうえで不在を確認できているケース（探索を尽くした結論は本 item の対象外）"
   - "判定したい性質そのものが主観的で、どこにも機械可読な痕跡が原理的に残らないケース"
