@@ -17,6 +17,10 @@ observations:
     ref: "#288"
     state: followed
     note: "規範（document-format の欄と印）を新設しながら検査側（episode-retrospective の必須項目）にも触れる単位だったので、両ファイルを並べて整合を確かめる step を plan に置いて実行した。その過程で frontmatter の正本である spec-card と、作業中の書き方の正本である doc-flow-guardrail が編集範囲外に残ることを surface し、後者は owner がスコープに入れて段B の commit になった — 齟齬を黙って残さなかったことが実際に配布側の穴を塞いだ"
+  - date: 2026-08-11
+    ref: "#319"
+    state: followed
+    note: "decision 層（規範に近い記録）へ追記しながら、同時に promotion 欄の規約にも触れる位置だったので、欄を検査するゲートの範囲を先に確かめた。bin/ lib/ tests/ scripts/ を走査して欄を読む機械が1つも無いこと（検査は #286 に未着地）を確認し、機械の不在を欄を拡張してよい根拠にはせず、規約の文（本欄は3つ組だけ・ref は2形）に従って書き戻し先を related と closure へ決めた。ゲートの側を見なければ、検査が無いことを理由に欄へ4つ目のキーを足していた"
 exclusions:
   - "規範とゲートが定義上一致しているケース（ゲートが規範の全条項を機械検査する設計だと明示されている場合）"
   - "規範を新設せず、既存規範のゲートだけを調整するケース"
