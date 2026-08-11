@@ -70,5 +70,19 @@ echo "[5] 親未解決（env も file も無し）: exit 1"
 rc=0; env -u PARENT_TMUX_PANE -u TMUX_PANE PATH="$STUB_BIN:$PATH" bash "$OE_REPORT" "x" >/dev/null 2>&1 || rc=$?
 ck "rc=1" "1" "$rc"
 
+echo "[6] exit 帯（#309）: help=0 / 呼び方の誤り=2。1 は「親ペインが無い」専用に残す"
+rc=0; run --help >/dev/null 2>&1 || rc=$?
+ck "--help は 0" "0" "$rc"
+rc=0; run -h >/dev/null 2>&1 || rc=$?
+ck "-h は 0" "0" "$rc"
+rc=0; run --bogus >/dev/null 2>&1 || rc=$?
+ck "unknown option は 2" "2" "$rc"
+rc=0; run >/dev/null 2>&1 || rc=$?
+ck "message 欠落は 2" "2" "$rc"
+before="$(nlines)"
+rc=0; run hello world >/dev/null 2>&1 || rc=$?
+ck "余分な位置引数は 2（切り詰めて送らない）" "2" "$rc"
+ck "その場合 emit されない" "$before" "$(nlines)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

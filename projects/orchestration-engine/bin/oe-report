@@ -32,21 +32,22 @@ usage: oe-report [--review] <message>
 
 注: 戻しは oe-send に一本化が方針。本コマンドは legacy。
 EOF
-  exit 1
 }
 
 REVIEW=0
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --review) REVIEW=1; shift ;;
-    -h|--help) usage ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; break ;;
-    *) echo "oe-report: unknown option: $1" >&2; usage ;;
+    *) echo "oe-report: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 MESSAGE="${1:-}"
-[[ -n "$MESSAGE" ]] || { echo "oe-report: message argument is required" >&2; usage; }
+[[ -n "$MESSAGE" ]] || { echo "oe-report: message argument is required" >&2; usage; exit 2; }
+# 余分な位置引数は黙って捨てず 2 で弾く。捨てると切り詰めた message を送ってしまう（#309）。
+[[ $# -le 1 ]] || { echo "oe-report: unexpected argument: $2（message は1つだけ。複数語はクォートする）" >&2; usage; exit 2; }
 
 # 親ペイン ID を解決
 PARENT_PANE="${PARENT_TMUX_PANE:-}"

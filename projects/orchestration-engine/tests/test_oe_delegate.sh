@@ -273,5 +273,20 @@ bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --claude-arg --permission-
 ck "downgrade (drop --elevated) rc=3" "3" "$rc"
 ck "elevated toggles digest" "yes" "$( [[ "$nedig" != "$eldig" ]] && echo yes || echo no )"
 
+echo "[27] exit 帯（#309）: help=0 / 呼び方の誤り=2。spawn には至らない"
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" --help >/dev/null 2>&1 || rc=$?
+ck "--help は 0" "0" "$rc"
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -h >/dev/null 2>&1 || rc=$?
+ck "-h は 0" "0" "$rc"
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" --bogus >/dev/null 2>&1 || rc=$?
+ck "unknown option は 2" "2" "$rc"
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" >/dev/null 2>&1 || rc=$?
+ck "task と --brief がどちらも無いのは 2" "2" "$rc"
+# クォート忘れ（複数の位置引数）は、切り詰めた task で spawn せず 2 で止める
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" my task here >/dev/null 2>&1 || rc=$?
+ck "余分な位置引数は 2" "2" "$rc"
+ck "上記のいずれも spawn しない" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
