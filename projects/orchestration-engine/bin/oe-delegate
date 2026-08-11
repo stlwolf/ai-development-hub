@@ -61,7 +61,6 @@ usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude
   PARENT_TMUX_PANE      子へ自動で渡る「親ペイン」コンテキスト（設定不要）。
                         子が親へ返したいときは oe-send "$PARENT_TMUX_PANE" "..." を使う
 EOF
-  exit 1
 }
 
 WORKSPACE="$(pwd)"
@@ -119,17 +118,25 @@ while [[ "${1:-}" == -* ]]; do
       fi
       # フラグが渡されたこと自体を記録（空文字を渡して照合をスキップする迂回を塞ぐ・実装SO D2）。
       APPROVED_DIGEST="$2"; APPROVED_DIGEST_SET=1; shift 2 ;;
-    -h|--help) usage ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; break ;;
-    *) echo "oe-delegate: unknown option: $1" >&2; usage ;;
+    *) echo "oe-delegate: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 TASK="${1:-}"
+# 余分な位置引数は黙って捨てず 2 で弾く。task を捨てたまま spawn すると、切り詰められた
+# task で子が起動してしまう（クォート忘れが最も危険な形で通る・#309）。
+if [[ $# -gt 1 ]]; then
+  echo "oe-delegate: unexpected argument: $2（task は1つだけ。複数語はクォートする）" >&2
+  usage
+  exit 2
+fi
 # task は --brief があれば省略可。どちらも無ければエラー。
 if [[ -z "$TASK" && -z "$BRIEF" ]]; then
   echo "oe-delegate: task argument is required (or pass --brief)" >&2
   usage
+  exit 2
 fi
 # task は 1 行。改行を含むなら spawn 前に弾く（送信は oe_send_line が拒否するため、
 # spawn 後に気づくと無キックの孤児ペインが残る。preflight で防ぐ）。

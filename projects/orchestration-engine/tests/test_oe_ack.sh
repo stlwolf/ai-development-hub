@@ -100,13 +100,14 @@ ck  "emit は %77 の 1 行だけ" "$((before + 1))" "$(nlines)"
 ck  "to=%77" "%77" "$(last | jq -r .to.pane)"
 ckc "%77 の acked 1 件" "$OUT5" "acked 1 件"
 
-echo "[6] ガード: TMUX_PANE 無し=exit2 / 自分自身=exit2 / --all+target=usage(exit1) / ログ無し=exit0"
+echo "[6] ガード: TMUX_PANE 無し=exit2 / 自分自身=exit2 / --all+target=呼び方の誤り(exit2) / ログ無し=exit0"
 rc=0; env -u TMUX_PANE bash "$OE_ACK" '%66' >/dev/null 2>&1 || rc=$?
 ck "TMUX_PANE 無し exit 2" "2" "$rc"
 rc=0; run '%59' >/dev/null 2>&1 || rc=$?
 ck "自分自身 exit 2" "2" "$rc"
+# #309: 呼び方の誤りは 2（help は 0）。usage() 経由の 1 は廃止した（PR #315 / #321 と同じ帯）。
 rc=0; run --all '%66' >/dev/null 2>&1 || rc=$?
-ck "--all+target は usage exit 1" "1" "$rc"
+ck "--all+target は呼び方の誤り exit 2" "2" "$rc"
 rc=0; OUT6="$(OE_EVENT_DIR="$_TMP_DIR/noevents" TMUX="oe,${PID},0" TMUX_PANE="%59" bash "$OE_ACK" '%66' 2>&1)" || rc=$?
 ck  "ログ無し exit 0" "0" "$rc"
 ckc "ログ無し告知"    "$OUT6" "nothing to ack"
@@ -156,6 +157,18 @@ printf '%s\n' '{"ts":"2026-07-03T09:00:00+00:00","type":"message_sent","from":{"
 RTACK="$(env PATH="$STUB_BIN:$PATH" TMUX="oe,${PID},0" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/rawtag" bash "$OE_ACK" '%66' 2>&1)"
 ckc "ack echo: tag neutralized (< invoke)" "$RTACK" "< invoke"
 if printf '%s' "$RTACK" | grep -qF '<invoke'; then echo "  FAIL: ack echo に raw <invoke 残存"; FAIL=$((FAIL+1)); else echo "  PASS: ack echo の raw <invoke 除去"; PASS=$((PASS+1)); fi
+
+echo "[14] exit 帯（#309）: help=0 / 呼び方の誤り=2"
+rc=0; run --help >/dev/null 2>&1 || rc=$?
+ck "--help は 0" "0" "$rc"
+rc=0; run -h >/dev/null 2>&1 || rc=$?
+ck "-h は 0" "0" "$rc"
+rc=0; run --bogus >/dev/null 2>&1 || rc=$?
+ck "unknown option は 2" "2" "$rc"
+rc=0; run >/dev/null 2>&1 || rc=$?
+ck "target 欠落（--all も無し）は 2" "2" "$rc"
+rc=0; run '%66' '%77' >/dev/null 2>&1 || rc=$?
+ck "余分な位置引数は 2" "2" "$rc"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

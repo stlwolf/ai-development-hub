@@ -63,27 +63,34 @@ usage: oe-ack [--all] [--] [<target>]
 （report_received・frontier snapshot）を打つ。未受領分が無ければ何も emit しない。
 受領済みは oe-activity --inbox（PENDING 列）/ --timeline（ack 行）で見える。
 EOF
-  exit 1
 }
 
 ALL=0
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --all) ALL=1; shift ;;
-    -h|--help) usage ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; break ;;
-    *) err "unknown option: $1"; usage ;;
+    *) err "unknown option: $1"; usage; exit 2 ;;
   esac
 done
 
 TARGET="${1:-}"
+# 余分な位置引数は黙って捨てず 2 で弾く（target は1つだけ。クォート忘れの検出・#309）。
+if [[ $# -gt 1 ]]; then
+  err "unexpected argument: $2（target は1つだけ。複数語はクォートする）"
+  usage
+  exit 2
+fi
 if [[ "$ALL" -eq 1 && -n "$TARGET" ]]; then
   err "--all と <target> は同時指定できません"
   usage
+  exit 2
 fi
 if [[ "$ALL" -eq 0 && -z "$TARGET" ]]; then
   err "target が必要です（または --all）"
   usage
+  exit 2
 fi
 
 SELF="${TMUX_PANE:-}"
