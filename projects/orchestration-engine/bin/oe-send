@@ -31,8 +31,14 @@ usage: oe-send [--brief <path>] [--] <target> [ad-hoc...]
 
 payload は「--brief のパス指示」＋「ad-hoc テキスト」を 1 行に連結して送る。
 どちらか一方は必須。改行を含む場合は送信せず失敗する（途中送信の防止）。
+
+exit: 送信した、または help を表示した→0 / 宛先が無い（生存しない %N・解決できない
+      ラベル・曖昧なラベル）→1 / 呼び方の誤り（unknown option・引数の欠落）と環境
+      エラー（tmux・jq の不在、改行を含む payload、送信そのものの失敗）→2 /
+      未着の可能性（OE_SEND_SIGNAL_MISS=1 のときだけ）→4。
+      0 は配送の成功を意味しない（help も 0 である）。取り込みの確認は受領印、
+      読んだことの確認は oe-ack の層で見る。
 EOF
-  exit 1
 }
 
 BRIEF=""
@@ -45,24 +51,22 @@ while [[ "${1:-}" == -* ]]; do
       [[ $# -ge 2 ]] || { echo "oe-send: $1 requires a value" >&2; exit 2; }
       BRIEF="$2"; shift 2 ;;
     --no-enter) SEND_ENTER=0; shift ;;
-    -h|--help) usage ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; break ;;
-    *) echo "oe-send: unknown option: $1" >&2; usage ;;
+    *) echo "oe-send: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 TARGET="${1:-}"
-[[ -n "$TARGET" ]] || { echo "oe-send: target is required" >&2; usage; }
+[[ -n "$TARGET" ]] || { echo "oe-send: target is required" >&2; usage; exit 2; }
 shift
 ADHOC="$*"
 
-# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決）
-PANE="$(oe_reg_resolve "$TARGET")" || exit
-
-# payload 組立
+# payload 組立。target 解決より先に済ませる。payload の欠落は呼び方の誤りなので、宛先が
+# 生きているかどうか（環境の側の事情）に関わらず 2 を返さなければならない。逆順にすると、
+# 解決できないラベル宛てのときだけ payload の欠落が 1（宛先が無い）に化ける。
 payload=""
 if [[ -n "$BRIEF" ]]; then
-  [[ -e "$BRIEF" ]] || echo "oe-send: warning: brief path not found locally: ${BRIEF} (child may resolve it in its workspace)" >&2
   payload="${BRIEF} を読んで進めて。"
 fi
 if [[ -n "$ADHOC" ]]; then
@@ -72,7 +76,16 @@ if [[ -n "$ADHOC" ]]; then
     payload="$ADHOC"
   fi
 fi
-[[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --brief and/or ad-hoc text)" >&2; usage; }
+[[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --brief and/or ad-hoc text)" >&2; usage; exit 2; }
+
+# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決）
+PANE="$(oe_reg_resolve "$TARGET")" || exit
+
+# brief パスの警告は宛先が決まってから出す。組立の側で出すと、宛先が解決できず送信しない
+# 経路でも「子が自分の workspace で解決するだろう」と言ってしまい、診断が反実仮想になる。
+if [[ -n "$BRIEF" && ! -e "$BRIEF" ]]; then
+  echo "oe-send: warning: brief path not found locally: ${BRIEF} (child may resolve it in its workspace)" >&2
+fi
 
 rc=0
 oe_send_line "$PANE" "$payload" "$SEND_ENTER" || rc=$?
