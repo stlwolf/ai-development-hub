@@ -213,7 +213,9 @@ brief は「全379コミットのうち本文にバッククォートを含む�
 - **第3ラウンドを回さない**: `not-required`。弱 SO の床の適用であり、規約は既に `so-compare` skill に在る。
 - **他の `oe-*` と `cc-lint` を報告に留めた**: `not-required`。brief の scope 指定に従っただけで、独立した設計判断としては薄い。
 
-**注入された negative knowledge**: `01KYMRE1NC7XX6N66RQ0MGGHF1` と `01KYJ76D7CS7EBY3WDYY1NS9Y2` の2件（この2行が分母の durable な記録である）。両方に観測を1レコードずつ書き戻した。
+**注入された negative knowledge**: `01KYMRE1NC7XX6N66RQ0MGGHF1` と `01KYJ76D7CS7EBY3WDYY1NS9Y2` の2件（この行が分母の durable な記録である）。**両方に観測を1レコードずつ書き戻した**（どちらも `followed` / `ref: #321`）。前者は「379件中2件」の訂正を、後者は `cc-lint` 素通りの発見を実際に生んでいる。
+
+**本単位の durable な参照**: [PR #321](https://github.com/stlwolf/ai-development-hub/pull/321)。issue は起こしていないので、観測レコードの `ref` もこの PR 番号を使った。
 
 **evidence anchor**: SO の出力先（`tmp/oe-review-*` / `tmp/so-*`）は揮発するので、`audit_id`・レーン・**解決後モデル**・**所要秒**・verdict・指摘の要旨を本文へ転記した（第1・第2ラウンドと Step4 の3回分）。cursor の解決先は CLI が出さないため記録が無い（`unavailable:cli-not-exposed`）ので、「cursor が何に解決されたか」は主張しない。
 
