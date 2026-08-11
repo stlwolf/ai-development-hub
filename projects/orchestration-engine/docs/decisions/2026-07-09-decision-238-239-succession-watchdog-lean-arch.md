@@ -113,6 +113,49 @@ tags: [orchestration, succession, watchdog, statusline, heartbeat, phase5, decis
 - 段階1 実装（PR 分割 + open question 解消 + 設計 SO 反映）の committed 正本群（#250 で昇格元の working plan `.oe/plan-stage1.md` を (b) 張替。掃除後 dead-end 化しない）: Q3-Q8 の解消は本 decision の §open questions / §注意点、consumer 側の実装レベル設計判断（Q3 OS cron・Q7 閾値）と実装 SO は `projects/orchestration-engine/docs/plans/2026-07-11-plan-239-pr-b-vitals-consumer.md`、board schema（PR-C・Q8）は `projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md`、各 PR の実装記録は `projects/orchestration-engine/docs/episodes/2026-07-10-episode-239-statusline-heartbeat-producer.md`（PR-A）/ `projects/orchestration-engine/docs/episodes/2026-07-11-episode-239-pr-b-vitals-consumer.md`（PR-B）/ `projects/orchestration-engine/docs/episodes/2026-07-10-episode-238-board-schema-validator.md`（PR-C）、設計 SO 3段の軌跡・代替案・却下根拠は `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-238-239-succession-watchdog-design-rationale.md`（§4・§6）。
 - 段階0（`oe-undelivered`・報告未達検知・#241 済）: `/Users/eddy/work/repos/github.com/stlwolf/ai-development-hub.docs-#238_succession_watchdog_design/projects/orchestration-engine/docs/episodes/2026-07-09-episode-239-report-undelivered-watchdog.md`
 
+## 段階2 の pane-capture heuristic に課す制約 — 1枚の画面から状態を決めない（#239 の判定から追記・2026-08-11）
+
+**本節は §結果「段階2 以降」が先送りした「お見合い pane-capture heuristic（段階2）」に、実装前の制約を課す追記であり、段階1 の決定を変えない。** 出典は `projects/orchestration-engine/docs/episodes/2026-08-10-episode-239-child-liveness-recipe.md`（以下「#239 episode」）で、該当の判定は同 `:19-21`、根拠の本文は同 `:178-186` である。**verification status のタグは下の凡例と同じ意味で使う**（本節のタグは 2026-08-11 に追記者が一次を開いて付けたもの）。
+
+### なぜ段階2 でこの制約が要るのか
+
+段階1 の拍動は **hang 検知ではなくプロセス死検知**である（§根拠の「正直な残余」）[verified]。**低 context hang（プロセス生存 × context 低 × model 停止）は beat も context% も動かず**、mode2 お見合いも段階1 では取りこぼす（§結果「注意点・残る穴」）[verified]。つまり段階2 は、機械が読める既存の信号が尽きたところから始まる。**そこで最初に手が伸びるのが画面であり、最初に踏むのが「1枚の画面から状態を読む」形である。**
+
+### 決定
+
+**禁じるのは1枚のスナップショットから状態を決めることであって、画面そのものではない。** 時間差で2回撮って差分を取る形は決定論的であり、稼働の判定に使ってよい。
+
+### 根拠 — このリポジトリ自身が時間差の差分を使っている
+
+`projects/orchestration-engine/bin/oe-selfcheck` の陽性対照がまさにその形である [verified]（本節の追記時に実体を読んだ）。
+
+- 全ペインを capture して1枚目を保存する（同 `:120` と `:126`）。
+- `OE_SELFCHECK_ACTIVITY_INTERVAL`（既定 1.2 秒）だけ待つ（同 `:132`）。
+- 2枚目を撮り（同 `:134`）、`cmp -s` で1枚目と違ったペインを稼働と数える（同 `:138`）。
+
+**したがって「画面を状態判定に使わない」という広い禁止を採ると、この実装を名指ししないまま無効化する。** 棄却したのはその広い禁止（「画面が使えるのは着弾の確認まで」）であり、棄却の根拠が自リポジトリの実装だった（#239 episode `:180-182`）[verified]。禁止の中身は変わっておらず、範囲だけが正確になっている。
+
+### 当時の前提（将来偽になりうるもの）
+
+1. **待機中を示す表示は、止まった後も画面に残る** [verified] `projects/orchestration-engine/docs/knowledge/items/01KZKWJM1KTAFN22XK0WP0F96J.md:25`。だから1枚では稼働を言えない。
+2. **差分が在ることは稼働の十分条件ではない。** 描画だけが動いている場合を分離していない。**`%cpu` が実は画面の再描画コストの代理かもしれない**という疑いは未解決で #239 へ回してある [unverified-summary]（#239 episode `:175` と同 `:292`）。この疑いが立つと、段階2 は「画面を退けて立てた一次の信号が、間接的に同じものを測り直していた」ことになる。
+3. **2枚差分の間隔は実装の値であって普遍の閾値ではない**（既定 1.2 秒は `oe-selfcheck` の値・上記 `:132`）[verified]。段階2 の consumer が別の間隔を採るなら、その値の根拠は自分で持つ必要がある。**閾値とサンプル数は #239 episode でも決めていない**（同 `:285`）[verified]。
+
+### 覆すコスト
+
+**覆すには「1枚から状態を決めてよい」という価値判断を戦わせる必要がある。** 差分方式が誤判定する事例が出ても、それは**差分方式の限界**であって1枚方式を復活させる根拠にはならない — 1枚は2枚差分の情報の部分集合なので、1枚で言えることは2枚でも言える。段階1 が「新 state を作らず observed 層は read 時に観測する」と決めた線（§決定）と同じ層の判断である。
+
+### 段階2 の実装が同時に守る線
+
+pane-capture で**承認**を読まないこと。承認の成立条件（受け取った経路だけを根拠にする）は `projects/orchestration-engine/docs/decisions/2026-07-17-decision-spawn-permission-handshake.md` の同日追記節が持つ。**本節（稼働判定の許容範囲）とあちら（承認の受領）は別の判断なので、片方を緩めてももう片方は緩まない。**
+
+### 併設している実装アーティファクト（昇格先ではない）
+
+- 手順: `canonical/skills/delegate-task/SKILL.md` の「委譲子の状態を親が判定する（1枚の画面から読まない）」節
+- 再発する失敗の型: `projects/orchestration-engine/docs/knowledge/items/01KZKWJM1KTAFN22XK0WP0F96J.md`
+
+**併設したことは昇格判定を代替しない**（`canonical/skills/episode-retrospective/SKILL.md:152`）。
+
 ## verification status 凡例
 
 `[verified]`（私が実体を開いて確認）/ `[unverified-summary]`（一次を引くが entailment 未確認）/ `[speculation]`（根拠なし）。本 doc の feasibility 2点（statusline `refreshInterval` / `context_window.used_percentage`）と best-effort 残余（cancel/debounce・fixed timer のプロセス層性）は本決定時に公式 doc を直読して [verified]。故障モード4種は #238/#239 本文由来で [unverified-summary]。
