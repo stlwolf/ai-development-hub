@@ -23,6 +23,9 @@ related:
   - type: source_material
     ref: "projects/orchestration-engine/docs/episodes/2026-07-09-episode-239-report-undelivered-watchdog.md"
     reason: "段階0 oe-undelivered（#241）= out-of-session consumer substrate の既実装"
+  - type: source_material
+    ref: "projects/orchestration-engine/docs/episodes/2026-08-10-episode-239-child-liveness-recipe.md"
+    reason: "末尾の追記節「段階2 の pane-capture heuristic に課す制約」の出典（#319 U1 で追記）。同 episode の promotion 2件目の昇格先が本 ADR である"
 tags: [orchestration, succession, watchdog, statusline, heartbeat, phase5, decision, read-only]
 ---
 
@@ -112,6 +115,59 @@ tags: [orchestration, succession, watchdog, statusline, heartbeat, phase5, decis
 
 - 段階1 実装（PR 分割 + open question 解消 + 設計 SO 反映）の committed 正本群（#250 で昇格元の working plan `.oe/plan-stage1.md` を (b) 張替。掃除後 dead-end 化しない）: Q3-Q8 の解消は本 decision の §open questions / §注意点、consumer 側の実装レベル設計判断（Q3 OS cron・Q7 閾値）と実装 SO は `projects/orchestration-engine/docs/plans/2026-07-11-plan-239-pr-b-vitals-consumer.md`、board schema（PR-C・Q8）は `projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md`、各 PR の実装記録は `projects/orchestration-engine/docs/episodes/2026-07-10-episode-239-statusline-heartbeat-producer.md`（PR-A）/ `projects/orchestration-engine/docs/episodes/2026-07-11-episode-239-pr-b-vitals-consumer.md`（PR-B）/ `projects/orchestration-engine/docs/episodes/2026-07-10-episode-238-board-schema-validator.md`（PR-C）、設計 SO 3段の軌跡・代替案・却下根拠は `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-238-239-succession-watchdog-design-rationale.md`（§4・§6）。
 - 段階0（`oe-undelivered`・報告未達検知・#241 済）: `/Users/eddy/work/repos/github.com/stlwolf/ai-development-hub.docs-#238_succession_watchdog_design/projects/orchestration-engine/docs/episodes/2026-07-09-episode-239-report-undelivered-watchdog.md`
+
+## 段階2 の pane-capture heuristic に課す制約 — 1枚の画面から状態を決めない（#239 の判定から追記・2026-08-11）
+
+**本節は §結果「段階2 以降」が先送りした「お見合い pane-capture heuristic（段階2）」に、実装前の制約を課す追記である。** 段階1 の決定（declared + observed + statusline producer・sidecar・seat defer）は一切変えない。**ただし defer した項目の採りうる形を狭めるので、段階2 の defer に対する明示的な amendment として読むこと** — 同節は段階2 の採否を「段階1 の運用観測後に HG が判断」としており、本節はその HG の前に方式の一部を落としている。
+
+出典は `projects/orchestration-engine/docs/episodes/2026-08-10-episode-239-child-liveness-recipe.md`（以下「#239 episode」）で、該当の判定は同 `:25-27`、根拠の本文は同 `:184-192`（節「下書きの枠組みを1つ狭めた」）である。**行番号は 2026-08-11 時点のもので、節名を併記してあるので参照先が動いても辿れる。** verification status のタグは下の凡例と同じ意味で使う（本節のタグは 2026-08-11 に追記者が一次を開いて付けたもの）。
+
+### なぜ段階2 でこの制約が要るのか
+
+段階1 の拍動は **hang 検知ではなくプロセス死検知**である（§根拠「正直な残余」）[verified]。**低 context hang（プロセス生存 × context 低 × model 停止）は beat も context% も動かず**、mode2 お見合いも段階1 では取りこぼす（§結果「注意点・残る穴」）[verified]。つまり段階2 は、機械が読める既存の信号が尽きたところから始まる。**そこで最初に手が伸びるのが画面であり、最初に踏むのが「1枚の画面から状態を読む」形である。**
+
+### 決定
+
+**段階2 の実装は、1枚のスナップショットから状態を決めてはならない。** 禁じるのは1枚から決めることであって、画面そのものではない — **時間差で2回撮って差分を取る形は使える。**
+
+線の中身（なぜ1枚では言えないか・何が有効か）は `projects/orchestration-engine/docs/knowledge/items/01KZKWJM1KTAFN22XK0WP0F96J.md` が正本で、**本節に転記しない。** 本節が足すのは**射程**である。すなわち、この線が縛るのは段階2 の pane-capture heuristic であり、段階1 の決定ではない。
+
+**差分が言えるのは候補までである。** 差分の有無から「稼働している」を確定してはならない（下記の前提2）。確定は成果物と人の目に渡す — 手順側もそう定めている（`canonical/skills/delegate-task/SKILL.md:266`「機械が出せるのは候補までである」）[verified]。
+
+### 根拠 — このリポジトリ自身が時間差の差分を使っている
+
+`projects/orchestration-engine/bin/oe-selfcheck` の陽性対照がまさにその形である [verified]（本節の追記時に実体を読んだ）。
+
+- 全ペインを capture して1枚目を保存する（同 `:120` と `:126`）。
+- `OE_SELFCHECK_ACTIVITY_INTERVAL`（既定 1.2 秒）だけ待つ（同 `:132`）。
+- 2枚目を撮り（同 `:134`）、`cmp -s` で1枚目と違ったペインを稼働と数える（同 `:138`）。
+
+**したがって「画面を状態判定に使わない」という広い禁止を採ると、この実装を名指ししないまま無効化する。** 棄却したのはその広い禁止（「画面が使えるのは着弾の確認まで」）であり、棄却の根拠が自リポジトリの実装だった（#239 episode `:186-188`）[verified]。禁止の中身は変わっておらず、範囲だけが正確になっている。
+
+### 段階2 の実装が最初にぶつかる点（consumer の形との噛み合わせ）
+
+**`oe-selfcheck` の形をそのまま cron へ移せない。** `oe-selfcheck` は同期・単発の検査で、1枚目を `$TMPDIR` に置き（同 `:126`）、`sleep` を挟んで比較し（同 `:132`・`:138`）、直後に消す（同 `:138-139`）。**1回の read の中で閉じている**ので §決定 の「observed 層は read 時に観測する」に収まる。
+
+一方、段階1 が決めた consumer は **out-of-session cron**（§決定）である。cron は毎回別プロセスで起動するので、2枚差分を取るには「起動したまま間隔ぶん待つ」か「1枚目を起動間で持ち越す」かのどちらかになる。**後者は新しい state 面を1つ増やすので、sidecar について §根拠 が引き受けたのと同じ判断（「小さいながら別 state 面を1つ増やす」）を、段階2 で再度通す必要がある。** 段階1 が declared 層に「新 engine state ゼロ」を置いた線に触るからである。前者を採る場合、cron に乗る固定待機は**既定 1.2 秒で、対象ペイン数に比例しない** — `oe-selfcheck` は全ペインの1枚目を撮ってから `sleep` を1回だけ挟み、そのあとで全ペインの2枚目を撮る形である（同 `:118-140`）[verified]。
+
+### 当時の前提（将来偽になりうるもの）
+
+1. **待機中を示す表示は、止まった後も画面に残る** [verified] `projects/orchestration-engine/docs/knowledge/items/01KZKWJM1KTAFN22XK0WP0F96J.md:25`。だから1枚では稼働を言えない。
+2. **差分が在ることは稼働の十分条件ではない。** 描画だけが動いている場合を分離していない。**`%cpu` が実は画面の再描画コストの代理かもしれない**という疑いは未解決で #239 へ回してある [unverified-summary]（#239 episode `:181` と同 `:299`）。この疑いが立つと、段階2 は「画面を退けて立てた一次の信号が、間接的に同じものを測り直していた」ことになる。
+3. **2枚差分の間隔は実装の値であって普遍の閾値ではない**（既定 1.2 秒は `oe-selfcheck` の値・上記 `:132`）[verified]。段階2 の consumer が別の間隔を採るなら、その値の根拠は自分で持つ必要がある。**閾値とサンプル数は #239 episode でも決めていない**（同 `:292`）[verified]。
+
+### 覆すコスト
+
+**覆すには「1枚から状態を決めてよい」という価値判断を戦わせる必要がある。** 差分方式が誤判定する事例が出ても、それは**差分方式の限界**であって1枚方式を復活させる根拠にはならない — 1枚は2枚差分の情報の部分集合なので、1枚で言えることは2枚でも言える。
+
+### 段階2 の実装が同時に守る線
+
+pane-capture で**承認**を読まないこと。承認の成立条件は `projects/orchestration-engine/docs/decisions/2026-07-17-decision-spawn-permission-handshake.md` の同日追記節が持つ。**本節（稼働判定の許容範囲）とあちら（承認の受領）は別の判断なので、片方を緩めてももう片方は緩まない。**
+
+### 併設している実装アーティファクト（昇格先ではない）
+
+- 手順: `canonical/skills/delegate-task/SKILL.md` の「委譲子の状態を親が判定する（1枚の画面から読まない）」節
+- 再発する失敗の型: `projects/orchestration-engine/docs/knowledge/items/01KZKWJM1KTAFN22XK0WP0F96J.md`
 
 ## verification status 凡例
 

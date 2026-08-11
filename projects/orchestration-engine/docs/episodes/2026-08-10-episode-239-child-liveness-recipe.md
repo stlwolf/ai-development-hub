@@ -11,6 +11,12 @@ related:
   - type: design_context
     ref: "projects/orchestration-engine/bin/oe-vitals"
     reason: "同じ #239 の先行単位。統括 session 側の vital を sidecar で見る consumer で、本単位が扱う『親が子を見る』軸とは対象が別"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-07-17-decision-spawn-permission-handshake.md"
+    reason: "上げた先（#319 U1 で追記）。promotion 1件目『承認の成立条件を常時ロードの規範に置いた』の昇格先で、同 ADR の『承認の成立条件をどの層に置くか — 常時ロードの規範層に置く』節が本 episode を出典に引く"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md"
+    reason: "上げた先（#319 U1 で追記）。promotion 2件目『画面ベース判定の禁止範囲を1枚のスナップショットへ狭めた』の昇格先で、同 ADR が段階2 へ先送りした pane-capture heuristic に課す制約として節が立っている"
 tags: [delegation, liveness, negative-knowledge, human-gate, engine]
 promotion:
   - subject: "承認の成立条件（何をもって承認とするか）を、呼ばれたときだけ効くスキルではなく常時ロードの規範に置いた"
@@ -278,6 +284,7 @@ tier は **heavy**。品質ゲートとして実装 SO を明示的に起動し�
 - rule — 承認の成立条件を1行で追加済み（owner のゲート対象）。
 - skill — 手順を `delegate-task` に追加済み。
 - decision — `required` と判定した判断が**2件**ある。「承認の成立条件を規範側に置く」と「画面ベースの状態判定を禁じる範囲を1枚のスナップショットへ狭める」である。**どちらも実行（decision への昇格）は本単位の外**で、行き先は #239 の後続か、owner が別途決める。片方だけを挙げると、もう片方が判定されなかったように読めるので両方書く。
+  - `本文なし: 別単位（#319 U1）が後から足した書き戻し` **上げた先（#319 U1 が実行・2026-08-11）**: 上の「行き先は本単位の外」は #239 の後続ではなく **#319**（溜まった判定を置き場別に処理する暫定の手作業）が引き取った。1件目は `projects/orchestration-engine/docs/decisions/2026-07-17-decision-spawn-permission-handshake.md` の「承認の成立条件をどの層に置くか — 常時ロードの規範層に置く」節へ、2件目は `projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md` の「段階2 の pane-capture heuristic に課す制約 — 1枚の画面から状態を決めない」節へ追記した。**どちらも新規 decision を起こさず既存 ADR の続きとして足している。** この行は別単位が後から足した書き戻しであり、本 episode の closure 時点の記録ではない（`promotion` 欄には足していない。同欄は機械契約の3つ組だけを持つと規約が定めているため。経緯は `projects/orchestration-engine/docs/episodes/2026-08-11-episode-319-adr-append-c1-c2.md`）。
 
 ### 残課題（すべてに行き先を付ける）
 
