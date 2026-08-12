@@ -39,6 +39,9 @@ superpowers ([obra/superpowers](https://github.com/obra/superpowers), MIT) の I
 **Files changed:**
 - [変更ファイル一覧]
 
+**Links:**
+- [このターンで作成・更新した PR / Issue / doc。生 URL または絶対パス。無ければ「None」]
+
 **What I tested:**
 - [テスト内容と結果]
 
@@ -61,6 +64,8 @@ superpowers ([obra/superpowers](https://github.com/obra/superpowers), MIT) の I
 該当しないセクション（Out-of-scope findings, Concerns, Blocked on）は省略する。
 
 「What I implemented」に要件との対応（要件X → 実装箇所Y）を含めることで、Compliance Review での照合コストを下げる。対応が自明な場合は省略可。
+
+「Links」は依頼側がそのまま operator への導線に使うので、PR や Issue を番号だけで返さず URL で返す（`output-format-rule` §5 / §6）。番号だけ受け取った依頼側は URL を組み立て直せない。worktree 内の doc は、その時点で開ける絶対パス（worktree のパス）で返す。作成・更新したものが無ければ「None」と書く。
 
 ## Self-review チェックリスト
 
@@ -240,6 +245,9 @@ step ID が書かれていること自体は免責にならない（指された
 
 **Files changed:**
 - [変更ファイル一覧]
+
+**Links:**
+- [このターンで作成・更新した PR / Issue / doc。生 URL または絶対パス。無ければ「None」]
 
 **What I tested:**
 - [テスト内容と結果]
