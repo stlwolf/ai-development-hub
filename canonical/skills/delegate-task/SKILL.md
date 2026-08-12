@@ -218,12 +218,16 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 `PARENT_TMUX_PANE`（親ペイン ID）へ送るだけ:
 
 ```bash
-"$BIN/oe-send" "$PARENT_TMUX_PANE" "実装完了。PR #150 を作成した"
+"$BIN/oe-send" "$PARENT_TMUX_PANE" "実装完了。PR #150: https://github.com/<owner>/<repo>/pull/150"
 "$BIN/oe-send" --no-enter "$PARENT_TMUX_PANE" "親が読んでから送りたい下書き"
 ```
 
 `PARENT_TMUX_PANE` が未設定（手動委譲・再アタッチ後など）なら、親ペインを `oe-list` で確認して
 `%N` を直接指定する。
+
+成果物は番号ではなく URL で戻す。親はこの戻しをそのまま operator への導線に使うので、`#150` だけ
+受け取っても URL を組み立て直せない（`output-format-rule` §5 / §6）。doc は、その時点で開ける絶対パス
+（worktree のパス）で戻す。
 
 ### malform を持ち込まない（生 capture を貼らない）
 
