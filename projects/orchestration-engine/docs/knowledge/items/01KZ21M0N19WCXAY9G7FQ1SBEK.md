@@ -8,7 +8,11 @@ prediction: "その仕掛けが本来いちばん検出したかった対象が�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-03-episode-299-delivery-receipt.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-13
+    ref: "#301"
+    state: externally_verified
+    note: "予測がそのまま自分に当たり、設計SO が確認した。常時 broken が1件ある状態で通知を絞るため「同じ検査が N 回続けて indeterminate なら通知する」と書いたが、対象の検査は誰も作業していない時間帯に正常に indeterminate へ落ちるので夜間は毎晩発火し、逆に1回目で判明する『検査が実行できない』側の報告を3時間遅らせる形だった。本 item を読んで「何が push から外れるかを先に書く」を計画書に明記していたのに、絞り方そのものが主目的を落としていた。対処として indeterminate を no-positive-control と check-unable の2種へ分け、前者は記録にのみ残し後者は1回目から通知する形へ直した"
 ---
 
 ノイズを減らすために、**その仕掛けの主目的に当たる対象を既定で伏せてはならない。** ノイズは別の軸で減らす。
