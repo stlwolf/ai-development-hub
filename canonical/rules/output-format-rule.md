@@ -4,7 +4,8 @@
 3. Steps (minimal granularity — one command / one PR / one change per item)
 4. Open questions / risks
 5. Related links — required whenever this turn created or updated an addressable artifact.
-   - Trigger: you created or updated an Issue, a PR, or an in-repo document during this turn. The report then MUST end with a "関連リンク" section. Comments and review replies (e.g. a Copilot response) are optional — include them when the thread is worth revisiting.
+   - Trigger: you created or updated an Issue, a PR, or an in-repo document during this turn. The report then MUST end with a related-links section. Heading string: `関連リンク` when the report is written in Japanese, `Related links` when it is in English — pick by the language of the report, not by the language of this rule. Comments and review replies (e.g. a Copilot response) are optional — include them when the thread is worth revisiting.
+   - This is the operator-facing section. A subagent's structured `Links` field (see the `implementer-contract` skill) is the same information on the agent-to-agent channel; the two names are not interchangeable.
    - Contents: every artifact you created or updated in this turn, one per line, labeled. Order: PR first, then Issue, then documents, then anything else.
    - Form: a bare full URL, e.g. `PR #110: https://github.com/<owner>/<repo>/pull/110` (§6). A bare `#110` with no URL does not count as a link. In-repo Markdown documents use the absolute path that resolves at the time of writing (§7) — inside a worktree that is the worktree path, not the post-merge one.
    - Not required when the turn produced no such artifact: investigation, a question answered, read-only work. Do not pad the section with links you did not touch.
