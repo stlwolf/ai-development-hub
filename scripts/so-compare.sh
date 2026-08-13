@@ -475,6 +475,10 @@ classify_result() {
 #   2. 完了したら一時ファイルへ書いてから mv で差し替える（attempt_state=finished）
 # どの時点で中断されても「何回目の試行が、何秒の上限で走っていたか」は残り、
 # 読み手は attempt_state で確定値か途中かを見分けられる。
+# 開始側も完了側と同じく原子的に置く。直接 > で truncate すると、echo と echo の
+# 間で落ちたときに attempt や上限を欠いた部分 meta が残り、まさに守りたい
+# 「中断されても試行番号と上限は残る」が成り立たなくなる。mv を境にして、
+# 前なら旧 meta・後なら完全な running meta、のどちらかしか観測されないようにする。
 write_meta_start() {
     local tool="$1" attempt="$2" tool_timeout="$3"
     {
@@ -482,11 +486,14 @@ write_meta_start() {
         echo "attempt=$attempt"
         echo "attempt_state=running"
         echo "timeout_limit_seconds=$tool_timeout"
-    } > "$OUT_DIR/${tool}-meta.txt"
+    } | commit_meta "$tool"
 }
 
-# 完了した meta を原子的に置き換える（本体は stdin で受ける）。
+# meta を原子的に置き換える（本体は stdin で受ける）。
 # 直接 > で上書きすると、書いている途中の meta を読まれうる。
+# 一時ファイルは同じディレクトリに作るので mv は同一 filesystem 内で原子的になる。
+# 中断で .tmp が残ることはあるが、正本は読み手に見えないままで、次の書き込みが
+# truncate するので害はない。
 commit_meta() {
     local tool="$1"
     cat > "$OUT_DIR/${tool}-meta.txt.tmp"
@@ -503,23 +510,52 @@ commit_meta() {
 #   codex-cli 0.147.0     → 空白があり不合格
 #   2.1.229 (Claude Code) → 空白と括弧があり不合格
 #   2026.08.11-e8db854    → 合格
-# 3 レーン中 2 レーンが常に unavailable になってしまう。meta が守りたいのは
-# 「1 行 1 組の key=value が壊れないこと」であって、モデル ID の形ではない。
-# したがって拒否するのは行を壊すもの（= と改行と制御文字）だけにし、空白と
-# 括弧は通す。
-CLI_VERSION_RE='^[A-Za-z0-9._:+/() -]+$'
+# 3 レーン中 2 レーンが常に unavailable になってしまう。
+#
+# かといって「空白と括弧も許す」allowlist に広げるだけでは足りない。それでも
+# codex@0.147.0 や v1.2.3, build 4 や v1.2.3 [arm64] のような、行を壊さない
+# 版文字列を落とす。**同じ「実在の版を落とす」欠陥を形を変えて残すことになる。**
+#
+# meta が守りたいのは「1 行 1 組の key=value が壊れないこと」だけである。そこで
+# allowlist をやめ、行を壊すバイトだけを拒否する denylist にする。
+#   拒否: 制御文字（NUL 含む）・DEL・`=`
+#   許可: それ以外の印字可能 ASCII と高位バイト（多バイト文字）
+#
+# 検査はバイト列のまま行う。bash の変数へ入れた時点で NUL は黙って捨てられるので
+# （`ver<NUL>bad` は `verbad` になる）、変数化した後では NUL の有無を判定できない。
+CLI_VERSION_MAX_CHARS=200
 cli_version_for() {
-    local cmd="$1" raw=""
+    local cmd="$1" tmpf raw bad rc=0
+    tmpf="$(mktemp "${TMPDIR:-/tmp}/so-cliver.XXXXXX")" || {
+        printf '%s\n' "unavailable:query-failed"
+        return 0
+    }
     # --version 自体にも上限を掛ける。掛けないと、レーン本体のタイムアウトの
     # 外側に無限に待ちうる経路を新しく作ることになる（実測は 16〜388ms）。
-    raw="$(timeout 5 "$cmd" --version 2>/dev/null)" || raw=""
-    # 複数行を返す CLI があっても 1 行目だけを採る（改行は meta の行を壊す）
-    raw="${raw%%$'\n'*}"
+    timeout 5 "$cmd" --version > "$tmpf" 2>/dev/null || rc=$?
+    if [[ $rc -ne 0 || ! -s "$tmpf" ]]; then
+        rm -f "$tmpf"
+        printf '%s\n' "unavailable:query-failed"
+        return 0
+    fi
+    # 複数行を返す CLI があっても 1 行目だけを見る（改行は meta の行を壊す）。
+    # 許可バイトを tr で削り、何か残れば拒否対象が含まれていたことになる。
+    bad="$(LC_ALL=C head -n 1 "$tmpf" \
+        | LC_ALL=C tr -d '\012\040-\074\076-\176\200-\377' | wc -c | tr -d ' ')"
+    if [[ "$bad" != "0" ]]; then
+        rm -f "$tmpf"
+        printf '%s\n' "unavailable:schema-unexpected"
+        return 0
+    fi
+    raw="$(LC_ALL=C head -n 1 "$tmpf")"
+    rm -f "$tmpf"
+    raw="$(trim_ws "$raw")"
+    # 空白だけの出力を「取れた」とは言わない（空欄にしない契約に反する）
     if [[ -z "$raw" ]]; then
         printf '%s\n' "unavailable:query-failed"
         return 0
     fi
-    if (( ${#raw} > 200 )) || [[ ! "$raw" =~ $CLI_VERSION_RE ]]; then
+    if (( ${#raw} > CLI_VERSION_MAX_CHARS )); then
         printf '%s\n' "unavailable:schema-unexpected"
         return 0
     fi
@@ -1051,6 +1087,10 @@ for tool in "${TOOLS_RUN[@]}"; do
             timeout_empty)   status_label="${C_RED}タイムアウト(出力なし)${C_RESET}" ;;
             error_partial)   status_label="${C_YELLOW}エラー(部分出力あり)${C_RESET}" ;;
             error)           status_label="${C_RED}エラー${C_RESET}" ;;
+            # timeout_status が無い = そのレーンの meta が attempt_state=running の
+            # まま終わった（試行の途中でレーンが落ちた）。集計では失敗側に数えて
+            # いるが、無表示だと原因を追えないので状態として出す。
+            *)               status_label="${C_RED}未確定(試行が完了していない)${C_RESET}" ;;
         esac
         retry_label=""
         if [[ "${meta_retry:-}" == "1" ]]; then

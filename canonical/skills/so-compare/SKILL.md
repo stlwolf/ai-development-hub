@@ -130,7 +130,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 |---|---|
 | `tool` | レーン名 |
 | `attempt` | 試行番号（`1` = 初回 / `2` = リトライ） |
-| `attempt_state` | `finished` = 確定値 / `running` = **その試行の途中で中断された** |
+| `attempt_state` | `finished` = 確定値 / `running` = **未確定**（実行中に読めばこの値。so-compare が終わった後も残っていれば、その試行の途中で中断されたということ） |
 | `timeout_limit_seconds` | **その試行に実際に効いた上限（秒）** |
 | `model_requested` / `model_resolved` / `model_resolved_source` | 下記「解決後モデルの記録」 |
 | `cli_version` / `cli_version_source` | 下記「CLI の版の記録」 |
@@ -147,7 +147,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 読むときの注意が 3 つある。
 
 - **`timeout_limit_seconds` と `retry_timeout` は別物である。** 前者は**その meta が記録している試行**に効いた上限、後者はリトライ用に算出した上限である。リトライ後の meta では同じ値になるが、`.attempt1` では前者が 1 回目の上限を指す。上限を知りたいときは `timeout_limit_seconds` を見る。
-- **`attempt_state=running` の meta は確定値ではない。** その試行の途中で so-compare 自体が止められたことを示す。この場合 `stdout` / `stderr` は書きかけか、前の試行のものが残っている可能性がある。**`elapsed_seconds` や `timeout_status` は入っていない。**
+- **`attempt_state=running` の meta は確定値ではない。** 実行中に読めば当然この値になる。**so-compare が終わった後も `running` のまま残っていれば、その試行の途中で中断されたということ**である。この場合 `stdout` / `stderr` は書きかけか、前の試行のものが残っている可能性がある。**`elapsed_seconds` や `timeout_status` は入っていない**（結果サマリでは「未確定」と表示され、集計では失敗側に数えられる）。
 - **`attempt` を見れば、最終 meta が初回の結果かリトライの結果かを確定できる。** `retry=1` の追記に頼らない（中断されると追記が届かない）。
 
 ### `stderr_bytes` は進行の指標ではない
@@ -172,8 +172,8 @@ tmp/so-YYYYMMDD-HHMMSS/
 
 - `model_resolved_source` と同じく、**出所が書いてあること自体は取得成功を意味しない**。成否は `cli_version` 側の `unavailable:*` で見る。
 - `preflight` と付けているのは、これが**実行後の観測ではない**ためである。実行中に CLI が差し替わった場合までは追えない。
-- 取得できなかった場合は `unavailable:query-failed`、行を壊す値（`=` や制御文字を含む、または極端に長い）だった場合は `unavailable:schema-unexpected` になる。**空欄にはしない**（記録漏れと取得不能を区別するため）。
-- 版文字列は空白と括弧を含みうる（`codex-cli 0.147.0` / `2.1.229 (Claude Code)` 等）。モデル ID 用の文字集合とは別の規則で検査している。
+- 取得できなかった場合（コマンドが失敗した・出力が空・空白だけ）は `unavailable:query-failed`、行を壊す値だった場合は `unavailable:schema-unexpected` になる。**空欄にはしない**（記録漏れと取得不能を区別するため）。
+- 検査は**行を壊すバイトだけを拒否する**形にしている（制御文字・DEL・`=`）。それ以外の印字可能文字は通す。モデル ID 用の文字集合を流用したり、許可リストを列挙したりすると、`codex-cli 0.147.0` や `v1.2.3 [arm64]` のような**実在する版を落とす**（一度やっている）。
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
 
