@@ -114,15 +114,66 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
-├── codex-meta.txt      # メタデータ（tool, model_requested, model_resolved, model_resolved_source, exit_code, timeout_status, elapsed_seconds, stdout_lines, stdout_bytes）
+├── codex-meta.txt      # メタデータ（全レーン共通の項目 + model_resolved 系）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-raw.json     # Claude の生 JSON（jq がある場合のみ。回答本文はここから取り出される）
 ├── claude-stderr.txt   # Claude の stderr
-├── claude-meta.txt     # メタデータ（model_requested, effort_requested, model_resolved, models_all, model_resolved_source, body_source を含む）
+├── claude-meta.txt     # メタデータ（+ effort_requested, models_all, body_source）
 ├── cursor-stdout.txt   # Cursor の回答（--cursor 時のみ）
 ├── cursor-stderr.txt   # Cursor の stderr（--cursor 時のみ）
-└── cursor-meta.txt     # メタデータ（model_requested, model_resolved, model_resolved_source 含む。--cursor 時のみ）
+└── cursor-meta.txt     # メタデータ（--cursor 時のみ）
 ```
+
+`<tool>-meta.txt` は 1 行 1 組の `key=value` である。読み手は `grep '^key=' | cut -d= -f2` で取る。全レーンに共通して入る項目は次のとおり。
+
+| キー | 意味 |
+|---|---|
+| `tool` | レーン名 |
+| `attempt` | 試行番号（`1` = 初回 / `2` = リトライ） |
+| `attempt_state` | `finished` = 確定値 / `running` = **その試行の途中で中断された** |
+| `timeout_limit_seconds` | **その試行に実際に効いた上限（秒）** |
+| `model_requested` / `model_resolved` / `model_resolved_source` | 下記「解決後モデルの記録」 |
+| `cli_version` / `cli_version_source` | 下記「CLI の版の記録」 |
+| `exit_code` / `timeout_status` | 終了コードと分類 |
+| `elapsed_seconds` | その試行の所要秒数 |
+| `stdout_lines` / `stdout_bytes` / `stderr_bytes` | 出力量 |
+
+リトライが走ると `retry=1` と `retry_timeout=<秒>` が追記され、**1 回目の記録は `<tool>-meta.txt.attempt1` に退避される**（`stdout` / `stderr` / `raw.json` も同様）。
+
+## 使われた上限を後から言うための記録
+
+**「このラウンドは何秒で打ち切られたのか」を事後に言えるようにするための項目である。** 上限は環境変数で実行ごとに変えられるので、記録が無いと過去の出力から復元できない。実際、過去の出力は上限が揃っておらず、`timeout_status=success` の所要秒だけを集めても**そのとき効いていた上限で頭を打たれた後の値**しか見えない（分布の右側が切られる）。既定値を実測から決め直すには、この記録が母集団に要る。
+
+読むときの注意が 3 つある。
+
+- **`timeout_limit_seconds` と `retry_timeout` は別物である。** 前者は**その meta が記録している試行**に効いた上限、後者はリトライ用に算出した上限である。リトライ後の meta では同じ値になるが、`.attempt1` では前者が 1 回目の上限を指す。上限を知りたいときは `timeout_limit_seconds` を見る。
+- **`attempt_state=running` の meta は確定値ではない。** その試行の途中で so-compare 自体が止められたことを示す。この場合 `stdout` / `stderr` は書きかけか、前の試行のものが残っている可能性がある。**`elapsed_seconds` や `timeout_status` は入っていない。**
+- **`attempt` を見れば、最終 meta が初回の結果かリトライの結果かを確定できる。** `retry=1` の追記に頼らない（中断されると追記が届かない）。
+
+### `stderr_bytes` は進行の指標ではない
+
+`stderr_bytes` は #303（空返しの分類）の材料として入れている。stdout が 0 バイトでも stderr が数百 KB まで育っている実行が実在し、**「出力が無い」と「何も起きていない」が別であること**の手掛かりになる。
+
+ただし次の 2 点から、これ単体で状態を判定してはいけない。
+
+- **量であって時刻ではない。** 終了時点の総量なので、開始直後に大量出力して以後停止した場合と、最後まで出し続けた場合を区別できない。
+- **0 バイトは異常を意味しない。** 正常に成功して stderr を 1 バイトも出さないレーンが実在する。**`stderr_bytes` が 0 でないことを合格条件にしてはいけない。**
+
+空返しの原因を meta から断定しないこと（原因の分類は #303 が持つ）。
+
+## CLI の版の記録
+
+各レーンの meta には、そのレーンが起動する CLI の版が入る。**同じプロンプト・同じモデル指定でも、CLI の版が変われば挙動が変わりうる**ため、証跡として残す。
+
+| キー | 意味 |
+|---|---|
+| `cli_version` | 版文字列、または `unavailable:<種別>` |
+| `cli_version_source` | 常に `preflight-cli-flag`。レーン本体の実行**前**に、別プロセスで `--version` を叩いて採った値であることを示す |
+
+- `model_resolved_source` と同じく、**出所が書いてあること自体は取得成功を意味しない**。成否は `cli_version` 側の `unavailable:*` で見る。
+- `preflight` と付けているのは、これが**実行後の観測ではない**ためである。実行中に CLI が差し替わった場合までは追えない。
+- 取得できなかった場合は `unavailable:query-failed`、行を壊す値（`=` や制御文字を含む、または極端に長い）だった場合は `unavailable:schema-unexpected` になる。**空欄にはしない**（記録漏れと取得不能を区別するため）。
+- 版文字列は空白と括弧を含みうる（`codex-cli 0.147.0` / `2.1.229 (Claude Code)` 等）。モデル ID 用の文字集合とは別の規則で検査している。
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
 
@@ -268,7 +319,23 @@ claude だけ既定を分けた（`SO_CLAUDE_TIMEOUT` = 1200秒。`SO_TIMEOUT` =
 
 さらに **cursor の334秒はリトライ上限360秒に対して余裕7%しかない**。同じプロンプトでも5%程度は振れるので、claude で直したばかりの「リトライにも届かず構造的に落ちる」故障モードは、cursor では一歩手前にある。
 
-**レビュー級の SO を投げるときは `SO_TIMEOUT` の引き上げ（400〜480秒程度）を検討すること。** 既定を変えていないのは本 issue の scope 外だからであって、240秒で足りているからではない。
+**レビュー級の SO を投げるときは `SO_TIMEOUT` の引き上げを検討すること。** 既定が240秒のままなのは、240秒で足りているからではない。
+
+#### 引き上げ幅を「400〜480秒」と書いていたのは根拠が弱い（#298 で測り直した）
+
+過去の出力から meta を全件（レーン単位266件）走査して分かったことを残す。**この節は既定値を変えていない。値を決めるには母集団が足りない、というのが結論である。**
+
+- **480秒でも足りない実例が複数ある。** `SO_TIMEOUT=480` を明示して回してなお初回が `timeout_empty` になった記録があり、#298 自身の設計 SO でも codex が531秒かかった。**「400〜480秒にすれば初回で通る」とは言えない。**
+- **成功した所要秒の分布から上限を決めてはいけない。** 上限を超えた実行は成功として残らないので、分布は右側が切られている。しかも過去の実行は上限が揃っていない。切られた標本から選んだ値は、**その切り方をそのまま既定に焼き込む**ことになる。
+- **リトライが1回目より短時間で返る例がある**（480秒で空返し → リトライ410秒で成功など）。ここから「1回目は止まっていた」と結論してはいけない。負荷変動・キャッシュ・経路の違いでも同じ観測になる（原因の分類は #303 が持つ）。
+
+**次にこれを決め直すときは、`timeout_limit_seconds` が入った母集団を使うこと。** 各試行に効いた上限が記録されるようになったので、打ち切りを考慮した扱い（初回試行だけを取り出し、`timeout_empty` を右側打ち切りとして扱う）ができる。上限を手で上げた実行は課題の難しさと相関している可能性が高いので、層別せずに混ぜないこと。
+
+#### 引き上げるときは最悪の待ち時間も一緒に見る
+
+**1回目の各レーンは並列だが、リトライは逐次である。** 複数レーンが `timeout_empty` になると、リトライの時間は足し算になる。弱2レーン（codex + cursor）で両方が空返しになった場合、`SO_TIMEOUT` が240秒なら壁時計はおよそ960秒だが、480秒に上げるとおよそ1740秒（29分）になる。
+
+**レビュー級の SO は背景で実行すること。** 前景で回すと、この待ち時間がそのままセッションのブロックになる。
 
 **観測したレビュー級のプロンプトでは、既定のままで claude レーンが返っている。** タイムアウトを手で指定する必要はなかった。環境変数を一切設定せずレビュー級のプロンプトを投げ、`timeout_status=success` / 739秒 / 11748 bytes / リトライなしで返ることを確かめた。
 
