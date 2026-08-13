@@ -13,7 +13,11 @@ exclusions:
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-03-episode-299-delivery-receipt.md"
 landing: guard-candidate
-observations: []
+observations:
+  - date: 2026-08-13
+    ref: "#298"
+    state: injected_not_used
+    note: "適用機会に当たったのに使わなかった。リトライが1回目の上限より短時間で返った4件から「1回目は止まっていた・上限を上げても直らない」と原因を断定し、plan の 1.5 節と既定値の選定根拠に使った。設計SO の2レーンが揃って棄却し（負荷変動・キャッシュ・経路差でも同じ観測になる）、検算して取り下げた。brief の slot で自分が採用理由まで書いた item を、同じ plan の中で踏んでいる。指摘後は観測の記述まで後退させ、SKILL.md にも空返しの原因を meta から断定しない旨を書いた（#303 が分類を持つことへの導線つき）。効いたのは外部指摘の後だけなので followed とは書けない"
 ---
 
 空返しのレーンについて、**meta の値から根本原因を確定してはいけない。** 値が確定するのは「budget に到達して kill された」ことまでで、なぜ完了しなかったかは運んでいない。
