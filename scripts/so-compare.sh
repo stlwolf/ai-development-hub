@@ -461,6 +461,107 @@ classify_result() {
     fi
 }
 
+# --- meta の書き出し（#298） ---
+#
+# meta は従来、外部コマンドが終わってから一度だけ書いていた。この形は「その試行に
+# 何秒の上限が効いていたか」を残す用途に耐えない。リトライは 1 回目の meta を
+# .attempt1 へ退避してから同期で走るので、その途中で親が止められると
+# 「meta は 1 回目・stdout / stderr は 2 回目」という食い違いが残る。実際、退避
+# ファイルはあるのに retry= の追記が無い出力ディレクトリが 5 件観測されている
+# （tmp/so-272-design 等。詳細は #298 の plan）。
+#
+# そこで書き込みを 2 段に分ける。
+#   1. 試行を始める前に、その試行の番号と上限を置く（attempt_state=running）
+#   2. 完了したら一時ファイルへ書いてから mv で差し替える（attempt_state=finished）
+# どの時点で中断されても「何回目の試行が、何秒の上限で走っていたか」は残り、
+# 読み手は attempt_state で確定値か途中かを見分けられる。
+# 開始側も完了側と同じく原子的に置く。直接 > で truncate すると、echo と echo の
+# 間で落ちたときに attempt や上限を欠いた部分 meta が残り、まさに守りたい
+# 「中断されても試行番号と上限は残る」が成り立たなくなる。mv を境にして、
+# 前なら旧 meta・後なら完全な running meta、のどちらかしか観測されないようにする。
+write_meta_start() {
+    local tool="$1" attempt="$2" tool_timeout="$3"
+    {
+        echo "tool=$tool"
+        echo "attempt=$attempt"
+        echo "attempt_state=running"
+        echo "timeout_limit_seconds=$tool_timeout"
+    } | commit_meta "$tool"
+}
+
+# meta を原子的に置き換える（本体は stdin で受ける）。
+# 直接 > で上書きすると、書いている途中の meta を読まれうる。
+# 一時ファイルは同じディレクトリに作るので mv は同一 filesystem 内で原子的になる。
+# 中断で .tmp が残ることはあるが、正本は読み手に見えないままで、次の書き込みが
+# truncate するので害はない。
+commit_meta() {
+    local tool="$1"
+    cat > "$OUT_DIR/${tool}-meta.txt.tmp"
+    mv "$OUT_DIR/${tool}-meta.txt.tmp" "$OUT_DIR/${tool}-meta.txt"
+}
+
+# --- CLI の版の取得（#298） ---
+#
+# SO の判定は committed 層から証跡リンクで引かれる。「どのモデルが答えたか」を
+# 残す #295 と同じ理由で、「どの版の CLI が答えたか」も後から言えるようにする。
+#
+# 値の健全性チェックに model_resolved 用の文字集合（^[A-Za-z0-9._:+-]+$）を
+# 流用してはいけない。あれは空白も括弧も通さないので、実際の版文字列が落ちる。
+#   codex-cli 0.147.0     → 空白があり不合格
+#   2.1.229 (Claude Code) → 空白と括弧があり不合格
+#   2026.08.11-e8db854    → 合格
+# 3 レーン中 2 レーンが常に unavailable になってしまう。
+#
+# かといって「空白と括弧も許す」allowlist に広げるだけでは足りない。それでも
+# codex@0.147.0 や v1.2.3, build 4 や v1.2.3 [arm64] のような、行を壊さない
+# 版文字列を落とす。**同じ「実在の版を落とす」欠陥を形を変えて残すことになる。**
+#
+# meta が守りたいのは「1 行 1 組の key=value が壊れないこと」だけである。そこで
+# allowlist をやめ、行を壊すバイトだけを拒否する denylist にする。
+#   拒否: 制御文字（NUL 含む）・DEL・`=`
+#   許可: それ以外の印字可能 ASCII と高位バイト（多バイト文字）
+#
+# 検査はバイト列のまま行う。bash の変数へ入れた時点で NUL は黙って捨てられるので
+# （`ver<NUL>bad` は `verbad` になる）、変数化した後では NUL の有無を判定できない。
+CLI_VERSION_MAX_CHARS=200
+cli_version_for() {
+    local cmd="$1" tmpf raw bad rc=0
+    tmpf="$(mktemp "${TMPDIR:-/tmp}/so-cliver.XXXXXX")" || {
+        printf '%s\n' "unavailable:query-failed"
+        return 0
+    }
+    # --version 自体にも上限を掛ける。掛けないと、レーン本体のタイムアウトの
+    # 外側に無限に待ちうる経路を新しく作ることになる（実測は 16〜388ms）。
+    timeout 5 "$cmd" --version > "$tmpf" 2>/dev/null || rc=$?
+    if [[ $rc -ne 0 || ! -s "$tmpf" ]]; then
+        rm -f "$tmpf"
+        printf '%s\n' "unavailable:query-failed"
+        return 0
+    fi
+    # 複数行を返す CLI があっても 1 行目だけを見る（改行は meta の行を壊す）。
+    # 許可バイトを tr で削り、何か残れば拒否対象が含まれていたことになる。
+    bad="$(LC_ALL=C head -n 1 "$tmpf" \
+        | LC_ALL=C tr -d '\012\040-\074\076-\176\200-\377' | wc -c | tr -d ' ')"
+    if [[ "$bad" != "0" ]]; then
+        rm -f "$tmpf"
+        printf '%s\n' "unavailable:schema-unexpected"
+        return 0
+    fi
+    raw="$(LC_ALL=C head -n 1 "$tmpf")"
+    rm -f "$tmpf"
+    raw="$(trim_ws "$raw")"
+    # 空白だけの出力を「取れた」とは言わない（空欄にしない契約に反する）
+    if [[ -z "$raw" ]]; then
+        printf '%s\n' "unavailable:query-failed"
+        return 0
+    fi
+    if (( ${#raw} > CLI_VERSION_MAX_CHARS )); then
+        printf '%s\n' "unavailable:schema-unexpected"
+        return 0
+    fi
+    printf '%s\n' "$raw"
+}
+
 resolve_codex_model() {
     local requested="$1"
     if [[ -n "$requested" ]]; then
@@ -656,8 +757,10 @@ extract_claude_body() {
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
     local tool_timeout="${1:-$(base_timeout_for codex)}"
+    local attempt="${2:-1}"
     echo "[Codex] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
+    write_meta_start codex "$attempt" "$tool_timeout"
     start=$(date +%s)
 
     local codex_args=("exec" "-s" "$SANDBOX_MODE")
@@ -687,25 +790,33 @@ run_codex() {
 
     {
         echo "tool=codex"
+        echo "attempt=$attempt"
+        echo "attempt_state=finished"
+        echo "timeout_limit_seconds=$tool_timeout"
         echo "model_requested=${CODEX_MODEL:-default}"
         echo "model_resolved=$model_resolved"
         # codex の model_resolved は resolve_codex_model() が要求値または
         # ~/.codex/config.toml を読んで組み立てた値であり、実行後の観測ではない。
         # レーンによって model_resolved の確からしさが違うので出所を明示する（#295）。
         echo "model_resolved_source=config"
+        echo "cli_version=$CODEX_CLI_VERSION"
+        echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
-    } > "$OUT_DIR/codex-meta.txt"
+        echo "stderr_bytes=$(wc -c < "$OUT_DIR/codex-stderr.txt" | tr -d ' ')"
+    } | commit_meta codex
 }
 
 # shellcheck disable=SC2120
 run_claude() {
     local tool_timeout="${1:-$(base_timeout_for claude)}"
+    local attempt="${2:-1}"
     echo "[Claude] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
+    write_meta_start claude "$attempt" "$tool_timeout"
     start=$(date +%s)
 
     local claude_args=("-p")
@@ -775,25 +886,35 @@ run_claude() {
 
     {
         echo "tool=claude"
+        echo "attempt=$attempt"
+        echo "attempt_state=finished"
+        echo "timeout_limit_seconds=$tool_timeout"
         echo "model_requested=${CLAUDE_MODEL:-default}"
         echo "effort_requested=${CLAUDE_EFFORT:-default}"
         echo "model_resolved=$CLAUDE_MODEL_RESOLVED"
         echo "models_all=$CLAUDE_MODELS_ALL"
         echo "model_resolved_source=$model_source"
+        echo "cli_version=$CLAUDE_CLI_VERSION"
+        echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/claude-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/claude-stdout.txt" | tr -d ' ')"
-    } > "$OUT_DIR/claude-meta.txt"
+        # 処理の進行を表すのはプロセス本体の stderr なので claude-stderr.txt を採る。
+        # モデル抽出の診断を書く claude-modelmeta-stderr.txt は対象にしない。
+        echo "stderr_bytes=$(wc -c < "$OUT_DIR/claude-stderr.txt" | tr -d ' ')"
+    } | commit_meta claude
 }
 
 # shellcheck disable=SC2120
 run_cursor() {
     local tool_timeout="${1:-$(base_timeout_for cursor)}"
+    local attempt="${2:-1}"
     echo "[Cursor] 実行中... (timeout=${tool_timeout}秒)"
     local start end elapsed exit_code
+    write_meta_start cursor "$attempt" "$tool_timeout"
     start=$(date +%s)
 
     local cursor_args=(-p -f --mode ask --output-format text)
@@ -821,6 +942,9 @@ run_cursor() {
 
     {
         echo "tool=cursor"
+        echo "attempt=$attempt"
+        echo "attempt_state=finished"
+        echo "timeout_limit_seconds=$tool_timeout"
         echo "model_requested=${CURSOR_MODEL:-default}"
         # cursor CLI は解決後のモデルを出力しない。json / stream-json に出る model は
         # 表示名（既定の auto では "Auto Balance"）であって具体的なモデル ID ではない。
@@ -830,13 +954,39 @@ run_cursor() {
         # 空欄にはしない。空欄だと記録漏れと取得不能が区別できなくなる。
         echo "model_resolved=unavailable:cli-not-exposed"
         echo "model_resolved_source=none"
+        echo "cli_version=$CURSOR_CLI_VERSION"
+        echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/cursor-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/cursor-stdout.txt" | tr -d ' ')"
-    } > "$OUT_DIR/cursor-meta.txt"
+        echo "stderr_bytes=$(wc -c < "$OUT_DIR/cursor-stderr.txt" | tr -d ' ')"
+    } | commit_meta cursor
 }
+
+# --- CLI の版を1度だけ取る（#298） ---
+# レーン本体を起動する前に採る。リトライのたびに取り直しても値は変わらないので、
+# 1 回で足りる。ここで採った値を各レーンの meta へ書く。
+#
+# cli_version_source は取得の成否に関わらず preflight-cli-flag で固定する。
+# 「どこから取ろうとしたか」を表す欄であり、取得できたかどうかは cli_version 側の
+# unavailable:* が表す（claude の model_resolved_source=cli-json が成否に関わらず
+# 書かれるのと同じ扱い・#295）。preflight と付けるのは、これがレーン本体の実行後の
+# 観測ではなく、事前に別プロセスを起こして採った値だからである。
+CLI_VERSION_SOURCE="preflight-cli-flag"
+CODEX_CLI_VERSION=""
+CLAUDE_CLI_VERSION=""
+CURSOR_CLI_VERSION=""
+if $RUN_CODEX; then
+    CODEX_CLI_VERSION="$(cli_version_for "$CODEX_CMD")"
+fi
+if $RUN_CLAUDE; then
+    CLAUDE_CLI_VERSION="$(cli_version_for "$CLAUDE_CMD")"
+fi
+if $RUN_CURSOR; then
+    CURSOR_CLI_VERSION="$(cli_version_for "$CURSOR_CMD")"
+fi
 
 # --- 実行 ---
 if $RUN_CODEX; then
@@ -875,9 +1025,13 @@ for tool in codex claude cursor; do
         for suffix in meta.txt stdout.txt stderr.txt raw.json; do
             cp "$OUT_DIR/${tool}-${suffix}" "$OUT_DIR/${tool}-${suffix}.attempt1" 2>/dev/null || true
         done
-        # 同期リトライ（延長タイムアウト）
-        "run_${tool}" "$retry_timeout"
-        # リトライ情報を metadata に追記
+        # 同期リトライ（延長タイムアウト）。第2引数で試行番号を渡すので、
+        # リトライ側の meta は自分が 2 回目であることと、そのとき効いた上限を
+        # 自分で持つ（下の追記が届かなくても復元できる・#298）。
+        "run_${tool}" "$retry_timeout" 2
+        # リトライ情報を metadata に追記（後方互換のため残す）。
+        # timeout_limit_seconds が「その試行に効いた上限」、retry_timeout が
+        # 「リトライ用に算出した上限」で、リトライ後の meta では同じ値になる。
         {
             echo "retry=1"
             echo "retry_timeout=$retry_timeout"
@@ -933,6 +1087,10 @@ for tool in "${TOOLS_RUN[@]}"; do
             timeout_empty)   status_label="${C_RED}タイムアウト(出力なし)${C_RESET}" ;;
             error_partial)   status_label="${C_YELLOW}エラー(部分出力あり)${C_RESET}" ;;
             error)           status_label="${C_RED}エラー${C_RESET}" ;;
+            # timeout_status が無い = そのレーンの meta が attempt_state=running の
+            # まま終わった（試行の途中でレーンが落ちた）。集計では失敗側に数えて
+            # いるが、無表示だと原因を追えないので状態として出す。
+            *)               status_label="${C_RED}未確定(試行が完了していない)${C_RESET}" ;;
         esac
         retry_label=""
         if [[ "${meta_retry:-}" == "1" ]]; then
