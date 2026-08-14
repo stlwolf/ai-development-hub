@@ -43,7 +43,12 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; }
 header() { echo -e "${CYAN}━━━ $1 ━━━${NC}"; }
 
 usage() {
-    sed -n '/^# Usage:/,/^set -euo pipefail/p' "$0" | head -n -1 | sed 's/^# \?//'
+    # BSD/macOS 互換にするため GNU 拡張を2か所やめている。
+    #   末尾1行（set -euo pipefail）の除去: head -n -1 → sed '$d'
+    #   行頭 '# ' の除去:                    s/^# \?// → 2つの s コマンド
+    # （BSD の head に -n -1 は無く、BSD の基本正規表現は \? を
+    #   「直前の要素は省略可」と解釈しない。sync/sync-bin.sh と同じ手当て）
+    sed -n '/^# Usage:/,/^set -euo pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
     exit 0
 }
 
