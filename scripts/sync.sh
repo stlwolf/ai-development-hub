@@ -174,11 +174,27 @@ check_target() {
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
             ;;
         bin)
-            local base="${HOME}/bin"
-            local so_compare="${repo_root}/scripts/so-compare.sh"
-            local arena_compare="${repo_root}/projects/arena-compare/arena-compare.sh"
-            [[ -f "${so_compare}" ]] && check_symlink "${base}/so-compare" "${so_compare}" "so-compare" has_diffs
-            [[ -f "${arena_compare}" ]] && check_symlink "${base}/arena-compare" "${arena_compare}" "arena-compare" has_diffs
+            # 配布対象を知っているのは sync-bin.sh なので、検査もそちらへ委譲する。
+            # ここに対象を手書きすると、配布対象が増えたときに検査側だけ古くなる（#313）。
+            local bin_script="${SYNC_DIR}/sync-bin.sh"
+            if [[ ! -x "${bin_script}" ]]; then
+                error "  bin: 検査を委譲できません（not found or not executable）: ${bin_script}"
+                has_diffs=true
+            else
+                # 素で呼んではいけない。check_target は main() の `if ! check_target` から
+                # 呼ばれるので関数本体の errexit が抑止され、子が差分（rc=1）を返しても
+                # 素の呼び出しでは握り潰されて up to date と表示される。
+                # 先例の sync-codex.sh は子を素で呼んでいるが、あちらは main が
+                # トップレベルで実行されるので errexit が効く。前提が違う。
+                local bin_rc=0
+                "${bin_script}" --check || bin_rc=$?
+                # 0 以外はすべて差分として扱う。子を実行できなかったときの終了コードは
+                # 呼び出し文脈で 1 にも 126 にもなり、数値では「差分あり」と区別できない。
+                # 理由は子が印字するので、ここで細分する必要はない。
+                if [[ "${bin_rc}" -ne 0 ]]; then
+                    has_diffs=true
+                fi
+            fi
             ;;
     esac
 
