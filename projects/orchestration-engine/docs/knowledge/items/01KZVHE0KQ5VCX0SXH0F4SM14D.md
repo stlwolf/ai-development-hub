@@ -8,7 +8,11 @@ prediction: "規律だけが移り、その規律が成り立つ前提は移ら�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-11-episode-301-selfcheck-scheduling.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-15
+    ref: "#313"
+    state: externally_verified
+    note: "1単位で2回発火し両方向に出た。sed の置換は前提（範囲の最終行が落としたい行）が移ることを確認して採用。子プロセスの呼び方は先例が素で呼んでいるが、移植先が if ! 文脈で errexit が抑止されるため前提が移らず、実測すると子が rc=1 でも親が緑になった。予測どおり先例では安全な手順が移植先で故障を隠した。親も先例と呼び出し文脈を独立に再現している"
 ---
 
 **先例の規律を移植するときは、その規律が成り立っている前提も移植先に在るかを確かめる。** 規律は文面として写せるが、前提は写らない。

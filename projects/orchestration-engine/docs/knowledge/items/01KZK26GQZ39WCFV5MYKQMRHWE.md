@@ -8,7 +8,11 @@ prediction: "その警告は着手対象そのものにも当たっている。�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-09-episode-309-sync-hookfire-distribution.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-15
+    ref: "#313"
+    state: followed
+    note: "着手前に対象そのものの名前で committed 層を引き、6件の欠落が gate で置かれた保留でなく drift だと一次記録3件で確定した（検査を書いた commit の当時 CMD_NAMES は検査どおり2件・以後6回伸びたが検査側は無変更・episode 248 が sync と check は対と明記・episode 309 と plan 309 が本件の起票を宣言）。保留のリスクは配布スコープの側にあり、本単位が触らないと決めた領域に落ちていた"
 exclusions:
   - "対象について plan / 決定記録が存在しない単発の作業（引くべき一次記録が無い）"
   - "欠落そのものが機械検査で検出されており、意図的な保留という選択肢が最初から無い場合"

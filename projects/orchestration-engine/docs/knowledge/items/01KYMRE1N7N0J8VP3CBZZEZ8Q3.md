@@ -9,6 +9,10 @@ source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-28-episode-284-decision-backfill.md"
 landing: nl
 observations:
+  - date: 2026-08-15
+    ref: "#313"
+    state: followed
+    note: "改善前の対照を先に取り、2件だけ赤・6件は緑を観測してから着手した。緑を根拠にしない規律は守れたが、逆向きの変種を新たに踏んだ＝陽性対照で期待どおりの赤が出たのに理由が別（足場の破壊）だった。色の一致を通してしまう穴として新 item 01M00KCCHNMFPHP5HAGX2DZ1MK を収穫した"
   - date: 2026-08-03
     ref: "#299"
     state: followed

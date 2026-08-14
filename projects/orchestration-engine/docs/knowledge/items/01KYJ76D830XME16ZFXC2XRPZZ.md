@@ -9,6 +9,10 @@ source:
   ref: "projects/orchestration-engine/docs/episodes/2026-07-27-episode-284-episode-layer-split.md"
 landing: nl
 observations:
+  - date: 2026-08-15
+    ref: "#313"
+    state: followed
+    note: "完全性の述語を母集団の側から書いた。検査側の手書きをやめ、配布対象を持つスクリプトへ検査を移して CMD_NAMES を母集団に回す形にした。母集団側から検証もした（8件を1件ずつ落として全件で赤・9件目を足すと呼び出し側を無改造で追随）。加えて母集団を取り損ねたときに緑にしない条件（0件・2配列の長さ不一致で exit 2）を設計へ入れた"
   - date: 2026-07-29
     ref: "#292"
     state: followed
