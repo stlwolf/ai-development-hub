@@ -12,7 +12,7 @@ related:
     ref: "docs/research/2026-06-10-episode-quality-audit.md"
     reason: "設計の主根拠（52 episode 全数監査・法則 L1〜L8・提言 R1）"
   - type: design_context
-    ref: "docs/episodes/2026-06-10-episode-149-audit-meta.md"
+    ref: "docs/orchestration-engine/episodes/2026-06-10-episode-149-audit-meta.md"
     reason: "skill 出力の実質プロトタイプ（自己適用 1 例目）。本 episode は 2 例目"
   - type: integration_target
     ref: "canonical/skills/episode-retrospective/SKILL.md"

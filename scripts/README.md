@@ -40,6 +40,8 @@ scripts/
 
 `sync-codex.sh` は実行前に `check-codex-guardrails.sh` を呼び出し、`canonical/rules` と `canonical/codex/AGENTS.md` の整合を検証する。
 
+`sync.sh --check bin` は `sync-bin.sh --check` へ委譲する。配備と検査が同じ `CMD_NAMES` / `CMD_SOURCES` を通るので、配布対象を増やしても検査側を触る必要はない。
+
 ## ユーティリティ
 
 ### `check-codex-guardrails.sh`
