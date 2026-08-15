@@ -36,8 +36,16 @@ cat > "$STUB_BIN/tmux" <<'EOF'
 case "${1:-}" in
   list-panes)
     if [[ -n "${MOCK_TMUX_FAIL:-}" ]]; then echo "no server running" >&2; exit 1; fi
-    # shellcheck disable=SC2086
-    printf '%s\n' ${MOCK_LIVE_PANES:-} ;;
+    # oe_reg_gc は '#{pane_id} #{pid}' を要求する（#270）。server pid は $TMUX から導いて
+    # _oe_reg_server_pid と必ず一致させる。
+    if [[ "$*" == *'#{pid}'* ]]; then
+      _sp="${TMUX#*,}"; _sp="${_sp%%,*}"
+      # shellcheck disable=SC2086
+      for _mp in ${MOCK_LIVE_PANES:-}; do printf '%s %s\n' "$_mp" "$_sp"; done
+    else
+      # shellcheck disable=SC2086
+      printf '%s\n' ${MOCK_LIVE_PANES:-}
+    fi ;;
   display-message) printf '%s\n' "${MOCK_CWD:-/mock/cwd}" ;;
   *) : ;;
 esac

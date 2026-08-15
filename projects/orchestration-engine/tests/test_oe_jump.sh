@@ -32,8 +32,15 @@ cat > "$_TMP_DIR/pathbin/tmux" <<'EOF'
 printf '%s\n' "$*" >> "${OE_JUMP_TEST_LOG_DIR:?}/tmux.log"
 case "${1:-}" in
   list-panes)
-    # shellcheck disable=SC2086
-    printf '%s\n' ${MOCK_LIVE_PANES:-} ;;
+    # oe_reg_gc は '#{pane_id} #{pid}' を要求する（#270）。server pid は $TMUX から導く。
+    if [[ "$*" == *'#{pid}'* ]]; then
+      _sp="${TMUX#*,}"; _sp="${_sp%%,*}"
+      # shellcheck disable=SC2086
+      for _mp in ${MOCK_LIVE_PANES:-}; do printf '%s %s\n' "$_mp" "$_sp"; done
+    else
+      # shellcheck disable=SC2086
+      printf '%s\n' ${MOCK_LIVE_PANES:-}
+    fi ;;
   display-message)
     printf '%s\n' "${MOCK_TMUX_META:-}" ;;
   switch-client|select-window|select-pane) exit 0 ;;

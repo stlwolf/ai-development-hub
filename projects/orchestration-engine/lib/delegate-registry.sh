@@ -165,15 +165,38 @@ oe_reg_list() {
 }
 
 # oe_reg_gc — 生存ペインに無い or 別サーバ pid の spawn レジストリ entry を掃除
+#   ただし「自分の身元を確立できたとき」だけ走る（#270）。$TMUX が壊れた 1 回の呼び出しで
+#   生存中の全 entry を消す事故が 3 回起きたため、入口で身元を検査してから掃除する。
+#   掃除そのものの条件（下の削除条件）は従来どおりで変えていない。
 oe_reg_gc() {
   [[ -d "$OE_DELEGATE_STATE_DIR" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
-  local pid panes live_keys p f base rc
+  local pid panes live_keys p f base rc server_pid
   pid="$(_oe_reg_server_pid)"
-  panes="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; rc=$?
+  # 身元が数値でなければ何も掃除しない（掃除せず正常終了＝best-effort）。空・glob メタ文字・
+  # 非英数を一括で弾く。数値は _oe_reg_key の sanitize で不変なので、下の prefix 比較（raw pid）
+  # とディスク上のキー（sanitize 済み）の非対称もここで消える。
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  # 生存ペインと「応答したサーバ自身が名乗る pid」を同じ 1 回の呼び出しで取る。
+  # 2 回に分けると、物差しと母集団が別のサーバから来る隙ができる。
+  # #{pid} は tmux 2.1+ の Server PID（#{pane_pid} はペインの先頭プロセスで別物）。
+  # 未対応の書式は空に展開されるので、下の非空検査で安全側（掃除しない）に倒れる。
+  panes="$(tmux list-panes -a -F '#{pane_id} #{pid}' 2>/dev/null)"; rc=$?
   # list-panes 失敗 or 空（サーバ未起動/接続不可）時は GC をスキップ（全 entry 誤削除を防ぐ）
   [[ "$rc" -eq 0 && -n "$panes" ]] || return 0
+  # 物差しが取れない（#{pid} 非対応・awk 不在など）ときは空になる。
+  # 次の一致検査は $pid が非空（上の数値検査を通過済み）なので空とは必ず不一致になり、
+  # この行が無くても同じ return 0 に落ちる。挙動を変えない冗長な明示であって、独立した
+  # 帯ではない。数値検査を将来緩めたときの保険として残している。
+  server_pid="$(printf '%s\n' "$panes" | awk 'NR==1{print $2}')"
+  [[ -n "$server_pid" ]] || return 0
+  # $TMUX 由来の pid と、live 一覧を作ったサーバが名乗る pid が食い違うなら身元が壊れている
+  # （$TMUX 消失・別 server pid の混入）。掃除せず正常終了する。
+  # 注: これは $TMUX の内部整合性の検査である。tmux は $TMUX の第 1 フィールドを接続先ソケット
+  # にするため、$TMUX 全体が別の生きたサーバのものに置き換わった形は検出できない（#337）。
+  [[ "$pid" == "$server_pid" ]] || return 0
   live_keys="$(printf '%s\n' "$panes" | while IFS= read -r p; do
+    p="${p%% *}"
     [[ -n "$p" ]] && printf '%s\n' "$(_oe_reg_key "$p")"
   done)"
   for f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
