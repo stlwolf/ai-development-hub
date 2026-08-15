@@ -8,7 +8,11 @@ prediction: "分岐ごとに正しい番号を割り当てたことで満足し�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-11-episode-oe-send-exit-and-commit-inline-code.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-15
+    ref: "#270"
+    state: followed
+    note: "exit の帯そのものではないが（oe_reg_gc は best-effort で全経路が return 0）、この item の中核である「利用者から見た帯は番号の割り当てでなく検査が走る順序で決まる」を検査の順序設計へ当てた。引数それ自体の well-formedness（pid が数値か）を、環境に依存する解決（tmux への問い合わせ）より前に置いた。身元が壊れているときは tmux に問い合わせすらしない。加えて item の (1)（分岐ごとでなく入力ごとの経路で確かめる）をテストへ当て、型A のテストが「不一致」経路を撃っていることを MOCK_SERVER_PID の明示で担保し、型B と引き金は数値検査で止まって一致検査に到達しないことを本文に書いた。型の名前とガードが1対1でないことを明示したのはこの item の効果である"
 exclusions:
   - "帯が成功と失敗の2つしかない verb（順序を変えても帯が動かない）"
   - "引数の検査そのものが環境依存の解決を必要とする場合（順序を入れ替えられない）"
