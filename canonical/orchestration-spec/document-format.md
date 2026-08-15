@@ -570,14 +570,17 @@ YYYY-MM-DD-{type}-{topic}.md
 
 配置先:
 
+**蒸留木は1つの親ディレクトリの下にまとめ、その親が木のスコープを名指しする。** 層ごとに置き場を散らさない。`knowledge/items/`（§3.4）も同じ親の下に置くので、item の置き場は「収穫元 episode と同じ木の `knowledge/items/`」という**関係**で解ける（特定のパスを覚える必要がない）。
+
 | 種別 | パス |
 |------|------|
-| プロジェクト横断の Decision | `docs/decisions/` |
-| プロジェクト固有の Decision | `projects/{name}/docs/decisions/` |
-| KickOff / Plan | `docs/plans/{issue-or-epic}/` |
-| プロジェクト横断の Episode | `docs/episodes/` |
-| プロジェクト固有の Episode | プロジェクト固有ディレクトリ（規約は各プロジェクト） |
-| Discussion | `docs/draft/` または `ideas/`・プロジェクト固有は `projects/{name}/docs/discussions/` |
+| プロジェクト配下の蒸留木 | `projects/{name}/docs/{plans,episodes,decisions,discussions,knowledge}/` |
+| リポジトリ直下の蒸留木 | `docs/{name}/{plans,episodes,decisions,knowledge}/`（`{name}` は略称でなくスコープの実名） |
+| ADR 形式 | 上記いずれかの `decisions/` 配下（`ADR-NNN-{topic}.md`） |
+| Discussion | 各木の `discussions/`。層に載る前の探索メモは `docs/draft/` または `ideas/` |
+
+- **`docs/` 直下に層のディレクトリ（`docs/episodes/` 等）を直接生やさない。親を1つ挟む。** 層を直下に置くと、性質の違う別種の置き場（自由記述の知見ノート等）と同じ階層に並び、どの規約で読む文書なのかが名前から判別できなくなる。
+- 1つのリポジトリに複数の木があってよい。木ごとに独立した `knowledge/items/` を持ち、列挙は木を横断して見る（§3.4）。
 
 ### 作業層（`.oe/`）
 
