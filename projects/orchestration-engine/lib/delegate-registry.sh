@@ -188,7 +188,9 @@ oe_reg_gc() {
   # 次の一致検査は $pid が非空（上の数値検査を通過済み）なので空とは必ず不一致になり、
   # この行が無くても同じ return 0 に落ちる。挙動を変えない冗長な明示であって、独立した
   # 帯ではない。数値検査を将来緩めたときの保険として残している。
-  server_pid="$(printf '%s\n' "$panes" | awk 'NR==1{print $2}')"
+  # awk の失敗（不在・実行不可）は握り潰して空にする。呼び出し元が set -e の文脈だと、
+  # 握り潰さない形では「空にして安全側へ倒れる」前にスクリプトごと終了しうる（Copilot 指摘）。
+  server_pid="$(printf '%s\n' "$panes" | awk 'NR==1{print $2}' 2>/dev/null || true)"
   [[ -n "$server_pid" ]] || return 0
   # $TMUX 由来の pid と、live 一覧を作ったサーバが名乗る pid が食い違うなら身元が壊れている
   # （$TMUX 消失・別 server pid の混入）。掃除せず正常終了する。

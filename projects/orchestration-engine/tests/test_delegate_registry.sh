@@ -21,9 +21,11 @@ mkdir -p "$OE_DELEGATE_STATE_DIR" "$OE_PANE_ISSUE_DIR" || { echo "FATAL: cannot 
 # 実環境配下を指していないことの最終確認。この時点では lib 未 source なので lib の :- fallback は
 # まだ走っておらず、ここで見るのは代入した値そのものである。実際にこの検査が効くのは、
 # TMPDIR が ~/.claude 配下を指していて mktemp がそこへ掘った場合である。
+# HOME 未設定でも set -u で落ちないよう ${HOME:-} で参照する（未設定なら照合は成立しないだけで、
+# 意図した FATAL メッセージ無しに unbound variable で死ぬのを避ける）。
 for _d in "$OE_DELEGATE_STATE_DIR" "$OE_PANE_ISSUE_DIR"; do
   case "$_d" in
-    "$HOME"/.claude/*) echo "FATAL: 隔離が外れて実環境を指している: $_d" >&2; exit 1 ;;
+    "${HOME:-}"/.claude/*) echo "FATAL: 隔離が外れて実環境を指している: $_d" >&2; exit 1 ;;
   esac
 done
 
