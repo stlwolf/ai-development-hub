@@ -6,7 +6,7 @@ date: 2026-08-13
 trigger: "外部レビューが「検査が実在の正当な値を弾いている」と指摘し、その検査が許可集合の列挙（allowlist）で書かれているとき。指摘された具体値を通すために許可集合へ文字を足そうとする局面"
 prediction: "指摘された値だけが通るようになり、列挙しきれなかった正当な値では同じ欠陥が同じ場所に残る。指摘の再現テストは緑になるので、型が消えたと誤認して閉じる"
 source:
-  ref: "docs/episodes/2026-08-13-episode-298-so-meta-recording.md"
+  ref: "docs/orchestration-engine/episodes/2026-08-13-episode-298-so-meta-recording.md"
 landing: nl
 observations: []
 exclusions:

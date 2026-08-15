@@ -403,7 +403,7 @@ brief の scope 5 は `canonical/skills/so-compare/SKILL.md` だけを挙げて�
 - `canonical/orchestration-spec/document-format.md:280` — SO モード節の機構層の説明
 - `scripts/README.md:87` — 環境変数の説明
 
-**3つとも直す。** これは brief の文面を超える追加だが、勝手な拡張ではない。#296 の episode（`docs/episodes/2026-08-01-episode-295-so-model-record.md:202`）が、まさにこの2つの上流文書への追随を漏らして後から直したことを記録しており、同じ漏れを再生産しないための処置である。**この判断は owner の gate 3 で承認可否を確認したい。**
+**3つとも直す。** これは brief の文面を超える追加だが、勝手な拡張ではない。#296 の episode（`docs/orchestration-engine/episodes/2026-08-01-episode-295-so-model-record.md:202`）が、まさにこの2つの上流文書への追随を漏らして後から直したことを記録しており、同じ漏れを再生産しないための処置である。**この判断は owner の gate 3 で承認可否を確認したい。**
 
 #### 実際に直したのは SKILL.md だけである（承認は得たが、他2文書は直す対象が無かった）
 

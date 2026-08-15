@@ -220,7 +220,7 @@ tier = **heavy**（実行中の撤回が3件・意図して起動した外部SO 
 
 ### 蒸留シグナル
 
-- **knowledge store**: 上の原則3件を `docs/knowledge/items/` へ収穫した（下記）。
+- **knowledge store**: 上の原則3件を `docs/orchestration-engine/knowledge/items/` へ収穫した（下記）。
 - **Decision / skill / rule**: なし。3件はいずれも「次に手を動かすときの行動を変える」型で、決定の記録ではない。
 
 ### 残課題（すべて行き先つき）
@@ -236,7 +236,7 @@ tier = **heavy**（実行中の撤回が3件・意図して起動した外部SO 
 
 ### 収穫した negative knowledge（Step 5）
 
-収穫元がこの木なので `docs/knowledge/items/` へ置いた（engine 木ではない）。`knowledge-list --include-uncommitted` が3件とも横断で拾うことと、`validate-knowledge` が3件とも通ることを確認済み。
+収穫元がこの木なので `docs/orchestration-engine/knowledge/items/` へ置いた（engine 木ではない）。`knowledge-list --include-uncommitted` が3件とも横断で拾うことと、`validate-knowledge` が3件とも通ることを確認済み。
 
 - `01M00KCCHNMFPHP5HAGX2DZ1MK` — 陽性対照は期待した色ではなく期待した理由まで見る
 - `01M00KCCHR10VP4QF088827B8B` — 同時に出された複数の裁定は、片方の採用が他方の前提を壊しうる

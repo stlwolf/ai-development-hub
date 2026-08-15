@@ -78,7 +78,7 @@ plan は3版を経ている（`.oe/plan-288b-promotion-slot.md`）。作業層�
 
 ### 現存する唯一の実例が、多重度を既に破っていた
 
-`docs/episodes/2026-08-04-episode-288-promotion-admission.md` の判定表は **6行**だが、同じ節の集計は **7件**（`required` 3 / `not-required` 3 / `unknown` 1）。第6行がセル内で2値を持ち、二重に数えられている。多重度を要求した当の単位自身が守れていなかった。
+`docs/orchestration-engine/episodes/2026-08-04-episode-288-promotion-admission.md` の判定表は **6行**だが、同じ節の集計は **7件**（`required` 3 / `not-required` 3 / `unknown` 1）。第6行がセル内で2値を持ち、二重に数えられている。多重度を要求した当の単位自身が守れていなかった。
 
 ## M1. gate 1（ゼロベース探索）が前提を2つ崩した
 

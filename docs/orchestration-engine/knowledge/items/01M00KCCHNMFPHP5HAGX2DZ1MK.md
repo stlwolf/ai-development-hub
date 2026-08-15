@@ -6,7 +6,7 @@ date: 2026-08-15
 trigger: "陽性対照（検査対象をわざと壊して、検査が赤くなることを確かめる手順）を組み、期待した色が出たとき。とくに対照を仕込む足場（複製・一時ディレクトリ・環境変数の差し替え）を自分で組んだ場合"
 prediction: "期待した色が出たことをもって検査が効いていると読む。実際は足場の側の別の理由でその色になっており、確かめたかった検査経路は一度も踏まれていない。偽陽性が『陽性対照を通した』という証跡付きで通るので、以後の検証がその上に積まれる"
 source:
-  ref: "docs/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
+  ref: "docs/orchestration-engine/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
 landing: nl
 observations: []
 exclusions:

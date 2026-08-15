@@ -6,7 +6,7 @@ date: 2026-08-15
 trigger: "1つの変更を複数コミットに分け、各コミットが単独で成立することを確かめるとき。とくにコードと、そのコードを説明する文書（README・ヘルプ・コメント）を同じコミットへ同梱しているとき"
 prediction: "『単独で成立』を実行可能性の意味だけで読み、コミットを checkout して動かして確かめる。同じコミットに入れた文書が後続コミットの内容を先取りして書いている状態は、動作検証では検出されないので通る。bisect やコミット単位のレビューで文書とコードが食い違って見える"
 source:
-  ref: "docs/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
+  ref: "docs/orchestration-engine/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
 landing: nl
 observations: []
 exclusions:

@@ -480,8 +480,8 @@ bash 3.2 経由で実測し、`REPO_ROOT` が repo ルートに解決され `CMD
 | `scripts/sync.sh` | `bin)` を「`[[ -x ]]` で弾いてから子へ委譲し rc を写す」形へ（§3.3）。`usage()` の GNU 依存2か所を BSD 互換へ |
 | `scripts/README.md` | `:41` の直後に委譲関係を1文追記（owner 裁定A・§7）。**正本の記述（`:39`）は真なので触らない** |
 | `CLAUDE.md` | **変更しない。** `:22` の「正本は `CMD_NAMES`」は案N でも真であり、粒度も委譲関係を書く場所ではない |
-| `docs/plans/2026-08-14-plan-313-...md` | 本 plan |
-| `docs/episodes/2026-08-14-episode-313-...md` | episode |
+| `docs/orchestration-engine/plans/2026-08-14-plan-313-...md` | 本 plan |
+| `docs/orchestration-engine/episodes/2026-08-14-episode-313-...md` | episode |
 
 **案F との差:** 新規ファイル `scripts/sync/bin-commands.sh` が消え、`sync-bin.sh` の変更が「配列を抜く」から「verb を足す」に変わった。**文書2本は、承認された理由が消えて別の理由の候補になった**ので、いったん未確定として置いてある。
 
