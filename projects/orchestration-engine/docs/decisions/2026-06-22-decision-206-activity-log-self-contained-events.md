@@ -36,10 +36,12 @@ tags: [orchestration, activity-log, event-bus, identity, cockpit, report-inbox, 
 | 項目 | 内容 | 根拠 | status |
 |---|---|---|---|
 | delegate 子は session_id を持たない | registry は `{pane,label,workspace,parent_pane,role}` のみ。session_id/state/audit を持たない | `lib/delegate-registry.sh:56`・[#188 ADR 前提表](2026-06-19-decision-188-identity-unification.md) | verified |
-| pane は寿命が短く再利用される | tmux `%N` は pane 破棄後に再割当。registry は GC される（`oe_reg_gc`） | `lib/delegate-registry.sh:168` | verified |
+| pane は寿命が短く再利用される | tmux `%N` は pane 破棄後に再割当。registry は GC される（`oe_reg_gc`） | `lib/delegate-registry.sh:168` | ~~verified~~ → **一部誤り（#270 で訂正）** |
 | #188 の read-only/read 時相関 | observer は両ソースを read 時投影・永続マップを作らない（DJ-188-3）。read-only は観測者拘束（DJ-188-5） | [#188 ADR](2026-06-19-decision-188-identity-unification.md) | verified |
 
 → DJ-188-4 の素朴な「`session_id` 主キー」は **delegate の相互作用を 1 件も載せられない**（session_id が無い）。pane 主キーは GC/再利用で read 時に identity が失われる（寿命ミスマッチ）。
+
+**訂正（2026-08-15・#270 / PR #339 で判明）**: 上表の「tmux `%N` は pane 破棄後に再割当」は不正確である。**同一 server が生きているあいだ `%N` は再利用されない**（番号は単調増加する）。実際に起きるのは**世代跨ぎ**で、新しい tmux server はペイン ID を `%0` から振り直す。別ソケットでサーバを立てて実測し、新サーバが `%0`・長寿の既定サーバが `%331` であることを確認した。**「寿命ミスマッチ」という結論そのものは変わらない**（世代跨ぎで同じ番号が別の実体を指しうるため）が、**根拠の機序が違う**ので、この行を「同一 server 内で番号が使い回される」の根拠として引かないこと。経緯は `projects/orchestration-engine/docs/episodes/2026-08-14-episode-270-registry-gc-wipe.md`。
 
 ## 決定
 

@@ -33,7 +33,14 @@ if [[ "${1:-}" == "split-window" ]]; then
 fi
 
 if [[ "${1:-}" == "list-panes" ]]; then
-  printf '%%1\n%%9\n'
+  # oe_reg_gc は '#{pane_id} #{pid}' を要求する（#270）。server pid は $TMUX から導いて
+  # _oe_reg_server_pid と必ず一致させる。
+  if [[ "$*" == *'#{pid}'* ]]; then
+    _sp="${TMUX#*,}"; _sp="${_sp%%,*}"
+    printf '%%1 %s\n%%9 %s\n' "$_sp" "$_sp"
+  else
+    printf '%%1\n%%9\n'
+  fi
   exit 0
 fi
 
