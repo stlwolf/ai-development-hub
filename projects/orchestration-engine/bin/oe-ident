@@ -64,7 +64,8 @@ fi
 # 現サーバ（pid）の子 entry だけを走査（別サーバの stale で pane-id 衝突しても誤検知しない）。
 # grep -F で per-file jq を避ける（#() の hot path・oe_reg_record の compact JSON は形が安定）。
 is_parent=0
-if [[ -n "$pid" ]] && grep -lF "\"parent_pane\":\"${PANE}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
+# state dir が空だと "/<pid>_*.json" ＝ root を走査する（#322）。pid と同じ理由で非空を要求する。
+if [[ -n "$pid" && -n "$OE_DELEGATE_STATE_DIR" ]] && grep -lF "\"parent_pane\":\"${PANE}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
   is_parent=1
 fi
 role=""

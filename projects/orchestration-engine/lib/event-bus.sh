@@ -87,7 +87,8 @@ _oe_event_ident() {
   fi
   # 現サーバ pid の子 entry を走査して parent 判定（別サーバの stale で pane-id 衝突しても誤検知しない）。
   # grep -F で per-file jq を避ける（oe-ident と同イディオム）。
-  if [[ -n "$pid" ]] && grep -lF "\"parent_pane\":\"${pane}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
+  # state dir が空だと "/<pid>_*.json" ＝ root を走査する（#322）。pid と同じ理由で非空を要求する。
+  if [[ -n "$pid" && -n "$OE_DELEGATE_STATE_DIR" ]] && grep -lF "\"parent_pane\":\"${pane}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
     is_parent=1
   fi
   if [[ "$is_parent" -eq 1 ]]; then role="parent"; elif [[ "$is_child" -eq 1 ]]; then role="child"; fi

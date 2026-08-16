@@ -227,6 +227,9 @@ oe_reg_gc() {
     p="${p%% *}"
     [[ -n "$p" ]] && printf '%s\n' "$(_oe_reg_key "$p")"
   done)"
+  # 空だと "/*.json" ＝ root を走査する。上の -d 検査で到達しないが、#270 で入れた
+  # pid の非空検査と同じ理由で明示する（黙って root を掴む形を残さない・#322）。
+  [[ -n "$OE_DELEGATE_STATE_DIR" ]] || return 0
   for f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f" .json)"
