@@ -483,7 +483,7 @@ sanitize_out() {
 label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(alive のみ) > "?"
   local pane="$1" key label=""
   key="$(_oe_reg_key "$pane")"
-  if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+  if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
   [[ -n "$label" ]] || label="$(entry_field_of "$pane" 4)"

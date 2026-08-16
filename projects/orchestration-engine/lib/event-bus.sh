@@ -82,7 +82,7 @@ _oe_event_ident() {
   pid="$(_oe_reg_server_pid 2>/dev/null)" || pid=""
   key="$(_oe_reg_key "$pane" 2>/dev/null)" || key=""
   [[ -n "$key" ]] || { printf '\037\037\n'; return 0; }
-  if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+  if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
   own="${OE_DELEGATE_STATE_DIR}/${key}.json"

@@ -47,7 +47,7 @@ fi
 
 # --- label: pane-issue(.name) 優先 → spawn-registry(.label) ---
 label=""
-if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
   label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
 fi
 own="${OE_DELEGATE_STATE_DIR}/${key}.json"

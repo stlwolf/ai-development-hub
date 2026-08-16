@@ -114,7 +114,7 @@ oe_reg_resolve() {
     [[ -n "$p" ]] || continue
     key="$(_oe_reg_key "$p")"
     # pane-issue が在れば、そのペインのラベルは pane-issue が所有する（spawn ラベルは抑止）
-    if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
       piname="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
       if [[ -n "$piname" ]]; then
         if _oe_label_match "$target" "$piname"; then matched+=("$p"); fi
@@ -122,7 +122,7 @@ oe_reg_resolve() {
       fi
     fi
     # pane-issue が無いペインのみ spawn レジストリ（現在の親にスコープ）を見る
-    if [[ -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
+    if [[ -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
       plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       if [[ -n "$plabel" && "$pparent" == "$self" ]] && _oe_label_match "$target" "$plabel"; then
@@ -164,11 +164,11 @@ oe_reg_list() {
     [[ -n "$p" ]] || continue
     key="$(_oe_reg_key "$p")"
     label=""; source=""
-    if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
       label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
       [[ -n "$label" ]] && source="pane-issue"
     fi
-    if [[ -z "$source" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
+    if [[ -z "$source" && -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
       plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       if [[ -n "$plabel" && "$pparent" == "$self" ]]; then
