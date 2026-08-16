@@ -26,7 +26,9 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 # 活動ログ emit（best-effort・#206）。source 失敗や関数不在でも委譲本体は壊さない。
 # shellcheck source=../lib/event-bus.sh
-source "${BIN_DIR}/../lib/event-bus.sh" 2>/dev/null || true
+# 2>/dev/null は付けない（#322）。消せるのは診断だけで、失敗そのものは止められない。
+# || true は残す（event-bus 不在でも delegate は動く・declare -F の no-op と対）。
+source "${BIN_DIR}/../lib/event-bus.sh" || true
 
 usage() {
   cat >&2 <<'EOF'

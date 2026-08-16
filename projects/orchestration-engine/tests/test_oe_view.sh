@@ -392,5 +392,19 @@ ck "\$HOME 配下 md → 許可(exit 0)" "0" "$rc"
 rc=0; env -u OE_VIEW_ROOTS HOME="$_TMP_DIR/fakehome" "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "\$HOME 外 md → 拒否(exit 1)" "1" "$rc"
 
+# ----------------------------------------------------------------------------
+# [18] HOME も OE_VIEW_ROOTS も無いとき: allowlist は空 = 全拒否（fail-closed・#322 gate 3 裁定 4）
+#      allowlist が決まらないときに通すのは境界の意味が逆になる。--from-link 以外
+#      （--here / 直叩き）は allowlist を要求しないので巻き添えにしない。
+# ----------------------------------------------------------------------------
+echo "[18] HOME 不在で OE_VIEW_ROOTS が空 → --from-link は全拒否（#322）"
+all_shims_on; reset_state; reset_logs
+mkdir -p "$_TMP_DIR/nohome"
+printf '# n\n' > "$_TMP_DIR/nohome/x.md"
+rc=0; env -u OE_VIEW_ROOTS -u HOME OE_VIEW_STATE_DIR="$_TMP_DIR/vstate" "$VIEW" --from-link -- "$_TMP_DIR/nohome/x.md" >/dev/null 2>&1 || rc=$?
+ck "HOME 不在 + roots 空 → --from-link 拒否" "1" "$rc"
+rc=0; env -u OE_VIEW_ROOTS -u HOME OE_VIEW_STATE_DIR="$_TMP_DIR/vstate" "$VIEW" --help >/dev/null 2>&1 || rc=$?
+ck "HOME 不在でも --help は 0" "0" "$rc"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

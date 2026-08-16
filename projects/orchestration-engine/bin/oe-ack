@@ -98,6 +98,12 @@ SELF="${TMUX_PANE:-}"
 command -v jq >/dev/null 2>&1 || { err "jq が必要です（covers の計算に使用）"; exit 2; }
 
 # 単一ノブ OE_EVENT_DIR（writer=event-bus.sh / reader=oe-activity と一致）
+# 置き場が決まらないのは環境の失敗であって「受領するものが無い」ではない（#322）。
+# exit 0 で返すと、ログを読めていないことが成功に化ける。
+if [[ -z "$OE_EVENT_DIR" ]]; then
+  err "活動ログの置き場が決まりません（HOME 未設定・OE_EVENT_DIR も未指定）"
+  exit 2
+fi
 OE_EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
 if [[ ! -s "$OE_EVENT_FILE" ]]; then
   echo "oe-ack: nothing to ack (no activity recorded yet in ${OE_EVENT_FILE})" >&2

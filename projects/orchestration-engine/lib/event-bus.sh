@@ -22,13 +22,21 @@
 # 呼び出し側が未 source なら自前で取り込む（多重 source は冪等）。
 if ! declare -F _oe_reg_key >/dev/null 2>&1; then
   # shellcheck source=delegate-registry.sh
-  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" 2>/dev/null || true
+  # 2>/dev/null は付けない（#322）。消せるのは診断だけで、未定義変数による shell の終了は
+  # 止められない。実際 oe-send / oe-ack / oe-report は「出力ゼロで rc=1」という最悪の
+  # 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
+  # no-op フォールバックとセットで意図された設計である。
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" || true
 fi
 
 # #224: 会話到達面へ載る preview を write-time で無害化する共有 helper（多重 source は冪等）。
 if ! declare -F oe_sanitize_conversation >/dev/null 2>&1; then
   # shellcheck source=sanitize.sh
-  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" 2>/dev/null || true
+  # 2>/dev/null は付けない（#322）。消せるのは診断だけで、未定義変数による shell の終了は
+  # 止められない。実際 oe-send / oe-ack / oe-report は「出力ゼロで rc=1」という最悪の
+  # 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
+  # no-op フォールバックとセットで意図された設計である。
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" || true
 fi
 # source 失敗（欠落/権限/source エラー）でも emit は best-effort・noise-free を保つ: 未定義なら
 # no-op へフォールバック定義し、oe_event_message_sent 内の呼び出しが `command not found` を
@@ -38,12 +46,27 @@ declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation(
 # delegate-registry.sh が source されない（_oe_reg_key を他所が定義済 等）/ 環境で未設定でも、
 # 未定義の state dir で `/${pid}_*.json` のように root 配下を誤って glob しないよう、registry と
 # 同じ既定値をここでもフォールバック設定する（best-effort・Copilot 指摘）。
-OE_DELEGATE_STATE_DIR="${OE_DELEGATE_STATE_DIR:-${HOME}/.claude/state/oe-delegate}"
-OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+
+if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"
+else                       OE_DELEGATE_STATE_DIR=""
+fi
+if   [ -n "${OE_PANE_ISSUE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_PANE_ISSUE_DIR="${HOME}/.claude/state/pane-issue"
+else                       OE_PANE_ISSUE_DIR=""
+fi
 
 # ログの保存先（cross-session。registry / pane-issue と同じ ~/.claude/state 規約）。
 # テストは OE_EVENT_DIR で隔離する。
-OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+if   [ -n "${OE_EVENT_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_EVENT_DIR="${HOME}/.claude/state"
+else                       OE_EVENT_DIR=""
+fi
 
 # _oe_event_ident <pane> — pane の識別子を read 時投影し "role<US>label<US>parent_pane" を返す。
 #   role  : parent（この pane を parent_pane に持つ子 entry が在る） > child（自身の spawn entry が在り かつ parent_pane 非空・#259） > ""
@@ -59,7 +82,7 @@ _oe_event_ident() {
   pid="$(_oe_reg_server_pid 2>/dev/null)" || pid=""
   key="$(_oe_reg_key "$pane" 2>/dev/null)" || key=""
   [[ -n "$key" ]] || { printf '\037\037\n'; return 0; }
-  if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+  if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
   own="${OE_DELEGATE_STATE_DIR}/${key}.json"
@@ -72,7 +95,8 @@ _oe_event_ident() {
   fi
   # 現サーバ pid の子 entry を走査して parent 判定（別サーバの stale で pane-id 衝突しても誤検知しない）。
   # grep -F で per-file jq を避ける（oe-ident と同イディオム）。
-  if [[ -n "$pid" ]] && grep -lF "\"parent_pane\":\"${pane}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
+  # state dir が空だと "/<pid>_*.json" ＝ root を走査する（#322）。pid と同じ理由で非空を要求する。
+  if [[ -n "$pid" && -n "$OE_DELEGATE_STATE_DIR" ]] && grep -lF "\"parent_pane\":\"${pane}\"" "${OE_DELEGATE_STATE_DIR}/${pid}"_*.json >/dev/null 2>&1; then
     is_parent=1
   fi
   if [[ "$is_parent" -eq 1 ]]; then role="parent"; elif [[ "$is_child" -eq 1 ]]; then role="child"; fi
@@ -94,6 +118,17 @@ oe_event_emit() {
   [[ -n "$extra" ]] || extra='{}'
   [[ -n "$type" ]] || return 0
   local dir="$OE_EVENT_DIR" file ts line
+  # 置き場が決まらないときは root へ触らず、理由を 1 回だけ名乗って諦める（#322）。
+  # rc は 0 のまま — 本 lib の不変条件（全 public 関数は常に return 0）を優先する。
+  # 非0にすると oe-ack:154 の裸呼び出しが set -e で死に、受領印が取れない環境事情が
+  # oe-ack 本体を殺す。gate 3 の裁定でこの優先順位を確定した。
+  if [[ -z "$dir" ]]; then
+    if [[ -z "${_OE_EVENT_DIR_WARNED:-}" ]]; then
+      _OE_EVENT_DIR_WARNED=1
+      echo "oe-event: 活動ログの置き場が決まらないので記録していません（HOME 未設定・OE_EVENT_DIR も未指定）" >&2
+    fi
+    return 0
+  fi
   mkdir -p "$dir" 2>/dev/null || return 0
   file="${dir}/oe-events.jsonl"
   ts="$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")" || return 0

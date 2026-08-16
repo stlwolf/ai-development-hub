@@ -36,8 +36,22 @@
 #
 set -uo pipefail
 
-HOME_DIR="${HOME:-}"
-FIRE_DIR="${HOOK_FIRING_DIR:-${HOME_DIR}/.claude/state/hook-firing}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+# _oe_state_dir <変数名> <suffix> — 明示指定（空文字も含む）を尊重 / 無ければ HOME 由来 /
+# それも無ければ空。値ではなく**変数名**を受けるのは、${VAR:-} で渡すと明示的な空文字が
+# 「未設定」に畳まれて既定値へ戻ってしまうためである（#322 DJ-1 と同じ理由）。
+declare -F _oe_state_dir >/dev/null 2>&1 || _oe_state_dir() {
+  local _n="$1"
+  if   [ -n "${!_n+x}" ]; then printf '%s' "${!_n}"
+  elif _oe_home_usable; then printf '%s%s' "$HOME" "$2"
+  fi
+}
+
+FIRE_DIR="$(_oe_state_dir HOOK_FIRING_DIR "/.claude/state/hook-firing")"
 TALLY_DIR="${FIRE_DIR}/tally"
 DENY_LOG="${FIRE_DIR}/deny.jsonl"
 DIAG_LOG="${FIRE_DIR}/diag.jsonl"
@@ -128,7 +142,9 @@ fresh() { [ -n "$(find "$1" -type f -mtime "-${DAYS}" 2>/dev/null)" ]; }
 # --- 1. 記録機構そのものが在るか（陽性対照が取れる状態か）---
 if [ ! -d "$TALLY_DIR" ]; then
   add "tally-store" "indeterminate" \
-    "${TALLY_DIR} が無い。フックが一度も発火していないか、配備されていない。0 件を「危険な操作が無かった」と読まないこと"
+    "$( [ -n "$FIRE_DIR" ] \
+        && printf '%s が無い。フックが一度も発火していないか、配備されていない' "$TALLY_DIR" \
+        || printf '記録先が決まらない（HOME 未設定・HOOK_FIRING_DIR も未指定）' )。0 件を「危険な操作が無かった」と読まないこと"
 else
   found="$(find "$TALLY_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')"
   if [ "$found" = "0" ]; then
@@ -285,7 +301,7 @@ if [ "$JSON" = "1" ]; then
   done
   printf ']\n'
 else
-  printf '窓: 直近 %s 日 / 記録先: %s\n\n' "$DAYS" "$FIRE_DIR"
+  printf '窓: 直近 %s 日 / 記録先: %s\n\n' "$DAYS" "${FIRE_DIR:-（決まらない: HOME 未設定）}"
   for row in "${ROWS[@]}"; do
     IFS=$'\037' read -r n v d <<< "$row"
     printf '  %-14s %-28s %s\n' "$v" "$n" "$d"

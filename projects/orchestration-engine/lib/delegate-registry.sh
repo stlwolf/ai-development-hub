@@ -11,8 +11,20 @@
 # state を引く。逆算しないので孤児/別サーバの stale を踏まない。
 # Bash 3.2 互換: 連想配列（declare -A）は使わない。
 
-OE_DELEGATE_STATE_DIR="${OE_DELEGATE_STATE_DIR:-${HOME}/.claude/state/oe-delegate}"
-OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+
+if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"
+else                       OE_DELEGATE_STATE_DIR=""
+fi
+if   [ -n "${OE_PANE_ISSUE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_PANE_ISSUE_DIR="${HOME}/.claude/state/pane-issue"
+else                       OE_PANE_ISSUE_DIR=""
+fi
 
 # _oe_reg_server_pid — $TMUX = "socket,pid,session" の pid を返す（wt-pane-issue.sh と同一）
 _oe_reg_server_pid() {
@@ -48,6 +60,8 @@ oe_reg_record() {
   local pane="${1:-}" label="${2:-}" workspace="${3:-}" parent="${4:-}"
   [[ -n "$pane" ]] || { echo "oe_reg_record: child pane is required" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "oe_reg_record: jq is required" >&2; return 2; }
+  # 置き場が決まらないときは、空パスを見せずに原因を名乗って落ちる（#322）。
+  [[ -n "$OE_DELEGATE_STATE_DIR" ]] || { echo "oe_reg_record: 登記の置き場が決まりません（HOME 未設定・OE_DELEGATE_STATE_DIR も未指定）" >&2; return 1; }
   mkdir -p "$OE_DELEGATE_STATE_DIR" 2>/dev/null || { echo "oe_reg_record: cannot create ${OE_DELEGATE_STATE_DIR}" >&2; return 1; }
   local key file tmp
   key="$(_oe_reg_key "$pane")"
@@ -77,6 +91,14 @@ oe_reg_resolve() {
   fi
   command -v tmux >/dev/null 2>&1 || { echo "oe_reg_resolve: tmux is required" >&2; return 2; }
   command -v jq   >/dev/null 2>&1 || { echo "oe_reg_resolve: jq is required" >&2; return 2; }
+  # 置き場が決まらない（HOME 未設定など）は「該当なし (1)」ではなく環境エラー (2)（#322）。
+  # 1 に落とすと「登記を引けない」が「その宛先は存在しない」に化け、環境の失敗が宛先の帯を汚す。
+  # %N の素通しは state 不要なので上で既に返っている。
+  # どちらか一方でも欠けると union が不完全になり、「見つからない」と区別できない（&& ではなく ||）。
+  if [[ -z "$OE_DELEGATE_STATE_DIR" || -z "$OE_PANE_ISSUE_DIR" ]]; then
+    echo "oe_reg_resolve: state の置き場が決まらないのでラベルを解決できません（HOME 未設定・OE_DELEGATE_STATE_DIR / OE_PANE_ISSUE_DIR も未指定）" >&2
+    return 2
+  fi
 
   local self="${TMUX_PANE:-}"
   # list-panes 自体の失敗（サーバ未起動/接続不可）は「該当なし (1)」と区別し環境エラー (2)。
@@ -92,7 +114,7 @@ oe_reg_resolve() {
     [[ -n "$p" ]] || continue
     key="$(_oe_reg_key "$p")"
     # pane-issue が在れば、そのペインのラベルは pane-issue が所有する（spawn ラベルは抑止）
-    if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
       piname="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
       if [[ -n "$piname" ]]; then
         if _oe_label_match "$target" "$piname"; then matched+=("$p"); fi
@@ -100,7 +122,7 @@ oe_reg_resolve() {
       fi
     fi
     # pane-issue が無いペインのみ spawn レジストリ（現在の親にスコープ）を見る
-    if [[ -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
+    if [[ -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
       plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       if [[ -n "$plabel" && "$pparent" == "$self" ]] && _oe_label_match "$target" "$plabel"; then
@@ -122,6 +144,11 @@ oe_reg_resolve() {
 
 # oe_reg_list — 現サーバの生存ペインを宛先候補として一覧（source 列付き）
 oe_reg_list() {
+  # 置き場が決まらないときは黙って pane-title へ degrade しない（#322）。
+  # 表だけ出ると「登記された子は居ない」と読めてしまい、クラッシュより誤解を生む。
+  if [[ -z "$OE_DELEGATE_STATE_DIR" || -z "$OE_PANE_ISSUE_DIR" ]]; then
+    echo "oe_reg_list: state の置き場が決まらないので登記を読んでいません（HOME 未設定）。以下は pane-title のみ" >&2
+  fi
   command -v tmux >/dev/null 2>&1 || { echo "oe_reg_list: tmux is required" >&2; return 2; }
   command -v jq   >/dev/null 2>&1 || { echo "oe_reg_list: jq is required" >&2; return 2; }
   local self="${TMUX_PANE:-}"
@@ -137,11 +164,11 @@ oe_reg_list() {
     [[ -n "$p" ]] || continue
     key="$(_oe_reg_key "$p")"
     label=""; source=""
-    if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
       label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
       [[ -n "$label" ]] && source="pane-issue"
     fi
-    if [[ -z "$source" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
+    if [[ -z "$source" && -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
       plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
       if [[ -n "$plabel" && "$pparent" == "$self" ]]; then
@@ -201,6 +228,9 @@ oe_reg_gc() {
     p="${p%% *}"
     [[ -n "$p" ]] && printf '%s\n' "$(_oe_reg_key "$p")"
   done)"
+  # 空だと "/*.json" ＝ root を走査する。上の -d 検査で到達しないが、#270 で入れた
+  # pid の非空検査と同じ理由で明示する（黙って root を掴む形を残さない・#322）。
+  [[ -n "$OE_DELEGATE_STATE_DIR" ]] || return 0
   for f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f" .json)"

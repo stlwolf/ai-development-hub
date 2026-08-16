@@ -411,6 +411,12 @@ ENTRIES=""
 FOREIGN=0
 SKIPPED=0
 SEEN_PANES=" "
+# 置き場が決まらないときは走査しない（#322）。空文字のまま glob すると /*.json ＝ root を
+# 走査したうえで空ツリーを exit 0 で出すので、「子は居ない」という誤った成功になる。
+if [[ -z "$OE_DELEGATE_STATE_DIR" ]]; then
+  echo "oe-tree: 登記の置き場が決まりません（HOME 未設定・OE_DELEGATE_STATE_DIR も未指定）" >&2
+  exit 2
+fi
 for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
   [[ -e "$_f" ]] || continue
   _base="$(basename "$_f" .json)"
@@ -477,7 +483,7 @@ sanitize_out() {
 label_of() { # <pane> — pane-issue(.name) > registry(.label) > pane_title(alive のみ) > "?"
   local pane="$1" key label=""
   key="$(_oe_reg_key "$pane")"
-  if [[ -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+  if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)" || label=""
   fi
   [[ -n "$label" ]] || label="$(entry_field_of "$pane" 4)"
