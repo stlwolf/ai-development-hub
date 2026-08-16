@@ -31,21 +31,23 @@ set -uo pipefail
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
-# _oe_state_path <override> <suffix> — override 優先 / 無ければ HOME 由来 / どちらも無ければ空。
-# 空を返すのは「置き場が決まらない」の表現で、/ 始まりのパスを組み立てないためである。
-declare -F _oe_state_path >/dev/null 2>&1 || _oe_state_path() {
-  if   [ -n "$1" ]; then printf '%s' "$1"
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+# _oe_state_dir <変数名> <suffix> — 明示指定（空文字も含む）を尊重 / 無ければ HOME 由来 /
+# それも無ければ空。値ではなく**変数名**を受けるのは、${VAR:-} で渡すと明示的な空文字が
+# 「未設定」に畳まれて既定値へ戻ってしまうためである（#322 DJ-1 と同じ理由）。
+declare -F _oe_state_dir >/dev/null 2>&1 || _oe_state_dir() {
+  local _n="$1"
+  if   [ -n "${!_n+x}" ]; then printf '%s' "${!_n}"
   elif _oe_home_usable; then printf '%s%s' "$HOME" "$2"
   fi
 }
 
-HOME_DIR="$(_oe_home_usable && printf '%s' "$HOME")"
-EVENT_DIR="$(_oe_state_path "${OE_EVENT_DIR:-}" "/.claude/state")"
+HOME_DIR=""; _oe_home_usable && HOME_DIR="$HOME"   # rc を漏らさない形（将来 set -e を入れても死なない）
+EVENT_DIR="$(_oe_state_dir OE_EVENT_DIR "/.claude/state")"
 EVENT_FILE="${EVENT_DIR}/oe-events.jsonl"
-BEAT_DIR="$(_oe_state_path "${OE_HEARTBEAT_DIR:-}" "/.claude/state/oe-heartbeat")"
-PROJ_DIR="$(_oe_state_path "${OE_TRANSCRIPT_DIR:-}" "/.claude/projects")"
-SETTINGS="$(_oe_state_path "${OE_CLAUDE_SETTINGS:-}" "/.claude/settings.json")"
+BEAT_DIR="$(_oe_state_dir OE_HEARTBEAT_DIR "/.claude/state/oe-heartbeat")"
+PROJ_DIR="$(_oe_state_dir OE_TRANSCRIPT_DIR "/.claude/projects")"
+SETTINGS="$(_oe_state_dir OE_CLAUDE_SETTINGS "/.claude/settings.json")"
 MARKER="${OE_SEND_PROC_MARKER:-esc to interrupt}"
 
 # usage は表示だけを担う。**exit は呼び出し側が決める。**
@@ -259,7 +261,7 @@ scan_transcripts() {
 # **プロンプトを 1 度も受けていない新しいセッション**を掴んだだけで broken を出した（誤爆を実測）。
 # 新しい順に数本を見て、user ターンを持つ本が在るのに typed が 1 件も無いときだけ broken とする。
 check_transcript_format() {
-  [[ -d "$PROJ_DIR" ]] || { add "transcript-format" "indeterminate" "transcript の置き場が無い: ${PROJ_DIR}"; return; }
+  [[ -d "$PROJ_DIR" ]] || { add "transcript-format" "indeterminate" "transcript の置き場が無い: ${PROJ_DIR:-（決まらない: HOME 未設定・OE_TRANSCRIPT_DIR も未指定）}"; return; }
   if [[ "$TS_COUNT" -eq 0 ]]; then
     add "transcript-format" "indeterminate" "transcript が 0 件（陽性対照を取れない）"; return
   fi
@@ -290,7 +292,7 @@ check_transcript_format() {
 # --- 4. pane↔session の橋: heartbeat sidecar が pane を持っているか ---
 # 陽性対照: sidecar が1つでも在ること。1つも無ければ indeterminate。
 check_pane_bridge() {
-  [[ -d "$BEAT_DIR" ]] || { add "pane-session-bridge" "indeterminate" "sidecar の置き場が無い: ${BEAT_DIR}"; return; }
+  [[ -d "$BEAT_DIR" ]] || { add "pane-session-bridge" "indeterminate" "sidecar の置き場が無い: ${BEAT_DIR:-（決まらない: HOME 未設定・OE_HEARTBEAT_DIR も未指定）}"; return; }
   local total=0 withpane=0 f
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue

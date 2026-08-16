@@ -15,7 +15,7 @@
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
 elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"
@@ -94,7 +94,8 @@ oe_reg_resolve() {
   # 置き場が決まらない（HOME 未設定など）は「該当なし (1)」ではなく環境エラー (2)（#322）。
   # 1 に落とすと「登記を引けない」が「その宛先は存在しない」に化け、環境の失敗が宛先の帯を汚す。
   # %N の素通しは state 不要なので上で既に返っている。
-  if [[ -z "$OE_DELEGATE_STATE_DIR" && -z "$OE_PANE_ISSUE_DIR" ]]; then
+  # どちらか一方でも欠けると union が不完全になり、「見つからない」と区別できない（&& ではなく ||）。
+  if [[ -z "$OE_DELEGATE_STATE_DIR" || -z "$OE_PANE_ISSUE_DIR" ]]; then
     echo "oe_reg_resolve: state の置き場が決まらないのでラベルを解決できません（HOME 未設定・OE_DELEGATE_STATE_DIR / OE_PANE_ISSUE_DIR も未指定）" >&2
     return 2
   fi
@@ -145,7 +146,7 @@ oe_reg_resolve() {
 oe_reg_list() {
   # 置き場が決まらないときは黙って pane-title へ degrade しない（#322）。
   # 表だけ出ると「登記された子は居ない」と読めてしまい、クラッシュより誤解を生む。
-  if [[ -z "$OE_DELEGATE_STATE_DIR" && -z "$OE_PANE_ISSUE_DIR" ]]; then
+  if [[ -z "$OE_DELEGATE_STATE_DIR" || -z "$OE_PANE_ISSUE_DIR" ]]; then
     echo "oe_reg_list: state の置き場が決まらないので登記を読んでいません（HOME 未設定）。以下は pane-title のみ" >&2
   fi
   command -v tmux >/dev/null 2>&1 || { echo "oe_reg_list: tmux is required" >&2; return 2; }

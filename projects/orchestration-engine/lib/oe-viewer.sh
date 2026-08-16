@@ -25,7 +25,7 @@
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 if   [ -n "${OE_VIEW_STATE_DIR+x}" ]; then :
 elif _oe_home_usable; then OE_VIEW_STATE_DIR="${HOME}/.claude/state/oe-view"
@@ -81,7 +81,7 @@ _oe_viewer_pane_exists() {
 #   --cwd は path の dirname（glow の相対参照・cwd 表示の整合用）。path は argv 要素で渡す
 #   （`-- glow -p -- <path>`）ため再トークナイズが起きず %q 不要・注入面が消滅（§5）。
 #   作成後に source ペイン（WEZTERM_PANE）へ activate して focus 奪取を回避（#111）。
-#   rc 0=成功（pane_id 出力）/ 2=spawn 失敗（環境エラー）。
+#   rc 0=成功（pane_id 出力）/ 1=state の置き場が無い or 書込失敗/ 2=spawn 失敗（環境エラー）。
 _oe_viewer_spawn() {
   local path="$1" new_pane source_pane dir
   source_pane="${WEZTERM_PANE:-}"
@@ -106,7 +106,7 @@ _oe_viewer_spawn() {
 #   state の viewer が生存 → kill → 新 glow ペインを spawn → state 更新 /
 #   stale・無し → spawn + state 更新。
 #   glow -p はページャ（シェルではない）ため send による再利用はできず、毎回 replace する。
-#   rc 0=成功（pane_id 出力）/ 2=spawn 失敗（環境エラー）。
+#   rc 0=成功（pane_id 出力）/ 1=state の置き場が無い or 書込失敗 / 2=spawn 失敗（環境エラー）。
 oe_viewer_resolve() {
   local path="$1" cached
   # state の置き場が決まらないなら、旧 pane の kill も新 pane の spawn もしない（#322）。

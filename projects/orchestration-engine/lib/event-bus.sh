@@ -50,7 +50,7 @@ declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation(
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
 elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"

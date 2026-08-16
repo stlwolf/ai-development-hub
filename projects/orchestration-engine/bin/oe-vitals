@@ -137,16 +137,18 @@ command -v jq >/dev/null 2>&1 || { err "jq が必要です（sidecar / context% 
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
-# _oe_state_path <override> <suffix> — override 優先 / 無ければ HOME 由来 / どちらも無ければ空。
-# 空を返すのは「置き場が決まらない」の表現で、/ 始まりのパスを組み立てないためである。
-declare -F _oe_state_path >/dev/null 2>&1 || _oe_state_path() {
-  if   [ -n "$1" ]; then printf '%s' "$1"
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+# _oe_state_dir <変数名> <suffix> — 明示指定（空文字も含む）を尊重 / 無ければ HOME 由来 /
+# それも無ければ空。値ではなく**変数名**を受けるのは、${VAR:-} で渡すと明示的な空文字が
+# 「未設定」に畳まれて既定値へ戻ってしまうためである（#322 DJ-1 と同じ理由）。
+declare -F _oe_state_dir >/dev/null 2>&1 || _oe_state_dir() {
+  local _n="$1"
+  if   [ -n "${!_n+x}" ]; then printf '%s' "${!_n}"
   elif _oe_home_usable; then printf '%s%s' "$HOME" "$2"
   fi
 }
 
-OE_HEARTBEAT_DIR="$(_oe_state_path "${OE_HEARTBEAT_DIR:-}" "/.claude/state/oe-heartbeat")"
+OE_HEARTBEAT_DIR="$(_oe_state_dir OE_HEARTBEAT_DIR "/.claude/state/oe-heartbeat")"
 
 # 統括スコープ化に使う board。machine-local（gitignored `.oe/`）ゆえ既定 path は持たず OE_BOARD_FILE で
 # 与える。未設定 / 未解決なら統括を特定できず no-op（検知に化かさない）。
@@ -155,7 +157,7 @@ OE_BOARD_FILE="${OE_BOARD_FILE:-}"
 # 単一ノブ OE_EVENT_DIR（oe-undelivered / event-bus.sh と一致）配下に verb 固有 seen cache を置く。
 # 注: 名前空間衝突回避のため seen dir は oe-vitals/（producer の sidecar dir = oe-heartbeat/ とは別）。
 # HOME 未設定でも set -u で abort しないよう ${HOME:-} で守る（producer と同方針・実装SO codex 指摘）。
-OE_EVENT_DIR="$(_oe_state_path "${OE_EVENT_DIR:-}" "/.claude/state")"
+OE_EVENT_DIR="$(_oe_state_dir OE_EVENT_DIR "/.claude/state")"
 SEEN_DIR="${OE_EVENT_DIR}/oe-vitals"
 SEEN_FILE="${SEEN_DIR}/seen"
 
@@ -222,6 +224,13 @@ resolve_succession() {
 }
 
 SUP="$(resolve_supervisor_pane "$OE_BOARD_FILE")"
+
+# 置き場が決まらないのは「記録が無い」ではない（#322 DJ-3）。0 件と混ぜて exit 0 で返すと、
+# 読めていないことが成功に化ける。空 base に suffix を足して "/..." を組み立てもしない。
+if [[ -z "$OE_HEARTBEAT_DIR" ]]; then
+  echo "oe-vitals: heartbeatの置き場が決まりません（HOME 未設定・OE_HEARTBEAT_DIR も未指定）" >&2
+  exit 2
+fi
 
 # --- sidecar 群を集める（set -u 下の空配列展開を避けるため件数を先に見る）---
 shopt -s nullglob
@@ -345,7 +354,7 @@ if ! seen_has "$key" && command -v wez >/dev/null 2>&1; then
   fi
   body="現統括 ${sup_pane} (${sup_sid_disp}) · ${flag_kind} · beat=${beat_disp} · ctx=${sup_ctx_disp}% · ${note}"
   if wez notify "$title" "$body" 2>/dev/null; then
-    if mkdir -p "$SEEN_DIR" 2>/dev/null; then
+    if [[ -n "$OE_EVENT_DIR" ]] && mkdir -p "$SEEN_DIR" 2>/dev/null; then
       printf '%s\n' "$key" >> "$SEEN_FILE" 2>/dev/null || true
     else
       err "seen cache dir を作成できませんでした（${SEEN_DIR}）— 二重通知抑止は無効・検知は継続"

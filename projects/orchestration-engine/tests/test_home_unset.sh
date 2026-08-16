@@ -23,7 +23,9 @@ ck() { # <desc> <expected> <actual>
   else echo "  FAIL: $1 (want='$2' got='$3')"; fail=$((fail+1)); fi
 }
 
-# --- 隔離（本ファイルは HOME を消して verb を実行するので、書き先を必ず temp に寄せる）---
+# --- 隔離 ---
+# 本ファイルの隔離は「HOME を消す/差し替える」ことだけに依っている（OE_*_DIR は設定しない）。
+# それで実 ~/.claude を触らないことは [5b] の / 差分検査と合わせて機械的に確かめる。
 _TMP_ROOT="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
 [[ -n "$_TMP_ROOT" && -d "$_TMP_ROOT" ]] || { echo "FATAL: temp root is not a directory" >&2; exit 1; }
 trap 'rm -rf "$_TMP_ROOT"' EXIT
@@ -71,6 +73,12 @@ _rc=0; env -u HOME bash -c '
   set -uo pipefail; source "'"$LIB_DIR"'/delegate-registry.sh"
   oe_reg_record "%9" "x" "/ws" "%1"' >/dev/null 2>&1 || _rc=$?
 ck "oe_reg_record は非0で落ちる" "1" "$_rc"
+# rc だけだと修正前の「source ごと abort（同じく rc=1）」と区別できないので、原因まで見る。
+_err="$(env -u HOME bash -c '
+  set -uo pipefail; source "'"$LIB_DIR"'/delegate-registry.sh"
+  oe_reg_record "%9" "x" "/ws" "%1"' 2>&1 >/dev/null)"
+ck "oe_reg_record は理由を名乗る（abort と区別）" "yes" \
+  "$( printf '%s' "$_err" | grep -q '置き場が決まりません' && echo yes || echo no )"
 _rc=0; env -u HOME bash -c '
   set -uo pipefail; source "'"$LIB_DIR"'/event-bus.sh"
   oe_event_child_spawned "%1" "%9" "x"' >/dev/null 2>&1 || _rc=$?
@@ -91,6 +99,36 @@ done
 _got="$(HOME="$_TMP_ROOT" bash -c '
   set -uo pipefail; source "'"$LIB_DIR"'/delegate-registry.sh"; printf "%s" "${OE_DELEGATE_STATE_DIR}"' 2>/dev/null)"
 ck "正常な HOME では従来どおり決まる" "${_TMP_ROOT}/.claude/state/oe-delegate" "$_got"
+
+# shellcheck disable=SC2016  # ${VAR+x} は説明の文字列であって展開させない
+echo "[5b] / 直下に何も作られない（plan Step 5 の約束・root 書き込みの検知）"
+# root glob / root mkdir は「/ に該当ファイルが無い機械では気づけない」ので、
+# 実行前後の / の中身を比較して機械的に捕まえる。
+# 限界: 一般ユーザで走らせると / への mkdir は権限で失敗するため、この検査は「作れてしまう
+# 環境（root / コンテナ）で効く」ものである。読み取り側の root glob もここでは検出できない。
+# それでも置くのは、root で回る CI やコンテナで初めて出る類の退行を、そこで確実に落とすためである。
+# shellcheck disable=SC2012  # / 直下の名前一覧を比べるだけなので ls で足りる
+_root_before="$(ls -a / 2>/dev/null | sort)"
+for _v in oe-activity oe-undelivered oe-vitals oe-hookfire oe-selfcheck oe-tree; do
+  env -u HOME timeout 20 "$BIN_DIR/$_v" >/dev/null 2>&1 || true
+done
+env -u HOME bash -c '
+  set -uo pipefail; source "'"$LIB_DIR"'/delegate-registry.sh"
+  oe_reg_record "%9" "x" "/ws" "%1"' >/dev/null 2>&1 || true
+# shellcheck disable=SC2012  # 同上
+_root_after="$(ls -a / 2>/dev/null | sort)"
+ck "verb 実行の前後で / の中身が変わらない" "same" \
+  "$( [[ "$_root_before" == "$_root_after" ]] && echo same || echo changed )"
+
+echo "[5c] OE_VIEW_ROOTS が空なら --from-link は全拒否（gate 3 裁定 4）"
+_rc=0; env -u HOME timeout 20 "$BIN_DIR/oe-view" --from-link "/tmp/nonexistent-322.md" >/dev/null 2>&1 || _rc=$?
+ck "空 allowlist で --from-link が通らない" "yes" "$( [[ "$_rc" -ne 0 ]] && echo yes || echo no )"
+
+echo "[5d] 重複した helper の定義が全ファイルで byte 一致している"
+_n="$(grep -rh '_oe_home_usable() {' "$BIN_DIR" "$LIB_DIR" 2>/dev/null | sed 's/^ *//' | sort -u | grep -c .)"
+ck "_oe_home_usable の定義は1種類" "1" "$_n"
+_n="$(grep -rh 'declare -F _oe_state_dir' "$BIN_DIR" 2>/dev/null | sed 's/^ *//' | sort -u | grep -c .)"
+ck "_oe_state_dir の定義は1種類" "1" "$_n"
 
 # shellcheck disable=SC2016  # ${VAR+x} は説明の文字列であって展開させない
 echo '[6] 明示指定は空文字でも尊重される（${VAR+x} 判定の要）'

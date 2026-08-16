@@ -51,7 +51,7 @@ declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation(
 # 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
 # state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
 # tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 if   [ -n "${OE_EVENT_DIR+x}" ]; then :
 elif _oe_home_usable; then OE_EVENT_DIR="${HOME}/.claude/state"
@@ -81,6 +81,13 @@ case "${1:-}" in
   *)  err "unexpected argument: $1"; usage; exit 2 ;;
 esac
 [[ $# -eq 0 ]] || { err "unexpected extra argument: $1"; usage; exit 2; }
+
+# 置き場が決まらないのは「記録が無い」ではない（#322 DJ-3）。0 件と混ぜて exit 0 で返すと、
+# 読めていないことが成功に化ける。空 base に suffix を足して "/..." を組み立てもしない。
+if [[ -z "$OE_EVENT_DIR" ]]; then
+  echo "oe-activity: 活動ログの置き場が決まりません（HOME 未設定・OE_EVENT_DIR も未指定）" >&2
+  exit 2
+fi
 
 # --- 入力が無い場合 ---
 if [[ ! -s "$OE_EVENT_FILE" ]]; then
