@@ -22,13 +22,21 @@
 # 呼び出し側が未 source なら自前で取り込む（多重 source は冪等）。
 if ! declare -F _oe_reg_key >/dev/null 2>&1; then
   # shellcheck source=delegate-registry.sh
-  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" 2>/dev/null || true
+  # 2>/dev/null は付けない（#322）。消せるのは診断だけで、未定義変数による shell の終了は
+  # 止められない。実際 oe-send / oe-ack / oe-report は「出力ゼロで rc=1」という最悪の
+  # 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
+  # no-op フォールバックとセットで意図された設計である。
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/delegate-registry.sh" || true
 fi
 
 # #224: 会話到達面へ載る preview を write-time で無害化する共有 helper（多重 source は冪等）。
 if ! declare -F oe_sanitize_conversation >/dev/null 2>&1; then
   # shellcheck source=sanitize.sh
-  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" 2>/dev/null || true
+  # 2>/dev/null は付けない（#322）。消せるのは診断だけで、未定義変数による shell の終了は
+  # 止められない。実際 oe-send / oe-ack / oe-report は「出力ゼロで rc=1」という最悪の
+  # 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
+  # no-op フォールバックとセットで意図された設計である。
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" || true
 fi
 # source 失敗（欠落/権限/source エラー）でも emit は best-effort・noise-free を保つ: 未定義なら
 # no-op へフォールバック定義し、oe_event_message_sent 内の呼び出しが `command not found` を

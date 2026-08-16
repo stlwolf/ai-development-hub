@@ -19,7 +19,11 @@
 # read 時 viewer 用）。event-bus.sh は delegate-registry.sh を必要に応じ自前で source する。
 # 失敗しても oe_send_line の rc は変えない（emit は常に return 0）。
 # shellcheck source=event-bus.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/event-bus.sh" 2>/dev/null || true
+# 2>/dev/null は付けない（#322）。消せるのは診断だけで、未定義変数による shell の終了は
+# 止められない。実際 oe-send / oe-ack / oe-report は「出力ゼロで rc=1」という最悪の
+# 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
+# no-op フォールバックとセットで意図された設計である。
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/event-bus.sh" || true
 
 # --- finalize 内部ヘルパー（source 専用・oe_ 接頭辞でネームスペース汚染を最小化） ---
 
