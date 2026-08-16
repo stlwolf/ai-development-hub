@@ -3,7 +3,7 @@ id: "01M02WHH43Z9GES6JVRED56VXH"
 title: "#322 HOME 未設定で oe-* が引数解析の前に落ちる — 作業記録"
 date: 2026-08-15
 type: episode
-status: draft
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/322"
 scope: orchestration-engine
 related:
@@ -11,6 +11,16 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/322"
     reason: "本エピソードの起点（うち HOME 部分のみ）"
 tags: [engine, home, set-u, help, robustness]
+promotion:
+  - subject: "HOME の可否を非空でなく「絶対パスかつ / でない」で見て、判定を ${VAR+x}（宣言済みか）へ変える"
+    verdict: not-required
+    ref: "本文: 空文字は「未設定」と同じに畳まれる — 設計の急所（実測で判明・自分の事故つき）"
+  - subject: "置き場が決まらないことを 0 件と混ぜず、経路ごとの既存契約に沿って名乗る"
+    verdict: not-required
+    ref: "本文: gate 2 の SO（2レーン）— 当初案は blocker で覆った"
+  - subject: "gate 3 でスコープが広がったのに設計判断の表を当て直さず、退行を1件作った"
+    verdict: not-required
+    ref: "本文: 根本原因は「スコープが増えたのに設計判断を当て直さなかった」こと"
 ---
 
 # #322 HOME 未設定で oe-* が引数解析の前に落ちる — 作業記録
@@ -179,3 +189,96 @@ OE_DELEGATE_STATE_DIR="" で lib を source（HOME は正常）
 - `shellcheck` は変更した15ファイルすべて clean
 - **反証可能性**: 修正前（`90fdb84`）の lib / bin に新テストを当てると **29/26** で、26 assert が落ちる
 - 21 verb すべてが `HOME` 未設定で `--help` rc=0（`oe-ident` は `--help` を持たないので出力非空の対象から外し、テストに明記した）
+
+## Step 4 — gate 4（実装SO 2レーン + Copilot）
+
+- `tmp/so-gate4-322/`（codex 342秒・claude 471秒）。両レーンとも実返却
+- **blocker 1件 + should-fix 多数。両レーンが独立に同じ根本原因を指摘した。**
+
+### 根本原因は「スコープが増えたのに設計判断を当て直さなかった」こと
+
+**gate 3 で tier 2 の4本を後から本単位へ入れたのに、DJ-3（読み取りの帯）と DJ-5（root 走査のガード）をその4本へ当て直していなかった。** DJ の表は tier 2 が入る前に書いたもので、据え置いたままだった。**個別の実装ミスの集まりではなく、1つの構造的な抜けである。** claude レーンがこの診断を明示し、codex の指摘も全部そこに帰着した。
+
+昇格の印: 裁定でスコープが広がったとき、既に書いた設計判断の表を新しい対象へ当て直す工程が抜けるという構造
+
+### 直した内容
+
+**blocker（本 PR が作った退行）**: `oe-vitals` が空の heartbeat dir で `/*.json` を走査し、空の event dir で `mkdir -p /oe-vitals` を試みていた。**変更前は `/.claude/...` へ落ちていたので、悪化させていた。** 走査と書き込みの前で止めた。
+
+**should-fix**:
+
+- `oe-activity` / `oe-undelivered` / `oe-vitals` が、置き場が決まらないのに **exit 0 で「記録なし」**を返していた（`oe-ack` / `oe-tree` で採った形に揃えた）
+- ヘルパへ `${VAR:-}` で渡していたため **tier 2 だけ明示的な空文字を尊重せず**、同じノブの意味が producer と consumer で逆になっていた。**値でなく変数名を受ける形**（`${!n+x}`）に変えて解消
+- `resolve` / `list` のガードが「両方空」でしか発火せず、片方だけ空だと rc=1（宛先が無い）へ落ちていた
+- `oe-delegate:29` に `2>/dev/null` が1件だけ残っていた
+- **plan Step 5 で約束した「`/` 直下に何も作られない」検査が無かった。** これが blocker を見逃した直接の原因である。検査を足した（限界も明記した — 一般ユーザでは `/` への mkdir が権限で失敗するので、効くのは root で回る環境である）
+- **gate 3 裁定4（`OE_VIEW_ROOTS` は fail-closed）のテストが1件も無かった。** 実装は正しかったが固定していなかった
+
+**nit**: `HOME=//` を弾く / viewer の rc 一覧に 1 を追加 / `oe-hookfire` と `oe-selfcheck` が空パスを表示し「未配備」と**原因を誤って断定**していたのを直す / `oe-selfcheck` の `HOME_DIR` が rc=1 を漏らす形をやめる。
+
+### Copilot（1件・採用）
+
+空の state dir と `/${key}` が連結して root 直下を参照する経路。**指摘は `oe_reg_list` の1箇所だったが、同型が `resolve` / `event-bus` / `oe-ident` / `oe-tree` にもあったので4ファイル7箇所を同時に塞いだ。**
+
+### 検証（最終）
+
+- `tests/test_home_unset.sh` **60/0**・`test_oe_view.sh` **64/0**（bash 5.2.37 / 3.2.57 双方）
+- **engine の全 39 スイート green**・`shellcheck` は変更した全ファイル clean
+- 修正前（`90fdb84`）の lib / bin に新テストを当てると **26 assert が落ちる**
+
+---
+
+## closure（2026-08-17・マージ前）
+
+**tier: heavy。** 方針転回（gate 2 で当初案が3点覆り、gate 4 でスコープ追随漏れが出た）・意図的な外部レビュー（gate 2 / gate 4 / Copilot）・非自明な設計判断・自分の事故が1件。
+
+### 事実・失敗
+
+- gate 2 で当初案が3点覆った。`本文: gate 2 の SO（2レーン）— 当初案は blocker で覆った`
+- **隔離を怠って実 registry を1件汚した。** `本文: 空文字は「未設定」と同じに畳まれる — 設計の急所（実測で判明・自分の事故つき）`
+- gate 4 で**自分が作った退行**（`oe-vitals` の root 走査・root mkdir）が出た。`本文: 根本原因は「スコープが増えたのに設計判断を当て直さなかった」こと`
+- **plan で約束した検査を2つ書き落としていた**（`/` 直下の差分・`OE_VIEW_ROOTS` の fail-closed）。前者は blocker を見逃した直接の原因。`本文: 直した内容`
+- SO の1回目が空振りしていた（`tmp/` が無く exit 0 で終了）。`本文: gate 2 の SO（2レーン）— 当初案は blocker で覆った`
+
+### 決定と根拠
+
+`${VAR+x}` / `_oe_home_usable` / 帯の分け方 / スコープは plan の DJ-1〜DJ-6 と gate 3 の裁定が正本。`本文: gate 2 の SO（2レーン）— 当初案は blocker で覆った`
+
+### わかったこと
+
+- **先例の「3分岐」は代入と使用側ガードの対で成立している。** `本文: 先例（``cc-lint.sh:39-41``）は「3分岐」だけではない`
+- `${VAR:-}` は未設定と空文字を畳むので、空文字を番兵にする設計は再宣言と組み合わさると壊れる。`本文: 空文字は「未設定」と同じに畳まれる — 設計の急所（実測で判明・自分の事故つき）`
+- 先に死ぬ箇所が後続の落下点を隠す。`本文: gate 2 の SO（2レーン）— 当初案は blocker で覆った`
+
+### 原則
+
+- **裁定でスコープが広がったら、既に書いた設計判断の表を新しい対象へ当て直す。** → 収穫（下記）
+- **検証対象が隔離の仕組みそのものであるときは、別の手段で測る。** → 既存 item への観測で足りると判断（下記）
+
+### 次の消費者
+
+- **#322 の `cc-lint` 部分をやる人**（本 PR では触っていない。#322 は open のまま）
+- **`oe-*` に新しい verb を足す人**。`tests/test_home_unset.sh` が `bin/oe-*` の glob で自動的に対象へ入れるので、`HOME` 前提を持ち込むとそこで落ちる
+- **#337 を実装する人**（registry の帯分け）。本単位が入れた「置き場が決まらない = rc=2」の帯と揃える必要がある
+
+### follow-up の routing
+
+| 項目 | 行き先 |
+|---|---|
+| `cc-lint` の素通り（#322 の「1.」） | **#322**（open のまま・本 PR では触らない） |
+| `oe-delegate:373` の `\|\| true`（登記できなくても spawn が成功扱い） | **追わない**（#270 のスコープ外節と同じ単位・owner 裁定済み） |
+| `canonical/claude/statusline/statusline-oe-heartbeat.sh:38` が旧形 | **PR 本文に申し送り済み**（engine 外・owner 判断） |
+| `_oe_home_usable` の8ファイル重複 | **テストで固定した**（定義が1種類であることを機械検査） |
+| `/` 直下の検査が root 権限でしか効かない件 | **追わない**（テスト内に限界として明記。CI が root で回るなら効く） |
+
+### 昇格の判定
+
+`promotion` に3件（frontmatter）。**`required` は0件。** 設計判断は plan と本 episode に痕跡が揃っており decision へ写しても人間の価値が増えない。一般化できる教訓は knowledge store 側へ回した。
+
+### evidence anchor / SO 証跡
+
+`tmp/so-gate2-322/`（2レーン）/ `tmp/so-gate4-322/`（2レーン）。`tmp/` は gitignore で揮発するので、レーン数・所要秒・指摘の内容と採否は本文へ転記済み。
+
+### status
+
+**stable / 達成。** `HOME` 未設定で引数解析前に abort する問題は解消し、`/` 直下を走査・書き込みしない形にした。**ただし「engine 全体で HOME 無しが安全になった」とは言わない** — 本単位が言えるのは「未定義 `HOME` の abort を止め、root を触らないようにした」までである。
