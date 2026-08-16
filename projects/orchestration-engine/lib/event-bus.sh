@@ -109,6 +109,17 @@ oe_event_emit() {
   [[ -n "$extra" ]] || extra='{}'
   [[ -n "$type" ]] || return 0
   local dir="$OE_EVENT_DIR" file ts line
+  # 置き場が決まらないときは root へ触らず、理由を 1 回だけ名乗って諦める（#322）。
+  # rc は 0 のまま — 本 lib の不変条件（全 public 関数は常に return 0）を優先する。
+  # 非0にすると oe-ack:154 の裸呼び出しが set -e で死に、受領印が取れない環境事情が
+  # oe-ack 本体を殺す。gate 3 の裁定でこの優先順位を確定した。
+  if [[ -z "$dir" ]]; then
+    if [[ -z "${_OE_EVENT_DIR_WARNED:-}" ]]; then
+      _OE_EVENT_DIR_WARNED=1
+      echo "oe-event: 活動ログの置き場が決まらないので記録していません（HOME 未設定・OE_EVENT_DIR も未指定）" >&2
+    fi
+    return 0
+  fi
   mkdir -p "$dir" 2>/dev/null || return 0
   file="${dir}/oe-events.jsonl"
   ts="$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")" || return 0

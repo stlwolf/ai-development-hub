@@ -109,6 +109,12 @@ _oe_viewer_spawn() {
 #   rc 0=成功（pane_id 出力）/ 2=spawn 失敗（環境エラー）。
 oe_viewer_resolve() {
   local path="$1" cached
+  # state の置き場が決まらないなら、旧 pane の kill も新 pane の spawn もしない（#322）。
+  # 書き込みの直前だけで失敗させると、spawn 済みの glow ペインが未追跡のまま残る。
+  if [[ -z "$OE_VIEW_STATE_DIR" ]]; then
+    echo "oe-view: viewer state の置き場が決まりません（HOME 未設定・OE_VIEW_STATE_DIR も未指定）" >&2
+    return 1
+  fi
   cached="$(_oe_viewer_read_state)"
   # 生存している旧 viewer は kill（replace モデル: 新 glow ペインで置き換える）。
   # best-effort: kill 失敗（既に消えた等）は新規 spawn を妨げない。

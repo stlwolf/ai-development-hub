@@ -60,6 +60,8 @@ oe_reg_record() {
   local pane="${1:-}" label="${2:-}" workspace="${3:-}" parent="${4:-}"
   [[ -n "$pane" ]] || { echo "oe_reg_record: child pane is required" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "oe_reg_record: jq is required" >&2; return 2; }
+  # 置き場が決まらないときは、空パスを見せずに原因を名乗って落ちる（#322）。
+  [[ -n "$OE_DELEGATE_STATE_DIR" ]] || { echo "oe_reg_record: 登記の置き場が決まりません（HOME 未設定・OE_DELEGATE_STATE_DIR も未指定）" >&2; return 1; }
   mkdir -p "$OE_DELEGATE_STATE_DIR" 2>/dev/null || { echo "oe_reg_record: cannot create ${OE_DELEGATE_STATE_DIR}" >&2; return 1; }
   local key file tmp
   key="$(_oe_reg_key "$pane")"
