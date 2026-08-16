@@ -28,7 +28,10 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${BIN_DIR}/../lib/delegate-registry.sh"
 
 # 記録 target の state（最後の1件のみ・上書き）。テストは env で隔離する。
-OE_JUMP_STATE_DIR="${OE_JUMP_STATE_DIR:-${HOME}/.claude/state/oe-jump}"
+if   [ -n "${OE_JUMP_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_JUMP_STATE_DIR="${HOME}/.claude/state/oe-jump"
+else                       OE_JUMP_STATE_DIR=""
+fi
 OE_JUMP_STATE_FILE="${OE_JUMP_STATE_DIR}/last-target"
 
 usage() {

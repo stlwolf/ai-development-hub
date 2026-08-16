@@ -11,8 +11,20 @@
 # state を引く。逆算しないので孤児/別サーバの stale を踏まない。
 # Bash 3.2 互換: 連想配列（declare -A）は使わない。
 
-OE_DELEGATE_STATE_DIR="${OE_DELEGATE_STATE_DIR:-${HOME}/.claude/state/oe-delegate}"
-OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+
+if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"
+else                       OE_DELEGATE_STATE_DIR=""
+fi
+if   [ -n "${OE_PANE_ISSUE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_PANE_ISSUE_DIR="${HOME}/.claude/state/pane-issue"
+else                       OE_PANE_ISSUE_DIR=""
+fi
 
 # _oe_reg_server_pid — $TMUX = "socket,pid,session" の pid を返す（wt-pane-issue.sh と同一）
 _oe_reg_server_pid() {

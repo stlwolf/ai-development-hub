@@ -38,12 +38,27 @@ declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation(
 # delegate-registry.sh が source されない（_oe_reg_key を他所が定義済 等）/ 環境で未設定でも、
 # 未定義の state dir で `/${pid}_*.json` のように root 配下を誤って glob しないよう、registry と
 # 同じ既定値をここでもフォールバック設定する（best-effort・Copilot 指摘）。
-OE_DELEGATE_STATE_DIR="${OE_DELEGATE_STATE_DIR:-${HOME}/.claude/state/oe-delegate}"
-OE_PANE_ISSUE_DIR="${OE_PANE_ISSUE_DIR:-${HOME}/.claude/state/pane-issue}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+
+if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"
+else                       OE_DELEGATE_STATE_DIR=""
+fi
+if   [ -n "${OE_PANE_ISSUE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_PANE_ISSUE_DIR="${HOME}/.claude/state/pane-issue"
+else                       OE_PANE_ISSUE_DIR=""
+fi
 
 # ログの保存先（cross-session。registry / pane-issue と同じ ~/.claude/state 規約）。
 # テストは OE_EVENT_DIR で隔離する。
-OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME}/.claude/state}"
+if   [ -n "${OE_EVENT_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_EVENT_DIR="${HOME}/.claude/state"
+else                       OE_EVENT_DIR=""
+fi
 
 # _oe_event_ident <pane> — pane の識別子を read 時投影し "role<US>label<US>parent_pane" を返す。
 #   role  : parent（この pane を parent_pane に持つ子 entry が在る） > child（自身の spawn entry が在り かつ parent_pane 非空・#259） > ""

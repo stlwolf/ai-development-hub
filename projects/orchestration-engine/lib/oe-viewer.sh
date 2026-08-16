@@ -21,7 +21,16 @@
 #   （WEZTERM_PANE）へ activate して focus 奪取を回避（#111）。
 
 # viewer state（最後の viewer pane_id 1 件のみ・上書き）。テストは env で隔離する。
-OE_VIEW_STATE_DIR="${OE_VIEW_STATE_DIR:-${HOME}/.claude/state/oe-view}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+
+if   [ -n "${OE_VIEW_STATE_DIR+x}" ]; then :
+elif _oe_home_usable; then OE_VIEW_STATE_DIR="${HOME}/.claude/state/oe-view"
+else                       OE_VIEW_STATE_DIR=""
+fi
 OE_VIEW_STATE_FILE="${OE_VIEW_STATE_DIR}/viewer-pane-id"
 
 # 新規 viewer split のジオメトリ（既定: 右 40%）。
