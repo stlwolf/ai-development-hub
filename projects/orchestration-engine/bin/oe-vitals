@@ -133,7 +133,20 @@ command -v jq >/dev/null 2>&1 || { err "jq が必要です（sidecar / context% 
 # sidecar dir は producer（PR-A）と同一の env ノブ OE_HEARTBEAT_DIR を共有する（consumer は producer が
 # 書いた dir を読む）。既定は producer と一致させる。default はここでインライン宣言し env で上書き可
 # （lib/event-bus.sh idiom）。constants.sh には足さない（engine/project-relative 専用）。
-OE_HEARTBEAT_DIR="${OE_HEARTBEAT_DIR:-${HOME:-}/.claude/state/oe-heartbeat}"
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・全箇所で byte 一致させる）。
+# 非空だけでは足りない: HOME=/ は //.claude/... ＝ root 直下を掴み、相対 HOME は cwd 配下へ
+# state を散らす。先例（canonical/hooks/scripts/cc-lint.sh:39-41）が -n で済むのは、あちらが
+# tally を 1 バイト追記するだけの best-effort だからで、state を作る engine には足りない。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /) return 1;; /*) return 0;; *) return 1;; esac; }
+# _oe_state_path <override> <suffix> — override 優先 / 無ければ HOME 由来 / どちらも無ければ空。
+# 空を返すのは「置き場が決まらない」の表現で、/ 始まりのパスを組み立てないためである。
+declare -F _oe_state_path >/dev/null 2>&1 || _oe_state_path() {
+  if   [ -n "$1" ]; then printf '%s' "$1"
+  elif _oe_home_usable; then printf '%s%s' "$HOME" "$2"
+  fi
+}
+
+OE_HEARTBEAT_DIR="$(_oe_state_path "${OE_HEARTBEAT_DIR:-}" "/.claude/state/oe-heartbeat")"
 
 # 統括スコープ化に使う board。machine-local（gitignored `.oe/`）ゆえ既定 path は持たず OE_BOARD_FILE で
 # 与える。未設定 / 未解決なら統括を特定できず no-op（検知に化かさない）。
@@ -142,7 +155,7 @@ OE_BOARD_FILE="${OE_BOARD_FILE:-}"
 # 単一ノブ OE_EVENT_DIR（oe-undelivered / event-bus.sh と一致）配下に verb 固有 seen cache を置く。
 # 注: 名前空間衝突回避のため seen dir は oe-vitals/（producer の sidecar dir = oe-heartbeat/ とは別）。
 # HOME 未設定でも set -u で abort しないよう ${HOME:-} で守る（producer と同方針・実装SO codex 指摘）。
-OE_EVENT_DIR="${OE_EVENT_DIR:-${HOME:-}/.claude/state}"
+OE_EVENT_DIR="$(_oe_state_path "${OE_EVENT_DIR:-}" "/.claude/state")"
 SEEN_DIR="${OE_EVENT_DIR}/oe-vitals"
 SEEN_FILE="${SEEN_DIR}/seen"
 
