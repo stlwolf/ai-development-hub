@@ -411,6 +411,12 @@ ENTRIES=""
 FOREIGN=0
 SKIPPED=0
 SEEN_PANES=" "
+# 置き場が決まらないときは走査しない（#322）。空文字のまま glob すると /*.json ＝ root を
+# 走査したうえで空ツリーを exit 0 で出すので、「子は居ない」という誤った成功になる。
+if [[ -z "$OE_DELEGATE_STATE_DIR" ]]; then
+  echo "oe-tree: 登記の置き場が決まりません（HOME 未設定・OE_DELEGATE_STATE_DIR も未指定）" >&2
+  exit 2
+fi
 for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
   [[ -e "$_f" ]] || continue
   _base="$(basename "$_f" .json)"
