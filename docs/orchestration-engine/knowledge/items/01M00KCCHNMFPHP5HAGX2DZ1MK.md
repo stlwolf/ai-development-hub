@@ -8,7 +8,11 @@ prediction: "期待した色が出たことをもって検査が効いている�
 source:
   ref: "docs/orchestration-engine/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-17
+    ref: "#340"
+    state: followed
+    note: "足場を4回直した。逆向きの変種を踏んだ＝期待した色が出ず、出ない理由が足場（codex exec --help が引数列の途中で短絡し UTF-8 検証へ到達しない）だった。色が出ないほうにも同じ疑いが要る"
 exclusions:
   - "検査の出力が rc しか返さず、理由を観測する手段がそもそも無い場合（この場合は理由の確認を要求しても実行できない）"
   - "対照の足場を自分で組んでおらず、既に他の検証で健全性が実証されている経路を使い回すケース"

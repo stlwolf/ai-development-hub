@@ -389,10 +389,45 @@ if [[ -n "$PREV_DIR" ]]; then
         for tool in codex claude cursor; do
             prev_file="$PREV_DIR/${tool}-stdout.txt"
             if [[ -f "$prev_file" && -s "$prev_file" ]]; then
-                prev_content=$(head -c "$PREV_MAX_BYTES" "$prev_file")
+                # #340: head -c はバイト境界で切るので、日本語（3バイト文字）の途中で切れると
+                # 不正な UTF-8 ができる。codex は argv でも stdin でも不正 UTF-8 を拒否して
+                # exit 2 で即死し、elapsed 0 秒 / stdout 0 バイトなので timeout_empty の
+                # リトライ経路にも乗らない（レーンが 1 本まるごと失われる）。
+                # iconv は上限未満の前回出力にも走るので、切断由来でない不正（前回の
+                # レーンが壊れた出力を残した等）も健全化される。これは意図した副次効果として
+                # 受け入れているため、存在確認も「非空の --prev」全体に掛かる。
+                if ! command -v iconv &>/dev/null; then
+                    echo "Error: iconv が見つかりません。--prev は前回出力の UTF-8 健全化に iconv を使います: $prev_file" >&2
+                    exit 1
+                fi
+                prev_raw=$(head -c "$PREV_MAX_BYTES" "$prev_file")
+                # iconv は末尾が不完全な文字のとき rc=1 を返すが、出力は正しく不正バイトを
+                # 落としている。set -euo pipefail 下で落ちないよう rc を握り潰す（握り潰しが
+                # 掛かるのは printf | iconv のパイプラインだけで、head は別行なので errexit に残る）。
+                prev_content=$(printf '%s' "$prev_raw" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null) || true
+                raw_bytes=$(printf '%s' "$prev_raw" | wc -c | tr -d ' ')
+                prev_bytes=$(printf '%s' "$prev_content" | wc -c | tr -d ' ')
                 orig_size=$(wc -c < "$prev_file" | tr -d ' ')
+                # 出力の空 / 非空を「健全化が成功したか」の判定に使わない。上限が 1 文字の幅より
+                # 小さければ空になるのが正しく、部分出力して失敗する iconv は非空のまま通る。
+                # どちらも量でしか見えないので、量を必ず伝える形にしてある（下の注記と警告）。
+                if (( raw_bytes > 0 && prev_bytes == 0 )); then
+                    # 妥当な UTF-8 が 1 バイトも残らなかった。原因は「前回出力自体が UTF-8 でない」
+                    # 「上限が 1 文字の幅より小さい」「iconv の失敗」のいずれもありえ、出力からは
+                    # 区別できないので原因を断定しない。切り詰め注記は付くが stderr には出ないため
+                    # ここで伝える。
+                    echo "Warning: 前回出力から妥当な UTF-8 が得られませんでした（前回出力が UTF-8 でない / 上限が小さすぎる / iconv の失敗のいずれか）: $prev_file" >&2
+                elif (( orig_size <= PREV_MAX_BYTES && prev_bytes < raw_bytes )); then
+                    # 切り詰めが起きていないのに短くなったのなら、前回出力そのものが
+                    # 不正な UTF-8 だったということ。注記が付かない経路なので警告で伝える。
+                    echo "Warning: 前回出力に不正な UTF-8 が含まれていたため $((raw_bytes - prev_bytes)) バイトを落としました: $prev_file" >&2
+                fi
                 if (( orig_size > PREV_MAX_BYTES )); then
-                    prev_content="${prev_content}"$'\n\n[... truncated: '"${orig_size}"' bytes -> '"${PREV_MAX_BYTES}"' bytes ...]'
+                    # 第 2 項は上限ではなく実際に載ったバイト数を書く。上限を書くと、健全化で
+                    # 大きく落ちたときに「上限まで入っている」と嘘になる（落ちる量は境界後退の
+                    # 1〜3 バイトに限らない。内部の不正バイトの数だけ落ちるうえ、コマンド置換が
+                    # 末尾の改行を落とす分も乗る）。
+                    prev_content="${prev_content}"$'\n\n[... truncated: '"${orig_size}"' bytes -> '"${prev_bytes}"' bytes ...]'
                 fi
                 PROMPT="${PROMPT}"$'\n\n'"### 前回の ${tool} の回答"$'\n```\n'"${prev_content}"$'\n```'
             fi
