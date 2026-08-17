@@ -483,6 +483,7 @@ SO の実行記録。
 | gate 2 設計SO | `tmp/so-340-gate2/` | 333秒 / 13,802 B / exit 0 | 575秒 / 23,268 B / exit 0 |
 | gate 4 実装SO | `tmp/so-340-gate4/` | 229秒 / 6,946 B / exit 0（**不合格判定**） | 403秒 / 14,891 B / exit 0 |
 | closure 外部チェック | `tmp/so-340-step4b/` | 179秒 / 6,027 B / exit 0 | 366秒 / 7,927 B / exit 0 |
+| Copilot（PR #345） | GitHub 上 | `state: COMMENTED`・8ファイル / **行コメント0件** | — |
 
 `tmp/so-340-step4/`（同名の先行実行と競合した回）は**判定に使わない**（`本文: closure の外部チェックを1回空振りさせた（足場の失敗・3件目）`）。
 
