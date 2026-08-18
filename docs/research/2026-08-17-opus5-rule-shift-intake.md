@@ -59,14 +59,16 @@ v2.1.154 は Opus 4.8 の登場と同じ版であり、同じ項に「Claude は
 
 | # | 記事 | 著者 / 公開日 | 位置づけ |
 |---|---|---|---|
-| A | Opus 5では今までのプロンプトが逆効果に | little_hands（松岡）/ 2026-07-26 | 公式プロンプトガイドの読み解き。出発点 |
-| B | Opus5が思考が浅いように感じる問題への対策 | Yuichi Uemura / 2026-07-26 | 崩れの診断と修正 3 種 |
-| C | Opus 5 世代でルールの書き方は公式に変わった — 自作ルールの棚卸し手順 | shimo4228 / 2026-07-27 | **棚卸しの手順そのもの。#307 に直接使える** |
-| D | エージェントのルールは 1 本でいい感じ | yasuna / 2026-07-26 | 1 本化 + モデルゲート + 実績からの導出 |
-| E | Opus 5 Made Claude Code Chatty. Three Changes Reined It In. | Joe Cotellese / 2026-07-31 | 冗長化への 3 つの対処。BLUF |
-| F | Opus 5 verbose in Claude Code: blame the short system prompt | Luca Di Domenico / 2026-08-05 | 長版へ戻す設定。ただし推測ベース |
+| A | [Opus 5では今までのプロンプトが逆効果に](https://zenn.dev/little_hand_s/articles/72646a09f49d2a) | little_hands（松岡）/ 2026-07-26 | 公式プロンプトガイドの読み解き。出発点 |
+| B | [Opus5が思考が浅いように感じる問題への対策](https://zenn.dev/u1/articles/claude5-rules-collapse-and-fix) | Yuichi Uemura / 2026-07-26 | 崩れの診断と修正 3 種 |
+| C | [Opus 5 世代でルールの書き方は公式に変わった — 自作ルールの棚卸し手順](https://zenn.dev/shimo4228/articles/claude5-rules-official-shift-audit) | shimo4228 / 2026-07-27 | **棚卸しの手順そのもの。#307 に直接使える** |
+| D | [エージェントのルールは 1 本でいい感じ](https://yasunacoffee.github.io/yasuna-tech/posts/agent-rule-1hon-de-iikanji/) | yasuna / 2026-07-26 | 1 本化 + モデルゲート + 実績からの導出 |
+| E | [Opus 5 Made Claude Code Chatty. Three Changes Reined It In.](https://joecotellese.com/posts/steering-claude-code-bluf/) | Joe Cotellese / 2026-07-31 | 冗長化への 3 つの対処。BLUF |
+| F | [Opus 5 verbose in Claude Code: blame the short system prompt](https://lucadidomenico.studio/en/blog/opus-5-verbose-system-prompt-claude-code) | Luca Di Domenico / 2026-08-05 | 長版へ戻す設定。ただし推測ベース |
 
-未読のまま残した候補が 1 件ある。`https://apidog.com/blog/prompting-claude-opus-5/`（再確認指示の落とし穴）。A と重複する可能性が高いため優先度を下げた。[speculation]
+一次ソースは [Claude Code の公式 CHANGELOG](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)（v2.1.154 の項）。
+
+未読のまま残した候補が 1 件ある。[Claude Opus 5 プロンプト最適化：再確認指示の落とし穴](https://apidog.com/blog/prompting-claude-opus-5/)。A と重複する可能性が高いため優先度を下げた。[speculation]
 
 ---
 
@@ -219,9 +221,9 @@ F-1 が効くなら、ルールを書き換えずに長版へ戻すという選�
 
 | 記事 | 推奨 | 理由 |
 |---|---|---|
-| C. shimo4228 の棚卸し手順 | 原文推奨 | 3 ステップと 4 観点の判定枠、競合と幽霊設定の実例が #307 の手順に直接なる |
-| B. Uemura の診断と修正 | 原文推奨 | 崩れの症状 3 つと修正 3 種の before / after。headless で各モデルに自分の prompt を引用させた検証方法も含む |
-| D. yasuna の 1 本化 | 中間 | 実績からの導出と痕跡の残る書き方が要点。本ノートに転記済み。実装の細部が必要になったら読む |
-| E. Cotellese の 3 変更 | 中間 | `/focus` が競合ルールセットを足していたという発見だけ原文で確認する価値がある |
-| F. Di Domenico の長版復帰 | 要点で足りる | 推測ベースで検証結果がない。設定の書式だけ取り、効果は自分で確かめる |
-| A. little_hands の読み解き | 記事より原典 | 公式ガイドを直接読むほうが確度が高い。`claude-api` skill 同梱の移行ガイドで代替できる |
+| [C. shimo4228 の棚卸し手順](https://zenn.dev/shimo4228/articles/claude5-rules-official-shift-audit) | 原文推奨 | 3 ステップと 4 観点の判定枠、競合と幽霊設定の実例が #307 の手順に直接なる |
+| [B. Uemura の診断と修正](https://zenn.dev/u1/articles/claude5-rules-collapse-and-fix) | 原文推奨 | 崩れの症状 3 つと修正 3 種の before / after。headless で各モデルに自分の prompt を引用させた検証方法も含む |
+| [D. yasuna の 1 本化](https://yasunacoffee.github.io/yasuna-tech/posts/agent-rule-1hon-de-iikanji/) | 中間 | 実績からの導出と痕跡の残る書き方が要点。本ノートに転記済み。実装の細部が必要になったら読む |
+| [E. Cotellese の 3 変更](https://joecotellese.com/posts/steering-claude-code-bluf/) | 中間 | `/focus` が競合ルールセットを足していたという発見だけ原文で確認する価値がある |
+| [F. Di Domenico の長版復帰](https://lucadidomenico.studio/en/blog/opus-5-verbose-system-prompt-claude-code) | 要点で足りる | 推測ベースで検証結果がない。設定の書式だけ取り、効果は自分で確かめる |
+| [A. little_hands の読み解き](https://zenn.dev/little_hand_s/articles/72646a09f49d2a) | 記事より原典 | 公式ガイドを直接読むほうが確度が高い。`claude-api` skill 同梱の移行ガイドで代替できる |
