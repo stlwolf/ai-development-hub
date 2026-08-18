@@ -8,7 +8,11 @@ prediction: "対照が通るので走査は健全だと読む。実際は対照�
 source:
   ref: "docs/orchestration-engine/episodes/2026-08-17-episode-340-so-compare-prev-utf8.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-08-18
+    ref: "#343"
+    state: followed
+    note: "#340 で1件取りこぼした反省から、今回は結論を書く前に語彙を8パターンへ広げた（cut -c / cut -b / head -c / ${v:0:N} / awk substr / perl substr / fold -w / colrm）。結果は notify.sh の1箇所だけで、もう1件の cut -c は sha256 の16進を切っており非該当と確定できた。教訓どおり「1箇所」と言う前にパターンの側を増やしたので、今回は取りこぼしが出なかった"
 exclusions:
   - "走査の目的が「ヒットしたものを処理する」だけで、網羅性を主張しないケース"
   - "対象集合が独立に列挙されており、走査がその集合に対する照合として使われているケース（母集団が走査パターンに依存していない）"
