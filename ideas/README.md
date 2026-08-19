@@ -8,6 +8,10 @@
 
 ## インデックス
 
+### 2026-08-20
+
+- `human-readable-generation-discussion.md`: 生成文章の可読性 — 会話面・4層ドキュメント・AI エコシステムの境界。Claude Code (Opus 5) との壁打ち統合。読みづらさの2軸分解（順序/表面の癖）、生成と読解の非対称（format tax）、電報体=書き手最適化、3層分割（transport=schema / 意味の層=自然言語 / モデル内部=latent・同一系列限定）、「置き場が分けていたのは読者でなくライフサイクル」。証拠束は `docs/research/2026-08-20-human-readable-generation-literature.md`（安定側）に分離
+
 ### 2026-06-18
 
 - `remote-harness-cloud-substrate-extension.md`: remote ハーネス構想 — Claude Code (Opus 4.8) との壁打ち統合。ローカルに閉じたハーネスを Routines / Claude Code on the web のクラウド基板へ延ばす。ハーネスの4面分解（トリガ/実行/設定/ゲート）と5スロット座標系（Trigger/Driver/Work/Gate/State）、「強制力は Routine でなく branch protection から出る」核心補正、(A) 非機械的フローの強制 と (B) 持続ラフループ の2系統、remote で初めて可能な4フロー原型、「薄く大きく」原則、到達点の半径(i-iv)、要実機確認4点、SO投入用プロンプトを含む。20260414「制御ループの不在」への回答
