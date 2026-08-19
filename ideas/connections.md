@@ -14,7 +14,7 @@
 - [20260130/ai-native-interface-concept.md](20260130/ai-native-interface-concept.md) — AI向けインターフェースと中間言語の逆転（起点）
 - [20260215/ai-readable-code-discussion-log-chatgpt.md](20260215/ai-readable-code-discussion-log-chatgpt.md) — コードレベルへの拡張：AIが正しく説明できる形が正義になる可能性
 - [20260215/ai-readable-code-evaluation-claude.md](20260215/ai-readable-code-evaluation-claude.md) — 「AI-Readableは現時点では良い設計の別名」という留保
-- [20260820/human-readable-generation-discussion.md](20260820/human-readable-generation-discussion.md) — 起点の問いに測定つきの回答が付いた折り返し点。AI の読解も人間可読な言葉に強く依存する（識別子除去で理解が落ちる）ため「中間言語の逆転」は読解側の証拠で棄却方向。for AI に効くのは文の圧縮でなく機械が解ける構造で、20260215 の「良い設計の別名」という留保に外部測定の裏付けが付いた。会話面は人間専用インターフェースとして残る（可読性の対象が一周して人間へ戻る）
+- [20260820/human-readable-generation-discussion.md](20260820/human-readable-generation-discussion.md) — 起点の問いに測定つきの回答が付いた折り返し点。AI の読解も人間可読な言葉（名前）に強く依存する（識別子除去で理解が落ちる）ため「中間言語の逆転」は読解側の証拠で棄却方向。for AI に効くのは文の圧縮でなく機械が解ける構造で、20260215 の「良い設計の別名」という留保に外部測定の裏付けが付いた。純粋SO 3レーンの反証を経て、レジスタは読者種（人間/AI）でなくアクセスパターン（精読/走査）で選ぶ、という対抗軸が加わった（可読性の対象が「誰が読むか」から「どう読むか」へ）
 
 ### 意味記憶 vs エピソード記憶 → 書くアンカー vs 読むアンカー
 
@@ -135,7 +135,7 @@ AI→AI（SOプロンプト）と人間→AI（ドメイン入力）の両方向
 - [20260329/metadata-layer-mirror-repo-synthesis.md](20260329/metadata-layer-mirror-repo-synthesis.md) — ledger（保存） / tree（AI投影） / AGENTS.md（人間投影）の三分割。SoT は ledger、tree は materialized context view
 - [20260221/document-format-design-principles.md](20260221/document-format-design-principles.md) — write:read 比率によるフォーマット判断。「書く形式」と「読む形式」の分離が同じ問題構造
 - [20260224/hypothesis-json-schema-aggregation-orchestration.md](20260224/hypothesis-json-schema-aggregation-orchestration.md) — 子スレッド→親スレッドの情報昇格をJSONスキーマで構造化。ledger の保存形式との接続
-- [20260820/human-readable-generation-discussion.md](20260820/human-readable-generation-discussion.md) — 「書く形式と読む形式の分離」に測定根拠が合流（生成中に形式を課すと精度が落ち、自由生成→後整形で回復する format tax の非対称）。人間投影/AI 投影の分離を文体（register）層まで拡張し、投影は分けても意味を運ぶ層はどちらの投影でも自然言語が最適、という境界を引いた
+- [20260820/human-readable-generation-discussion.md](20260820/human-readable-generation-discussion.md) — 「書く形式と読む形式の分離」に測定根拠が合流（生成中に形式を課すと精度が落ち、自由生成→後整形で回復する format tax の非対称）。人間投影/AI 投影の分離を文体（register）層まで拡張し、意味を運ぶ層は自然言語が有力な既定、という境界を引いた。SO の codex レーンが出した「意味・根拠構造を正本にし用途別ビューをレンダリングする」案は、ledger（保存）/tree（AI投影）/AGENTS.md（人間投影）三分割の register 版そのもの
 
 ### エピソード記憶と決定記録の接続
 

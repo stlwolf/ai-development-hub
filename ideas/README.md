@@ -10,7 +10,8 @@
 
 ### 2026-08-20
 
-- `human-readable-generation-discussion.md`: 生成文章の可読性 — 会話面・4層ドキュメント・AI エコシステムの境界。Claude Code (Opus 5) との壁打ち統合。読みづらさの2軸分解（順序/表面の癖）、生成と読解の非対称（format tax）、電報体=書き手最適化、3層分割（transport=schema / 意味の層=自然言語 / モデル内部=latent・同一系列限定）、「置き場が分けていたのは読者でなくライフサイクル」。証拠束は `docs/research/2026-08-20-human-readable-generation-literature.md`（安定側）に分離
+- `human-readable-generation-discussion.md`: 生成文章の可読性 — 会話面・4層ドキュメント・AI エコシステムの境界。Claude Code (Opus 5) との壁打ち + 純粋SO（発散型・3レーン）反証の統合。読みづらさの3軸分解（内容選択/順序/表面の癖）、生成と読解の非対称（format tax・会話面と文書生成の二分）、電報体は「走査最適レジスタの精読文脈への誤適用」（同型論法は3レーン一致で取り下げ）、3層分割（transport=schema / 意味の層=自然言語が有力な既定 / モデル内部=latent・同一系列限定）、レジスタ選択軸の三つ巴（レンダラー分離/消費者別レジスタ/アクセスパターン）。証拠束は `docs/research/2026-08-20-human-readable-generation-literature.md`（安定側・v2）に分離
+- `discussion-logs/`: 純粋SO 3レーンの回答原文（codex=gpt-5.6-sol / cursor=grok-4.6-high / claude=fable-5 文脈なし対照）と投入プロンプト。3レーンが独立に同じ導出（電報体の同型論法・editor 型の構造要因説）を棄却し、最負荷箇所の特定（research 所見5）まで一致した記録
 
 ### 2026-06-18
 
