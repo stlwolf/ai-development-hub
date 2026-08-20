@@ -1,8 +1,8 @@
 ---
-title: "情報収集ストリームの継続資料 — 成果物索引・未処理の在庫・再取得手順"
-date: 2026-08-20
-status: handoff
-tags: [handoff, intake, feedly, backlog, continuation]
+title: "情報収集ストリームの状態 — 成果物索引・未処理の在庫・再取得手順"
+updated: 2026-08-20
+status: living
+tags: [intake, feedly, backlog, continuation]
 related_research:
   - docs/research/2026-07-27-loop-engineering-intake.md（ループ軸・Feedly API の実測を含む）
   - docs/research/2026-07-27-team-harness-intake.md（チーム軸）
@@ -28,6 +28,8 @@ next_step:
 2026 年 7 月末から 8 月にかけて、Feedly の Read Later に溜めた記事を読み込んでリポジトリの資産へ接続する作業を続けた。その作業は 1 つの会話スレッドの上で進んでいて、成果物は外部化してあるが、**進行状態（何を読み終え、何が残り、どう取得したか）はスレッドの中にしか無かった。**
 
 アカウントの移行などでスレッドを参照できなくなっても継続できるように、状態をここへ移す。新しいセッションはこのドキュメントから入れる。
+
+**これは更新されていく文書である。** 在庫が減ったら消し、新しい在庫が出たら足す。日付を持たないのはそのためで、frontmatter の `updated` を最終更新として使う。凍結された分析は `docs/research/` 側のノートにある。
 
 ## 2. 済んでいること
 

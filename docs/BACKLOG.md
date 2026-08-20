@@ -17,7 +17,7 @@ Issue化するまでもないが忘れたくない検討・調査タスク。優
 
 ## 情報収集（intake）ストリーム
 
-進行状態・未処理の在庫・Feedly の再取得手順は [`docs/research/2026-08-20-intake-handoff.md`](research/2026-08-20-intake-handoff.md) に集約している。会話スレッドを参照できなくなっても、そこから再開できる。
+進行状態・未処理の在庫・Feedly の再取得手順は [`docs/INTAKE-STATUS.md`](INTAKE-STATUS.md) に集約している。会話スレッドを参照できなくなっても、そこから再開できる。
 
 - [ ] **束 B の 4 件をノート化するか判断する** — 読了済み・要点は継続資料に記録済み。Goodpatch の 2 点（ループ 4 分類、`AGENTS.md` の肥大化対策）は [#307](https://github.com/stlwolf/ai-development-hub/issues/307) に効く
 - [ ] **6 月保存の未読 5 件を処理するか判断する** — うち alibaba/open-code-review は `oss-research-session` の案件として起票する候補
