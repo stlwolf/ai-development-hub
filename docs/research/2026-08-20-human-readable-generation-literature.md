@@ -197,3 +197,78 @@ v1 公開後、純粋SO（発散型・3レーン）の反証を受けて改訂�
 - latent 通信の異機種間拡張を扱う論文（arXiv 2606.05711）は PDF から本文を取り出せず未読。
 - WRAP・入力形式比較・BLUF・A2A・日本語圏対策記事は検索要約止まり。
 - format tax のレジスタ指示への外挿は未測定。アクセスパターン仮説も未検証（反証条件つきの実験が所見5にある）。
+
+## 付録: 参照一覧（調査で当たった実例・記事の索引）
+
+frontmatter の sources は本文を確認した主要ソースに限っている。本付録は、調査で実際に当たった参照の全体索引である（各所見との対応つき）。状態タグは本文と同じ規約: [verified] は本文を取得して確認、[unverified-summary] は検索結果の要約止まり。ここに無い URL は本調査では当たっていない。
+
+### 対策スキル・実例 — 人間向け文章の editor 型ツール群（所見1）
+
+市場に流通している「AIっぽさを直す」スキルの実例。存在と概要の索引であり、中身を確認したのは avoid-ai-writing のみ。
+
+- [avoid-ai-writing SKILL.md](https://github.com/conorbronsdon/avoid-ai-writing/blob/main/SKILL.md) — 表面の癖に加え順序・情報密度も検査する唯一の確認例。treadmill effect の検出を含む [verified]
+- [De-Slop: Humanize AI Prose](https://mcpmarket.com/tools/skills/de-slop-writing-refiner) — puffery・rule-of-three・曖昧な出典の除去 [unverified-summary]
+- [Stop Slop](https://mcpmarket.com/tools/skills/stop-slop) — 前置き（throat-clearing）・jargon・定型リズムの除去 [unverified-summary]
+- [Humanizer](https://mcpmarket.com/tools/skills/ai-writing-humanizer-4) / [Humanize AI Writing](https://mcpmarket.com/tools/skills/humanize-ai-writing-1) / [OneAway 版 Humanizer](https://oneaway.io/skills/humanizer) — em dash 過剰・単調構造の修正系 [unverified-summary]
+- [Anti-AI Writing Engine](https://mcpmarket.com/tools/skills/anti-ai-writing-engine-1) — SUCKS フレームワーク・相関構文と hedge の禁止 [unverified-summary]
+- [Prose Writing & Style Guide](https://mcpmarket.com/tools/skills/prose-writing-style-guide) — Strunk & White を editor として強制 [unverified-summary]
+- 紹介・解説記事: [Medium: Best Claude Skill to have — Humanizer](https://medium.com/data-science-in-your-pocket/best-claude-skill-to-have-humanizer-55060b4b9843) / [DEV: This Claude skill fixed my AI writing](https://dev.to/vasughanta09/this-claude-skill-fixed-my-ai-writing-3pko) / [theaimarketer: Your writing sounds like AI](https://theaimarketer.substack.com/p/your-writing-sounds-like-ai-heres) / [willfrancis: How to Stop Claude Writing Like an AI](https://willfrancis.com/how-to-stop-claude-writing-like-an-ai/) / [Context Link: Claude Em-Dash Problem](https://www.context-link.ai/blog/claude-em-dash-remover) / [ranthebuilder: Claude Cowork で自分の声で書く](https://ranthebuilder.cloud/blog/how-i-use-claude-cowork-to-write-with-ai-in-my-voice/) — いずれも editor 型の運用例 [unverified-summary]
+
+### 日本語圏の対策記事 — 「AIっぽさを消す」系（所見1）
+
+目的が本ノートと逆（AI 判定の回避）で、体言止め・倒置を推奨する側。同じ「AIっぽさ」の語が別問題を指す実例。
+
+- [hirokaji: カスタムインストラクションから変える](https://note.com/tasty_dunlin998/n/n6b459279a5d5) [unverified-summary]
+- [fm23: 人間らしさを取り戻すプロンプト](https://note.com/ff_prevent/n/n518b6862295d) [unverified-summary]
+- [リードプラス: AI判定を回避するリライト術](https://www.leadplus.co.jp/blog/rewrite-techniques-to-avoid-ai-detection) [unverified-summary]
+- [あなたのAI顧問: AIっぽさをAIに消させるプロンプト設計](https://ai-advisors.jp/media/ai-knowledge/eliminate-ai-features/) [unverified-summary]
+- [AI Academy: AIっぽさをなくすプロンプト術5選](https://aiacademy.jp/media/?p=8083) [unverified-summary]
+- [YOSCA: AIっぽい文章の直し方](https://yosca.jp/technique/15165/) [unverified-summary]
+- [AIのチカラ: AI臭を消すプロンプトの使い方](https://ai-no-chikara.com/posts/chatgpt-ai-shu-kesu-prompt) [unverified-summary]
+- [EXTAGE: 生成AIの文章校正ツール10選](https://www.extage-marketing.co.jp/web-school/ai-proofreading/) [unverified-summary]
+
+### 読みづらさの議論・計測（所見2）
+
+- [Jacob Desforges: I Don't Want To Read Your LLM Output](https://jacobdesforges.com/i-dont-want-to-read-your-llm-output/) — 読み手へのコスト転嫁論。認知負荷の言語化として最接近 [verified]
+- [When LLMs Over-Answer（arXiv 2607.17063）](https://arxiv.org/html/2607.17063v2) — 本文所見2の数値の出典 [verified]
+- [HN: LLM の冗長さへの不満スレッド](https://news.ycombinator.com/item?id=47032375) — 議論が長さの軸に閉じている実例 [verified]
+- [dantaylorwatt: AI's verbosity problem](https://dantaylorwatt.substack.com/p/ais-verbosity-problem/comments) / [BuildML: 冗長回答の直し方（面接問題）](https://substack.com/@buildml/note/c-190308122) [unverified-summary]
+
+### 順序の先行技術 — BLUF / Pyramid Principle（所見3）
+
+- [AirOps: Bottom Line Up Front](https://www.airops.com/blog/bottom-line-up-front-bluf) / [LegalClarity: BLUF とは](https://legalclarity.org/bottom-line-up-front-bluf-what-it-is-and-how-to-use-it/) / [FourWeekMBA: BLUF 2026 Guide](https://fourweekmba.com/bluf-bottom-line-up-front/) — AR 25-50（1988）由来の結論先出し標準 [unverified-summary]
+- [Medium: The Pyramid Principle（Lessons from McKinsey）](https://medium.com/lessons-from-mckinsey/the-pyramid-principle-f0885dd3c5c7) / [cybercorsairs: Pyramid Principle と AI プロンプト構造](https://cybercorsairs.com/most-people-build-arguments-bottom-up-the-pyramid-principle-does-the-opposite/) / [smartprompts: Minto Pyramid の10プロンプト](https://smartpromptsforai.substack.com/p/bottom-line-up-front-10-prompts-to) — 「自己回帰モデルは結論先出しを嫌うので逆順を強制する」という主張の出どころ（ブログ級） [unverified-summary]
+
+### 生成側の測定 — format tax・構造化出力（所見4）
+
+- [The Format Tax（arXiv 2604.03616）](https://arxiv.org/html/2604.03616) — 本文所見4の数値の出典 [verified]
+- [Capacity, Not Format（arXiv 2606.09410）](https://arxiv.org/html/2606.09410) / [When Correct Isn't Usable（arXiv 2605.02363）](https://arxiv.org/html/2605.02363v1) / [Michael Hannecke: Beyond JSON](https://medium.com/@michael.hannecke/beyond-json-picking-the-right-format-for-llm-pipelines-b65f15f77f7d) / [tianpan: Grammar-Constrained Generation](https://tianpan.co/blog/2026-04-16-grammar-constrained-generation-output-reliability) — two-step（自由生成→整形）推奨の周辺 [unverified-summary]
+
+### 読解側の測定 — 識別子・入力形式（所見5）
+
+- [When Names Disappear（arXiv 2510.03178）](https://arxiv.org/html/2510.03178) — 本文所見5の数値の出典 [verified]
+- [Do LLMs Learn Structure or Names?（ACM）](https://dl.acm.org/doi/10.1145/3803846.3807465) — 識別子シフトへの頑健性の同系研究 [unverified-summary]
+- [Notation Matters（arXiv 2605.29676）](https://arxiv.org/pdf/2605.29676) — 圧縮≠精度低下（形式設計次第） [verified]
+- [improvingagents: ネスト形式の比較（JSON/YAML/XML/Markdown）](https://www.improvingagents.com/blog/best-nested-data-format/) / [craftmarkdown: Markdown vs JSON for LLMs](https://www.craftmarkdown.com/markdown-vs-json-for-llms) / [SoftServe: JSON vs TOON vs Markdown-KV](https://medium.com/softserve-technical-communication/rethinking-llm-inputs-json-against-toon-and-markdown-kv-b713bcbe7eb5) / [ONTO（arXiv 2604.17512）](https://arxiv.org/pdf/2604.17512) — 形式差はトークンを買うが理解はあまり買えない、の出どころ [unverified-summary]
+
+### AI 間通信・for-AI 形式の境界（所見6）
+
+- [LatentMAS（arXiv 2511.20639）](https://arxiv.org/html/2511.20639v1) — latent 通信の数値と同一系列限定の出典 [verified]
+- [Why do AI agents communicate in human language?（arXiv 2506.02739）](https://arxiv.org/pdf/2506.02739) — 自然言語の3理由の出典 [verified]
+- [Emergent Languages: From Token Efficiency to Oversight Evasion（arXiv 2605.31170）](https://arxiv.org/pdf/2605.31170) [verified]
+- [Beyond tokens（arXiv 2606.05711）](https://arxiv.org/pdf/2606.05711) — 異機種間 latent の一般化。PDF から本文を取り出せず未読 [unverified-summary]
+- [A2A Protocol 公式](https://a2a-protocol.org/latest/) / [Governance Gaps in Agent Interoperability Protocols（arXiv 2606.31498）](https://arxiv.org/pdf/2606.31498) — envelope=schema / 意味=自然言語の線引きの実例 [unverified-summary]
+- AI 向け言語の実例: [Seemann: Programming languages for AI](https://blog.ploeh.dk/2026/03/30/programming-languages-for-ai/) [verified] / [GlyphLang（Show HN）](https://news.ycombinator.com/item?id=46571166) / [SudoLang](https://medium.com/javascript-scene/sudolang-a-powerful-pseudocode-programming-language-for-llms-d64d42aa719b) / [Pel（arXiv 2505.13453）](https://arxiv.org/pdf/2505.13453) / [dshills: Programming Without People](https://dshills.medium.com/programming-without-people-designing-a-language-for-llms-2192618d2540) — いずれも制約を増やす方向で、機械語寄りの設計は見つからなかった [unverified-summary]
+
+### 学習形式（所見6補足）
+
+- [Rephrasing the Web / WRAP（arXiv 2401.16380）](https://arxiv.org/abs/2401.16380) / [HF blog 解説](https://huggingface.co/blog/vladbogo/rephrasing-the-web) / [BeyondWeb（arXiv 2508.10975）](https://arxiv.org/pdf/2508.10975) — 書き換え先が「整った人間の文章」である事例 [unverified-summary]
+
+### ハーネス機構 — output styles（ハーネスへの帰結・#348）
+
+- [Output styles - Claude Code Docs（公式）](https://code.claude.com/docs/en/output-styles) — 機構の一次情報 [verified]
+- [tessl: communication style のカスタマイズ](https://tessl.io/blog/claude-code-now-lets-you-customize-its-communication-style) / [knightli: Claude Code を簡潔にする設定](https://knightli.com/en/2026/07/10/claude-code-reduce-verbose-output-settings/) — 運用例 [unverified-summary]
+
+### 所見7の対抗仮説・周辺文献について
+
+所見7（RLHF 長さバイアス・expertise reversal・Lost in the Middle・CNL・電信史実ほか）は SO レーンが文献名で提示したもので、URL の索引は存在しない（レーンは URL を返していない）。原文は `ideas/20260820/discussion-logs/` の3ファイル。一次確認は次ラウンド候補（本文「未確認のまま残ること」参照）。
