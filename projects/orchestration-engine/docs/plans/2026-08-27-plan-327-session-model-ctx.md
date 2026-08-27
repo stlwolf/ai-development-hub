@@ -201,6 +201,13 @@ owner 裁定（2026-08-27）: **表示面は session 主キーの一覧を先に
 | DJ-J | `--all` | 残す。役割を「既定＝鮮度で帰属解決」に対して「全 sidecar を AGE 付きで出す」に固定する | 既定が正しくなったので別の役割が生まれた |
 | DJ-K | 実機 producer の検証 | 実装中は行わない。受入は fixture で行い、実機確認は master マージ後の owner 目視 | worktree から sync すると dangling symlink になる（F9）。実機検証を捨てることを明示的に受容する |
 
+### 実装で確定した差分（back-propagation・2026-08-28）
+
+実装中に DJ-E から1点ずれた。episode 側に一次記録がある（`2026-08-28-episode-327-session-model-ctx.md` の「Step 3〜5」節）。
+
+- **DJ-E の列順と LABEL の切り詰めを変えた。** plan は `PANE / CTX / AGE / LABEL / MODEL` として「LABEL は固定幅で切る」と書いていたが、実装は `PANE / CTX / AGE / MODEL / LABEL` にして、LABEL も切らない形にした。理由は bash の `printf` の幅指定がバイト単位で、ラベルに実在する多バイト文字（`✳` や日本語）を途中で切って不正な UTF-8 を作るため（同じ型が #343 / #346 で `notify.sh` に起きている）。可変幅を最後の1列に寄せることで、どちらも切らずに整列を保てる。
+- ほかに、gate 4 の指摘で **observer 側の server pid を `list-panes` に答えた server から取る**ことと、Copilot の指摘で **read-set 宣言を tmux query 3種に合わせる**ことを足した。どちらも DJ の変更ではなく DJ-D / DJ-G の実装精度の問題として扱った。
+
 ### 異常入力の期待値（DJ-H）
 
 | 入力 | 期待 |

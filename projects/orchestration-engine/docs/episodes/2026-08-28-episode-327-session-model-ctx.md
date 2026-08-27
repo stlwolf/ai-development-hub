@@ -3,7 +3,7 @@ id: "01M123HTHDX7RCDG1EG1X68SNN"
 title: "#327 全 Claude セッションのモデル名とコンテキスト% を1つの面に出す — 実行記録"
 date: 2026-08-28
 type: episode
-status: in-development
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/327"
 scope: orchestration-engine
 related:
@@ -14,9 +14,30 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/327"
     reason: "起点。調査結果と方向転換はコメントに一次記録がある"
 tags: [engine, cockpit, oe-threads, statusline, heartbeat]
+promotion:
+  - subject: "sidecar のキー集合を固定するアサートが additive 変更の検出器として働く"
+    verdict: not-required
+    ref: "本文: 2026-08-28 Step 1（producer）完了"
+  - subject: "条件式が暗黙に空文字の一致に依存している形は共通化のときだけ表に出る"
+    verdict: not-required
+    ref: "本文: 2026-08-28 Step 2（label 解決の lib 切り出し）完了"
+  - subject: "区切り文字の選定は read 側の IFS 空白かで決まる"
+    verdict: required
+    ref: "本文: 2026-08-28 Step 3〜5（verb 実装・テスト・doc）完了"
+  - subject: "他 verb の idiom を借りるときは、その verb が何を前提にしていないかを見る"
+    verdict: required
+    ref: "本文: 2026-08-28 gate 4（実装SO）の指摘を反映"
+  - subject: "閉じた集合を宣言した契約は実装を1行足すたびに宣言側の点検が要る"
+    verdict: not-required
+    ref: "本文: 2026-08-28 Copilot レビュー1ラウンド"
+  - subject: "表示面の選択は母集団の実測で決まる（oe-tree の森林は目的の母集団と違う）"
+    verdict: unknown
+    ref: "本文: 前提（着手時点で確定していること）"
 ---
 
 # #327 全 Claude セッションのモデル名とコンテキスト% を1つの面に出す — 実行記録
+
+**なぜこの作業が始まったか**: 並列で走っている Claude スレッドが、どのモデルで動いていてコンテキストをどれだけ使っているかを知るには、ペインを1つずつ見に行くしかなかった。上位モデルの切り替え忘れとコンテキスト肥大の接近に、スレッドを選ぶ前に気づけるようにするのが目的である（#327）。
 
 本 episode は **実装着手時（gate 3 通過直後）に枠を作った**。それ以前の経緯（gate 1 と gate 2 を3周回して設計が v1 から v4 まで入れ替わった過程）は plan 側に一次記録があるので、ここでは繰り返さず plan を正本とする。
 
@@ -45,7 +66,7 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 
 **生の改行を含む stdin は入力ごと捨てられる（それが正しい）。** `display_name` に生の改行が入った JSON は JSON として不正なので、jq が parse に失敗して write 全体が skip される。sidecar は書かれず temp も残らない。テストで制御文字を入れるときは、コマンド行に生バイトを置かず jq の `implode` で実行時に作る（生バイトを書くと承認ダイアログ側で弾かれる）。
 
-昇級の印: sidecar のキー集合を固定するアサートは additive 変更の検出器として機能する（意図せずそうなっていた）
+昇格の印: sidecar のキー集合を固定するアサートは additive 変更の検出器として機能する（意図せずそうなっていた）
 
 ### 2026-08-28 Step 2（label 解決の lib 切り出し）完了
 
@@ -57,7 +78,7 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 
 検証は neg-control で行った。mock tmux と隔離した state で、切り出し前後の `oe_reg_list` 出力を `cmp` した。`TMUX_PANE="%1"` の通常ケースと、`TMUX_PANE=""` かつ `parent_pane=""` の root entry を置いたケースの両方で byte 一致した。**後者を測らなければ、この罠は踏んだまま緑になっていた。**
 
-昇級の印: 「条件式が暗黙に空文字の一致に依存している」形は、共通化のときだけ表に出る
+昇格の印: 「条件式が暗黙に空文字の一致に依存している」形は、共通化のときだけ表に出る
 
 ### 2026-08-28 Step 3〜5（verb 実装・テスト・doc）完了
 
@@ -71,7 +92,7 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 
 もう1つ、DJ-E から実装で意図的にずれた点がある。plan は列順を `PANE / CTX / AGE / LABEL / MODEL` として「LABEL は固定幅で切る」と書いていたが、**固定幅の切り詰めは bash の `printf` ではバイト単位になり、日本語や記号（ラベルに実在する ✳）を途中で切って不正な UTF-8 を作る**（#343 / #346 で notify.sh が踏んだのと同じ型）。そこで列順を `PANE / CTX / AGE / MODEL / LABEL` にして、可変幅を最後の LABEL 1つに寄せ、どちらも切らない形にした。切り詰めが要るのは codepoint 上限（表示崩れ防止）だけで、それは jq 側で行う。
 
-昇級の印: 区切り文字の選定は「値に出るか」だけでなく「read 側の IFS 空白か」で決まる
+昇格の印: 区切り文字の選定は「値に出るか」だけでなく「read 側の IFS 空白か」で決まる
 
 ### 2026-08-28 gate 4（実装SO）の指摘を反映
 
@@ -93,7 +114,7 @@ cursor の指摘は3件で、いずれも成立した。
 
 `_oe_reg_label` に第4引数（`server_pid`）を足し、**key の計算だけ**に効かせる形へ直した。tmux 内・tmux 外の両方で同じラベルが出ることを実機で確認し、`oe_reg_list` の byte 一致も維持されている。
 
-昇級の印: 他 verb の idiom を借りるときは「その verb が何を前提にしていないか」を見る（oe-ident は tmux へ問い合わせない）
+昇格の印: 他 verb の idiom を借りるときは「その verb が何を前提にしていないか」を見る（oe-ident は tmux へ問い合わせない）
 
 ### 2026-08-28 Copilot レビュー1ラウンド
 
@@ -111,4 +132,69 @@ Copilot は行コメントを付けず、レビュー本文で1点だけ指摘�
 
 verb のヘッダと `bin/README.md` の両方を実体に合わせ、`spawn-registry` 段を使わないこと（`_oe_reg_label` の第3引数を 0 で呼ぶ）も明示した。コードは変えていないのでテストは 50/0 のまま。
 
-昇級の印: 「閉じた集合」を宣言した契約は、実装を1行足すたびに宣言側の点検が要る
+昇格の印: 「閉じた集合」を宣言した契約は、実装を1行足すたびに宣言側の点検が要る
+
+## closure（2026-08-28・PR レビュー後・マージ前）
+
+tier は **heavy**。トリガは4つ該当した。実行中に方針転回があった（v1 から v4）／意図的に外部レビューを4回起動した（`oe-refute` 3回・`oe-review` 1回）／非自明な設計判断を比較して棄却した／昇格候補がある。
+
+### closure gate
+
+- **Context / なぜ**: 冒頭に1文で自己完結させた（`本文: なぜこの作業が始まったか` は冒頭段落）。closure 時に補ったので、枠を作った時点では欠けていた。
+- **次の消費者**: (1) cockpit を使う owner（`oe-threads` の出力を読む人）(2) ambient 表示（pane-border）と検知（`oe-vitals` の scope 拡張）を次段で着手する人 — 本 episode の「本単位では開かない」列が入口になる (3) #350 の担当（producer の temp 滞留）。
+- **follow-up routing**: 下記「残課題」に全件の行き先を書いた。行き先なしの項目は無い。
+- **昇格の判定**: frontmatter の `promotion` に6件（`required` 2 / `not-required` 3 / `unknown` 1）。**印の接頭辞を `昇級の印:` と誤記していたため、本文の5件は規約上の印として拾われない状態だった**（固定接頭辞は `昇格の印:`）。closure で接頭辞を修正し、判定は印に依存せず独立に行った。
+- **status 確定**: `stable`。達成度は **部分** — 実機で MODEL 列が埋まるのはマージ後に primary tree から sync してからで、この単位では確認できない（下記「残課題」）。
+- **evidence anchor**: `tmp/oe-refute-*` と `tmp/oe-review-*` は永続しないので、verdict と audit_id と指摘の要点は本文と plan へ転記済み（`本文: 2026-08-28 gate 4（実装SO）の指摘を反映`）。
+- **SO 証跡リンク**: Step 4 の外部チェックの結果は下記「Step 4」に記載。
+- **観測の書き戻し**: 該当なし（委譲していないので brief が無く、negative knowledge の注入も無い）。
+
+### 事実・失敗
+
+- 設計が3回覆った。表示面（`oe-tree`）→ 母集団の定義 → 鮮度の扱い、の順に別の場所が壊れた（`本文: 前提（着手時点で確定していること）` と plan の gate 記録が一次）。
+- 実装中に区切り文字のバグを自分で踏んだ（`本文: 2026-08-28 Step 3〜5（verb 実装・テスト・doc）完了`）。
+- gate 4 で observer 側の server identity の欠陥を指摘された（`本文: 2026-08-28 gate 4（実装SO）の指摘を反映`）。
+- その修正の検証中に、自分の修正が別の劣化を作っていた（同上）。
+- Copilot に read-set 宣言と実体の不一致を指摘された（`本文: 2026-08-28 Copilot レビュー1ラウンド`）。
+- **gate 4 の codex レーンが2回ともタイムアウトした**（同上）。実返却1レーンで進めたことは PR 本文でも disclose した。
+- **PR head が push に追いつかない事象が起きた**。`cannot lock ref` が返ったあと、branch は新 SHA なのに PR オブジェクトが旧 SHA のままになった。この closure の commit を push して再同期を試みる（`本文なし: closure と同時に起きている事象のため本文に節が無い`）。
+
+### 決定と根拠
+
+- 表示面を `oe-tree` から新 verb へ振り替えた。棄却理由は母集団の実測（生存7ペインのうち2ペインが登記に無い）。plan の gate 1 記録が一次。
+- 母集団の基準を鮮度から pane 実在へ移し、さらにそれも覆して「鮮度は帰属の解決にだけ使う」へ着地した。棄却した案と実測（`%0` に sidecar 7件・うち6件が約4日前）は plan の gate 2 記録が一次。
+- 共有 lib の切り出し範囲をラベル解決だけに絞った。pane 突合まで共有すると `oe-vitals` の max-ts 契約と新 verb の ambiguous 方針が両立しない（plan の gate 2 記録が一次）。
+- **plan の DJ-E から意図的にずれた**（列順と LABEL の切り詰め）。理由は `printf` の幅指定がバイト単位で多バイト文字を割ること（`本文: 2026-08-28 Step 3〜5（verb 実装・テスト・doc）完了`）。plan 側へ back-propagate した。
+
+### わかったこと
+
+- statusLine は `refreshInterval` のタイマーでアイドル中も発火する。実測で生存ペインの sidecar が 20〜26 秒ごとに進み、画面表示の値と一致した（#327 のコメントが一次）。
+- `oe_reg_list` は登記ではなく **tmux の生存ペイン全件**を列挙している。`oe-tree` の母集団が狭いのは森林構築の側の性質だった（`本文なし: 待ち時間の調査で分かり、報告のみで本文に節を立てていなかった`）。
+- sidecar の `session_id` は ULID ではなく UUIDv4。producer の契約コメントが誤記していた（`本文: 2026-08-28 Step 1（producer）完了`）。
+
+### 原則（Pattern / Anti-pattern）
+
+- **Anti**: 区切り文字を「値に出るか」だけで選ぶ。→ **Pattern**: 分解側の IFS 意味論まで見て非空白を選ぶ（Step 5 で収穫）。
+- **Anti**: 他 verb の idiom を「動いている先例」として借りる。→ **Pattern**: 借り先が何をしていないかを読む（Step 5 で収穫）。
+- **Anti**: 「閉じた集合」と宣言した read-set を、実装を足したあとに点検しない。→ **Pattern**: query を1つ足したら宣言側も同じ commit で直す。
+
+### 蒸留シグナル
+
+- knowledge store: 2件収穫（`01M1272GA630SBY8ZAXBHC6JGH` 区切り文字 / `01M1272GA8CRXQKQWMF005NHCF` idiom 借用）。
+- decision: なし。表示面の選択は #327 の1単位に閉じており、覆すのに要るのは母集団の再実測（確認）であって議論ではない。
+- skill / rule: なし。read-set 宣言の点検は verb ヘッダの規約として既に着地している。
+
+### 残課題（全件に行き先を付与）
+
+| 残課題 | 行き先 |
+| --- | --- |
+| 実機で MODEL 列が埋まることの確認 | plan の HG-2（マージ後に primary tree から `./scripts/sync.sh claude` → owner が目視） |
+| ambient 表示（pane-border）・検知（`oe-vitals` の scope 拡張）・pane option ストア | #327 のコメントに次段候補として記録（起票は owner 判断） |
+| producer の temp 滞留（`.hb.*` 35件） | #350 |
+| SO レーンのタイムアウト（codex が2回とも 360 秒で空返し） | #298 / #303（既存・本 arc は追加サンプル） |
+| PR head が push に追いつかない事象 | この closure の push で再同期を試みる。解消しなければ owner に close/reopen の判断を上げる |
+| `--all` の SESSION 列が8文字で切れる | 追わない（実データの UUID 先頭8文字は識別に足り、fixture 名が切れるのは表示上の話） |
+
+### Step 4（heavy の外部チェック）
+
+`so-compare` で closure 品質の focused check を実施。結果は下記に追記する。
