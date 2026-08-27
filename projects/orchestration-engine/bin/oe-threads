@@ -7,10 +7,14 @@
 #   oe-threads --fresh <sec>      帰属を解決する鮮度窓（既定 900）
 #   oe-threads -h | --help
 #
-# read-only / 非検出: 読むのは (1) statusLine 拍動 sidecar（OE_HEARTBEAT_DIR）(2) tmux のペイン存在
-#   （mux query）(3) pane-issue / spawn-registry の state ファイル のみ。write path は一切持たず、
-#   ペイン出力も読まない（capture 走査・自動反応はしない）。この列挙は閉じた集合として固定する
-#   （#177 / #188 の read-only 観測規律・oe-tree:40-44 と同じ宣言）。
+# read-only / 非検出: 読むのは次の3系統のみ。write path は一切持たず、ペイン出力も読まない
+#   （capture 走査・自動反応はしない）。この列挙は閉じた集合として固定する（#177 / #188 の
+#   read-only 観測規律・oe-tree:40-44 と同じ宣言）。
+#     (1) statusLine 拍動 sidecar（OE_HEARTBEAT_DIR 配下の JSON）
+#     (2) tmux query 3種: ペイン存在（list-panes の pane_id）/ server pid（display-message の #{pid}）/
+#         pane_title（display-message。_oe_reg_label のラベル解決の最終段）
+#     (3) pane-issue の state ファイル（ラベル解決の第1段。spawn-registry 段は使わない＝
+#         _oe_reg_label の第3引数を 0 で呼ぶ）
 #
 # 母集団（DJ-A）: 自 server の生存ペインを左辺にした左外部結合。sidecar 側から列挙しない。
 #   sidecar は同じ pane に何日分も溜まる（実測: %0 に7件・うち6件が約4日前）ので、sidecar 起点だと
@@ -55,7 +59,7 @@ usage:
   oe-threads --fresh <sec>    帰属を解決する鮮度窓（既定 900・OE_THREADS_FRESH_SEC でも指定可）
   oe-threads -h | --help
 
-読むのは sidecar / tmux のペイン存在 / pane-issue だけで、書き込みはしない。
+読むのは sidecar / tmux query（ペイン存在・server pid・pane_title）/ pane-issue だけで、書き込みはしない。
 EOF
 }
 

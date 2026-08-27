@@ -94,3 +94,21 @@ cursor の指摘は3件で、いずれも成立した。
 `_oe_reg_label` に第4引数（`server_pid`）を足し、**key の計算だけ**に効かせる形へ直した。tmux 内・tmux 外の両方で同じラベルが出ることを実機で確認し、`oe_reg_list` の byte 一致も維持されている。
 
 昇級の印: 他 verb の idiom を借りるときは「その verb が何を前提にしていないか」を見る（oe-ident は tmux へ問い合わせない）
+
+### 2026-08-28 Copilot レビュー1ラウンド
+
+Copilot は行コメントを付けず、レビュー本文で1点だけ指摘した（`Changes recommended`）。
+
+> The read-only/read-set documentation in `oe-threads` and `bin/README.md` is currently inconsistent with the actual tmux queries performed and should be corrected to keep the "closed set" contract accurate.
+
+**成立する。** 私の宣言は「読むのは (1) sidecar (2) tmux のペイン存在 (3) pane-issue」と書いていたが、実際に発行している tmux query は3種ある。
+
+- `list-panes -a -F '#{pane_id}'`（ペイン存在）
+- `display-message -p '#{pid}'`（server pid・gate 4 の修正で足した）
+- `display-message -p -t <pane> '#{pane_title}'`（`_oe_reg_label` のラベル解決の最終段）
+
+**閉じた集合だと自分で宣言した契約が、実体と合っていなかった。** しかも合わなくなった直接の原因は gate 4 の修正で `#{pid}` を足したことで、そのとき宣言側を直していない。先例（`oe-tree:40-41`）は「ペイン存在・座標・pane_title（mux query）」と query の種類まで列挙しており、そちらが正しい粒度だった。
+
+verb のヘッダと `bin/README.md` の両方を実体に合わせ、`spawn-registry` 段を使わないこと（`_oe_reg_label` の第3引数を 0 で呼ぶ）も明示した。コードは変えていないのでテストは 50/0 のまま。
+
+昇級の印: 「閉じた集合」を宣言した契約は、実装を1行足すたびに宣言側の点検が要る

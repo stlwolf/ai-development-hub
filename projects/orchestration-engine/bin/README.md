@@ -468,8 +468,10 @@ oe-threads --fresh 300      # 帰属を解決する鮮度窓（既定 900・OE_T
 のみ一意なので、pane だけでは別 server の同番ペインと衝突する。sidecar 側の `server_pid` が空のもの
 （producer 更新前・`$TMUX` 不在で書かれた記録）は pane だけで突合する劣化動作。
 
-read-only / 非検出: 読むのは (1) sidecar (2) tmux のペイン存在 (3) pane-issue のみ。write path は
-持たず、ペイン出力も読まない。exit は 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・
+read-only / 非検出: 読むのは (1) sidecar (2) tmux query 3種（ペイン存在＝`list-panes` の `pane_id` /
+server pid＝`display-message` の `#{pid}` / `pane_title`＝ラベル解決の最終段）(3) pane-issue のみ。
+`spawn-registry` 段は使わない（`_oe_reg_label` の第3引数を 0 で呼ぶ）。write path は持たず、ペイン
+出力も読まない。exit は 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・
 tmux 不在や `list-panes` 失敗）。**空表を「0 件」として exit 0 で返さない**（#322 DJ-3）。
 
 ## oe-undelivered — 報告未達検知 watchdog（#239 段階0・read-only・cron 可）
