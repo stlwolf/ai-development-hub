@@ -101,7 +101,14 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 
 `oe-review --lanes 2 --base master`（audit_id `20260827174044J8NCT322AXG0`・`lens=impl`）は **refuted**。
 
-**codex レーンは2回とも 360 秒でタイムアウトした**（`timeout_empty`・stdout 0 バイト）。弱 SO の partial として disclose して進む（実返却は cursor の1レーン）。#298 と #303 が扱っている事象の追加サンプルになる。
+**codex レーンは実返却なしだった**（attempt1 が 240 秒・リトライが 360 秒・どちらも stdout 0 バイト）。弱 SO の partial として disclose して進む（実返却は cursor の1レーン）。
+
+**当初「2回とも 360 秒でタイムアウト」と書いたのは誤りだったので訂正する。** meta を読み直すと attempt1 は 240 秒、attempt2 は 360 秒（×1.5）で、上限は伸びていた。さらに2つの attempt は性質が違う。
+
+- **attempt1 は実際に働いていた。** stderr が 19KB あり、diff のファイル一覧を読み終えて「producer、共有 registry、consumer、テストの順に分割して突き合わせる」と方針を述べたところで 240 秒に達している。stdout が空なのは最終回答に到達しなかったからで、プロセスは生産的だった。
+- **attempt2 は何もしていない。** stderr は 39 バイトで `Reading additional input from stdin...` の1行だけ。そこから 360 秒沈黙している。
+
+原因の切り分けは closure の「Step 4」節に書いた（渡し方の問題と stdin の機構欠陥の2つ）。
 
 cursor の指摘は3件で、いずれも成立した。
 
@@ -162,7 +169,7 @@ tier は **heavy**。トリガは4つ該当した。実行中に方針転回が�
 - gate 4 で observer 側の server identity の欠陥を指摘された（`本文: 2026-08-28 gate 4（実装SO）の指摘を反映`）。
 - その修正の検証中に、自分の修正が別の劣化を作っていた（同上）。
 - Copilot に read-set 宣言と実体の不一致を指摘された（`本文: 2026-08-28 Copilot レビュー1ラウンド`）。
-- **gate 4 の codex レーンが2回ともタイムアウトした**（同上）。実返却1レーンで進めたことは PR 本文でも disclose した。
+- **gate 4 と Step 4 で codex レーンが実返却なしだった**（同上）。実返却1レーンで進めたことは PR 本文でも disclose した。**この事象について私は3箇所で数値を誤記し、後から訂正した**（「2回とも 360 秒」→ 240 秒 → 360 秒 / 「3回連続の空返し」→ 5回中3回は成功 / attempt2 の性質を打ち切りと沈黙で区別していなかった）。
 - **PR head が push に追いつかない事象が起きた**。`cannot lock ref` が返ったあと、branch は新 SHA なのに PR オブジェクトが旧 SHA のままになった。この closure の commit を push して再同期を試みる（`本文なし: closure と同時に起きている事象のため本文に節が無い`）。
 
 ### 決定と根拠
@@ -197,7 +204,8 @@ tier は **heavy**。トリガは4つ該当した。実行中に方針転回が�
 | 実機で MODEL 列が埋まることの確認 | plan の HG-2（マージ後に primary tree から `./scripts/sync.sh claude` → owner が目視） |
 | ambient 表示（pane-border）・検知（`oe-vitals` の scope 拡張）・pane option ストア | #327 のコメントに次段候補として記録（起票は owner 判断） |
 | producer の temp 滞留（`.hb.*` 35件） | #350 |
-| SO レーンのタイムアウト（codex が2回とも 360 秒で空返し） | #298 / #303（既存・本 arc は追加サンプル） |
+| SO の渡し方（材料集めを codex に外注すると 240 秒で足りない） | 私の運用規律として本 episode に記録。so-compare スキルへの codify は owner 判断 |
+| `so-compare` の codex レーンが継承した stdin でブロックする（1行修正で塞げる） | owner 判断待ち（#298 / #303 とは別の機構欠陥。起票候補） |
 | PR head が push に追いつかない事象 | **解消済み**（closure の push で PR head・ローカル HEAD・origin がすべて `f2cd41c` で一致した）。close/reopen は不要だった |
 | 「read-set の宣言を実装追加時に点検する」規律の成文化 | 追わない（機構が未確定。強制力の置き場を決める単位が #305 なので、成文化はそこで扱う。本 arc では Copilot が実際に捕まえた事実の記録に留める） |
 | `--all` の SESSION 列が8文字で切れる | 追わない（実データの UUID 先頭8文字は識別に足り、fixture 名が切れるのは表示上の話） |
@@ -207,8 +215,21 @@ tier は **heavy**。トリガは4つ該当した。実行中に方針転回が�
 `so-compare -w <worktree>` で closure 品質の focused check を実施した（4観点に限定: 選択的省略 / routing 網羅 / 揮発パス / back-propagation）。
 
 - 出力: `tmp/so-20260828-032117/`（永続しないので指摘と対応を以下に転記する）
-- **codex レーンは2回ともタイムアウトした**（240秒 → リトライ 360秒・いずれも `timeout_empty`）。実返却は claude レーン1本（450秒・exit 0）。gate 4 と合わせて**同じ日に codex が3回連続で空返し**しており、#298 / #303 の追加サンプルになる。
-- 弱 SO の partial として disclose して進める（実返却1レーン以上を満たす）。
+- **codex レーンは実返却なし**（attempt1 が 240 秒・リトライが 360 秒）。実返却は claude レーン1本（450秒・exit 0）。弱 SO の partial として disclose して進める（実返却1レーン以上を満たす）。
+
+**codex の失敗を「3回連続の空返し」と書いたのは誤りだったので訂正する。** 本 arc の SO は5回で、**3回は codex が成功している**。
+
+| SO | codex へのプロンプト | codex | 結果 |
+| --- | --- | --- | --- |
+| gate 1（探索） | 5.6KB | 168秒 | 成功（attempt 1） |
+| gate 2（plan v2） | 20.4KB | 160秒 | 成功（attempt 1） |
+| gate 2 再（plan v3） | 27.4KB | 237秒 | **成功（attempt 2＝リトライで成功している）** |
+| gate 4（実装SO） | 6.1KB | 360秒 | 実返却なし |
+| Step 4（本チェック） | 1.1KB | 360秒 | 実返却なし |
+
+**量では説明できない**（27KB が通り 1.1KB が落ちている）。差は**プロンプトが自己完結しているか**である。成功した3件は claim doc の全文をインラインで渡しており、codex は読みに行く必要がなかった。落ちた2件は逆で、gate 4 は 1342 行の diff、Step 4 は 226 行の episode と 339 行の plan と git log を**codex 自身に読ませる**形だった。codex の既定 240 秒は「プロンプト内で完結する仕事」に合わせた値なので、材料集めに使われると足りない。claude レーンが両方成功したのは上限が 1200 秒だからである。**ここは渡し方の問題で、私の側の誤りである。**
+
+これとは別に、**stdin の機構欠陥**がある。実返却なしだった2件の attempt2 は、どちらも stderr が 39 バイト（`Reading additional input from stdin...` のみ）で沈黙していた。`scripts/so-compare.sh` の `run_codex` は stdin をリダイレクトしておらず、非 TTY の文脈では codex が EOF を待って固まる。`1+1` の自明なプロンプトで実測したところ、stdin を渡さない条件では exit 124 で 90 秒フル消費し、`< /dev/null` を付けると即 exit 0 で返った。プロンプトは argv で渡しているので stdin から読む必要はない。ただし gate 2 再実行では attempt2 が成功しているので**間欠的**である。
 
 **指摘は8件で、すべて実体を確認して成立した。この節を含め、全件をこの closure 内で修正した。**
 
