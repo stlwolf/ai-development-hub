@@ -223,6 +223,21 @@ owner 裁定（2026-08-27）: **表示面は session 主キーの一覧を先に
 - [ ] READ: `projects/orchestration-engine/tests/test_oe_tree.sh:1,95,140` — tmux mock と `OE_PANE_ISSUE_DIR` 隔離と時計固定の idiom
 - [ ] SURFACE: `.hb.*` の leak（35件）を別 Issue として起票する。**本単位では直さない**
 
+## HG-1 の記録（gate 3 通過・2026-08-28）
+
+owner が plan v4 をそのまま承認した（分割せず1単位・4周目の SO は回さない）。以降の照合はこの baseline を母集団の同一性の基準にする。
+
+| 対象 | 値 | 備考 |
+| --- | --- | --- |
+| 承認した plan（commit） | `5dabce3efc1b5ae34be8d606672bd1687d1584de` | この commit の内容が承認された版。本節はこの後の commit で追記している |
+| 承認した plan（blob） | `130e81357e36eb32651bcadf29a499db841f1085` | 上の commit 時点のファイル |
+| ゲート表（`document-format.md`）の commit | `28dcd5ed437e07ce97c8ef42d9c83f5ce05ac47e` | §11 ゲート配置の版 |
+| ゲート表（blob） | `484cb487a34126e363c807b47a76370fa793f8e9` | 同上 |
+| 委譲時の書面（brief） | 無し | 委譲していない（本セッションが実装する）。3点のうち1点が構造的に存在しないことを明示する |
+| digest のアルゴリズムと対象 | git blob（`git hash-object <path>`・SHA-1 over file bytes） | 再計算は同じコマンドで行う。照合の直前に計算した値を承認時の値として使わない |
+
+照合の手順と不一致時の扱い（`invalid-baseline` で判定に入らない）は `unmet-gate-check` が正本。
+
 ## HG-1: owner HG（gate 3・plan → 実装）
 
 - [ ] plan v4 を owner に提示して承認を得る（4周目の SO を回すかも owner が決める）
