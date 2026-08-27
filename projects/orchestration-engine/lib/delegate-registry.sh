@@ -153,6 +153,11 @@ oe_reg_resolve() {
 #   <pane>          %N。
 #   [self]          spawn-registry 段の比較対象（parent_pane == self の entry だけを採る）。既定は空。
 #   [use_registry]  1 で spawn-registry 段を有効化。既定は 0。
+#   [server_pid]    state キーの名前空間（tmux server pid）。省略時は $TMUX から導出する。
+#                   **key の計算だけに効かせる**（tmux への問い合わせは実 $TMUX のまま）。TMUX を
+#                   丸ごと差し替える oe-ident:44 の idiom をそのまま借りると、pane_title を引く
+#                   tmux が偽の socket を掴んで失敗し、ラベルが空になる（#327 で実測）。あちらは
+#                   tmux へ問い合わせないので成立していた。
 #
 # **なぜ registry 段が opt-in なのか**: oe_reg_list は「委譲の宛先候補（自分の子）」を出す表なので、
 # parent_pane == self の entry だけをラベル源として採る。一方 #327 の観測用途は「誰の子かを問わず、
@@ -167,10 +172,14 @@ oe_reg_resolve() {
 # 注: LF/CR のみ対象。U+2028 等 / ANSI / TAB は消費者のレコード境界にならず %N 行を
 # 偽造しない（視覚偽装は別軸・scope 外）。書き込み側 hardening は #178 外（follow-up）。
 _oe_reg_label() {
-  local p="$1" self="${2:-}" use_registry="${3:-0}"
+  local p="$1" self="${2:-}" use_registry="${3:-0}" pid_override="${4:-}"
   local key plabel pparent
   _oe_reg_label_out=""; _oe_reg_source_out=""
-  key="$(_oe_reg_key "$p")"
+  if [[ -n "$pid_override" ]]; then
+    key="$(TMUX="oe,${pid_override},0" _oe_reg_key "$p")"
+  else
+    key="$(_oe_reg_key "$p")"
+  fi
   if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
     _oe_reg_label_out="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
     [[ -n "$_oe_reg_label_out" ]] && _oe_reg_source_out="pane-issue"

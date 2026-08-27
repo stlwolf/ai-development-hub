@@ -5,7 +5,7 @@ description: oe-* オーケストレーションツール群（engine 本体 / �
 
 # Orchestration Toolkit (oe-*) — 統合概観
 
-oe-* ツール群を **1 つのパッケージとして一貫理解する**ための概観。個別スクリプトを repo 走査して断片把握すると齟齬が出るため、本スキルで全体像を取り、詳細は各 verb の README / focused スキルへ routing する。実体は engine の `bin/`（`oe` ＋ `oe-*`・**全 23 verb**。hub では `projects/orchestration-engine/bin/`）。この 22 は `bin/` 直下の実行可能エントリの実数なので、verb が増減したら下の役割別リストとこの数も直す。
+oe-* ツール群を **1 つのパッケージとして一貫理解する**ための概観。個別スクリプトを repo 走査して断片把握すると齟齬が出るため、本スキルで全体像を取り、詳細は各 verb の README / focused スキルへ routing する。実体は engine の `bin/`（`oe` ＋ `oe-*`・**全 23 verb**。hub では `projects/orchestration-engine/bin/`）。この 23 は `bin/` 直下の実行可能エントリの実数なので、verb が増減したら下の役割別リストとこの数も直す。
 
 ## ツール群（役割別）
 

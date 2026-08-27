@@ -6,6 +6,7 @@
 #   - OE_PANE_ISSUE_DIR  ラベル解決の置き場
 #   - PATH 先頭の tmux stub（実 tmux のペイン一覧・pane_title を使わない）
 #   - NOW_EPOCH          時計固定（AGE と鮮度判定を決定化）
+#   - OE_THREADS_FRESH_SEC  帰属窓の固定（ホストに設定されていると G1 / G3 の期待が壊れる・実装SO 指摘）
 #
 # 回帰テストとして固定する事象（すべて #327 の gate で実測・または実装中に発見）:
 #   - G1: 生存ペインは古い sidecar を溜めるので、鮮度を帰属に使わないと墓地が既定出力に出る
@@ -32,6 +33,8 @@ NOW=1700000000
 SPID=99999
 export TMUX="/tmp/mock-tmux-socket,${SPID},0"
 export NOW_EPOCH="$NOW"
+# 帰属窓もホストから切り離す（既定値と同じ値を明示的に固定する）
+export OE_THREADS_FRESH_SEC=900
 
 # --- 隔離した置き場 ---
 export OE_HEARTBEAT_DIR="$_TMP/oe-heartbeat"
@@ -49,6 +52,9 @@ case "${1:-}" in
     if [[ -n "${MOCK_TMUX_FAIL:-}" ]]; then echo "no server running" >&2; exit 1; fi
     for p in ${MOCK_LIVE_PANES:-}; do printf '%s\n' "$p"; done ;;
   display-message)
+    # 実 tmux と同じく要求書式で分岐する。#{pid} は observer 自身の server pid。
+    # MOCK_SERVER_PID は - 既定（:- ではない）。空を明示代入して「pid が取れない server」を再現する。
+    if [[ "$*" == *'#{pid}'* ]]; then printf '%s\n' "${MOCK_SERVER_PID-99999}"; exit 0; fi
     t=""; prev=""
     for a in "$@"; do [[ "$prev" == "-t" ]] && t="$a"; prev="$a"; done
     printf 'title of %s\n' "$t" ;;
@@ -228,6 +234,33 @@ ck  "全件出る（2行）"        "2"    "$(rows "$OUT")"
 ckc "墓地も出る"             "$OUT" "97"
 ckc "AGE が日で出る"         "$OUT" "4d"
 ckc "SRVPID 列が出る"        "$OUT" "99999"
+
+# ============================================================================
+echo ""
+echo "[12] 実装SO 指摘の回帰: observer の \$TMUX が空でも server identity を落とさない"
+# ============================================================================
+# tmux 外の端末（Cursor の統合ターミナル等）から叩くと $TMUX は空だが list-panes は既定 server の
+# ペインを返す。ここで observer の pid を諦めると、別 server の sidecar が同番 pane に載る（G3 復活）。
+reset_beats
+mkbeat other 15 22 '%1' '99998' 'Haiku 4.5'
+OUT="$(env -u TMUX MOCK_LIVE_PANES='%1' bash "$VERB" 2>/dev/null)"
+ncc "TMUX 空でも別 server の ctx を出さない"    "$OUT" "22"
+ncc "TMUX 空でも別 server の model を出さない"  "$OUT" "Haiku"
+reset_beats
+mkbeat mine 15 22 '%1' '99999' 'Opus 5'
+OUT="$(env -u TMUX MOCK_LIVE_PANES='%1' bash "$VERB" 2>/dev/null)"
+ckc "TMUX 空でも自 server の記録は出る"         "$OUT" "Opus 5"
+ckc "  ctx も出る"                              "$OUT" "22"
+# server pid がどうしても確定できないなら帰属を推測せず中断する
+env -u TMUX MOCK_SERVER_PID='' MOCK_LIVE_PANES='%1' bash "$VERB" >/dev/null 2>&1; rc=$?
+ck  "身元が確定できないと exit 2"                "2" "$rc"
+# ラベルの key も <server_pid>_<pane> なので、TMUX 空でも pane-issue が引けること
+reset_beats
+mkbeat mine2 15 22 '%6' '99999' 'Opus 5'
+mkissue '_6' '#327 label-from-issue'
+OUT="$(env -u TMUX MOCK_LIVE_PANES='%6' bash "$VERB" 2>/dev/null)"
+ckc "TMUX 空でも pane-issue のラベルが出る"      "$OUT" "#327 label-from-issue"
+ncc "  pane_title へ落ちていない"                "$OUT" "title of %6"
 
 # ============================================================================
 echo ""

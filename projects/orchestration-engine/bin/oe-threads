@@ -28,7 +28,8 @@
 # server identity（DJ-D）: 突合は server_pid と pane の組で行う。pane 番号は tmux server 内でのみ
 #   一意なので、pane だけでは別 server の同番ペインと衝突する。sidecar 側の server_pid が空のもの
 #   （producer 更新前に書かれた記録・TMUX 不在で書かれた記録）は pane だけで突合する劣化動作とし、
-#   非空で不一致のものは候補にしない。
+#   非空で不一致のものは候補にしない。observer 側の pid は list-panes に答えた server から取り、
+#   確定できないときは帰属を推測せず exit 2 にする（$TMUX に依存しない）。
 #
 # 列（DJ-E）: PANE / CTX / AGE / MODEL / LABEL。MODEL は幅で切らない（display_name の末尾に
 #   1M 版の区別が載るため）。可変幅が2列あるので、切らない MODEL に最小幅を与え、溢れは最後の
@@ -96,8 +97,6 @@ fi
 
 NOW="${NOW_EPOCH:-$(date +%s 2>/dev/null)}"
 [[ "$NOW" =~ ^[0-9]+$ ]] || { err "現在時刻が取れません"; exit 2; }
-
-SERVER_PID="$(_oe_reg_server_pid 2>/dev/null || true)"
 
 # _oe_reg_label が global で返す2値（bash 3.2 に nameref が無いため・lib 側で毎回リセットされる）。
 # 呼び出し前に宣言しておく（source 先の代入は shellcheck から見えないため）。
@@ -169,6 +168,19 @@ if ! LIVE="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; then
   exit 2
 fi
 
+# observer 側の server identity は **list-panes に答えた server 自身**から取る（実装SO 指摘）。
+# $TMUX からしか取らないと、tmux 外の端末（Cursor の統合ターミナル等）から叩いたときに空になり、
+# 下の突合が「比較しない」へ倒れて別 server の同番ペインを誤帰属する。list-panes は $TMUX 不在でも
+# 既定ソケットのペインを返すので、この経路が観測の主経路になりうる。#270 の GC が #{pid} を物差しに
+# しているのと同じ形に揃える。
+SERVER_PID="$(tmux display-message -p '#{pid}' 2>/dev/null)" || SERVER_PID=""
+[[ "$SERVER_PID" =~ ^[0-9]+$ ]] || SERVER_PID="$(_oe_reg_server_pid 2>/dev/null || true)"
+if [[ ! "$SERVER_PID" =~ ^[0-9]+$ ]]; then
+  # 身元が確立できないなら pane だけで帰属を推測しない（誤帰属より不明を選ぶ）。
+  err "自分の tmux server pid が確定できません（pane 帰属を推測しないため中断します）"
+  exit 2
+fi
+
 printf '%-8s %5s %6s  %-20s %s\n' "PANE" "CTX" "AGE" "MODEL" "LABEL"
 
 while IFS= read -r _p; do
@@ -179,14 +191,17 @@ while IFS= read -r _p; do
     [[ "$_rpane" == "$_p" ]] || continue
     [[ "$_rts" =~ ^[0-9]+$ ]] || continue
     # server identity: 非空で不一致なら候補にしない（別 server の同番ペインを誤帰属しない）
-    if [[ -n "$_rspid" && -n "$SERVER_PID" && "$_rspid" != "$SERVER_PID" ]]; then continue; fi
+    if [[ -n "$_rspid" && "$_rspid" != "$SERVER_PID" ]]; then continue; fi
     # 鮮度窓の外は候補にしない（帰属の解決にだけ鮮度を使う）
     [[ $((NOW - _rts)) -le "$FRESH" && $((NOW - _rts)) -ge 0 ]] || continue
     _n=$((_n + 1))
     _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
   done
 
-  _oe_reg_label "$_p" "" 0
+  # ラベルの key は <server_pid>_<pane> なので、$TMUX が空でも解決できるよう確定済みの pid を
+  # 第4引数で渡す（これをしないと tmux 外から叩いたときだけ pane-issue が引けず pane_title へ落ちる）。
+  # TMUX を丸ごと差し替える形にはしない — pane_title を引く tmux が偽 socket を掴んで失敗する。
+  _oe_reg_label "$_p" "" 0 "$SERVER_PID"
   _label="$(_out "$_oe_reg_label_out" 120)"
 
   if [[ "$_n" -eq 1 ]]; then

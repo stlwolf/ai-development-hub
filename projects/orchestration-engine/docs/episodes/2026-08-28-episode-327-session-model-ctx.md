@@ -72,3 +72,25 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 もう1つ、DJ-E から実装で意図的にずれた点がある。plan は列順を `PANE / CTX / AGE / LABEL / MODEL` として「LABEL は固定幅で切る」と書いていたが、**固定幅の切り詰めは bash の `printf` ではバイト単位になり、日本語や記号（ラベルに実在する ✳）を途中で切って不正な UTF-8 を作る**（#343 / #346 で notify.sh が踏んだのと同じ型）。そこで列順を `PANE / CTX / AGE / MODEL / LABEL` にして、可変幅を最後の LABEL 1つに寄せ、どちらも切らない形にした。切り詰めが要るのは codepoint 上限（表示崩れ防止）だけで、それは jq 側で行う。
 
 昇級の印: 区切り文字の選定は「値に出るか」だけでなく「read 側の IFS 空白か」で決まる
+
+### 2026-08-28 gate 4（実装SO）の指摘を反映
+
+`oe-review --lanes 2 --base master`（audit_id `20260827174044J8NCT322AXG0`・`lens=impl`）は **refuted**。
+
+**codex レーンは2回とも 360 秒でタイムアウトした**（`timeout_empty`・stdout 0 バイト）。弱 SO の partial として disclose して進む（実返却は cursor の1レーン）。#298 と #303 が扱っている事象の追加サンプルになる。
+
+cursor の指摘は3件で、いずれも成立した。
+
+**1. observer 側の server identity を落とすと G3 が主経路で復活する（実在の欠陥）。** 突合条件を `[[ -n "$_rspid" && -n "$SERVER_PID" && ... ]]` と書いていたので、`SERVER_PID` が空だと比較そのものが skip され、別 server の同番ペインが載る。そして `SERVER_PID` は `$TMUX` からしか取っていなかった。**`tmux list-panes -a` は `$TMUX` 不在でも既定ソケットのペインを返す**ので、tmux 外の端末から叩く経路が観測の主経路になりうる。#270 の GC が `#{pid}` を物差しにしているのと非対称だった、という指摘も正しい。
+
+修正は `tmux display-message -p '#{pid}'`（＝`list-panes` に答えた server 自身）から取り、確定できなければ帰属を推測せず exit 2 にした。突合条件からも `-n "$SERVER_PID"` を外し、「比較しない」経路を残さない形にした。
+
+**2. テストがホストの `OE_THREADS_FRESH_SEC` に依存していた。** 隔離4点セットを謳っていたのに帰属窓を固定していなかった。ホストに小さい値が設定されていると G1 と G3 の期待が壊れる。既定と同じ 900 を明示 export した。
+
+**3. SKILL.md に「全 23 verb」と「この 22 は」が同居していた。** 数字の直し漏れ。
+
+**そして修正の検証で、自分の修正が別の劣化を作っていたのを見つけた。** ラベルの key は `<server_pid>_<pane>` なので、`$TMUX` が空だと pane-issue が引けず pane_title へ落ちる。これを直すため `oe-ident:44` の idiom（`TMUX="oe,${pid},0" _oe_reg_key`）をそのまま借りたところ、**`%0` のラベルが空になった**。`_oe_reg_label` は pane_title を引くために tmux へ問い合わせるので、偽の socket 名を掴んで失敗していた。**`oe-ident` でこの idiom が成立するのは、あちらが tmux へ問い合わせず「引けなければ空」で終えるからである。** 借りるときに前提の違いを見ていなかった。
+
+`_oe_reg_label` に第4引数（`server_pid`）を足し、**key の計算だけ**に効かせる形へ直した。tmux 内・tmux 外の両方で同じラベルが出ることを実機で確認し、`oe_reg_list` の byte 一致も維持されている。
+
+昇級の印: 他 verb の idiom を借りるときは「その verb が何を前提にしていないか」を見る（oe-ident は tmux へ問い合わせない）
