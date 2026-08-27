@@ -438,6 +438,40 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 
 ---
 
+## oe-threads — 生存ペインごとのモデル名とコンテキスト%（#327・read-only）
+
+statusLine 拍動 sidecar を **生存ペイン側から** 引いて、いま動いている Claude スレッドのモデル名と
+コンテキスト% を1つの表に出す read-only 観測 verb。ペインを1つずつ見に行かずに、モデルの切り替え
+忘れと context 肥大の接近に気づくための面。
+
+```bash
+oe-threads                  # 自 server の生存ペイン + pane を持たない fresh スレッド
+oe-threads --all            # 全 sidecar を AGE つきで出す（鮮度で絞らない・墓地も見える）
+oe-threads --fresh 300      # 帰属を解決する鮮度窓（既定 900・OE_THREADS_FRESH_SEC でも指定可）
+```
+
+出力は `PANE / CTX / AGE / MODEL / LABEL`。`MODEL` は幅で切らない（`display_name` の末尾に 1M 版の
+区別が載るため）。可変幅が2列あるので、切らない `MODEL` に最小幅を与え、溢れは最後の `LABEL` 側へ
+逃がす（`oe-tree` の「長い値は溢れてよい」degrade と同じ）。
+
+**なぜ生存ペインを左辺にするか（DJ-A）**: sidecar は同じ pane に何日分も溜まる（実測で `%0` に7件・
+うち6件が約4日前）。sidecar 側から列挙すると、生きているペインほど墓地が増えて一覧が使えなくなる。
+左辺を生存ペインにすると行数はペイン数で固定される。`oe-tree` の母集団（登記の森林）とは別で、
+**登記されていない手動ペインも出る**（実測で生存7ペインのうち2ペインが登記に無かった）。
+
+**鮮度の使い分け（DJ-B）**: 行を落とすのには使わず、帰属の解決にだけ使う。生存ペインの行は鮮度に
+関係なく常に出る（静かなスレッドが消えない）。どの sidecar をそのペインの現役とみなすかだけを鮮度窓で
+決める。fresh な候補が2件以上あるときは `PANE` に `?` を付けて値を出さない（最新で潰さない＝pane
+再利用の誤帰属を「解決済み」に見せない）。
+
+**server identity（DJ-D）**: 突合は `server_pid` と `pane` の組で行う。pane 番号は tmux server 内で
+のみ一意なので、pane だけでは別 server の同番ペインと衝突する。sidecar 側の `server_pid` が空のもの
+（producer 更新前・`$TMUX` 不在で書かれた記録）は pane だけで突合する劣化動作。
+
+read-only / 非検出: 読むのは (1) sidecar (2) tmux のペイン存在 (3) pane-issue のみ。write path は
+持たず、ペイン出力も読まない。exit は 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・
+tmux 不在や `list-panes` 失敗）。**空表を「0 件」として exit 0 で返さない**（#322 DJ-3）。
+
 ## oe-undelivered — 報告未達検知 watchdog（#239 段階0・read-only・cron 可）
 
 子→親の報告（`message_sent`）のうち、親が受領印（`report_received`・#220/#206A）を打っておらず（未ack）、かつ最古の未ack報告が**時間窓 W を越えた**ものを検出し、owner に ping する read-only 観測 verb。統括死亡 / send 無言失敗で報告が虚空へ消える経路（#239 mode3・チャネル脆弱）を、**#220 の frontier（未ack）＋時間次元**で決定論的に拾う（ペイン出力は capture しない）。
@@ -537,7 +571,7 @@ oe-hookfire --json       # 機械可読
 
 ## oe-vitals — 統括 vital 監視 watchdog（#239 段階1・read-only・cron 可）
 
-statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane}`）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。
+statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane, server_pid, model}`。`server_pid` と `model` は #327 で additive に追加。本 verb が読むのは従来の3キーだけ）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。
 
 ```bash
 oe-vitals                          # 既定 W=1800s / T=85% で統括 vital を判定し owner ping

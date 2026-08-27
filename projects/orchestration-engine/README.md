@@ -42,6 +42,7 @@ projects/orchestration-engine/
 │   ├── oe-kick                # #N / kickoff パスを 1 引数で受ける oe-delegate の薄いワンショットラッパー（#178）
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
+│   ├── oe-threads             # 生存ペインごとのモデル名とコンテキスト%（statusLine 拍動 sidecar を pane 側から引く・#327）
 │   ├── oe-register            # 手動起動ペインの自己 root 登記 / 既存ペインの委譲 link（#259）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
 │   ├── oe-jump                # 通知/ラベルから対象 tmux ペインへ focus（--record で直近 target を replay・#179）

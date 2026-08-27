@@ -109,7 +109,7 @@ echo "[5b] / 直下に何も作られない（plan Step 5 の約束・root 書�
 # それでも置くのは、root で回る CI やコンテナで初めて出る類の退行を、そこで確実に落とすためである。
 # shellcheck disable=SC2012  # / 直下の名前一覧を比べるだけなので ls で足りる
 _root_before="$(ls -a / 2>/dev/null | sort)"
-for _v in oe-activity oe-undelivered oe-vitals oe-hookfire oe-selfcheck oe-tree; do
+for _v in oe-activity oe-undelivered oe-vitals oe-hookfire oe-selfcheck oe-tree oe-threads; do
   env -u HOME timeout 20 "$BIN_DIR/$_v" >/dev/null 2>&1 || true
 done
 env -u HOME bash -c '

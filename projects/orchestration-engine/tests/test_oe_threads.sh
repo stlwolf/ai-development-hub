@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# test_oe_threads.sh — oe-threads（#327・生存ペインごとのモデル名とコンテキスト%）の検証
+#
+# 隔離は4点セット（どれかを落とすとホスト依存になる）:
+#   - OE_HEARTBEAT_DIR   sidecar の置き場（実ホームの 200 件超を読ませない）
+#   - OE_PANE_ISSUE_DIR  ラベル解決の置き場
+#   - PATH 先頭の tmux stub（実 tmux のペイン一覧・pane_title を使わない）
+#   - NOW_EPOCH          時計固定（AGE と鮮度判定を決定化）
+#
+# 回帰テストとして固定する事象（すべて #327 の gate で実測・または実装中に発見）:
+#   - G1: 生存ペインは古い sidecar を溜めるので、鮮度を帰属に使わないと墓地が既定出力に出る
+#   - G3: sidecar は server 内でのみ一意な pane を持つので、別 server の同番ペインを誤帰属しうる
+#   - G4: pane が空の sidecar は交差では落ちるので unbound 行として出す
+#   - 実装中に発見: 区切りに TAB を使うと空フィールドで列がずれる（TAB は IFS の空白文字）
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VERB="$SCRIPT_DIR/../bin/oe-threads"
+[[ -x "$VERB" ]] || { echo "FAIL: verb not found: $VERB"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+
+_TMP="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
+trap 'rm -rf "$_TMP"' EXIT
+
+PASS=0; FAIL=0
+ck()  { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
+ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
+ncc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
+
+# --- 固定した時計と server pid ---
+NOW=1700000000
+SPID=99999
+export TMUX="/tmp/mock-tmux-socket,${SPID},0"
+export NOW_EPOCH="$NOW"
+
+# --- 隔離した置き場 ---
+export OE_HEARTBEAT_DIR="$_TMP/oe-heartbeat"
+export OE_PANE_ISSUE_DIR="$_TMP/pane-issue"
+export OE_DELEGATE_STATE_DIR="$_TMP/oe-delegate"
+mkdir -p "$OE_HEARTBEAT_DIR" "$OE_PANE_ISSUE_DIR" "$OE_DELEGATE_STATE_DIR"
+
+# --- tmux stub（PATH 先頭・list-panes と display-message だけ意味を持つ）---
+STUB="$_TMP/bin"; mkdir -p "$STUB"
+cat > "$STUB/tmux" <<'TMUXEOF'
+#!/usr/bin/env bash
+# mock tmux: MOCK_LIVE_PANES（空白区切り）を list-panes が返す。display-message は title を返す。
+case "${1:-}" in
+  list-panes)
+    if [[ -n "${MOCK_TMUX_FAIL:-}" ]]; then echo "no server running" >&2; exit 1; fi
+    for p in ${MOCK_LIVE_PANES:-}; do printf '%s\n' "$p"; done ;;
+  display-message)
+    t=""; prev=""
+    for a in "$@"; do [[ "$prev" == "-t" ]] && t="$a"; prev="$a"; done
+    printf 'title of %s\n' "$t" ;;
+  *) exit 0 ;;
+esac
+TMUXEOF
+chmod +x "$STUB/tmux"
+export PATH="$STUB:$PATH"
+
+# --- sidecar を書く helper ---
+# mkbeat <name> <age_sec> <ctx-json> <pane> <server_pid> <display_name|-none->
+mkbeat() {
+  local name="$1" age="$2" ctx="$3" pane="$4" spid="$5" dn="$6"
+  jq -nc --argjson ts "$((NOW - age))" --argjson ctx "$ctx" --arg pane "$pane" --arg spid "$spid" --arg dn "$dn" \
+    '{ts:$ts, context_pct:$ctx, pane:$pane, server_pid:$spid,
+      model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end)}' \
+    > "$OE_HEARTBEAT_DIR/${name}.json"
+}
+mkissue() { printf '%s' "{\"name\":\"$2\"}" > "$OE_PANE_ISSUE_DIR/${SPID}_${1}"; }
+reset_beats() { rm -rf "$OE_HEARTBEAT_DIR"; mkdir -p "$OE_HEARTBEAT_DIR"; }
+run() { MOCK_LIVE_PANES="$1" bash "$VERB" "${@:2}" 2>/dev/null; }
+rows() { printf '%s' "$1" | tail -n +2 | grep -c .; }
+
+# ============================================================================
+echo "[1] 母集団: 生存ペイン起点で、行数はペイン数と一致する"
+# ============================================================================
+reset_beats
+mkbeat live0 5 61 '%0' "$SPID" 'Opus 5'
+OUT="$(run '%0 %1 %2')"
+ck  "行数はペイン数（3）"        "3"    "$(rows "$OUT")"
+ckc "sidecar の無いペインも出る"  "$OUT" "%1"
+ckc "  値は - になる"            "$OUT" "%1           -      -  -"
+
+# ============================================================================
+echo ""
+echo "[2] G1 回帰: 同じ pane の古い sidecar（墓地）を既定出力に出さない"
+# ============================================================================
+reset_beats
+mkbeat ghost1 345600 97 '%0' "$SPID" 'Opus 4.8'   # 4日前
+mkbeat ghost2 345601 13 '%0' "$SPID" 'Opus 4.8'
+mkbeat ghost3 345602 20 '%0' "$SPID" 'Opus 4.8'
+mkbeat live0  5      61 '%0' "$SPID" 'Opus 5'
+OUT="$(run '%0')"
+ck  "%0 の行は1行だけ"           "1"    "$(rows "$OUT")"
+ckc "現役の ctx が出る"           "$OUT" "61"
+ncc "墓地の ctx は出ない（97）"    "$OUT" "97"
+ncc "曖昧マークは付かない"         "$OUT" "%0?"
+
+# ============================================================================
+echo ""
+echo "[3] DJ-C: fresh な候補が2件なら曖昧マークを付けて値を出さない"
+# ============================================================================
+reset_beats
+mkbeat dupa 10 33 '%4' "$SPID" 'Fable 5'
+mkbeat dupb 20 44 '%4' "$SPID" 'Opus 5'
+OUT="$(run '%4')"
+ckc "PANE に曖昧マーク"           "$OUT" "%4?"
+ckc "件数を出す"                  "$OUT" "ambiguous(2)"
+ncc "値は出さない（33）"           "$OUT" "33"
+ncc "値は出さない（44）"           "$OUT" "44"
+
+# ============================================================================
+echo ""
+echo "[4] G3 回帰: 別 server の同番ペインを誤帰属しない"
+# ============================================================================
+reset_beats
+mkbeat other 15 22 '%1' '99998' 'Haiku 4.5'
+OUT="$(run '%1')"
+ncc "別 server の ctx を出さない"       "$OUT" "22"
+ncc "別 server の model を出さない"     "$OUT" "Haiku"
+ckc "値は - になる"                     "$OUT" "%1           -      -  -"
+# server_pid が空の記録（producer 更新前 / TMUX 不在）は pane だけで突合する劣化動作
+reset_beats
+mkbeat legacy 15 22 '%1' '' 'Haiku 4.5'
+OUT="$(run '%1')"
+ckc "server_pid 空は pane だけで突合する" "$OUT" "Haiku 4.5"
+ckc "  ctx も出る"                        "$OUT" "22"
+
+# ============================================================================
+echo ""
+echo "[5] G4 回帰: pane を持たない fresh スレッドを unbound 行で出す"
+# ============================================================================
+reset_beats
+mkbeat unb 25 8 '' "$SPID" 'Opus 5'
+mkbeat old 999999 8 '' "$SPID" 'Opus 4.8'   # 古い unbound は出さない
+OUT="$(run '%0')"
+ckc "unbound 行が出る"              "$OUT" "unbound session"
+ckc "  model が出る"                "$OUT" "Opus 5"
+ncc "古い unbound は出さない"        "$OUT" "Opus 4.8"
+ck  "行数はペイン1 + unbound1 = 2"  "2"    "$(rows "$OUT")"
+
+# ============================================================================
+echo ""
+echo "[6] 空フィールドで列がずれない（実装中に発見・TAB 区切りの罠の回帰）"
+# ============================================================================
+reset_beats
+mkbeat e1 5 61 '%0' '' 'Opus 5'          # server_pid だけ空
+OUT="$(run '%0')"
+ckc "server_pid 空でも model が MODEL 列に出る" "$OUT" "Opus 5"
+ncc "  SESSION 値が PANE 列に来ていない"        "$OUT" "e1  "
+reset_beats
+mkbeat e2 5 61 '' '' 'Opus 5'            # pane と server_pid の両方が空
+OUT="$(run '%0')"
+ckc "両方空でも unbound 行として出る"           "$OUT" "unbound session e2"
+ckc "  model が出る"                            "$OUT" "Opus 5"
+
+# ============================================================================
+echo ""
+echo "[7] DJ-D/DJ-E: MODEL は幅で切らない（1M 版の区別が末尾に残る）"
+# ============================================================================
+reset_beats
+mkbeat m1 5 47 '%6' "$SPID" 'Opus 5 (1M context)'
+OUT="$(run '%6')"
+ckc "display_name が末尾まで出る" "$OUT" "Opus 5 (1M context)"
+
+# ============================================================================
+echo ""
+echo "[8] LABEL: pane-issue を優先し、無ければ pane_title へ落ちる"
+# ============================================================================
+reset_beats
+mkbeat l1 5 47 '%6' "$SPID" 'Opus 5'
+mkissue '_6' '#327 label-from-issue'
+OUT="$(run '%6 %7')"
+ckc "pane-issue のラベルが出る"   "$OUT" "#327 label-from-issue"
+ckc "無いペインは pane_title"     "$OUT" "title of %7"
+
+# ============================================================================
+echo ""
+echo "[9] DJ-H: 異常入力の期待値"
+# ============================================================================
+reset_beats
+printf '%s' 'not json at all'    > "$OE_HEARTBEAT_DIR/broken.json"
+printf '%s' '["array","not","object"]' > "$OE_HEARTBEAT_DIR/arr.json"
+mkbeat future 0 50 '%2' "$SPID" 'Future 9'
+jq -nc --argjson ts "$((NOW + 600))" '{ts:$ts, context_pct:50, pane:"%2", server_pid:"99999", model:{display_name:"Future 9"}}' > "$OE_HEARTBEAT_DIR/future.json"
+jq -nc --argjson ts "$((NOW - 5))"   '{ts:$ts, context_pct:"NaN", pane:"%3", server_pid:"99999", model:{display_name:"Ctx Bad"}}' > "$OE_HEARTBEAT_DIR/ctxbad.json"
+jq -nc                               '{ts:"nope", context_pct:5, pane:"%5", server_pid:"99999", model:{display_name:"Ts Bad"}}'  > "$OE_HEARTBEAT_DIR/tsbad.json"
+jq -nc --argjson ts "$((NOW - 5))"   '{ts:$ts, context_pct:9, pane:"%7", server_pid:"99999", model:"a string"}'                  > "$OE_HEARTBEAT_DIR/modelstr.json"
+OUT="$(run '%2 %3 %5 %7')"
+ck  "壊れた JSON / 配列でも落ちない（4行出る）" "4" "$(rows "$OUT")"
+ncc "未来 ts は候補にしない（Future 9）"        "$OUT" "Future 9"
+ckc "ctx 非数値は - にして model は出す"        "$OUT" "Ctx Bad"
+ncc "  ctx に NaN を出さない"                   "$OUT" "NaN"
+ncc "ts 非数値は候補にしない（Ts Bad）"          "$OUT" "Ts Bad"
+ckc "model が文字列なら MODEL は -"             "$OUT" "%7           9"
+
+# ============================================================================
+echo ""
+echo "[10] 前提が満たせないときは exit 2（空表を 0 件と偽らない）"
+# ============================================================================
+reset_beats
+MOCK_TMUX_FAIL=1 MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1; rc=$?
+ck  "tmux 不在 / list-panes 失敗 → exit 2" "2" "$rc"
+env -u HOME -u OE_HEARTBEAT_DIR MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1; rc=$?
+ck  "HOME 未設定で置き場が決まらない → exit 2" "2" "$rc"
+# shellcheck disable=SC2012  # / 直下の名前一覧を比べるだけなので ls で足りる（test_home_unset.sh と同じ判断）
+_root_before="$(ls -a / 2>/dev/null | sort)"
+env -u HOME -u OE_HEARTBEAT_DIR MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1 || true
+# shellcheck disable=SC2012
+ck  "  / を汚さない" "$_root_before" "$(ls -a / 2>/dev/null | sort)"
+MOCK_LIVE_PANES='%0' bash "$VERB" --fresh 0 >/dev/null 2>&1; rc=$?
+ck  "--fresh 0 は不正 → exit 2" "2" "$rc"
+MOCK_LIVE_PANES='%0' bash "$VERB" --bogus >/dev/null 2>&1; rc=$?
+ck  "未知のオプション → exit 2" "2" "$rc"
+MOCK_LIVE_PANES='%0' bash "$VERB" -h >/dev/null 2>&1; rc=$?
+ck  "--help は exit 0" "0" "$rc"
+
+# ============================================================================
+echo ""
+echo "[11] --all: 鮮度で絞らず全件を出す"
+# ============================================================================
+reset_beats
+mkbeat g1 345600 97 '%0' "$SPID" 'Opus 4.8'
+mkbeat l1 5      61 '%0' "$SPID" 'Opus 5'
+OUT="$(run '%0' --all)"
+ck  "全件出る（2行）"        "2"    "$(rows "$OUT")"
+ckc "墓地も出る"             "$OUT" "97"
+ckc "AGE が日で出る"         "$OUT" "4d"
+ckc "SRVPID 列が出る"        "$OUT" "99999"
+
+# ============================================================================
+echo ""
+echo "=== RESULT: pass=$PASS fail=$FAIL ==="
+[[ "$FAIL" -eq 0 ]] || exit 1
