@@ -207,6 +207,8 @@ owner 裁定（2026-08-27）: **表示面は session 主キーの一覧を先に
 
 - **DJ-E の列順と LABEL の切り詰めを変えた。** plan は `PANE / CTX / AGE / LABEL / MODEL` として「LABEL は固定幅で切る」と書いていたが、実装は `PANE / CTX / AGE / MODEL / LABEL` にして、LABEL も切らない形にした。理由は bash の `printf` の幅指定がバイト単位で、ラベルに実在する多バイト文字（`✳` や日本語）を途中で切って不正な UTF-8 を作るため（同じ型が #343 / #346 で `notify.sh` に起きている）。可変幅を最後の1列に寄せることで、どちらも切らずに整列を保てる。
 - ほかに、gate 4 の指摘で **observer 側の server pid を `list-panes` に答えた server から取る**ことと、Copilot の指摘で **read-set 宣言を tmux query 3種に合わせる**ことを足した。どちらも DJ の変更ではなく DJ-D / DJ-G の実装精度の問題として扱った。
+- **`--all` の列は既定表と別である。** DJ-E は「SESSION 列は出さない」と書いているが、これは既定表についての判断で、`--all` は `PANE / SRVPID / CTX / AGE / MODEL / SESSION` を出す（墓地を見るモードなので、どの server のどの session かが必要）。DJ-E の文言に対する例外として記録する。
+- **下の Step 3 と Step 4 の「LABEL は固定幅で切る」系の項目は無効である。** 上記のとおり LABEL も切らない形にしたので、`Step 4` の受入項目「LABEL が切られる」を満たすことは現在の実装では**不合格**を意味する。plan は追記型で運用するため当該行は残すが、照合には本節を優先する。
 
 ### 異常入力の期待値（DJ-H）
 
