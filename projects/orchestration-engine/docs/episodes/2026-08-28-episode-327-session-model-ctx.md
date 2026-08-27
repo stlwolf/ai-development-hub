@@ -46,3 +46,15 @@ sidecar に `model`（`{id, display_name}`）と `server_pid` を additive で�
 **生の改行を含む stdin は入力ごと捨てられる（それが正しい）。** `display_name` に生の改行が入った JSON は JSON として不正なので、jq が parse に失敗して write 全体が skip される。sidecar は書かれず temp も残らない。テストで制御文字を入れるときは、コマンド行に生バイトを置かず jq の `implode` で実行時に作る（生バイトを書くと承認ダイアログ側で弾かれる）。
 
 昇級の印: sidecar のキー集合を固定するアサートは additive 変更の検出器として機能する（意図せずそうなっていた）
+
+### 2026-08-28 Step 2（label 解決の lib 切り出し）完了
+
+`oe_reg_list` の中にあった「pane → ラベルと出所」の解決を `_oe_reg_label` として切り出した。`oe_reg_list` の出力は byte 一致で、消費者側のテストも全件パスした（registry 35 / select 35 / status 27 / jump 38 / delegate 55 / send 42 / tree 61 / ident 14）。
+
+**素直な切り出し方をすると挙動が静かに変わる箇所があった。** 元のコードは spawn-registry 段を `[[ -n "$plabel" && "$pparent" == "$self" ]]` で判定しており、**`self` が空かどうかは見ていない**。つまり `TMUX_PANE` が空の環境では、`parent_pane` が空の entry（`oe-register root` で自己登記した root）と空文字どうしで一致し、root のラベルが spawn-registry 由来として採用される。
+
+「観測用途では registry 段を通したくない」を `[[ -n "$self" ]]` のガードで表現すると、まさにこのケースだけ挙動が変わる。そこで **registry 段を第3引数（`use_registry`）の opt-in にして、`self` は素通しにした**。`oe_reg_list` は `1` を渡して従来どおり、観測側は `0` を渡して pane-issue > pane_title の2段になる。
+
+検証は neg-control で行った。mock tmux と隔離した state で、切り出し前後の `oe_reg_list` 出力を `cmp` した。`TMUX_PANE="%1"` の通常ケースと、`TMUX_PANE=""` かつ `parent_pane=""` の root entry を置いたケースの両方で byte 一致した。**後者を測らなければ、この罠は踏んだまま緑になっていた。**
+
+昇級の印: 「条件式が暗黙に空文字の一致に依存している」形は、共通化のときだけ表に出る
