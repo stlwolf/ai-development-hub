@@ -806,7 +806,16 @@ run_codex() {
         codex_args+=("-C" "$WORKSPACE")
     fi
 
+    # stdin は /dev/null に固定する（#352）。codex exec は stdin が TTY でないとき
+    # 「Reading additional input from stdin...」を出して読みに行き、EOF に達しないパイプ
+    # （バックグラウンド実行・別プロセスからの呼び出し）では上限までそこで待つ。プロンプトは
+    # argv で渡しているので stdin から読む必要はない。実測: 1+1 のプロンプトでも stdin 未固定
+    # では exit 124 で 90 秒フル消費し、/dev/null を与えると即 exit 0 で返った。
+    # 当たるとリトライ（上限 ×1.5）も同じ read で待つので、伸ばした分だけ無駄になる。
+    # claude / cursor レーンは同じ形だが本件では両方返っているため、ここでは変えない
+    # （各 CLI が stdin を読むかの実測を取ってから判断する）。
     if timeout "$tool_timeout" "$CODEX_CMD" "${codex_args[@]}" "$PROMPT" \
+        < /dev/null \
         > "$OUT_DIR/codex-stdout.txt" 2> "$OUT_DIR/codex-stderr.txt"; then
         exit_code=0
     else
