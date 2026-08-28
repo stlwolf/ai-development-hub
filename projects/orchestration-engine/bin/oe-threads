@@ -13,6 +13,7 @@
 #     (1) statusLine 拍動 sidecar（OE_HEARTBEAT_DIR 配下の JSON）
 #     (2) tmux query 3種: ペイン存在（list-panes の pane_id）/ server pid（display-message の #{pid}）/
 #         pane_title（display-message。_oe_reg_label のラベル解決の最終段）
+#         **--all はこの系統を一切呼ばない**（sidecar の素の一覧なので tmux 不要）
 #     (3) pane-issue の state ファイル（ラベル解決の第1段。spawn-registry 段は使わない＝
 #         _oe_reg_label の第3引数を 0 で呼ぶ）
 #
@@ -39,8 +40,14 @@
 #   1M 版の区別が載るため）。可変幅が2列あるので、切らない MODEL に最小幅を与え、溢れは最後の
 #   LABEL 側へ逃がす（oe-tree:529 と同じ「長い値は溢れてよい」degrade）。
 #
-# exit: 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・tmux 不在や list-panes 失敗）。
+# exit: 0 正常 / 2 前提が満たせない。前提は**モードによって違う**（実装SO 指摘）:
+#     既定モード : jq / 置き場が決まる / **置き場が読める** / tmux が応答する
+#     --all      : jq / 置き場が決まる / **置き場が読める**（tmux は不要なので要求しない）
 #   空表を「0 件」として exit 0 で返さない（読めていないことを成功に化かさない・#322 DJ-3）。
+#   これは「置き場が読めない」だけでなく「**在るファイルを1件も投影できなかった**」場合にも効かせる。
+#   jq の rc で区別する: rc=2 は読取失敗（permission / I-O）、それ以外（rc=5 等）は中身の壊れで、
+#   後者は DJ-H どおり候補から外して行は出す。**読取失敗は件数を stderr に出し、全件が読めなければ
+#   exit 2** にする（「記録なし」と「観測不能」を同じ表で返さない）。
 
 set -uo pipefail
 
@@ -60,6 +67,7 @@ usage:
   oe-threads -h | --help
 
 読むのは sidecar / tmux query（ペイン存在・server pid・pane_title）/ pane-issue だけで、書き込みはしない。
+--all は sidecar だけを読むので tmux を必要としない（既定モードは tmux が応答しないと exit 2）。
 EOF
 }
 
@@ -96,6 +104,17 @@ declare -F _oe_state_dir >/dev/null 2>&1 || _oe_state_dir() {
 BEAT_DIR="$(_oe_state_dir OE_HEARTBEAT_DIR "/.claude/state/oe-heartbeat")"
 if [[ -z "$BEAT_DIR" ]]; then
   err "sidecar の置き場が決まりません（HOME 未設定・OE_HEARTBEAT_DIR も未指定）"
+  exit 2
+fi
+# 置き場が「読めない」ことを glob の 0 件と混ぜない（実装SO 指摘）。nullglob は探索不能も 0 件に
+# 畳むので、ここで明示的に落とす。まだ一度も走っていない環境（dir 未作成）と、権限で読めない
+# 環境は区別する — 前者は正当な 0 件、後者は観測不能である。
+if [[ -e "$BEAT_DIR" && ! -d "$BEAT_DIR" ]]; then
+  err "sidecar の置き場がディレクトリではありません: ${BEAT_DIR}"
+  exit 2
+fi
+if [[ -d "$BEAT_DIR" && ! ( -r "$BEAT_DIR" && -x "$BEAT_DIR" ) ]]; then
+  err "sidecar の置き場を読めません（権限）: ${BEAT_DIR}"
   exit 2
 fi
 
@@ -136,30 +155,61 @@ _age() { # <seconds>
 #     空フィールド（pane 空の unbound / server_pid 空の旧 sidecar / ctx 非数値）で列がずれる。US は
 #     非空白なので空フィールドが保たれる（oe-tree の ENTRIES と同じ区切り）。
 _US="$(printf '\037')"
+# 値の型を強制してから @tsv へ渡す（実装SO 指摘）。@tsv は配列や object を受け付けず jq 全体が
+# rc=5 で落ちるので、素朴に渡すと **その sidecar の有効な ts / context_pct / pane まで丸ごと脱落**
+# する。string でないものは空にして、行そのものは生かす。
+_PROJECT='
+  def s: if type == "string" then . else "" end;
+  def n: if type == "number" then tostring else "" end;
+  select(type=="object")
+  | [ (input_filename | split("/") | last | sub("\\.json$"; "")),
+      (.ts | n),
+      (.context_pct | n),
+      (.pane | s),
+      (.server_pid | s),
+      (if (.model | type) == "object" then (.model.display_name | s) else "" end) ]
+  | @tsv'
 RECS=()
+_files=0; _unreadable=0; _malformed=0
 shopt -s nullglob
 for _f in "$BEAT_DIR"/*.json; do
-  _line="$(jq -r 'select(type=="object")
-      | [ (input_filename | split("/") | last | sub("\\.json$"; "")),
-          (.ts // 0),
-          (if (.context_pct | type) == "number" then (.context_pct | tostring) else "" end),
-          (.pane // ""),
-          (.server_pid // ""),
-          (if (.model | type) == "object" then (.model.display_name // "") else "" end) ]
-      | @tsv' "$_f" 2>/dev/null | tr '\011' '\037')" || continue
-  [[ -n "$_line" ]] || continue
+  _files=$((_files + 1))
+  # jq の rc を単体で取る。**パイプの中に入れて PIPESTATUS を親で読むことはできない**
+  # （command substitution はサブシェルなので、パイプの状態が親に伝わらない）。
+  # rc=2 は読取失敗（permission / I-O）、それ以外（rc=5 等）は中身の壊れ。
+  _jqrc=0
+  _raw="$(jq -r "$_PROJECT" "$_f" 2>/dev/null)" || _jqrc=$?
+  _line="$(printf '%s' "$_raw" | tr '\011' '\037')"
+  if [[ "$_jqrc" -eq 2 ]]; then
+    _unreadable=$((_unreadable + 1)); continue
+  elif [[ "$_jqrc" -ne 0 ]]; then
+    _malformed=$((_malformed + 1)); continue
+  fi
+  [[ -n "$_line" ]] || { _malformed=$((_malformed + 1)); continue; }
   RECS+=("$_line")
 done
 shopt -u nullglob
+
+# 「記録なし」と「観測不能」を同じ表で返さない。
+if [[ "$_unreadable" -gt 0 ]]; then
+  err "警告: sidecar ${_unreadable}/${_files} 件を読めませんでした（権限 / I-O）"
+fi
+if [[ "$_malformed" -gt 0 ]]; then
+  err "警告: sidecar ${_malformed}/${_files} 件は中身が壊れているため候補から外しました"
+fi
+if [[ "$_files" -gt 0 && "${#RECS[@]}" -eq 0 && "$_unreadable" -gt 0 ]]; then
+  err "sidecar が ${_files} 件在るのに1件も読めませんでした（観測不能）"
+  exit 2
+fi
 
 # --- --all: 鮮度で絞らず全件を出す ---
 if [[ "$SHOW_ALL" -eq 1 ]]; then
   printf '%-8s %-6s %5s %6s  %-20s %s\n' "PANE" "SRVPID" "CTX" "AGE" "MODEL" "SESSION"
   for _r in ${RECS[@]+"${RECS[@]}"}; do
     IFS="$_US" read -r _sid _ts _ctx _pane _spid _model <<< "$_r"
-    [[ "$_ts" =~ ^[0-9]+$ ]] || _ts=0
+    if [[ "$_ts" =~ ^[0-9]+$ ]]; then _agestr="$(_age "$((NOW - _ts))")"; else _agestr="-"; fi
     printf '%-8s %-6s %5s %6s  %-20s %s\n' \
-      "${_pane:--}" "${_spid:--}" "${_ctx:--}" "$(_age "$((NOW - _ts))")" \
+      "${_pane:--}" "${_spid:--}" "${_ctx:--}" "$_agestr" \
       "$(_out "${_model:--}" 60)" "${_sid:0:8}"
   done
   exit 0

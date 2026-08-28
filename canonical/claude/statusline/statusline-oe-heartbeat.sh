@@ -25,7 +25,9 @@
 #                     欠落）は {} を書く**。素朴に .model.id を引くと jq が "Cannot index string with
 #                     string" で落ち、書き込み全体が失敗して既存キーの契約まで死ぬ（#327 で実測）。
 #                     display_name は 1M 版の区別（"Opus 5 (1M context)"）を末尾に持つので、消費者側で
-#                     頭から切らないこと。
+#                     頭から切らないこと。**id / display_name は string 以外なら空にする** — 配列や
+#                     object をそのまま保存すると、消費者側の @tsv が rc=5 で落ちて sidecar のレコード
+#                     全体（有効な ts / context_pct / pane を含む）が脱落する（#327 の実装SO 指摘）。
 #   - write は atomic（同一 dir 内 temp + rename）。毎秒級 write × 別プロセス read の競合で
 #     consumer が半端な JSON を読まないようにする。
 #
@@ -81,7 +83,8 @@ _oe_heartbeat_write() {
           pane:$pane,
           server_pid:$spid,
           model:(if (.model|type) == "object"
-                 then {id:(.model.id // ""), display_name:(.model.display_name // "")}
+                 then {id:(.model.id | if type == "string" then . else "" end),
+                       display_name:(.model.display_name | if type == "string" then . else "" end)}
                  else {} end)}' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "${dir}/${sid}.json" 2>/dev/null || rm -f "$tmp" 2>/dev/null

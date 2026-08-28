@@ -63,6 +63,8 @@ esac
 TMUXEOF
 chmod +x "$STUB/tmux"
 export PATH="$STUB:$PATH"
+# tmux を PATH から外した状態を作るための空ディレクトリ（[13-6] で使う）
+mkdir -p "$_TMP/no-tmux"
 
 # --- sidecar を書く helper ---
 # mkbeat <name> <age_sec> <ctx-json> <pane> <server_pid> <display_name|-none->
@@ -261,6 +263,68 @@ mkissue '_6' '#327 label-from-issue'
 OUT="$(env -u TMUX MOCK_LIVE_PANES='%6' bash "$VERB" 2>/dev/null)"
 ckc "TMUX 空でも pane-issue のラベルが出る"      "$OUT" "#327 label-from-issue"
 ncc "  pane_title へ落ちていない"                "$OUT" "title of %6"
+
+# ============================================================================
+echo ""
+echo "[13] 実装SO 再依頼の回帰: 読取失敗を「記録なし」に化かさない / --all の前提はモード別"
+# ============================================================================
+# 13-1: 置き場が読めない（権限）→ exit 2。dir 未作成（正当な 0 件）とは区別する。
+reset_beats
+_unreadable="$_TMP/unreadable"; rm -rf "$_unreadable"; mkdir -p "$_unreadable"; chmod 000 "$_unreadable"
+OE_HEARTBEAT_DIR="$_unreadable" MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1; rc=$?
+chmod 755 "$_unreadable"
+ck  "置き場が読めない → exit 2"                    "2" "$rc"
+_missing="$_TMP/never-created"
+OE_HEARTBEAT_DIR="$_missing" MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1; rc=$?
+ck  "置き場が未作成（正当な 0 件）→ exit 0"        "0" "$rc"
+
+# 13-2: 在るファイルを1件も読めない → exit 2（「観測不能」を空表にしない）
+reset_beats
+mkbeat u1 5 61 '%0' "$SPID" 'Opus 5'
+chmod 000 "$OE_HEARTBEAT_DIR/u1.json"
+MOCK_LIVE_PANES='%0' bash "$VERB" >/dev/null 2>&1; rc=$?
+chmod 644 "$OE_HEARTBEAT_DIR/u1.json"
+ck  "在るのに全件読めない → exit 2"                "2" "$rc"
+
+# 13-3: 一部が読めないときは警告を出しつつ、読めた分は出す
+reset_beats
+mkbeat ok1 5 61 '%0' "$SPID" 'Opus 5'
+mkbeat ng1 5 22 '%1' "$SPID" 'Sonnet 5'
+chmod 000 "$OE_HEARTBEAT_DIR/ng1.json"
+OUT="$(MOCK_LIVE_PANES='%0 %1' bash "$VERB" 2>"$_TMP/err13.txt")"; rc=$?
+chmod 644 "$OE_HEARTBEAT_DIR/ng1.json"
+ck  "一部読めない → exit 0"                        "0" "$rc"
+ckc "読めた分は出る"                                "$OUT" "Opus 5"
+ckc "読めなかった件数を stderr に出す"              "$(cat "$_TMP/err13.txt")" "読めませんでした"
+ncc "読めなかった分の値は出さない"                  "$OUT" "Sonnet 5"
+
+# 13-4: 壊れた JSON は「読取失敗」とは別枠で、警告つきで候補から外す（DJ-H どおり行は出る）
+reset_beats
+mkbeat ok2 5 61 '%0' "$SPID" 'Opus 5'
+printf '%s' 'not json at all' > "$OE_HEARTBEAT_DIR/broken2.json"
+OUT="$(MOCK_LIVE_PANES='%0' bash "$VERB" 2>"$_TMP/err14.txt")"; rc=$?
+ck  "壊れた JSON が在っても exit 0"                "0" "$rc"
+ckc "壊れている件数を stderr に出す"                "$(cat "$_TMP/err14.txt")" "中身が壊れている"
+ncc "  読取失敗として数えない"                      "$(cat "$_TMP/err14.txt")" "読めませんでした"
+ckc "健全な記録は出る"                              "$OUT" "Opus 5"
+
+# 13-5: display_name が string でない sidecar でも、有効な ts / ctx / pane が脱落しない
+reset_beats
+jq -nc --argjson ts "$((NOW - 5))" '{ts:$ts, context_pct:61, pane:"%0", server_pid:"99999", model:{id:"x", display_name:["arr"]}}' \
+  > "$OE_HEARTBEAT_DIR/typed.json"
+OUT="$(run '%0')"
+ckc "ctx は生き残る"                                "$OUT" "61"
+ckc "MODEL は - になる"                             "$OUT" "-"
+ncc "行が脱落していない"                            "$OUT" "%0           -      -  -"
+
+# 13-6: --all は tmux を必要としない（既定モードは必要）
+reset_beats
+mkbeat a1 5 61 '%0' "$SPID" 'Opus 5'
+OUT="$(PATH="$_TMP/no-tmux:$(dirname "$(command -v jq)"):/usr/bin:/bin" bash "$VERB" --all 2>/dev/null)"; rc=$?
+ck  "--all は tmux 不在でも exit 0"                "0" "$rc"
+ckc "  内容が出る"                                  "$OUT" "Opus 5"
+PATH="$_TMP/no-tmux:$(dirname "$(command -v jq)"):/usr/bin:/bin" bash "$VERB" >/dev/null 2>&1; rc=$?
+ck  "既定モードは tmux 不在で exit 2"              "2" "$rc"
 
 # ============================================================================
 echo ""
