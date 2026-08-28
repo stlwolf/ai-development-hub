@@ -12,6 +12,9 @@ set -euo pipefail
 #   - pane は ${TMUX_PANE:-}（伝播すれば載る・無ければ空）。
 #   - 既存 statusLine の wrap（OE_HEARTBEAT_WRAP_CMD）で表示を保ちつつ beat も書く。
 #   - atomic write の temp（.hb.*）を残さない。
+#   - #327: model は .model が object のときだけ {id, display_name} を投影する（object 以外は {}）。
+#   - #327: server_pid は $TMUX の pid 部（非数値・不在は空）。テストは TMUX を常に明示制御して
+#     決定化する（ホストが tmux 内で回すと ambient な $TMUX を拾って結果が変わるため）。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -36,13 +39,19 @@ mkhb() { HBDIR="$_TMP_DIR/$1"; mkdir -p "$HBDIR"; }
 run() {
   local input="$1"
   if [[ $# -ge 2 ]]; then
-    printf '%s' "$input" | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE="$2" bash "$PRODUCER"
+    printf '%s' "$input" | env -u TMUX OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE="$2" bash "$PRODUCER"
   else
-    printf '%s' "$input" | env -u TMUX_PANE OE_HEARTBEAT_DIR="$HBDIR" bash "$PRODUCER"
+    printf '%s' "$input" | env -u TMUX -u TMUX_PANE OE_HEARTBEAT_DIR="$HBDIR" bash "$PRODUCER"
   fi
 }
+# run_tmux <input-json> <TMUX_PANE> <TMUX> — $TMUX を明示指定して回す（server_pid の検証用・#327）
+run_tmux() {
+  printf '%s' "$1" | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE="$2" TMUX="$3" bash "$PRODUCER"
+}
 # sidecar のフィールドを読む
-field() { jq -r "$2" "$HBDIR/$1.json" 2>/dev/null; }
+field()  { jq -r "$2" "$HBDIR/$1.json" 2>/dev/null; }
+# sidecar のフィールドを JSON として読む（object 比較用・#327）
+fieldc() { jq -c "$2" "$HBDIR/$1.json" 2>/dev/null; }
 
 # ============================================================================
 echo "[1] 基本: sidecar に {ts, context_pct, pane} が書かれる + 最小 statusLine 出力"
@@ -52,7 +61,8 @@ ck  "sidecar ファイルが session_id 名で存在" "yes" "$([[ -f "$HBDIR/01A
 ck  "context_pct=42" "42" "$(field 01ABC '.context_pct')"
 ck  "pane=%99（TMUX_PANE 伝播）" "%99" "$(field 01ABC '.pane')"
 ck  "ts が正の整数" "yes" "$([[ "$(field 01ABC '.ts')" =~ ^[0-9]+$ ]] && echo yes || echo no)"
-ck  "JSON キーは ts/context_pct/pane の3つ" "context_pct pane ts" "$(field 01ABC 'keys_unsorted | sort | join(" ")')"
+# キー集合は契約そのものなので固定する（#327 で model / server_pid を additive に追加した）。
+ck  "JSON キーは ts/context_pct/pane/server_pid/model の5つ" "context_pct model pane server_pid ts" "$(field 01ABC 'keys_unsorted | sort | join(" ")')"
 ckc "表示に model" "$OUT" "Opus"
 ckc "表示に context%" "$OUT" "42% ctx"
 
@@ -168,7 +178,7 @@ OUT="$(printf '%s' "{\"session_id\":\"01R5\",\"model\":{\"display_name\":\"Opus 
 ckc "閾値 env 上書きで 5h 表示" "$OUT" "· 5h 50%"
 
 # rate_limits があっても sidecar 契約は不変（{ts,context_pct,pane}・context_pct のみ）
-ck  "sidecar キーは従来どおり" "context_pct pane ts" "$(field 01R2 'keys_unsorted | sort | join(" ")')"
+ck  "sidecar キーは表示機能の追加で増えない" "context_pct model pane server_pid ts" "$(field 01R2 'keys_unsorted | sort | join(" ")')"
 ck  "sidecar context_pct=34（rate_limits 混入なし）" "34" "$(field 01R2 '.context_pct')"
 
 echo "[14] now 取得不可（date 失敗）→ 5h% は出すが残り時間は抑止（Copilot 指摘・誤値回避）"
@@ -180,6 +190,62 @@ OUT="$(printf '%s' "{\"session_id\":\"01R6\",\"model\":{\"display_name\":\"Opus 
   | env OE_HEARTBEAT_DIR="$HBDIR" TMUX_PANE='%1' PATH="$STUB:$PATH" bash "$PRODUCER")"
 ckc "date 失敗でも 5h% は出す" "$OUT" "· 5h 83%"
 ncc "now 欠落 → 残り時間の括弧は出さない" "$OUT" "5h 83% ("
+
+# ============================================================================
+echo ""
+echo "[13] #327: model は object のときだけ投影する"
+# ============================================================================
+mkhb m13
+run '{"session_id":"01M13A","model":{"id":"claude-opus-5","display_name":"Opus 5 (1M context)"},"context_window":{"used_percentage":42}}' '%9' >/dev/null
+ck  "model.id が載る"                     "claude-opus-5"        "$(field 01M13A '.model.id')"
+ck  "display_name が末尾まで載る"          "Opus 5 (1M context)"  "$(field 01M13A '.model.display_name')"
+run '{"session_id":"01M13B","model":"opus","context_window":{"used_percentage":5}}' '%9' >/dev/null
+ck  "model が文字列 → {}（jq を落とさない）" "{}" "$(fieldc 01M13B '.model')"
+ck  "  既存キーも生き残る（context_pct）"    "5"  "$(field 01M13B '.context_pct')"
+run '{"session_id":"01M13C","context_window":{"used_percentage":7}}' '%9' >/dev/null
+ck  "model 欠落 → {}"                      "{}" "$(fieldc 01M13C '.model')"
+run '{"session_id":"01M13D","model":null,"context_window":{"used_percentage":7}}' '%9' >/dev/null
+ck  "model が null → {}"                   "{}" "$(fieldc 01M13D '.model')"
+run '{"session_id":"01M13E","model":{"display_name":"Sonnet 5"},"context_window":{"used_percentage":7}}' '%9' >/dev/null
+ck  "id 欠落 → 空文字（キーは残す）"         ""           "$(field 01M13E '.model.id')"
+ck  "  display_name は載る"                "Sonnet 5"   "$(field 01M13E '.model.display_name')"
+
+# ============================================================================
+echo ""
+echo "[14] #327: server_pid は \$TMUX の pid 部（非数値・不在は空）"
+# ============================================================================
+mkhb m14
+run_tmux '{"session_id":"01M14A","model":{"id":"m","display_name":"M"},"context_window":{"used_percentage":3}}' '%9' '/private/tmp/tmux-501/default,739,0' >/dev/null
+ck  "pid 部を取る"                 "739" "$(field 01M14A '.server_pid')"
+run_tmux '{"session_id":"01M14B","model":{"id":"m","display_name":"M"},"context_window":{"used_percentage":3}}' '%9' 'socket,notanumber,0' >/dev/null
+ck  "pid が非数値 → 空"            ""    "$(field 01M14B '.server_pid')"
+run '{"session_id":"01M14C","model":{"id":"m","display_name":"M"},"context_window":{"used_percentage":3}}' '%9' >/dev/null
+ck  "\$TMUX 不在 → 空"             ""    "$(field 01M14C '.server_pid')"
+ck  "  pane は env から載る"        "%9"  "$(field 01M14C '.pane')"
+
+# ============================================================================
+echo ""
+echo "[15] #327: display_name の制御文字と区切り文字は JSON に保持され write は成功する"
+# ============================================================================
+mkhb m15
+# 制御文字は実行時に jq の implode で作る（テストの入力にも生バイトを置かない）
+_in15="$(jq -nc '{session_id:"01M15", model:{id:"x|y", display_name:("A|B" + ([10]|implode) + "C" + ([27]|implode) + "2J")}, context_window:{used_percentage:1}}')"
+run "$_in15" '%9' >/dev/null
+ck  "write は成功する（sidecar が在る）"   "yes" "$([[ -f "$HBDIR/01M15.json" ]] && echo yes || echo no)"
+ck  "id の | が保持される"                "x|y" "$(field 01M15 '.model.id')"
+ck  "display_name の改行が保持される"      "$(printf 'A|B\nC\033'"2J")" "$(field 01M15 '.model.display_name')"
+ck  "  temp を残さない"                   "0"   "$(find "$HBDIR" -maxdepth 1 -name '.hb.*' | wc -l | tr -d ' ')"
+
+# ============================================================================
+echo ""
+echo "[16] #327: 既存キーの契約は不変（追加は additive）"
+# ============================================================================
+mkhb m16
+run '{"session_id":"01M16","model":{"id":"m","display_name":"M"},"context_window":{"used_percentage":42}}' '%9' >/dev/null
+ckr "ts は epoch 秒"        "$(field 01M16 '.ts')" '^[0-9]+$'
+ck  "context_pct は不変"     "42"  "$(field 01M16 '.context_pct')"
+ck  "pane は不変"            "%9"  "$(field 01M16 '.pane')"
+ck  "既存 consumer の投影が通る（ts|ctx|pane）" "42|%9" "$(jq -r '"\(.context_pct)|\(.pane)"' "$HBDIR/01M16.json")"
 
 # ============================================================================
 echo ""

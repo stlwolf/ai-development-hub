@@ -7,13 +7,27 @@
 #
 # 契約（PR-A が正本として定義・PR-B が read する前提）:
 #   - sidecar パス : ${OE_HEARTBEAT_DIR:-${HOME}/.claude/state/oe-heartbeat}/<session_id>.json
-#                    <session_id> は stdin JSON の .session_id（ULID・session 安定）。
-#   - sidecar 内容 : {"ts":<epoch秒>, "context_pct":<0-100>, "pane":"<tmux pane|空>"}
+#                    <session_id> は stdin JSON の .session_id（session 安定。実体は UUIDv4 で、
+#                    以前この行が ULID と書いていたのは誤り＝#327 で実データと照合して訂正）。
+#   - sidecar 内容 : {"ts":<epoch秒>, "context_pct":<0-100>, "pane":"<tmux pane|空>",
+#                     "server_pid":"<tmux server pid|空>",
+#                     "model":{"id":"<model id>","display_name":"<表示名>"}|{}}
 #       ts          = date +%s（BSD/GNU 両可搬・bin/oe-undelivered:100 と同型）
 #       context_pct = stdin .context_window.used_percentage（null/早期は // 0 fallback）
 #       pane        = ${TMUX_PANE:-}（statusLine 実行 env に伝播すれば載る。stdin には tmux pane 情報が
 #                     無いため env から取得する。伝播しない環境では空になり、consumer は session_id
 #                     主キー + board 突合で pane を解決する＝空でも契約は保たれる）
+#       server_pid  = $TMUX の pid 部（lib/delegate-registry.sh の _oe_reg_server_pid と同一の導出）。
+#                     pane 番号は tmux server 内でのみ一意なので、pane だけでは別 server の同番ペインと
+#                     衝突する。registry が <server_pid>_<pane> でキーを名前空間化しているのと同じ理由で
+#                     持たせる（#327）。$TMUX 不在・pid が数値でない場合は空。
+#       model       = stdin .model の id と display_name。**.model が object でないとき（文字列 / null /
+#                     欠落）は {} を書く**。素朴に .model.id を引くと jq が "Cannot index string with
+#                     string" で落ち、書き込み全体が失敗して既存キーの契約まで死ぬ（#327 で実測）。
+#                     display_name は 1M 版の区別（"Opus 5 (1M context)"）を末尾に持つので、消費者側で
+#                     頭から切らないこと。**id / display_name は string 以外なら空にする** — 配列や
+#                     object をそのまま保存すると、消費者側の @tsv が rc=5 で落ちて sidecar のレコード
+#                     全体（有効な ts / context_pct / pane を含む）が脱落する（#327 の実装SO 指摘）。
 #   - write は atomic（同一 dir 内 temp + rename）。毎秒級 write × 別プロセス read の競合で
 #     consumer が半端な JSON を読まないようにする。
 #
@@ -41,7 +55,7 @@ OE_HEARTBEAT_DIR="${OE_HEARTBEAT_DIR:-${HOME:-}/.claude/state/oe-heartbeat}"
 _oe_heartbeat_write() {
   command -v jq >/dev/null 2>&1 || return 0
 
-  local sid ts pane dir tmp
+  local sid ts pane server_pid dir tmp
   sid="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)" || return 0
   [[ -n "$sid" ]] || return 0
   # session_id をファイル名として安全な文字集合に限定（区切り混入 / path traversal 防止）。
@@ -50,14 +64,28 @@ _oe_heartbeat_write() {
   ts="$(date +%s 2>/dev/null)" || return 0
   [[ "$ts" =~ ^[0-9]+$ ]] || return 0
   pane="${TMUX_PANE:-}"
+  # server_pid: $TMUX = "socket,pid,session" の pid 部（_oe_reg_server_pid と同一の導出）。
+  # 数値でなければ空にする（偽の名前空間を作らない）。
+  server_pid="${TMUX:-}"
+  server_pid="${server_pid#*,}"
+  server_pid="${server_pid%%,*}"
+  [[ "$server_pid" =~ ^[0-9]+$ ]] || server_pid=""
   dir="$OE_HEARTBEAT_DIR"
 
   mkdir -p "$dir" 2>/dev/null || return 0
   tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || return 0
-  # 本体は input を主入力に取り、ts/pane を注入。context_pct は null/欠落を // 0 で吸収。
+  # 本体は input を主入力に取り、ts/pane/server_pid を注入。context_pct は null/欠落を // 0 で吸収。
+  # model は object のときだけ投影する（object 以外を素朴に index すると jq 全体が落ちる＝上の契約参照）。
   if printf '%s' "$input" \
-    | jq -c --argjson ts "$ts" --arg pane "$pane" \
-        '{ts:$ts, context_pct:((.context_window.used_percentage // 0) | tonumber? // 0), pane:$pane}' \
+    | jq -c --argjson ts "$ts" --arg pane "$pane" --arg spid "$server_pid" \
+        '{ts:$ts,
+          context_pct:((.context_window.used_percentage // 0) | tonumber? // 0),
+          pane:$pane,
+          server_pid:$spid,
+          model:(if (.model|type) == "object"
+                 then {id:(.model.id | if type == "string" then . else "" end),
+                       display_name:(.model.display_name | if type == "string" then . else "" end)}
+                 else {} end)}' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "${dir}/${sid}.json" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   else

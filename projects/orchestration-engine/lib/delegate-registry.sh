@@ -143,6 +143,64 @@ oe_reg_resolve() {
 }
 
 # oe_reg_list — 現サーバの生存ペインを宛先候補として一覧（source 列付き）
+# _oe_reg_label <pane> [self] [use_registry] — pane のラベルと出所を read 時に解決する。
+#
+# 2値（label と source）を返すので、bash 3.2 に nameref が無い制約から global 経由で返す:
+#   _oe_reg_label_out    解決したラベル（LF/CR は空白へ畳む・下記 sanitize 参照）
+#   _oe_reg_source_out   出所（pane-issue | spawn-registry | pane-title）
+#
+# 引数:
+#   <pane>          %N。
+#   [self]          spawn-registry 段の比較対象（parent_pane == self の entry だけを採る）。既定は空。
+#   [use_registry]  1 で spawn-registry 段を有効化。既定は 0。
+#   [server_pid]    state キーの名前空間（tmux server pid）。省略時は $TMUX から導出する。
+#                   **key の計算だけに効かせる**（tmux への問い合わせは実 $TMUX のまま）。TMUX を
+#                   丸ごと差し替える oe-ident:44 の idiom をそのまま借りると、pane_title を引く
+#                   tmux が偽の socket を掴んで失敗し、ラベルが空になる（#327 で実測）。あちらは
+#                   tmux へ問い合わせないので成立していた。
+#
+# **なぜ registry 段が opt-in なのか**: oe_reg_list は「委譲の宛先候補（自分の子）」を出す表なので、
+# parent_pane == self の entry だけをラベル源として採る。一方 #327 の観測用途は「誰の子かを問わず、
+# そのペインが何なのか」を知りたいので、この段を通さず pane-issue > pane_title の2段で解決する。
+# 同じ関数を両者で共有しつつ、意味の違いを引数で明示する（既定を 0 にしたのは、観測側が誤って
+# 「自分の子だけラベルが付く」挙動を引き継がないようにするため）。
+#
+# 出力チョークポイントでの sanitize（消費者 oe-list/oe-select/oe-status を一括防御）。
+# label に改行（LF/CR）が混じると 1 行構成の表が複数行化し、消費側の行パース
+# （`while read` / `awk '{print $1}'`）に偽の %N 候補行が紛れ込み別ペインへ誤送信し得る。
+# 解決直後に改行を空白へ畳んで偽行注入経路を断つ（pane_title 由来の細工を含む）。
+# 注: LF/CR のみ対象。U+2028 等 / ANSI / TAB は消費者のレコード境界にならず %N 行を
+# 偽造しない（視覚偽装は別軸・scope 外）。書き込み側 hardening は #178 外（follow-up）。
+_oe_reg_label() {
+  local p="$1" self="${2:-}" use_registry="${3:-0}" pid_override="${4:-}"
+  local key plabel pparent
+  _oe_reg_label_out=""; _oe_reg_source_out=""
+  if [[ -n "$pid_override" ]]; then
+    key="$(TMUX="oe,${pid_override},0" _oe_reg_key "$p")"
+  else
+    key="$(_oe_reg_key "$p")"
+  fi
+  if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
+    _oe_reg_label_out="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
+    [[ -n "$_oe_reg_label_out" ]] && _oe_reg_source_out="pane-issue"
+  fi
+  if [[ -z "$_oe_reg_source_out" && "$use_registry" == "1" \
+        && -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
+    plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
+    pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
+    if [[ -n "$plabel" && "$pparent" == "$self" ]]; then
+      _oe_reg_label_out="$plabel"; _oe_reg_source_out="spawn-registry"
+    fi
+  fi
+  if [[ -z "$_oe_reg_source_out" ]]; then
+    _oe_reg_label_out="$(tmux display-message -p -t "$p" '#{pane_title}' 2>/dev/null)"
+    _oe_reg_source_out="pane-title"
+  fi
+  _oe_reg_label_out="${_oe_reg_label_out//$'\n'/ }"
+  _oe_reg_label_out="${_oe_reg_label_out//$'\r'/ }"
+  return 0
+}
+
 oe_reg_list() {
   # 置き場が決まらないときは黙って pane-title へ degrade しない（#322）。
   # 表だけ出ると「登記された子は居ない」と読めてしまい、クラッシュより誤解を生む。
@@ -159,34 +217,13 @@ oe_reg_list() {
     return 2
   fi
   printf '%-8s %-14s %s\n' "PANE" "SOURCE" "LABEL"
-  local p key label source plabel pparent
+  local p label source
   while IFS= read -r p; do
     [[ -n "$p" ]] || continue
-    key="$(_oe_reg_key "$p")"
-    label=""; source=""
-    if [[ -n "$OE_PANE_ISSUE_DIR" && -f "${OE_PANE_ISSUE_DIR}/${key}" ]]; then
-      label="$(jq -r '.name // empty' "${OE_PANE_ISSUE_DIR}/${key}" 2>/dev/null)"
-      [[ -n "$label" ]] && source="pane-issue"
-    fi
-    if [[ -z "$source" && -n "$OE_DELEGATE_STATE_DIR" && -f "${OE_DELEGATE_STATE_DIR}/${key}.json" ]]; then
-      plabel="$(jq -r '.label // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
-      pparent="$(jq -r '.parent_pane // empty' "${OE_DELEGATE_STATE_DIR}/${key}.json" 2>/dev/null)"
-      if [[ -n "$plabel" && "$pparent" == "$self" ]]; then
-        label="$plabel"; source="spawn-registry"
-      fi
-    fi
-    if [[ -z "$source" ]]; then
-      label="$(tmux display-message -p -t "$p" '#{pane_title}' 2>/dev/null)"
-      source="pane-title"
-    fi
-    # 出力チョークポイントでの sanitize（消費者 oe-list/oe-select/oe-status を一括防御）。
-    # label に改行（LF/CR）が混じると 1 行構成のこの表が複数行化し、消費側の行パース
-    # （`while read` / `awk '{print $1}'`）に偽の %N 候補行が紛れ込み別ペインへ誤送信し得る。
-    # 出力直前で改行を空白へ畳んで偽行注入経路を断つ（pane_title 由来の細工を含む）。
-    # 注: LF/CR のみ対象。U+2028 等 / ANSI / TAB は消費者のレコード境界にならず %N 行を
-    # 偽造しない（視覚偽装は別軸・scope 外）。書き込み側 hardening は #178 外（follow-up）。
-    label="${label//$'\n'/ }"
-    label="${label//$'\r'/ }"
+    # ラベル解決は _oe_reg_label（#327 で切り出し）。ここは委譲の宛先一覧なので registry 段を有効に
+    # し、self をそのまま渡す（parent_pane == self の entry ＝「自分の子」だけを採る既存の意味）。
+    _oe_reg_label "$p" "$self" 1
+    label="$_oe_reg_label_out"; source="$_oe_reg_source_out"
     printf '%-8s %-14s %s\n' "$p" "$source" "$label"
   done <<< "$live"
 }
