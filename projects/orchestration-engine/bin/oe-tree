@@ -472,7 +472,11 @@ BEAT_WINDOW="${OE_TREE_BEAT_WINDOW_SEC:-900}"
 [[ "$BEAT_WINDOW" =~ ^[0-9]+$ && "$BEAT_WINDOW" -gt 0 ]] || BEAT_WINDOW=900
 BEAT_NOW="${NOW_EPOCH:-$(date +%s 2>/dev/null)}"
 [[ "$BEAT_NOW" =~ ^[0-9]+$ ]] || BEAT_NOW=0
+# observer の身元は list-panes に答えた server（#{pid}）から取り、取れなければ $TMUX 由来の
+# SERVER_PID へ落とす。**どちらも取れないときは fail-closed** にする（実装SO 指摘）:
+# 身元不明のまま「server_pid を持つ sidecar を全部通す」と、別 server の同番ペインを誤帰属する。
 BEAT_SPID="$(tmux display-message -p '#{pid}' 2>/dev/null)"
+[[ "$BEAT_SPID" =~ ^[0-9]+$ ]] || BEAT_SPID="$SERVER_PID"
 [[ "$BEAT_SPID" =~ ^[0-9]+$ ]] || BEAT_SPID=""
 BEATS=""            # pane US n US ctx US model の行（n>=2 は ambiguous）
 BEAT_UNREADABLE=0   # 読めなかった sidecar（権限 / I-O）
@@ -480,40 +484,52 @@ BEAT_MALFORMED=0    # 中身が壊れていた sidecar
 BEAT_DIR_BAD=0      # 置き場そのものが読めない
 
 # shellcheck disable=SC2016  # $now/$win/$spid/$sep は jq の変数（--argjson / --arg で渡す）なので展開させない
+# **@tsv でエスケープしてから区切りを US へ変換する**（実装SO 指摘）。join で生の値を並べると、
+# producer が保持する display_name 内の改行がそのままレコード境界になり、awk が別の行として読む。
+# 悪意ある値なら別ペインの拍動を偽装して注入できる（実際に到達可能であることを実装SO が確認した）。
+# @tsv は値の中の TAB / 改行 / バックスラッシュをエスケープするので、変換後の US は区切りだけになる。
+#
+# server の突合規則: observer の身元が分かっているときは「sidecar の server_pid が空（旧記録）か
+# 一致」を通し、身元が分からないときは「空だけ」を通す（fail-closed）。
+#
+# 先頭に !skipped 行を出して、valid JSON だが object でない sidecar の件数を返す。jq は成功するので
+# 遅い経路に落ちず、数えないと「壊れを note で開示する」契約を満たせない（実装SO 指摘）。
 _beat_program='
   def s: if type == "string" then . else "" end;
   def n: if type == "number" then . else null end;
-  [ inputs
-    | select(type == "object")
-    | { pane: (.pane | s),
-        ts: (.ts | n),
-        ctx: (.context_pct | n),
-        spid: (.server_pid | s),
-        model: (if (.model | type) == "object" then (.model.display_name | s) else "" end) }
-    | select(.pane != "" and .ts != null)
-    | select($now - .ts >= 0 and $now - .ts <= $win)
-    | select(.spid == "" or $spid == "" or .spid == $spid) ]
-  | group_by(.pane)
-  | map({ pane: .[0].pane, n: length, best: (sort_by(.ts) | last) })
-  | .[]
-  | [ .pane, (.n | tostring),
-      (if .n == 1 then (if .best.ctx == null then "" else (.best.ctx | floor | tostring) end) else "" end),
-      (if .n == 1 then .best.model else "" end) ]
-  | join($sep)'
+  [inputs] as $all
+  | ([ $all[] | select(type != "object") ] | length) as $nonobj
+  | ([ $all[]
+       | select(type == "object")
+       | { pane: (.pane | s),
+           ts: (.ts | n),
+           ctx: (.context_pct | n),
+           spid: (.server_pid | s),
+           model: (if (.model | type) == "object" then (.model.display_name | s) else "" end) }
+       | select(.pane != "" and .ts != null)
+       | select($now - .ts >= 0 and $now - .ts <= $win)
+       | select(if $spid == "" then .spid == "" else (.spid == "" or .spid == $spid) end) ]
+     | group_by(.pane)
+     | map({ pane: .[0].pane, n: length, best: (sort_by(.ts) | last) })) as $rows
+  | (["!skipped", ($nonobj | tostring), "", ""] | @tsv),
+    ($rows[]
+     | [ .pane, (.n | tostring),
+         (if .n == 1 then (if .best.ctx == null then "" else (.best.ctx | floor | tostring) end) else "" end),
+         (if .n == 1 then .best.model else "" end) ]
+     | @tsv)'
 
 if command -v jq >/dev/null 2>&1 && [[ -n "$BEAT_DIR" ]]; then
   if [[ -e "$BEAT_DIR" && ! -d "$BEAT_DIR" ]] || { [[ -d "$BEAT_DIR" ]] && ! { [[ -r "$BEAT_DIR" && -x "$BEAT_DIR" ]]; }; }; then
     BEAT_DIR_BAD=1
   else
-    _beat_sep="$(printf '\037')"
     shopt -s nullglob
     _beat_files=("$BEAT_DIR"/*.json)
     shopt -u nullglob
     if [[ "${#_beat_files[@]}" -gt 0 ]]; then
       # 速い経路: 1 プロセスで dir 全体を舐める
       if ! BEATS="$(jq -rn --argjson now "$BEAT_NOW" --argjson win "$BEAT_WINDOW" \
-                        --arg spid "$BEAT_SPID" --arg sep "$_beat_sep" \
-                        "$_beat_program" "${_beat_files[@]}" 2>/dev/null)"; then
+                        --arg spid "$BEAT_SPID" \
+                        "$_beat_program" "${_beat_files[@]}" 2>/dev/null | tr '\011' '\037')"; then
         # 遅い経路: 壊れた JSON が混じっているので 1 件ずつ読み、件数を数える
         BEATS=""
         _beat_ok=()
@@ -530,12 +546,19 @@ if command -v jq >/dev/null 2>&1 && [[ -n "$BEAT_DIR" ]]; then
         done
         if [[ "${#_beat_ok[@]}" -gt 0 ]]; then
           BEATS="$(jq -rn --argjson now "$BEAT_NOW" --argjson win "$BEAT_WINDOW" \
-                       --arg spid "$BEAT_SPID" --arg sep "$_beat_sep" \
-                       "$_beat_program" "${_beat_ok[@]}" 2>/dev/null)" || BEATS=""
+                       --arg spid "$BEAT_SPID" \
+                       "$_beat_program" "${_beat_ok[@]}" 2>/dev/null | tr '\011' '\037')" || BEATS=""
         fi
       fi
     fi
   fi
+fi
+
+# 先頭の !skipped 行（object でない valid JSON の件数）を取り出して malformed に足す。
+if [[ -n "$BEATS" ]]; then
+  _beat_skipped="$(printf '%s' "$BEATS" | awk -F $'\037' '$1=="!skipped" {print $2; exit}')"
+  [[ "$_beat_skipped" =~ ^[0-9]+$ ]] && BEAT_MALFORMED=$((BEAT_MALFORMED + _beat_skipped))
+  BEATS="$(printf '%s' "$BEATS" | awk -F $'\037' '$1!="!skipped"')"
 fi
 
 # beat_of <pane> — 行末に足す文字列（無ければ空）。ENTRIES と同じ US 区切り + awk の idiom。

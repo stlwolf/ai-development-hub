@@ -137,6 +137,14 @@ ck() {
     echo "    --- got ----"; printf '%s\n' "$actual"   | sed 's/^/    /'
   fi
 }
+# ncc <label> <haystack> <needle> — 部分一致の否定（#327 で追加）
+ncc() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    echo "  FAIL: $1 (unexpected: $3)"; FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $1"; PASS=$((PASS + 1))
+  fi
+}
 # ckc <label> <haystack> <needle> — 部分一致（#327 で追加。既存の ck は完全一致）
 ckc() {
   if printf '%s' "$2" | grep -qF -- "$3"; then
@@ -588,6 +596,51 @@ sleep 2
 kill "$_wpid" 2>/dev/null || true
 wait "$_wpid" 2>/dev/null || true
 ckc "watch のフレームに beat が出る" "$(cat "$_wout")" "Opus 5 61%"
+reset_beats
+
+# ----------------------------------------------------------------------------
+echo "[36] #327 実装SO の回帰: display_name の改行で拍動レコードを注入できない"
+# ----------------------------------------------------------------------------
+# producer は改行を JSON に保持する契約（test_oe_heartbeat_producer.sh [15]）。生の値を US で
+# 並べると改行がレコード境界になり、別ペインの拍動を偽装して注入できてしまう。
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+mkentry %61 "other" "/w/two" ""
+MOCK_LIVE_PANES="%60 %61"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:11, pane:"%61", server_pid:"12345",
+  model:{id:"x", display_name:("Real" + ([10]|implode) + "%60\u001f1\u001f77\u001fForged")}}' \
+  > "$OE_HEARTBEAT_DIR/inject.json"
+OUT="$("$TREE")"
+ncc "偽装した拍動が %60 に載らない"        "$OUT" "Forged"
+ncc "  偽の ctx も出ない"                  "$OUT" "77%"
+ckc "%60 は素のまま"                       "$OUT" "%60    alive  solo ~one"
+ckc "%61 には本物が載る"                   "$OUT" "%61    alive  other ~two  Real"
+
+echo "[37] #327 実装SO の回帰: observer の身元は #{pid} が空でも \$TMUX から取る"
+# 実装SO の指摘は「#{pid} が取れないと server_pid つき sidecar を全部通す fail-open」だった。
+# oe-tree は $TMUX 無しでは起動しないので「身元がまったく取れない」状態は到達しない（fail-closed
+# 自体は防御として残すが、ここでは到達する経路＝#{pid} だけが空のケースを固定する）。
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat s1 5 61 '%60' 12345 'Opus 5'
+ckc "#{pid} が取れるとき載る"                        "$("$TREE")" "solo ~one  Opus 5 61%"
+ckc "#{pid} が空でも \$TMUX の pid で載る"            "$(MOCK_SERVER_PID='' "$TREE")" "solo ~one  Opus 5 61%"
+reset_beats; mkbeat s2 5 77 '%60' 99998 'Haiku 4.5'
+ncc "#{pid} が空でも別 server は通さない（fail-open の回帰）" "$(MOCK_SERVER_PID='' "$TREE")" "Haiku 4.5"
+reset_beats; mkbeat s3 5 44 '%60' '' 'Sonnet 5'
+ckc "server_pid 空（旧記録）は通す"                  "$(MOCK_SERVER_PID='' "$TREE")" "Sonnet 5 44%"
+
+echo "[38] #327 実装SO の回帰: object でない valid JSON も壊れとして数える"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat o1 5 61 '%60' 12345 'Opus 5'
+printf '%s' '["array","not","object"]' > "$OE_HEARTBEAT_DIR/arr.json"
+printf '%s' '"just a string"'          > "$OE_HEARTBEAT_DIR/str.json"
+OUT="$("$TREE")"
+ckc "健全な拍動は出る"                     "$OUT" "Opus 5 61%"
+ckc "非 object を件数で開示する"           "$OUT" "note: 2 heartbeat files malformed"
 reset_beats
 
 echo
