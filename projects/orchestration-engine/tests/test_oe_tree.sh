@@ -47,6 +47,9 @@ case "${1:-}" in
   display-message)
     if [[ "$*" == *'#{window_zoomed_flag}'* ]]; then
       printf '%s\n' "${MOCK_ZOOM_FLAG:-0}"    # --pick ensure_zoom 用（既定 0=未 zoom）
+    elif [[ "$*" == *'#{pid}'* ]]; then
+      # 拍動の server 突合用（#327）。分岐を足さないと pid が title 経路へ落ちて突合が壊れる。
+      printf '%s\n' "${MOCK_SERVER_PID-99999}"
     elif [[ "$*" == *'#{pane_id}'* ]]; then
       printf '%s\n' "${MOCK_ACTIVE_PANE:-}"
     else
@@ -103,6 +106,23 @@ mkdir -p "$OE_DELEGATE_STATE_DIR" "$OE_PANE_ISSUE_DIR"
 export TMUX="/tmp/mock-tmux,12345,0"   # server pid = 12345
 export TMUX_PANE="%110"                # self（case [1] の孫）
 
+# --- 拍動 sidecar の隔離（#327）---
+# 隔離しないと実ホームを読む。実ホームには %85 の sidecar が実在するので fixture と衝突し、
+# ホスト依存になる。時計と窓も固定して鮮度判定を決定化する（test_oe_threads.sh と同じ形）。
+export OE_HEARTBEAT_DIR="$_TMP_DIR/oe-heartbeat"
+export OE_TREE_BEAT_WINDOW_SEC=900
+export NOW_EPOCH=1700000000
+export MOCK_SERVER_PID=12345           # mock tmux の #{pid}（$TMUX の pid と揃える）
+mkdir -p "$OE_HEARTBEAT_DIR"
+# mkbeat <name> <age秒> <ctx> <pane> <server_pid> <display_name|-none->
+mkbeat() {
+  jq -nc --argjson ts "$((NOW_EPOCH - $2))" --argjson ctx "$3" --arg pane "$4" --arg spid "$5" --arg dn "$6" \
+    '{ts:$ts, context_pct:$ctx, pane:$pane, server_pid:$spid,
+      model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end)}' \
+    > "$OE_HEARTBEAT_DIR/${1}.json"
+}
+reset_beats() { rm -rf "$OE_HEARTBEAT_DIR"; mkdir -p "$OE_HEARTBEAT_DIR"; }
+
 TREE="$_TMP_DIR/bin/oe-tree"
 
 PASS=0
@@ -115,6 +135,16 @@ ck() {
     echo "  FAIL: $label"; FAIL=$((FAIL + 1))
     echo "    --- want ---"; printf '%s\n' "$expected" | sed 's/^/    /'
     echo "    --- got ----"; printf '%s\n' "$actual"   | sed 's/^/    /'
+  fi
+}
+# ckc <label> <haystack> <needle> — 部分一致（#327 で追加。既存の ck は完全一致）
+ckc() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    echo "  PASS: $1"; PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $1"; FAIL=$((FAIL + 1))
+    echo "    --- missing ---"; printf '%s\n' "$3" | sed 's/^/    /'
+    echo "    --- in -------"; printf '%s\n' "$2" | sed 's/^/    /'
   fi
 }
 reset_state() {
@@ -467,6 +497,98 @@ ck "pick empty forest stdout empty" "" "$out"
 err="$("$TREE" --pick </dev/null 2>&1 >/dev/null)"
 ck "pick empty forest msg on stderr" "yes" \
   "$(printf '%s' "$err" | grep -q 'no spawn nodes to pick' && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+echo "[27] #327: 行末に拍動（モデル名とコンテキスト%）を足す"
+# ----------------------------------------------------------------------------
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat b1 5 61 '%60' 12345 'Opus 5 (1M context)'
+ck "beat を行末に足す" '-     %60    alive  solo ~one  Opus 5 (1M context) 61%' "$("$TREE")"
+
+echo "[28] #327: 拍動が無い / gone / 鮮度切れ では何も足さない"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+ck "拍動なし → 素の行" '-     %60    alive  solo ~one' "$("$TREE")"
+mkbeat b2 5000 61 '%60' 12345 'Opus 5'
+ck "鮮度窓の外 → 足さない" '-     %60    alive  solo ~one' "$("$TREE")"
+reset_beats; mkbeat b3 5 61 '%60' 12345 'Opus 5'
+MOCK_LIVE_PANES=""
+ck "gone なら足さない" '-     %60    gone   solo ~one' "$("$TREE")"
+
+echo "[29] #327: 別 server の sidecar を誤って足さない / 旧 sidecar は pane 単独で突合"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat b4 5 61 '%60' 99998 'Haiku 4.5'
+ck "別 server → 足さない" '-     %60    alive  solo ~one' "$("$TREE")"
+reset_beats; mkbeat b5 5 44 '%60' '' 'Sonnet 5'
+ck "server_pid 空（旧 sidecar）→ pane 単独で突合" '-     %60    alive  solo ~one  Sonnet 5 44%' "$("$TREE")"
+
+echo "[30] #327: 帰属が曖昧なら潰さず ambiguous と出す"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat d1 5  61 '%60' 12345 'Opus 5'
+mkbeat d2 10 33 '%60' 12345 'Fable 5'
+ck "候補2件 → ambiguous(2)" '-     %60    alive  solo ~one  ambiguous(2)' "$("$TREE")"
+
+echo "[31] #327: 壊れた sidecar は tree を殺さず note で開示する"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat ok1 5 61 '%60' 12345 'Opus 5'
+printf '%s' 'not json at all' > "$OE_HEARTBEAT_DIR/broken.json"
+OUT="$("$TREE")"; rc=$?
+ck  "exit 0（拍動は装飾なので tree を止めない）" "0" "$rc"
+ckc "健全な拍動は出る"                            "$OUT" "Opus 5 61%"
+ckc "壊れを note で開示する"                      "$OUT" "note: 1 heartbeat files malformed"
+
+echo "[32] #327: 置き場が読めないときも tree は出し、note で開示する"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+_unread="$_TMP_DIR/hb-unreadable"; rm -rf "$_unread"; mkdir -p "$_unread"; chmod 000 "$_unread"
+OUT="$(OE_HEARTBEAT_DIR="$_unread" "$TREE")"; rc=$?
+chmod 755 "$_unread"
+ck  "exit 0"                        "0" "$rc"
+ckc "tree 本体は出る"                "$OUT" "%60    alive  solo ~one"
+ckc "置き場が読めないことを開示する"  "$OUT" "note: heartbeat dir unreadable"
+
+echo "[33] #327: display_name の制御文字を sanitize し、長すぎる名前は上限で切る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:61, pane:"%60", server_pid:"12345",
+  model:{id:"x", display_name:("Op" + ([27]|implode) + "us 5")}}' > "$OE_HEARTBEAT_DIR/ctl.json"
+ckc "制御文字が畳まれる" "$("$TREE")" "solo ~one  Op us 5 61%"
+reset_beats
+mkbeat long 5 61 '%60' 12345 'AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEE'
+ckc "上限で切って ... を付ける" "$("$TREE")" "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDD... 61%"
+
+echo "[34] #327: --pick-list（popup が読む面）にも同じものが出る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat p1 5 61 '%60' 12345 'Opus 5'
+ck "pick-list の候補行にも出る（末尾までアンカー）" \
+   "$(printf '%%60\t-     %%60    alive  solo ~one  Opus 5 61%%')" "$("$TREE" --pick-list)"
+
+echo "[35] #327: --watch の1 tick にも出る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat w1 5 61 '%60' 12345 'Opus 5'
+_wout="$_TMP_DIR/watch-beat.txt"
+"$TREE" --watch --interval 1 > "$_wout" 2>&1 </dev/null &
+_wpid=$!
+sleep 2
+kill "$_wpid" 2>/dev/null || true
+wait "$_wpid" 2>/dev/null || true
+ckc "watch のフレームに beat が出る" "$(cat "$_wout")" "Opus 5 61%"
+reset_beats
 
 echo
 echo "PASS=${PASS} FAIL=${FAIL}"

@@ -38,10 +38,16 @@
 #     搬送する（oe-ident が role を前置するのは単一ペインの孤立表示だから）。
 #
 # read-only / 非検出: 読むのは (1) registry / pane-issue の state ファイル
-#   (2) tmux のペイン存在・座標・pane_title（mux query）のみ。oe_reg_gc 等の write path は
-#   一切呼ばない（#177 / #188 の read-only 観測規律）。--watch の poll はこの read セットを
+#   (2) tmux のペイン存在・座標・pane_title（mux query）(3) statusLine 拍動 sidecar
+#   （OE_HEARTBEAT_DIR・#327）のみ。oe_reg_gc 等の write path は一切呼ばない
+#   （#177 / #188 の read-only 観測規律）。--watch の poll はこの read セットを
 #   反復するだけで「何を読むか」の線は動かさない（capture 走査・自動反応に踏み込まない —
 #   oe-status DJ-1(c) が守った非検出境界との整合 = DJ-223-9・hg-1 裁定済み）。
+#
+#   **(3) は 2026-08-30 に owner が再裁定して加えた。** それまでこの列挙は (1)(2) の2系統に
+#   閉じており「裁定済み」と明記されていた。cockpit（`Ctrl+Space` → `v` の popup = 本 verb の
+#   `--pick`）にモデル名とコンテキスト% を出すには第3のソースが要る、という理由による。
+#   **書き込みと非検出の境界は動かしていない** — sidecar も読むだけで、ペイン出力は依然読まない。
 #
 # exit: 0=表示成功（登記 0 件の空表示を含む）/ 2=環境エラー（tmux scope 不能・jq 不在・
 #   引数不正）。$TMUX 不在は server_pid が導出できず scoping も liveness も成立しない＝
@@ -442,6 +448,116 @@ for _f in "${OE_DELEGATE_STATE_DIR}"/*.json; do
   ENTRIES+="${_line}"$'\n'
 done
 
+# --- 拍動 sidecar（#327）---
+# 目的の面は本 verb の `--pick`（cockpit の popup）。行末にモデル名とコンテキスト% を足す。
+#
+# **1 フレームあたり jq は 1 プロセス**に抑える（sidecar 件数に比例させない）。--watch は tick ごとに
+# 自分を再 exec し、--pick も候補取得のたびに再帰起動するので、1 ファイル 1 プロセスにすると
+# popup の常設経路が sidecar の件数だけプロセスを起こすことになる（実測で 176 件）。
+# 壊れた JSON があると jq は reader 段で全体を止めるため、その場合だけ 1 ファイルずつの遅い経路へ
+# 落ちて件数を数える（正常時は 1 プロセス・異常時だけ honest degrade）。
+#
+# 帰属は oe-threads と同じ規則: 鮮度窓内の候補が 1 件なら確定 / 2 件以上は最新で潰さず ambiguous /
+# 0 件なら何も足さない。突合は server_pid と pane の組で、server_pid が空の旧 sidecar は pane 単独で
+# 突合する劣化動作（既存の記録を全部落とさないため）。
+BEAT_DIR="${OE_HEARTBEAT_DIR:-}"
+if [[ -z "$BEAT_DIR" ]]; then
+  case "${HOME:-}" in
+    /|//) BEAT_DIR="" ;;
+    /*)   BEAT_DIR="${HOME}/.claude/state/oe-heartbeat" ;;
+    *)    BEAT_DIR="" ;;
+  esac
+fi
+BEAT_WINDOW="${OE_TREE_BEAT_WINDOW_SEC:-900}"
+[[ "$BEAT_WINDOW" =~ ^[0-9]+$ && "$BEAT_WINDOW" -gt 0 ]] || BEAT_WINDOW=900
+BEAT_NOW="${NOW_EPOCH:-$(date +%s 2>/dev/null)}"
+[[ "$BEAT_NOW" =~ ^[0-9]+$ ]] || BEAT_NOW=0
+BEAT_SPID="$(tmux display-message -p '#{pid}' 2>/dev/null)"
+[[ "$BEAT_SPID" =~ ^[0-9]+$ ]] || BEAT_SPID=""
+BEATS=""            # pane US n US ctx US model の行（n>=2 は ambiguous）
+BEAT_UNREADABLE=0   # 読めなかった sidecar（権限 / I-O）
+BEAT_MALFORMED=0    # 中身が壊れていた sidecar
+BEAT_DIR_BAD=0      # 置き場そのものが読めない
+
+# shellcheck disable=SC2016  # $now/$win/$spid/$sep は jq の変数（--argjson / --arg で渡す）なので展開させない
+_beat_program='
+  def s: if type == "string" then . else "" end;
+  def n: if type == "number" then . else null end;
+  [ inputs
+    | select(type == "object")
+    | { pane: (.pane | s),
+        ts: (.ts | n),
+        ctx: (.context_pct | n),
+        spid: (.server_pid | s),
+        model: (if (.model | type) == "object" then (.model.display_name | s) else "" end) }
+    | select(.pane != "" and .ts != null)
+    | select($now - .ts >= 0 and $now - .ts <= $win)
+    | select(.spid == "" or $spid == "" or .spid == $spid) ]
+  | group_by(.pane)
+  | map({ pane: .[0].pane, n: length, best: (sort_by(.ts) | last) })
+  | .[]
+  | [ .pane, (.n | tostring),
+      (if .n == 1 then (if .best.ctx == null then "" else (.best.ctx | floor | tostring) end) else "" end),
+      (if .n == 1 then .best.model else "" end) ]
+  | join($sep)'
+
+if command -v jq >/dev/null 2>&1 && [[ -n "$BEAT_DIR" ]]; then
+  if [[ -e "$BEAT_DIR" && ! -d "$BEAT_DIR" ]] || { [[ -d "$BEAT_DIR" ]] && ! { [[ -r "$BEAT_DIR" && -x "$BEAT_DIR" ]]; }; }; then
+    BEAT_DIR_BAD=1
+  else
+    _beat_sep="$(printf '\037')"
+    shopt -s nullglob
+    _beat_files=("$BEAT_DIR"/*.json)
+    shopt -u nullglob
+    if [[ "${#_beat_files[@]}" -gt 0 ]]; then
+      # 速い経路: 1 プロセスで dir 全体を舐める
+      if ! BEATS="$(jq -rn --argjson now "$BEAT_NOW" --argjson win "$BEAT_WINDOW" \
+                        --arg spid "$BEAT_SPID" --arg sep "$_beat_sep" \
+                        "$_beat_program" "${_beat_files[@]}" 2>/dev/null)"; then
+        # 遅い経路: 壊れた JSON が混じっているので 1 件ずつ読み、件数を数える
+        BEATS=""
+        _beat_ok=()
+        for _bf in "${_beat_files[@]}"; do
+          _brc=0
+          jq -e 'type == "object"' "$_bf" >/dev/null 2>&1 || _brc=$?
+          if [[ "$_brc" -eq 2 ]]; then
+            BEAT_UNREADABLE=$((BEAT_UNREADABLE + 1))
+          elif [[ "$_brc" -ne 0 ]]; then
+            BEAT_MALFORMED=$((BEAT_MALFORMED + 1))
+          else
+            _beat_ok+=("$_bf")
+          fi
+        done
+        if [[ "${#_beat_ok[@]}" -gt 0 ]]; then
+          BEATS="$(jq -rn --argjson now "$BEAT_NOW" --argjson win "$BEAT_WINDOW" \
+                       --arg spid "$BEAT_SPID" --arg sep "$_beat_sep" \
+                       "$_beat_program" "${_beat_ok[@]}" 2>/dev/null)" || BEATS=""
+        fi
+      fi
+    fi
+  fi
+fi
+
+# beat_of <pane> — 行末に足す文字列（無ければ空）。ENTRIES と同じ US 区切り + awk の idiom。
+beat_of() {
+  [[ -n "$BEATS" ]] || return 0
+  local rec n ctx model
+  rec="$(printf '%s' "$BEATS" | awk -F $'\037' -v p="$1" '$1==p {print $2 "\037" $3 "\037" $4; exit}')"
+  [[ -n "$rec" ]] || return 0
+  n="${rec%%$'\037'*}"; rec="${rec#*$'\037'}"
+  ctx="${rec%%$'\037'*}"; model="${rec#*$'\037'}"
+  if [[ "$n" != "1" ]]; then
+    printf 'ambiguous(%s)' "$n"
+    return 0
+  fi
+  model="$(sanitize_out "$model")"
+  [[ "${#model}" -gt 40 ]] && model="${model:0:40}..."
+  if [[ -n "$model" && -n "$ctx" ]]; then printf '%s %s%%' "$model" "$ctx"
+  elif [[ -n "$model" ]];              then printf '%s' "$model"
+  elif [[ -n "$ctx" ]];                then printf '%s%%' "$ctx"
+  fi
+}
+
 # 読めない/解釈できない/重複の現 server entry は無言で捨てず件数を footer で開示する
 # （foreign と同型の honest degrade — 全滅時も部分スキップ時も「登記どおり」と偽らない。実装SO 指摘）。
 # picklist モードでは note / 空森メッセージを stderr へ流す（stdout は候補行だけに保つ —
@@ -451,6 +567,10 @@ _note_fd=1
 print_notes() {
   [[ "$SKIPPED" -gt 0 ]] && echo "note: ${SKIPPED} entries skipped (unreadable or duplicate pane)" >&"$_note_fd"
   [[ "$FOREIGN" -gt 0 ]] && echo "note: ${FOREIGN} entries from other tmux servers not shown (stale)" >&"$_note_fd"
+  # 拍動は装飾なので tree は止めないが、読めなかったことは黙って捨てない（#327）。
+  [[ "$BEAT_DIR_BAD" -gt 0 ]] && echo "note: heartbeat dir unreadable (model/context omitted)" >&"$_note_fd"
+  [[ "$BEAT_UNREADABLE" -gt 0 ]] && echo "note: ${BEAT_UNREADABLE} heartbeat files unreadable" >&"$_note_fd"
+  [[ "$BEAT_MALFORMED" -gt 0 ]] && echo "note: ${BEAT_MALFORMED} heartbeat files malformed" >&"$_note_fd"
   return 0
 }
 
@@ -511,7 +631,7 @@ ROOTS="$(
 VISITED=" "
 render() { # <pane> <prefix> <child-prefix>
   local pane="$1" pfx="$2" cpfx="$3"
-  local live coord label ws suffix=""
+  local live coord label ws suffix="" _beat
   # picklist モードは各ノード行の先頭に隠しキー列 "%N<TAB>" を前置する（fzf の --with-nth 2 /
   # 番号 fallback の %N 抽出用）。表示本文（$pfx 以降）は view と同一なので木の形は保たれる。
   if [[ "$VISITED" == *" ${pane} "* ]]; then
@@ -532,6 +652,12 @@ render() { # <pane> <prefix> <child-prefix>
   ws="$(entry_field_of "$pane" 3)"
   [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
   [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
+  # 拍動は行末に足す（#327・owner 裁定）。gone / 拍動なしでは何も足さない。
+  # gone は「tmux にそのペインが無い」なので、そのペインを名乗る sidecar が新しくても
+  # 現役の帰属とは言えない（pane 再利用の誤帰属になる）。alive と ?（tmux 不明）だけに出す。
+  _beat=""
+  [[ "$live" != "gone" ]] && _beat="$(beat_of "$pane")"
+  [[ -n "$_beat" ]] && suffix+="  ${_beat}"
   if [[ "$MODE" == picklist ]]; then
     printf '%s\t%s%-4s  %-5s  %-5s  %s%s\n' "$pane" "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
   else

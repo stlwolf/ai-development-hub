@@ -440,6 +440,12 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 
 ## oe-threads — 生存ペインごとのモデル名とコンテキスト%（#327・read-only）
 
+**cockpit の主役ではない。** owner が見る面は `oe-tree`（`Ctrl+Space` → `v` の popup）で、そちらには
+#327 の続きで拍動を直接載せた（上の「行末の拍動」節）。本 verb は**母集団が違う**別用途として残る —
+`oe-tree` が登記（親子関係）に閉じているのに対し、本 verb は tmux の生存ペイン全件を左辺に取るので、
+登記に無い手動ペインも出る。統合するかは未判断。
+
+
 statusLine 拍動 sidecar を **生存ペイン側から** 引いて、いま動いている Claude スレッドのモデル名と
 コンテキスト% を1つの表に出す read-only 観測 verb。ペインを1つずつ見に行かずに、モデルの切り替え
 忘れと context 肥大の接近に気づくための面。
@@ -473,6 +479,31 @@ server pid＝`display-message` の `#{pid}` / `pane_title`＝ラベル解決の�
 `spawn-registry` 段は使わない（`_oe_reg_label` の第3引数を 0 で呼ぶ）。write path は持たず、ペイン
 出力も読まない。exit は 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・
 tmux 不在や `list-panes` 失敗）。**空表を「0 件」として exit 0 で返さない**（#322 DJ-3）。
+
+### 行末の拍動（モデル名とコンテキスト%・#327）
+
+生存ノードの行末に、そのペインで動いている Claude のモデル名とコンテキスト% を出す。`--pick`
+（cockpit の popup が使う面）にも同じ render を通るので自動で出る。
+
+```text
+1.1   %0     alive  orch-12 ~biz-infra  Opus 5 (1M context) 61%
+├─ -   %1     gone   #100 ~biz-infra.infra-#100_deploy_entrypoint
+```
+
+- **置き場は行末**（`~workspace` / `(you)` と同じ suffix 慣習）。実測で popup の実効幅は約 116 桁、
+  拍動を足した最長行は 96 桁（owner 裁定・2026-08-30）。
+- **`gone` と拍動なしでは何も足さない。** `gone` は tmux にそのペインが無いので、そのペインを名乗る
+  sidecar が新しくても現役の帰属とは言えない（pane 再利用の誤帰属になる）。
+- **帰属は鮮度窓（既定 900 秒・`OE_TREE_BEAT_WINDOW_SEC`）内の候補で解く。** 1件なら確定、2件以上は
+  最新で潰さず `ambiguous(n)` と出す。突合は `server_pid` と `pane` の組で、`server_pid` が空の旧
+  sidecar は pane 単独で突合する劣化動作。
+- **拍動は装飾なので tree を止めない。** 置き場が読めない・壊れた sidecar が在る場合も tree は出し、
+  件数を note で開示する（黙って捨てない）。
+- **1 フレームあたり jq は 1 プロセス**に抑えている（sidecar 件数に比例させない）。`--watch` は tick
+  ごとに自分を再 exec するため。実測で sidecar 176 件・フレーム 313ms（拍動なしの版は 283ms）。
+- **read-set の再裁定**: 本 verb の読む集合は (1) registry / pane-issue (2) tmux query に閉じており
+  「DJ-223-9・hg-1 裁定済み」と明記されていた。2026-08-30 に owner が再裁定し、(3) statusLine 拍動
+  sidecar を加えた。書き込みと非検出の境界は動かしていない。
 
 ## oe-undelivered — 報告未達検知 watchdog（#239 段階0・read-only・cron 可）
 
