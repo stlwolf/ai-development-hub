@@ -74,3 +74,23 @@ owner は案X を選んだ。試作は plan 確定後に削除した（コミッ
 最終状態は 88/0（既存 61 + 新規 27）、両 bash で全件パス。既存の観測 verb も不変。
 
 昇格の印: 「値に出ない区切り」を選んだ時点で終わりにせず、値の中の改行がレコード境界になる経路を見る
+
+### 2026-08-30 Copilot レビュー1ラウンド
+
+行コメントは付かず、レビュー本文で1点の指摘（`Changes recommended`）。
+
+> Updated docs/comments claim "1 フレームあたり jq は 1 プロセス" in a way that can be misread as overall frame cost, but the command uses jq in multiple other places, so the wording should be clarified to avoid misinformation.
+
+**成立する。しかも私自身の実測と食い違っていた。** 測ったのは「拍動あり 20 回 / 拍動なし 18 回 → 拍動が増やすのは 2 回」で、**フレーム全体が 1 プロセスになったことは一度も無い**。それなのにコメントと README と plan に「1 フレームあたり jq は 1 プロセス」と書いていた。受入条件も「1フレームの jq プロセス数が sidecar 件数に比例しない」と、全体の回数で書いていた（測っていたのは増分なので、条件と測定がずれている）。
+
+3箇所（verb のコメント・`bin/README.md`・plan の DJ-7 と最終検証）を、増分で言い切る形に直した。
+
+**この誤りは自分の測定値を見ていれば気づけた。** 20 と 18 という数字を並べて書いておきながら、要約の一文が「1 プロセス」のままだった。**数値を出したあとに、その数値で要約文を検算していない。**
+
+### 2026-08-30 Copilot が来るまでの待ち時間について（自己訂正）
+
+私は「12分待ったが Copilot レビューは未着」と報告し、Copilot 無しで進める案を owner に出した。**これは早合点だった** — レビューはその直後に付いていた（`submitted_at` 09:06:27Z）。owner が URL を示して指摘した。
+
+前回（PR #351）が約4分で付いたため、12分を「来ない」の根拠にしてしまった。**サンプル1件の所要時間を閾値として扱った**のが誤りである。加えて、GraphQL 経由（`gh pr view --json reviews`）では author が `copilot-pull-request-reviewer`、REST 経由では `copilot-pull-request-reviewer[bot]` と表記が違う。今回の判定は前者で書いたが、両方を見るか、そもそも「未着」を宣言せずに待つべきだった。
+
+昇格の印: 外部の非同期プロセスに「来ない」と宣言するとき、サンプル1件の所要時間を閾値にしない
