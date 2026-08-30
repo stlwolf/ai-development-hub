@@ -93,6 +93,19 @@ plan を書く前に試作して測った。**前単位の失敗が「実機の�
 - [ ] READ: `projects/orchestration-engine/bin/oe-threads:240-269` — 帰属解決（**前版は行番号を間違えていた**）
 - [ ] READ: `projects/orchestration-engine/tests/test_oe_tree.sh:24-60` — `cp` + `lib` symlink のハーネスと mock の分岐
 
+## HG-1 の記録（gate 3 通過・2026-08-30）
+
+owner が plan を承認した（4周目の SO は回さない）。以降の照合はこの baseline を母集団の同一性の基準にする。
+
+| 対象 | 値 | 備考 |
+| --- | --- | --- |
+| 承認した plan（commit） | `f315c8c15015407d9697d0554bea72909b08a47f` | この commit の内容が承認された版。本節はこの後の commit で追記している |
+| 承認した plan（blob） | `6594173e7d953f02d854d43f340ea4d105f4039a` | 上の commit 時点のファイル |
+| ゲート表（`document-format.md`）の commit | `28dcd5ed437e07ce97c8ef42d9c83f5ce05ac47e` | §11 ゲート配置の版 |
+| ゲート表（blob） | `484cb487a34126e363c807b47a76370fa793f8e9` | 同上 |
+| 委譲時の書面（brief） | 無し | 委譲していない（本セッションが実装する） |
+| digest のアルゴリズムと対象 | git blob（`git hash-object <path>`・SHA-1 over file bytes） | 再計算は同じコマンドで行う |
+
 ## HG-1: owner HG（gate 3）
 
 - [ ] plan を owner に提示して承認を得る
