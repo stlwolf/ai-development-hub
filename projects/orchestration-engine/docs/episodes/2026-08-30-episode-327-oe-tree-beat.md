@@ -3,7 +3,7 @@ id: "01M18WRGJJC1DNJ2EE321M0R87"
 title: "#327 cockpit の親子ツリーにモデル名とコンテキスト% を出す — 実行記録"
 date: 2026-08-30
 type: episode
-status: in-development
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/327"
 scope: orchestration-engine
 related:
@@ -14,6 +14,31 @@ related:
     ref: "projects/orchestration-engine/docs/episodes/2026-08-28-episode-327-session-model-ctx.md"
     reason: "前単位の実行記録。読み取りの実装（oe-threads）と、面を取り違えて未達に終わった経緯がある"
 tags: [engine, cockpit, oe-tree, statusline, heartbeat]
+promotion:
+  - subject: "表示の依頼では母集団や取得経路より先に目的の面を実物で特定する"
+    verdict: required
+    ref: "本文: なぜこの作業が始まったか"
+  - subject: "区切り文字の選定と値のエスケープは別の仕事で、片方だけでは壊れる"
+    verdict: required
+    ref: "本文: 2026-08-30 gate 4（実装SO）の指摘を反映"
+  - subject: "非同期の到着を前回1回の所要時間を閾値にして「来ない」と宣言しない"
+    verdict: required
+    ref: "本文: 2026-08-30 Copilot が来るまでの待ち時間について（自己訂正）"
+  - subject: "sidecar は pane を名乗るだけなので pane の生死は別の source で確かめる"
+    verdict: not-required
+    ref: "本文: 2026-08-30 実装（Step 1〜4）完了"
+  - subject: "置き場の判断は実測なしでは慣習に合う以上のことが言えない"
+    verdict: not-required
+    ref: "本文: 2026-08-30 着手前の試作（幅の確認を最初に置いた）"
+  - subject: "数値を出したあとにその数値で要約文を検算する"
+    verdict: not-required
+    ref: "本文: 2026-08-30 Copilot レビュー1ラウンド"
+  - subject: "oe-tree の read-set に sidecar を加えた再裁定"
+    verdict: unknown
+    ref: "本文: 前提（着手時点で確定していること）"
+  - subject: "closure の checklist を自分で埋めても自分が書いた記録の欠落は見つけられない"
+    verdict: not-required
+    ref: "本文: Step 4（heavy の外部チェック・実施済み）"
 ---
 
 # #327 cockpit の親子ツリーにモデル名とコンテキスト% を出す — 実行記録
@@ -22,7 +47,7 @@ tags: [engine, cockpit, oe-tree, statusline, heartbeat]
 
 ## 前提（着手時点で確定していること）
 
-- gate 2（設計SO・3レーン）を1周通し、指摘を plan に反映済み。**3レーンとも attempt 1 で返った**（codex 168秒 / claude 351秒 / cursor 202秒）。前単位で収穫した knowledge item（材料をインラインし上限を上げる）をそのまま適用した結果である。
+- gate 2（設計SO・3レーン）を1周通し、**verdict は `refuted`**（audit_id `20260829191141HSX8GSXN7CWV`）。指摘を plan に反映済み。**3レーンとも attempt 1 で返った**（codex 168秒 / claude 351秒 / cursor 202秒）。前単位で収穫した knowledge item（材料をインラインし上限を上げる）をそのまま適用した結果である。
 - gate 3（owner HG）は 2026-08-30 に通過。baseline は plan の「HG-1 の記録」節（承認 commit `f315c8c`）。
 - owner 裁定3件: 置き場は行末 / `oe-tree` の read-set に sidecar を加える再裁定を認める / 母集団は変えず未登記セッションは別単位。
 - 実装はこのセッションが行う（委譲しない）。
@@ -77,7 +102,7 @@ owner は案X を選んだ。試作は plan 確定後に削除した（コミッ
 
 ### 2026-08-30 Copilot レビュー1ラウンド
 
-行コメントは付かず、レビュー本文で1点の指摘（`Changes recommended`）。
+行コメントは付かず、レビュー本文で1点の指摘（`Changes recommended`）。**被覆は部分的で、レビュー本文の Review details は `Files reviewed: 3/5 changed files` / `Comments generated: 0` / `Review effort level: Lite` と書いている。** heavy tier のゲートとして1ラウンド数えている以上、5件中3件しか読まれていないことは開示しておく。
 
 > Updated docs/comments claim "1 フレームあたり jq は 1 プロセス" in a way that can be misread as overall frame cost, but the command uses jq in multiple other places, so the wording should be clarified to avoid misinformation.
 
@@ -87,6 +112,8 @@ owner は案X を選んだ。試作は plan 確定後に削除した（コミッ
 
 **この誤りは自分の測定値を見ていれば気づけた。** 20 と 18 という数字を並べて書いておきながら、要約の一文が「1 プロセス」のままだった。**数値を出したあとに、その数値で要約文を検算していない。**
 
+昇格の印: 測った数を書いたら、その数で自分の要約文を検算する
+
 ### 2026-08-30 Copilot が来るまでの待ち時間について（自己訂正）
 
 私は「12分待ったが Copilot レビューは未着」と報告し、Copilot 無しで進める案を owner に出した。**これは早合点だった** — レビューはその直後に付いていた（`submitted_at` 09:06:27Z）。owner が URL を示して指摘した。
@@ -94,3 +121,93 @@ owner は案X を選んだ。試作は plan 確定後に削除した（コミッ
 前回（PR #351）が約4分で付いたため、12分を「来ない」の根拠にしてしまった。**サンプル1件の所要時間を閾値として扱った**のが誤りである。加えて、GraphQL 経由（`gh pr view --json reviews`）では author が `copilot-pull-request-reviewer`、REST 経由では `copilot-pull-request-reviewer[bot]` と表記が違う。今回の判定は前者で書いたが、両方を見るか、そもそも「未着」を宣言せずに待つべきだった。
 
 昇格の印: 外部の非同期プロセスに「来ない」と宣言するとき、サンプル1件の所要時間を閾値にしない
+
+## closure（2026-08-30・PR レビュー後・マージ前）
+
+tier は **heavy**。意図的に外部レビューを起動した（gate 2 の3レーン・gate 4 の2レーン）／非自明な設計判断を比較して棄却した（置き場・lib 切り出し・母集団）／昇格候補がある、の3トリガに当たる。
+
+### closure gate
+
+- **Context / なぜ**: 冒頭に1文で自己完結させた（`本文: なぜこの作業が始まったか`）。
+- **次の消費者**: (1) cockpit を使う owner（`Ctrl+Space` → `v` の popup を見る人）(2) 母集団を広げる別単位と、落ちたあとの親子関係の復元を扱う人 (3) `oe-threads` を統合するか判断する人。
+- **follow-up routing**: 下記「残課題」に全件の行き先を書いた。行き先なしの項目は無い。
+- **昇格の判定**: frontmatter の `promotion` に7件（`required` 3 / `not-required` 3 / `unknown` 1）。`required` の3件は同じブランチで knowledge item として収穫した。
+- **status 確定**: `stable`。達成度は **部分** — 実機の popup（`Ctrl+Space` → `v`）で owner が目視するのはマージ後で、この単位では確認できない。**前単位はここを確認せずに近い形で報告して未達だったので、今回は達成と書かない。**
+- **evidence anchor**: `tmp/oe-refute-*` と `tmp/oe-review-*` は永続しないので、verdict と audit_id と指摘の要点は本文へ転記済み。
+- **SO 証跡リンク**: Step 4 の外部チェックは下記に記す。
+- **観測の書き戻し**: 該当なし（委譲していないので brief が無く、negative knowledge の注入も無い）。
+
+### 事実・失敗
+
+- **前単位が丸ごと未達だった。** 面を特定せずに設計し、別の道具を作っていた（`本文: なぜこの作業が始まったか`）。
+- gate 2 が私の「gate 1 を省く根拠」を3レーンとも否定した。面以外の自由度（read-set の再裁定・lib 切り出しの失敗意味論・走査コスト・sanitize・置き場の幅）が残っていた（`本文: 前提（着手時点で確定していること）`）。
+- **gate 2 は「自由度が残っていた」だけでなく、私が plan に書いた記述そのものが間違っている箇所を4件指した**（`本文なし: 前版 plan の指摘なので、現 plan の該当行と gate 2 の出力が一次資料）。(1) 母集団を「登記に無いペインは行として出さない」と書いたが、`oe-tree` は未登記の `parent_pane` を合成 root として実際に表示する（`oe-tree:497` と `test_oe_tree.sh:130` が根拠）。(2) DJ-4 を「厳密突合」と書いたが、それを採ると `server_pid` 空の旧 sidecar が全部帰属しなくなる（現 plan の DJ-4 備考に自己申告として残している）。(3) DJ-6 の「26 箇所」は前単位 v1 の数字の使い回しで、`ck` は 45 件（完全一致に限れば 26 という読みもあり、レーン間で判定が割れた）。(4) Pre-Implementation の行番号が対象を外していた（現 plan の Pre-Implementation に訂正として残している）。**gate 4 側の同型（自分が書いた仕様やテストの誤り）は4件とも詳述したのに、gate 2 側だけ不足の言い方に丸めていた。**
+- **実装で仕様を落とした。** plan に「gone では何も足さない」と書いたのに、実装で `gone` にも拍動が付いていた。テストが捕まえた（`本文: 2026-08-30 実装（Step 1〜4）完了`）。
+- **前単位で収穫した教訓を持っていて、別 facet で同じ型を踏んだ。** 区切りに US を選んだが値をエスケープせず、改行でレコードを注入できる状態にした（`本文: 2026-08-30 gate 4（実装SO）の指摘を反映`）。
+- **前単位の gate 4 で指摘された型を、別の場所で再発させた。** observer の身元が取れないときの fail-open（同上）。
+- **間違った理由で通るテストを書いた。** fail-closed の回帰を `TMUX=''` で書いたが、`oe-tree` は `$TMUX` 無しでは起動しないので「何も出なかった」で通っていた（同上）。
+- **自分の実測と食い違う要約を3箇所に書いた。** 「1 フレームあたり jq は 1 プロセス」（`本文: 2026-08-30 Copilot レビュー1ラウンド`）。
+- **「Copilot は来ない」と早合点し、それを前提にした提案を owner に出した。** 直後に到着していた（`本文: 2026-08-30 Copilot が来るまでの待ち時間について（自己訂正）`）。
+
+### 決定と根拠
+
+- 面を `oe-tree` に固定し、母集団を変えない判断は owner 裁定（`本文: 前提（着手時点で確定していること）`）。棄却したのは「平坦な一覧へ差し替える」「母集団を広げる」の2案で、前者は cockpit の目的（親子関係）を壊し、後者は #188 の identity 裁定に触れるため。
+- 置き場は行末。試作で popup の実効幅を実測して決めた（`本文: 2026-08-30 着手前の試作（幅の確認を最初に置いた）`）。棄却した案Y（`alive` の直後に挟む）は、拍動を持ちえない `gone` 行にも場所取りが要り全行が 25 桁太る。
+- lib 切り出しを取り下げた（`本文: 前提（着手時点で確定していること）`）。共有すると `oe-threads` の exit 政策（読めなければ exit 2）が装飾の層へ入り、拍動の不具合でトポロジ表示が死ぬ。
+- `gone` に足さないのは、sidecar が pane を名乗るだけで pane の生死を保証しないため（`本文: 2026-08-30 実装（Step 1〜4）完了`）。
+
+### わかったこと
+
+- `oe-tree --pick` は `--pick-list` で通常の render を再利用するので、行を変えれば popup の候補行も同時に変わる（`本文: なぜこの作業が始まったか`）。
+- 拍動が増やす jq は 2 回で、フレーム全体は 20 回前後（`本文: 2026-08-30 Copilot レビュー1ラウンド`）。
+- Copilot のレビュー author は GraphQL と REST で表記が違う（`本文: 2026-08-30 Copilot が来るまでの待ち時間について（自己訂正）`）。
+
+### 原則（Pattern / Anti-pattern）
+
+- **Anti**: 「表示する」依頼で、面を確かめずに母集団と取得経路から設計する。→ **Pattern**: 面を実物で特定し plan の冒頭に固定する（Step 5 で収穫）。
+- **Anti**: 区切り文字を選んだだけで分解の安全を終わりにする。→ **Pattern**: 値をエスケープしてから区切る（Step 5 で収穫）。
+- **Anti**: 非同期の到着を1サンプルの所要時間で「来ない」と宣言する。→ **Pattern**: 「まだ確認できていない」と書き、打ち切るなら打ち切ったと書く（Step 5 で収穫）。
+- **Anti**: 数値を測ったあと、要約の一文をその数値で検算しない。→ **Pattern**: 要約に数を書いたら測定値と突き合わせる。
+
+### 蒸留シグナル
+
+- knowledge store: **3件収穫**（`01M19CPRGAY3GJMM1DQPFKPFW0` 面の特定 / `01M19CPRGERDEV1CFWXQ40XVPT` 区切りと値のエスケープ / `01M19CPRGHAE74F7TV0Y9KYQAN` 非同期の到着）。
+- decision: なし。面と母集団の判断は #327 の1単位に閉じており、覆すのに要るのは owner の再指定（確認）であって議論ではない。ただし **read-set の再裁定は `unknown`** とした（下記）。
+- skill / rule: なし。
+
+### 昇格の判定で `unknown` にしたもの
+
+**`oe-tree` の read-set に sidecar を加えた再裁定**を `unknown` にした。owner が口頭で認めた判断で、元の裁定（DJ-223-9・hg-1）は verb のヘッダにしか痕跡が無く、decision 層の文書が見つからなかった。**元の裁定がどこに記録されているかが分からないので、再裁定を昇格すべきかも判定できない。** 何が分かれば決まるか: DJ-223-9 の一次記録の所在（#223 の episode か discussion か、あるいはヘッダのコメントが唯一の記録か）。
+
+### 残課題（全件に行き先を付与）
+
+| 残課題 | 行き先 |
+| --- | --- |
+| 実機の popup（`Ctrl+Space` → `v`）で owner が目視する | plan の HG-2（マージ後） |
+| 母集団を広げる（登記に無い生存セッションを出す）+ 落ちたあとの親子関係の復元 | owner が別単位で扱うと明言済み。起票は owner |
+| `oe-threads` を統合するか廃止するか | **発火条件つきで保留**: 母集団を広げる別単位（登記に無い生存セッションを cockpit に出す）が着手されたときに判断する。そこで母集団が一致すれば `oe-threads` の存在理由が消えるため。それまでは `bin/README.md` の「主役ではない」位置づけのまま置く |
+| DJ-223-9 の一次記録の所在（上記 `unknown` の解消） | 追わない（再裁定は済んでおり、所在が分かった時点で decision 昇格を再検討すれば足りる） |
+| Copilot のレビュー author 表記が REST と GraphQL で違う | 追わない（knowledge item に書いたので次回は両方見る） |
+
+### Step 4（heavy の外部チェック・実施済み）
+
+`so-compare --with claude,cursor`（`SO_TIMEOUT=600`）で closure 品質の focused check を実施した。**2レーンとも返った**（claude 493秒 / cursor 273秒）。出力は `tmp/so-20260830-221333/`（永続しないので指摘と対応を以下へ転記する）。
+
+**8件の指摘があり、一次確認した5件すべてが成立した。全件この closure 内で直した。**
+
+| # | 指摘 | 一次確認 | 対応 |
+| --- | --- | --- | --- |
+| 4-A | **PR #354 本文に、Copilot が指摘した当の誤りが残っている** | PR 本文40行目に「1 フレームあたり jq は 1 プロセス」が実在。同じ本文の検証表は「20 回・拍動が使うのは 2 回」と正しい値を書いており、1つの文書の中で矛盾していた | PR 本文を訂正 |
+| 4-B | **`bin/README.md` の新節が `oe-tree` 節ではなく `oe-threads` 節の中に入っている** | 実測で `## oe-tree`(347) → `## oe-threads`(441) → `### 行末の拍動`(483)。**`oe-tree` の挙動を説明する節が別 verb の配下にあり、`oe-tree` 節には拍動の記述が1行も無かった。** plan の Step 4 は「`oe-tree` 節に追記」と書いていたので実装が step から外れていた | `oe-tree` 節の末尾（439行）へ移し、相互参照の「上の」も直した |
+| 4-C | `--help` の表示契約が `[~workspace] [(you)]` のままで実挙動と食い違う | `oe-tree:93` に実在。gate 2 の cursor レーンが名指しで挙げていた指摘を取り込み損ねていた | 表示契約に `[モデル ctx%]` を足した |
+| 4-D | 鮮度窓 900 秒が plan にも episode にも書かれておらず、#327 の決定コメント（「60 秒前後を提案」）と食い違ったまま | 両 doc に「900」は grep で0件。実装は `oe-tree:473` で 900（`oe-threads` の既定を踏襲） | plan の DJ-4 に値と出自（前単位の plan v4 の DJ-B で 60→900 に変えた経緯）を明記した |
+| 3-A | gate 2 の audit_id と verdict が本文に無く `tmp/` にしか存在しない | `20260829191141HSX8GSXN7CWV` はどの doc にも無し。`tmp/` は gitignore なので worktree を掃除すると消える | 「前提」節へ転記した |
+| 1-A | gate 2 が指した「plan の記述そのものの誤り」4件が事実・失敗に無く、「自由度が残っていた」に丸められている | gate 4 側の同型は4件とも詳述しているのに gate 2 側だけ不足の言い方だった | 事実・失敗へ4件を追記した |
+| 1-B | Copilot の被覆が部分的（3/5 files・Lite）だったことが未記載 | レビュー本文の Review details に実在 | Copilot の節へ追記した |
+| 2-A | 残課題の `oe-threads` の行に行き先が無い（「未判断」は状態、「README に書いた」は記録先） | そのとおり | 発火条件（母集団を広げる別単位の着手時）を書いた |
+
+**レーンが「Step 4 が未了で stdout が 0 バイト」と書いたのは、そのレーン自身が走っている最中の so-compare 出力を見たためである**（自分の出力を自分で覗いて空だと判定した形）。ここは指摘として成立しない。
+
+**この外部チェックは2単位連続で closure の穴を見つけた**（前単位8件・本単位8件）。内側のゲート（自分で checklist を埋める）は、自分が書いた記録の欠落を見つけられない、という同じ結果になっている。
+
+昇格の印: closure の checklist を自分で埋めても、自分が書いた記録の欠落は見つけられない

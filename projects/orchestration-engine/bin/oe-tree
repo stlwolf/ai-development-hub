@@ -90,7 +90,7 @@ usage: oe-tree [--watch [--interval N]] | [--pick]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
-各ノード: <座標 win.pane|-> <pane> <liveness> <label> [~workspace] [(you)]
+各ノード: <座標 win.pane|-> <pane> <liveness> <label> [~workspace] [(you)] [モデル ctx%]
 （座標は複数セッション時のみ session: を前置。並びは画面配置順 = window→pane 昇順・
 gone は末尾）
 
