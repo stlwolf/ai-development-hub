@@ -436,9 +436,44 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 
 関連 lib: `delegate-registry.sh`（`_oe_reg_server_pid` / `_oe_reg_key`・read ヘルパのみ使用）。隣接 verb: `oe-jump`（jump 再利用先）/ `oe-select`（fzf・番号 fallback の同型元）。
 
+### 行末の拍動（モデル名とコンテキスト%・#327）
+
+生存ノードの行末に、そのペインで動いている Claude のモデル名とコンテキスト% を出す。`--pick`
+（cockpit の popup が使う面）にも同じ render を通るので自動で出る。
+
+```text
+4.1   %6     alive  #327 oe-tree-beat  Opus 5 (1M context) 90% (you)
+└─ 4.2   %18    alive  #327 display-probe  Opus 5 (1M context) 6% ~repo-a.feature-#327_example
+```
+
+- **並びは「切れてよい順に右へ」**: ラベル（issue ID）→ **拍動** → `(you)` → `~workspace`。popup は幅が
+  足りないと行の右端から切れるので、いちばん見たい拍動を workspace より前に置く。**当初は行末に置いて
+  いたが、worktree で子を回している実機で 123 桁になり popup の実効幅（約 116 桁）を超え、拍動が真っ先に
+  切れた**（worktree の末尾成分は `<repo>.<branch-slug>` で実測 53 桁）。ブランチ名の情報価値が低いという
+  owner 裁定（2026-09-01）により workspace を最後に回した。
+- **`gone` と拍動なしでは何も足さない。** `gone` は tmux にそのペインが無いので、そのペインを名乗る
+  sidecar が新しくても現役の帰属とは言えない（pane 再利用の誤帰属になる）。
+- **帰属は鮮度窓（既定 900 秒・`OE_TREE_BEAT_WINDOW_SEC`）内の候補で解く。** 1件なら確定、2件以上は
+  最新で潰さず `ambiguous(n)` と出す。突合は `server_pid` と `pane` の組で、`server_pid` が空の旧
+  sidecar は pane 単独で突合する劣化動作。
+- **拍動は装飾なので tree を止めない。** 置き場が読めない・壊れた sidecar が在る場合も tree は出し、
+  件数を note で開示する（黙って捨てない）。
+- **拍動のために起こす jq を sidecar 件数に比例させない**（dir 全体を 1 回の jq で舐める）。`--watch` は
+  tick ごとに自分を再 exec するため。**フレーム全体の jq は 20 回前後**で、そのうち拍動が増やすのは
+  2 回である（拍動なしの版は 18 回。残りは登記とラベルの解決など既存の経路）。実測は sidecar 176 件・
+  フレーム 313ms（拍動なしの版は 283ms）。
+- **read-set の再裁定**: 本 verb の読む集合は (1) registry / pane-issue (2) tmux query に閉じており
+  「DJ-223-9・hg-1 裁定済み」と明記されていた。2026-08-30 に owner が再裁定し、(3) statusLine 拍動
+  sidecar を加えた。書き込みと非検出の境界は動かしていない。
+
 ---
 
 ## oe-threads — 生存ペインごとのモデル名とコンテキスト%（#327・read-only）
+
+**cockpit の主役ではない。** owner が見る面は `oe-tree`（`Ctrl+Space` → `v` の popup）で、そちらには
+#327 の続きで拍動を直接載せた（上の「行末の拍動」節）。本 verb は**母集団が違う**別用途として残る —
+`oe-tree` が登記（親子関係）に閉じているのに対し、本 verb は tmux の生存ペイン全件を左辺に取るので、
+登記に無い手動ペインも出る。統合するかは未判断。
 
 statusLine 拍動 sidecar を **生存ペイン側から** 引いて、いま動いている Claude スレッドのモデル名と
 コンテキスト% を1つの表に出す read-only 観測 verb。ペインを1つずつ見に行かずに、モデルの切り替え

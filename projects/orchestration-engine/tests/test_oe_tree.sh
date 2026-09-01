@@ -47,6 +47,9 @@ case "${1:-}" in
   display-message)
     if [[ "$*" == *'#{window_zoomed_flag}'* ]]; then
       printf '%s\n' "${MOCK_ZOOM_FLAG:-0}"    # --pick ensure_zoom 用（既定 0=未 zoom）
+    elif [[ "$*" == *'#{pid}'* ]]; then
+      # 拍動の server 突合用（#327）。分岐を足さないと pid が title 経路へ落ちて突合が壊れる。
+      printf '%s\n' "${MOCK_SERVER_PID-99999}"
     elif [[ "$*" == *'#{pane_id}'* ]]; then
       printf '%s\n' "${MOCK_ACTIVE_PANE:-}"
     else
@@ -103,6 +106,23 @@ mkdir -p "$OE_DELEGATE_STATE_DIR" "$OE_PANE_ISSUE_DIR"
 export TMUX="/tmp/mock-tmux,12345,0"   # server pid = 12345
 export TMUX_PANE="%110"                # self（case [1] の孫）
 
+# --- 拍動 sidecar の隔離（#327）---
+# 隔離しないと実ホームを読む。実ホームには %85 の sidecar が実在するので fixture と衝突し、
+# ホスト依存になる。時計と窓も固定して鮮度判定を決定化する（test_oe_threads.sh と同じ形）。
+export OE_HEARTBEAT_DIR="$_TMP_DIR/oe-heartbeat"
+export OE_TREE_BEAT_WINDOW_SEC=900
+export NOW_EPOCH=1700000000
+export MOCK_SERVER_PID=12345           # mock tmux の #{pid}（$TMUX の pid と揃える）
+mkdir -p "$OE_HEARTBEAT_DIR"
+# mkbeat <name> <age秒> <ctx> <pane> <server_pid> <display_name|-none->
+mkbeat() {
+  jq -nc --argjson ts "$((NOW_EPOCH - $2))" --argjson ctx "$3" --arg pane "$4" --arg spid "$5" --arg dn "$6" \
+    '{ts:$ts, context_pct:$ctx, pane:$pane, server_pid:$spid,
+      model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end)}' \
+    > "$OE_HEARTBEAT_DIR/${1}.json"
+}
+reset_beats() { rm -rf "$OE_HEARTBEAT_DIR"; mkdir -p "$OE_HEARTBEAT_DIR"; }
+
 TREE="$_TMP_DIR/bin/oe-tree"
 
 PASS=0
@@ -115,6 +135,24 @@ ck() {
     echo "  FAIL: $label"; FAIL=$((FAIL + 1))
     echo "    --- want ---"; printf '%s\n' "$expected" | sed 's/^/    /'
     echo "    --- got ----"; printf '%s\n' "$actual"   | sed 's/^/    /'
+  fi
+}
+# ncc <label> <haystack> <needle> — 部分一致の否定（#327 で追加）
+ncc() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    echo "  FAIL: $1 (unexpected: $3)"; FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $1"; PASS=$((PASS + 1))
+  fi
+}
+# ckc <label> <haystack> <needle> — 部分一致（#327 で追加。既存の ck は完全一致）
+ckc() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    echo "  PASS: $1"; PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $1"; FAIL=$((FAIL + 1))
+    echo "    --- missing ---"; printf '%s\n' "$3" | sed 's/^/    /'
+    echo "    --- in -------"; printf '%s\n' "$2" | sed 's/^/    /'
   fi
 }
 reset_state() {
@@ -142,7 +180,7 @@ export MOCK_LIVE_PANES="%83 %85 %94 %110"
 expected='-     %49    gone   ?
 └─ -     %83    alive  fresh-orch-2 ~demo-infra
    ├─ -     %85    alive  #902 ~demo-org.902
-   │  └─ -     %110   alive  #902-u1 ~demo-org (you)
+   │  └─ -     %110   alive  #902-u1 (you) ~demo-org
    └─ -     %94    alive  #36 ~ecs'
 ck "chain render" "$expected" "$("$TREE")"
 
@@ -334,7 +372,7 @@ sleep 1.5
 kill "$_watch_pid" 2>/dev/null
 wait "$_watch_pid" 2>/dev/null
 ck "watch header" "yes" "$(grep -q 'oe-tree --watch · interval=1s' "$_watch_out" && echo yes || echo no)"
-ck "watch tree content" "yes" "$(grep -q -- '-     %110   alive  #902-u1 ~demo-org (you)' "$_watch_out" && echo yes || echo no)"
+ck "watch tree content" "yes" "$(grep -q -- '-     %110   alive  #902-u1 (you) ~demo-org' "$_watch_out" && echo yes || echo no)"
 ck "watch alt-screen restore" "yes" "$(grep -q $'\033\[?1049l' "$_watch_out" && echo yes || echo no)"
 
 # ----------------------------------------------------------------------------
@@ -349,7 +387,7 @@ _watch_pid2=$!
 sleep 1.5
 kill "$_watch_pid2" 2>/dev/null
 wait "$_watch_pid2" 2>/dev/null
-ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 ~ecs (you)' "$_watch_out2" && echo yes || echo no)"
+ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 (you) ~ecs' "$_watch_out2" && echo yes || echo no)"
 unset MOCK_ACTIVE_PANE
 
 # ----------------------------------------------------------------------------
@@ -384,7 +422,7 @@ reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
 pl_out="$("$TREE" --pick-list 2>/dev/null)"
 ck "pick-list key col + display (%110)" "yes" \
-  "$(printf '%s\n' "$pl_out" | awk -F '\t' '$1=="%110" && $2 ~ /%110   alive  #902-u1 ~demo-org \(you\)/ {print "yes"; exit}')"
+  "$(printf '%s\n' "$pl_out" | awk -F '\t' '$1=="%110" && $2 ~ /%110   alive  #902-u1 \(you\) ~demo-org/ {print "yes"; exit}')"
 ck "pick-list 5 nodes = 5 keyed lines" "5" "$(printf '%s\n' "$pl_out" | grep -c $'\t')"
 printf '{"pane":"%%7","label":"f","workspace":"/w","parent_pane":"%%1","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/99999__7.json"
@@ -467,6 +505,143 @@ ck "pick empty forest stdout empty" "" "$out"
 err="$("$TREE" --pick </dev/null 2>&1 >/dev/null)"
 ck "pick empty forest msg on stderr" "yes" \
   "$(printf '%s' "$err" | grep -q 'no spawn nodes to pick' && echo yes || echo no)"
+
+# ----------------------------------------------------------------------------
+echo "[27] #327: 行末に拍動（モデル名とコンテキスト%）を足す"
+# ----------------------------------------------------------------------------
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat b1 5 61 '%60' 12345 'Opus 5 (1M context)'
+ck "beat を行末に足す" '-     %60    alive  solo  Opus 5 (1M context) 61% ~one' "$("$TREE")"
+
+echo "[28] #327: 拍動が無い / gone / 鮮度切れ では何も足さない"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+ck "拍動なし → 素の行" '-     %60    alive  solo ~one' "$("$TREE")"
+mkbeat b2 5000 61 '%60' 12345 'Opus 5'
+ck "鮮度窓の外 → 足さない" '-     %60    alive  solo ~one' "$("$TREE")"
+reset_beats; mkbeat b3 5 61 '%60' 12345 'Opus 5'
+MOCK_LIVE_PANES=""
+ck "gone なら足さない" '-     %60    gone   solo ~one' "$("$TREE")"
+
+echo "[29] #327: 別 server の sidecar を誤って足さない / 旧 sidecar は pane 単独で突合"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat b4 5 61 '%60' 99998 'Haiku 4.5'
+ck "別 server → 足さない" '-     %60    alive  solo ~one' "$("$TREE")"
+reset_beats; mkbeat b5 5 44 '%60' '' 'Sonnet 5'
+ck "server_pid 空（旧 sidecar）→ pane 単独で突合" '-     %60    alive  solo  Sonnet 5 44% ~one' "$("$TREE")"
+
+echo "[30] #327: 帰属が曖昧なら潰さず ambiguous と出す"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat d1 5  61 '%60' 12345 'Opus 5'
+mkbeat d2 10 33 '%60' 12345 'Fable 5'
+ck "候補2件 → ambiguous(2)" '-     %60    alive  solo  ambiguous(2) ~one' "$("$TREE")"
+
+echo "[31] #327: 壊れた sidecar は tree を殺さず note で開示する"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat ok1 5 61 '%60' 12345 'Opus 5'
+printf '%s' 'not json at all' > "$OE_HEARTBEAT_DIR/broken.json"
+OUT="$("$TREE")"; rc=$?
+ck  "exit 0（拍動は装飾なので tree を止めない）" "0" "$rc"
+ckc "健全な拍動は出る"                            "$OUT" "Opus 5 61%"
+ckc "壊れを note で開示する"                      "$OUT" "note: 1 heartbeat files malformed"
+
+echo "[32] #327: 置き場が読めないときも tree は出し、note で開示する"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+_unread="$_TMP_DIR/hb-unreadable"; rm -rf "$_unread"; mkdir -p "$_unread"; chmod 000 "$_unread"
+OUT="$(OE_HEARTBEAT_DIR="$_unread" "$TREE")"; rc=$?
+chmod 755 "$_unread"
+ck  "exit 0"                        "0" "$rc"
+ckc "tree 本体は出る"                "$OUT" "%60    alive  solo ~one"
+ckc "置き場が読めないことを開示する"  "$OUT" "note: heartbeat dir unreadable"
+
+echo "[33] #327: display_name の制御文字を sanitize し、長すぎる名前は上限で切る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:61, pane:"%60", server_pid:"12345",
+  model:{id:"x", display_name:("Op" + ([27]|implode) + "us 5")}}' > "$OE_HEARTBEAT_DIR/ctl.json"
+ckc "制御文字が畳まれる" "$("$TREE")" "solo  Op us 5 61% ~one"
+reset_beats
+mkbeat long 5 61 '%60' 12345 'AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEE'
+ckc "上限で切って ... を付ける" "$("$TREE")" "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDD... 61%"
+
+echo "[34] #327: --pick-list（popup が読む面）にも同じものが出る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat p1 5 61 '%60' 12345 'Opus 5'
+ck "pick-list の候補行にも出る（末尾までアンカー）" \
+   "$(printf '%%60\t-     %%60    alive  solo  Opus 5 61%% ~one')" "$("$TREE" --pick-list)"
+
+echo "[35] #327: --watch の1 tick にも出る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat w1 5 61 '%60' 12345 'Opus 5'
+_wout="$_TMP_DIR/watch-beat.txt"
+"$TREE" --watch --interval 1 > "$_wout" 2>&1 </dev/null &
+_wpid=$!
+sleep 2
+kill "$_wpid" 2>/dev/null || true
+wait "$_wpid" 2>/dev/null || true
+ckc "watch のフレームに beat が出る" "$(cat "$_wout")" "Opus 5 61%"
+reset_beats
+
+# ----------------------------------------------------------------------------
+echo "[36] #327 実装SO の回帰: display_name の改行で拍動レコードを注入できない"
+# ----------------------------------------------------------------------------
+# producer は改行を JSON に保持する契約（test_oe_heartbeat_producer.sh [15]）。生の値を US で
+# 並べると改行がレコード境界になり、別ペインの拍動を偽装して注入できてしまう。
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+mkentry %61 "other" "/w/two" ""
+MOCK_LIVE_PANES="%60 %61"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:11, pane:"%61", server_pid:"12345",
+  model:{id:"x", display_name:("Real" + ([10]|implode) + "%60\u001f1\u001f77\u001fForged")}}' \
+  > "$OE_HEARTBEAT_DIR/inject.json"
+OUT="$("$TREE")"
+ncc "偽装した拍動が %60 に載らない"        "$OUT" "Forged"
+ncc "  偽の ctx も出ない"                  "$OUT" "77%"
+ckc "%60 は素のまま"                       "$OUT" "%60    alive  solo ~one"
+ckc "%61 には本物が載る"                   "$OUT" "%61    alive  other  Real"
+
+echo "[37] #327 実装SO の回帰: observer の身元は #{pid} が空でも \$TMUX から取る"
+# 実装SO の指摘は「#{pid} が取れないと server_pid つき sidecar を全部通す fail-open」だった。
+# oe-tree は $TMUX 無しでは起動しないので「身元がまったく取れない」状態は到達しない（fail-closed
+# 自体は防御として残すが、ここでは到達する経路＝#{pid} だけが空のケースを固定する）。
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat s1 5 61 '%60' 12345 'Opus 5'
+ckc "#{pid} が取れるとき載る"                        "$("$TREE")" "solo  Opus 5 61% ~one"
+ckc "#{pid} が空でも \$TMUX の pid で載る"            "$(MOCK_SERVER_PID='' "$TREE")" "solo  Opus 5 61% ~one"
+reset_beats; mkbeat s2 5 77 '%60' 99998 'Haiku 4.5'
+ncc "#{pid} が空でも別 server は通さない（fail-open の回帰）" "$(MOCK_SERVER_PID='' "$TREE")" "Haiku 4.5"
+reset_beats; mkbeat s3 5 44 '%60' '' 'Sonnet 5'
+ckc "server_pid 空（旧記録）は通す"                  "$(MOCK_SERVER_PID='' "$TREE")" "Sonnet 5 44%"
+
+echo "[38] #327 実装SO の回帰: object でない valid JSON も壊れとして数える"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat o1 5 61 '%60' 12345 'Opus 5'
+printf '%s' '["array","not","object"]' > "$OE_HEARTBEAT_DIR/arr.json"
+printf '%s' '"just a string"'          > "$OE_HEARTBEAT_DIR/str.json"
+OUT="$("$TREE")"
+ckc "健全な拍動は出る"                     "$OUT" "Opus 5 61%"
+ckc "非 object を件数で開示する"           "$OUT" "note: 2 heartbeat files malformed"
+reset_beats
 
 echo
 echo "PASS=${PASS} FAIL=${FAIL}"
