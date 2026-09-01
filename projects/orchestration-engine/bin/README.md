@@ -442,12 +442,15 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 （cockpit の popup が使う面）にも同じ render を通るので自動で出る。
 
 ```text
-1.1   %0     alive  orch-12 ~repo-a  Opus 5 (1M context) 61%
-├─ -   %1     gone   #100 ~repo-a.infra-#100_example
+4.1   %6     alive  #327 oe-tree-beat  Opus 5 (1M context) 90% (you)
+└─ 4.2   %18    alive  #327 display-probe  Opus 5 (1M context) 6% ~repo-a.feature-#327_example
 ```
 
-- **置き場は行末**（`~workspace` / `(you)` と同じ suffix 慣習）。実測で popup の実効幅は約 116 桁、
-  拍動を足した最長行は 96 桁（owner 裁定・2026-08-30）。
+- **並びは「切れてよい順に右へ」**: ラベル（issue ID）→ **拍動** → `(you)` → `~workspace`。popup は幅が
+  足りないと行の右端から切れるので、いちばん見たい拍動を workspace より前に置く。**当初は行末に置いて
+  いたが、worktree で子を回している実機で 123 桁になり popup の実効幅（約 116 桁）を超え、拍動が真っ先に
+  切れた**（worktree の末尾成分は `<repo>.<branch-slug>` で実測 53 桁）。ブランチ名の情報価値が低いという
+  owner 裁定（2026-09-01）により workspace を最後に回した。
 - **`gone` と拍動なしでは何も足さない。** `gone` は tmux にそのペインが無いので、そのペインを名乗る
   sidecar が新しくても現役の帰属とは言えない（pane 再利用の誤帰属になる）。
 - **帰属は鮮度窓（既定 900 秒・`OE_TREE_BEAT_WINDOW_SEC`）内の候補で解く。** 1件なら確定、2件以上は

@@ -90,7 +90,7 @@ usage: oe-tree [--watch [--interval N]] | [--pick]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
-各ノード: <座標 win.pane|-> <pane> <liveness> <label> [~workspace] [(you)] [モデル ctx%]
+各ノード: <座標 win.pane|-> <pane> <liveness> <label> [モデル ctx%] [(you)] [~workspace]
 （座標は複数セッション時のみ session: を前置。並びは画面配置順 = window→pane 昇順・
 gone は末尾）
 
@@ -675,14 +675,18 @@ render() { # <pane> <prefix> <child-prefix>
   coord="$(sanitize_out "$(coord_of "$pane")")"
   label="$(label_of "$pane")"
   ws="$(entry_field_of "$pane" 3)"
-  [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
-  [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
-  # 拍動は行末に足す（#327・owner 裁定）。gone / 拍動なしでは何も足さない。
-  # gone は「tmux にそのペインが無い」なので、そのペインを名乗る sidecar が新しくても
-  # 現役の帰属とは言えない（pane 再利用の誤帰属になる）。alive と ?（tmux 不明）だけに出す。
+  # 並びは「切れてよい順に右へ」置く（#327・owner 裁定 2026-09-01）。popup は幅が足りないと
+  # 行の右端から切れるので、ラベル（issue ID）→ 拍動 → (you) → workspace の順にする。
+  # workspace を最後にしたのは、worktree の末尾成分が <repo>.<branch-slug> で長く（実測 53 桁）、
+  # かつブランチ名の情報価値が低いという判断による。最初の実装は拍動を行末に置いていたが、
+  # worktree の子がいる実機で 123 桁になり、popup の実効幅 116 桁を超えて拍動が真っ先に切れた。
+  # gone は「tmux にそのペインが無い」ので、そのペインを名乗る sidecar が新しくても現役の帰属
+  # とは言えない（pane 再利用の誤帰属になる）。alive と ?（tmux 不明）だけに出す。
   _beat=""
   [[ "$live" != "gone" ]] && _beat="$(beat_of "$pane")"
   [[ -n "$_beat" ]] && suffix+="  ${_beat}"
+  [[ -n "$SELF" && "$pane" == "$SELF" ]] && suffix+=" (you)"
+  [[ -n "$ws" ]] && suffix+=" ~${ws##*/}"
   if [[ "$MODE" == picklist ]]; then
     printf '%s\t%s%-4s  %-5s  %-5s  %s%s\n' "$pane" "$pfx" "$coord" "$pane" "$live" "$label" "$suffix"
   else

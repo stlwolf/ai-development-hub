@@ -180,7 +180,7 @@ export MOCK_LIVE_PANES="%83 %85 %94 %110"
 expected='-     %49    gone   ?
 └─ -     %83    alive  fresh-orch-2 ~demo-infra
    ├─ -     %85    alive  #902 ~demo-org.902
-   │  └─ -     %110   alive  #902-u1 ~demo-org (you)
+   │  └─ -     %110   alive  #902-u1 (you) ~demo-org
    └─ -     %94    alive  #36 ~ecs'
 ck "chain render" "$expected" "$("$TREE")"
 
@@ -372,7 +372,7 @@ sleep 1.5
 kill "$_watch_pid" 2>/dev/null
 wait "$_watch_pid" 2>/dev/null
 ck "watch header" "yes" "$(grep -q 'oe-tree --watch · interval=1s' "$_watch_out" && echo yes || echo no)"
-ck "watch tree content" "yes" "$(grep -q -- '-     %110   alive  #902-u1 ~demo-org (you)' "$_watch_out" && echo yes || echo no)"
+ck "watch tree content" "yes" "$(grep -q -- '-     %110   alive  #902-u1 (you) ~demo-org' "$_watch_out" && echo yes || echo no)"
 ck "watch alt-screen restore" "yes" "$(grep -q $'\033\[?1049l' "$_watch_out" && echo yes || echo no)"
 
 # ----------------------------------------------------------------------------
@@ -387,7 +387,7 @@ _watch_pid2=$!
 sleep 1.5
 kill "$_watch_pid2" 2>/dev/null
 wait "$_watch_pid2" 2>/dev/null
-ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 ~ecs (you)' "$_watch_out2" && echo yes || echo no)"
+ck "fallback (you) on active pane" "yes" "$(grep -q -- '-     %94    alive  #36 (you) ~ecs' "$_watch_out2" && echo yes || echo no)"
 unset MOCK_ACTIVE_PANE
 
 # ----------------------------------------------------------------------------
@@ -422,7 +422,7 @@ reset_state; fixture_chain
 export MOCK_LIVE_PANES="%83 %85 %94 %110"
 pl_out="$("$TREE" --pick-list 2>/dev/null)"
 ck "pick-list key col + display (%110)" "yes" \
-  "$(printf '%s\n' "$pl_out" | awk -F '\t' '$1=="%110" && $2 ~ /%110   alive  #902-u1 ~demo-org \(you\)/ {print "yes"; exit}')"
+  "$(printf '%s\n' "$pl_out" | awk -F '\t' '$1=="%110" && $2 ~ /%110   alive  #902-u1 \(you\) ~demo-org/ {print "yes"; exit}')"
 ck "pick-list 5 nodes = 5 keyed lines" "5" "$(printf '%s\n' "$pl_out" | grep -c $'\t')"
 printf '{"pane":"%%7","label":"f","workspace":"/w","parent_pane":"%%1","role":"child"}' \
   > "${OE_DELEGATE_STATE_DIR}/99999__7.json"
@@ -513,7 +513,7 @@ reset_state; reset_beats
 mkentry %60 "solo" "/w/one" ""
 MOCK_LIVE_PANES="%60"
 mkbeat b1 5 61 '%60' 12345 'Opus 5 (1M context)'
-ck "beat を行末に足す" '-     %60    alive  solo ~one  Opus 5 (1M context) 61%' "$("$TREE")"
+ck "beat を行末に足す" '-     %60    alive  solo  Opus 5 (1M context) 61% ~one' "$("$TREE")"
 
 echo "[28] #327: 拍動が無い / gone / 鮮度切れ では何も足さない"
 reset_state; reset_beats
@@ -533,7 +533,7 @@ MOCK_LIVE_PANES="%60"
 mkbeat b4 5 61 '%60' 99998 'Haiku 4.5'
 ck "別 server → 足さない" '-     %60    alive  solo ~one' "$("$TREE")"
 reset_beats; mkbeat b5 5 44 '%60' '' 'Sonnet 5'
-ck "server_pid 空（旧 sidecar）→ pane 単独で突合" '-     %60    alive  solo ~one  Sonnet 5 44%' "$("$TREE")"
+ck "server_pid 空（旧 sidecar）→ pane 単独で突合" '-     %60    alive  solo  Sonnet 5 44% ~one' "$("$TREE")"
 
 echo "[30] #327: 帰属が曖昧なら潰さず ambiguous と出す"
 reset_state; reset_beats
@@ -541,7 +541,7 @@ mkentry %60 "solo" "/w/one" ""
 MOCK_LIVE_PANES="%60"
 mkbeat d1 5  61 '%60' 12345 'Opus 5'
 mkbeat d2 10 33 '%60' 12345 'Fable 5'
-ck "候補2件 → ambiguous(2)" '-     %60    alive  solo ~one  ambiguous(2)' "$("$TREE")"
+ck "候補2件 → ambiguous(2)" '-     %60    alive  solo  ambiguous(2) ~one' "$("$TREE")"
 
 echo "[31] #327: 壊れた sidecar は tree を殺さず note で開示する"
 reset_state; reset_beats
@@ -571,7 +571,7 @@ mkentry %60 "solo" "/w/one" ""
 MOCK_LIVE_PANES="%60"
 jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:61, pane:"%60", server_pid:"12345",
   model:{id:"x", display_name:("Op" + ([27]|implode) + "us 5")}}' > "$OE_HEARTBEAT_DIR/ctl.json"
-ckc "制御文字が畳まれる" "$("$TREE")" "solo ~one  Op us 5 61%"
+ckc "制御文字が畳まれる" "$("$TREE")" "solo  Op us 5 61% ~one"
 reset_beats
 mkbeat long 5 61 '%60' 12345 'AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEE'
 ckc "上限で切って ... を付ける" "$("$TREE")" "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDD... 61%"
@@ -582,7 +582,7 @@ mkentry %60 "solo" "/w/one" ""
 MOCK_LIVE_PANES="%60"
 mkbeat p1 5 61 '%60' 12345 'Opus 5'
 ck "pick-list の候補行にも出る（末尾までアンカー）" \
-   "$(printf '%%60\t-     %%60    alive  solo ~one  Opus 5 61%%')" "$("$TREE" --pick-list)"
+   "$(printf '%%60\t-     %%60    alive  solo  Opus 5 61%% ~one')" "$("$TREE" --pick-list)"
 
 echo "[35] #327: --watch の1 tick にも出る"
 reset_state; reset_beats
@@ -614,7 +614,7 @@ OUT="$("$TREE")"
 ncc "偽装した拍動が %60 に載らない"        "$OUT" "Forged"
 ncc "  偽の ctx も出ない"                  "$OUT" "77%"
 ckc "%60 は素のまま"                       "$OUT" "%60    alive  solo ~one"
-ckc "%61 には本物が載る"                   "$OUT" "%61    alive  other ~two  Real"
+ckc "%61 には本物が載る"                   "$OUT" "%61    alive  other  Real"
 
 echo "[37] #327 実装SO の回帰: observer の身元は #{pid} が空でも \$TMUX から取る"
 # 実装SO の指摘は「#{pid} が取れないと server_pid つき sidecar を全部通す fail-open」だった。
@@ -624,8 +624,8 @@ reset_state; reset_beats
 mkentry %60 "solo" "/w/one" ""
 MOCK_LIVE_PANES="%60"
 mkbeat s1 5 61 '%60' 12345 'Opus 5'
-ckc "#{pid} が取れるとき載る"                        "$("$TREE")" "solo ~one  Opus 5 61%"
-ckc "#{pid} が空でも \$TMUX の pid で載る"            "$(MOCK_SERVER_PID='' "$TREE")" "solo ~one  Opus 5 61%"
+ckc "#{pid} が取れるとき載る"                        "$("$TREE")" "solo  Opus 5 61% ~one"
+ckc "#{pid} が空でも \$TMUX の pid で載る"            "$(MOCK_SERVER_PID='' "$TREE")" "solo  Opus 5 61% ~one"
 reset_beats; mkbeat s2 5 77 '%60' 99998 'Haiku 4.5'
 ncc "#{pid} が空でも別 server は通さない（fail-open の回帰）" "$(MOCK_SERVER_PID='' "$TREE")" "Haiku 4.5"
 reset_beats; mkbeat s3 5 44 '%60' '' 'Sonnet 5'
