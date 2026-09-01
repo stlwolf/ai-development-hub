@@ -442,8 +442,8 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 （cockpit の popup が使う面）にも同じ render を通るので自動で出る。
 
 ```text
-1.1   %0     alive  orch-12 ~biz-infra  Opus 5 (1M context) 61%
-├─ -   %1     gone   #100 ~biz-infra.infra-#100_deploy_entrypoint
+1.1   %0     alive  orch-12 ~repo-a  Opus 5 (1M context) 61%
+├─ -   %1     gone   #100 ~repo-a.infra-#100_deploy_entrypoint
 ```
 
 - **置き場は行末**（`~workspace` / `(you)` と同じ suffix 慣習）。実測で popup の実効幅は約 116 桁、
