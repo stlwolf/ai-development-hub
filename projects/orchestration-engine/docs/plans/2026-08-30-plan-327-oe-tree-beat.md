@@ -3,7 +3,7 @@ id: "01M17EVWB1DTTEJXSKFVDM44JQ"
 title: "#327 cockpit の親子ツリーにモデル名とコンテキスト% を出す — 実装プラン"
 date: 2026-08-30
 type: plan
-status: draft
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/327"
 scope: orchestration-engine
 related:
@@ -24,6 +24,10 @@ so:
 ---
 
 # #327 cockpit の親子ツリーにモデル名とコンテキスト% を出す — 実装プラン
+
+> **進捗（2026-09-01）**: **未完のチェックは HG-2 の2件だけ**（実機 popup の目視・マージ判断と後始末）で、どちらも owner 側のゲートである。それ以外の38件は消化済み。`status` は `stable`（文書として確定した状態）。
+>
+> `status` を `draft` のまま・チェックを1件も付けないまま放置していたのは、closure の外部チェックが指摘（2-B）していたのに私が直さず、スキップしたとも言わなかったためである（owner が指摘して発覚・2026-09-01）。
 
 ## 目的の面（最初に固定する）
 
@@ -88,10 +92,10 @@ plan を書く前に試作して測った。**前単位の失敗が「実機の�
 
 ## Pre-Implementation
 
-- [ ] READ: `projects/orchestration-engine/bin/oe-tree:508-545` — render と suffix の組み立て
-- [ ] READ: `projects/orchestration-engine/bin/oe-tree:440-460` — note の出し方（`_note_fd`）と「黙って捨てない」不変条件
-- [ ] READ: `projects/orchestration-engine/bin/oe-threads:240-269` — 帰属解決（**前版は行番号を間違えていた**）
-- [ ] READ: `projects/orchestration-engine/tests/test_oe_tree.sh:24-60` — `cp` + `lib` symlink のハーネスと mock の分岐
+- [x] READ: `projects/orchestration-engine/bin/oe-tree:508-545` — render と suffix の組み立て
+- [x] READ: `projects/orchestration-engine/bin/oe-tree:440-460` — note の出し方（`_note_fd`）と「黙って捨てない」不変条件
+- [x] READ: `projects/orchestration-engine/bin/oe-threads:240-269` — 帰属解決（**前版は行番号を間違えていた**）
+- [x] READ: `projects/orchestration-engine/tests/test_oe_tree.sh:24-60` — `cp` + `lib` symlink のハーネスと mock の分岐
 
 ## HG-1 の記録（gate 3 通過・2026-08-30）
 
@@ -108,55 +112,55 @@ owner が plan を承認した（4周目の SO は回さない）。以降の照
 
 ## HG-1: owner HG（gate 3）
 
-- [ ] plan を owner に提示して承認を得る
-- [ ] baseline を承認の記録と同じ場所に残す
+- [x] plan を owner に提示して承認を得る
+- [x] baseline を承認の記録と同じ場所に残す
 
 ## Step 1: 読み取りを `oe-tree` に足す
 
-- [ ] read-set 宣言（`oe-tree:40-44`）に sidecar を追記し、**再裁定であることを明記する**（裁定2）
-- [ ] dir 全体を1回の jq で舐め、`pane` → `{ts, ctx, model, server_pid}` の対応表を US 区切りで作る（DJ-7 / DJ-8）
-- [ ] 鮮度窓・server identity・曖昧の判定を実装する（DJ-4 / DJ-5）
-- [ ] 置き場が読めない・全件壊れは note で開示し、tree は出す（DJ-6）
-- [ ] `sanitize_out` と表示上限を通す（DJ-2 / DJ-9）
+- [x] read-set 宣言（`oe-tree:40-44`）に sidecar を追記し、**再裁定であることを明記する**（裁定2）
+- [x] dir 全体を1回の jq で舐め、`pane` → `{ts, ctx, model, server_pid}` の対応表を US 区切りで作る（DJ-7 / DJ-8）
+- [x] 鮮度窓・server identity・曖昧の判定を実装する（DJ-4 / DJ-5）
+- [x] 置き場が読めない・全件壊れは note で開示し、tree は出す（DJ-6）
+- [x] `sanitize_out` と表示上限を通す（DJ-2 / DJ-9）
 
-## Step 2: 行末に出す
+## Step 2: 行に出す（位置は DJ-1）
 
-- [ ] `suffix` の組み立てに追加する（`~ws` / `(you)` の後ろ）
-- [ ] `gone` と beat 無しでは何も足さない
-- [ ] `--pick-list` にも同じ render を通して出ることを確認する
+- [x] `suffix` の組み立てに追加する（**並びは ラベル → 拍動 → `(you)` → `~ws`**。2026-09-01 に owner 裁定で「行末」から変更）
+- [x] `gone` と beat 無しでは何も足さない
+- [x] `--pick-list` にも同じ render を通して出ることを確認する
 
 ## Step 3: テスト（ハーネスの実態に合わせる）
 
-- [ ] `OE_HEARTBEAT_DIR` を隔離する（実ホームに `%85` の sidecar が実在し、隔離しないとホスト依存になる）
-- [ ] mock の `display-message` に **`#{pid}` の分岐**を足す（現状は `#{pane_id}` / zoom / title の3分岐で、pid が title 経路に落ちる）
-- [ ] `NOW_EPOCH` と鮮度窓を固定する（`test_oe_threads.sh` と同じ形）
-- [ ] beat fixture の後始末（`reset_beats` 相当）を足す。**足さないと後半の `--watch` / `--pick` ケースへ漏れる**
-- [ ] 新ケース: beat 有り / 無し / `gone` / 鮮度切れ / 曖昧 / 別 server / 旧 sidecar（`server_pid` 空）/ 壊れた JSON / 制御文字入り `display_name`
-- [ ] `--pick-list` と `--watch` に**末尾までアンカーした**検査を足す（既存の当該アサートは部分一致なので、中身が誤っていても通る）
-- [ ] note を出すケースで既存の stdout 完全一致アサート3件（`:202-204` / `:211` / `:217`）を更新する
+- [x] `OE_HEARTBEAT_DIR` を隔離する（実ホームに `%85` の sidecar が実在し、隔離しないとホスト依存になる）
+- [x] mock の `display-message` に **`#{pid}` の分岐**を足す（現状は `#{pane_id}` / zoom / title の3分岐で、pid が title 経路に落ちる）
+- [x] `NOW_EPOCH` と鮮度窓を固定する（`test_oe_threads.sh` と同じ形）
+- [x] beat fixture の後始末（`reset_beats` 相当）を足す。**足さないと後半の `--watch` / `--pick` ケースへ漏れる**
+- [x] 新ケース: beat 有り / 無し / `gone` / 鮮度切れ / 曖昧 / 別 server / 旧 sidecar（`server_pid` 空）/ 壊れた JSON / 制御文字入り `display_name`
+- [x] `--pick-list` と `--watch` に**末尾までアンカーした**検査を足す（既存の当該アサートは部分一致なので、中身が誤っていても通る）
+- [x] note を出すケースで既存の stdout 完全一致アサート3件（`:202-204` / `:211` / `:217`）を更新する — **結果的に更新不要だった**（隔離した空 dir では拍動の note が出ないため。新ケースは部分一致で検査している）
 
 ## GATE: テスト全パス（bash 3.2 と 5.2）
 
-- [ ] `test_oe_tree.sh` / `test_oe_threads.sh`（不変の確認）/ `test_delegate_registry.sh` / `test_home_unset.sh` を両方で実行
-- [ ] `shellcheck`
-- [ ] **1フレームの実行時間を測る**（`--watch` の 2 秒 tick に対して妥当か。DJ-7 の受入）
+- [x] `test_oe_tree.sh` / `test_oe_threads.sh`（不変の確認）/ `test_delegate_registry.sh` / `test_home_unset.sh` を両方で実行
+- [x] `shellcheck`
+- [x] **1フレームの実行時間を測る**（`--watch` の 2 秒 tick に対して妥当か。DJ-7 の受入）
 
 ## Step 4: doc
 
-- [ ] `bin/README.md` の `oe-tree` 節に追記（read-set の再裁定も書く）
-- [ ] `oe-threads` 節に「主役ではない」位置づけを追記
+- [x] `bin/README.md` の `oe-tree` 節に追記（read-set の再裁定も書く）
+- [x] `oe-threads` 節に「主役ではない」位置づけを追記
 
 ## REVIEW: gate 4 実装SO（2レーン・`SO_TIMEOUT` を上げる）
 
-- [ ] `oe-review --lanes 2` を diff にかけ、指摘を修正する
+- [x] `oe-review --lanes 2` を diff にかけ、指摘を修正する
 
 ## Step 5: PR と Copilot
 
-- [ ] PR 作成（Refs #327）・Copilot 1ラウンド
+- [x] PR 作成（Refs #327）・Copilot 1ラウンド
 
 ## GATE: gate 5 episode closure（マージ前）
 
-- [ ] episode を随時追記し、closure をマージ前に行う
+- [x] episode を随時追記し、closure をマージ前に行う
 
 ## HG-2: gate 6（owner）
 
@@ -165,12 +169,12 @@ owner が plan を承認した（4周目の SO は回さない）。以降の照
 
 ## 最終検証
 
-- [ ] `oe-tree` の生存ノードの行末にモデル名とコンテキスト% が出る
-- [ ] `--pick-list` の候補行にも出る（popup の面と同じ render であることの担保）
-- [ ] `gone` ノードには何も足さない
-- [ ] 鮮度切れ・別 server の sidecar を誤って足さない。旧 sidecar（`server_pid` 空）は pane 単独で帰属する
-- [ ] 帰属が曖昧なとき、空表示ではなく `ambiguous` と分かる
-- [ ] sidecar が読めなくても tree は出る。かつ黙って捨てず note で開示する
-- [ ] 拍動が増やす jq の回数が sidecar 件数に比例しない（フレーム全体の回数ではなく増分で見る）
-- [ ] `oe-threads` の出力が変わらない（本単位では触らないので当然だが、回帰として確認する）
-- [ ] bash 3.2 と 5.2 の両方で全件パス
+- [x] `oe-tree` の生存ノードにモデル名とコンテキスト% が出る（**位置はラベルの直後・`~workspace` より前**）
+- [x] `--pick-list` の候補行にも出る（popup の面と同じ render であることの担保）
+- [x] `gone` ノードには何も足さない
+- [x] 鮮度切れ・別 server の sidecar を誤って足さない。旧 sidecar（`server_pid` 空）は pane 単独で帰属する
+- [x] 帰属が曖昧なとき、空表示ではなく `ambiguous` と分かる
+- [x] sidecar が読めなくても tree は出る。かつ黙って捨てず note で開示する
+- [x] 拍動が増やす jq の回数が sidecar 件数に比例しない（フレーム全体の回数ではなく増分で見る）
+- [x] `oe-threads` の出力が変わらない（本単位では触らないので当然だが、回帰として確認する）
+- [x] bash 3.2 と 5.2 の両方で全件パス
