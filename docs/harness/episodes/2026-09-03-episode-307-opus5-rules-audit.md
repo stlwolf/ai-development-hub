@@ -249,3 +249,9 @@ fable は既定でも auto でも (a)〜(f) PRESENT・(g) ABSENT。opus は既�
 - push して draft PR を1個作る。マージしない。Copilot レビュー依頼は不要（docs のみ・draft）。
 - issue #307 に HG-1 の裁定と PR の URL をコメントする。
 - `.oe/report-307-P5.md` に file 先行で報告し、`oe-send` で1行送って STOP。episode closure はまだしない（gate 5・マージ前）。
+
+- 14:47: worktree の `git status` は `docs/harness/` の untracked だけだった。3文書を1コミット `dc977a1`（docs(harness)）にし、origin/master が `d93eee3` のまま動いていないことを確かめて rebase なしで push した。
+- 14:48: draft PR #358 を作成（`--draft --assignee @me`・Copilot 依頼なし）。本文に「マージしない」「段階2 の着手時に扱いを決める」を明記。
+- 14:49: issue #307 に HG-1 の裁定表・PR・3文書のリンク・判定の内訳・前提訂正の要点をコメントした。
+
+このコミットで episode / discussion / plan は committed 層に入った。本節（P-5 の実行記録）はコミット後に書いたので、2つ目のコミットとして同じブランチに入れる。以後の追記も closure（gate 5）の前に同じブランチへコミットする。作業層の report / runtime capture / claim は `.oe/` に残る（gitignored）。
