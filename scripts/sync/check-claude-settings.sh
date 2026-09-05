@@ -354,7 +354,7 @@ echo "宣言した項目名の綴り:"
 if [[ -f "${KNOWN_KEYS}" ]]; then
     while IFS= read -r pointer; do
         top_key="$(printf '%s' "${pointer}" | sed -e 's|^/||' -e 's|/.*$||' -e 's|~1|/|g' -e 's|~0|~|g')"
-        if grep -qxF "${top_key}" <(grep -vE '^#|^$' "${KNOWN_KEYS}"); then
+        if grep -qxF -- "${top_key}" <(grep -vE '^#|^$' "${KNOWN_KEYS}"); then
             info "  ${top_key} は公式の一覧にあります"
         else
             warn "  ${top_key} は公式の一覧にありません（一覧が古い可能性もあるので警告どまり）"
