@@ -236,18 +236,20 @@ main() {
     sync_md_files "${CANONICAL_DIR}/commands" "${TARGET_BASE}/commands" "commands"
     echo ""
 
-    # 6. 宣言された設定項目を settings.json へ適用する
-    #    hooks と statusLine を別々に読み書きしていたのをやめ、宣言（canonical/claude/
-    #    settings.harness.json）に書かれた項目を1回の書き込みでまとめて当てる（#359）。
-    apply_declared_settings "${TARGET_BASE}/settings.json"
-    echo ""
-
     # 7. Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
     echo ""
 
     # 8. statusLine producer script (#239 PR-A: beat producer)
     sync_hook_scripts "${CANONICAL_DIR}/claude/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
+    echo ""
+
+    # 9. 宣言された設定項目を settings.json へ適用する
+    #    hooks と statusLine を別々に読み書きしていたのをやめ、宣言（canonical/claude/
+    #    settings.harness.json）に書かれた項目を1回の書き込みでまとめて当てる（#359）。
+    #    参照するスクリプトを配り終えた後に置く。先に設定だけ書くと、初回の配布では
+    #    まだ存在しないコマンドを指す設定が残り、途中で止まるとそれが居座る。
+    apply_declared_settings "${TARGET_BASE}/settings.json"
     echo ""
 
 

@@ -227,7 +227,8 @@ ck  "exit 1" "1" "$RC"
 ckc "中止すると言う" "$OUT" "中止します"
 ck  "宣言の項目は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
-ck  "使わなかったバックアップを残さない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
+ck  "諦めたときは読んだ時点の版を残す" "1" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
+ckc "残したと言う" "$OUT" "読んだ時点の内容を残しました"
 
 echo "[14] 宣言が空 → 何も書かない"
 fresh c14
@@ -409,7 +410,7 @@ ck  "割り込みを挿せた" "1" "$(grep -c 'twin.json' "$CASE/apply_twin.sh" 
 OUT="$("$BASH" "$CASE/apply_twin.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
 ck  "symlink のまま残る" "true" "$([[ -L "$ST" ]] && echo true || echo false)"
 ck  "リンク先に宣言を書いていない" "false" "$(jq -r '(.hooks != null)' "$CASE/twin.json")"
-ckc "差し替わったと言う" "$OUT" "直前に symlink へ差し替わった"
+ckc "差し替わったと言う" "$OUT" "直前に symlink かディレクトリへ差し替わった"
 ck  "exit 0（止めない）" "0" "$RC"
 
 echo "[24] union-array は正本側の重複も取り除く（実装SO 指摘の回帰）"
@@ -442,6 +443,67 @@ ck  "exit 1" "1" "$RC"
 ckc "比べられないと言う" "$OUT" "比べられませんでした"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
 ck  "宣言は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+
+echo "[26] 直前にディレクトリへ差し替えられても置き換えない（実装SO 指摘の回帰）"
+fresh c26
+printf '%s' '{"theme":"dark"}' > "$ST"
+sed "s|^    if \[\[ -L \"\${SETTINGS}\" .. ( -e \"\${SETTINGS}\" ..|    if [[ ! -d '$ST' ]]; then rm -f '$ST'; mkdir -p '$ST'; fi\n    if [[ -L \"\${SETTINGS}\" \|\| ( -e \"\${SETTINGS}\" \&\&|" \
+    "$APPLY" > "$CASE/apply_dir.sh"
+chmod +x "$CASE/apply_dir.sh"
+ck  "割り込みを挿せた" "1" "$(grep -c "mkdir -p '$ST'" "$CASE/apply_dir.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/apply_dir.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "ディレクトリのまま" "true" "$([[ -d "$ST" ]] && echo true || echo false)"
+ck  "中に一時ファイルを残していない" "0" "$(find "$ST" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
+ck  "exit 0（止めない）" "0" "$RC"
+
+echo "[27] union-array は手元の配列の重複も畳む（実装SO 指摘の回帰）"
+fresh c27
+printf '%s' '{"listy":["mine","mine"]}' > "$ST"
+printf '%s' '{"listy":["canon"]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/listy","op":"union-array","scope_behavior":"merge",
+           "source":{"file":"$CASE/src.json","pointer":"/listy"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "2件に畳まれる" "2" "$(jq -r '.listy | length' "$ST")"
+ck  "mine は1つ" "1" "$(jq -r '[.listy[] | select(. == "mine")] | length' "$ST")"
+
+echo "[28] statusLine がオブジェクトでなければ触らない（実装SO 指摘の回帰）"
+fresh c28
+printf '%s' '{"statusLine":"nonsense","theme":"dark"}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "statusLine はそのまま" "nonsense" "$(jq -r '.statusLine' "$ST")"
+ck  "hooks は入る" "true" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "個人層も残る" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[29] source.pointer の配列添字も拒む（実装SO 指摘の回帰）"
+fresh c29
+printf '%s' '{"theme":"dark"}' > "$ST"
+printf '%s' '{"arr":[{"k":1}]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/target","op":"replace","scope_behavior":"override",
+           "source":{"file":"$CASE/src.json","pointer":"/arr/0"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ckc "添字は扱えないと言う" "$OUT" "配列の添字は宣言で扱えません"
+ck  "何も書かない" "false" "$(jq -r '(.target != null)' "$ST")"
+
+echo "[30] 参照するスクリプトを配ってから設定を書く（順序の回帰）"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+apply_line="$(grep -n 'apply_declared_settings "\${TARGET_BASE}/settings.json"' "$REPO_ROOT/scripts/sync/sync-claude.sh" | head -1 | cut -d: -f1)"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+sl_line="$(grep -n 'sync_hook_scripts "\${CANONICAL_DIR}/claude/statusline"' "$REPO_ROOT/scripts/sync/sync-claude.sh" | head -1 | cut -d: -f1)"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+hook_line="$(grep -n 'sync_hook_scripts "\${CANONICAL_DIR}/hooks/scripts"' "$REPO_ROOT/scripts/sync/sync-claude.sh" | head -1 | cut -d: -f1)"
+ck  "statusLine の producer 配備より後に設定を書く" "true" "$([[ -n "$apply_line" && -n "$sl_line" && "$apply_line" -gt "$sl_line" ]] && echo true || echo false)"
+ck  "hook スクリプト配備より後に設定を書く" "true" "$([[ -n "$apply_line" && -n "$hook_line" && "$apply_line" -gt "$hook_line" ]] && echo true || echo false)"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

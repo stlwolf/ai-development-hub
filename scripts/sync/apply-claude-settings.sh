@@ -79,6 +79,29 @@ resolve_failed=false
 while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
     [[ "${handler}" == "-" ]] && handler=""
     [[ "${src_pointer}" == "-" ]] && src_pointer=""
+
+    # ポインタの妥当性。空文字は JSON Pointer では文書全体を指すので、これを
+    # 通すと設定ファイルの根をまるごと置き換えて個人層を消してしまう。
+    # 配列の添字は扱わない（宣言はオブジェクトのキーだけを指す契約）。
+    if [[ -z "${pointer}" || "${pointer}" != /* ]]; then
+        error "  ポインタは / で始まる必要があります: [${pointer}]"
+        resolve_failed=true; continue
+    fi
+    bad_seg=""
+    for chk in "${pointer}" "${src_pointer}"; do
+      [[ -z "${chk}" ]] && continue
+      while IFS= read -r seg; do
+        [[ -z "${seg}" ]] && continue
+        if [[ "${seg}" =~ ^[0-9]+$ ]]; then bad_seg="${seg}"; break; fi
+      # 末尾に改行を付ける。付けないと最後の区切りが read に拾われない。
+      done < <(printf '%s\n' "${chk#/}" | tr '/' '\n')
+      [[ -n "${bad_seg}" ]] && break
+    done
+    if [[ -n "${bad_seg}" ]]; then
+        error "  配列の添字は宣言で扱えません: ${pointer}（区切り: ${bad_seg}）"
+        resolve_failed=true; continue
+    fi
+
     expected="null"
     if [[ -n "${src_file}" && "${src_file}" != "-" ]]; then
         abs_src="${src_file}"
@@ -106,24 +129,6 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
         fi
         expected="$(jq -c '.value' <<< "${probe}")"
     fi
-    # ポインタの妥当性。空文字は JSON Pointer では文書全体を指すので、これを
-    # 通すと設定ファイルの根をまるごと置き換えて個人層を消してしまう。
-    # 配列の添字は扱わない（宣言はオブジェクトのキーだけを指す契約）。
-    if [[ -z "${pointer}" || "${pointer}" != /* ]]; then
-        error "  ポインタは / で始まる必要があります: [${pointer}]"
-        resolve_failed=true; continue
-    fi
-    bad_seg=""
-    while IFS= read -r seg; do
-        [[ -z "${seg}" ]] && continue
-        if [[ "${seg}" =~ ^[0-9]+$ ]]; then bad_seg="${seg}"; break; fi
-    # 末尾に改行を付ける。付けないと最後の区切りが read に拾われない。
-    done < <(printf '%s\n' "${pointer#/}" | tr '/' '\n')
-    if [[ -n "${bad_seg}" ]]; then
-        error "  配列の添字は宣言で扱えません: ${pointer}（区切り: ${bad_seg}）"
-        resolve_failed=true; continue
-    fi
-
     exp_type="$(jq -r 'type' <<< "${expected}")"
     case "${op}" in
         merge-object) [[ "${exp_type}" == "object" ]] || { error "  merge-object の正本がオブジェクトではありません: ${pointer} (${exp_type})"; resolve_failed=true; continue; } ;;
@@ -188,7 +193,9 @@ def apply_item($item):
       # 重複の判定は jq の等価比較で行う（tojson だとキーの順が違うオブジェクトを
       # 別物として残してしまう）。手元の並びは変えず、無いものだけを後ろに足す。
       # 正本側に重複があれば、そちらも取り除いてから足す。
-      ((getpath($path) // []) as $cur
+      # 「重複を除く」の契約どおり、手元の側の重複も畳む。並びは先に出た順を保つ。
+      (((getpath($path) // [])
+        | reduce .[] as $e ([]; if any(.[]; . == $e) then . else . + [$e] end)) as $cur
        | ($item.expected
           | reduce .[] as $e ([]; if any(.[]; . == $e) then . else . + [$e] end)) as $add
        | setpath($path; ($cur + ($add | map(select(. as $e | any($cur[]; . == $e) | not))))))
@@ -197,7 +204,12 @@ def apply_item($item):
       #   未設定           → 正本を載せる
       #   既に beat producer → command は保持し他のフィールドだけ更新（二重に包まない）
       #   独自のもの        → 元コマンドを退避して包む。padding 等の既存フィールドは残す
-      ((getpath($path) // {}) as $cur
+      # 現在値がオブジェクトでも空でもないなら触らない。旧実装は .statusLine.command
+      # の取り出しに失敗して、その項目だけ skip していた。挙動を揃える。
+      ((getpath($path)) as $raw
+       | if ($raw != null) and (($raw | type) != "object") then .
+         else
+      (($raw // {}) as $cur
        | (if ($cur | type) == "object" and ($cur.command | type) == "string"
           then $cur.command else "" end) as $cmd
        | if $cmd == "" then
@@ -206,7 +218,7 @@ def apply_item($item):
            setpath($path; ($cur + $item.expected + {command: $cmd}))
          else
            setpath($path; ($cur + $item.expected + {command: ($wrap_prefix + " " + $item.expected.command)}))
-         end)
+         end) end)
     else . end;
 
 reduce $decl[0][] as $item (.; apply_item($item))
@@ -316,7 +328,8 @@ while :; do
     #     保証するので、「置き換える直前の版」と同じものになる。
     backup=""
     if [[ -e "${SETTINGS}" ]]; then
-        backup="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S)"
+        # 秒精度だけだと、同じ秒に走った2つの実行が同じ名前を共有してしまう。
+        backup="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$"
         if ! cp "${SETTINGS}" "${backup}"; then
             rm -f "${out}"
             error "  バックアップを作れないので何も書きません"
@@ -332,11 +345,14 @@ while :; do
     fi
     if [[ "${now}" != "${before}" ]]; then
         rm -f "${out}"
-        [[ -n "${backup}" ]] && rm -f "${backup}"
         if [[ "${attempt}" -ge "${MAX_RETRY}" ]]; then
+            # 諦めるときはバックアップを残す。何が起きていたかを後から見られる
+            # ようにするためで、やり直す場合だけ消す。
             error "  読んでから書くまでの間に他のプロセスが書き換え続けています。中止します"
+            [[ -n "${backup}" ]] && error "  読んだ時点の内容を残しました: ${backup}"
             exit 1
         fi
+        [[ -n "${backup}" ]] && rm -f "${backup}"
         warn "  他のプロセスが書き換えたので読み直します（${attempt}/${MAX_RETRY}）"
         continue
     fi
@@ -345,10 +361,11 @@ while :; do
     # 差し替えられると、上の内容比較は通ってしまう。ここで見ないと rename が
     # symlink そのものを通常ファイルに変えてしまう（全体 symlink を棄却した
     # 理由と同じ現象を、自分の配布スクリプトで起こすことになる）。
-    if [[ -L "${SETTINGS}" ]]; then
+    if [[ -L "${SETTINGS}" || ( -e "${SETTINGS}" && ! -f "${SETTINGS}" ) ]]; then
         rm -f "${out}"
         [[ -n "${backup}" ]] && rm -f "${backup}"
-        warn "  直前に symlink へ差し替わったので触りません: ${SETTINGS}"
+        # ディレクトリへ差し替えられていると mv がその中へ移動して成功してしまう。
+        warn "  直前に symlink かディレクトリへ差し替わったので触りません: ${SETTINGS}"
         exit 0
     fi
 
