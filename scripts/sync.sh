@@ -132,6 +132,25 @@ check_skill_dirs() {
     done
 }
 
+check_orphan_links() {
+    local target="$1" repo_root="$2" diffs_ref="$3"
+    # 配布先の側から走査する。正本の側からだけ回していると、正本から消した
+    # ファイルの配布先は一度も訪れられず、残ったリンクが壊れても誰も見ない（#359）。
+    local orphan_script="${SYNC_DIR}/check-orphan-links.sh"
+    if [[ ! -x "${orphan_script}" ]]; then
+        error "  ${target}: 孤児リンクの検査を委譲できません（not found or not executable）: ${orphan_script}"
+        eval "${diffs_ref}=true"
+        return
+    fi
+    # 素で呼ばない。check_target は main() の `if ! check_target` から呼ばれるので
+    # 関数本体の errexit が抑止され、子が差分を返しても握り潰される。
+    local orphan_rc=0
+    "${orphan_script}" "${target}" --canonical "${repo_root}/canonical" || orphan_rc=$?
+    if [[ "${orphan_rc}" -ne 0 ]]; then
+        eval "${diffs_ref}=true"
+    fi
+}
+
 check_target() {
     local target="$1"
     local repo_root
@@ -151,6 +170,7 @@ check_target() {
             check_symlink "${base}/mcp.json" "${canonical}/mcp/cursor.json" "mcp.json" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/cursor.hooks.json" "hooks.json" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
+            check_orphan_links cursor "${repo_root}" has_diffs
             ;;
         claude)
             local base="${HOME}/.claude"
@@ -179,6 +199,7 @@ check_target() {
                     has_diffs=true
                 fi
             fi
+            check_orphan_links claude "${repo_root}" has_diffs
             ;;
         codex)
             local base="${HOME}/.codex"
@@ -187,6 +208,7 @@ check_target() {
             check_symlink "${base}/AGENTS.md" "${canonical}/codex/AGENTS.md" "AGENTS.md" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/codex.hooks.json" "hooks.json" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
+            check_orphan_links codex "${repo_root}" has_diffs
             ;;
         bin)
             # 配布対象を知っているのは sync-bin.sh なので、検査もそちらへ委譲する。
