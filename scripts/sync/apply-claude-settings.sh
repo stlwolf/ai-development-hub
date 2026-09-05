@@ -59,8 +59,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v jq >/dev/null 2>&1 || { error "jq が必要です"; exit 2; }
+
+# JSON として読めるかの判定は jq -e 'type' で行う。素の jq -e . は、最後の出力が
+# null か false のときに偽を返すので、正しい JSON である null や false を壊れて
+# いると誤判定する。逆に jq empty は空ファイルを通してしまう。type を出させれば、
+# 値がある（null や false も含む）ときだけ真になり、空ファイルと壊れた JSON は
+# どちらも偽になる。
 [[ -f "${DECLARATION}" ]] || { error "宣言ファイルが読めません: ${DECLARATION}"; exit 2; }
-jq -e . "${DECLARATION}" >/dev/null 2>&1 || { error "宣言ファイルが JSON として読めません: ${DECLARATION}"; exit 2; }
+jq -e 'type' "${DECLARATION}" >/dev/null 2>&1 || { error "宣言ファイルが JSON として読めません: ${DECLARATION}"; exit 2; }
 
 decl_count="$(jq '.items | length' "${DECLARATION}")"
 if [[ "${decl_count}" -eq 0 ]]; then
@@ -212,7 +218,11 @@ def apply_item($item):
   | if $item.op == "replace" then setpath($path; $item.expected)
     elif $item.op == "absent" then delpaths([$path])
     elif $item.op == "merge-object" then
-      setpath($path; ((getpath($path) // {}) * $item.expected))
+      # 手元の値がオブジェクトでなければ触らない。そのまま重ねると jq の
+      # 掛け合わせが例外になり、他の項目も含めて適用が丸ごと止まる。
+      # union-array と statusLine と同じ姿勢に揃える。
+      (if ((getpath($path)) != null) and (((getpath($path)) | type) != "object") then .
+       else setpath($path; ((getpath($path) // {}) * $item.expected)) end)
     elif $item.op == "union-array" then
       # 手元の値が配列でなければ触らない。壊して書き換えるより、そのまま
       # 残して検査に出す方がよい（statusLine の扱いと同じ姿勢）。
@@ -288,9 +298,19 @@ while :; do
             error "  読めません: ${SETTINGS}"
             exit 1
         fi
-        if ! jq -e . "${read_copy}" >/dev/null 2>&1; then
+        if ! jq -e 'type' "${read_copy}" >/dev/null 2>&1; then
             warn "  JSON として読めないので触りません（壊れている可能性）: ${SETTINGS}"
             [[ "${#backups_made[@]}" -gt 0 ]] && info "  読んだ時点の内容: ${backups_made[0]}"
+            rm -f "${read_copy}"
+            exit 0
+        fi
+        # いちばん外側がオブジェクトでなければ触らない。宣言はキーを指すので、
+        # 配列や文字列や null の文書は対象外である。とくに null は、jq の
+        # setpath がそこにオブジェクトを作ってしまうので、黙っていると文書を
+        # まるごと置き換えることになる。
+        top_type="$(jq -r 'type' "${read_copy}" 2>/dev/null || echo unknown)"
+        if [[ "${top_type}" != "object" ]]; then
+            warn "  いちばん外側がオブジェクトではないので触りません（${top_type}）: ${SETTINGS}"
             rm -f "${read_copy}"
             exit 0
         fi
@@ -342,7 +362,7 @@ while :; do
         exit 1
     fi
     rm -f "${out}.base"
-    if ! jq -e . "${out}" >/dev/null 2>&1; then
+    if ! jq -e 'type' "${out}" >/dev/null 2>&1; then
         rm -f "${out}"
         error "  適用の結果が JSON として壊れています。何も書きません"
         exit 1

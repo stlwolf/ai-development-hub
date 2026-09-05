@@ -674,6 +674,46 @@ ck  "写しができている" "true" "$([[ -n "$bk" ]] && echo true || echo fal
 ck  "プロセス番号だけの名前ではない" "false" "$([[ "$bk" == *".bak."*".$$" ]] && echo true || echo false)"
 ck  "read の一時ファイルが残っていない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
 
+echo "[44] merge-object は手元がオブジェクトでなければ触らない（実装SO 指摘の回帰）"
+fresh c44
+printf '%s' '{"autoMode":"not-an-object","theme":"dark"}' > "$ST"
+printf '%s' '{"autoMode":{"a":1}}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[
+   {"pointer":"/autoMode","op":"merge-object","scope_behavior":"override",
+    "source":{"file":"$CASE/src.json","pointer":"/autoMode"}},
+   {"pointer":"/hooks","op":"replace","scope_behavior":"merge",
+    "source":{"file":"$REPO_ROOT/canonical/hooks/claude.hooks.json","pointer":"/hooks"}}
+ ],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "落ちない" "0" "$RC"
+ck  "手元の値をそのまま残す" "not-an-object" "$(jq -r '.autoMode' "$ST")"
+ck  "他の項目は適用される" "true" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "個人層も無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[45] 値が null や false だけの settings を壊れていると誤判定しない（実装SO 指摘の回帰）"
+for v in 'null' 'false' '0' '"str"' '[]'; do
+  fresh "c45$(printf '%s' "$v" | tr -cd 'a-z0-9')"
+  printf '%s' "$v" > "$ST"
+  run
+  # トップが object でない settings には触らないのが正しい（宣言はキーを指すため）。
+  ncc "[$v] 壊れているとは言わない" "$OUT" "JSON として読めないので触りません"
+  ckc "[$v] オブジェクトでないので触らないと言う" "$OUT" "いちばん外側がオブジェクトではないので触りません"
+  ck  "[$v] 中身は変わらない" "$v" "$(cat "$ST")"
+  ck  "[$v] 止めない" "0" "$RC"
+done
+
+echo "[46] 空ファイルは読めないものとして扱う"
+fresh c46
+: > "$ST"
+run
+ck  "exit 0（止めない）" "0" "$RC"
+ckc "読めないと言う" "$OUT" "JSON として読めないので触りません"
+ck  "空のまま" "0" "$(wc -c < "$ST" | tr -d ' ')"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

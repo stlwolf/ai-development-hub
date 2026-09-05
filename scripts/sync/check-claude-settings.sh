@@ -61,7 +61,7 @@ if [[ ! -f "${DECLARATION}" ]]; then
     exit 2
 fi
 
-if ! jq -e . "${DECLARATION}" >/dev/null 2>&1; then
+if ! jq -e 'type' "${DECLARATION}" >/dev/null 2>&1; then
     error "宣言ファイルが JSON として読めません: ${DECLARATION}"
     exit 2
 fi
@@ -217,7 +217,7 @@ elif [[ ! -e "${SETTINGS}" ]]; then
     settings_state="missing"
 elif [[ ! -f "${SETTINGS}" ]]; then
     settings_state="not-regular"
-elif ! jq -e . "${SETTINGS}" >/dev/null 2>&1; then
+elif ! jq -e 'type' "${SETTINGS}" >/dev/null 2>&1; then
     settings_state="unparsable"
 fi
 
@@ -344,7 +344,7 @@ echo "上位スコープの同名項目（対象: ${PROJECT_ROOT}）:"
 shadow_found=false
 for pf in "${PROJECT_ROOT}/.claude/settings.json" "${PROJECT_ROOT}/.claude/settings.local.json"; do
     [[ -f "${pf}" ]] || continue
-    jq -e . "${pf}" >/dev/null 2>&1 || { warn "  読めません: ${pf}"; continue; }
+    jq -e 'type' "${pf}" >/dev/null 2>&1 || { warn "  読めません: ${pf}"; continue; }
     while IFS=$'\t' read -r pointer scope_behavior; do
         top_key="$(printf '%s' "${pointer}" | sed -e 's|^/||' -e 's|/.*$||' -e 's|~1|/|g' -e 's|~0|~|g')"
         if jq -e --arg k "${top_key}" 'has($k)' "${pf}" >/dev/null 2>&1; then
