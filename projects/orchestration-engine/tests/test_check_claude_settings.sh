@@ -193,6 +193,56 @@ printf '%s' '{"autoMode":{"flagTrue":true}}' > "$ST"
 OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
 ck  "葉の欠落を拾う" "1" "$RC"
 
+echo "[16] op と正本の型が噛み合わないとき緑を名乗らせない（実装SO 指摘の回帰）"
+fresh c16
+printf '%s' '{"effortLevel":"high"}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/effortLevel","op":"merge-object","scope_behavior":"override",
+           "source":{"file":"SRCFILE","pointer":"/effortLevel"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl.json" && rm -f "$CASE/decl.json.bak"
+printf '%s' '{"effortLevel":"low"}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "スカラーに merge-object → exit 2" "2" "$RC"
+ckc "型が噛み合わないと言う" "$OUT" "merge-object の正本がオブジェクトではありません"
+
+cat > "$CASE/decl2.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/effortLevel","op":"union-array","scope_behavior":"override",
+           "source":{"file":"SRCFILE","pointer":"/effortLevel"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl2.json" && rm -f "$CASE/decl2.json.bak"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl2.json" 2>&1)"; RC=$?
+ck  "スカラーに union-array → exit 2" "2" "$RC"
+
+cat > "$CASE/decl3.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/effortLevel","op":"nonsense","scope_behavior":"override",
+           "source":{"file":"SRCFILE","pointer":"/effortLevel"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl3.json" && rm -f "$CASE/decl3.json.bak"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl3.json" 2>&1)"; RC=$?
+ck  "知らない op → exit 2" "2" "$RC"
+ckc "扱えない op と言う" "$OUT" "扱えない op です"
+
+echo "[17] 正本に値が無い項目は検査を止める（母集団を静かに縮めない）"
+fresh c17; build_green
+printf '%s' '{"somethingElse":1}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/hooks","op":"replace","scope_behavior":"merge",
+           "source":{"file":"SRCFILE","pointer":"/hooks"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl.json" && rm -f "$CASE/decl.json.bak"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "正本に値が無い → exit 2" "2" "$RC"
+ckc "正本に値が無いと言う" "$OUT" "正本に値がありません"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

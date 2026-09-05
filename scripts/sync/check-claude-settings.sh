@@ -129,7 +129,30 @@ while IFS=$'\t' read -r idx pointer op handler scope_behavior src_file src_point
             continue
         fi
     fi
-    jq -c \
+    # op と期待値の型が噛み合っていないと、判定が空集合への全称になって
+    # 何を壊しても緑になる（merge-object にスカラーを与えた場合が該当）。
+    exp_type="$(jq -r 'type' <<< "${expected}")"
+    case "${op}" in
+        merge-object)
+            if [[ "${exp_type}" != "object" ]]; then
+                error "  merge-object の正本がオブジェクトではありません: ${pointer} (${exp_type})"
+                resolve_failed=true
+                continue
+            fi ;;
+        union-array)
+            if [[ "${exp_type}" != "array" ]]; then
+                error "  union-array の正本が配列ではありません: ${pointer} (${exp_type})"
+                resolve_failed=true
+                continue
+            fi ;;
+        replace|absent|handler) ;;
+        *)
+            error "  扱えない op です: ${pointer} (${op})"
+            resolve_failed=true
+            continue ;;
+    esac
+
+    if jq -c \
         --arg pointer "${pointer}" \
         --arg op "${op}" \
         --arg handler "${handler}" \
@@ -138,7 +161,15 @@ while IFS=$'\t' read -r idx pointer op handler scope_behavior src_file src_point
         --argjson idx "${idx}" \
         '. + [{pointer: $pointer, op: $op, handler: $handler,
                scope_behavior: $scope_behavior, expected: $expected, idx: $idx}]' \
-        "${resolved}" > "${resolved}.tmp" && mv "${resolved}.tmp" "${resolved}"
+        "${resolved}" > "${resolved}.tmp"; then
+        mv "${resolved}.tmp" "${resolved}"
+    else
+        # 追記に失敗した項目を黙って落とすと、母集団が縮んだまま残りの項目で
+        # 緑を返せてしまう。検査そのものを失敗にする。
+        rm -f "${resolved}.tmp"
+        error "  項目を検査対象に追加できませんでした: ${pointer}"
+        resolve_failed=true
+    fi
 done < <(jq -r '.items | to_entries[]
     | [ (.key|tostring), .value.pointer, .value.op,
         (if (.value.handler // "") == "" then "-" else .value.handler end),
