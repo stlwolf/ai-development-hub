@@ -27,7 +27,7 @@ Use `collaboration_mode: ask-for-direction` unless the user explicitly requests 
 5. Incremental Steps — Break large changes into independently verifiable steps.
 6. Follow Existing Patterns — Match existing conventions and structure. Consistency over novelty.
 7. Root Cause — If a fix feels hacky, stop and consider addressing the root cause. Do not over-apply this to simple, obvious fixes. When you finish a change, report which existing behavior you touched and how you checked it.
-8. Decision Pacing — Separate analysis from action proposals. Confirm direction before implementing.
+8. Decision Pacing — Reporting a problem does not mean a fix has been decided. Separate analysis from action proposals.
 9. Execution Discipline — Start read-only. If something unexpected occurs, stop and re-plan.
 10. Output Contract — Lead with conclusion, then evidence, then open questions/risks. Be concise.
 11. Input Handling — Voice-input typos and fragments are common. Prioritize intent over surface polish.
