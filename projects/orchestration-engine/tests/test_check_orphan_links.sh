@@ -260,6 +260,37 @@ else
   ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
 fi
 
+echo "[21] 走査ルート自体が symlink でも中を見る（実装SO 指摘の回帰）"
+fresh c21
+printf 'x' > "$CANON/rules/alpha.md"
+rmdir "$BASE/rules"
+mkdir -p "$CASE/real_rules"
+ln -s "$CASE/real_rules" "$BASE/rules"
+ln -s "$CANON/rules/retired.md" "$CASE/real_rules/retired.md"
+run
+ck  "孤児を見つける" "1" "$RC"
+ckc "孤児として分類" "$OUT" "orphan-canonical rules/retired.md"
+
+echo "[22] 中間 symlink で外へ抜ける壊れたリンクを孤児にしない（実装SO 指摘の回帰）"
+fresh c22
+mkdir -p "$CASE/outside" "$CANON/linked"
+ln -s "$CASE/outside" "$CANON/linked/out"
+# 字句的には正本配下だが、実体は正本の外。しかも解決先は存在しない。
+ln -s "$CANON/linked/out/gone.md" "$BASE/rules/via.md"
+run_v
+ck  "孤児にしない" "0" "$RC"
+ckc "外向きとして分類" "$OUT" "dangling-outside rules/via.md"
+ncc "孤児と呼ばない" "$OUT" "orphan-canonical rules/via.md"
+
+echo "[23] realpath が解決できないときの経路（存在する祖先まで遡る）"
+fresh c23
+# 中間が壊れた symlink だと realpath は空を返す。この場合だけ字句の遡りが走る。
+ln -s "$CASE/nowhere" "$CANON/broken_mid"
+ln -s "$CANON/broken_mid/leaf.md" "$BASE/rules/x.md"
+run
+ck  "孤児として拾う" "1" "$RC"
+ckc "孤児として分類" "$OUT" "orphan-canonical rules/x.md"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

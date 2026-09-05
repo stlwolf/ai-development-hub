@@ -129,12 +129,38 @@ normalize_path() {
     printf '%s' "${joined:-/}"
 }
 
-resolve_path() {
+# 解決できないパスでも必ず答えを返す。realpath は実装によって、存在しない
+# パスを解決する版と失敗する版がある（macOS は解決し、GNU は -m 無しだと失敗する）。
+# 版差で分類が変わると、掃除の対象までぶれる。存在する祖先まで解決して残りを
+# 継ぎ足す形にして、どちらの版でも同じ答えにする。
+_realpath_raw() {
     if command -v realpath >/dev/null 2>&1; then
         realpath "$1" 2>/dev/null
     else
         python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1" 2>/dev/null
     fi
+}
+
+resolve_path() {
+    local p="$1" out rest="" cur base
+    if out="$(_realpath_raw "$p")" && [[ -n "${out}" ]]; then
+        printf '%s' "${out}"
+        return 0
+    fi
+    cur="$p"
+    while [[ -n "${cur}" && "${cur}" != "/" && "${cur}" != "." ]]; do
+        if [[ -e "${cur}" ]]; then
+            base="$(_realpath_raw "${cur}")"
+            if [[ -n "${base}" ]]; then
+                printf '%s' "${base}${rest}"
+                return 0
+            fi
+            break
+        fi
+        rest="/$(basename "${cur}")${rest}"
+        cur="$(dirname "${cur}")"
+    done
+    printf '%s' "$p"
 }
 
 CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
@@ -201,7 +227,9 @@ for d in "${dirs[@]}"; do
     fi
     find_rc=0
     # 名前に改行が入りうるので NUL 区切りで受ける。行区切りだと1件が2件に割れる。
-    find "${dir}" -maxdepth 1 -mindepth 1 -type l -print0 > "${listing}" 2>/dev/null || find_rc=$?
+    # 末尾のスラッシュを付ける。付けないと、走査ルート自体が symlink のときに
+    # find が中へ降りず、孤児を全件見落として緑を返す。
+    find "${dir}/" -maxdepth 1 -mindepth 1 -type l -print0 > "${listing}" 2>/dev/null || find_rc=$?
     while IFS= read -r -d '' entry; do
         [[ -n "${entry}" ]] || continue
         scanned=$((scanned + 1))
