@@ -327,6 +327,21 @@ run
 ck  "孤児として拾う" "1" "$RC"
 ckc "リンク先をそのまま出す" "$OUT" 'we\ntwo.md'
 
+echo "[27] 3ターゲットとも走査根の一覧を持っている（定義の脱落の回帰）"
+for t in claude cursor codex; do
+  ck  "$t の走査根が定義されている" "1" "$(grep -c "^${t}_dirs=(" "$CHECK" | tr -d ' ')"
+done
+
+echo "[28] 3ターゲットとも実際に走る（bash 3.2 でも落ちない）"
+fresh c28
+printf 'x' > "$CANON/rules/alpha.md"
+for t in claude cursor codex; do
+  o="$("$BASH" "$CHECK" "$t" --base "$BASE" --canonical "$CANON" --verbose 2>&1)"; r=$?
+  ck  "$t は 0 か 1 で返る（2 や unbound ではない）" "true" "$([[ "$r" -eq 0 || "$r" -eq 1 ]] && echo true || echo false)"
+  ncc "$t で未定義変数を踏まない" "$o" "unbound variable"
+  ckc "$t が走査の件数を出す" "$o" "走査した symlink:"
+done
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
