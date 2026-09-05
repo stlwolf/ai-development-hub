@@ -69,7 +69,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (14)
+## Rules (13)
 
 | Name | Description | Path |
 |------|-------------|------|
@@ -84,7 +84,6 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
 | output-format-rule | Conclusion → evidence → steps → risks → links output structure; related links required when the turn created or updated an Issue / PR / in-repo doc (§5: heading pinned by the report's language, comments optional, bare `#N` insufficient, no padding, read-only turns exempt; operator-facing section, distinct from a subagent's `Links` field); URL form by destination (§6: bare URL to the terminal, `[label](url)` to Markdown renderers); plain-Japanese wording (§8: no decorative English, keep work-object names); operator-facing plain prose (§9: no telegram compression; chat + human-gate; reasoning / agent-channels / board exempt) | `rules/output-format-rule.md` |
 | reframe-on-stall-rule | Always-on soft floor under exhaustion-before-conclusion: when exploration stalls (no material new information, lateral repetition), consider a zero-base rebuild before continuing. Qualitative trigger via observable signs (not a count); reconcile against discarded premises; low-risk carve-out; model-dependent (hard gate #77 backs high-stakes once it lands) | `rules/reframe-on-stall-rule.md` |
-| skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
 | subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; concurrency / nesting limits belong to the harness, not to the rule; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
 | workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
 
