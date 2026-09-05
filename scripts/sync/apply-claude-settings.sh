@@ -72,7 +72,11 @@ fi
 # 正本の解決。1項目でも解けなければ何も書かない（部分適用を作らない）。
 # ---------------------------------------------------------------------------
 resolved="$(mktemp)" || { error "作業ファイルを作れません"; exit 2; }
-trap 'rm -f "${resolved}" "${resolved}.tmp"' EXIT
+# 後始末は1本にまとめる。後から trap を張り直すと前のものが消えて、
+# 先に作った作業ファイルが残り続ける。
+read_copy=""
+cleanup() { rm -f "${resolved}" "${resolved}.tmp" "${read_copy}"; }
+trap cleanup EXIT
 echo "[]" > "${resolved}" || { error "作業ファイルに書けません"; exit 2; }
 
 resolve_failed=false
@@ -129,6 +133,15 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
         fi
         expected="$(jq -c '.value' <<< "${probe}")"
     fi
+    # 値を書く操作は正本を要る。source が無いまま通すと null を書き込む。
+    case "${op}" in
+        replace|merge-object|union-array|handler)
+            if [[ -z "${src_file}" || "${src_file}" == "-" ]]; then
+                error "  この操作には値の出どころが要ります: ${pointer} (${op})"
+                resolve_failed=true; continue
+            fi ;;
+    esac
+
     exp_type="$(jq -r 'type' <<< "${expected}")"
     case "${op}" in
         merge-object) [[ "${exp_type}" == "object" ]] || { error "  merge-object の正本がオブジェクトではありません: ${pointer} (${exp_type})"; resolve_failed=true; continue; } ;;
@@ -229,8 +242,6 @@ before_exists=0
 now_exists=0
 backups_made=()
 ever_existed=0
-read_copy=""
-trap 'rm -f "${read_copy}"' EXIT
 while :; do
     attempt=$((attempt + 1))
 
@@ -351,8 +362,11 @@ while :; do
     #      消さない。横取りで元の内容が消える（削除・空化・置換）ことがあり、
     #      そのとき手元に残る唯一の写しがこれになる。やり直しのたびに消すと、
     #      いちばん復旧が要る場面で復旧できなくなる。
-    if [[ "${before_exists}" -eq 1 && "${#backups_made[@]}" -eq 0 ]]; then
-        bk="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$"
+    if [[ "${before_exists}" -eq 1 ]]; then
+        # 試行ごとに1つ取る。最初のものは元の内容を保ち、最後のものが
+        # 置き換え直前の版になる。以前のものは消さない（横取りで元が
+        # 失われたときに、いちばん古い写しだけが復旧の手がかりになる）。
+        bk="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$.${attempt}"
         # 実体からではなく、読んだ瞬間の写しから作る。実体を読み直すと、
         # その間に空にされていた場合に壊れた内容を写してしまう。
         if ! cp "${read_copy}" "${bk}" 2>/dev/null; then

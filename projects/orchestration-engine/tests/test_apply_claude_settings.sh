@@ -214,7 +214,7 @@ ckc "読み直したと言う" "$OUT" "読み直します"
 ck  "割り込みの追記が残る" "1" "$(jq -r '.raced' "$ST")"
 ck  "宣言の項目も入る" "true" "$(jq -r '(.hooks != null)' "$ST")"
 ck  "個人層も残る" "dark" "$(jq -r '.theme' "$ST")"
-ck  "捨てたバックアップが残っていない" "1" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
+ck  "試行ごとに写しが残る（1回やり直したので2つ）" "2" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
 
 echo "[13c] 横取りが続くなら中止する（書かない）"
 fresh c13c
@@ -227,7 +227,7 @@ ck  "exit 1" "1" "$RC"
 ckc "中止すると言う" "$OUT" "中止します"
 ck  "宣言の項目は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
-ck  "諦めたときは読んだ時点の版を残す" "1" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
+ck  "諦めたときも写しは残る" "true" "$([[ "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -ge 1 ]] && echo true || echo false)"
 ckc "残したと言う" "$OUT" "読んだ時点の内容を残しました"
 
 echo "[14] 宣言が空 → 何も書かない"
@@ -524,7 +524,7 @@ chmod +x "$CASE/a.sh"
 OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
 ck  "宣言だけのファイルを作らない" "1" "$RC"
 ckc "消えたと言う" "$OUT" "settings.json が消えました"
-bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | head -1)"
 ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
 ck  "写しに個人層がある" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
 ck  "写しに model もある" "opus" "$(jq -r '.model' "$bk" 2>/dev/null)"
@@ -538,7 +538,7 @@ OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "
 ck  "空のまま何も書かない" "0" "$RC"
 ckc "読めないと言う" "$OUT" "JSON として読めないので触りません"
 ckc "写しの在処を伝える" "$OUT" "読んだ時点の内容"
-bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | head -1)"
 ck  "写しから個人層を戻せる" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
 
 echo "[33] 破壊的な横取り: 確認の直前に空オブジェクトへ置換される（実装SO 指摘の回帰）"
@@ -548,7 +548,7 @@ sed "s|^    # (c) 最後の確認。|    printf '%s' '{}' > '$ST'\n    # (c) 最
 chmod +x "$CASE/a.sh"
 OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
 # 横取り側が個人層を消したので、手元の結果に個人層は戻らない。写しから戻せることを見る。
-bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | head -1)"
 ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
 ck  "写しに個人層がある" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
 ck  "終了コードは 0 か 1" "true" "$([[ "$RC" -eq 0 || "$RC" -eq 1 ]] && echo true || echo false)"
@@ -570,7 +570,7 @@ sed "s|^    # statusline-wrap が退避に使う元コマンドを、いまの�
 chmod +x "$CASE/a.sh"
 ck  "割り込みを挿せた" "1" "$(grep -c ": > '$ST'" "$CASE/a.sh" | tr -d ' ')"
 OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
-bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | head -1)"
 ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
 ck  "写しは空になっていない" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
 ck  "写しに model もある" "opus" "$(jq -r '.model' "$bk" 2>/dev/null)"
@@ -592,6 +592,45 @@ ck  "exit 0" "0" "$RC"
 ck  "read の一時ファイルが残っていない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
 run
 ck  "変更なしの経路でも残さない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
+
+echo "[38] 作業ファイルを残さない（trap の上書きの回帰）"
+fresh c38
+printf '%s' '{"theme":"dark"}' > "$ST"
+before_tmp="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l | tr -d ' ')"
+run
+ck  "exit 0" "0" "$RC"
+after_tmp="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l | tr -d ' ')"
+ck  "一時ファイルが増えていない" "$before_tmp" "$after_tmp"
+ck  "settings の隣にも残骸なし" "0" "$(find "$CASE" -maxdepth 1 \( -name 'settings.json.read.*' -o -name 'settings.json.tmp.*' \) | wc -l | tr -d ' ')"
+
+echo "[39] やり直して成功したとき、最後の写しが置き換え直前の版になる（実装SO 指摘の回帰）"
+fresh c39
+printf '%s' '{"theme":"dark"}' > "$ST"
+marker2="$CASE/raced2"
+sed "s|^    # (c) 最後の確認。|    if [[ ! -e '$marker2' ]]; then touch '$marker2'; jq -c '. + {mid: 1}' '$ST' > '$ST.r' \&\& mv '$ST.r' '$ST'; fi\n    # (c) 最後の確認。|" \
+    "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "成功する" "0" "$RC"
+oldest="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | head -1)"
+newest="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | sort | tail -1)"
+ck  "最古の写しは元の内容（割り込み前）" "null" "$(jq -r '.mid' "$oldest" 2>/dev/null)"
+ck  "最後の写しは置き換え直前の版（割り込み後）" "1" "$(jq -r '.mid' "$newest" 2>/dev/null)"
+ck  "結果にも割り込みの追記が残る" "1" "$(jq -r '.mid' "$ST")"
+
+echo "[40] 値の出どころが無い操作を拒む（実装SO 指摘の回帰）"
+fresh c40
+printf '%s' '{"theme":"dark"}' > "$ST"
+cat > "$CASE/decl.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/target","op":"replace","scope_behavior":"override"}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ckc "出どころが要ると言う" "$OUT" "値の出どころが要ります"
+ck  "null を書いていない" "false" "$(jq -r 'has("target")' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
