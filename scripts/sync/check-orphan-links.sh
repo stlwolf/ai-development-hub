@@ -60,8 +60,10 @@ codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 while [[ $# -gt 0 ]]; do
     case "$1" in
         claude|cursor|codex) TARGET="$1"; shift ;;
-        --base)      BASE="$2"; shift 2 ;;
-        --canonical) CANONICAL="$2"; shift 2 ;;
+        --base)      [[ $# -ge 2 ]] || { error "--base に値がありません"; exit 2; }
+                     BASE="$2"; shift 2 ;;
+        --canonical) [[ $# -ge 2 ]] || { error "--canonical に値がありません"; exit 2; }
+                     CANONICAL="$2"; shift 2 ;;
         -v|--verbose) VERBOSE=true; shift ;;
         -h|--help)
             sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
@@ -141,15 +143,16 @@ CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
 # macOS の既定のファイルシステムは大文字小文字を区別しない。綴りだけが違う
 # リンク先は、文字列の前方一致では正本配下と判定できず、孤児を見落とす。
 # 実際に試して確かめる（決め打ちしない）。
+# 判定はファイルを作らずに行う。読み取り専用の検査が正本の隣にファイルを
+# 作って消すのは、たとえ一時的でも筋が悪い（同名ファイルを壊しうるし、
+# 割り込まれると残る）。既にあるパスの綴りを変えて到達できるかで見る。
 CASE_INSENSITIVE=false
-_probe_dir="$(dirname "${CANONICAL_REAL}")"
-if [[ -d "${_probe_dir}" ]]; then
-    _probe="${_probe_dir}/.oe-case-probe.$$"
-    if : > "${_probe}" 2>/dev/null; then
-        _upper="${_probe_dir}/.OE-CASE-PROBE.$$"
-        [[ -e "${_upper}" ]] && CASE_INSENSITIVE=true
-        rm -f "${_probe}"
-    fi
+_alt="$(printf '%s' "${CANONICAL_REAL}" | tr '[:lower:]' '[:upper:]')"
+if [[ "${_alt}" != "${CANONICAL_REAL}" && -d "${_alt}" ]]; then
+    CASE_INSENSITIVE=true
+else
+    _alt2="$(printf '%s' "${CANONICAL_REAL}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${_alt2}" != "${CANONICAL_REAL}" && -d "${_alt2}" ]] && CASE_INSENSITIVE=true
 fi
 
 # 前方一致。区別しないファイルシステムでは綴りを揃えてから比べる。
@@ -179,7 +182,18 @@ fi
 
 for d in "${dirs[@]}"; do
     dir="${BASE}/${d}"
-    [[ -d "${dir}" ]] || continue
+    if [[ ! -d "${dir}" ]]; then
+        # 「無い」のか「あるが辿れない」のかを区別する。親が辿れないと -d は
+        # 偽になるので、黙って飛ばすと走査できなかったことが緑に化ける。
+        if [[ -e "${dir}" ]]; then
+            error "  配布先がディレクトリではありません: ${dir}"
+            scan_failed=true
+        elif [[ -d "${BASE}" && ! -x "${BASE}" ]]; then
+            error "  配布先の親を辿れないので確かめられません: ${dir}"
+            scan_failed=true
+        fi
+        continue
+    fi
     # process substitution だと find の終了コードが取れないので、いったん受ける。
     if ! listing="$(mktemp)" || [[ -z "${listing}" ]]; then
         error "作業ファイルを作れません"
@@ -202,9 +216,12 @@ for d in "${dirs[@]}"; do
         # 解決先が消えていると realpath は失敗するので、生の文字列が要る。
         under_canonical=false
         real="$(resolve_path "${abs}")"
-        if [[ -n "${real}" ]] && under_prefix "${real}" "${CANONICAL_REAL}"; then
-            under_canonical=true
+        if [[ -n "${real}" ]]; then
+            # 解決できたなら実パスの判定を信じる。ここで字句判定へ落とすと、
+            # 正本配下の中間 symlink が外を指す場合に外向きを見落とす。
+            under_prefix "${real}" "${CANONICAL_REAL}" && under_canonical=true
         elif under_prefix "${abs}" "${CANONICAL_REAL}" || under_prefix "${abs}" "${CANONICAL}"; then
+            # 解決できないときだけ、生のリンク先を字句的に見る。
             under_canonical=true
         fi
 

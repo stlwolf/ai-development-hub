@@ -217,6 +217,49 @@ ck  "出力は空" "" "$OUT"
 run_v
 ckc "verbose なら内訳を出す" "$OUT" "走査した symlink: 1 件"
 
+echo "[17] 検査が正本の隣にファイルを作らない（実装SO 指摘の回帰）"
+fresh c17
+printf 'x' > "$CANON/rules/alpha.md"
+ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
+before="$(find "$CASE" -maxdepth 1 -mindepth 1 | sort)"
+run_v
+after="$(find "$CASE" -maxdepth 1 -mindepth 1 | sort)"
+ck  "正本の隣に増減がない" "$before" "$after"
+
+echo "[18] 中間の symlink が外を指すリンクを孤児にしない（実装SO 指摘の回帰）"
+fresh c18
+mkdir -p "$CASE/outside/rules"
+printf 'x' > "$CASE/outside/rules/alpha.md"
+# 正本配下の名前だが、途中の symlink で外へ抜ける
+mkdir -p "$CANON/linked"
+ln -s "$CASE/outside" "$CANON/linked/out"
+ln -s "$CANON/linked/out/rules/alpha.md" "$BASE/rules/via.md"
+run_v
+ck  "孤児にしない" "0" "$RC"
+ckc "外向きとして数える" "$OUT" "生きている 1 件"
+ncc "孤児と呼ばない" "$OUT" "orphan-canonical rules/via.md"
+
+echo "[19] オプションの値が欠けたら exit 2（実装SO 指摘の回帰）"
+OUT="$("$BASH" "$CHECK" claude --base 2>&1)"; RC=$?
+ck  "--base の値なし → exit 2" "2" "$RC"
+ckc "値が無いと言う" "$OUT" "--base に値がありません"
+OUT="$("$BASH" "$CHECK" claude --canonical 2>&1)"; RC=$?
+ck  "--canonical の値なし → exit 2" "2" "$RC"
+
+echo "[20] 配布先の親を辿れないとき緑を名乗らない（実装SO 指摘の回帰）"
+fresh c20
+printf 'x' > "$CANON/rules/alpha.md"
+ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
+chmod 000 "$BASE"
+run
+chmod 755 "$BASE"
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "  SKIP: root では権限を落としても辿れるため"
+else
+  ck  "exit 1" "1" "$RC"
+  ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
+fi
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
