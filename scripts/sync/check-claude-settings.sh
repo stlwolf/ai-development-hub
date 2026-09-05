@@ -82,13 +82,20 @@ def ptr2path($p):
   else ($p | ltrimstr("/") | split("/")
         | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
 
+# パスの要素は、JSON Pointer 由来なら文字列、jq の paths 由来なら配列添字が数値で来る。
+# 数値に test を当てると例外になり、判定そのものが途中で終わる。両方を受ける。
 def haspath($p):
   . as $doc
   | reduce $p[] as $k ({ok: true, cur: $doc};
       if .ok | not then .
-      elif (.cur | type) == "object" and (.cur | has($k)) then {ok: true, cur: .cur[$k]}
-      elif (.cur | type) == "array" and ($k | test("^[0-9]+$"))
-           and ((.cur | length) > ($k | tonumber)) then {ok: true, cur: .cur[$k | tonumber]}
+      elif (.cur | type) == "object" and ($k | type) == "string" and (.cur | has($k))
+        then {ok: true, cur: .cur[$k]}
+      elif (.cur | type) == "array" and ($k | type) == "number"
+           and ($k >= 0) and ((.cur | length) > $k)
+        then {ok: true, cur: .cur[$k]}
+      elif (.cur | type) == "array" and ($k | type) == "string"
+           and ($k | test("^[0-9]+$")) and ((.cur | length) > ($k | tonumber))
+        then {ok: true, cur: .cur[$k | tonumber]}
       else {ok: false, cur: null} end)
   | .ok;
 

@@ -270,6 +270,27 @@ run
 ck  "差分として扱う" "1" "$RC"
 ncc "宣言どおりと言わない" "$OUT" "宣言どおり"
 
+echo "[21] merge-object の正本が配列を含んでいても落ちない（実装SO 指摘の回帰）"
+fresh c21
+printf '%s' '{"autoMode":{"environment":["a","b"],"flag":false}}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/autoMode","op":"merge-object","scope_behavior":"override",
+           "source":{"file":"SRCFILE","pointer":"/autoMode"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl.json" && rm -f "$CASE/decl.json.bak"
+printf '%s' '{"autoMode":{"environment":["a","b"],"flag":false,"extra":1}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "配列を含む正本と一致 → 緑" "0" "$RC"
+printf '%s' '{"autoMode":{"environment":["a","ZZZ"],"flag":false}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "配列の要素の違いを拾う" "1" "$RC"
+printf '%s' '{"autoMode":{"environment":["a"],"flag":false}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "配列が短いのを拾う" "1" "$RC"
+ncc "判定できなかったとは言わない" "$OUT" "判定を計算できませんでした"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
