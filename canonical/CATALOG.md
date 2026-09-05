@@ -75,7 +75,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 |------|-------------|------|
 | behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns, Root Cause (address root causes; report which existing behavior you touched and how you checked it) | `rules/behavioral-rule.md` |
 | careful-operations-rule | Destructive command guardrails — three-tier pattern table (blocked / requires confirmation / exceptions) | `rules/careful-operations-rule.md` |
-| decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
+| decision-pacing-rule | Reporting a problem is not a decision to fix it; separate analysis from action proposals | `rules/decision-pacing-rule.md` |
 | evidence-verification-rule | Concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
 | execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
 | exhaustion-before-conclusion-rule | Complements Evidence First with exploration breadth: do not conclude while reachable paths or options remain unexamined. Illustrated by design (option) / bug-investigation (code-path) cases; design-domain soft layer landed as predecision-exploration (#77) + soft floor reframe-on-stall-rule (#161); deterministic hard gates (#77/#78) deferred; includes a minimal high-stakes discipline | `rules/exhaustion-before-conclusion-rule.md` |

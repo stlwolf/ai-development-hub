@@ -249,7 +249,7 @@ Plan が成立したら `adversarial-review` skill で漏れ・矛盾・曖昧�
 
 - `canonical/cursor/rules/cursor-first-turn.mdc` — ターン1の自己能力宣言 / 即拒否禁止 / output mode 分類
 - `canonical/rules/input-style-rule.md` — 音声入力解釈の汎用ルール
-- `canonical/rules/decision-pacing-rule.md` — 「やるかどうか」を先に決める
+- `canonical/rules/decision-pacing-rule.md` — 問題の報告と対応の提案を分ける
 - `canonical/rules/implementation-gate-rule.md` — 実装前の計画フェーズ強制
 
 ## 参考
