@@ -139,16 +139,22 @@ while IFS=$'\t' read -r idx pointer op handler scope_behavior src_file src_point
             resolve_failed=true
             continue
         fi
-        if ! expected="$(jq -c --arg p "${src_pointer}" "${PTR_LIB} getpath(ptr2path(\$p))" "${abs_src}" 2>/dev/null)"; then
+        # 値が null であることと、パスが無いことを区別する。区別しないと、
+        # 適用側は書けるのに検査側だけが失敗する（両者の契約がずれる）。
+        if ! probe="$(jq -c --arg p "${src_pointer}" "${PTR_LIB}
+              (ptr2path(\$p)) as \$path
+              | {found: (([paths] | any(. == \$path)) or ((\$path | length) == 0)),
+                 value: getpath(\$path)}" "${abs_src}" 2>/dev/null)"; then
             error "  正本ファイルを読めません: ${pointer} → ${src_file}"
             resolve_failed=true
             continue
         fi
-        if [[ "${expected}" == "null" ]]; then
-            error "  正本に値がありません: ${pointer} → ${src_file}#${src_pointer}"
+        if [[ "$(jq -r '.found' <<< "${probe}")" != "true" ]]; then
+            error "  正本にそのパスがありません: ${pointer} → ${src_file}#${src_pointer}"
             resolve_failed=true
             continue
         fi
+        expected="$(jq -c '.value' <<< "${probe}")"
     fi
     # op と期待値の型が噛み合っていないと、判定が空集合への全称になって
     # 何を壊しても緑になる（merge-object にスカラーを与えた場合が該当）。

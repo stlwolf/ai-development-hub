@@ -168,7 +168,13 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
             # 名前を検証する。知らない名前を通すと、適用側が何もしないまま
             # 「適用した」と返る。宣言の書き間違いが素通りする形になる。
             case "${handler}" in
-                statusline-wrap) ;;
+                statusline-wrap)
+                    # 退避する元コマンドの取り出しが .statusLine.command に固定なので、
+                    # 別の場所に宣言されるとハンドラの中身とずれる。置き場を縛る。
+                    if [[ "${pointer}" != "/statusLine" ]]; then
+                        error "  statusline-wrap は /statusLine にしか宣言できません: ${pointer}"
+                        resolve_failed=true; continue
+                    fi ;;
                 *) error "  知らないハンドラです: ${pointer} (${handler:-空})"; resolve_failed=true; continue ;;
             esac ;;
         *) error "  扱えない op です: ${pointer} (${op})"; resolve_failed=true; continue ;;

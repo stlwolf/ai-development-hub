@@ -245,7 +245,7 @@ DECLEOF
 sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl.json" && rm -f "$CASE/decl.json.bak"
 OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
 ck  "正本に値が無い → exit 2" "2" "$RC"
-ckc "正本に値が無いと言う" "$OUT" "正本に値がありません"
+ckc "正本にそのパスが無いと言う" "$OUT" "正本にそのパスがありません"
 
 echo "[18] 解決先が消えた symlink を「未適用」と誤らない（実装SO 指摘の回帰）"
 fresh c18; build_green
@@ -294,6 +294,23 @@ printf '%s' '{"autoMode":{"environment":["a"],"flag":false}}' > "$ST"
 OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
 ck  "配列が短いのを拾う" "1" "$RC"
 ncc "判定できなかったとは言わない" "$OUT" "判定を計算できませんでした"
+
+echo "[22] 正本の値が null でも検査できる（適用側と契約を揃える・実装SO 指摘の回帰）"
+fresh c22
+printf '%s' '{"nullable":null}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/nullable","op":"replace","scope_behavior":"override",
+           "source":{"file":"$CASE/src.json","pointer":"/nullable"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+printf '%s' '{"nullable":null}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "一致として緑" "0" "$RC"
+ncc "解決失敗にしない" "$OUT" "正本にそのパスがありません"
+printf '%s' '{"nullable":1}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "違えば差分" "1" "$RC"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

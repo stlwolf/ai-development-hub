@@ -714,6 +714,21 @@ ck  "exit 0（止めない）" "0" "$RC"
 ckc "読めないと言う" "$OUT" "JSON として読めないので触りません"
 ck  "空のまま" "0" "$(wc -c < "$ST" | tr -d ' ')"
 
+echo "[47] statusline-wrap は /statusLine 以外に宣言できない（実装SO 指摘の回帰）"
+fresh c47
+printf '%s' '{"theme":"dark"}' > "$ST"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/somewhereElse","op":"handler","handler":"statusline-wrap","scope_behavior":"override",
+           "source":{"file":"$REPO_ROOT/canonical/claude/statusline/claude.statusline.json","pointer":"/statusLine"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ckc "置き場が違うと言う" "$OUT" "statusline-wrap は /statusLine にしか宣言できません"
+ck  "何も書かない" "false" "$(jq -r 'has("somewhereElse")' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
