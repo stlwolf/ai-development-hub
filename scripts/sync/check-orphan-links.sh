@@ -81,9 +81,14 @@ codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 # たまたま同じ名前があれば、本当の孤児を残すことになるが、それは報告に残る。
 would_be_distributed() {
     local entry_name="$1" is_dir="$2" found="" rc=0
+    # find の -name は中身を glob として読む。名前に * や ? や [ が入っていると
+    # 自分自身の名前に一致せず、配られているのに「配布対象ではない」と判定して
+    # 消してしまう。特別な意味を持つ文字を打ち消してから渡す。
+    local pat
+    pat="$(printf '%s' "${entry_name}" | sed 's/[][*?\\]/\\&/g')"
     if [[ "${is_dir}" == true ]]; then
         # ディレクトリの配布（skills）は SKILL.md を持つ同名ディレクトリを探す。
-        found="$(find "${CANONICAL_REAL}" -type d -name "${entry_name}" \
+        found="$(find "${CANONICAL_REAL}" -type d -name "${pat}" \
                    -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null | head -1)" || rc=$?
     else
         # 配布の関数はいずれも拡張子で絞っている（.md / .mdc / .sh）。ここは配布先ごとの
@@ -92,7 +97,7 @@ would_be_distributed() {
             *.md|*.mdc|*.sh) ;;
             *) return 1 ;;
         esac
-        found="$(find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null | head -1)" || rc=$?
+        found="$(find "${CANONICAL_REAL}" -type f -name "${pat}" 2>/dev/null | head -1)" || rc=$?
     fi
 
     # 見つかったなら配られうる。
@@ -350,7 +355,19 @@ if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
         dir_name="${orphan_dirs[$i]}"
         entry_name="$(basename "${entry}")"
 
-        # 削除の直前にやり直す。検出してから今までの間に張り直された可能性がある。
+        # 順序が要になる。全木の探索は時間がかかるので先に済ませ、その後に
+        # 安い再確認を置いて、そのまま削除へ入る。逆にすると、再確認と削除の
+        # 間に全木の探索が挟まり、その隙に通常ファイルへ変わったものを消しうる。
+
+        # まず、いま配布規則がこの名前を配ろうとしているか（重い判定）。
+        entry_is_dir=false
+        [[ "${dir_name}" == "skills" ]] && entry_is_dir=true
+        if would_be_distributed "${entry_name}" "${entry_is_dir}"; then
+            info "  いまも配布の対象なので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+
+        # ここから下は安い判定だけを置く。削除の直前にやり直す意味がある。
         if [[ ! -L "${entry}" ]]; then
             info "  もう symlink ではないので触りません: ${dir_name}/${entry_name}"
             kept=$((kept + 1)); continue
@@ -368,14 +385,9 @@ if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
             info "  正本の外を指しているので触りません: ${dir_name}/${entry_name}"
             kept=$((kept + 1)); continue
         fi
-        # いま配布規則がこの名前を配ろうとしているなら消さない。
-        entry_is_dir=false
-        [[ "${raw2}" == */ ]] && entry_is_dir=true
-        # リンク先が消えているので、正本側にディレクトリとして在りうるかは
-        # 配布先の分類（skills はディレクトリ単位）から判断する。
-        [[ "${dir_name}" == "skills" ]] && entry_is_dir=true
-        if would_be_distributed "${entry_name}" "${entry_is_dir}"; then
-            info "  いまも配布の対象なので触りません: ${dir_name}/${entry_name}"
+        # 最後にもう一度だけ symlink であることを見る。ここと削除の間には何も置かない。
+        if [[ ! -L "${entry}" ]]; then
+            info "  直前に symlink でなくなったので触りません: ${dir_name}/${entry_name}"
             kept=$((kept + 1)); continue
         fi
 

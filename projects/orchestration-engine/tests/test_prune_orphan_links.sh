@@ -197,7 +197,7 @@ ln -s "$CANON/rules/retired.md" "$BASE/rules/retired.md"
 # 正本の探索を必ず失敗させる複製を作る。安全弁が失敗したら、消してよい側では
 # なく残す側へ倒れることを見る。
 # shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
-sed 's|^        found="$(find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null . head -1)" .. rc=$?|        found=""; rc=7|' \
+sed 's|^        found="$(find "${CANONICAL_REAL}" -type f -name "${pat}" 2>/dev/null . head -1)" .. rc=$?|        found=""; rc=7|' \
     "$CHECK" > "$CASE/prune_probefail.sh"
 chmod +x "$CASE/prune_probefail.sh"
 ck  "割り込みを挿せた" "1" "$(grep -cE '^        found=""; rc=7$' "$CASE/prune_probefail.sh" | tr -d ' ')"
@@ -214,6 +214,29 @@ for t in claude cursor codex; do
   ncc "$t で未定義変数を踏まない" "$o" "unbound variable"
   ck  "$t は 0 か 1 か 2 で返る" "true" "$([[ "$r" -ge 0 && "$r" -le 2 ]] && echo true || echo false)"
 done
+
+echo "[19] 名前に glob の文字が入っていても配布対象と認める（実装SO 指摘の回帰）"
+fresh c19
+for n in b c d; do printf 'x' > "$CANON/rules/$n.md"; ln -s "$CANON/rules/$n.md" "$BASE/rules/$n.md"; done
+weird='a[1].md'
+printf 'x' > "$CANON/rules/$weird"
+ln -s "$CANON/rules/old-$weird" "$BASE/rules/$weird"
+prune
+ck  "消さない" "true" "$([[ -L "$BASE/rules/$weird" ]] && echo true || echo false)"
+ckc "配布の対象だと言う" "$OUT" "いまも配布の対象なので触りません"
+
+echo "[20] 削除の直前に通常ファイルへ変わったら消さない（実装SO 指摘の回帰）"
+fresh c20
+ln -s "$CANON/rules/retired.md" "$BASE/rules/retired.md"
+# 最後の symlink 確認の直前で、対象を通常ファイルへ差し替える。
+sed "s|^        # 最後にもう一度だけ symlink であることを見る。|        rm -f '$BASE/rules/retired.md'; printf 'now-a-file' > '$BASE/rules/retired.md'\n        # 最後にもう一度だけ symlink であることを見る。|" \
+    "$CHECK" > "$CASE/prune_swap.sh"
+chmod +x "$CASE/prune_swap.sh"
+ck  "割り込みを挿せた" "1" "$(grep -c 'now-a-file' "$CASE/prune_swap.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/prune_swap.sh" claude --base "$BASE" --canonical "$CANON" --prune 2>&1)"; RC=$?
+ck  "通常ファイルは消えていない" "true" "$([[ -f "$BASE/rules/retired.md" && ! -L "$BASE/rules/retired.md" ]] && echo true || echo false)"
+ck  "中身も残る" "now-a-file" "$(cat "$BASE/rules/retired.md" 2>/dev/null)"
+ckc "直前に変わったと言う" "$OUT" "直前に symlink でなくなったので触りません"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
