@@ -152,6 +152,32 @@ ncc "unbound variable を出さない" "$OUT" "unbound variable"
 ckc "1件走査した" "$OUT" "走査した symlink: 1 件"
 ckc "分類が落ちない" "$OUT" "dangling-outside rules/absup.md"
 
+echo "[12] リンク先に glob 文字が入っていても展開しない（実装SO 指摘の回帰）"
+fresh c12
+printf 'x' > "$CANON/rules/alpha.md"
+printf 'x' > "$CANON/rules/beta.md"
+# リンク先に * を含める。展開されると正本の別ファイルに化けて分類が狂う。
+ln -s "$CANON/rules/*" "$BASE/rules/star.md"
+run
+ncc "unbound や error を出さない" "$OUT" "error"
+ckc "リンク先をそのまま報告する" "$OUT" "orphan-canonical rules/star.md"
+ck  "孤児として exit 1" "1" "$RC"
+
+echo "[13] 配布先を走査できないとき緑を名乗らない（実装SO 指摘の回帰）"
+fresh c13
+printf 'x' > "$CANON/rules/alpha.md"
+ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
+chmod 000 "$BASE/rules"
+run
+chmod 755 "$BASE/rules"
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "  SKIP: root では読み取り権限を落としても走査できるため"
+else
+  ck  "exit 1" "1" "$RC"
+  ckc "判定できないと言う" "$OUT" "孤児の有無を判定できません"
+  ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
+fi
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

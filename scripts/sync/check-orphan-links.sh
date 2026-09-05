@@ -94,10 +94,17 @@ normalize_path() {
     local p="$1" part joined=""
     local -a out=()
     local OLD_IFS="$IFS"
+    # リンク先には * や ? や [ が入りうる。分割だけさせたいので、その間だけ
+    # パス名展開を止める。止めないとリンク先がファイルシステムに対して展開され、
+    # 分類が丸ごと狂う。
+    local had_noglob=0
+    case "$-" in *f*) had_noglob=1 ;; esac
+    set -f
     IFS='/'
     # shellcheck disable=SC2086  # 区切りで分割させるのが目的
     set -- $p
     IFS="$OLD_IFS"
+    [[ "${had_noglob}" -eq 0 ]] && set +f
     for part in "$@"; do
         case "${part}" in
             ''|'.') ;;
@@ -129,6 +136,9 @@ CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
 [[ -z "${CANONICAL_REAL}" ]] && CANONICAL_REAL="${CANONICAL}"
 
 orphan_count=0
+scan_failed=false
+listing=""
+find_rc=0
 outside_dangling_count=0
 outside_alive_count=0
 scanned=0
@@ -139,6 +149,13 @@ echo "  正本: ${CANONICAL_REAL}"
 for d in "${dirs[@]}"; do
     dir="${BASE}/${d}"
     [[ -d "${dir}" ]] || continue
+    # process substitution だと find の終了コードが取れないので、いったん受ける。
+    if ! listing="$(mktemp)" || [[ -z "${listing}" ]]; then
+        error "作業ファイルを作れません"
+        exit 2
+    fi
+    find_rc=0
+    find "${dir}" -maxdepth 1 -mindepth 1 -type l > "${listing}" 2>/dev/null || find_rc=$?
     while IFS= read -r entry; do
         [[ -n "${entry}" ]] || continue
         scanned=$((scanned + 1))
@@ -180,13 +197,25 @@ for d in "${dirs[@]}"; do
                 outside_alive_count=$((outside_alive_count + 1))
             fi
         fi
-    done < <(find "${dir}" -maxdepth 1 -mindepth 1 -type l 2>/dev/null)
+    done < "${listing}"
+    # 走査そのものが失敗したら、孤児が無かったのか見られなかったのかを区別できない。
+    # 黙って次のディレクトリへ進むと、母集団が縮んだまま緑を返せてしまう。
+    if [[ "${find_rc}" -ne 0 ]]; then
+        error "  配布先を走査できませんでした: ${dir}"
+        scan_failed=true
+    fi
+    rm -f "${listing}"
 done
 
 echo ""
 info "  走査した symlink: ${scanned} 件"
 if [[ "${outside_dangling_count}" -gt 0 || "${outside_alive_count}" -gt 0 ]]; then
     info "  正本の外: 解決できない ${outside_dangling_count} 件 / 生きている ${outside_alive_count} 件（掃除の対象外）"
+fi
+
+if [[ "${scan_failed}" == true ]]; then
+    error "  ${TARGET}: 走査できなかった配布先があるため、孤児の有無を判定できません"
+    exit 1
 fi
 
 if [[ "${orphan_count}" -gt 0 ]]; then
