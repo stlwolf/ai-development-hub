@@ -3,7 +3,7 @@
 ## Principles
 - One task per subagent — keep them focused.
 - When delegating implementation, enforce the `implementer-contract` skill (status enum, report format, self-review).
-- Concurrency and nesting limits come from the harness environment variables (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` / `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), not from this rule. Do not write a numeric cap here.
+- Concurrency and nesting limits for delegation belong to the harness, not to this rule. Do not write a numeric cap here; where a harness exposes such limits, set them there.
 
 ## Custom Agents First
 - Prefer domain-specific custom agents over generic subagents.
