@@ -33,7 +33,10 @@ fresh() {
   CANON="$CASE/canonical"; BASE="$CASE/home/.claude"
   mkdir -p "$CANON/rules" "$CANON/skills" "$BASE/rules" "$BASE/skills"
 }
-run() { OUT="$("$CHECK" claude --base "$BASE" --canonical "$CANON" 2>&1)"; RC=$?; }
+# 検査スクリプトは shebang 任せにせず、いま走っている bash で起動する。
+# そうしないと /bin/bash 3.2 でテストを回しても、スクリプト側は PATH の
+# bash 5 で動いてしまい、3.2 固有の挙動を踏めない。
+run() { OUT="$("$BASH" "$CHECK" claude --base "$BASE" --canonical "$CANON" 2>&1)"; RC=$?; }
 
 # ============================================================================
 echo "[1] 正本と一致している配布先 → 孤児なし"
@@ -136,6 +139,18 @@ OUT="$("$CHECK" 2>&1)"; RC=$?
 ck  "ターゲットなし → exit 2" "2" "$RC"
 OUT="$("$CHECK" nosuchtool 2>&1)"; RC=$?
 ck  "知らないターゲット → exit 2" "2" "$RC"
+
+echo "[11] .. がパスの深さを超える相対リンクでも落ちない（実装SO 指摘の回帰）"
+fresh c11
+# /a/../../gone.md は、正規化の途中で一度スタックが空になる最小の形。
+# bash 3.2 では set -u のもとで空配列の "${a[@]}" が unbound になり、
+# 修正前はこのリンクが分類されないまま黙って落ちていた。
+ln -s "/a/../../gone.md" "$BASE/rules/absup.md"
+run
+ck  "落ちない" "0" "$RC"
+ncc "unbound variable を出さない" "$OUT" "unbound variable"
+ckc "1件走査した" "$OUT" "走査した symlink: 1 件"
+ckc "分類が落ちない" "$OUT" "dangling-outside rules/absup.md"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

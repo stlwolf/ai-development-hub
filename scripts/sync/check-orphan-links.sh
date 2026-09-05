@@ -101,7 +101,13 @@ normalize_path() {
     for part in "$@"; do
         case "${part}" in
             ''|'.') ;;
-            '..') if [[ "${#out[@]}" -gt 0 ]]; then unset "out[$(( ${#out[@]} - 1 ))]"; out=("${out[@]}"); fi ;;
+            '..')
+                if [[ "${#out[@]}" -gt 0 ]]; then
+                    unset "out[$(( ${#out[@]} - 1 ))]"
+                    # bash 3.2 では set -u のもとで空配列の "${a[@]}" が unbound になる。
+                    # 全部消えたときは素の代入に落とす（.. がパスの深さを超える相対リンク）。
+                    if [[ "${#out[@]}" -gt 0 ]]; then out=("${out[@]}"); else out=(); fi
+                fi ;;
             *) out+=("${part}") ;;
         esac
     done
