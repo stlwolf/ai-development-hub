@@ -229,6 +229,8 @@ before_exists=0
 now_exists=0
 backups_made=()
 ever_existed=0
+read_copy=""
+trap 'rm -f "${read_copy}"' EXIT
 while :; do
     attempt=$((attempt + 1))
 
@@ -244,19 +246,25 @@ while :; do
         exit 0
     fi
 
+    rm -f "${read_copy}"
     if [[ -e "${SETTINGS}" ]]; then
         before_exists=1
-        if ! before="$(cat "${SETTINGS}" 2>/dev/null)"; then
+        ever_existed=1
+        # 読んだ瞬間の実体をそのまま写し取る。以降の判断も、写しを取る先も、
+        # すべてこの複製を使う。ファイルを2度読むと、その間に空にされたり
+        # 置き換えられたりして、判断に使った内容と写しの内容が食い違う。
+        read_copy="${SETTINGS}.read.$$"
+        if ! cp "${SETTINGS}" "${read_copy}" 2>/dev/null; then
             error "  読めません: ${SETTINGS}"
             exit 1
         fi
-        ever_existed=1
-        if ! jq -e . "${SETTINGS}" >/dev/null 2>&1; then
+        if ! jq -e . "${read_copy}" >/dev/null 2>&1; then
             warn "  JSON として読めないので触りません（壊れている可能性）: ${SETTINGS}"
             [[ "${#backups_made[@]}" -gt 0 ]] && info "  読んだ時点の内容: ${backups_made[0]}"
+            rm -f "${read_copy}"
             exit 0
         fi
-        current_file="${SETTINGS}"
+        current_file="${read_copy}"
     else
         if [[ "${ever_existed}" -eq 1 ]]; then
             # 前の試行では在ったのに消えている。ここで作ると、宣言した項目だけの
@@ -267,7 +275,6 @@ while :; do
             exit 1
         fi
         before_exists=0
-        before=""
         current_file=""
     fi
 
@@ -325,7 +332,7 @@ while :; do
         # 両方が空ファイルになったときに cmp が一致と判定し、何も適用して
         # いないのに成功を名乗る。
         cmp_ok=1
-        jq -S . <<< "${before}" > "${out}.cmp" 2>/dev/null || cmp_ok=0
+        jq -S . "${read_copy}" > "${out}.cmp" 2>/dev/null || cmp_ok=0
         jq -S . "${out}" > "${out}.cmp2" 2>/dev/null || cmp_ok=0
         if [[ "${cmp_ok}" -eq 1 && -s "${out}.cmp" && -s "${out}.cmp2" ]] && cmp -s "${out}.cmp" "${out}.cmp2"; then
             rm -f "${out}" "${out}.cmp" "${out}.cmp2"
@@ -346,7 +353,9 @@ while :; do
     #      いちばん復旧が要る場面で復旧できなくなる。
     if [[ "${before_exists}" -eq 1 && "${#backups_made[@]}" -eq 0 ]]; then
         bk="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$"
-        if ! cp "${SETTINGS}" "${bk}" 2>/dev/null; then
+        # 実体からではなく、読んだ瞬間の写しから作る。実体を読み直すと、
+        # その間に空にされていた場合に壊れた内容を写してしまう。
+        if ! cp "${read_copy}" "${bk}" 2>/dev/null; then
             rm -f "${out}"
             error "  バックアップを作れないので何も書きません"
             exit 1
@@ -369,12 +378,17 @@ while :; do
     #     プロセスが空で作った場合に「変わっていない」と判定して上書きする。
     if [[ -e "${SETTINGS}" ]]; then
         now_exists=1
-        now="$(cat "${SETTINGS}" 2>/dev/null || echo "")"
     else
         now_exists=0
-        now=""
     fi
-    if [[ "${now_exists}" -ne "${before_exists}" || "${now}" != "${before}" ]]; then
+    same=1
+    if [[ "${now_exists}" -ne "${before_exists}" ]]; then
+        same=0
+    elif [[ "${before_exists}" -eq 1 ]]; then
+        # 文字列ではなくバイト単位で比べる。末尾の改行の違いも取りこぼさない。
+        cmp -s "${read_copy}" "${SETTINGS}" || same=0
+    fi
+    if [[ "${same}" -eq 0 ]]; then
         rm -f "${out}"
         if [[ "${attempt}" -ge "${MAX_RETRY}" ]]; then
             error "  読んでから書くまでの間に他のプロセスが書き換え続けています。中止します"
@@ -402,6 +416,7 @@ while :; do
     if [[ "${#backups_made[@]}" -gt 0 ]]; then
         info "  Backup: ${backups_made[$(( ${#backups_made[@]} - 1 ))]}"
     fi
+    rm -f "${read_copy}"
     info "  ${decl_count} item(s) applied"
     exit 0
 done

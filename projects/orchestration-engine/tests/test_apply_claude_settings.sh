@@ -561,6 +561,38 @@ OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "
 ckc "変化を見つけて読み直す" "$OUT" "読み直します"
 ck  "空のまま残る（宣言で上書きしない）" "0" "$(wc -c < "$ST" | tr -d ' ')"
 
+echo "[35] 計算の途中で実体が空にされても、写しは読んだ時点のまま（実装SO 指摘の回帰）"
+fresh c35
+printf '%s' '{"theme":"dark","model":"opus"}' > "$ST"
+# 読み取りの直後・写しを取る前に実体を空にする。
+sed "s|^    # statusline-wrap が退避に使う元コマンドを、いまの内容から取り出す。|    : > '$ST'\n    # statusline-wrap が退避に使う元コマンドを、いまの内容から取り出す。|" \
+    "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+ck  "割り込みを挿せた" "1" "$(grep -c ": > '$ST'" "$CASE/a.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
+ck  "写しは空になっていない" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
+ck  "写しに model もある" "opus" "$(jq -r '.model' "$bk" 2>/dev/null)"
+
+echo "[36] 末尾の改行だけの違いも横取りとして拾う（バイト比較の回帰）"
+fresh c36
+printf '%s' '{"theme":"dark"}' > "$ST"
+sed "s|^    # (c) 最後の確認。|    printf '%s\\\\n' '{\"theme\":\"dark\"}' > '$ST'\n    # (c) 最後の確認。|" \
+    "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ckc "変化として読み直す" "$OUT" "読み直します"
+
+echo "[37] 読み取り用の一時ファイルを残さない"
+fresh c37
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "read の一時ファイルが残っていない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
+run
+ck  "変更なしの経路でも残さない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
