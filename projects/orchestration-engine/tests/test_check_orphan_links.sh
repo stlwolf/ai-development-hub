@@ -176,7 +176,7 @@ chmod 755 "$BASE/rules"
 if [[ "$(id -u)" -eq 0 ]]; then
   echo "  SKIP: root では読み取り権限を落としても走査できるため"
 else
-  ck  "exit 1" "1" "$RC"
+  ck  "exit 2（孤児ありとは別の状態）" "2" "$RC"
   ckc "判定できないと言う" "$OUT" "孤児の有無を判定できません"
   ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
 fi
@@ -256,7 +256,7 @@ chmod 755 "$BASE"
 if [[ "$(id -u)" -eq 0 ]]; then
   echo "  SKIP: root では権限を落としても辿れるため"
 else
-  ck  "exit 1" "1" "$RC"
+  ck  "exit 2（孤児ありとは別の状態）" "2" "$RC"
   ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
 fi
 
@@ -290,6 +290,18 @@ ln -s "$CANON/broken_mid/leaf.md" "$BASE/rules/x.md"
 run
 ck  "孤児として拾う" "1" "$RC"
 ckc "孤児として分類" "$OUT" "orphan-canonical rules/x.md"
+
+echo "[24] 終了コードの3値が区別できる"
+fresh c24
+printf 'x' > "$CANON/rules/alpha.md"
+ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
+run
+ck  "孤児なし → 0" "0" "$RC"
+ln -s "$CANON/rules/retired.md" "$BASE/rules/retired.md"
+run
+ck  "孤児あり → 1" "1" "$RC"
+OUT="$("$BASH" "$CHECK" claude --base "$BASE" --canonical "$CASE/no-such-canonical" 2>&1)"; RC=$?
+ck  "正本が無い → 2" "2" "$RC"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

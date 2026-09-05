@@ -30,7 +30,10 @@
 # Exit:
 #   0  孤児なし
 #   1  孤児あり（orphan-canonical が1件以上）
-#   2  検査を実行できない（正本が見つからない・引数が不正 等）
+#   2  検査を実行できない（正本が見つからない・引数が不正・配布先を走査できない 等）
+#
+# 「孤児があった」と「そもそも判定できなかった」は別の状態なので終了コードを分ける。
+# 呼び出し側（sync.sh --check）は 0 以外をすべて差分として扱うので、検知は落ちない。
 
 # -e は付けない。孤児を数え上げてから結論を出す設計で、途中で抜けると
 # 走査が尻切れになったことと孤児が無かったことが区別できなくなる。
@@ -141,12 +144,12 @@ _realpath_raw() {
     fi
 }
 
+# 常に「存在する祖先まで解決して残りを継ぎ足す」1つの手順で答えを出す。
+# 存在しないパスをそのまま渡すと、解決する実装（macOS の realpath / python の
+# os.path.realpath）と失敗する実装（GNU の realpath）で答えが変わり、
+# 掃除の対象がぶれる。渡す先を必ず「存在するパス」に揃えることで版差を消す。
 resolve_path() {
-    local p="$1" out rest="" cur base
-    if out="$(_realpath_raw "$p")" && [[ -n "${out}" ]]; then
-        printf '%s' "${out}"
-        return 0
-    fi
+    local p="$1" rest="" cur base
     cur="$p"
     while [[ -n "${cur}" && "${cur}" != "/" && "${cur}" != "." ]]; do
         if [[ -e "${cur}" ]]; then
@@ -173,12 +176,15 @@ CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
 # 作って消すのは、たとえ一時的でも筋が悪い（同名ファイルを壊しうるし、
 # 割り込まれると残る）。既にあるパスの綴りを変えて到達できるかで見る。
 CASE_INSENSITIVE=false
-_alt="$(printf '%s' "${CANONICAL_REAL}" | tr '[:lower:]' '[:upper:]')"
-if [[ "${_alt}" != "${CANONICAL_REAL}" && -d "${_alt}" ]]; then
+_case_probe() {
+    local alt="$1"
+    # 存在するだけでは足りない。区別する FS に綴り違いの別ディレクトリがあると
+    # 誤判定し、他人のリンクを掃除の対象にしてしまう。同じ実体かどうかを見る。
+    [[ "${alt}" != "${CANONICAL_REAL}" && -e "${alt}" && "${alt}" -ef "${CANONICAL_REAL}" ]]
+}
+if _case_probe "$(printf '%s' "${CANONICAL_REAL}" | tr '[:lower:]' '[:upper:]')" \
+   || _case_probe "$(printf '%s' "${CANONICAL_REAL}" | tr '[:upper:]' '[:lower:]')"; then
     CASE_INSENSITIVE=true
-else
-    _alt2="$(printf '%s' "${CANONICAL_REAL}" | tr '[:upper:]' '[:lower:]')"
-    [[ "${_alt2}" != "${CANONICAL_REAL}" && -d "${_alt2}" ]] && CASE_INSENSITIVE=true
 fi
 
 # 前方一致。区別しないファイルシステムでは綴りを揃えてから比べる。
@@ -244,14 +250,10 @@ for d in "${dirs[@]}"; do
         # 解決先が消えていると realpath は失敗するので、生の文字列が要る。
         under_canonical=false
         real="$(resolve_path "${abs}")"
-        if [[ -n "${real}" ]]; then
-            # 解決できたなら実パスの判定を信じる。ここで字句判定へ落とすと、
-            # 正本配下の中間 symlink が外を指す場合に外向きを見落とす。
-            under_prefix "${real}" "${CANONICAL_REAL}" && under_canonical=true
-        elif under_prefix "${abs}" "${CANONICAL_REAL}" || under_prefix "${abs}" "${CANONICAL}"; then
-            # 解決できないときだけ、生のリンク先を字句的に見る。
-            under_canonical=true
-        fi
+        # resolve_path は常に答えを返す。存在する祖先まで解決してから残りを
+        # 継ぎ足すので、正本配下の中間 symlink が外を指す場合もここで外れる。
+        # 生の文字列だけを見る分岐は置かない（解決結果と食い違う判定になるため）。
+        under_prefix "${real}" "${CANONICAL_REAL}" && under_canonical=true
 
         alive=false
         [[ -e "${entry}" ]] && alive=true
@@ -297,8 +299,10 @@ if [[ "${outside_dangling_count}" -gt 0 || "${outside_alive_count}" -gt 0 ]]; th
 fi
 
 if [[ "${scan_failed}" == true ]]; then
+    # 「孤児があった」(1) とは別の状態なので、終了コードも分ける。
+    # 呼び出し側は 0 以外をすべて差分として扱うので、検知は落ちない。
     error "  ${TARGET}: 走査できなかった配布先があるため、孤児の有無を判定できません"
-    exit 1
+    exit 2
 fi
 
 if [[ "${orphan_count}" -gt 0 ]]; then
