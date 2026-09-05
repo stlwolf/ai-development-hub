@@ -11,6 +11,7 @@ Purpose: lock in the minimal set of always-on principles while keeping heavy pro
 
 The canonical source is `canonical/rules/*.md` (12 files). This file is a keyword-level summary.
 For detailed rules (exception conditions, specific procedures), read the canonical source.
+Each canonical rule carries a `review-when` line in its frontmatter saying what would make it worth revisiting.
 Consistency check: `./scripts/check-codex-guardrails.sh`
 
 ## Collaboration Mode

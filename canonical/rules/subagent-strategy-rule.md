@@ -1,3 +1,7 @@
+---
+review-when: the harness changes its delegation defaults or where concurrency and nesting limits live
+---
+
 # Subagent Strategy
 
 ## Principles

@@ -1,3 +1,7 @@
+---
+review-when: the hook scripts change which patterns they block, or a new tier of destructive operation appears
+---
+
 # Careful Operations — Destructive Command Guardrails
 
 Three-tier classification of destructive operations: Blocked / Requires Confirmation / Exceptions.
