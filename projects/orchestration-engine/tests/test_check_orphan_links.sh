@@ -19,7 +19,11 @@ CHECK="$REPO_ROOT/scripts/sync/check-orphan-links.sh"
 
 [[ -x "$CHECK" ]] || { echo "FAIL: check script not found: $CHECK"; exit 1; }
 
-_TMP_DIR="$(mktemp -d)"
+# mktemp の失敗を握り潰すと _TMP_DIR が空になり、fresh() が / 直下に
+# ディレクトリを作りにいく。trap でも回収されないのでホストを汚す。
+if ! _TMP_DIR="$(mktemp -d)" || [[ -z "$_TMP_DIR" || ! -d "$_TMP_DIR" ]]; then
+  echo "FAIL: 一時ディレクトリを作れません"; exit 1
+fi
 trap 'rm -rf "$_TMP_DIR"' EXIT
 
 PASS=0; FAIL=0
@@ -302,6 +306,26 @@ run
 ck  "孤児あり → 1" "1" "$RC"
 OUT="$("$BASH" "$CHECK" claude --base "$BASE" --canonical "$CASE/no-such-canonical" 2>&1)"; RC=$?
 ck  "正本が無い → 2" "2" "$RC"
+
+echo "[25] 途中の symlink を挟んだ .. を字句で畳まない（実装SO 指摘の回帰）"
+fresh c25
+mkdir -p "$CASE/outside/subdir"
+ln -s "$CASE/outside/subdir" "$CANON/jump"
+# canonical/jump/../missing の実体は outside/missing であって canonical/missing ではない。
+# 字句で畳むと正本配下と誤り、掃除の対象に混ざる。
+ln -s "$CANON/jump/../missing" "$BASE/rules/tricky.md"
+run_v
+ncc "孤児と呼ばない" "$OUT" "orphan-canonical rules/tricky.md"
+ckc "外向きとして分類" "$OUT" "dangling-outside rules/tricky.md"
+ck  "孤児なしで exit 0" "0" "$RC"
+
+echo "[26] リンク先のバックスラッシュを解釈しない（実装SO 指摘の回帰）"
+fresh c26
+weird="$(printf 'we\\ntwo.md')"
+ln -s "$CANON/rules/$weird" "$BASE/rules/bs.md"
+run
+ck  "孤児として拾う" "1" "$RC"
+ckc "リンク先をそのまま出す" "$OUT" 'we\ntwo.md'
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

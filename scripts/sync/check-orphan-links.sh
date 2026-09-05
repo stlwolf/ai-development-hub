@@ -50,9 +50,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
-info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# printf を使う。echo -e だと、リンク先に含まれるバックスラッシュを
+# エスケープとして解釈してしまい、報告が実際のリンク先と違う文字列になる。
+info() { printf '%b[INFO]%b %s\n' "${GREEN}" "${NC}" "$1"; }
+warn() { printf '%b[WARN]%b %s\n' "${YELLOW}" "${NC}" "$1"; }
+error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
 
 # 配布先ディレクトリの allowlist。sync が書き込む場所だけを歩く。
 # ~/.claude 全体を歩くとセッションデータや cache に触るか、ノイズで溺れる。
@@ -96,42 +98,6 @@ if [[ ! -d "${CANONICAL}" ]]; then
     exit 2
 fi
 
-# 存在しないパスでも使える字句的な正規化。realpath は解決先が無いと失敗するので、
-# 壊れた相対リンクの行き先を判定するにはこれが要る。
-normalize_path() {
-    local p="$1" part joined=""
-    local -a out=()
-    local OLD_IFS="$IFS"
-    # リンク先には * や ? や [ が入りうる。分割だけさせたいので、その間だけ
-    # パス名展開を止める。止めないとリンク先がファイルシステムに対して展開され、
-    # 分類が丸ごと狂う。
-    local had_noglob=0
-    case "$-" in *f*) had_noglob=1 ;; esac
-    set -f
-    IFS='/'
-    # shellcheck disable=SC2086  # 区切りで分割させるのが目的
-    set -- $p
-    IFS="$OLD_IFS"
-    [[ "${had_noglob}" -eq 0 ]] && set +f
-    for part in "$@"; do
-        case "${part}" in
-            ''|'.') ;;
-            '..')
-                if [[ "${#out[@]}" -gt 0 ]]; then
-                    unset "out[$(( ${#out[@]} - 1 ))]"
-                    # bash 3.2 では set -u のもとで空配列の "${a[@]}" が unbound になる。
-                    # 全部消えたときは素の代入に落とす（.. がパスの深さを超える相対リンク）。
-                    if [[ "${#out[@]}" -gt 0 ]]; then out=("${out[@]}"); else out=(); fi
-                fi ;;
-            *) out+=("${part}") ;;
-        esac
-    done
-    if [[ "${#out[@]}" -gt 0 ]]; then
-        for part in "${out[@]}"; do joined="${joined}/${part}"; done
-    fi
-    printf '%s' "${joined:-/}"
-}
-
 # 解決できないパスでも必ず答えを返す。realpath は実装によって、存在しない
 # パスを解決する版と失敗する版がある（macOS は解決し、GNU は -m 無しだと失敗する）。
 # 版差で分類が変わると、掃除の対象までぶれる。存在する祖先まで解決して残りを
@@ -155,7 +121,8 @@ resolve_path() {
         if [[ -e "${cur}" ]]; then
             base="$(_realpath_raw "${cur}")"
             if [[ -n "${base}" ]]; then
-                printf '%s' "${base}${rest}"
+                # base が / のときに // にならないよう、連続するスラッシュだけ潰す。
+                printf '%s' "${base}${rest}" | sed 's|//*|/|g'
                 return 0
             fi
             break
@@ -242,9 +209,11 @@ for d in "${dirs[@]}"; do
         raw="$(readlink "${entry}")"
         # 相対リンクはリンクのあるディレクトリからの相対として絶対化する。
         abs="${raw}"
+        # 相対リンクはリンクのあるディレクトリからの相対。ここで .. を字句的に
+        # 畳んではいけない。途中に symlink があると a/link/../b は a/b ではなく、
+        # 畳むと外向きのリンクを正本配下と誤って判定して掃除の対象に混ぜてしまう。
+        # .. の解決はファイルシステムに任せる（resolve_path が行う）。
         [[ "${abs}" != /* ]] && abs="$(dirname "${entry}")/${abs}"
-        # 相対リンクは ../ を含んだままだと文字列比較で正本配下かを判定できない。
-        abs="$(normalize_path "${abs}")"
 
         # 正本配下かどうかは、解決できた実パスと生のターゲット文字列の両方で見る。
         # 解決先が消えていると realpath は失敗するので、生の文字列が要る。
