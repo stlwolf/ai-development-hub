@@ -23,7 +23,11 @@ SL_SRC="$REPO_ROOT/canonical/claude/statusline/claude.statusline.json"
 [[ -x "$CHECK" ]] || { echo "FAIL: check script not found: $CHECK"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
-_TMP_DIR="$(mktemp -d)"
+# mktemp の失敗を握り潰すと _TMP_DIR が空になり、fresh() が / 直下に
+# ディレクトリを作りにいく。trap でも回収されないのでホストを汚す。
+if ! _TMP_DIR="$(mktemp -d)" || [[ -z "$_TMP_DIR" || ! -d "$_TMP_DIR" ]]; then
+  echo "FAIL: 一時ディレクトリを作れません"; exit 1
+fi
 trap 'rm -rf "$_TMP_DIR"' EXIT
 
 PASS=0; FAIL=0
