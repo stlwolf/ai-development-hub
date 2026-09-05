@@ -244,7 +244,13 @@ main() {
     sync_hook_scripts "${CANONICAL_DIR}/claude/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
     echo ""
 
-    # 9. 宣言された設定項目を settings.json へ適用する
+    # 9. Output styles（正本があるときだけ配る。有効化する鍵は宣言に入れていない）
+    if [[ -d "${CANONICAL_DIR}/output-styles" ]]; then
+        sync_md_files "${CANONICAL_DIR}/output-styles" "${TARGET_BASE}/output-styles" "output-styles"
+        echo ""
+    fi
+
+    # 10. 宣言された設定項目を settings.json へ適用する
     #    hooks と statusLine を別々に読み書きしていたのをやめ、宣言（canonical/claude/
     #    settings.harness.json）に書かれた項目を1回の書き込みでまとめて当てる（#359）。
     #    参照するスクリプトを配り終えた後に置く。先に設定だけ書くと、初回の配布では
@@ -253,7 +259,7 @@ main() {
     echo ""
 
 
-    # 10. MCP servers (merge into ~/.claude.json)
+    # 11. MCP servers (merge into ~/.claude.json)
     sync_mcp_servers "${CANONICAL_DIR}/mcp/claude.json" "${HOME}/.claude.json" "MCP servers"
     echo ""
 

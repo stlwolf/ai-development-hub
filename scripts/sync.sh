@@ -180,6 +180,7 @@ check_target() {
             check_symlinks_dir "${canonical}/agents" "${base}/agents" "*.md" "agents" has_diffs
             check_symlinks_dir "${canonical}/commands" "${base}/commands" "*.md" "commands" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
+            check_symlinks_dir "${canonical}/output-styles" "${base}/output-styles" "*.md" "output-styles" has_diffs
             # settings.json の検査は宣言（canonical/claude/settings.harness.json）を
             # 知っている専用スクリプトへ委譲する。ここに hooks だけを手書きしていると、
             # 宣言に項目が増えたときに検査側だけ古くなる（#313 と同じ理由・#359）。

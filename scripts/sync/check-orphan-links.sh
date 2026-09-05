@@ -58,7 +58,7 @@ error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
 
 # 配布先ディレクトリの allowlist。sync が書き込む場所だけを歩く。
 # ~/.claude 全体を歩くとセッションデータや cache に触るか、ノイズで溺れる。
-claude_dirs=(rules skills agents commands hooks orchestration-spec statusline)
+claude_dirs=(rules skills agents commands hooks orchestration-spec statusline output-styles)
 cursor_dirs=(rules skills agents commands hooks orchestration-spec)
 codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 
