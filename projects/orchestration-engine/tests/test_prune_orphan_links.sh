@@ -191,6 +191,30 @@ else
   echo "  SKIP: canonical/commands が無い"
 fi
 
+echo "[17] 配布対象かを確かめられないときは消さない（実装SO 指摘の回帰・安全弁）"
+fresh c17
+ln -s "$CANON/rules/retired.md" "$BASE/rules/retired.md"
+# 正本の探索を必ず失敗させる複製を作る。安全弁が失敗したら、消してよい側では
+# なく残す側へ倒れることを見る。
+# shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
+sed 's|^        found="$(find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null . head -1)" .. rc=$?|        found=""; rc=7|' \
+    "$CHECK" > "$CASE/prune_probefail.sh"
+chmod +x "$CASE/prune_probefail.sh"
+ck  "割り込みを挿せた" "1" "$(grep -cE '^        found=""; rc=7$' "$CASE/prune_probefail.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/prune_probefail.sh" claude --base "$BASE" --canonical "$CANON" --prune 2>&1)"; RC=$?
+ck  "リンクは残る" "true" "$([[ -L "$BASE/rules/retired.md" ]] && echo true || echo false)"
+ckc "確かめられないと言う" "$OUT" "配布対象かを確かめられませんでした"
+ckc "安全側に倒すと言う" "$OUT" "安全側に倒して残します"
+ck  "exit 1（残した孤児がある）" "1" "$RC"
+
+echo "[18] 掃除も3ターゲットで走る（走査根の脱落の回帰）"
+fresh c18
+for t in claude cursor codex; do
+  o="$("$BASH" "$CHECK" "$t" --base "$BASE" --canonical "$CANON" --prune 2>&1)"; r=$?
+  ncc "$t で未定義変数を踏まない" "$o" "unbound variable"
+  ck  "$t は 0 か 1 か 2 で返る" "true" "$([[ "$r" -ge 0 && "$r" -le 2 ]] && echo true || echo false)"
+done
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

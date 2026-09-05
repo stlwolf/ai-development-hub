@@ -80,20 +80,31 @@ codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 # この判定は意図的に緩い。消しすぎるより、消し損ねる方がよい。無関係な場所に
 # たまたま同じ名前があれば、本当の孤児を残すことになるが、それは報告に残る。
 would_be_distributed() {
-    local entry_name="$1" is_dir="$2"
+    local entry_name="$1" is_dir="$2" found="" rc=0
     if [[ "${is_dir}" == true ]]; then
         # ディレクトリの配布（skills）は SKILL.md を持つ同名ディレクトリを探す。
-        find "${CANONICAL_REAL}" -type d -name "${entry_name}" -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null \
-            | head -1 | grep -q . && return 0
-        return 1
+        found="$(find "${CANONICAL_REAL}" -type d -name "${entry_name}" \
+                   -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null | head -1)" || rc=$?
+    else
+        # 配布の関数はいずれも拡張子で絞っている（.md / .mdc / .sh）。ここは配布先ごとの
+        # 表ではなく、配布の仕組みそのものの性質なので、表に戻すことなく使える。
+        case "${entry_name}" in
+            *.md|*.mdc|*.sh) ;;
+            *) return 1 ;;
+        esac
+        found="$(find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null | head -1)" || rc=$?
     fi
-    # 配布の関数はいずれも拡張子で絞っている（.md / .mdc / .sh）。ここは配布先ごとの
-    # 表ではなく、配布の仕組みそのものの性質なので、表に戻すことなく使える。
-    case "${entry_name}" in
-        *.md|*.mdc|*.sh) ;;
-        *) return 1 ;;
-    esac
-    find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null | head -1 | grep -q . && return 0
+
+    # 見つかったなら配られうる。
+    [[ -n "${found}" ]] && return 0
+
+    # 見つからなかったとき、それが「無い」からなのか「探せなかった」からなのかを
+    # 区別する。探索そのものが失敗した場合は、配られうる側に倒して消さない。
+    # この判定は削除の安全弁なので、失敗が消してよい側へ倒れてはいけない。
+    if [[ "${rc}" -ne 0 ]]; then
+        warn "    配布対象かを確かめられませんでした。安全側に倒して残します: ${entry_name}"
+        return 0
+    fi
     return 1
 }
 
