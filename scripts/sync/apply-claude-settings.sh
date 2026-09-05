@@ -91,6 +91,17 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
         error "  ポインタは / で始まる必要があります: [${pointer}]"
         resolve_failed=true; continue
     fi
+    # 形だけでは足りない。"/" は / で始まるが、解いた結果は空になって
+    # 文書全体を指す。実際に解いた長さで確かめる。
+    ptr_len="$(jq -rn --arg p "${pointer}" '
+        def ptr2path($x): if $x == "" then []
+          else ($x | ltrimstr("/") | split("/")
+                | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
+        ptr2path($p) | length' 2>/dev/null || echo 0)"
+    if [[ "${ptr_len}" -eq 0 ]]; then
+        error "  文書全体を指すポインタは使えません: [${pointer}]"
+        resolve_failed=true; continue
+    fi
     bad_seg=""
     for chk in "${pointer}" "${src_pointer}"; do
       [[ -z "${chk}" ]] && continue
@@ -203,6 +214,9 @@ def apply_item($item):
     elif $item.op == "merge-object" then
       setpath($path; ((getpath($path) // {}) * $item.expected))
     elif $item.op == "union-array" then
+      # 手元の値が配列でなければ触らない。壊して書き換えるより、そのまま
+      # 残して検査に出す方がよい（statusLine の扱いと同じ姿勢）。
+      if ((getpath($path)) != null) and (((getpath($path)) | type) != "array") then . else
       # 重複の判定は jq の等価比較で行う（tojson だとキーの順が違うオブジェクトを
       # 別物として残してしまう）。手元の並びは変えず、無いものだけを後ろに足す。
       # 正本側に重複があれば、そちらも取り除いてから足す。
@@ -211,7 +225,7 @@ def apply_item($item):
         | reduce .[] as $e ([]; if any(.[]; . == $e) then . else . + [$e] end)) as $cur
        | ($item.expected
           | reduce .[] as $e ([]; if any(.[]; . == $e) then . else . + [$e] end)) as $add
-       | setpath($path; ($cur + ($add | map(select(. as $e | any($cur[]; . == $e) | not))))))
+       | setpath($path; ($cur + ($add | map(select(. as $e | any($cur[]; . == $e) | not)))))) end
     elif $item.op == "handler" and $item.handler == "statusline-wrap" then
       # 現行の3分岐をそのまま写す。
       #   未設定           → 正本を載せる
@@ -264,8 +278,13 @@ while :; do
         # 読んだ瞬間の実体をそのまま写し取る。以降の判断も、写しを取る先も、
         # すべてこの複製を使う。ファイルを2度読むと、その間に空にされたり
         # 置き換えられたりして、判断に使った内容と写しの内容が食い違う。
-        read_copy="${SETTINGS}.read.$$"
-        if ! cp "${SETTINGS}" "${read_copy}" 2>/dev/null; then
+        # 名前を予測できると、先回りして symlink を置かれたときに別の場所へ
+        # 書いてしまう。mktemp に作らせる。
+        if ! read_copy="$(mktemp "${SETTINGS}.read.XXXXXX")"; then
+            error "  作業ファイルを作れません: ${SETTINGS}"
+            exit 1
+        fi
+        if ! cat "${SETTINGS}" > "${read_copy}" 2>/dev/null; then
             error "  読めません: ${SETTINGS}"
             exit 1
         fi
@@ -366,10 +385,18 @@ while :; do
         # 試行ごとに1つ取る。最初のものは元の内容を保ち、最後のものが
         # 置き換え直前の版になる。以前のものは消さない（横取りで元が
         # 失われたときに、いちばん古い写しだけが復旧の手がかりになる）。
-        bk="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$.${attempt}"
+        # 名前は時刻で読めるようにしつつ、実体の作成は mktemp に任せる
+        # （既にあるファイルを踏まないため）。
+        # 試行番号を名前に入れておく。同じ秒に2つできたときでも、名前の順で
+        # 古い順に並ぶ（最古＝元の内容、最後＝置き換え直前の版）。
+        if ! bk="$(mktemp "${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).${attempt}.XXXXXX")"; then
+            rm -f "${out}"
+            error "  バックアップを作れないので何も書きません"
+            exit 1
+        fi
         # 実体からではなく、読んだ瞬間の写しから作る。実体を読み直すと、
         # その間に空にされていた場合に壊れた内容を写してしまう。
-        if ! cp "${read_copy}" "${bk}" 2>/dev/null; then
+        if ! cat "${read_copy}" > "${bk}" 2>/dev/null; then
             rm -f "${out}"
             error "  バックアップを作れないので何も書きません"
             exit 1

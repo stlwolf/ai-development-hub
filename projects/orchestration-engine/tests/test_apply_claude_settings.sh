@@ -632,6 +632,48 @@ ckc "出どころが要ると言う" "$OUT" "値の出どころが要ります"
 ck  "null を書いていない" "false" "$(jq -r 'has("target")' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
 
+echo "[41] スラッシュ1文字のポインタを拒む（実装SO 指摘の回帰・個人層の全消し）"
+fresh c41
+printf '%s' '{"theme":"dark","model":"opus","tui":"fullscreen"}' > "$ST"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/","op":"replace","scope_behavior":"override",
+           "source":{"file":"$REPO_ROOT/canonical/hooks/claude.hooks.json","pointer":"/hooks"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ckc "文書全体は使えないと言う" "$OUT" "文書全体を指すポインタは使えません"
+ck  "theme が残る" "dark" "$(jq -r '.theme' "$ST")"
+ck  "model が残る" "opus" "$(jq -r '.model' "$ST")"
+ck  "tui が残る" "fullscreen" "$(jq -r '.tui' "$ST")"
+ck  "キーの数が変わらない" "3" "$(jq -r 'keys | length' "$ST")"
+
+echo "[42] union-array は手元の値が配列でなければ触らない（実装SO 指摘の回帰）"
+fresh c42
+printf '%s' '{"listy":"not-an-array","theme":"dark"}' > "$ST"
+printf '%s' '{"listy":["canon"]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/listy","op":"union-array","scope_behavior":"merge",
+           "source":{"file":"$CASE/src.json","pointer":"/listy"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "落ちない" "0" "$RC"
+ck  "手元の値をそのまま残す" "not-an-array" "$(jq -r '.listy' "$ST")"
+ck  "個人層も無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[43] 一時ファイルとバックアップの名前が予測できない（実装SO 指摘の回帰）"
+fresh c43
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+ck  "写しができている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
+# 名前がプロセス番号だけで決まるなら、この形に一致するはず。ランダム部分があれば一致しない。
+ck  "プロセス番号だけの名前ではない" "false" "$([[ "$bk" == *".bak."*".$$" ]] && echo true || echo false)"
+ck  "read の一時ファイルが残っていない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.read.*' | wc -l | tr -d ' ')"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
