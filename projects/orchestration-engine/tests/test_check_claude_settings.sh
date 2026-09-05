@@ -243,6 +243,14 @@ OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/dec
 ck  "正本に値が無い → exit 2" "2" "$RC"
 ckc "正本に値が無いと言う" "$OUT" "正本に値がありません"
 
+echo "[18] 解決先が消えた symlink を「未適用」と誤らない（実装SO 指摘の回帰）"
+fresh c18; build_green
+mv "$ST" "$CASE/real.json"; ln -s "$CASE/real.json" "$ST"; rm -f "$CASE/real.json"
+run
+ck  "exit 1" "1" "$RC"
+ckc "symlink と言う" "$OUT" "symlink なので適用できません"
+ncc "未適用とは言わない" "$OUT" "一度も適用されていません"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

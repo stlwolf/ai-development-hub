@@ -161,8 +161,8 @@ while IFS=$'\t' read -r idx pointer op handler scope_behavior src_file src_point
         --argjson idx "${idx}" \
         '. + [{pointer: $pointer, op: $op, handler: $handler,
                scope_behavior: $scope_behavior, expected: $expected, idx: $idx}]' \
-        "${resolved}" > "${resolved}.tmp"; then
-        mv "${resolved}.tmp" "${resolved}"
+        "${resolved}" > "${resolved}.tmp" && mv "${resolved}.tmp" "${resolved}"; then
+        :
     else
         # 追記に失敗した項目を黙って落とすと、母集団が縮んだまま残りの項目で
         # 緑を返せてしまう。検査そのものを失敗にする。
@@ -188,10 +188,12 @@ fi
 # (5) 適用できない状態 — 対象が通常ファイルか、JSON として読めるか。
 # ---------------------------------------------------------------------------
 settings_state="ok"
-if [[ ! -e "${SETTINGS}" ]]; then
-    settings_state="missing"
-elif [[ -L "${SETTINGS}" ]]; then
+# -L を先に見る。-e はリンクを辿るので、解決先が消えた symlink は -e が偽になり、
+# 順序を逆にすると「一度も適用されていない」と誤って報告する。
+if [[ -L "${SETTINGS}" ]]; then
     settings_state="symlink"
+elif [[ ! -e "${SETTINGS}" ]]; then
+    settings_state="missing"
 elif [[ ! -f "${SETTINGS}" ]]; then
     settings_state="not-regular"
 elif ! jq -e . "${SETTINGS}" >/dev/null 2>&1; then
