@@ -16,6 +16,10 @@
 #
 # 何も書き換えない。直すのは sync 側の仕事で、こちらは報告だけ（issue #359 HG-D）。
 
+# -e は付けない。この検査は「差分をすべて数え上げてから結論を出す」ものなので、
+# 途中の非0で抜けると報告が尻切れになり、母集団が縮んだこと自体を見逃す。
+# 失敗を見逃してよいという意味ではなく、失敗しうる箇所は個別に終了コードを
+# 確かめている（同じ姿勢の先例: scripts/sync/apply-codex-notify-config.sh）。
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +45,7 @@ while [[ $# -gt 0 ]]; do
         --known-keys)  KNOWN_KEYS="$2"; shift 2 ;;
         --project-root) PROJECT_ROOT="$2"; shift 2 ;;
         -h|--help)
-            sed -n '/^# Usage:/,/^set -uo pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
+            sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
             exit 0 ;;
         *) error "Unknown argument: $1"; exit 2 ;;
     esac
@@ -107,9 +111,19 @@ def leafpaths:
   | unique;
 '
 
-resolved="$(mktemp)"
+# mktemp の失敗を握り潰すと、以降の書き込み先が空文字になって静かに壊れる。
+# set -e は使わない（下記のとおり報告を最後まで出し切る設計のため）ので、
+# 個別に確かめる。
+if ! resolved="$(mktemp)" || [[ -z "${resolved}" ]]; then
+    error "作業ファイルを作れません"
+    exit 2
+fi
 resolve_failed=false
-echo "[]" > "${resolved}"
+if ! echo "[]" > "${resolved}"; then
+    error "作業ファイルに書けません: ${resolved}"
+    rm -f "${resolved}"
+    exit 2
+fi
 
 while IFS=$'\t' read -r idx pointer op handler scope_behavior src_file src_pointer; do
     # jq 側は空欄を "-" で埋めている。bash の IFS はタブの連続を1つに畳むので、
