@@ -4,11 +4,11 @@
 3. Steps (minimal granularity — one command / one PR / one change per item)
 4. Open questions / risks
 5. Related links — required whenever this turn created or updated an addressable artifact.
-   - Trigger: you created or updated an Issue, a PR, or an in-repo document during this turn. The report then MUST end with a related-links section. Heading string: `関連リンク` when the report is written in Japanese, `Related links` when it is in English — pick by the language of the report, not by the language of this rule. Comments and review replies (e.g. a Copilot response) are optional — include them when the thread is worth revisiting.
-   - This is the operator-facing section. A subagent's structured `Links` field (see the `implementer-contract` skill) is the same information on the agent-to-agent channel; the two names are not interchangeable.
+   - Trigger: you created or updated an Issue, a PR, or an in-repo document during this turn. The report then MUST end with a related-links block. **Introduce it with a line-head label, not a heading**: `関連リンク:` when the report is written in Japanese, `Related links:` when it is in English — pick by the language of the report, not by the language of this rule. A label keeps the block out of the way when a harness tells short replies to carry no headings; a heading would collide with that. Comments and review replies (e.g. a Copilot response) are optional — include them when the thread is worth revisiting.
+   - This is the operator-facing block. A subagent's structured `Links` field (see the `implementer-contract` skill) is the same information on the agent-to-agent channel; the two names are not interchangeable.
    - Contents: every artifact you created or updated in this turn, one per line, labeled. Order: PR first, then Issue, then documents, then anything else.
    - Form: a bare full URL, e.g. `PR #110: https://github.com/<owner>/<repo>/pull/110` (§6). A bare `#110` with no URL does not count as a link. In-repo Markdown documents use the absolute path that resolves at the time of writing (§7) — inside a worktree that is the worktree path, not the post-merge one.
-   - Not required when the turn produced no such artifact: investigation, a question answered, read-only work. Do not pad the section with links you did not touch.
+   - Not required when the turn produced no such artifact: investigation, a question answered, read-only work. Do not pad the block with links you did not touch.
 6. URL form follows the destination.
    - Terminal output shown to the operator (chat replies, reports): bare full URLs. This terminal auto-links a bare URL but renders `[label](url)` literally, so the Markdown form loses the click target.
    - Text handed to a Markdown renderer (PR body, Issue body, comments, in-repo docs): `[label](url)` — e.g. [PR #5143](https://github.com/...), [Pipeline #16261](https://app.circleci.com/...).
