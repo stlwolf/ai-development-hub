@@ -395,6 +395,54 @@ else
   rm -f "$old_in_repo"
 fi
 
+echo "[23] 中身が同じ symlink へ直前に差し替えられても置き換えない（実装SO 指摘の回帰）"
+fresh c23
+printf '%s' '{"theme":"dark"}' > "$ST"
+# リンク先は「その時点の settings と同じ内容」にする。内容比較では見抜けない。
+# 差し替えは「直前の再確認」より前に起こす。再確認と置き換えの間に起きる
+# 差し替えは rename の原子性の外なので、どう並べても捕まえられない。ここで
+# 確かめるのは、再確認が同内容の symlink を見抜けるかどうかである。
+sed "s|^    # 置き換える直前にもう一度 symlink を見る。|    if [[ ! -L '$ST' ]]; then cp '$ST' '$CASE/twin.json'; rm -f '$ST'; ln -s '$CASE/twin.json' '$ST'; fi\n    # 置き換える直前にもう一度 symlink を見る。|" \
+    "$APPLY" > "$CASE/apply_twin.sh"
+chmod +x "$CASE/apply_twin.sh"
+ck  "割り込みを挿せた" "1" "$(grep -c 'twin.json' "$CASE/apply_twin.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/apply_twin.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "symlink のまま残る" "true" "$([[ -L "$ST" ]] && echo true || echo false)"
+ck  "リンク先に宣言を書いていない" "false" "$(jq -r '(.hooks != null)' "$CASE/twin.json")"
+ckc "差し替わったと言う" "$OUT" "直前に symlink へ差し替わった"
+ck  "exit 0（止めない）" "0" "$RC"
+
+echo "[24] union-array は正本側の重複も取り除く（実装SO 指摘の回帰）"
+fresh c24
+printf '%s' '{"listy":["a"]}' > "$ST"
+printf '%s' '{"listy":["x","x","a","y"]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/listy","op":"union-array","scope_behavior":"merge",
+           "source":{"file":"$CASE/src.json","pointer":"/listy"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "重複が畳まれて3件" "3" "$(jq -r '.listy | length' "$ST")"
+ck  "x は1つだけ" "1" "$(jq -r '[.listy[] | select(. == "x")] | length' "$ST")"
+ck  "手元の a は先頭のまま" "a" "$(jq -r '.listy[0]' "$ST")"
+
+echo "[25] 変更の有無を比べられないときは成功を名乗らない（実装SO 指摘の回帰）"
+fresh c25
+printf '%s' '{"theme":"dark"}' > "$ST"
+# 比較用の正規化を必ず失敗させる複製を作る。
+# shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
+sed 's|^        jq -S . "${out}" > "${out}.cmp2" 2>/dev/null .. cmp_ok=0$|        cmp_ok=0|' \
+    "$APPLY" > "$CASE/apply_cmpfail.sh"
+chmod +x "$CASE/apply_cmpfail.sh"
+ck  "割り込みを挿せた" "1" "$(grep -cE '^        cmp_ok=0$' "$CASE/apply_cmpfail.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/apply_cmpfail.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "exit 1" "1" "$RC"
+ckc "比べられないと言う" "$OUT" "比べられませんでした"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+ck  "宣言は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

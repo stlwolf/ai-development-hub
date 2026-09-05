@@ -187,8 +187,11 @@ def apply_item($item):
     elif $item.op == "union-array" then
       # 重複の判定は jq の等価比較で行う（tojson だとキーの順が違うオブジェクトを
       # 別物として残してしまう）。手元の並びは変えず、無いものだけを後ろに足す。
+      # 正本側に重複があれば、そちらも取り除いてから足す。
       ((getpath($path) // []) as $cur
-       | setpath($path; ($cur + ($item.expected | map(select(. as $e | any($cur[]; . == $e) | not))))))
+       | ($item.expected
+          | reduce .[] as $e ([]; if any(.[]; . == $e) then . else . + [$e] end)) as $add
+       | setpath($path; ($cur + ($add | map(select(. as $e | any($cur[]; . == $e) | not))))))
     elif $item.op == "handler" and $item.handler == "statusline-wrap" then
       # 現行の3分岐をそのまま写す。
       #   未設定           → 正本を載せる
@@ -290,12 +293,21 @@ while :; do
 
     # (a) 変更が無いなら、そもそも何もしない（バックアップも作らない）。
     if [[ -n "${before}" ]]; then
-        jq -S . <<< "${before}" > "${out}.cmp" 2>/dev/null
-        jq -S . "${out}" > "${out}.cmp2" 2>/dev/null
-        if cmp -s "${out}.cmp" "${out}.cmp2"; then
+        # 2つの正規化の終了コードを両方見る。見ないと、書き込みに失敗して
+        # 両方が空ファイルになったときに cmp が一致と判定し、何も適用して
+        # いないのに成功を名乗る。
+        cmp_ok=1
+        jq -S . <<< "${before}" > "${out}.cmp" 2>/dev/null || cmp_ok=0
+        jq -S . "${out}" > "${out}.cmp2" 2>/dev/null || cmp_ok=0
+        if [[ "${cmp_ok}" -eq 1 && -s "${out}.cmp" && -s "${out}.cmp2" ]] && cmp -s "${out}.cmp" "${out}.cmp2"; then
             rm -f "${out}" "${out}.cmp" "${out}.cmp2"
             info "  変更はありません"
             exit 0
+        fi
+        if [[ "${cmp_ok}" -eq 0 ]]; then
+            rm -f "${out}" "${out}.cmp" "${out}.cmp2"
+            error "  変更の有無を比べられませんでした。何も書きません"
+            exit 1
         fi
     fi
     rm -f "${out}.cmp" "${out}.cmp2"
@@ -327,6 +339,17 @@ while :; do
         fi
         warn "  他のプロセスが書き換えたので読み直します（${attempt}/${MAX_RETRY}）"
         continue
+    fi
+
+    # 置き換える直前にもう一度 symlink を見る。中身が同じファイルへの symlink に
+    # 差し替えられると、上の内容比較は通ってしまう。ここで見ないと rename が
+    # symlink そのものを通常ファイルに変えてしまう（全体 symlink を棄却した
+    # 理由と同じ現象を、自分の配布スクリプトで起こすことになる）。
+    if [[ -L "${SETTINGS}" ]]; then
+        rm -f "${out}"
+        [[ -n "${backup}" ]] && rm -f "${backup}"
+        warn "  直前に symlink へ差し替わったので触りません: ${SETTINGS}"
+        exit 0
     fi
 
     if ! mv "${out}" "${SETTINGS}"; then
