@@ -1,3 +1,7 @@
+---
+review-when: the harness changes what it says about headings, formatting, or how links are rendered
+---
+
 # Output Format
 1. Conclusion (one line)
 2. Evidence / verification results (commands and output)

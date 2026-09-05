@@ -1,3 +1,7 @@
+---
+review-when: the research and review skills that consume this protocol change their output contract
+---
+
 # Evidence Verification — Claim-Level Status & Spot-Check Discipline
 
 This rule is about checking claims against external sources. It is not an instruction to re-check your own output; those are different acts, and only the former is what this rule asks for.

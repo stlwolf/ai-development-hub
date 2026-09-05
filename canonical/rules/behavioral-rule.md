@@ -1,3 +1,7 @@
+---
+review-when: the harness system prompt changes what it says about scope, safe operations, or tool preference
+---
+
 # Behavioral Rules
 1. Evidence First: Prefer primary sources (official docs, RFCs, source code, logs). Mark speculation explicitly.
 2. CLI Native: Prefer CLI tools (gh, curl, grep) for information gathering — reach for the command line before assuming a task needs something else. Reading and editing files is not covered here; follow the harness's own guidance for the current mode.

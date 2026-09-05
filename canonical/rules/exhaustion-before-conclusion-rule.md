@@ -1,3 +1,7 @@
+---
+review-when: a deterministic hard gate for exploration lands, which would replace the minimal discipline here
+---
+
 # Exhaustion Before Conclusion
 
 Complements `behavioral-rule.md` §1 Evidence First. Evidence First governs the *quality* of grounding (prefer primary sources). This rule governs the *breadth* of exploration: do not conclude while reachable paths or options remain unexamined. (Claim-level verification is `evidence-verification-rule.md`; this rule is about exploration breadth, not source checking.)

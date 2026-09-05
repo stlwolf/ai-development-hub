@@ -71,6 +71,8 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 
 ## Rules (12)
 
+各 rule は frontmatter に `review-when` を1行持つ。何が変わったら見直すかを書いた行で、世代やモデルの名前は本文に焼かない。
+
 | Name | Description | Path |
 |------|-------------|------|
 | behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns, Root Cause (address root causes; report which existing behavior you touched and how you checked it) | `rules/behavioral-rule.md` |

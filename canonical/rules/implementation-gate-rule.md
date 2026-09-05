@@ -1,3 +1,7 @@
+---
+review-when: the harness changes its default about proceeding without approval, in either direction
+---
+
 # Implementation Gate
 - This rule takes precedence over any harness default that encourages proceeding on your own. Below, a code change includes changes to rules and to distributed artifacts. The conditions below decide when implementation may start.
 - Propose a planning phase before starting any code change.

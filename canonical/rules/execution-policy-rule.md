@@ -1,3 +1,7 @@
+---
+review-when: the harness gains or loses a task-tracking tool, or starts prescribing how commands are shown
+---
+
 # Execution Policy
 - Progress read-only first, then mutating operations.
 - Present commands in copy-pasteable code blocks.

@@ -1,3 +1,7 @@
+---
+review-when: a stall detector lands as a hook, which would move this floor from prose to a machine check
+---
+
 # Reframe on Stall
 
 Complements `behavioral-rule.md` §1 Evidence First and serves as the always-on soft floor under `exhaustion-before-conclusion-rule.md`. Where that rule says "do not conclude too early," this one says "do not keep grinding the same way."
