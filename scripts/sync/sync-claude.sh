@@ -185,125 +185,24 @@ sync_mcp_servers() {
     info "  ${count} MCP server(s) synced"
 }
 
-sync_claude_hooks() {
-    local hooks_source="$1"
-    local settings_target="$2"
-    local label="$3"
+apply_declared_settings() {
+    local settings_target="$1"
+    local apply_script="${SCRIPT_DIR}/apply-claude-settings.sh"
 
-    info "Syncing ${label}: ${hooks_source} → ${settings_target}"
+    info "Syncing declared settings → ${settings_target}"
 
-    if [[ ! -f "$hooks_source" ]]; then
-        warn "Source not found: ${hooks_source}"
-        return
+    if [[ ! -x "${apply_script}" ]]; then
+        error "  適用スクリプトが見つからないか実行できません: ${apply_script}"
+        return 1
     fi
 
-    local hooks_json
-    hooks_json=$(jq '.hooks' "$hooks_source")
-
-    if [[ -f "$settings_target" && ! -L "$settings_target" ]]; then
-        local backup
-        backup="${settings_target}.bak.$(date +%Y%m%d-%H%M%S)"
-        cp "$settings_target" "$backup"
-        info "  Backup: ${backup}"
-        local tmp_settings
-        tmp_settings="$(mktemp "${settings_target}.tmp.XXXXXX")"
-        if jq --argjson hooks "$hooks_json" '.hooks = $hooks' "$settings_target" > "$tmp_settings"; then
-            mv "$tmp_settings" "$settings_target"
-        else
-            rm -f "$tmp_settings"
-            error "  Failed to merge hooks into: $(basename "${settings_target}")"
-            return 1
-        fi
-        info "  Merged hooks into: $(basename "${settings_target}")"
-    elif [[ ! -e "$settings_target" ]]; then
-        mkdir -p "$(dirname "${settings_target}")"
-        jq -n --argjson hooks "$hooks_json" '{hooks: $hooks}' > "$settings_target"
-        info "  Created: $(basename "${settings_target}")"
-    else
-        warn "Skipping (symlink or special file): ${settings_target}"
-    fi
-}
-
-sync_claude_statusline() {
-    local statusline_source="$1"
-    local settings_target="$2"
-    local label="$3"
-
-    info "Syncing ${label}: ${statusline_source} → ${settings_target}"
-
-    if [[ ! -f "$statusline_source" ]]; then
-        warn "Source not found: ${statusline_source}"
-        return
-    fi
-
-    if ! command -v jq &>/dev/null; then
-        warn "jq not found — skipping statusLine sync"
-        return
-    fi
-
-    # 配布したい statusLine オブジェクト（type / command / refreshInterval）と、その command（=beat producer）。
-    local desired our_cmd marker
-    desired=$(jq -c '.statusLine' "$statusline_source")
-    our_cmd=$(jq -r '.statusLine.command' "$statusline_source")
-    # beat producer 判定は $HOME リテラルや quote に依存しない安定 basename で行う（$HOME 展開・絶対パス化・
-    # wrap 済みのいずれでも既存を beat producer と認識でき、再 sync 時の二重 wrap を防ぐ）。
-    marker="statusline-oe-heartbeat.sh"
-
-    # settings.json が無ければ statusLine のみで新規作成。
-    if [[ ! -e "$settings_target" ]]; then
-        mkdir -p "$(dirname "${settings_target}")"
-        jq -n --argjson sl "$desired" '{statusLine: $sl}' > "$settings_target"
-        info "  Created: $(basename "${settings_target}") (statusLine installed)"
-        return
-    fi
-
-    # symlink / 通常ファイル以外（dir/fifo 等）は触らない（hooks merge と同じ姿勢・-f で守る）。
-    if [[ -L "$settings_target" || ! -f "$settings_target" ]]; then
-        warn "Skipping (symlink or non-regular file): ${settings_target}"
-        return
-    fi
-
-    local backup existing_cmd tmp_settings
-    # settings.json が壊れている（jq で parse 不能）なら statusLine merge のみ skip し、sync 全体は
-    # abort させない（set -euo pipefail 下で jq の非0を握りつぶす。hooks merge の if jq 姿勢に揃える）。
-    if ! existing_cmd=$(jq -r '.statusLine.command // ""' "$settings_target" 2>/dev/null); then
-        warn "settings.json を jq で parse できません（壊れている可能性）— statusLine merge を skip: ${settings_target}"
-        return
-    fi
-
-    backup="${settings_target}.bak.$(date +%Y%m%d-%H%M%S)"
-    cp "$settings_target" "$backup"
-    info "  Backup: ${backup}"
-
-    tmp_settings="$(mktemp "${settings_target}.tmp.XXXXXX")"
-
-    # 非破壊 merge（Q4）:
-    #   - statusLine 未設定           → beat producer を設定。
-    #   - 既に beat producer（wrap 済含む・our_cmd を含む）→ command は保持し type/refreshInterval のみ更新（二重 wrap 防止）。
-    #   - ユーザー独自 statusLine      → 表示を壊さず wrap: 元コマンドを OE_HEARTBEAT_WRAP_CMD へ退避し、
-    #                                     beat producer 経由で call-through する（beat は side-effect で合成）。
-    # いずれの分岐も既存 statusLine の他フィールド（padding / hideVimModeIndicator 等）を保持したまま
-    # desired（type / command / refreshInterval）を上書き overlay する（(.statusLine // {}) を土台にする）。
-    local jq_ok=1
-    if [[ -z "$existing_cmd" ]]; then
-        jq --argjson sl "$desired" '.statusLine = ((.statusLine // {}) + $sl)' "$settings_target" > "$tmp_settings" || jq_ok=0
-        [[ "$jq_ok" == "1" ]] && info "  Merged statusLine (beat producer installed)"
-    elif [[ "$existing_cmd" == *"$marker"* ]]; then
-        # command 文字列は既存を保持（wrap 済みなら wrap を維持＝二重 wrap 防止）。他フィールドは desired で更新。
-        jq --argjson sl "$desired" '.statusLine = ((.statusLine // {}) + $sl + {command: .statusLine.command})' "$settings_target" > "$tmp_settings" || jq_ok=0
-        [[ "$jq_ok" == "1" ]] && info "  Refreshed statusLine (beat producer already present)"
-    else
-        local wrapped
-        wrapped="OE_HEARTBEAT_WRAP_CMD=$(printf '%q' "$existing_cmd") ${our_cmd}"
-        jq --argjson sl "$desired" --arg wc "$wrapped" '.statusLine = ((.statusLine // {}) + $sl + {command: $wc})' "$settings_target" > "$tmp_settings" || jq_ok=0
-        [[ "$jq_ok" == "1" ]] && info "  Wrapped existing statusLine (display preserved · beat added)"
-    fi
-
-    if [[ "$jq_ok" == "1" ]]; then
-        mv "$tmp_settings" "$settings_target"
-    else
-        rm -f "$tmp_settings"
-        error "  Failed to merge statusLine into: $(basename "${settings_target}")"
+    # 素で呼ばない。main はトップレベルで走るので errexit が効き、子の非0で
+    # sync 全体が止まる。適用できない相手（symlink・壊れた JSON）は子が 0 で
+    # 返すので、ここで止まるのは本当に書けなかったときだけになる。
+    local rc=0
+    "${apply_script}" --settings "${settings_target}" || rc=$?
+    if [[ "${rc}" -ne 0 ]]; then
+        error "  設定の適用に失敗しました（rc=${rc}）"
         return 1
     fi
 }
@@ -337,8 +236,10 @@ main() {
     sync_md_files "${CANONICAL_DIR}/commands" "${TARGET_BASE}/commands" "commands"
     echo ""
 
-    # 6. Hooks config (merge into settings.json)
-    sync_claude_hooks "${CANONICAL_DIR}/hooks/claude.hooks.json" "${TARGET_BASE}/settings.json" "hooks"
+    # 6. 宣言された設定項目を settings.json へ適用する
+    #    hooks と statusLine を別々に読み書きしていたのをやめ、宣言（canonical/claude/
+    #    settings.harness.json）に書かれた項目を1回の書き込みでまとめて当てる（#359）。
+    apply_declared_settings "${TARGET_BASE}/settings.json"
     echo ""
 
     # 7. Hook scripts
@@ -349,9 +250,6 @@ main() {
     sync_hook_scripts "${CANONICAL_DIR}/claude/statusline" "${TARGET_BASE}/statusline" "statusline scripts"
     echo ""
 
-    # 9. statusLine config (non-destructive merge into settings.json)
-    sync_claude_statusline "${CANONICAL_DIR}/claude/statusline/claude.statusline.json" "${TARGET_BASE}/settings.json" "statusLine"
-    echo ""
 
     # 10. MCP servers (merge into ~/.claude.json)
     sync_mcp_servers "${CANONICAL_DIR}/mcp/claude.json" "${HOME}/.claude.json" "MCP servers"

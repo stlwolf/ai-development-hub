@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# test_apply_claude_settings.sh — 宣言駆動の適用を検証（#359 PR-3）。
+#
+# 一時ディレクトリの settings.json だけを触る（実 ~/.claude は読まない・書かない）。
+# 検証する軸:
+#   - 宣言に無い項目（個人層）を一切変えない
+#   - 書き込みは1回。バックアップも1回
+#   - 変更が無いときは書かない（バックアップも作らない）
+#   - 書けない相手（symlink / 通常ファイル以外 / 壊れた JSON）には触らず、止めない
+#   - 読んでから書くまでに他が書き換えたら読み直す
+#   - 1項目でも正本が解けなければ何も書かない（部分適用を作らない）
+#   - replace / merge-object / union-array / absent / statusline-wrap の各動作
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+APPLY="$REPO_ROOT/scripts/sync/apply-claude-settings.sh"
+HOOKS_SRC="$REPO_ROOT/canonical/hooks/claude.hooks.json"
+
+[[ -x "$APPLY" ]] || { echo "FAIL: apply script not found: $APPLY"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+
+if ! _TMP_DIR="$(mktemp -d)" || [[ -z "$_TMP_DIR" || ! -d "$_TMP_DIR" ]]; then
+  echo "FAIL: 一時ディレクトリを作れません"; exit 1
+fi
+trap 'rm -rf "$_TMP_DIR"' EXIT
+
+PASS=0; FAIL=0
+ck()  { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
+ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
+ncc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
+
+CASE=""; ST=""; OUT=""; RC=0
+fresh() { CASE="$_TMP_DIR/$1"; mkdir -p "$CASE"; ST="$CASE/settings.json"; }
+run()   { OUT="$("$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?; }
+run_d() { OUT="$("$BASH" "$APPLY" --settings "$ST" --declaration "$1" 2>&1)"; RC=$?; }
+backups() { find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' '; }
+bkline()  { printf '%s' "$OUT" | grep -c 'Backup:' | tr -d ' '; }
+
+# ============================================================================
+echo "[1] 宣言に無い項目を一切変えない"
+fresh c1
+printf '%s' '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true,"enabledPlugins":{"x@y":true}}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "theme 保持" "dark" "$(jq -r '.theme' "$ST")"
+ck  "tui 保持" "fullscreen" "$(jq -r '.tui' "$ST")"
+ck  "model 保持" "claude-opus-5" "$(jq -r '.model' "$ST")"
+ck  "false の値も保持" "false" "$(jq -r '.remoteControlAtStartup' "$ST")"
+ck  "未文書のキーも保持" "true" "$(jq -r '.skipWorkflowUsageWarning' "$ST")"
+ck  "enabledPlugins 保持" "true" "$(jq -r '.enabledPlugins["x@y"]' "$ST")"
+ck  "hooks は入る" "true" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "statusLine は入る" "true" "$(jq -r '(.statusLine != null)' "$ST")"
+
+echo "[2] 書き込みは1回・バックアップも1回"
+fresh c2
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+ck  "Backup の行は1つ" "1" "$(bkline)"
+ck  "バックアップファイルも1つ" "1" "$(backups)"
+
+echo "[3] 変更が無ければ書かない（バックアップも作らない）"
+fresh c3
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+before_mtime="$(stat -f %m "$ST" 2>/dev/null || stat -c %Y "$ST")"
+rm -f "$CASE"/settings.json.bak.*
+run
+ck  "2回目は exit 0" "0" "$RC"
+ckc "変更なしと言う" "$OUT" "変更はありません"
+ck  "バックアップを作らない" "0" "$(backups)"
+after_mtime="$(stat -f %m "$ST" 2>/dev/null || stat -c %Y "$ST")"
+ck  "ファイルを書き換えない" "$before_mtime" "$after_mtime"
+
+echo "[4] settings.json が無ければ作る（バックアップは無し）"
+fresh c4
+run
+ck  "exit 0" "0" "$RC"
+ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
+ck  "バックアップは無い" "0" "$(backups)"
+ck  "宣言の2項目だけ" "hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+
+echo "[5] symlink には触らず、止めない"
+fresh c5
+printf '%s' '{"theme":"dark"}' > "$CASE/real.json"
+ln -s "$CASE/real.json" "$ST"
+run
+ck  "exit 0（止めない）" "0" "$RC"
+ckc "symlink だと言う" "$OUT" "symlink なので触りません"
+ck  "実体は変わらない" "dark" "$(jq -r '.theme' "$CASE/real.json")"
+ck  "symlink のまま" "true" "$([[ -L "$ST" ]] && echo true || echo false)"
+
+echo "[6] 通常ファイル以外には触らず、止めない"
+fresh c6
+mkdir -p "$ST"
+run
+ck  "exit 0（止めない）" "0" "$RC"
+ckc "通常ファイルでないと言う" "$OUT" "通常ファイルではないので触りません"
+ck  "ディレクトリのまま" "true" "$([[ -d "$ST" ]] && echo true || echo false)"
+
+echo "[7] 壊れた JSON には触らず、止めない（現行は hooks 側で sync 全体が止まっていた）"
+fresh c7
+printf '%s' '{ not json' > "$ST"
+run
+ck  "exit 0（止めない）" "0" "$RC"
+ckc "読めないと言う" "$OUT" "JSON として読めないので触りません"
+ck  "中身は元のまま" '{ not json' "$(cat "$ST")"
+ck  "バックアップも作らない" "0" "$(backups)"
+
+echo "[8] 正本が1つでも解けなければ何も書かない（部分適用を作らない）"
+fresh c8
+printf '%s' '{"theme":"dark"}' > "$ST"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[
+   {"pointer":"/hooks","op":"replace","scope_behavior":"merge",
+    "source":{"file":"$HOOKS_SRC","pointer":"/hooks"}},
+   {"pointer":"/statusLine","op":"handler","handler":"statusline-wrap","scope_behavior":"override",
+    "source":{"file":"$CASE/no-such-source.json","pointer":"/statusLine"}}
+ ],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ck  "hooks も書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "theme はそのまま" "dark" "$(jq -r '.theme' "$ST")"
+ck  "バックアップも作らない" "0" "$(backups)"
+
+echo "[9] merge-object は手元にしかない下位キーを残す"
+fresh c9
+printf '%s' '{"autoMode":{"environment":["keep"],"mine":1}}' > "$ST"
+printf '%s' '{"autoMode":{"environment":["from-canon"],"added":2}}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/autoMode","op":"merge-object","scope_behavior":"override",
+           "source":{"file":"$CASE/src.json","pointer":"/autoMode"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "手元だけの下位キーが残る" "1" "$(jq -r '.autoMode.mine' "$ST")"
+ck  "正本の値が入る" "2" "$(jq -r '.autoMode.added' "$ST")"
+ck  "配列は正本で置き換わる" "from-canon" "$(jq -r '.autoMode.environment[0]' "$ST")"
+
+echo "[10] union-array は手元の項目を残したまま正本の項目を足す"
+fresh c10
+printf '%s' '{"listy":["mine"]}' > "$ST"
+printf '%s' '{"listy":["canon","mine"]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/listy","op":"union-array","scope_behavior":"merge",
+           "source":{"file":"$CASE/src.json","pointer":"/listy"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "重複しない" "2" "$(jq -r '.listy | length' "$ST")"
+ck  "手元の項目が残る" "true" "$(jq -r '[.listy[]] | index("mine") != null' "$ST")"
+ck  "正本の項目が入る" "true" "$(jq -r '[.listy[]] | index("canon") != null' "$ST")"
+
+echo "[11] absent は消す"
+fresh c11
+printf '%s' '{"gone":1,"stay":2}' > "$ST"
+cat > "$CASE/decl.json" <<'DECLEOF'
+{"version":1,
+ "items":[{"pointer":"/gone","op":"absent","scope_behavior":"override"}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "消える" "false" "$(jq -r 'has("gone")' "$ST")"
+ck  "他は残る" "2" "$(jq -r '.stay' "$ST")"
+
+echo "[12] statusline-wrap の3分岐"
+fresh c12a
+printf '%s' '{}' > "$ST"
+run
+ckc "未設定 → 正本を載せる" "$(jq -r '.statusLine.command' "$ST")" "statusline-oe-heartbeat.sh"
+ck  "包んでいない" "0" "$(jq -r '.statusLine.command' "$ST" | grep -c 'OE_HEARTBEAT_WRAP_CMD' | tr -d ' ')"
+fresh c12b
+printf '%s' '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}' > "$ST"
+run
+ck  "独自 → 1回だけ包む" "1" "$(jq -r '.statusLine.command' "$ST" | grep -c 'OE_HEARTBEAT_WRAP_CMD' | tr -d ' ')"
+ckc "元コマンドを退避" "$(jq -r '.statusLine.command' "$ST")" "mybar.sh"
+ck  "padding を保持" "2" "$(jq -r '.statusLine.padding' "$ST")"
+run
+ck  "再適用でも二重に包まない" "1" "$(jq -r '.statusLine.command' "$ST" | grep -c 'OE_HEARTBEAT_WRAP_CMD' | tr -d ' ')"
+
+echo "[13] 読んでから書くまでに他が書き換えたら読み直す"
+fresh c13
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+ck  "1回目 exit 0" "0" "$RC"
+printf '%s' "$(jq -c '. + {injected: 1}' "$ST")" > "$ST"
+run
+ck  "外の追記があっても適用できる" "0" "$RC"
+ck  "外の追記は消えない" "1" "$(jq -r '.injected' "$ST")"
+
+echo "[13b] 横取りを実際に起こす（1回だけ割り込む → 読み直して成功する）"
+fresh c13b
+printf '%s' '{"theme":"dark"}' > "$ST"
+race_marker="$CASE/raced"
+OUT="$(OE_APPLY_TEST_RACE="if [[ ! -e '$race_marker' ]]; then touch '$race_marker'; jq -c '. + {raced: 1}' '$ST' > '$ST.r' && mv '$ST.r' '$ST'; fi"       "$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?
+ck  "読み直して成功する" "0" "$RC"
+ckc "読み直したと言う" "$OUT" "読み直します"
+ck  "割り込みの追記が残る" "1" "$(jq -r '.raced' "$ST")"
+ck  "宣言の項目も入る" "true" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "個人層も残る" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[13c] 横取りが続くなら中止する（書かない）"
+fresh c13c
+printf '%s' '{"theme":"dark"}' > "$ST"
+before_content="$(cat "$ST")"
+OUT="$(OE_APPLY_TEST_RACE="jq -c '.n = ((.n // 0) + 1)' '$ST' > '$ST.r' && mv '$ST.r' '$ST'"       "$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?
+ck  "exit 1" "1" "$RC"
+ckc "中止すると言う" "$OUT" "中止します"
+ck  "宣言の項目は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+ncc "元の内容と同じではない（割り込みだけが効いている）" "$before_content" "hooks"
+
+echo "[14] 宣言が空 → 何も書かない"
+fresh c14
+printf '%s' '{"theme":"dark"}' > "$ST"
+printf '%s' '{"version":1,"items":[]}' > "$CASE/empty.json"
+run_d "$CASE/empty.json"
+ck  "exit 2" "2" "$RC"
+ck  "theme はそのまま" "dark" "$(jq -r '.theme' "$ST")"
+ck  "hooks は入らない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+
+echo ""
+echo "=== PASS=$PASS FAIL=$FAIL ==="
+[[ "$FAIL" -eq 0 ]]
