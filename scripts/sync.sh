@@ -12,6 +12,7 @@
 #   ./scripts/sync.sh --list           # 利用可能ターゲット一覧
 #   ./scripts/sync.sh --check          # 全ターゲットの整合チェック
 #   ./scripts/sync.sh --check cursor   # cursor のみチェック
+#   ./scripts/sync.sh --prune claude   # 孤児 symlink を削除（検査も行う・既定は報告のみ）
 #
 # Available targets:
 #   cursor  — canonical + cursor-specific → ~/.cursor/
@@ -30,6 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SYNC_DIR="${SCRIPT_DIR}/sync"
 
 ALL_TARGETS=(cursor claude codex bin)
+# --prune を付けたときだけ、配布先に残った孤児 symlink を削除する（既定は報告のみ）。
+PRUNE_MODE=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -134,6 +137,8 @@ check_skill_dirs() {
 
 check_orphan_links() {
     local target="$1" repo_root="$2" diffs_ref="$3"
+    local prune_args=()
+    [[ "${PRUNE_MODE:-false}" == true ]] && prune_args=(--prune)
     # 配布先の側から走査する。正本の側からだけ回していると、正本から消した
     # ファイルの配布先は一度も訪れられず、残ったリンクが壊れても誰も見ない（#359）。
     local orphan_script="${SYNC_DIR}/check-orphan-links.sh"
@@ -145,7 +150,7 @@ check_orphan_links() {
     # 素で呼ばない。check_target は main() の `if ! check_target` から呼ばれるので
     # 関数本体の errexit が抑止され、子が差分を返しても握り潰される。
     local orphan_rc=0
-    "${orphan_script}" "${target}" --canonical "${repo_root}/canonical" || orphan_rc=$?
+    "${orphan_script}" "${target}" --canonical "${repo_root}/canonical" "${prune_args[@]+"${prune_args[@]}"}" || orphan_rc=$?
     if [[ "${orphan_rc}" -ne 0 ]]; then
         eval "${diffs_ref}=true"
     fi
@@ -270,6 +275,7 @@ main() {
             -h|--help) usage ;;
             -l|--list) list_targets ;;
             --check) check_mode=true ;;
+            --prune) PRUNE_MODE=true; check_mode=true ;;
             --*) targets+=("${arg#--}") ;;
             *) targets+=("${arg}") ;;
         esac
@@ -295,7 +301,11 @@ main() {
     done
 
     if [[ "${check_mode}" == true ]]; then
-        info "Check mode: ${targets[*]}"
+        if [[ "${PRUNE_MODE}" == true ]]; then
+            info "Prune mode: ${targets[*]}（孤児 symlink を削除します）"
+        else
+            info "Check mode: ${targets[*]}"
+        fi
         echo ""
         local failed=()
         for target in "${targets[@]}"; do

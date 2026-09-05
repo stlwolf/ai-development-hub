@@ -15,6 +15,7 @@
 #   ./scripts/sync/check-orphan-links.sh claude --base /tmp/fake-home/.claude
 #   ./scripts/sync/check-orphan-links.sh claude --canonical /path/to/canonical
 #   ./scripts/sync/check-orphan-links.sh claude --verbose   # 何も無くても内訳を出す
+#   ./scripts/sync/check-orphan-links.sh claude --prune     # 孤児を削除する（明示のときだけ）
 #
 # 分類:
 #   orphan-canonical  リンク先が今の正本ディレクトリ配下を指しているのに、正本にその実体が無い。
@@ -29,7 +30,7 @@
 #
 # Exit:
 #   0  孤児なし
-#   1  孤児あり（orphan-canonical が1件以上）
+#   1  孤児あり（--prune 無し）／ 消さなかった孤児が残った（--prune 有り）
 #   2  検査を実行できない（正本が見つからない・引数が不正・配布先を走査できない 等）
 #
 # 「孤児があった」と「そもそも判定できなかった」は別の状態なので終了コードを分ける。
@@ -45,6 +46,7 @@ CANONICAL="${REPO_ROOT}/canonical"
 BASE=""
 TARGET=""
 VERBOSE=false
+PRUNE=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -59,6 +61,43 @@ error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
 # 配布先ディレクトリの allowlist。sync が書き込む場所だけを歩く。
 # ~/.claude 全体を歩くとセッションデータや cache に触るか、ノイズで溺れる。
 claude_dirs=(rules skills agents commands hooks orchestration-spec statusline output-styles)
+
+# 配布規則の対応表。「配布先の名前」→「正本のどこを・どのパターンで見るか」。
+# 掃除のときだけ使う。いま sync が配ろうとしている名前は、正本に実体が無くても
+# 消さない（正本が一時的に見えないだけの状態で消してしまうのを防ぐ）。
+# 書式: <配布先ディレクトリ>|<正本の相対パス>|<種別: md / sh / dir>
+# shellcheck disable=SC2317  # 下の走査から呼ぶ
+rule_for_dir() {
+    case "$1" in
+        rules)              printf '%s' 'rules|md' ;;
+        orchestration-spec) printf '%s' 'orchestration-spec|md' ;;
+        agents)             printf '%s' 'agents|md' ;;
+        commands)           printf '%s' 'commands|md' ;;
+        output-styles)      printf '%s' 'output-styles|md' ;;
+        skills)             printf '%s' 'skills|dir' ;;
+        hooks)              printf '%s' 'hooks/scripts|sh' ;;
+        statusline)         printf '%s' 'claude/statusline|sh' ;;
+        commands-registry)  printf '%s' 'codex/commands-registry|md' ;;
+        *)                  printf '%s' '' ;;
+    esac
+}
+
+# いま配布規則がこの名前を配ろうとしているか。
+# 正本にその名前で実体があり、かつ規則のパターンに合っていれば true。
+# shellcheck disable=SC2317  # 掃除の経路から呼ぶ
+would_be_distributed() {
+    local dir_name="$1" entry_name="$2"
+    local rule; rule="$(rule_for_dir "${dir_name}")"
+    [[ -z "${rule}" ]] && return 1
+    local src_rel="${rule%%|*}" kind="${rule##*|}"
+    local src="${CANONICAL_REAL}/${src_rel}/${entry_name}"
+    case "${kind}" in
+        md)  [[ -f "${src}" && "${entry_name}" == *.md ]] ;;
+        sh)  [[ -f "${src}" && "${entry_name}" == *.sh ]] ;;
+        dir) [[ -d "${src}" && -f "${src}/SKILL.md" ]] ;;
+        *)   return 1 ;;
+    esac
+}
 cursor_dirs=(rules skills agents commands hooks orchestration-spec)
 codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 
@@ -70,6 +109,7 @@ while [[ $# -gt 0 ]]; do
         --canonical) [[ $# -ge 2 ]] || { error "--canonical に値がありません"; exit 2; }
                      CANONICAL="$2"; shift 2 ;;
         -v|--verbose) VERBOSE=true; shift ;;
+        --prune)      PRUNE=true; shift ;;
         -h|--help)
             sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
             exit 0 ;;
@@ -165,6 +205,8 @@ under_prefix() {
 }
 
 orphan_count=0
+orphan_paths=()
+orphan_dirs=()
 scan_failed=false
 listing=""
 find_rc=0
@@ -233,6 +275,8 @@ for d in "${dirs[@]}"; do
                 warn "  orphan-canonical ${rel} → ${raw}"
                 warn "    正本を指していますが、そこに実体がありません"
                 orphan_count=$((orphan_count + 1))
+                orphan_paths+=("${entry}")
+                orphan_dirs+=("${d}")
             fi
         else
             if [[ "${alive}" == false ]]; then
@@ -274,8 +318,84 @@ if [[ "${scan_failed}" == true ]]; then
     exit 2
 fi
 
+if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
+    echo ""
+    info "  掃除を始めます（--prune が指定されています）"
+
+    # 正本の側が壊れている状態で掃除を走らせると、配備物のすべてが孤児に見える。
+    # worktree から sync した後にその worktree を消す事故は実際に起きている。
+    canon_entries=0
+    for d in "${dirs[@]}"; do
+        rule="$(rule_for_dir "${d}")"
+        [[ -z "${rule}" ]] && continue
+        src_dir="${CANONICAL_REAL}/${rule%%|*}"
+        [[ -d "${src_dir}" ]] || continue
+        n="$(find "${src_dir}" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+        canon_entries=$((canon_entries + n))
+    done
+    if [[ "${canon_entries}" -eq 0 ]]; then
+        error "  正本の側が空です。この状態では配備物のすべてが孤児に見えるので掃除しません"
+        exit 2
+    fi
+    # 孤児が配備物の大半を占めるなら、正本の側が壊れている疑いが強い。
+    if [[ "${scanned}" -gt 0 && $(( orphan_count * 2 )) -gt "${scanned}" ]]; then
+        error "  孤児が配備物の半分を超えています（${orphan_count} / ${scanned}）。正本の側が壊れている疑いがあるので掃除しません"
+        exit 2
+    fi
+
+    pruned=0
+    kept=0
+    for i in "${!orphan_paths[@]}"; do
+        entry="${orphan_paths[$i]}"
+        dir_name="${orphan_dirs[$i]}"
+        entry_name="$(basename "${entry}")"
+
+        # 削除の直前にやり直す。検出してから今までの間に張り直された可能性がある。
+        if [[ ! -L "${entry}" ]]; then
+            info "  もう symlink ではないので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        if [[ -e "${entry}" ]]; then
+            info "  解決できるようになったので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        # リンク先が今も正本配下を指しているか、物理的に解決して確かめ直す。
+        raw2="$(readlink "${entry}")"
+        abs2="${raw2}"
+        [[ "${abs2}" != /* ]] && abs2="$(dirname "${entry}")/${abs2}"
+        real2="$(resolve_path "${abs2}")"
+        if ! under_prefix "${real2}" "${CANONICAL_REAL}"; then
+            info "  正本の外を指しているので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        # いま配布規則がこの名前を配ろうとしているなら消さない。
+        if would_be_distributed "${dir_name}" "${entry_name}"; then
+            info "  いまも配布の対象なので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+
+        if rm -f "${entry}"; then
+            info "  削除: ${dir_name}/${entry_name} → ${raw2}"
+            pruned=$((pruned + 1))
+        else
+            error "  削除できませんでした: ${dir_name}/${entry_name}"
+            kept=$((kept + 1))
+        fi
+    done
+
+    echo ""
+    info "  削除 ${pruned} 件 / 残した ${kept} 件"
+    if [[ "${kept}" -gt 0 ]]; then
+        error "  ${TARGET}: 消さなかった孤児が ${kept} 件あります"
+        exit 1
+    fi
+    info "  ${TARGET}: 孤児を掃除しました"
+    exit 0
+fi
+
 if [[ "${orphan_count}" -gt 0 ]]; then
     error "  ${TARGET}: 正本から消えた配布先が ${orphan_count} 件残っています"
+    info "  消すには --prune を付けてください（既定では報告だけです）"
     exit 1
 fi
 [[ "${VERBOSE}" == true ]] && info "  ${TARGET}: 正本から消えた配布先はありません"
