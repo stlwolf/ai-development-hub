@@ -87,20 +87,43 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
             error "  正本ファイルが見つかりません: ${pointer} → ${src_file}"
             resolve_failed=true; continue
         fi
+        # 値が null であることと、パスが無いことを区別する。区別しないと、
+        # 正本に置いた null を適用できない。
         # shellcheck disable=SC2016  # jq プログラムなのでシェルに展開させない
-        if ! expected="$(jq -c --arg p "${src_pointer}" '
-              def ptr2path($p): if $p == "" or $p == "/" then []
+        if ! probe="$(jq -c --arg p "${src_pointer}" '
+              def ptr2path($p): if $p == "" then []
                 else ($p | ltrimstr("/") | split("/")
                       | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
-              getpath(ptr2path($p))' "${abs_src}" 2>/dev/null)"; then
+              (ptr2path($p)) as $path
+              | {found: ([paths] | any(. == $path)) or ($path | length) == 0,
+                 value: getpath($path)}' "${abs_src}" 2>/dev/null)"; then
             error "  正本ファイルを読めません: ${pointer} → ${src_file}"
             resolve_failed=true; continue
         fi
-        if [[ "${expected}" == "null" ]]; then
-            error "  正本に値がありません: ${pointer} → ${src_file}#${src_pointer}"
+        if [[ "$(jq -r '.found' <<< "${probe}")" != "true" ]]; then
+            error "  正本にそのパスがありません: ${pointer} → ${src_file}#${src_pointer}"
             resolve_failed=true; continue
         fi
+        expected="$(jq -c '.value' <<< "${probe}")"
     fi
+    # ポインタの妥当性。空文字は JSON Pointer では文書全体を指すので、これを
+    # 通すと設定ファイルの根をまるごと置き換えて個人層を消してしまう。
+    # 配列の添字は扱わない（宣言はオブジェクトのキーだけを指す契約）。
+    if [[ -z "${pointer}" || "${pointer}" != /* ]]; then
+        error "  ポインタは / で始まる必要があります: [${pointer}]"
+        resolve_failed=true; continue
+    fi
+    bad_seg=""
+    while IFS= read -r seg; do
+        [[ -z "${seg}" ]] && continue
+        if [[ "${seg}" =~ ^[0-9]+$ ]]; then bad_seg="${seg}"; break; fi
+    # 末尾に改行を付ける。付けないと最後の区切りが read に拾われない。
+    done < <(printf '%s\n' "${pointer#/}" | tr '/' '\n')
+    if [[ -n "${bad_seg}" ]]; then
+        error "  配列の添字は宣言で扱えません: ${pointer}（区切り: ${bad_seg}）"
+        resolve_failed=true; continue
+    fi
+
     exp_type="$(jq -r 'type' <<< "${expected}")"
     case "${op}" in
         merge-object) [[ "${exp_type}" == "object" ]] || { error "  merge-object の正本がオブジェクトではありません: ${pointer} (${exp_type})"; resolve_failed=true; continue; } ;;
@@ -148,19 +171,11 @@ fi
 # ---------------------------------------------------------------------------
 info "Applying ${decl_count} declared item(s) → $(basename "${SETTINGS}")"
 
-if [[ -L "${SETTINGS}" ]]; then
-    # -L を先に見る。-e はリンクを辿るので、解決先が消えた symlink を取り逃がす。
-    warn "  symlink なので触りません: ${SETTINGS}"
-    exit 0
-fi
-if [[ -e "${SETTINGS}" && ! -f "${SETTINGS}" ]]; then
-    warn "  通常ファイルではないので触りません: ${SETTINGS}"
-    exit 0
-fi
-
 # shellcheck disable=SC2016  # jq プログラムなのでシェルに展開させない
 JQ_APPLY='
-def ptr2path($p): if $p == "" or $p == "/" then []
+# JSON Pointer: 空文字が文書全体を指し、"/" は空文字のキーを指す。
+# 添字は解決時に弾いているので、ここでは文字列のキーだけを扱う。
+def ptr2path($p): if $p == "" then []
   else ($p | ltrimstr("/") | split("/") | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
 
 def apply_item($item):
@@ -197,6 +212,18 @@ reduce $decl[0][] as $item (.; apply_item($item))
 attempt=0
 while :; do
     attempt=$((attempt + 1))
+
+    # 書けない相手かどうかは毎回見る。1回目の後に symlink へ差し替えられると、
+    # 次の試行でリンク先を読んで、置き換えで symlink 自体を通常ファイルにしてしまう。
+    if [[ -L "${SETTINGS}" ]]; then
+        # -L を先に見る。-e はリンクを辿るので、解決先が消えた symlink を取り逃がす。
+        warn "  symlink なので触りません: ${SETTINGS}"
+        exit 0
+    fi
+    if [[ -e "${SETTINGS}" && ! -f "${SETTINGS}" ]]; then
+        warn "  通常ファイルではないので触りません: ${SETTINGS}"
+        exit 0
+    fi
 
     if [[ -e "${SETTINGS}" ]]; then
         if ! before="$(cat "${SETTINGS}" 2>/dev/null)"; then

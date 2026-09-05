@@ -276,55 +276,123 @@ ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
 ck  "宣言の2項目が入る" "hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
 
-echo "[18] 現行実装との等価性（fixture 比較・実装SO 指摘の回帰）"
-BASE_REF="feature/#359_orphan_link_detection"
-if ! git -C "$REPO_ROOT" rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
-  echo "  SKIP: 比較元の枝 $BASE_REF が見つからない"
-else
-  old_sync="$_TMP_DIR/old-sync-claude.sh"
-  git -C "$REPO_ROOT" show "$BASE_REF:scripts/sync/sync-claude.sh" > "$old_sync" 2>/dev/null
-  if [[ ! -s "$old_sync" ]]; then
-    echo "  SKIP: 旧 sync-claude.sh を取り出せない"
-  else
-    # 旧実装は canonical を自分の位置から解決するので、リポジトリ内に置いて走らせる。
-    old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.sh"
-    cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
-    run_fixture() {  # run_fixture <script> <name> <init> <outdir>
-      local script="$1" name="$2" init="$3" outdir="$4"
-      local home="$outdir/$name/home"; mkdir -p "$home/.claude"
-      local st="$home/.claude/settings.json"
-      case "$init" in
-        NONE) ;;
-        SYMLINK) printf '%s' '{"hooks":{}}' > "$home/.claude/real.json"; ln -s "$home/.claude/real.json" "$st" ;;
-        DIR) mkdir -p "$st" ;;
-        *) printf '%s' "$init" > "$st" ;;
-      esac
-      env HOME="$home" bash "$script" >/dev/null 2>&1
-      if [[ -f "$st" && ! -L "$st" ]]; then jq -S . "$st" 2>/dev/null || cat "$st"
-      elif [[ -L "$st" ]]; then echo "SYMLINK"
-      elif [[ -d "$st" ]]; then echo "DIR"
-      else echo "MISSING"; fi
-    }
-    declare -a FIX_NAMES=(missing hooks_only own_statusline wrapped broken_json symlink personal_keys dir)
-    # shellcheck disable=SC2016  # fixture の中身は literal のまま渡す
-    declare -a FIX_INITS=(
-      'NONE'
-      '{"hooks":{"Stop":[{"matcher":"","hooks":[]}]}}'
-      '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}'
-      '{"statusLine":{"type":"command","command":"OE_HEARTBEAT_WRAP_CMD=/x/mybar.sh $HOME/.claude/statusline/statusline-oe-heartbeat.sh","refreshInterval":10}}'
-      '{ not json'
-      'SYMLINK'
-      '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true}'
-      'DIR'
-    )
-    for i in "${!FIX_NAMES[@]}"; do
-      n="${FIX_NAMES[$i]}"; init="${FIX_INITS[$i]}"
-      o="$(run_fixture "$old_in_repo" "$n" "$init" "$_TMP_DIR/eq_old")"
-      w="$(run_fixture "$REPO_ROOT/scripts/sync/sync-claude.sh" "$n" "$init" "$_TMP_DIR/eq_new")"
-      ck "fixture $n の結果が一致" "$o" "$w"
-    done
-    rm -f "$old_in_repo"
+echo "[19] ポインタの妥当性（実装SO 指摘の回帰）"
+fresh c19
+printf '%s' '{"theme":"dark","model":"m"}' > "$ST"
+for badptr in "" "hooks" "/items/0"; do
+  cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"$badptr","op":"replace","scope_behavior":"override",
+           "source":{"file":"$REPO_ROOT/canonical/hooks/claude.hooks.json","pointer":"/hooks"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+  run_d "$CASE/decl.json"
+  ck  "ポインタ [$badptr] を拒む" "2" "$RC"
+done
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+ck  "根を潰していない" "m" "$(jq -r '.model' "$ST")"
+
+echo "[20] 正本の値が null でも適用できる（実装SO 指摘の回帰）"
+fresh c20
+printf '%s' '{"theme":"dark"}' > "$ST"
+printf '%s' '{"nullable":null}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/nullable","op":"replace","scope_behavior":"override",
+           "source":{"file":"$CASE/src.json","pointer":"/nullable"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "キーが作られる" "true" "$(jq -r 'has("nullable")' "$ST")"
+ck  "値は null" "null" "$(jq -r '.nullable' "$ST")"
+printf '%s' '{"other":1}' > "$CASE/src2.json"
+cat > "$CASE/decl2.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/missing","op":"replace","scope_behavior":"override",
+           "source":{"file":"$CASE/src2.json","pointer":"/missing"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl2.json"
+ck  "パスが無ければ止める" "2" "$RC"
+ckc "そのパスが無いと言う" "$OUT" "正本にそのパスがありません"
+
+echo "[21] 途中で symlink に差し替わっても置き換えない（実装SO 指摘の回帰）"
+fresh c21
+printf '%s' '{"theme":"dark"}' > "$ST"
+printf '%s' '{"theme":"real"}' > "$CASE/real.json"
+# 1回目の確認を失敗させ、その隙に対象を symlink へ差し替える。
+sed "s|^    # (c) 最後の確認。|    if [[ ! -L '$ST' ]]; then rm -f '$ST'; ln -s '$CASE/real.json' '$ST'; fi\n    # (c) 最後の確認。|" \
+    "$APPLY" > "$CASE/apply_swap.sh"
+chmod +x "$CASE/apply_swap.sh"
+OUT="$("$BASH" "$CASE/apply_swap.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "symlink のまま残る" "true" "$([[ -L "$ST" ]] && echo true || echo false)"
+ck  "リンク先を書き換えていない" "real" "$(jq -r '.theme' "$CASE/real.json")"
+ckc "symlink だと言う" "$OUT" "symlink なので触りません"
+
+echo "[22] 現行実装との等価性（fixture 比較・終了コードも含める）"
+# 枝の名前に頼らない。履歴を遡って、旧実装をまだ含んでいる最後の版を探す。
+old_sync="$_TMP_DIR/old-sync-claude.sh"
+old_rev=""
+while IFS= read -r c; do
+  if git -C "$REPO_ROOT" show "$c:scripts/sync/sync-claude.sh" 2>/dev/null | grep -q 'sync_claude_hooks'; then
+    old_rev="$c"; break
   fi
+done < <(git -C "$REPO_ROOT" rev-list HEAD -- scripts/sync/sync-claude.sh 2>/dev/null)
+if [[ -z "$old_rev" ]]; then
+  # 見つからないときは緑にしない。等価性は受け入れ条件そのものなので、
+  # 確かめられなかったことを失敗として出す。
+  echo "  FAIL: 旧実装を含む版を履歴から見つけられない（等価性を確認できない）"
+  FAIL=$((FAIL+1))
+else
+  git -C "$REPO_ROOT" show "$old_rev:scripts/sync/sync-claude.sh" > "$old_sync"
+  old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.sh"
+  cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
+  run_fixture() {  # run_fixture <script> <name> <init> <outdir>
+    local script="$1" name="$2" init="$3" outdir="$4"
+    local home="$outdir/$name/home"; mkdir -p "$home/.claude"
+    local st="$home/.claude/settings.json"
+    case "$init" in
+      NONE) ;;
+      SYMLINK) printf '%s' '{"hooks":{}}' > "$home/.claude/real.json"; ln -s "$home/.claude/real.json" "$st" ;;
+      DIR) mkdir -p "$st" ;;
+      *) printf '%s' "$init" > "$st" ;;
+    esac
+    env HOME="$home" bash "$script" >/dev/null 2>&1
+    local rc=$?
+    # 終了コードも比べる。片方が適用前に落ちて入力が残っただけでも
+    # 内容だけ見ると一致に見えるため（実装SO 指摘）。
+    printf 'rc_class=%s\n' "$( [[ "$rc" -eq 0 ]] && echo ok || echo nonzero )"
+    if [[ -f "$st" && ! -L "$st" ]]; then jq -S . "$st" 2>/dev/null || cat "$st"
+    elif [[ -L "$st" ]]; then echo "SYMLINK"
+    elif [[ -d "$st" ]]; then echo "DIR"
+    else echo "MISSING"; fi
+  }
+  declare -a FIX_NAMES=(missing hooks_only own_statusline wrapped broken_json symlink personal_keys dir)
+  # shellcheck disable=SC2016  # fixture の中身は literal のまま渡す
+  declare -a FIX_INITS=(
+    'NONE'
+    '{"hooks":{"Stop":[{"matcher":"","hooks":[]}]}}'
+    '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}'
+    '{"statusLine":{"type":"command","command":"OE_HEARTBEAT_WRAP_CMD=/x/mybar.sh $HOME/.claude/statusline/statusline-oe-heartbeat.sh","refreshInterval":10}}'
+    '{ not json'
+    'SYMLINK'
+    '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true}'
+    'DIR'
+  )
+  echo "  （比較元: $(git -C "$REPO_ROOT" rev-parse --short "$old_rev")）"
+  for i in "${!FIX_NAMES[@]}"; do
+    n="${FIX_NAMES[$i]}"; init="${FIX_INITS[$i]}"
+    o="$(run_fixture "$old_in_repo" "$n" "$init" "$_TMP_DIR/eq_old")"
+    w="$(run_fixture "$REPO_ROOT/scripts/sync/sync-claude.sh" "$n" "$init" "$_TMP_DIR/eq_new")"
+    # 壊れた JSON のときだけ終了コードが変わるのは意図した変更なので、内容だけ比べる。
+    if [[ "$n" == "broken_json" ]]; then
+      o="$(printf '%s' "$o" | grep -v '^rc_class=')"
+      w="$(printf '%s' "$w" | grep -v '^rc_class=')"
+    fi
+    ck "fixture $n の結果が一致" "$o" "$w"
+  done
+  rm -f "$old_in_repo"
 fi
 
 echo ""
