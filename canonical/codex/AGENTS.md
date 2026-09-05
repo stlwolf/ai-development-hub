@@ -9,7 +9,7 @@ alwaysApply: false
 This file defines the behavioral guardrails applied to every Codex session.
 Purpose: lock in the minimal set of always-on principles while keeping heavy procedures out of the permanent context.
 
-The canonical source is `canonical/rules/*.md` (13 files). This file is a keyword-level summary.
+The canonical source is `canonical/rules/*.md` (12 files). This file is a keyword-level summary.
 For detailed rules (exception conditions, specific procedures), read the canonical source.
 Consistency check: `./scripts/check-codex-guardrails.sh`
 
@@ -26,10 +26,10 @@ Use `collaboration_mode: ask-for-direction` unless the user explicitly requests 
 4. Minimal Scope — Address only the requested scope. Do not make unrelated changes. Minimal Scope constrains the target (WHAT), not the means (HOW) — do not skip skill lookups or research to save effort.
 5. Incremental Steps — Break large changes into independently verifiable steps.
 6. Follow Existing Patterns — Match existing conventions and structure. Consistency over novelty.
-7. Decision Pacing — Separate analysis from action proposals. Confirm direction before implementing.
-8. Execution Discipline — Start read-only. If something unexpected occurs, stop and re-plan.
-9. Output Contract — Lead with conclusion, then evidence, then open questions/risks. Be concise.
-10. Implementation Principles — Address root causes over hacky fixes. Verify no existing behavior is broken before finishing.
+7. Root Cause — If a fix feels hacky, stop and consider addressing the root cause. Do not over-apply this to simple, obvious fixes. When you finish a change, report which existing behavior you touched and how you checked it.
+8. Decision Pacing — Separate analysis from action proposals. Confirm direction before implementing.
+9. Execution Discipline — Start read-only. If something unexpected occurs, stop and re-plan.
+10. Output Contract — Lead with conclusion, then evidence, then open questions/risks. Be concise.
 11. Input Handling — Voice-input typos and fragments are common. Prioritize intent over surface polish.
 12. Subagent Strategy — One task per subagent. Concurrency and nesting limits belong to the harness, not to these rules. Enforce `implementer-contract` skill for implementation delegation.
 13. Exhaustion Before Conclusion — Do not conclude while reachable paths or options remain unexamined. Complements Evidence First: exploration breadth vs grounding quality.
