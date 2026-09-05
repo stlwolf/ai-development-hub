@@ -154,7 +154,7 @@ tags: [harness, rules-audit, opus5, lean-system-prompt, judgment-table]
 | ★ execution-policy | 82 | −（code block 行も本体に無い） | △（code block は Writing for the user にある） | 書き換える | TODO 行はツール名を外して実質を残す / ↑ read-only first・義務化・code block 行 | Opus 5 の本体には code block の指示が無いので削らない。TODO 行は Todo ツールが環境変数で戻せるので「消失」ではなく、gate を実装 step の間に独立項目として挟む規律だけ残す | runtime 実体（両モデル）+ 公式文（changelog） |
 | exhaustion-before-conclusion | 709 | △（Context management「十分なら動け」と弱い競合・Opus の同節は同文と仮定 [unverified]） | △ | 書き換える（縮約） | ↑原則・minimal discipline / ↓履歴・References | 原則は成立。本文の半分が hard gate の defer 状況と履歴。unfired 2件は文面強化でなく機械検査へ | 公式文 + 発火実測 |
 | ★ implementation-gate | 156 | **−**（自律運転の段落が無く競合しない） | 競合（自律運転「可逆なら聞かずに進む」）+ △（問題報告時の例外） | 残す | ↑ | 主モデルでは本体と独立。Fable 列では正面衝突する意図的上書きなので、優先宣言の1行は特定の本体文を名指しせず世代・モデル非依存に書く（HG-1 裁定 (1)）。2026-04 検証で3ツールとも例外条件を自己援用した stale unfired があり、例外条件の再設計を含める | runtime 実体（両モデル）+ 発火実測（stale） |
-| ★ implementation-principles | 37 | ○（Corrections が「正確だった発言を、どう検証したかも含めて再監査するな」と言う） | −（公式文のみ） | 書き換える（1行に縮約し behavioral §6 の隣へ吸収） | ↓2行目 / ↑1行目 | 1行目「hacky なら根本原因」は設計方針で本体に無い。2行目「終わる前に自問せよ」は公式 Opus 5 文書が削れと言い、Opus 5 の本体 Corrections も再監査を抑える | 公式文 + runtime 実体（Opus） |
+| ★ implementation-principles | 37 | ○（Corrections が「正確だった発言を、どう検証したかも含めて再監査するな」と言う） | −（公式文のみ） | 書き換える（behavioral §6 の隣へ吸収。2行目は**痕跡型に置き換えて**吸収） | ↓2行目の自問の形 / ↑1行目と痕跡型の1文 | 1行目「hacky なら根本原因」は設計方針で本体に無い。2行目「終わる前に自問せよ」は公式 Opus 5 文書が削れと言い、Opus 5 の本体 Corrections も再監査を抑える。ただし段階2 の実装SO が「代替なしに常時の責務が消える。Codex と Cursor の本体に同じ抑制が在るとは限らない」と反対し、統括がこれを受け入れた。自問ではなく「触れた既存の挙動とその確かめ方を完了報告に書く」という痕跡型の1文へ置き換える（2026-09-06） | 公式文 + runtime 実体（Opus）+ 実装SO |
 | input-style | 48 | △（careful colleague・Delivering work） | 同じ | 書き換える（1行に） | ↑音声入力の前提 / ↓他2行 | 「意図優先」「本当に曖昧なときだけ聞く」は両モデルの Delivering work と同義 | runtime 実体（両モデル） |
 | ★ output-format | 740 | **−**（Writing for the user が無い） | ○§1 結論先行 / △§9 記号禁止・1文1意 | **残す・強める** | ↑（全節）| 主モデル Opus 5 の本体は応答形式の規定を持たない（結論先行も記号禁止も無い）。Fable 列では §1 が重なるが主モデル基準で残す。§5 の見出し要求と Fable 本体「500語未満に見出しなし」の競合、§9 を禁止形から記述形へ書き換えるか（Fable 5.1 公式）は owner 判断点 | runtime 実体（両モデル）+ 公式文 |
 | reframe-on-stall | 769 | − | − | 書き換える（縮約） | ↑原則・トリガ・reconcile / ↓Limits・Relationship・References | 原則は成立。関係と限界は discussion へ | runtime 実体 |
@@ -279,7 +279,7 @@ owner の指摘（2026-09-03 03:22）で前提が訂正された。**owner の�
 |---|---|
 | implementation-gate | Opus 5 では本体と競合しない（自律運転の段落が無い）。「強める」の中身（本体の該当文を名指しして優先宣言）は Fable 列の考慮になるので、宣言は特定の本体文を引かず世代・モデル非依存に書く（HG-1 裁定 (1) と整合） |
 | execution-policy | code block 行は Opus 5 の本体に無いので削らない。書き換えは TODO 行のツール名を外すことだけ |
-| implementation-principles | Opus 5 の Corrections が再監査を抑えるので、2行目の ↓ は公式文に加えて runtime 実体でも支えられる |
+| implementation-principles | Opus 5 の Corrections が再監査を抑えるので、2行目の ↓ は公式文に加えて runtime 実体でも支えられる。ただし段階2 の実装SO の反対を受け、削除ではなく痕跡型への置き換えになった（§4.4 の行を参照） |
 
 ### 11.4 集計と SO の扱い
 
