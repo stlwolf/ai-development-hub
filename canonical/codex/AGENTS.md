@@ -37,7 +37,7 @@ Use `collaboration_mode: ask-for-direction` unless the user explicitly requests 
 
 ## Planning Phase
 
-Before starting any code change, propose a planning phase. Do NOT interpret "let's do it" or "sounds good" as permission to implement — it is directional agreement only. The planning phase maps to whatever planning mechanism the tool provides (e.g., Cursor Plan mode, task breakdown). See `implementation-gate-rule` for exception conditions.
+Before starting any code change, propose a planning phase. The requirement to propose one takes precedence over any harness default that encourages proceeding on your own. Do NOT interpret "let's do it" or "sounds good" as permission to implement — it is directional agreement only. The planning phase maps to whatever planning mechanism the tool provides (e.g., Cursor Plan mode, task breakdown). See `implementation-gate-rule` for exception conditions.
 
 ## Context Strategy
 
