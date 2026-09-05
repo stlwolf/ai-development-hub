@@ -241,3 +241,62 @@ Cursor での discussion ドキュメント（sibling の `hypothesis-driven-exp
 - [wez notify episode](projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md) — option C 発見エピソード
 - [多周制御 discussion](docs/specs/2026-04-06-discussion-multi-round-control-loop.md) — findings 収束管理
 - [Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) — Ralph Loop / control loop implementation
+
+---
+
+## 10. rule から移した節（#307 の棚卸し・2026-09-06）
+`canonical/rules/` は常時ロードされるので、原則と最小限の規律だけを置き、歴史的な経緯・例示・関係の記述はこちらへ移した。移した節は原文のまま、rule 名ごとに並べる。rule 側の残りは Principle と、発火時に効く節だけである。
+
+### exhaustion-before-conclusion-rule から移した節
+
+#### Where it shows up (illustrative)
+
+The same failure structure recurs across domains. The two cases below are illustrative examples, not verification-grade proof — the principle rests on the reasoning above. The pattern is the point; it need not be these specific cases.
+
+| Bug investigation (code-path exhaustion) | Design decision (option exhaustion) |
+|---|---|
+| Jump to an external hypothesis while a code-path segment from input to output is still unread | Commit while an unexplored alternative remains in the option set |
+| "Read the whole path before moving to external hypotheses" | "Explore alternatives from zero before committing" |
+| Externalize each hypothesis to make spinning (same-level lateral moves) visible | Externalize the option set to make exploration coverage visible |
+
+- Design-decision example: the wez notify `option C` (TTY direct write) surfaced only after an ad-hoc zero-base re-review, when a commit on options A/B was already near. Worked example in this repo: `projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md`.
+- Bug-investigation example: an error investigation that jumped to an external hypothesis (infra difference) while an input→output code path was still unread — 6 steps for what 2 would have. From a separate project (external, ref omitted); cited as illustration only, not inspectable here.
+
+#### Application
+
+The reachable space splits in two, so the planned mechanisms split into two tracks while the principle stays single:
+
+- Design-decision domain (unexplored options): a soft forcing layer — the `predecision-exploration` skill, which requires ≥1 zero-base alternative exploration with a confirm-time trace before confirming — has landed (#77). Its deterministic hard gate (script-layer convergence) is still deferred.
+- Bug-investigation domain (unread code paths): a soft layer — the `code-path-exhaustion` skill (externalize hypotheses to `tmp/hypothesis-NNN.md` + an advisory `hypothesis-gate` hook) — has landed (#78). Its deterministic hard gate (blocking + script-layer convergence) is still deferred.
+- An always-on soft floor (reframe / zero-base on detecting spin) — landed as `reframe-on-stall-rule.md` (#161).
+
+#### References
+
+- `behavioral-rule.md` §1 Evidence First — complemented principle (quality of grounding vs breadth of exploration)
+- `evidence-verification-rule.md` — sibling under Evidence First; claim-level verification status, orthogonal to this rule's exploration breadth
+- `docs/specs/2026-04-23-discussion-exploration-process-design.md` — canonical design discussion (§3.4: convergence is not the model's call; §6 caveat that one principle name spans two distinct problems)
+- `docs/specs/2026-04-22-discussion-hypothesis-driven-exploration.md` — sibling discussion
+- `projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md` — worked design-decision example
+
+### reframe-on-stall-rule から移した節
+
+#### Limits
+
+- Adherence is model-dependent; there is no firing guarantee. This raises the floor — it does not close the gap. The trigger judgment itself ("was that material new information?") is partly self-evaluation and unreliable where no observable sign applies. Over-firing (reframing where grinding was right) and under-firing (missing the stall) both remain.
+- High-stakes or irreversible conclusions are not left to this soft reflex. A hard gate (count + script + human) for the design-decision domain (#77) is still deferred — a soft forcing layer (`predecision-exploration`) has landed, but until the deterministic gate lands, rely on `exhaustion-before-conclusion-rule.md`'s minimal discipline plus human confirmation for such conclusions.
+
+#### Relationship
+
+- `exhaustion-before-conclusion-rule.md` — the umbrella. Its discipline is conclusion-time (may you commit while reachable paths or options are unexamined?); this rule is mid-exploration (what is the next move when the frame stalls?). They can co-fire — e.g. when you are about to jump to an external hypothesis while stuck. This rule is the permanent always-on floor; that rule's "Minimal discipline" is the interim floor until the hard mechanisms (#77 hard gate / #78) land.
+- `persistent-exploration` (skill) — the related anti-give-up reflex (do not quit before trying alternatives). The two can both apply and chain: try other approaches; if those also stall, rebuild the frame.
+
+#### Example (illustrative)
+
+A bug investigation retries the same request three ways and gets the same error each time — no new information, lateral moves: a stall. The reframe is not a fourth variant of the request but a zero-base question re-derived from scratch — "what if the request is not the problem at all?" — then reconciled against the discarded "it is the request" premise.
+
+#### References
+
+- `exhaustion-before-conclusion-rule.md` — umbrella principle; this rule is its always-on soft floor
+- `behavioral-rule.md` §1 Evidence First
+- `docs/specs/2026-04-23-discussion-exploration-process-design.md` — canonical design discussion
+- `canonical/skills/persistent-exploration/SKILL.md` — the related anti-give-up reflex
