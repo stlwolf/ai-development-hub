@@ -251,6 +251,25 @@ ck  "exit 1" "1" "$RC"
 ckc "symlink と言う" "$OUT" "symlink なので適用できません"
 ncc "未適用とは言わない" "$OUT" "一度も適用されていません"
 
+echo "[19] statusLine.command が文字列でなくても判定が途中で終わらない（実装SO 指摘の回帰）"
+for bad in '123' '{"a":1}' '["x"]' 'null'; do
+  fresh "c19-$(printf '%s' "$bad" | tr -cd 'a-z0-9')"
+  build_green
+  jq --argjson v "$bad" '.statusLine.command = $v' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+  run
+  ck  "command=$bad → 差分として扱う" "1" "$RC"
+  ncc "宣言どおりと言わない" "$OUT" "宣言どおり"
+  ckc "hooks の判定は出る" "$OUT" "/hooks"
+  ckc "statusLine の判定も出る" "$OUT" "/statusLine"
+done
+
+echo "[20] statusLine が丸ごとスカラーでも落ちない"
+fresh c20; build_green
+jq '.statusLine = "nonsense"' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "差分として扱う" "1" "$RC"
+ncc "宣言どおりと言わない" "$OUT" "宣言どおり"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

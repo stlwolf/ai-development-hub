@@ -225,6 +225,7 @@ echo ""
 echo "宣言した項目（${decl_count} 件）:"
 
 if [[ "${settings_state}" == "ok" ]]; then
+    findings_rc=0
     findings="$(jq -r --slurpfile decl "${resolved}" "
 ${PTR_LIB}
 def marker: \"statusline-oe-heartbeat.sh\";
@@ -257,7 +258,11 @@ def verdict(\$item):
            then [\"ok\", \"正本の項目をすべて含んでいます\"]
            else [\"diff\", \"正本の項目のうち手元に無いものがあります\"] end)
         elif \$item.op == \"handler\" and \$item.handler == \"statusline-wrap\" then
-          ((\$got.command // \"\") as \$cmd
+          # command が文字列でないと contains が例外になり、jq が途中で終わる。
+          # 型を正規化してから見る。
+          ((if (\$got | type) != \"object\" then \"\"
+            elif (\$got.command | type) != \"string\" then \"\"
+            else \$got.command end) as \$cmd
            | if (\$cmd | contains(marker) | not) then
                [\"diff\", \"拍動 producer が statusLine のコマンドにいません\"]
              elif (\$cmd | contains(\"OE_HEARTBEAT_WRAP_CMD\"))
@@ -274,11 +279,26 @@ def verdict(\$item):
 \$decl[0][] as \$item
 | verdict(\$item) as \$v
 | [\$v[0], \$item.pointer, \$item.op, \$v[1]] | @tsv
-" "${SETTINGS}" 2>/dev/null)"
+" "${SETTINGS}" 2>/dev/null)" || findings_rc=$?
 
-    if [[ -z "${findings}" ]]; then
-        error "  判定を計算できませんでした"
+    findings_count=0
+    [[ -n "${findings}" ]] && findings_count="$(printf '%s\n' "${findings}" | grep -c . || true)"
+
+    if [[ "${findings_rc}" -ne 0 || -z "${findings}" ]]; then
+        error "  判定を計算できませんでした（jq rc=${findings_rc}）"
         has_diffs=true
+    elif [[ "${findings_count}" -ne "${decl_count}" ]]; then
+        # 判定が途中で終わると、出た分だけで緑を返せてしまう。宣言の件数と
+        # 突き合わせて、母集団が縮んだまま結論を出さない。
+        error "  判定できた項目が宣言より少ないです（${findings_count} / ${decl_count}）"
+        has_diffs=true
+        while IFS=$'\t' read -r verdict pointer op message; do
+            case "${verdict}" in
+                ok)      info "  一致 ${pointer} (${op}) — ${message}" ;;
+                missing) warn "  未適用 ${pointer} (${op}) — ${message}" ;;
+                *)       warn "  差分 ${pointer} (${op}) — ${message}" ;;
+            esac
+        done <<< "${findings}"
     else
         while IFS=$'\t' read -r verdict pointer op message; do
             case "${verdict}" in
