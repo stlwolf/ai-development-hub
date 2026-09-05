@@ -37,13 +37,14 @@ fresh() {
 # そうしないと /bin/bash 3.2 でテストを回しても、スクリプト側は PATH の
 # bash 5 で動いてしまい、3.2 固有の挙動を踏めない。
 run() { OUT="$("$BASH" "$CHECK" claude --base "$BASE" --canonical "$CANON" 2>&1)"; RC=$?; }
+run_v() { OUT="$("$BASH" "$CHECK" claude --base "$BASE" --canonical "$CANON" --verbose 2>&1)"; RC=$?; }
 
 # ============================================================================
 echo "[1] 正本と一致している配布先 → 孤児なし"
 fresh c1
 printf 'x' > "$CANON/rules/alpha.md"
 ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
-run
+run_v
 ck  "exit 0" "0" "$RC"
 ckc "孤児なしと出る" "$OUT" "正本から消えた配布先はありません"
 ckc "1件走査した" "$OUT" "走査した symlink: 1 件"
@@ -85,7 +86,10 @@ printf 'x' > "$CASE/other-checkout/canonical/rules/alpha.md"
 ln -s "$CASE/other-checkout/canonical/rules/alpha.md" "$BASE/rules/alpha.md"
 run
 ck  "exit 0" "0" "$RC"
-ckc "別分類で報告" "$OUT" "alive-outside rules/alpha.md"
+ckc "既定では要約だけ出す" "$OUT" "生きている 1 件"
+ncc "既定では1件ずつ出さない" "$OUT" "alive-outside rules/alpha.md"
+run_v
+ckc "verbose なら別分類で報告" "$OUT" "alive-outside rules/alpha.md"
 ckc "固定されている可能性と書く" "$OUT" "別のチェックアウトに固定されている可能性"
 
 echo "[6] 通常ファイルには触らない"
@@ -93,7 +97,7 @@ fresh c6
 printf 'x' > "$BASE/rules/handwritten.md"
 printf 'x' > "$CANON/rules/alpha.md"
 ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
-run
+run_v
 ck  "exit 0" "0" "$RC"
 ncc "通常ファイルを孤児にしない" "$OUT" "handwritten.md"
 ckc "symlink だけを数える" "$OUT" "走査した symlink: 1 件"
@@ -129,7 +133,7 @@ echo "[9] allowlist の外は歩かない"
 fresh c9
 mkdir -p "$BASE/statsig"
 ln -s "$CANON/rules/retired.md" "$BASE/statsig/retired.md"
-run
+run_v
 ck  "exit 0" "0" "$RC"
 ncc "allowlist 外は拾わない" "$OUT" "statsig"
 ckc "0件走査" "$OUT" "走査した symlink: 0 件"
@@ -149,7 +153,6 @@ ln -s "/a/../../gone.md" "$BASE/rules/absup.md"
 run
 ck  "落ちない" "0" "$RC"
 ncc "unbound variable を出さない" "$OUT" "unbound variable"
-ckc "1件走査した" "$OUT" "走査した symlink: 1 件"
 ckc "分類が落ちない" "$OUT" "dangling-outside rules/absup.md"
 
 echo "[12] リンク先に glob 文字が入っていても展開しない（実装SO 指摘の回帰）"
@@ -177,6 +180,42 @@ else
   ckc "判定できないと言う" "$OUT" "孤児の有無を判定できません"
   ncc "孤児なしとは言わない" "$OUT" "正本から消えた配布先はありません"
 fi
+
+echo "[14] 綴りだけ違うリンク先でも正本配下と判定する（実装SO 指摘の回帰）"
+fresh c14
+printf 'x' > "$CANON/rules/alpha.md"
+probe="$(dirname "$CANON")/.case-probe.$$"
+: > "$probe"
+if [[ -e "$(dirname "$CANON")/.CASE-PROBE.$$" ]]; then
+  rm -f "$probe"
+  upper_canon="$(dirname "$CANON")/CANONICAL"
+  ln -s "$upper_canon/rules/retired.md" "$BASE/rules/retired.md"
+  run
+  ck  "綴り違いでも孤児として拾う" "1" "$RC"
+  ckc "孤児として分類" "$OUT" "orphan-canonical rules/retired.md"
+else
+  rm -f "$probe"
+  echo "  SKIP: 大文字小文字を区別するファイルシステムのため"
+fi
+
+echo "[15] 名前に改行が入っていても1件として数える（実装SO 指摘の回帰）"
+fresh c15
+weird="$(printf 'two\nlines.md')"
+ln -s "$CANON/rules/retired.md" "$BASE/rules/$weird"
+run_v
+ck  "exit 1" "1" "$RC"
+ckc "1件として数える" "$OUT" "走査した symlink: 1 件"
+ckc "孤児として拾う" "$OUT" "orphan-canonical"
+
+echo "[16] 何も無いときは既定では黙る（--check の出力を変えない）"
+fresh c16
+printf 'x' > "$CANON/rules/alpha.md"
+ln -s "$CANON/rules/alpha.md" "$BASE/rules/alpha.md"
+run
+ck  "exit 0" "0" "$RC"
+ck  "出力は空" "" "$OUT"
+run_v
+ckc "verbose なら内訳を出す" "$OUT" "走査した symlink: 1 件"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

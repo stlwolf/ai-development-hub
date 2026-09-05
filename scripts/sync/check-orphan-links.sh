@@ -14,6 +14,7 @@
 #   ./scripts/sync/check-orphan-links.sh codex
 #   ./scripts/sync/check-orphan-links.sh claude --base /tmp/fake-home/.claude
 #   ./scripts/sync/check-orphan-links.sh claude --canonical /path/to/canonical
+#   ./scripts/sync/check-orphan-links.sh claude --verbose   # 何も無くても内訳を出す
 #
 # 分類:
 #   orphan-canonical  リンク先が今の正本ディレクトリ配下を指しているのに、正本にその実体が無い。
@@ -40,6 +41,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CANONICAL="${REPO_ROOT}/canonical"
 BASE=""
 TARGET=""
+VERBOSE=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -60,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         claude|cursor|codex) TARGET="$1"; shift ;;
         --base)      BASE="$2"; shift 2 ;;
         --canonical) CANONICAL="$2"; shift 2 ;;
+        -v|--verbose) VERBOSE=true; shift ;;
         -h|--help)
             sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
             exit 0 ;;
@@ -135,6 +138,30 @@ resolve_path() {
 CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
 [[ -z "${CANONICAL_REAL}" ]] && CANONICAL_REAL="${CANONICAL}"
 
+# macOS の既定のファイルシステムは大文字小文字を区別しない。綴りだけが違う
+# リンク先は、文字列の前方一致では正本配下と判定できず、孤児を見落とす。
+# 実際に試して確かめる（決め打ちしない）。
+CASE_INSENSITIVE=false
+_probe_dir="$(dirname "${CANONICAL_REAL}")"
+if [[ -d "${_probe_dir}" ]]; then
+    _probe="${_probe_dir}/.oe-case-probe.$$"
+    if : > "${_probe}" 2>/dev/null; then
+        _upper="${_probe_dir}/.OE-CASE-PROBE.$$"
+        [[ -e "${_upper}" ]] && CASE_INSENSITIVE=true
+        rm -f "${_probe}"
+    fi
+fi
+
+# 前方一致。区別しないファイルシステムでは綴りを揃えてから比べる。
+under_prefix() {
+    local path="$1" prefix="$2"
+    if [[ "${CASE_INSENSITIVE}" == true ]]; then
+        path="$(printf '%s' "${path}" | tr '[:upper:]' '[:lower:]')"
+        prefix="$(printf '%s' "${prefix}" | tr '[:upper:]' '[:lower:]')"
+    fi
+    [[ "${path}" == "${prefix}" || "${path}" == "${prefix}/"* ]]
+}
+
 orphan_count=0
 scan_failed=false
 listing=""
@@ -143,8 +170,12 @@ outside_dangling_count=0
 outside_alive_count=0
 scanned=0
 
-echo "配布先の孤児 symlink（${TARGET}: ${BASE}）"
-echo "  正本: ${CANONICAL_REAL}"
+# 何も見つからないときは既定では黙る。sync.sh --check の正常時の出力を
+# 変えないという契約のため。--verbose を付けると走査の内訳を出す。
+if [[ "${VERBOSE}" == true ]]; then
+    echo "配布先の孤児 symlink（${TARGET}: ${BASE}）"
+    echo "  正本: ${CANONICAL_REAL}"
+fi
 
 for d in "${dirs[@]}"; do
     dir="${BASE}/${d}"
@@ -155,8 +186,9 @@ for d in "${dirs[@]}"; do
         exit 2
     fi
     find_rc=0
-    find "${dir}" -maxdepth 1 -mindepth 1 -type l > "${listing}" 2>/dev/null || find_rc=$?
-    while IFS= read -r entry; do
+    # 名前に改行が入りうるので NUL 区切りで受ける。行区切りだと1件が2件に割れる。
+    find "${dir}" -maxdepth 1 -mindepth 1 -type l -print0 > "${listing}" 2>/dev/null || find_rc=$?
+    while IFS= read -r -d '' entry; do
         [[ -n "${entry}" ]] || continue
         scanned=$((scanned + 1))
         raw="$(readlink "${entry}")"
@@ -170,9 +202,9 @@ for d in "${dirs[@]}"; do
         # 解決先が消えていると realpath は失敗するので、生の文字列が要る。
         under_canonical=false
         real="$(resolve_path "${abs}")"
-        if [[ -n "${real}" && ( "${real}" == "${CANONICAL_REAL}" || "${real}" == "${CANONICAL_REAL}/"* ) ]]; then
+        if [[ -n "${real}" ]] && under_prefix "${real}" "${CANONICAL_REAL}"; then
             under_canonical=true
-        elif [[ "${abs}" == "${CANONICAL_REAL}"/* || "${abs}" == "${CANONICAL}"/* ]]; then
+        elif under_prefix "${abs}" "${CANONICAL_REAL}" || under_prefix "${abs}" "${CANONICAL}"; then
             under_canonical=true
         fi
 
@@ -192,8 +224,12 @@ for d in "${dirs[@]}"; do
                 warn "    解決できませんが正本の外なので触りません（別の仕組みが張った可能性）"
                 outside_dangling_count=$((outside_dangling_count + 1))
             else
-                warn "  alive-outside ${rel} → ${raw}"
-                warn "    生きていますが正本の外を指しています（別のチェックアウトに固定されている可能性）"
+                # 生きている外向きリンクは、worktree から走らせると配備物の全部が
+                # 該当する。既定では1件ずつ出さず、末尾の要約だけにする。
+                if [[ "${VERBOSE}" == true ]]; then
+                    warn "  alive-outside ${rel} → ${raw}"
+                    warn "    生きていますが正本の外を指しています（別のチェックアウトに固定されている可能性）"
+                fi
                 outside_alive_count=$((outside_alive_count + 1))
             fi
         fi
@@ -207,8 +243,10 @@ for d in "${dirs[@]}"; do
     rm -f "${listing}"
 done
 
-echo ""
-info "  走査した symlink: ${scanned} 件"
+if [[ "${VERBOSE}" == true ]]; then
+    echo ""
+    info "  走査した symlink: ${scanned} 件"
+fi
 if [[ "${outside_dangling_count}" -gt 0 || "${outside_alive_count}" -gt 0 ]]; then
     info "  正本の外: 解決できない ${outside_dangling_count} 件 / 生きている ${outside_alive_count} 件（掃除の対象外）"
 fi
@@ -222,5 +260,5 @@ if [[ "${orphan_count}" -gt 0 ]]; then
     error "  ${TARGET}: 正本から消えた配布先が ${orphan_count} 件残っています"
     exit 1
 fi
-info "  ${TARGET}: 正本から消えた配布先はありません"
+[[ "${VERBOSE}" == true ]] && info "  ${TARGET}: 正本から消えた配布先はありません"
 exit 0
