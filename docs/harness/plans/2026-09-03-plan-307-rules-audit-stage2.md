@@ -110,9 +110,9 @@ F-1 の使い方（HG-1 裁定 (5)・計測手順として）: 前後比較は�
 
 ### Step 2b: PR-2b `implementation-principles` を1行に縮約して `behavioral` へ吸収（概算: 45分）
 
-- [ ] `implementation-principles-rule.md` の1行目「If a fix feels hacky, address the root cause」を `behavioral-rule.md` §6 の隣に1句で吸収し、2行目「Before finishing, ask: does this break existing behavior?」（公式が削れという self-check 型）は削る。ファイルは削除する
+- [ ] `implementation-principles-rule.md` の1行目「If a fix feels hacky, address the root cause」を `behavioral-rule.md` §6 の隣に1句で吸収する。2行目「Before finishing, ask: does this change break any existing behavior?」は自問の形をやめ、**痕跡型に置き換えて同じ項目へ吸収する**（触れた既存の挙動とその確かめ方を完了報告に書く）。ファイルは削除する。**2026-09-06 更新**: 当初は2行目を削除する計画だったが、段階2 の実装SO が「代替なしに常時の責務が消える。Codex と Cursor の本体に同じ抑制が在るとは限らない」と反対し、統括が受け入れた
 - [ ] 同じ PR で: AGENTS.md の Implementation Principles 節と guardrail の `require_pattern "Implementation Principles"` と CATALOG を動かす。参照 1 件を張り替える
-- [ ] 受け入れ基準: dangling 参照 0。guardrail 緑。本数 13 から 12
+- [ ] 受け入れ基準: dangling 参照 0。guardrail 緑。本数 13 から 12。**behavioral の新項目に痕跡型の1文が在り、自問の形の文が本文に無い**
 - [ ] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 3: PR-3 `decision-pacing` を1行に縮約（概算: 30分・追補で退役から変更）
