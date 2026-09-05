@@ -160,12 +160,22 @@ check_target() {
             check_symlinks_dir "${canonical}/agents" "${base}/agents" "*.md" "agents" has_diffs
             check_symlinks_dir "${canonical}/commands" "${base}/commands" "*.md" "commands" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
-            if [[ -f "${base}/settings.json" ]]; then
-                local expected_hooks actual_hooks
-                expected_hooks="$(jq -S '.hooks' "${canonical}/hooks/claude.hooks.json" 2>/dev/null)"
-                actual_hooks="$(jq -S '.hooks' "${base}/settings.json" 2>/dev/null)"
-                if [[ "${expected_hooks}" != "${actual_hooks}" ]]; then
-                    warn "  Hooks section differs in settings.json"
+            # settings.json の検査は宣言（canonical/claude/settings.harness.json）を
+            # 知っている専用スクリプトへ委譲する。ここに hooks だけを手書きしていると、
+            # 宣言に項目が増えたときに検査側だけ古くなる（#313 と同じ理由・#359）。
+            local settings_check="${SYNC_DIR}/check-claude-settings.sh"
+            if [[ ! -x "${settings_check}" ]]; then
+                error "  claude settings: 検査を委譲できません（not found or not executable）: ${settings_check}"
+                has_diffs=true
+            else
+                # 素で呼ばない。check_target は main() の `if ! check_target` から呼ばれるので
+                # 関数本体の errexit が抑止され、子が差分（rc=1）を返しても握り潰される
+                # （bin ターゲットと同じ手当て）。
+                local settings_rc=0
+                "${settings_check}" --project-root "${repo_root}" || settings_rc=$?
+                # 0 以外はすべて差分として扱う。子を実行できなかったときの終了コードは
+                # 呼び出し文脈で変わり、数値では「差分あり」と区別できない。理由は子が印字する。
+                if [[ "${settings_rc}" -ne 0 ]]; then
                     has_diffs=true
                 fi
             fi

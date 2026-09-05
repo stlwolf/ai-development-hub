@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "description": "hub が正本を持つ Claude Code 設定の宣言。ここに書いた項目だけを sync が適用し --check が検査する。書いていない項目には一切触らない（issue #359）。",
+  "items": [
+    {
+      "pointer": "/hooks",
+      "op": "replace",
+      "scope_behavior": "merge",
+      "source": {
+        "file": "canonical/hooks/claude.hooks.json",
+        "pointer": "/hooks"
+      },
+      "note": "hooks は3ツール共通の正本を持つので、宣言は参照だけにする。公式仕様ではスコープをまたいでマージされるので、上位ファイルに hooks があっても hub の分は消えない。"
+    },
+    {
+      "pointer": "/statusLine",
+      "op": "handler",
+      "handler": "statusline-wrap",
+      "scope_behavior": "override",
+      "source": {
+        "file": "canonical/claude/statusline/claude.statusline.json",
+        "pointer": "/statusLine"
+      },
+      "note": "拍動 producer は既存の statusLine を包んで表示を保つので、値の一致では検査できない。ハンドラが一致の述語を持つ（plan DJ-4）。"
+    }
+  ],
+  "unchecked_scopes": [
+    "managed settings（/Library/Application Support/ClaudeCode/ 等・読んでいない）",
+    "起動フラグ claude --settings（セッション限りで、どのファイルにも残らない）",
+    "検査を走らせたリポジトリ以外の .claude/settings.json と .claude/settings.local.json"
+  ]
+}
