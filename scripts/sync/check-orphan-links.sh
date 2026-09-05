@@ -62,44 +62,38 @@ error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
 # ~/.claude 全体を歩くとセッションデータや cache に触るか、ノイズで溺れる。
 claude_dirs=(rules skills agents commands hooks orchestration-spec statusline output-styles)
 
-# 配布規則の対応表。「配布先の名前」→「正本のどこを・どのパターンで見るか」。
-# 掃除のときだけ使う。いま sync が配ろうとしている名前は、正本に実体が無くても
-# 消さない（正本が一時的に見えないだけの状態で消してしまうのを防ぐ）。
-# 書式: <配布先ディレクトリ>|<正本の相対パス>|<種別: md / sh / dir>
-# shellcheck disable=SC2317  # 下の走査から呼ぶ
-rule_for_dir() {
-    case "$1" in
-        rules)              printf '%s' 'rules|md' ;;
-        orchestration-spec) printf '%s' 'orchestration-spec|md' ;;
-        agents)             printf '%s' 'agents|md' ;;
-        commands)           printf '%s' 'commands|md' ;;
-        output-styles)      printf '%s' 'output-styles|md' ;;
-        skills)             printf '%s' 'skills|dir' ;;
-        hooks)              printf '%s' 'hooks/scripts|sh' ;;
-        statusline)         printf '%s' 'claude/statusline|sh' ;;
-        commands-registry)  printf '%s' 'codex/commands-registry|md' ;;
-        *)                  printf '%s' '' ;;
-    esac
-}
-
-# いま配布規則がこの名前を配ろうとしているか。
-# 正本にその名前で実体があり、かつ規則のパターンに合っていれば true。
-# shellcheck disable=SC2317  # 掃除の経路から呼ぶ
+# 「いま配布規則がこの名前を配ろうとしているか」の判定。
+#
+# 配布先ごとの対応表を手で持つ形にしていたが、それでは足りなかった。理由が3つある。
+#   - 正本の側が入れ子になっている配布がある（canonical/commands の下は分類ごとの
+#     ディレクトリで、配布は basename だけを見て平らに置く）
+#   - 同じ配布先に複数の正本がある（Cursor の skills は共通と Cursor 専用の2つ、
+#     commands は共通と archive-title の2つ）
+#   - ツールごとに正本の場所が違う（Cursor の rules は canonical/cursor/rules の .mdc）
+#
+# 手で書いた表は、配布の側が変わると黙って古くなる。掃除は取り返しがつかないので、
+# 表を持たずに正本の木そのものへ問い合わせる形にした。同じ名前が正本のどこかに
+# あるなら配られうると見なして、消さない。
+#
+# この判定は意図的に緩い。消しすぎるより、消し損ねる方がよい。無関係な場所に
+# たまたま同じ名前があれば、本当の孤児を残すことになるが、それは報告に残る。
 would_be_distributed() {
-    local dir_name="$1" entry_name="$2"
-    local rule; rule="$(rule_for_dir "${dir_name}")"
-    [[ -z "${rule}" ]] && return 1
-    local src_rel="${rule%%|*}" kind="${rule##*|}"
-    local src="${CANONICAL_REAL}/${src_rel}/${entry_name}"
-    case "${kind}" in
-        md)  [[ -f "${src}" && "${entry_name}" == *.md ]] ;;
-        sh)  [[ -f "${src}" && "${entry_name}" == *.sh ]] ;;
-        dir) [[ -d "${src}" && -f "${src}/SKILL.md" ]] ;;
-        *)   return 1 ;;
+    local entry_name="$1" is_dir="$2"
+    if [[ "${is_dir}" == true ]]; then
+        # ディレクトリの配布（skills）は SKILL.md を持つ同名ディレクトリを探す。
+        find "${CANONICAL_REAL}" -type d -name "${entry_name}" -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null \
+            | head -1 | grep -q . && return 0
+        return 1
+    fi
+    # 配布の関数はいずれも拡張子で絞っている（.md / .mdc / .sh）。ここは配布先ごとの
+    # 表ではなく、配布の仕組みそのものの性質なので、表に戻すことなく使える。
+    case "${entry_name}" in
+        *.md|*.mdc|*.sh) ;;
+        *) return 1 ;;
     esac
+    find "${CANONICAL_REAL}" -type f -name "${entry_name}" 2>/dev/null | head -1 | grep -q . && return 0
+    return 1
 }
-cursor_dirs=(rules skills agents commands hooks orchestration-spec)
-codex_dirs=(skills agents commands-registry hooks orchestration-spec)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -324,15 +318,8 @@ if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
 
     # 正本の側が壊れている状態で掃除を走らせると、配備物のすべてが孤児に見える。
     # worktree から sync した後にその worktree を消す事故は実際に起きている。
-    canon_entries=0
-    for d in "${dirs[@]}"; do
-        rule="$(rule_for_dir "${d}")"
-        [[ -z "${rule}" ]] && continue
-        src_dir="${CANONICAL_REAL}/${rule%%|*}"
-        [[ -d "${src_dir}" ]] || continue
-        n="$(find "${src_dir}" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
-        canon_entries=$((canon_entries + n))
-    done
+    # ディレクトリだけ残って中身が消えた状態も「空」として扱う。数えるのはファイル。
+    canon_entries="$(find "${CANONICAL_REAL}" -type f 2>/dev/null | head -1 | wc -l | tr -d ' ')"
     if [[ "${canon_entries}" -eq 0 ]]; then
         error "  正本の側が空です。この状態では配備物のすべてが孤児に見えるので掃除しません"
         exit 2
@@ -369,7 +356,12 @@ if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
             kept=$((kept + 1)); continue
         fi
         # いま配布規則がこの名前を配ろうとしているなら消さない。
-        if would_be_distributed "${dir_name}" "${entry_name}"; then
+        entry_is_dir=false
+        [[ "${raw2}" == */ ]] && entry_is_dir=true
+        # リンク先が消えているので、正本側にディレクトリとして在りうるかは
+        # 配布先の分類（skills はディレクトリ単位）から判断する。
+        [[ "${dir_name}" == "skills" ]] && entry_is_dir=true
+        if would_be_distributed "${entry_name}" "${entry_is_dir}"; then
             info "  いまも配布の対象なので触りません: ${dir_name}/${entry_name}"
             kept=$((kept + 1)); continue
         fi

@@ -159,6 +159,38 @@ after_files="$(find "$BASE" -type f | wc -l | tr -d ' ')"
 ck  "通常ファイルの数は変わらない" "$before_files" "$after_files"
 ck  "消えたのは symlink だけ" "0" "$(find "$BASE" -maxdepth 2 -name 'retired.md' | wc -l | tr -d ' ')"
 
+echo "[14] 正本が入れ子でも配布対象と認める（実装SO 指摘の回帰・誤削除の防止）"
+fresh c14
+# 配布は basename だけを見て平らに置くので、正本が分類ディレクトリの下にあっても
+# 配布対象である。表を手で持っていたときは、これを見落として消しにいっていた。
+mkdir -p "$CANON/commands/review" "$BASE/commands"
+printf 'x' > "$CANON/commands/review/pr-review.md"
+ln -s "$CANON/commands/pr-review.md" "$BASE/commands/pr-review.md"   # 旧い平置きのパスを指す
+prune
+ck  "消さない" "true" "$([[ -L "$BASE/commands/pr-review.md" ]] && echo true || echo false)"
+ckc "配布の対象だと言う" "$OUT" "いまも配布の対象なので触りません"
+
+echo "[15] ツール固有の正本（別ディレクトリ）でも配布対象と認める"
+fresh c15
+mkdir -p "$CANON/cursor/rules" "$BASE/rules"
+printf 'x' > "$CANON/cursor/rules/only-cursor.mdc"
+ln -s "$CANON/rules/only-cursor.mdc" "$BASE/rules/only-cursor.mdc"
+prune
+ck  "消さない" "true" "$([[ -L "$BASE/rules/only-cursor.mdc" ]] && echo true || echo false)"
+
+echo "[16] 実機の配布名を当てて誤削除しないことを確かめる（読み取りのみ）"
+real_canon="$REPO_ROOT/canonical"
+if [[ -d "$real_canon/commands" ]]; then
+  miss=0
+  while IFS= read -r f; do
+    n="$(basename "$f")"
+    find "$real_canon" -type f -name "$n" 2>/dev/null | head -1 | grep -q . || miss=$((miss+1))
+  done < <(find "$real_canon/commands" -type f -name '*.md')
+  ck  "実機の commands はすべて配布対象と判定される" "0" "$miss"
+else
+  echo "  SKIP: canonical/commands が無い"
+fi
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
