@@ -92,7 +92,12 @@ def haspath($p):
       else {ok: false, cur: null} end)
   | .ok;
 
-def leafpaths: [paths(scalars)] + [paths(. == [] or . == {})] | unique;
+# 葉のパス。述語は「値」ではなく「型の判定結果」で書く。paths(scalars) と書くと
+# jq が select に値そのものを渡すので、値が false と null の葉が静かに落ちる。
+def leafpaths:
+  [paths(type != "object" and type != "array")]
+  + [paths((type == "object" or type == "array") and length == 0)]
+  | unique;
 '
 
 resolved="$(mktemp)"
@@ -202,13 +207,17 @@ def verdict(\$item):
       | if \$item.op == \"absent\" then
           [\"diff\", \"手元に残っています。宣言では消す指定です\"]
         elif \$item.op == \"replace\" then
-          (if (\$got | tojson) == (\$item.expected | tojson) then [\"ok\", \"一致\"]
+          (if \$got == \$item.expected then [\"ok\", \"一致\"]
            else [\"diff\", \"値が正本と違います\"] end)
         elif \$item.op == \"merge-object\" then
-          (if (\$item.expected | leafpaths) as \$lp
-              | all(\$lp[]; (\$got | haspath(.)) and ((\$got | getpath(.)) == (\$item.expected | getpath(.))))
-           then [\"ok\", \"正本の値をすべて含んでいます\"]
-           else [\"diff\", \"正本の値のうち手元に無いか違うものがあります\"] end)
+          # all() の中では . が現在のパスなので、先に束縛してから \$got へ渡す。
+          # そのまま \$got | haspath(.) と書くと . が \$got に置き換わって壊れる。
+          ((\$item.expected | leafpaths) as \$lp
+           | if all(\$lp[]; . as \$pp
+                    | (\$got | haspath(\$pp))
+                      and ((\$got | getpath(\$pp)) == (\$item.expected | getpath(\$pp))))
+             then [\"ok\", \"正本の値をすべて含んでいます\"]
+             else [\"diff\", \"正本の値のうち手元に無いか違うものがあります\"] end)
         elif \$item.op == \"union-array\" then
           (if (\$got | type) != \"array\" then [\"diff\", \"配列ではありません\"]
            elif all(\$item.expected[]; . as \$e | any(\$got[]; . == \$e))

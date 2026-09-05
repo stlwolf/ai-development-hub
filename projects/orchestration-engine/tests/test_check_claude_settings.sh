@@ -154,6 +154,45 @@ ckc "managed を挙げる" "$OUT" "managed settings"
 ckc "起動フラグを挙げる" "$OUT" "--settings"
 ckc "セッションの実値は取れないと書く" "$OUT" "走っているセッションの実際の値"
 
+echo "[14] replace の一致判定がキーの順に依存しない（実装SO 指摘の回帰）"
+fresh c14; build_green
+# hooks のキーを逆順に並べ替えた settings。中身は同じなので一致であるべき。
+jq '.hooks |= (to_entries | reverse | from_entries)' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "並べ替えても一致" "0" "$RC"
+ckc "hooks が一致" "$OUT" "一致 /hooks"
+
+echo "[15] merge-object が値 false / null の葉を見落とさない（実装SO 指摘の回帰）"
+fresh c15
+cat > "$CASE/decl.json" <<'DECLEOF'
+{
+  "version": 1,
+  "items": [
+    { "pointer": "/autoMode", "op": "merge-object", "scope_behavior": "override",
+      "source": { "file": "SRCFILE", "pointer": "/autoMode" } }
+  ],
+  "unchecked_scopes": ["managed settings", "--settings", "走っているセッションの実際の値"]
+}
+DECLEOF
+printf '%s' '{"autoMode":{"flagFalse":false,"flagNull":null,"flagTrue":true}}' > "$CASE/src.json"
+sed -i.bak "s|SRCFILE|$CASE/src.json|" "$CASE/decl.json" && rm -f "$CASE/decl.json.bak"
+# 正本どおり → 緑
+printf '%s' '{"autoMode":{"flagFalse":false,"flagNull":null,"flagTrue":true,"extra":1}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "正本の葉をすべて含む → 緑" "0" "$RC"
+# false の葉だけ壊す → 差分でなければ見落とし
+printf '%s' '{"autoMode":{"flagFalse":true,"flagNull":null,"flagTrue":true}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "false の葉の違いを拾う" "1" "$RC"
+# null の葉だけ壊す
+printf '%s' '{"autoMode":{"flagFalse":false,"flagNull":"x","flagTrue":true}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "null の葉の違いを拾う" "1" "$RC"
+# 葉ごと欠けている
+printf '%s' '{"autoMode":{"flagTrue":true}}' > "$ST"
+OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
+ck  "葉の欠落を拾う" "1" "$RC"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
