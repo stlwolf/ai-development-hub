@@ -16,6 +16,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 APPLY="$REPO_ROOT/scripts/sync/apply-claude-settings.sh"
+DECL="$REPO_ROOT/canonical/claude/settings.harness.json"
 HOOKS_SRC="$REPO_ROOT/canonical/hooks/claude.hooks.json"
 
 [[ -x "$APPLY" ]] || { echo "FAIL: apply script not found: $APPLY"; exit 1; }
@@ -198,26 +199,35 @@ ck  "外の追記があっても適用できる" "0" "$RC"
 ck  "外の追記は消えない" "1" "$(jq -r '.injected' "$ST")"
 
 echo "[13b] 横取りを実際に起こす（1回だけ割り込む → 読み直して成功する）"
+# 適用スクリプト本体に試験用の分岐は置かない（本番経路に任意コマンドの実行口を
+# 残さないため）。代わりに、テストがスクリプトの複製へ割り込みを1行挿して走らせる。
 fresh c13b
 printf '%s' '{"theme":"dark"}' > "$ST"
-race_marker="$CASE/raced"
-OUT="$(OE_APPLY_TEST_RACE="if [[ ! -e '$race_marker' ]]; then touch '$race_marker'; jq -c '. + {raced: 1}' '$ST' > '$ST.r' && mv '$ST.r' '$ST'; fi"       "$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?
+marker="$CASE/raced"
+sed "s|^    # (c) 最後の確認。|    if [[ ! -e '$marker' ]]; then touch '$marker'; jq -c '. + {raced: 1}' '$ST' > '$ST.r' \&\& mv '$ST.r' '$ST'; fi\n    # (c) 最後の確認。|" \
+    "$APPLY" > "$CASE/apply_race.sh"
+chmod +x "$CASE/apply_race.sh"
+ck  "割り込みを挿せた" "1" "$(grep -c "raced" "$CASE/apply_race.sh" | tr -d ' ')"
+OUT="$("$BASH" "$CASE/apply_race.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
 ck  "読み直して成功する" "0" "$RC"
 ckc "読み直したと言う" "$OUT" "読み直します"
 ck  "割り込みの追記が残る" "1" "$(jq -r '.raced' "$ST")"
 ck  "宣言の項目も入る" "true" "$(jq -r '(.hooks != null)' "$ST")"
 ck  "個人層も残る" "dark" "$(jq -r '.theme' "$ST")"
+ck  "捨てたバックアップが残っていない" "1" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
 
 echo "[13c] 横取りが続くなら中止する（書かない）"
 fresh c13c
 printf '%s' '{"theme":"dark"}' > "$ST"
-before_content="$(cat "$ST")"
-OUT="$(OE_APPLY_TEST_RACE="jq -c '.n = ((.n // 0) + 1)' '$ST' > '$ST.r' && mv '$ST.r' '$ST'"       "$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?
+sed "s|^    # (c) 最後の確認。|    jq -c '.n = ((.n // 0) + 1)' '$ST' > '$ST.r' \&\& mv '$ST.r' '$ST'\n    # (c) 最後の確認。|" \
+    "$APPLY" > "$CASE/apply_race.sh"
+chmod +x "$CASE/apply_race.sh"
+OUT="$("$BASH" "$CASE/apply_race.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
 ck  "exit 1" "1" "$RC"
 ckc "中止すると言う" "$OUT" "中止します"
 ck  "宣言の項目は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
-ncc "元の内容と同じではない（割り込みだけが効いている）" "$before_content" "hooks"
+ck  "使わなかったバックアップを残さない" "0" "$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
 
 echo "[14] 宣言が空 → 何も書かない"
 fresh c14
@@ -227,6 +237,95 @@ run_d "$CASE/empty.json"
 ck  "exit 2" "2" "$RC"
 ck  "theme はそのまま" "dark" "$(jq -r '.theme' "$ST")"
 ck  "hooks は入らない" "false" "$(jq -r '(.hooks != null)' "$ST")"
+
+echo "[15] 知らないハンドラ名を通さない（実装SO 指摘の回帰）"
+fresh c15
+printf '%s' '{"theme":"dark"}' > "$ST"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/statusLine","op":"handler","handler":"statusline-warp","scope_behavior":"override",
+           "source":{"file":"$REPO_ROOT/canonical/claude/statusline/claude.statusline.json","pointer":"/statusLine"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 2" "2" "$RC"
+ckc "知らないハンドラだと言う" "$OUT" "知らないハンドラです"
+ck  "何も書かない" "false" "$(jq -r '(.statusLine != null)' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[16] union-array はキーの順が違うだけのオブジェクトを重複扱いする"
+fresh c16
+printf '%s' '{"listy":[{"a":1,"b":2}]}' > "$ST"
+printf '%s' '{"listy":[{"b":2,"a":1},{"c":3}]}' > "$CASE/src.json"
+cat > "$CASE/decl.json" <<DECLEOF
+{"version":1,
+ "items":[{"pointer":"/listy","op":"union-array","scope_behavior":"merge",
+           "source":{"file":"$CASE/src.json","pointer":"/listy"}}],
+ "unchecked_scopes":["x"]}
+DECLEOF
+run_d "$CASE/decl.json"
+ck  "exit 0" "0" "$RC"
+ck  "同値は重複しない" "2" "$(jq -r '.listy | length' "$ST")"
+ck  "手元の並びは先頭のまま" "1" "$(jq -r '.listy[0].a' "$ST")"
+
+echo "[17] 親ディレクトリが無くても作れる（実装SO 指摘の回帰）"
+fresh c17
+ST="$CASE/nested/deeper/settings.json"
+run
+ck  "exit 0" "0" "$RC"
+ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
+ck  "宣言の2項目が入る" "hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+
+echo "[18] 現行実装との等価性（fixture 比較・実装SO 指摘の回帰）"
+BASE_REF="feature/#359_orphan_link_detection"
+if ! git -C "$REPO_ROOT" rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
+  echo "  SKIP: 比較元の枝 $BASE_REF が見つからない"
+else
+  old_sync="$_TMP_DIR/old-sync-claude.sh"
+  git -C "$REPO_ROOT" show "$BASE_REF:scripts/sync/sync-claude.sh" > "$old_sync" 2>/dev/null
+  if [[ ! -s "$old_sync" ]]; then
+    echo "  SKIP: 旧 sync-claude.sh を取り出せない"
+  else
+    # 旧実装は canonical を自分の位置から解決するので、リポジトリ内に置いて走らせる。
+    old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.sh"
+    cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
+    run_fixture() {  # run_fixture <script> <name> <init> <outdir>
+      local script="$1" name="$2" init="$3" outdir="$4"
+      local home="$outdir/$name/home"; mkdir -p "$home/.claude"
+      local st="$home/.claude/settings.json"
+      case "$init" in
+        NONE) ;;
+        SYMLINK) printf '%s' '{"hooks":{}}' > "$home/.claude/real.json"; ln -s "$home/.claude/real.json" "$st" ;;
+        DIR) mkdir -p "$st" ;;
+        *) printf '%s' "$init" > "$st" ;;
+      esac
+      env HOME="$home" bash "$script" >/dev/null 2>&1
+      if [[ -f "$st" && ! -L "$st" ]]; then jq -S . "$st" 2>/dev/null || cat "$st"
+      elif [[ -L "$st" ]]; then echo "SYMLINK"
+      elif [[ -d "$st" ]]; then echo "DIR"
+      else echo "MISSING"; fi
+    }
+    declare -a FIX_NAMES=(missing hooks_only own_statusline wrapped broken_json symlink personal_keys dir)
+    # shellcheck disable=SC2016  # fixture の中身は literal のまま渡す
+    declare -a FIX_INITS=(
+      'NONE'
+      '{"hooks":{"Stop":[{"matcher":"","hooks":[]}]}}'
+      '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}'
+      '{"statusLine":{"type":"command","command":"OE_HEARTBEAT_WRAP_CMD=/x/mybar.sh $HOME/.claude/statusline/statusline-oe-heartbeat.sh","refreshInterval":10}}'
+      '{ not json'
+      'SYMLINK'
+      '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true}'
+      'DIR'
+    )
+    for i in "${!FIX_NAMES[@]}"; do
+      n="${FIX_NAMES[$i]}"; init="${FIX_INITS[$i]}"
+      o="$(run_fixture "$old_in_repo" "$n" "$init" "$_TMP_DIR/eq_old")"
+      w="$(run_fixture "$REPO_ROOT/scripts/sync/sync-claude.sh" "$n" "$init" "$_TMP_DIR/eq_new")"
+      ck "fixture $n の結果が一致" "$o" "$w"
+    done
+    rm -f "$old_in_repo"
+  fi
+fi
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

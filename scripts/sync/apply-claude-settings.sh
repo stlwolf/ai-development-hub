@@ -7,6 +7,8 @@
 #   ./scripts/sync/apply-claude-settings.sh
 #   ./scripts/sync/apply-claude-settings.sh --settings /path/to/settings.json
 #   ./scripts/sync/apply-claude-settings.sh --declaration /path/to/decl.json
+#   ./scripts/sync/apply-claude-settings.sh --repo-root /path/to/repo
+#     （宣言の source.file は相対パスなので、その基準点を明示したいときに使う）
 #
 # Exit:
 #   0  適用した（変更が無かった場合を含む）
@@ -47,6 +49,8 @@ while [[ $# -gt 0 ]]; do
                        DECLARATION="$2"; shift 2 ;;
         --settings)    [[ $# -ge 2 ]] || { error "--settings に値がありません"; exit 2; }
                        SETTINGS="$2"; shift 2 ;;
+        --repo-root)   [[ $# -ge 2 ]] || { error "--repo-root に値がありません"; exit 2; }
+                       REPO_ROOT="$2"; shift 2 ;;
         -h|--help)
             sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
             exit 0 ;;
@@ -101,7 +105,14 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
     case "${op}" in
         merge-object) [[ "${exp_type}" == "object" ]] || { error "  merge-object の正本がオブジェクトではありません: ${pointer} (${exp_type})"; resolve_failed=true; continue; } ;;
         union-array)  [[ "${exp_type}" == "array" ]] || { error "  union-array の正本が配列ではありません: ${pointer} (${exp_type})"; resolve_failed=true; continue; } ;;
-        replace|absent|handler) ;;
+        replace|absent) ;;
+        handler)
+            # 名前を検証する。知らない名前を通すと、適用側が何もしないまま
+            # 「適用した」と返る。宣言の書き間違いが素通りする形になる。
+            case "${handler}" in
+                statusline-wrap) ;;
+                *) error "  知らないハンドラです: ${pointer} (${handler:-空})"; resolve_failed=true; continue ;;
+            esac ;;
         *) error "  扱えない op です: ${pointer} (${op})"; resolve_failed=true; continue ;;
     esac
     if jq -c --arg pointer "${pointer}" --arg op "${op}" --arg handler "${handler}" \
@@ -159,7 +170,10 @@ def apply_item($item):
     elif $item.op == "merge-object" then
       setpath($path; ((getpath($path) // {}) * $item.expected))
     elif $item.op == "union-array" then
-      setpath($path; (((getpath($path) // []) + $item.expected) | unique_by(tojson)))
+      # 重複の判定は jq の等価比較で行う（tojson だとキーの順が違うオブジェクトを
+      # 別物として残してしまう）。手元の並びは変えず、無いものだけを後ろに足す。
+      ((getpath($path) // []) as $cur
+       | setpath($path; ($cur + ($item.expected | map(select(. as $e | any($cur[]; . == $e) | not))))))
     elif $item.op == "handler" and $item.handler == "statusline-wrap" then
       # 現行の3分岐をそのまま写す。
       #   未設定           → 正本を載せる
@@ -210,28 +224,68 @@ while :; do
         wrap_prefix="OE_HEARTBEAT_WRAP_CMD=$(printf '%q' "${existing_cmd}")"
     fi
 
+    # 一時ファイルは settings と同じディレクトリに作る（mv を同一 FS の rename に
+    # するため）。親が無いと mktemp がそこで失敗するので、先に作っておく。
+    if ! mkdir -p "$(dirname "${SETTINGS}")"; then
+        error "  置き場のディレクトリを作れません: $(dirname "${SETTINGS}")"
+        exit 1
+    fi
     out="$(mktemp "${SETTINGS}.tmp.XXXXXX")" || { error "  一時ファイルを作れません"; exit 1; }
-    if ! jq -n --slurpfile decl "${resolved}" \
+    # settings は argv でなくファイルから読む。文書全体を引数に載せると、
+    # 大きな設定で引数長の上限に当たって落ちる。宣言側と同じ渡し方に揃える。
+    base_file="${current_file}"
+    if [[ -z "${base_file}" ]]; then
+        base_file="${out}.base"
+        echo '{}' > "${base_file}" || { rm -f "${out}"; error "  作業ファイルに書けません"; exit 1; }
+    fi
+    if ! jq -n --slurpfile decl "${resolved}" --slurpfile base "${base_file}" \
             --arg marker "${marker}" --arg wrap_prefix "${wrap_prefix}" \
-            --argjson base "$( [[ -n "${current_file}" ]] && cat "${current_file}" || echo '{}' )" \
-            "\$base | ${JQ_APPLY}" > "${out}" 2>/dev/null; then
+            "\$base[0] | ${JQ_APPLY}" > "${out}" 2>/dev/null; then
+        rm -f "${out}.base"
         rm -f "${out}"
         error "  適用の計算に失敗しました"
         exit 1
     fi
+    rm -f "${out}.base"
     if ! jq -e . "${out}" >/dev/null 2>&1; then
         rm -f "${out}"
         error "  適用の結果が JSON として壊れています。何も書きません"
         exit 1
     fi
 
-    # テスト用の継ぎ目。横取りの検知は安全に関わる分岐なので、実際に横取りを
-    # 起こして確かめられるようにしておく。通常の実行では未設定で何もしない。
-    if [[ -n "${OE_APPLY_TEST_RACE:-}" ]]; then
-        eval "${OE_APPLY_TEST_RACE}" || true
+    # ここから先の順序が要になる。確かめてから置き換えるまでの間に、比較や
+    # バックアップのような時間のかかる処理を挟むと、その隙に他のプロセスが
+    # 書いた内容を古い計算結果で踏み潰す。だから重い処理を全部先に済ませ、
+    # 最後の確認の直後に置き換えだけを行う。
+    #
+    # rename の直前と直後の隙間そのものは、どう並べても無くせない。ここで
+    # できるのは窓を最小にすることだけである。
+
+    # (a) 変更が無いなら、そもそも何もしない（バックアップも作らない）。
+    if [[ -n "${before}" ]]; then
+        jq -S . <<< "${before}" > "${out}.cmp" 2>/dev/null
+        jq -S . "${out}" > "${out}.cmp2" 2>/dev/null
+        if cmp -s "${out}.cmp" "${out}.cmp2"; then
+            rm -f "${out}" "${out}.cmp" "${out}.cmp2"
+            info "  変更はありません"
+            exit 0
+        fi
+    fi
+    rm -f "${out}.cmp" "${out}.cmp2"
+
+    # (b) バックアップを先に取る。中身は下の確認で before と一致することを
+    #     保証するので、「置き換える直前の版」と同じものになる。
+    backup=""
+    if [[ -e "${SETTINGS}" ]]; then
+        backup="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S)"
+        if ! cp "${SETTINGS}" "${backup}"; then
+            rm -f "${out}"
+            error "  バックアップを作れないので何も書きません"
+            exit 1
+        fi
     fi
 
-    # 置き換える直前に、読んだときと同じ内容かを確かめる。
+    # (c) 最後の確認。ここと置き換えの間には何も置かない。
     if [[ -e "${SETTINGS}" ]]; then
         now="$(cat "${SETTINGS}" 2>/dev/null || echo "")"
     else
@@ -239,6 +293,7 @@ while :; do
     fi
     if [[ "${now}" != "${before}" ]]; then
         rm -f "${out}"
+        [[ -n "${backup}" ]] && rm -f "${backup}"
         if [[ "${attempt}" -ge "${MAX_RETRY}" ]]; then
             error "  読んでから書くまでの間に他のプロセスが書き換え続けています。中止します"
             exit 1
@@ -247,34 +302,12 @@ while :; do
         continue
     fi
 
-    # 内容が変わらないなら書かない。バックアップも作らない。
-    if [[ -n "${before}" ]] && jq -S . <<< "${before}" > "${out}.cmp" 2>/dev/null \
-       && jq -S . "${out}" > "${out}.cmp2" 2>/dev/null \
-       && cmp -s "${out}.cmp" "${out}.cmp2"; then
-        rm -f "${out}" "${out}.cmp" "${out}.cmp2"
-        info "  変更はありません"
-        exit 0
-    fi
-    rm -f "${out}.cmp" "${out}.cmp2"
-
-    # バックアップは「置き換える直前の版」を取る。最初に読んだ版ではない。
-    if [[ -e "${SETTINGS}" ]]; then
-        backup="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S)"
-        if ! cp "${SETTINGS}" "${backup}"; then
-            rm -f "${out}"
-            error "  バックアップを作れないので何も書きません"
-            exit 1
-        fi
-        info "  Backup: ${backup}"
-    else
-        mkdir -p "$(dirname "${SETTINGS}")"
-    fi
-
     if ! mv "${out}" "${SETTINGS}"; then
         rm -f "${out}"
         error "  置き換えに失敗しました"
         exit 1
     fi
+    [[ -n "${backup}" ]] && info "  Backup: ${backup}"
     info "  ${decl_count} item(s) applied"
     exit 0
 done
