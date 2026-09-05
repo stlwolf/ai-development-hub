@@ -347,8 +347,18 @@ if [[ -z "$old_rev" ]]; then
   FAIL=$((FAIL+1))
 else
   git -C "$REPO_ROOT" show "$old_rev:scripts/sync/sync-claude.sh" > "$old_sync"
-  old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.sh"
-  cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
+  # 旧実装は canonical を自分の位置から解決するので、リポジトリ内に置く必要がある。
+  # 固定名だと同名の未追跡ファイルを壊すし、並行実行で互いに潰し合う。プロセス
+  # 番号を含めた名前にし、途中で落ちても片付くよう trap に積む。
+  old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.$$.sh"
+  if [[ -e "$old_in_repo" ]]; then
+    echo "  FAIL: 一時ファイルの置き場が既に埋まっている: $old_in_repo"
+    FAIL=$((FAIL+1))
+    old_in_repo=""
+  else
+    trap 'rm -rf "$_TMP_DIR"; [[ -n "${old_in_repo:-}" ]] && rm -f "$old_in_repo"' EXIT
+    cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
+  fi
   run_fixture() {  # run_fixture <script> <name> <init> <outdir>
     local script="$1" name="$2" init="$3" outdir="$4"
     local home="$outdir/$name/home"; mkdir -p "$home/.claude"
@@ -383,6 +393,7 @@ else
   )
   echo "  （比較元: $(git -C "$REPO_ROOT" rev-parse --short "$old_rev")）"
   for i in "${!FIX_NAMES[@]}"; do
+    [[ -z "${old_in_repo:-}" ]] && break
     n="${FIX_NAMES[$i]}"; init="${FIX_INITS[$i]}"
     o="$(run_fixture "$old_in_repo" "$n" "$init" "$_TMP_DIR/eq_old")"
     w="$(run_fixture "$REPO_ROOT/scripts/sync/sync-claude.sh" "$n" "$init" "$_TMP_DIR/eq_new")"
@@ -393,7 +404,7 @@ else
     fi
     ck "fixture $n の結果が一致" "$o" "$w"
   done
-  rm -f "$old_in_repo"
+  [[ -n "${old_in_repo:-}" ]] && rm -f "$old_in_repo"
 fi
 
 echo "[23] 中身が同じ symlink へ直前に差し替えられても置き換えない（実装SO 指摘の回帰）"
@@ -403,7 +414,7 @@ printf '%s' '{"theme":"dark"}' > "$ST"
 # 差し替えは「直前の再確認」より前に起こす。再確認と置き換えの間に起きる
 # 差し替えは rename の原子性の外なので、どう並べても捕まえられない。ここで
 # 確かめるのは、再確認が同内容の symlink を見抜けるかどうかである。
-sed "s|^    # 置き換える直前にもう一度 symlink を見る。|    if [[ ! -L '$ST' ]]; then cp '$ST' '$CASE/twin.json'; rm -f '$ST'; ln -s '$CASE/twin.json' '$ST'; fi\n    # 置き換える直前にもう一度 symlink を見る。|" \
+sed "s|^    # (d) 置き換える直前にもう一度だけ種別を見る。|    if [[ ! -L '$ST' ]]; then cp '$ST' '$CASE/twin.json'; rm -f '$ST'; ln -s '$CASE/twin.json' '$ST'; fi\n    # (d) 置き換える直前にもう一度だけ種別を見る。|" \
     "$APPLY" > "$CASE/apply_twin.sh"
 chmod +x "$CASE/apply_twin.sh"
 ck  "割り込みを挿せた" "1" "$(grep -c 'twin.json' "$CASE/apply_twin.sh" | tr -d ' ')"
@@ -447,7 +458,7 @@ ck  "宣言は書かれていない" "false" "$(jq -r '(.hooks != null)' "$ST")"
 echo "[26] 直前にディレクトリへ差し替えられても置き換えない（実装SO 指摘の回帰）"
 fresh c26
 printf '%s' '{"theme":"dark"}' > "$ST"
-sed "s|^    if \[\[ -L \"\${SETTINGS}\" .. ( -e \"\${SETTINGS}\" ..|    if [[ ! -d '$ST' ]]; then rm -f '$ST'; mkdir -p '$ST'; fi\n    if [[ -L \"\${SETTINGS}\" \|\| ( -e \"\${SETTINGS}\" \&\&|" \
+sed "s|^    # (b) 置き換えに関わる相手の種別をもう一度見る。|    if [[ ! -d '$ST' ]]; then rm -f '$ST'; mkdir -p '$ST'; fi\n    # (b) 置き換えに関わる相手の種別をもう一度見る。|" \
     "$APPLY" > "$CASE/apply_dir.sh"
 chmod +x "$CASE/apply_dir.sh"
 ck  "割り込みを挿せた" "1" "$(grep -c "mkdir -p '$ST'" "$CASE/apply_dir.sh" | tr -d ' ')"
@@ -504,6 +515,51 @@ sl_line="$(grep -n 'sync_hook_scripts "\${CANONICAL_DIR}/claude/statusline"' "$R
 hook_line="$(grep -n 'sync_hook_scripts "\${CANONICAL_DIR}/hooks/scripts"' "$REPO_ROOT/scripts/sync/sync-claude.sh" | head -1 | cut -d: -f1)"
 ck  "statusLine の producer 配備より後に設定を書く" "true" "$([[ -n "$apply_line" && -n "$sl_line" && "$apply_line" -gt "$sl_line" ]] && echo true || echo false)"
 ck  "hook スクリプト配備より後に設定を書く" "true" "$([[ -n "$apply_line" && -n "$hook_line" && "$apply_line" -gt "$hook_line" ]] && echo true || echo false)"
+
+echo "[31] 破壊的な横取り: 確認の直前にファイルを消される（実装SO 指摘の回帰）"
+fresh c31
+printf '%s' '{"theme":"dark","model":"opus"}' > "$ST"
+sed "s|^    # (c) 最後の確認。|    rm -f '$ST'\n    # (c) 最後の確認。|" "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "宣言だけのファイルを作らない" "1" "$RC"
+ckc "消えたと言う" "$OUT" "settings.json が消えました"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
+ck  "写しに個人層がある" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
+ck  "写しに model もある" "opus" "$(jq -r '.model' "$bk" 2>/dev/null)"
+
+echo "[32] 破壊的な横取り: 確認の直前に空にされる（実装SO 指摘の回帰）"
+fresh c32
+printf '%s' '{"theme":"dark","model":"opus"}' > "$ST"
+sed "s|^    # (c) 最後の確認。|    : > '$ST'\n    # (c) 最後の確認。|" "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ck  "空のまま何も書かない" "0" "$RC"
+ckc "読めないと言う" "$OUT" "JSON として読めないので触りません"
+ckc "写しの在処を伝える" "$OUT" "読んだ時点の内容"
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+ck  "写しから個人層を戻せる" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
+
+echo "[33] 破壊的な横取り: 確認の直前に空オブジェクトへ置換される（実装SO 指摘の回帰）"
+fresh c33
+printf '%s' '{"theme":"dark","model":"opus"}' > "$ST"
+sed "s|^    # (c) 最後の確認。|    printf '%s' '{}' > '$ST'\n    # (c) 最後の確認。|" "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+# 横取り側が個人層を消したので、手元の結果に個人層は戻らない。写しから戻せることを見る。
+bk="$(find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
+ck  "写しが残っている" "true" "$([[ -n "$bk" ]] && echo true || echo false)"
+ck  "写しに個人層がある" "dark" "$(jq -r '.theme' "$bk" 2>/dev/null)"
+ck  "終了コードは 0 か 1" "true" "$([[ "$RC" -eq 0 || "$RC" -eq 1 ]] && echo true || echo false)"
+
+echo "[34] 最初から無いファイルを別プロセスが空で作っても上書きしない（実装SO 指摘の回帰）"
+fresh c34
+sed "s|^    # (c) 最後の確認。|    : > '$ST'\n    # (c) 最後の確認。|" "$APPLY" > "$CASE/a.sh"
+chmod +x "$CASE/a.sh"
+OUT="$("$BASH" "$CASE/a.sh" --settings "$ST" --declaration "$DECL" --repo-root "$REPO_ROOT" 2>&1)"; RC=$?
+ckc "変化を見つけて読み直す" "$OUT" "読み直します"
+ck  "空のまま残る（宣言で上書きしない）" "0" "$(wc -c < "$ST" | tr -d ' ')"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

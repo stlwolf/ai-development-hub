@@ -225,6 +225,10 @@ reduce $decl[0][] as $item (.; apply_item($item))
 '
 
 attempt=0
+before_exists=0
+now_exists=0
+backups_made=()
+ever_existed=0
 while :; do
     attempt=$((attempt + 1))
 
@@ -241,16 +245,28 @@ while :; do
     fi
 
     if [[ -e "${SETTINGS}" ]]; then
+        before_exists=1
         if ! before="$(cat "${SETTINGS}" 2>/dev/null)"; then
             error "  読めません: ${SETTINGS}"
             exit 1
         fi
+        ever_existed=1
         if ! jq -e . "${SETTINGS}" >/dev/null 2>&1; then
             warn "  JSON として読めないので触りません（壊れている可能性）: ${SETTINGS}"
+            [[ "${#backups_made[@]}" -gt 0 ]] && info "  読んだ時点の内容: ${backups_made[0]}"
             exit 0
         fi
         current_file="${SETTINGS}"
     else
+        if [[ "${ever_existed}" -eq 1 ]]; then
+            # 前の試行では在ったのに消えている。ここで作ると、宣言した項目だけの
+            # ファイルになって個人層が失われた形で残る。書かずに止め、写しの
+            # 在処を伝える方がよい。
+            error "  読んでいる間に settings.json が消えました。何も書きません: ${SETTINGS}"
+            [[ "${#backups_made[@]}" -gt 0 ]] && error "  読んだ時点の内容を残しました: ${backups_made[0]}"
+            exit 1
+        fi
+        before_exists=0
         before=""
         current_file=""
     fi
@@ -303,8 +319,8 @@ while :; do
     # rename の直前と直後の隙間そのものは、どう並べても無くせない。ここで
     # できるのは窓を最小にすることだけである。
 
-    # (a) 変更が無いなら、そもそも何もしない（バックアップも作らない）。
-    if [[ -n "${before}" ]]; then
+    # (a) 変更が無いなら、そもそも何もしない。
+    if [[ "${before_exists}" -eq 1 ]]; then
         # 2つの正規化の終了コードを両方見る。見ないと、書き込みに失敗して
         # 両方が空ファイルになったときに cmp が一致と判定し、何も適用して
         # いないのに成功を名乗る。
@@ -324,48 +340,57 @@ while :; do
     fi
     rm -f "${out}.cmp" "${out}.cmp2"
 
-    # (b) バックアップを先に取る。中身は下の確認で before と一致することを
-    #     保証するので、「置き換える直前の版」と同じものになる。
-    backup=""
-    if [[ -e "${SETTINGS}" ]]; then
-        # 秒精度だけだと、同じ秒に走った2つの実行が同じ名前を共有してしまう。
-        backup="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$"
-        if ! cp "${SETTINGS}" "${backup}"; then
+    # (b0) ここまで来たら書き換えが要る。写しを1度だけ取り、以後どの経路でも
+    #      消さない。横取りで元の内容が消える（削除・空化・置換）ことがあり、
+    #      そのとき手元に残る唯一の写しがこれになる。やり直しのたびに消すと、
+    #      いちばん復旧が要る場面で復旧できなくなる。
+    if [[ "${before_exists}" -eq 1 && "${#backups_made[@]}" -eq 0 ]]; then
+        bk="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S).$$"
+        if ! cp "${SETTINGS}" "${bk}" 2>/dev/null; then
             rm -f "${out}"
             error "  バックアップを作れないので何も書きません"
             exit 1
         fi
+        backups_made+=("${bk}")
+    fi
+
+    # (b) 置き換えに関わる相手の種別をもう一度見る。写しを取った直後に見る。
+    #     FIFO へ差し替えられていると読み書きが待ち続けるし、ディレクトリなら
+    #     置き換えがその中へ移動して成功してしまう。どちらも触らないのが正しい。
+    if [[ -L "${SETTINGS}" || ( -e "${SETTINGS}" && ! -f "${SETTINGS}" ) ]]; then
+        rm -f "${out}"
+        warn "  symlink かディレクトリなどに差し替わったので触りません: ${SETTINGS}"
+        [[ "${#backups_made[@]}" -gt 0 ]] && info "  読んだ時点の内容: ${backups_made[0]}"
+        exit 0
     fi
 
     # (c) 最後の確認。ここと置き換えの間には何も置かない。
+    #     不在と空を区別する。区別しないと、最初は無かったファイルを別の
+    #     プロセスが空で作った場合に「変わっていない」と判定して上書きする。
     if [[ -e "${SETTINGS}" ]]; then
+        now_exists=1
         now="$(cat "${SETTINGS}" 2>/dev/null || echo "")"
     else
+        now_exists=0
         now=""
     fi
-    if [[ "${now}" != "${before}" ]]; then
+    if [[ "${now_exists}" -ne "${before_exists}" || "${now}" != "${before}" ]]; then
         rm -f "${out}"
         if [[ "${attempt}" -ge "${MAX_RETRY}" ]]; then
-            # 諦めるときはバックアップを残す。何が起きていたかを後から見られる
-            # ようにするためで、やり直す場合だけ消す。
             error "  読んでから書くまでの間に他のプロセスが書き換え続けています。中止します"
-            [[ -n "${backup}" ]] && error "  読んだ時点の内容を残しました: ${backup}"
+            [[ "${#backups_made[@]}" -gt 0 ]] && error "  読んだ時点の内容を残しました: ${backups_made[0]}"
             exit 1
         fi
-        [[ -n "${backup}" ]] && rm -f "${backup}"
         warn "  他のプロセスが書き換えたので読み直します（${attempt}/${MAX_RETRY}）"
         continue
     fi
 
-    # 置き換える直前にもう一度 symlink を見る。中身が同じファイルへの symlink に
-    # 差し替えられると、上の内容比較は通ってしまう。ここで見ないと rename が
-    # symlink そのものを通常ファイルに変えてしまう（全体 symlink を棄却した
-    # 理由と同じ現象を、自分の配布スクリプトで起こすことになる）。
+    # (d) 置き換える直前にもう一度だけ種別を見る。中身が同じファイルへの
+    #     symlink に差し替えられると、上の内容比較は通ってしまう。
     if [[ -L "${SETTINGS}" || ( -e "${SETTINGS}" && ! -f "${SETTINGS}" ) ]]; then
         rm -f "${out}"
-        [[ -n "${backup}" ]] && rm -f "${backup}"
-        # ディレクトリへ差し替えられていると mv がその中へ移動して成功してしまう。
         warn "  直前に symlink かディレクトリへ差し替わったので触りません: ${SETTINGS}"
+        [[ "${#backups_made[@]}" -gt 0 ]] && info "  読んだ時点の内容: ${backups_made[0]}"
         exit 0
     fi
 
@@ -374,7 +399,9 @@ while :; do
         error "  置き換えに失敗しました"
         exit 1
     fi
-    [[ -n "${backup}" ]] && info "  Backup: ${backup}"
+    if [[ "${#backups_made[@]}" -gt 0 ]]; then
+        info "  Backup: ${backups_made[$(( ${#backups_made[@]} - 1 ))]}"
+    fi
     info "  ${decl_count} item(s) applied"
     exit 0
 done
