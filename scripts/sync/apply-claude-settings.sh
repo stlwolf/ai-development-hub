@@ -342,7 +342,14 @@ while :; do
     marker="statusline-oe-heartbeat.sh"
     wrap_prefix=""
     if [[ -n "${existing_cmd}" && "${existing_cmd}" != *"${marker}"* ]]; then
-        wrap_prefix="OE_HEARTBEAT_WRAP_CMD=$(printf '%q' "${existing_cmd}")"
+        # 引用の仕方が bash の版で違う。5 は先頭の ~ を escape するが 3.2 はしない。
+        # escape すると、包んだ元コマンドを実行するときにチルダ展開が効かなくなり、
+        # 運用者の statusLine が動かなくなる。旧実装（3.2 で走っていた）に合わせて
+        # 先頭の 1 つだけ外す。この差は、テストが両方を同じ bash で起動していると
+        # 見えない（起動の仕方は shebang に任せること）。
+        quoted="$(printf '%q' "${existing_cmd}")"
+        [[ "${quoted}" == '\~'* ]] && quoted="${quoted#\\}"
+        wrap_prefix="OE_HEARTBEAT_WRAP_CMD=${quoted}"
     fi
 
     # 一時ファイルは settings と同じディレクトリに作る（mv を同一 FS の rename に

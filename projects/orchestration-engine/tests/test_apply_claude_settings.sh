@@ -369,7 +369,9 @@ else
       DIR) mkdir -p "$st" ;;
       *) printf '%s' "$init" > "$st" ;;
     esac
-    env HOME="$home" bash "$script" >/dev/null 2>&1
+    # shebang に任せて起動する。bash "$script" と書くと、旧実装が /bin/bash で
+    # 新実装が env bash という版の違いが隠れ、版差に由来するずれを見逃す。
+    env HOME="$home" "$script" >/dev/null 2>&1
     local rc=$?
     # 終了コードも比べる。片方が適用前に落ちて入力が残っただけでも
     # 内容だけ見ると一致に見えるため（実装SO 指摘）。
@@ -728,6 +730,22 @@ ck  "exit 2" "2" "$RC"
 ckc "置き場が違うと言う" "$OUT" "statusline-wrap は /statusLine にしか宣言できません"
 ck  "何も書かない" "false" "$(jq -r 'has("somewhereElse")' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[48] 包んだ元コマンドのチルダ展開が壊れない（実装SO 指摘の回帰・bash 版差）"
+fresh c48
+printf '%s' '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}' > "$ST"
+run
+wrapped="$(jq -r '.statusLine.command' "$ST")"
+ck  "1回だけ包む" "1" "$(printf '%s' "$wrapped" | grep -c 'OE_HEARTBEAT_WRAP_CMD' | tr -d ' ')"
+ncc "先頭のチルダを escape しない" "$wrapped" '\~'
+ckc "元コマンドが残っている" "$wrapped" 'mybar.sh'
+# 退避した値を取り出して評価し、チルダが展開されることを見る。
+saved="$(printf '%s' "$wrapped" | sed -n 's|^OE_HEARTBEAT_WRAP_CMD=\(.*\) /.*|\1|p')"
+[[ -z "$saved" ]] && saved="$(printf '%s' "$wrapped" | sed -n 's|^OE_HEARTBEAT_WRAP_CMD=\(.*\) ".*|\1|p')"
+expanded="$("$BASH" -c "eval printf '%s' $saved" 2>/dev/null)"
+# shellcheck disable=SC2088  # 展開されないことを確かめる側なので literal でよい
+ncc "評価してもチルダのままにならない" "$expanded" '~/'
+ckc "ホームに展開される" "$expanded" "$HOME"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
