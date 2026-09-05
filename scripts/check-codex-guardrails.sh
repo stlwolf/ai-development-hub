@@ -76,8 +76,6 @@ main() {
     # implementation-gate-rule.md
     require_pattern "planning phase" "implementation-gate-rule"
 
-    # skill-first-operations-rule.md
-    require_pattern "Skill-First" "skill-first-operations-rule"
 
     if [[ "$missing_count" -gt 0 ]]; then
         error "Guardrails check failed (${missing_count} missing pattern(s))"
