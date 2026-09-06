@@ -37,7 +37,7 @@ so-compare [OPTIONS] "プロンプト"
 | `--claude-only` | Claude のみ実行 | 両方実行 |
 | `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
 | `--cursor-only` | Cursor のみ実行 | 両方実行 |
-| `--cursor-model MODEL` | Cursor で使用するモデル | `auto` |
+| `--cursor-model MODEL` | Cursor で使用するモデル | `composer-2.5` |
 | `--claude-model MODEL` | Claude で使用するモデル（エイリアス `opus`/`sonnet`/`haiku` 可） | CLI 既定 |
 | `--codex-model MODEL` | Codex で使用するモデル | CLI 既定 |
 | `--claude-effort LEVEL` | Claude のエフォート（`low`/`medium`/`high`/`xhigh`/`max`） | CLI 既定 |
@@ -51,7 +51,7 @@ so-compare [OPTIONS] "プロンプト"
 | `SO_TIMEOUT` | codex / cursor のタイムアウト秒数 | `240` |
 | `SO_CLAUDE_TIMEOUT` | claude のタイムアウト秒数（claude だけ既定が長い。下記「レーンごとの所要時間」を見よ） | `1200` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
-| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `auto` |
+| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `composer-2.5` |
 | `SO_CLAUDE_MODEL` | Claude のデフォルトモデル（`--claude-model` で上書き可） | CLI 既定 |
 | `SO_CODEX_MODEL` | Codex のデフォルトモデル（`--codex-model` で上書き可） | CLI 既定 |
 | `SO_CLAUDE_EFFORT` | Claude のデフォルトエフォート（`--claude-effort` で上書き可） | CLI 既定 |
@@ -105,7 +105,7 @@ so-compare --codex-model gpt-5.5 -w "$(pwd)" "プロンプト"
 - 軽い確認 → 既定モデルのまま（フラグ未指定＝従来挙動）
 - 指定したモデル名が無効・未契約の場合、そのレーンはエラー（`error` / `error_partial`）として結果サマリに現れる
 
-未指定なら各 CLI の既定モデルで動作し、従来と挙動は変わらない。
+未指定なら claude / codex は各 CLI の既定モデルで動作する。**cursor だけは so-compare 側の既定 `composer-2.5` を渡す**（`auto` は解決先が実行ごとに変わり高コストのモデルを引くため。#375）。`auto` に戻したいときは `--cursor-model auto` を明示する。
 
 ## 出力ディレクトリ構成
 
@@ -177,7 +177,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
 
-SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor の既定は `auto` で実行時に選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
+SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor は `auto` を指定すると実行時に解決先が選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
 
 各レーンの meta には次のキーが入る。
 
@@ -228,7 +228,7 @@ SO の判定は plan / episode / discussion から証跡リンクで引かれ、
 
 ### cursor の解決後モデルを手で調べる手順
 
-**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（既定の `auto` では `Auto Balance` としか出ない）。
+**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（`auto` を指定したときは `Auto Balance` としか出ない）。
 
 具体名は Cursor 内部の SQLite に残っており、手で辿れば取得できる。**ただしこれは公開された形式ではなく、Cursor の更新で変わりうる。** 自動記録がこれに依存していないのは意図的な判断である（内部形式への無言の依存を作らないため）。
 
@@ -246,6 +246,8 @@ sqlite3 "$D/store.db" "select data from blobs;" | grep -oE '"modelName":"[^"]+"'
 ```
 
 ### `auto` は実行ごとに解決先が変わる（レーンの多様性を読むときの注意）
+
+so-compare の cursor 既定は `composer-2.5` なので、この節は `--cursor-model auto` を明示したときの話である（#375 以降）。
 
 同一プロンプト・同一条件で `auto` を3回走らせ、解決先を上の手順で確認した実測がある。
 

@@ -25,7 +25,7 @@ Options:
   --claude-only  Claude のみ実行
   --cursor       Cursor CLI (agent) も実行（デフォルト: 無効）
   --cursor-only  Cursor のみ実行
-  --cursor-model MODEL  Cursor で使用するモデル（デフォルト: auto）
+  --cursor-model MODEL  Cursor で使用するモデル（デフォルト: composer-2.5）
   --claude-model MODEL  Claude で使用するモデル（エイリアス opus/sonnet/haiku 可。デフォルト: CLI 既定）
   --codex-model MODEL   Codex で使用するモデル（デフォルト: CLI 既定）
   --claude-effort LEVEL Claude のエフォート level（low/medium/high/xhigh/max。デフォルト: CLI 既定）
@@ -40,7 +40,7 @@ Environment:
   SO_CLAUDE_TIMEOUT claude のタイムアウト秒数（整数、デフォルト: 1200）
                    レビュー級の課題では claude が他レーンより大幅に長くかかる実測が
                    あるため既定を分けている（詳細は so-compare skill）
-  SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: auto。--cursor-model で上書き可）
+  SO_CURSOR_MODEL  Cursor のデフォルトモデル（デフォルト: composer-2.5。--cursor-model で上書き可）
   SO_CLAUDE_MODEL  Claude のデフォルトモデル（--claude-model で上書き可）
   SO_CODEX_MODEL   Codex のデフォルトモデル（--codex-model で上書き可）
   SO_CLAUDE_EFFORT Claude のデフォルトエフォート（--claude-effort で上書き可）
@@ -69,7 +69,12 @@ PROVIDERS_RAW=""
 WITH_SPECIFIED=false
 LEGACY_PROVIDER_FLAG=false
 CLAUDE_WEB=false
-CURSOR_MODEL="${SO_CURSOR_MODEL:-auto}"
+# cursor の既定を auto にすると解決先が実行ごとに変わり、高コストのモデル
+# （cursor-grok-4.6-high 等）へ解決されて使用量の警告を招いた（owner 報告・2026-09-07）。
+# SO は設計と実装の両方のゲートで常時回すので、既定のコストがそのまま回数分効く。
+# composer-2.5 はアカウントで選べるモデルのうち最もコストが低い。auto や他のモデルは
+# --cursor-model / SO_CURSOR_MODEL で明示したときだけ使う（#375）。
+CURSOR_MODEL="${SO_CURSOR_MODEL:-composer-2.5}"
 CLAUDE_MODEL="${SO_CLAUDE_MODEL:-}"
 CODEX_MODEL="${SO_CODEX_MODEL:-}"
 CLAUDE_EFFORT="${SO_CLAUDE_EFFORT:-}"
@@ -991,7 +996,7 @@ run_cursor() {
         echo "timeout_limit_seconds=$tool_timeout"
         echo "model_requested=${CURSOR_MODEL:-default}"
         # cursor CLI は解決後のモデルを出力しない。json / stream-json に出る model は
-        # 表示名（既定の auto では "Auto Balance"）であって具体的なモデル ID ではない。
+        # 表示名（auto を指定したときは "Auto Balance"）であって具体的なモデル ID ではない。
         # 具体名は Cursor 内部の SQLite（~/.cursor/chats/**/store.db）にあるが、
         # 非公開の内部形式なので自動では依存しない（owner 判断・#295）。
         # 手動で辿る手順は canonical/skills/so-compare/SKILL.md に記載している。
