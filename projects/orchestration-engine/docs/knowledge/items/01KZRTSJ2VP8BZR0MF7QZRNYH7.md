@@ -8,7 +8,11 @@ prediction: "ファイル内の literal な exit N を grep して、見つか�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-12-episode-309-help-exit-remaining-verbs.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-06
+    ref: "#359"
+    state: followed
+    note: "終了コードの契約を文字列でなく実行経路として決めた。孤児検出で当初 0/1 の2値にしていたが、走査に失敗した場合を『孤児あり』と同じ 1 で返しており、実装SOに『別の状態なのに区別できない』と指摘された。経路ごとに走らせて 0（孤児なし）/ 1（孤児あり）/ 2（判定できない）の3値へ分け、3値が区別できることをテストで固定した。掃除の側でも同じ3値を保った"
 exclusions:
   - "関数を source していない自己完結したスクリプト（伝播の経路が無い）"
   - "実際に叩いて exit code を観測した場合（grep を根拠にしていない）"

@@ -12,6 +12,7 @@
 #   ./scripts/sync.sh --list           # 利用可能ターゲット一覧
 #   ./scripts/sync.sh --check          # 全ターゲットの整合チェック
 #   ./scripts/sync.sh --check cursor   # cursor のみチェック
+#   ./scripts/sync.sh --prune claude   # 孤児 symlink を削除（検査も行う・既定は報告のみ）
 #
 # Available targets:
 #   cursor  — canonical + cursor-specific → ~/.cursor/
@@ -30,6 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SYNC_DIR="${SCRIPT_DIR}/sync"
 
 ALL_TARGETS=(cursor claude codex bin)
+# --prune を付けたときだけ、配布先に残った孤児 symlink を削除する（既定は報告のみ）。
+PRUNE_MODE=false
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -132,6 +135,27 @@ check_skill_dirs() {
     done
 }
 
+check_orphan_links() {
+    local target="$1" repo_root="$2" diffs_ref="$3"
+    local prune_args=()
+    [[ "${PRUNE_MODE:-false}" == true ]] && prune_args=(--prune)
+    # 配布先の側から走査する。正本の側からだけ回していると、正本から消した
+    # ファイルの配布先は一度も訪れられず、残ったリンクが壊れても誰も見ない（#359）。
+    local orphan_script="${SYNC_DIR}/check-orphan-links.sh"
+    if [[ ! -x "${orphan_script}" ]]; then
+        error "  ${target}: 孤児リンクの検査を委譲できません（not found or not executable）: ${orphan_script}"
+        eval "${diffs_ref}=true"
+        return
+    fi
+    # 素で呼ばない。check_target は main() の `if ! check_target` から呼ばれるので
+    # 関数本体の errexit が抑止され、子が差分を返しても握り潰される。
+    local orphan_rc=0
+    "${orphan_script}" "${target}" --canonical "${repo_root}/canonical" "${prune_args[@]+"${prune_args[@]}"}" || orphan_rc=$?
+    if [[ "${orphan_rc}" -ne 0 ]]; then
+        eval "${diffs_ref}=true"
+    fi
+}
+
 check_target() {
     local target="$1"
     local repo_root
@@ -151,6 +175,7 @@ check_target() {
             check_symlink "${base}/mcp.json" "${canonical}/mcp/cursor.json" "mcp.json" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/cursor.hooks.json" "hooks.json" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
+            check_orphan_links cursor "${repo_root}" has_diffs
             ;;
         claude)
             local base="${HOME}/.claude"
@@ -160,15 +185,27 @@ check_target() {
             check_symlinks_dir "${canonical}/agents" "${base}/agents" "*.md" "agents" has_diffs
             check_symlinks_dir "${canonical}/commands" "${base}/commands" "*.md" "commands" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
-            if [[ -f "${base}/settings.json" ]]; then
-                local expected_hooks actual_hooks
-                expected_hooks="$(jq -S '.hooks' "${canonical}/hooks/claude.hooks.json" 2>/dev/null)"
-                actual_hooks="$(jq -S '.hooks' "${base}/settings.json" 2>/dev/null)"
-                if [[ "${expected_hooks}" != "${actual_hooks}" ]]; then
-                    warn "  Hooks section differs in settings.json"
+            check_symlinks_dir "${canonical}/output-styles" "${base}/output-styles" "*.md" "output-styles" has_diffs
+            # settings.json の検査は宣言（canonical/claude/settings.harness.json）を
+            # 知っている専用スクリプトへ委譲する。ここに hooks だけを手書きしていると、
+            # 宣言に項目が増えたときに検査側だけ古くなる（#313 と同じ理由・#359）。
+            local settings_check="${SYNC_DIR}/check-claude-settings.sh"
+            if [[ ! -x "${settings_check}" ]]; then
+                error "  claude settings: 検査を委譲できません（not found or not executable）: ${settings_check}"
+                has_diffs=true
+            else
+                # 素で呼ばない。check_target は main() の `if ! check_target` から呼ばれるので
+                # 関数本体の errexit が抑止され、子が差分（rc=1）を返しても握り潰される
+                # （bin ターゲットと同じ手当て）。
+                local settings_rc=0
+                "${settings_check}" --project-root "${repo_root}" || settings_rc=$?
+                # 0 以外はすべて差分として扱う。子を実行できなかったときの終了コードは
+                # 呼び出し文脈で変わり、数値では「差分あり」と区別できない。理由は子が印字する。
+                if [[ "${settings_rc}" -ne 0 ]]; then
                     has_diffs=true
                 fi
             fi
+            check_orphan_links claude "${repo_root}" has_diffs
             ;;
         codex)
             local base="${HOME}/.codex"
@@ -177,6 +214,7 @@ check_target() {
             check_symlink "${base}/AGENTS.md" "${canonical}/codex/AGENTS.md" "AGENTS.md" has_diffs
             check_symlink "${base}/hooks.json" "${canonical}/hooks/codex.hooks.json" "hooks.json" has_diffs
             check_symlinks_dir "${canonical}/hooks/scripts" "${base}/hooks" "*.sh" "hook-scripts" has_diffs
+            check_orphan_links codex "${repo_root}" has_diffs
             ;;
         bin)
             # 配布対象を知っているのは sync-bin.sh なので、検査もそちらへ委譲する。
@@ -237,6 +275,7 @@ main() {
             -h|--help) usage ;;
             -l|--list) list_targets ;;
             --check) check_mode=true ;;
+            --prune) PRUNE_MODE=true; check_mode=true ;;
             --*) targets+=("${arg#--}") ;;
             *) targets+=("${arg}") ;;
         esac
@@ -262,7 +301,11 @@ main() {
     done
 
     if [[ "${check_mode}" == true ]]; then
-        info "Check mode: ${targets[*]}"
+        if [[ "${PRUNE_MODE}" == true ]]; then
+            info "Prune mode: ${targets[*]}（孤児 symlink を削除します）"
+        else
+            info "Check mode: ${targets[*]}"
+        fi
         echo ""
         local failed=()
         for target in "${targets[@]}"; do
