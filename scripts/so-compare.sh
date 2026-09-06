@@ -531,7 +531,6 @@ write_meta_start() {
         # 「失敗を版で分ける」という目的から見て、いちばん要る場所で欠けることになる（#303 の
         # 実装SO が指摘）。完了側と同じ値を書くので、mv で差し替わっても値は変わらない。
         echo "so_compare_version=$SO_COMPARE_VERSION"
-        echo "so_compare_sha=$SO_COMPARE_SHA"
     } | commit_meta "$tool"
 }
 
@@ -549,49 +548,24 @@ commit_meta() {
 # --- so-compare 自身の版の記録（#303） ---
 #
 # **なぜ要るか。** レーンの meta には CLI の版（`cli_version`）が入るが、**so-compare 自身の版は
-# 入っていなかった。** そのため過去の出力を集めて分類しようとすると、母集団に「すでに直った
-# 故障の残骸」と「いまも起きる故障」が混ざる。実際 #303 の調査では、収集期間中に so-compare が
-# 4 回変わっており、うち #296 は claude の stdout の意味そのものを変えていた（プロセス標準出力の
-# 落ち先が claude-raw.json へ移った）。**その記録から決めた観測点が、いまの経路では当たらなかった。**
+# 入っていなかった。** そのため過去の出力を集めて分類すると、母集団に「すでに直った故障の残骸」と
+# 「いまも起きる故障」が混ざる。#303 の調査では収集期間中に so-compare が4回変わっており、うち
+# #296 は claude の stdout の意味そのものを変えていた。**その記録から決めた観測点が、いまの
+# 経路では当たらなかった。**
 #
-# 値は2つに分ける。**宣言した版は読みやすいが嘘をつきうる**（振る舞いを変えたのに上げ忘れる）。
-# **ハッシュは嘘をつかないが読めない。** 層別するときはハッシュで束ね、人が読むときは宣言を見る。
+# **実行時にハッシュを計算しない。** 当初は「宣言した版は上げ忘れると嘘をつくので、スクリプト
+# 自身のバイト列のハッシュも書く」設計にしていた。しかし実装SO が4周かけて、その1行のために
+# **レーンを1本も起動しないうちに SO 全体が止まる経路**を次々と実証した（`pipefail` で落ちる /
+# 応答しない hasher で無期限に待つ / `timeout` は TERM を送るだけなので TERM を無視する hasher
+# には効かない / パイプ後段の `awk` は上限の外）。**塞ぐたびに同じ壁の次の割れ目が出た。**
+#
+# 根にあるのは「**由来を記録するためだけに、どのレーンも始まる前の critical path で外部コマンドを
+# 走らせている**」ことである。そこで**外部コマンドをやめた**。meta に書くのは宣言した版だけにする。
+#
+# **上げ忘れは別の層で捕まえる。** `tests/test_so_compare_version.sh` がこのファイルのハッシュを
+# 固定値と突き合わせ、中身が変わったのに宣言が据え置きなら落ちる。**検査を実行時からテスト時へ
+# 移した**ので、止まっても見えるところで止まり、SO のゲートは巻き込まれない。
 SO_COMPARE_VERSION="2026-09-07"
-
-# 自分自身のバイト列のハッシュ。~/bin からの symlink 経由で呼ばれても、実体を読むので値は同じ。
-# 取れなければ空欄にせず種別を書く（記録漏れと取得不能を区別する。cli_version_for と同じ規約）。
-so_compare_self_sha() {
-    local src="${BASH_SOURCE[0]}" out
-    if [[ -z "$src" || ! -r "$src" ]]; then
-        printf '%s\n' "unavailable:self-unreadable"
-        return 0
-    fi
-    # **パイプラインの失敗を明示的に受ける。** `set -euo pipefail` の下では、hasher が非ゼロで
-    # 終わるとこの代入自体が失敗する。POSIX mode や inherit_errexit が効いている実行では
-    # そこで関数が即座に終わり、下の `unavailable:hash-failed` へ落ちる経路に届かない。
-    # さらにトップレベルの代入まで非ゼロになるので、**レーンを1本も起動しないままスクリプトが
-    # 終わる**（実装SO が bash 3.2 / 5.2 の POSIX mode で exit 9 を再現した）。
-    # **上限を掛ける。** `|| out=''` が受けるのは非ゼロ終了だけで、応答しない hasher（PATH 上の
-    # 壊れたラッパー・止まったプロセス）には効かない。この処理は**レーンを1本も起動する前の
-    # トップレベル**で走るので、掛けないと付随的な版記録のせいで SO 全体が無期限に止まる
-    # （実装SO の3周目の指摘）。**同じファイルの `cli_version_for()` が `--version` に対して
-    # まったく同じ理由で `timeout 5` を掛けている。先例がある場所で先例を外していた。**
-    if command -v shasum >/dev/null 2>&1; then
-        out="$(timeout 5 shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')" || out=''
-    elif command -v sha256sum >/dev/null 2>&1; then
-        out="$(timeout 5 sha256sum "$src" 2>/dev/null | awk '{print $1}')" || out=''
-    else
-        printf '%s\n' "unavailable:no-hasher"
-        return 0
-    fi
-    if [[ ! "$out" =~ ^[0-9a-f]{64}$ ]]; then
-        printf '%s\n' "unavailable:hash-failed"
-        return 0
-    fi
-    printf '%s\n' "${out:0:12}"
-}
-# 関数は必ず 0 で返すが、想定外の実行モードで落ちてもレーンを止めないよう、ここでも受ける。
-SO_COMPARE_SHA="$(so_compare_self_sha)" || SO_COMPARE_SHA="unavailable:hash-failed"
 
 # --- CLI の版の取得（#298） ---
 #
@@ -904,7 +878,6 @@ run_codex() {
         echo "cli_version=$CODEX_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "so_compare_version=$SO_COMPARE_VERSION"
-        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -1001,7 +974,6 @@ run_claude() {
         echo "cli_version=$CLAUDE_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "so_compare_version=$SO_COMPARE_VERSION"
-        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
@@ -1063,7 +1035,6 @@ run_cursor() {
         echo "cli_version=$CURSOR_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
         echo "so_compare_version=$SO_COMPARE_VERSION"
-        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
