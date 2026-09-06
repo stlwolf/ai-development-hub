@@ -102,7 +102,7 @@ so-compare --codex-model gpt-5.5 -w "$(pwd)" "プロンプト"
 ### 使い分けの目安
 
 - 設計判断・反証など重い SO → Claude を `--claude-model opus --claude-effort high`（必要なら `max`）に上げる
-- 軽い確認 → 既定モデルのまま（フラグ未指定＝従来挙動）
+- 軽い確認 → 既定モデルのまま（フラグ未指定でよい。ただし cursor の既定だけは so-compare 側が `composer-2.5` を指定する。下記参照）
 - 指定したモデル名が無効・未契約の場合、そのレーンはエラー（`error` / `error_partial`）として結果サマリに現れる
 
 未指定なら claude / codex は各 CLI の既定モデルで動作する。**cursor だけは so-compare 側の既定 `composer-2.5` を渡す**（`auto` は解決先が実行ごとに変わり高コストのモデルを引くため。#375）。`auto` に戻したいときは `--cursor-model auto` を明示する。
