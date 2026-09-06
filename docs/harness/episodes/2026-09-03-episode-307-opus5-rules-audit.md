@@ -3,7 +3,7 @@ id: 01M1HDRJTVVG2708DGKH98VGN7
 title: "#307 段階1 — Opus 5 世代の指針で rules 14本を棚卸しする（情報の取り直し・runtime 採取・判定表・plan）"
 date: 2026-09-03
 type: episode
-status: draft
+status: stable
 related:
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/307"
@@ -12,6 +12,53 @@ related:
     ref: "docs/research/2026-08-17-opus5-rule-shift-intake.md"
     reason: "材料の正本（S-1〜S-4・F-1〜F-10・O-1〜O-5）。本 episode はこれを取り直す"
 tags: [harness, rules-audit, opus5, lean-system-prompt, runtime-capture]
+promotion:
+  - subject: "削除の根拠「本体が持つ」は、配布物が届く全ツール・全モデルで確かめないと成立しない"
+    verdict: required
+    ref:
+      - "本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型"
+      - "本文: 何を仮定していて、なぜ拾えなかったか"
+  - subject: "ゲートを通った判定でも、適用範囲を自分で書いているなら範囲外からの反対は自分で処理する"
+    verdict: required
+    ref: "本文: PR-2b の反対を受け入れて痕跡型へ置き換えた（02:00）"
+  - subject: "判定の単位を節ではなく文に置く（同じドリフト文が複数の節に散る）"
+    verdict: not-required
+    ref: "本文: PR-1 `subagent-strategy` の書き換え（01:33〜）"
+  - subject: "反証レーンへ渡す claim は本文だけで判断できる密度に畳み、成果物はレーンが読める位置に置く"
+    verdict: required
+    ref:
+      - "本文: gate 2 — 1周目の結果（01:19〜01:23）: codex / cursor が timeout_empty"
+      - "本文: gate 2 — 2周目と claude レーンの結果（01:27〜01:33）: 3 / 3 refuted・期待どおり論点4 と帰属を突かれた"
+  - subject: "SO を並行で回すとレーンが落ち、片肺の判定になる"
+    verdict: required
+    ref: "本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型"
+  - subject: "棚卸しの基準線はモデル×版で宣言する（設定ファイルの model は採取したセッションの値）"
+    verdict: required
+    ref: "本文: 何を仮定していて、なぜ拾えなかったか"
+  - subject: "changelog に無いことを機能が無いことと読まない"
+    verdict: not-required
+    ref: "本文: F-1 の計測器を先に確かめた（バイナリの文字列）"
+  - subject: "undocumented な環境変数は効いても既定の運用に据えず、計測の物差しに留める"
+    verdict: not-required
+    ref: "本文: 切り分けの結果（03:41）: 期待が外れた。差は mode ではなくモデル"
+  - subject: "自己検証と外部ソース照合の区別は公式文に無く、当リポジトリ側の解釈である"
+    verdict: not-required
+    ref: "本文: P-1 の完了と報告（01:10 JST）"
+  - subject: "各 rule に見直し条件を1行持たせ、世代名を本文に焼かない"
+    verdict: not-required
+    ref: "本文: P-1 の完了と報告（01:10 JST）"
+  - subject: "研究ノートの前提（lean 版は応答形式の規定を失った）は実測で半分覆った"
+    verdict: not-required
+    ref: "本文: F-1 の実測 — 2回目（01:10〜01:13）と結論"
+  - subject: "F-1 は Opus 5 でも効く（長版 11 節）"
+    verdict: not-required
+    ref: "本文: 切り分けの結果（03:41）: 期待が外れた。差は mode ではなくモデル"
+  - subject: "stacked PR の積み直しは --onto に新旧の base を渡す"
+    verdict: not-required
+    ref: "本文: stack の積み直しを2回やった"
+  - subject: "禁止形で書いた規定は、いつ使ってよいかを述べる記述形へ置き換えうる"
+    verdict: unknown
+    ref: "本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型"
 ---
 
 # episode — #307 段階1 rules 14本の棚卸し
@@ -156,9 +203,9 @@ plan-first の規律で commit も PR もしていないので、**この3文書
 
 時間の記録: 01:34 に反映を終えた直後、owner の利用枠が尽きてセッションが約 27 分止まった（02:01 復帰）。予算終端 02:20 に対し P-4 の report 送信で閉じる。
 
-## closure（未・マージ前に書く）
+## closure の予定（段階1 時点のメモ・実際の closure は末尾）
 
-本アークの終端は P-4 で、closure は段階2 の PR レビュー後・マージ前（gate 5）に書く。NK 5 item への観測は上の下書きを写す。ただし 01KYJ76D830XME16ZFXC2XRPZZ は「注入源は followed・配布先は not_followed」に付け直す（gate 2 の節を参照）。
+本アークの終端は P-4 で、closure は段階2 の PR レビュー後・マージ前（gate 5）に書く。
 
 ### 差し戻し1件（統括 fact-check・02:05）: §4.4 の集計行が gate 2 前の値のままだった
 
@@ -309,3 +356,95 @@ PR #360 から #369 まで 10 本を stacked で作った。マージはして�
 昇格の印: SO を並行で回すとレーンが落ちる。速度と引き換えに片肺の判定を受け入れている。並行数の上限を決めるか、落ちたレーンの再走を手順に入れる
 
 **stack の積み直しは合計5回。** `--onto <新base> <旧base>` を使う限り機械的で、衝突は AGENTS.md の番号と要約行に集中した。ただし下流の PR ほど積み直しの回数が増える（#369 は3回）。stacked は「前の PR を待たずに進める」利点と引き換えに、上流の修正が下流の作業量になる。
+
+## マージ前の準備（2026-09-07 01:55〜）
+
+owner がマージの列を1回で通す方針になり、その準備を任された。#374（#359 の sync 改修）が master に入ったので、10本の枝を新しい master へ積み直した。`--onto <新base> <旧base>` を順に当て、**各 PR の差分が変わっていないことを patch-id で照合した。10本とも一致**し、guardrail も全枝で緑だった。master 側の変更は rules と CATALOG と AGENTS と guardrail に触れていないので、衝突は1件も起きなかった。差分が変わっていないため、再度の実装SO は要らないと判断した。
+
+### 孤児 symlink の検査を実測した（探針を2回作り直した）
+
+packet に「マージ後に何が出るか」を書く必要があり、推測で書かないために実機で測った。**1回目の探針は外れた。** 正本の外（`/nonexistent/...`）を指す壊れた symlink を作ったところ、検査は `dangling-outside` と分類し「正本の外なので触りません」と報告した。**実際の孤児は正本の中を指す**ので、この探針では `--prune` の対象にならず、faithful な対照になっていなかった。
+
+2回目は正本の中の存在しないファイルを指す探針にした。こちらは `orphan-canonical` と分類され、`--check` が「正本から消えた配布先が 2 件残っています」と赤で報告し、`--prune claude` で2件とも消えた。探針は後始末済みで、配布本数は 14 のまま戻っている。
+
+**追補は孤児が1件残ると見込んでいたが、実際は2件になる。** 退役するのは skill-first-operations と implementation-principles の2本だからである。packet にはこの2件で書いた。
+
+昇格の印: 探針は「実物と同じ経路・同じ分類に落ちるか」を先に確かめないと、faithful でない対照になる。壊れた symlink は指す先が正本の内か外かで分類も処分も変わった
+
+## closure（gate 5・マージ前・2026-09-07）
+
+tier は **heavy**。失敗と撤回があり（`本文: F-1 の実測 — 1回目（01:06〜01:10）` ほか）、品質ゲート目的で外部レビューを明示起動し（設計SO 1回・実装SO 12回）、非自明な設計判断を棄却込みで持ち、昇格候補がある。
+
+### closure gate
+
+- **Context / なぜ**: `本文: 0. なぜこの作業が始まったか` に1〜2文で自己完結して書いてある。
+- **次の消費者**: (1) owner — マージの可否を `.oe/merge-packet-307.md` で判断する。(2) 次アークの skills 28本の棚卸し — 判定表の軸と、ツール・モデルの母集団の扱いをそのまま引く。(3) #348（応答の書き方の実験） — rules の文面が変わる時点が交絡になるので、マージのタイミングを共有する。
+- **follow-up の行き先**: 下の「残課題」に全件、行き先つきで書いた。行き先なしの項目は無い。
+- **昇格の判定**: frontmatter の `promotion` に14件。内訳は required 5 / not-required 8 / unknown 1。本文の印は19件あり、同じ判断に付いた印（モデル軸3件・ツール軸3件・SO レーンの扱い2件）をまとめて14件にした。
+- **status 確定**: `stable`。達成度は **達成**（brief の終端 P-4、追補の P-5、段階2 の Step 8 まで到達した）。
+- **evidence anchor**: 揮発パスの参照は本文に残っていない。実測値（H1 の節集合・語数・孤児 symlink の検査出力）は本文と discussion §8、`.oe/runtime-capture-307.md` に転記済み。`.oe/` は作業層なので、committed 側で必要なものは discussion に写してある。
+- **SO 証跡**: 設計SO は discussion §10 の表、実装SO は各 PR 本文の gate 4 節。出力は `tmp/oe-refute-*` と `tmp/oe-review-*`（揮発）で、要旨は committed 側に写した。
+- **観測の書き戻し**: 注入された5 item すべてに1レコードずつ書き戻した（下記）。
+
+### 注入された negative knowledge（期待集合・この5件が分母）
+
+`01KYJ76D830XME16ZFXC2XRPZZ` / `01KYMRE1N7N0J8VP3CBZZEZ8Q3` / `01KYMRE1NC7XX6N66RQ0MGGHF1` / `01KYMRE1NE4HSGZR7T4XPA9JW8` / `01KZVHE0KQ5VCX0SXH0F4SM14D`
+
+書き戻した state は順に `externally_verified` / `followed` / `followed` / `followed` / `injected_not_used`。最後の1件を `injected_not_used` にしたのは、段階1 では先例の欠けた前提を足したのに、段階2 で「本体が持つから消せる」を移植するとき同じ確認をしなかったためである。適用の機会は在ったが使わなかった。
+
+### 事実・失敗
+
+- 計測器を自分で壊した3件。F-1 の対照レーンを補助関数の誤りで空にした（`本文: F-1 の実測 — 1回目（01:06〜01:10）`）。孤児 symlink の探針を正本の外に置き、faithful でない対照を取った（`本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型` の後に追記した実測。今回の gate 5 準備で気づいた）。dangling ref の検索でフィルタの前置を間違え、10件を誤って残存参照と読みかけた。**3件とも陽性対照か exit code の分離で気づけた。**
+- 前提の取り違え2件。主モデルを設定ファイルから読んで Fable と誤認した（`本文: 何を仮定していて、なぜ拾えなかったか`）。配布先を索引と記憶から数え、Cursor に rules 本文が配られていないことを見落とした（`本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型`）。
+- 判断の誤り1件。実装SO の反対を「ゲートを通っているから上流へ」と送ったが、反対を評価する材料は自分の文書の中に在った（`本文: PR-2b の反対を受け入れて痕跡型へ置き換えた（02:00）`）。
+- 集計行の取り残し1件。判定を更新したのに集計行を旧値のまま残し、統括の fact-check で差し戻された（`本文: 差し戻し1件（統括 fact-check・02:05）: §4.4 の集計行が gate 2 前の値のままだった`）。
+- 語数の測り直し漏れ1件。gate 4 の修正後に測り直さず、4本の PR 本文に古い値を書いた。実測して訂正した。
+- レーンの脱落5件。SO を3本並行で回して codex レーンが VERDICT を返さなかった（`本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型`）。
+
+### 決定と根拠
+
+- **蒸留木を `docs/harness/` に新設した**（`本文: 蒸留木の置き場を決めた`）。棄却した案は既存の `docs/orchestration-engine/` への相乗りで、あちらは engine スコープの実名なのでハーネス全体を対象にする本件と合わない。
+- **F-1 は既定を変えず計測の物差しにする**（`本文: 切り分けの結果（03:41）: 期待が外れた。差は mode ではなくモデル`）。棄却した案は長版へ戻すことで、採れば判定の半分が変わるが、changelog に無い変数へ運用を預けることになる。
+- **implementation-principles の2行目は削除でなく痕跡型へ置き換えた**（`本文: PR-2b の反対を受け入れて痕跡型へ置き換えた（02:00）`）。棄却した案は2つ。そのまま削除する案は Codex と Cursor に穴を開ける。元の自問形へ戻す案は、公式が削れと言う型をそのまま残すことになる。
+- **PR は stacked にした**（`本文: 段階2（2026-09-06 01:31〜）— 修正 PR を stacked で作る`）。棄却した案は master から並列に切ることで、CATALOG と AGENTS と guardrail が全 PR の共通 hotspot なので衝突が読めなくなる。
+- **見直し条件は frontmatter に置いた**（`本文なし: 統括の裁定と、frontmatter が本体に届かないという実測を受けた判断で、本文の追記より後に確定した`）。棄却した案は各 rule の末尾に平文で置くことで、誤読の余地は無いが裁定の形と違う。実測で誤読の経路が無いと分かったので裁定の形を保った。
+
+### わかったこと
+
+- lean 版の本体は同じ Claude Code の版でもモデルで中身が違う（`本文: 切り分けの結果（03:41）: 期待が外れた。差は mode ではなくモデル`）。permission mode では変わらない。
+- rule 本文を常時ロードしているのは Claude だけで、Cursor は rules を配布せず Codex は見出し要約を受ける（`本文: 段階2 の着地（02:10）— 10 本の PR と、そこで見つかった型`）。
+- rule の frontmatter は読み込みの時点で剥がされ、本体には本文だけが載る（統括の実測。discussion §8 に記録）。だから見直し条件は届く語数を増やさない。
+- 退役した rule の配布先には壊れた symlink が残り、#374 で入った検査がそれを `orphan-canonical` として報告し `--prune` で消える（本 closure の準備で実測）。**マージ後に残るのは2件**で、追補が見込んでいた1件ではない。
+
+### 原則
+
+- **「別の層が持つから消せる」は、消す先の配布物が届く全ての環境で確かめないと成立しない。** 収穫した（`docs/harness/knowledge/items/01M1VTJJFF1TK067ZX3X912G0P.md`）。
+- **ゲートを通ったことは、範囲外からの反対を上流へ送る理由にならない。** 収穫した（`docs/harness/knowledge/items/01M1VTJJG68CAK6DJEPERVSGQW.md`）。
+- 測る前に期待値を宣言する習慣は、今回も外れた予測を3回拾った（F-1 の R3、切り分けの mode 仮説、孤児 symlink の探針）。**外れたことが分かるのは、宣言してあるからである。**
+
+### 行動変更
+
+- **SO は1本ずつ回す。** トリガは `oe-review` / `oe-refute` を2本目に起動しようとしたとき。機構は運用規律（統括の裁定・2026-09-07）。着地先は本 episode と、次アークの brief の固定節。
+- **配布物から消すときは配布先の環境を先に列挙する。** トリガは「別の層が持つから消せる」と書こうとしたとき。機構は knowledge item `01M1VTJJFF1TK067ZX3X912G0P`。着地先は次アークの判定表の列。
+
+### 蒸留シグナル
+
+- knowledge store: 2件収穫（上記）。
+- decision: **なし。** 5件の `required` はいずれも作業の進め方の教訓で、knowledge item と運用規律に着地する。設計判断として decision に残すものは、rules の判定そのもの（discussion §4.4）が既に committed に在る。
+- skill / rule: **なし**（本アークの成果物が rules そのものなので、規範の追加は別の判断として扱う）。
+
+### 残課題（全件に行き先）
+
+| 残課題 | 行き先 |
+|---|---|
+| Cursor と Codex の runtime 採取 | 次アーク（skills 棚卸し）の最初の step。plan の follow-up に記載済み |
+| rules 書き換えの効果測定（2026-04 の検証シナリオ再走） | #307 のコメントに残す。本アークでは追わない |
+| Fable 5 prompting guide の over-verification 節の有無 | 統括セッションのモデル向けの確認。plan の follow-up に記載済み |
+| Piebald-AI の system prompt データでトークン数を取る | plan の follow-up。優先度は低い |
+| output-format §9 を記述形へ書き換えるか | PR #368 の後続として owner の裁定待ち。plan の Step 7b に検討行として在る |
+| workflow-awareness の「非 issue は default branch 滞在可」を本体に合わせるか | 同上。plan の論点表に未裁定として在る |
+| 退役した rule の配布先の掃除 | マージ後に `./scripts/sync.sh --prune claude` を1回。`.oe/merge-packet-307.md` の §2 に手順を書いた |
+
+### 形式メモ
+
+出力型×消費チャネルの骨格で拾えたのは、失敗の列挙と決定の棄却理由だった。拾えなかったのは「測る前に宣言する」習慣そのもので、これは失敗でも決定でもなく**手順の性質**なので原則の行に置いた。KPT の皮は使っていない。摩擦は promotion の14件で、印19件から畳む作業に時間がかかった。**印を置くのは安いが、畳むのは安くない。**
