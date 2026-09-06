@@ -566,10 +566,15 @@ so_compare_self_sha() {
         printf '%s\n' "unavailable:self-unreadable"
         return 0
     fi
+    # **パイプラインの失敗を明示的に受ける。** `set -euo pipefail` の下では、hasher が非ゼロで
+    # 終わるとこの代入自体が失敗する。POSIX mode や inherit_errexit が効いている実行では
+    # そこで関数が即座に終わり、下の `unavailable:hash-failed` へ落ちる経路に届かない。
+    # さらにトップレベルの代入まで非ゼロになるので、**レーンを1本も起動しないままスクリプトが
+    # 終わる**（実装SO が bash 3.2 / 5.2 の POSIX mode で exit 9 を再現した）。
     if command -v shasum >/dev/null 2>&1; then
-        out="$(shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')"
+        out="$(shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')" || out=''
     elif command -v sha256sum >/dev/null 2>&1; then
-        out="$(sha256sum "$src" 2>/dev/null | awk '{print $1}')"
+        out="$(sha256sum "$src" 2>/dev/null | awk '{print $1}')" || out=''
     else
         printf '%s\n' "unavailable:no-hasher"
         return 0
@@ -580,7 +585,8 @@ so_compare_self_sha() {
     fi
     printf '%s\n' "${out:0:12}"
 }
-SO_COMPARE_SHA="$(so_compare_self_sha)"
+# 関数は必ず 0 で返すが、想定外の実行モードで落ちてもレーンを止めないよう、ここでも受ける。
+SO_COMPARE_SHA="$(so_compare_self_sha)" || SO_COMPARE_SHA="unavailable:hash-failed"
 
 # --- CLI の版の取得（#298） ---
 #
