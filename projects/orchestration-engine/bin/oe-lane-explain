@@ -1,0 +1,374 @@
+#!/usr/bin/env bash
+# oe-lane-explain — SO のレーンが返らなかった理由を、過去の出力から読み取る read-only 観測 verb (#303)
+#
+# usage:
+#   oe-lane-explain <dir>...        指定した SO 出力ディレクトリのレーンを分類して表で出す
+#   oe-lane-explain --scan <root>   <root>/tmp 配下の SO 出力ディレクトリを全部集めて当てる
+#   oe-lane-explain --json ...      1 レーン 1 行の JSON（JSONL）で出す
+#   oe-lane-explain --summary ...   版の目印で層別した件数を出す
+#   oe-lane-explain -h | --help
+#
+# なぜ so-compare の外に置くか（#303 の設計SO で3レーン中2レーンが独立に出した案）:
+#   so-compare は ~/bin から repo への symlink で配布されており、触ると全セッションへ即座に
+#   反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。
+#   本 verb は出力ディレクトリを読むだけなので、シグネチャを直しても誰の実行にも影響しない。
+#   加えて **過去の出力へ遡って当てられる**（配布物側に入れると当てられるのは今後の実行だけ）。
+#
+# read-only / 非検出: 読むのは引数で指定された出力ディレクトリ配下のファイルだけである。
+#   write path を持たず、engine state（events / registry / session-state）にも触れない。
+#
+# 分類の契約（#303 の plan v2 §8 I-1）:
+#   - **「ファイルが不在」と「ファイルが空」を畳まない。** 不在は「そのファイルを作らない版が
+#     この記録を生成した」という証拠を運んでいる。畳むとレコードの出自を取り違える
+#     （knowledge/items/01M1VX9MH72K7G940R6WC7M218.md）。
+#   - **exit_code=0 のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を
+#     引用しただけのものを故障と読まないため（設計SO の指摘）。
+#   - **当たらなければ unknown に倒す。** 断定しない。evidence は none と書く。
+#   - **経過秒と上限の一致を原因の判定に使わない。** 上限で kill されたことは timeout_status が
+#     すでに表しており、その原因が時間なのか使用量上限なのかは決まらない。
+#
+# 版の目印（so_compare_version が meta に無い記録のための代替）:
+#   so-compare は 2026-08-02 以降に4回変わり、うち #296 は claude の stdout の意味そのものを
+#   変えた（JSON 形式で受けるようになり、プロセス標準出力は claude-raw.json へ落ちる）。
+#   meta に so-compare 自身の版は入っていないので、**観測できる目印だけを出す**（推定した
+#   「版」を1つの値にまとめない）。目印は era_markers に列挙する。
+#
+# exit: 0 正常 / 2 前提が満たせない（引数が無い・ディレクトリが読めない・レーンが1件も無い）。
+#   空表を「0 件」として exit 0 で返さない（読めていないことを成功に化かさない）。
+
+set -uo pipefail
+
+err() { printf 'oe-lane-explain: %s\n' "$*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-lane-explain [--json|--summary] <dir>...
+  oe-lane-explain [--json|--summary] --scan <root>
+
+  --scan <root>   <root>/tmp 配下の so-* / oe-refute-* / oe-review-* を集めて当てる
+  --json          1 レーン 1 行の JSON（JSONL）で出す
+  --summary       版の目印で層別した件数を出す
+  -h, --help      このヘルプを表示
+
+出力（既定の表）: DIR / LANE / ATT / STATUS / EXIT / ELAPSED / OUT / ERR / REASON / EVIDENCE
+exit: 0 正常 / 2 前提が満たせない（引数なし・読めない・レーンが1件も無い）
+EOF
+}
+
+# --- ファイルの状態（不在と空を畳まない） ---
+# 出力: absent / empty / present
+file_state() {
+  local f="$1"
+  if [[ ! -e "$f" ]]; then printf 'absent'; return; fi
+  if [[ ! -s "$f" ]]; then printf 'empty'; return; fi
+  printf 'present'
+}
+
+file_bytes() {
+  local f="$1"
+  if [[ ! -e "$f" ]]; then printf '-'; return; fi
+  wc -c < "$f" 2>/dev/null | tr -d ' '
+}
+
+meta_get() {
+  local meta="$1" key="$2" v
+  v="$(grep -m1 "^${key}=" "$meta" 2>/dev/null | cut -d= -f2- || true)"
+  printf '%s' "$v"
+}
+
+# シグネチャを当てる範囲（実測で決めた・下の理由を参照）
+SIG_TAIL_LINES="${OE_LANE_EXPLAIN_TAIL_LINES:-200}"
+
+# 行頭に錨を打ち、末尾 SIG_TAIL_LINES 行だけを見る。
+#
+# **素の部分一致では誤検出する。実物で踏んだ。** codex のレーンは stderr に TUI の描画を流すので、
+# ワークスペースの本文がそのままエコーされる。tmp/so-288-h3 の stderr は 831KB・6964 行あり、
+# その 2095 行目に「codex が引数を拒否していた（`error: invalid UTF-8 was detected ...`）」という
+# **リポジトリの散文**が入っている。素の grep はこれを故障のシグネチャとして拾い、本当は
+# timeout_empty のレーンを invalid_input と誤って断定した。
+#
+# 錨と末尾の2つを課すと分かれる。**本物は行頭に立ち、末尾に出る**（プロセスが死ぬ直前に出すため）。
+#   本物 : tmp/so-288-gate2-r2 の stderr は 6 行で、1 行目が `error: invalid UTF-8 ...`
+#   エコー: tmp/so-288-h3 は 6964 行中 2095 行目・行の途中（散文の中）
+# 上限を上げれば拾えるものが増えるが、同時に誤検出も増える。**拾えないほうへ倒す**（当たらなければ
+# unknown になるだけで、断定はしない）。
+line_starts_with() {
+  local pat="$1" f="$2"
+  [[ -s "$f" ]] || return 1
+  tail -n "$SIG_TAIL_LINES" "$f" 2>/dev/null \
+    | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { found = 1 } END { exit !found }'
+}
+
+# 錨が使えない文言のための逃し弁。**小さいファイルに限り**、行頭の錨なしで部分一致を許す。
+#
+# シェルが出す `<path>: line N: <path>: Operation not permitted` のように、**行頭が機械ごとに
+# 変わる**ものは錨を打てない。一方で誤検出の元はレーンの stderr に流れ込む TUI の描画（数百KB
+# まで育つ）なので、**小ささを条件にすれば誤検出の経路を塞げる**。上限は実測から決めた
+# （診断だけの stderr は 115〜7254 バイト・TUI が乗ると 168KB 以上）。
+SIG_SMALL_BYTES="${OE_LANE_EXPLAIN_SMALL_BYTES:-16384}"
+
+contains_in_small_file() {
+  local pat="$1" f="$2" sz
+  [[ -s "$f" ]] || return 1
+  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
+  [[ -n "$sz" ]] || return 1
+  (( sz <= SIG_SMALL_BYTES )) || return 1
+  LC_ALL=C grep -qF -- "$pat" "$f" 2>/dev/null
+}
+
+sig_hit_small() {
+  local label="$1" pat="$2" f="$3"
+  if contains_in_small_file "$pat" "$f"; then
+    printf '%s' "$label"
+    return 0
+  fi
+  return 1
+}
+
+# claude の本文は版で落ち先が変わる（#296 以降はプロセス標準出力が raw.json へ行く）。
+# stdout・raw.json の素の中身・raw.json の .result の3つを見る。
+claude_body_hit() {
+  local pat="$1" out="$2" raw="$3"
+  line_starts_with "$pat" "$out" && return 0
+  line_starts_with "$pat" "$raw" && return 0
+  if [[ -s "$raw" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r '.result? // empty' "$raw" 2>/dev/null \
+      | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { found = 1 } END { exit !found }' && return 0
+  fi
+  return 1
+}
+
+# 指定ファイル群のいずれかにシグネチャが当たれば、当たった側のラベルを返す。
+# 使い方: sig_hit <label> <pattern> <file>...
+sig_hit() {
+  local label="$1" pat="$2"; shift 2
+  local f
+  for f in "$@"; do
+    if line_starts_with "$pat" "$f"; then
+      printf '%s' "$label"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# claude 専用（本文の落ち先が版で変わるため）
+sig_hit_claude_body() {
+  local label="$1" pat="$2" out="$3" raw="$4"
+  if claude_body_hit "$pat" "$out" "$raw"; then
+    printf '%s' "$label"
+    return 0
+  fi
+  return 1
+}
+
+# --- レーン1件を分類する ---
+# 出力はグローバル R_* に置く（bash 3.2 互換のため連想配列を使わない）。
+classify_lane() {
+  local dir="$1" tool="$2" sfx="$3"
+  local meta="${dir}/${tool}-meta.txt${sfx}"
+  local out="${dir}/${tool}-stdout.txt${sfx}"
+  local errf="${dir}/${tool}-stderr.txt${sfx}"
+  local raw="${dir}/${tool}-raw.json${sfx}"
+
+  R_DIR="$(basename "$dir")"
+  R_TOOL="$tool"
+  R_ATTEMPT="$(meta_get "$meta" attempt)"
+  [[ -n "$R_ATTEMPT" ]] || R_ATTEMPT='-'
+  R_STATE="$(meta_get "$meta" attempt_state)"
+  [[ -n "$R_STATE" ]] || R_STATE='-'
+  R_STATUS="$(meta_get "$meta" timeout_status)"
+  [[ -n "$R_STATUS" ]] || R_STATUS='-'
+  R_EXIT="$(meta_get "$meta" exit_code)"
+  [[ -n "$R_EXIT" ]] || R_EXIT='-'
+  R_ELAPSED="$(meta_get "$meta" elapsed_seconds)"
+  [[ -n "$R_ELAPSED" ]] || R_ELAPSED='-'
+  R_LIMIT="$(meta_get "$meta" timeout_limit_seconds)"
+  [[ -n "$R_LIMIT" ]] || R_LIMIT='-'
+  R_MODEL="$(meta_get "$meta" model_requested)"
+  [[ -n "$R_MODEL" ]] || R_MODEL='-'
+  R_CLI="$(meta_get "$meta" cli_version)"
+  [[ -n "$R_CLI" ]] || R_CLI='-'
+
+  # so-compare 自身の版。いまの meta には入っていないので、入っていなければそう書く。
+  R_SOVER="$(meta_get "$meta" so_compare_version)"
+  [[ -n "$R_SOVER" ]] || R_SOVER='unavailable:not-recorded'
+
+  R_OUT_STATE="$(file_state "$out")"
+  R_ERR_STATE="$(file_state "$errf")"
+  R_RAW_STATE="$(file_state "$raw")"
+  R_OUT_BYTES="$(file_bytes "$out")"
+  R_ERR_BYTES="$(file_bytes "$errf")"
+
+  # 版の目印（推定した版を1つの値にまとめない）
+  local markers=''
+  if [[ "$tool" == 'claude' ]]; then
+    if [[ "$R_RAW_STATE" == 'absent' ]]; then
+      markers='claude-raw-absent'   # JSON 形式で受ける前（#296 より前）の記録
+    else
+      markers='claude-raw-present'  # #296 以降
+    fi
+  fi
+  if [[ -n "$(meta_get "$meta" timeout_limit_seconds)" ]]; then
+    markers="${markers:+${markers},}limit-recorded"   # #328 以降
+  else
+    markers="${markers:+${markers},}limit-not-recorded"
+  fi
+  R_MARKERS="$markers"
+
+  # --- 原因の判定 ---
+  R_REASON='unknown'
+  R_EVIDENCE='none'
+
+  # 成功したレーンにはシグネチャを当てない（陰性対照）。
+  if [[ "$R_EXIT" == '0' ]]; then
+    R_REASON='none'
+    R_EVIDENCE='none'
+    return 0
+  fi
+
+  local hit=''
+  case "$tool" in
+    codex)
+      hit="$(sig_hit 'codex-stderr:usage-limit'   "ERROR: You've hit your usage limit"                           "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:invalid-utf8'  'error: invalid UTF-8 was detected'                            "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:untrusted-dir' 'Not inside a trusted directory'                               "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:path-aliases'  'WARNING: proceeding, even though we could not create PATH aliases' "$errf")" ||
+      hit=''
+      ;;
+    claude)
+      hit="$(sig_hit_claude_body 'claude-body:session-limit' "You've hit your session limit" "$out" "$raw")" ||
+      hit="$(sig_hit_claude_body 'claude-body:usage-limit'   "You've hit your usage limit"   "$out" "$raw")" ||
+      hit="$(sig_hit_small 'claude-stderr:not-permitted' 'Operation not permitted' "$errf")" ||
+      hit="$(sig_hit_claude_body 'claude-body:api-error'     'API Error:'                    "$out" "$raw")" ||
+      hit=''
+      ;;
+    cursor)
+      hit="$(sig_hit 'cursor-stderr:auth-required' 'Error: Authentication required' "$errf")" ||
+      hit=''
+      ;;
+  esac
+
+  [[ -n "$hit" ]] || return 0
+  R_EVIDENCE="$hit"
+  case "$hit" in
+    *:usage-limit|*:session-limit) R_REASON='usage_limit' ;;
+    *:auth-required)               R_REASON='auth_required' ;;
+    *:invalid-utf8)                R_REASON='invalid_input' ;;
+    *:untrusted-dir|*:path-aliases|*:not-permitted) R_REASON='environment' ;;
+    # 通信断は「再走で救えるか」が決まらないので断定しない。証拠だけ残す。
+    *:api-error)                   R_REASON='unknown' ;;
+  esac
+  return 0
+}
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+emit_json() {
+  printf '{"dir":"%s","lane":"%s","attempt":"%s","attempt_state":"%s","timeout_status":"%s","exit_code":"%s","elapsed_seconds":"%s","timeout_limit_seconds":"%s","model_requested":"%s","cli_version":"%s","so_compare_version":"%s","stdout_state":"%s","stderr_state":"%s","raw_state":"%s","stdout_bytes":"%s","stderr_bytes":"%s","era_markers":"%s","failure_reason":"%s","failure_evidence":"%s"}\n' \
+    "$(json_escape "$R_DIR")" "$(json_escape "$R_TOOL")" "$(json_escape "$R_ATTEMPT")" \
+    "$(json_escape "$R_STATE")" "$(json_escape "$R_STATUS")" "$(json_escape "$R_EXIT")" \
+    "$(json_escape "$R_ELAPSED")" "$(json_escape "$R_LIMIT")" "$(json_escape "$R_MODEL")" \
+    "$(json_escape "$R_CLI")" "$(json_escape "$R_SOVER")" \
+    "$(json_escape "$R_OUT_STATE")" "$(json_escape "$R_ERR_STATE")" "$(json_escape "$R_RAW_STATE")" \
+    "$(json_escape "$R_OUT_BYTES")" "$(json_escape "$R_ERR_BYTES")" \
+    "$(json_escape "$R_MARKERS")" "$(json_escape "$R_REASON")" "$(json_escape "$R_EVIDENCE")"
+}
+
+# --- 引数 ---
+MODE='table'
+SCAN_ROOT=''
+DIRS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --json)    MODE='json'; shift ;;
+    --summary) MODE='summary'; shift ;;
+    --scan)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then err "--scan にはディレクトリが要ります"; usage; exit 2; fi
+      SCAN_ROOT="$2"; shift 2 ;;
+    -*) err "不明なオプション: $1"; usage; exit 2 ;;
+    *)  DIRS+=("$1"); shift ;;
+  esac
+done
+
+if [[ -n "$SCAN_ROOT" ]]; then
+  if [[ ! -d "$SCAN_ROOT" ]]; then err "ディレクトリがありません: $SCAN_ROOT"; exit 2; fi
+  scan_base="$SCAN_ROOT"
+  [[ -d "${SCAN_ROOT}/tmp" ]] && scan_base="${SCAN_ROOT}/tmp"
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && DIRS+=("$d")
+  done < <(find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) 2>/dev/null | sort)
+fi
+
+if [[ ${#DIRS[@]} -eq 0 ]]; then
+  err "対象のディレクトリがありません"
+  usage
+  exit 2
+fi
+
+# --- 走査 ---
+LANE_COUNT=0
+UNREADABLE=0
+SUM_KEYS=()
+SUM_VALS=()
+
+sum_add() {
+  local key="$1" i
+  for (( i = 0; i < ${#SUM_KEYS[@]}; i++ )); do
+    if [[ "${SUM_KEYS[$i]}" == "$key" ]]; then
+      SUM_VALS[i]=$(( SUM_VALS[i] + 1 ))
+      return
+    fi
+  done
+  SUM_KEYS+=("$key")
+  SUM_VALS+=(1)
+}
+
+if [[ "$MODE" == 'table' ]]; then
+  printf '%-34s %-7s %-3s %-14s %-4s %-7s %-16s %-16s %-13s %s\n' \
+    DIR LANE ATT STATUS EXIT ELAPSED OUT ERR REASON EVIDENCE
+fi
+
+for d in "${DIRS[@]}"; do
+  if [[ ! -d "$d" ]]; then err "ディレクトリがありません（飛ばします）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ ! -r "$d" ]]; then err "読めません（飛ばします）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  for tool in codex claude cursor; do
+    for sfx in '' '.attempt1' '.attempt2'; do
+      meta="${d}/${tool}-meta.txt${sfx}"
+      [[ -f "$meta" ]] || continue
+      classify_lane "$d" "$tool" "$sfx"
+      LANE_COUNT=$(( LANE_COUNT + 1 ))
+      case "$MODE" in
+        json)  emit_json ;;
+        summary) sum_add "${R_MARKERS}|${R_TOOL}|${R_STATUS}|${R_REASON}" ;;
+        table)
+          printf '%-34s %-7s %-3s %-14s %-4s %-7s %-16s %-16s %-13s %s\n' \
+            "${R_DIR:0:34}" "$R_TOOL" "$R_ATTEMPT" "$R_STATUS" "$R_EXIT" "$R_ELAPSED" \
+            "${R_OUT_STATE}/${R_OUT_BYTES}" "${R_ERR_STATE}/${R_ERR_BYTES}" "$R_REASON" "$R_EVIDENCE"
+          ;;
+      esac
+    done
+  done
+done
+
+if [[ "$MODE" == 'summary' ]]; then
+  printf '%-34s %-7s %-14s %-13s %s\n' ERA_MARKERS LANE STATUS REASON COUNT
+  for (( i = 0; i < ${#SUM_KEYS[@]}; i++ )); do
+    IFS='|' read -r m t s r <<< "${SUM_KEYS[$i]}"
+    printf '%-34s %-7s %-14s %-13s %s\n' "$m" "$t" "$s" "$r" "${SUM_VALS[$i]}"
+  done
+  printf '\n合計レーン: %s\n' "$LANE_COUNT"
+fi
+
+# 空表を「0 件」として成功にしない。
+if [[ "$LANE_COUNT" -eq 0 ]]; then
+  err "レーンの記録が1件も見つかりませんでした（対象 ${#DIRS[@]} ディレクトリ・読めなかったもの ${UNREADABLE} 件）"
+  exit 2
+fi
+
+exit 0

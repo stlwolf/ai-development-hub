@@ -606,6 +606,33 @@ oe-hookfire --json       # 機械可読
 
 ---
 
+## oe-lane-explain — SO のレーンが返らなかった理由を読み取る（#303・read-only）
+
+`so-compare` / `oe-refute` / `oe-review` の出力ディレクトリを読み、レーンごとに**なぜ返らなかったか**を分類する read-only 観測 verb。何も書き換えない。
+
+```bash
+oe-lane-explain tmp/oe-refute-XXXX            # 表形式
+oe-lane-explain --scan .                      # <root>/tmp 配下を全部集めて当てる
+oe-lane-explain --json tmp/so-XXXX            # 1 レーン 1 行の JSON
+oe-lane-explain --summary --scan .            # 版の目印で層別した件数
+```
+
+**なぜ `so-compare` の中に入れないか。** `so-compare` は `~/bin` から repo への symlink で配布されており、触ると全セッションへ即座に反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。外に置くと**過去の出力へ遡って当てられる**利点もある（配布物側に入れると当てられるのは今後の実行だけ）。#303 の設計SO で3レーン中2レーンが独立に出した案である。
+
+**分類の契約**（`failure_reason`）は `none` / `usage_limit` / `auth_required` / `invalid_input` / `environment` / `unknown` の6値で、`failure_evidence` にどのシグネチャが当たったかを書く。**当たらなければ `unknown` と `none` に倒す。断定しない。**
+
+- **`timeout` という値は置いていない。** 「上限に達して kill された」は `timeout_status` がすでに表しており、その原因が時間なのか使用量上限なのかは meta からは決まらない。原因の軸に `timeout` を置くと、分けられないものを分けたことにしてしまう。
+- **`exit_code=0` のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を引用しただけのものを故障と読まないためである。
+- **シグネチャは行頭に錨を打ち、末尾 200 行だけを見る。** 素の部分一致では誤検出する（実物で踏んだ）。codex のレーンは stderr に TUI の描画を流すので、ワークスペースの本文がそのままエコーされる。831KB・6964 行の stderr の 2095 行目に入っていたリポジトリの散文を、素の grep は故障のシグネチャとして拾った。窓は `OE_LANE_EXPLAIN_TAIL_LINES` で変えられる。
+- **錨が使えない文言（シェルが出す `<path>: line N: ... Operation not permitted` など）だけは、小さいファイルに限り部分一致を許す。** 上限は `OE_LANE_EXPLAIN_SMALL_BYTES`（既定 16384）。誤検出の元が数百KB の TUI 描画なので、小ささを条件にすれば経路を塞げる。
+- **「ファイルが不在」と「ファイルが空」を畳まない。** `stdout_state` / `stderr_state` / `raw_state` は `absent` / `empty` / `present` の3値である。不在は「そのファイルを作らない版がこの記録を生成した」という証拠を運んでいる。
+- **so-compare 自身の版は meta に無いので `unavailable:not-recorded` と書く。** 代わりに観測できる目印を `era_markers` に出す（`claude-raw-absent` なら #296 より前、`limit-recorded` なら #328 以降）。**推定した「版」を1つの値にまとめない。**
+- exit は 0 正常 / 2 前提が満たせない（引数なし・読めない・**レーンの記録が1件も無い**）。空表を「0 件」として exit 0 で返さない。
+
+関連: `tests/test_oe_lane_explain.sh`（29 件）/ `tests/fixtures/so-lane-failures/SOURCE.md`（fixture の出所と2つの陰性対照）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（I-1）。
+
+---
+
 ## oe-vitals — 統括 vital 監視 watchdog（#239 段階1・read-only・cron 可）
 
 statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane, server_pid, model}`。`server_pid` と `model` は #327 で additive に追加。本 verb が読むのは従来の3キーだけ）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。

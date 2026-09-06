@@ -1,0 +1,10 @@
+tool=claude
+model_requested=default
+effort_requested=default
+exit_code=1
+timeout_status=error_partial
+elapsed_seconds=795
+stdout_lines=1
+stdout_bytes=61
+retry=1
+retry_timeout=1350

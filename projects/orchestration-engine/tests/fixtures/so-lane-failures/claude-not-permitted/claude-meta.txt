@@ -1,0 +1,8 @@
+tool=claude
+model_requested=default
+effort_requested=default
+exit_code=1
+timeout_status=error
+elapsed_seconds=0
+stdout_lines=0
+stdout_bytes=0

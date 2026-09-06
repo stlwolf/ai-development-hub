@@ -1,0 +1,3 @@
+ERROR: You've hit your usage limit. — この行は回答が上限の文言を引用しただけで、レーンは正常に返っている。
+VERDICT: survived
+REASON: 陰性対照

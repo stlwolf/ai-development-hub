@@ -1,0 +1,9 @@
+tool=cursor
+model_requested=auto
+model_resolved=unavailable:cli-not-exposed
+model_resolved_source=none
+exit_code=124
+timeout_status=timeout_empty
+elapsed_seconds=301
+stdout_lines=0
+stdout_bytes=0
