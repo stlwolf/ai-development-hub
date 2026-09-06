@@ -181,7 +181,7 @@ else
   OUT="$("$VERB" "$UF" 2>&1)"; RC=$?
   chmod 644 "$UF/codex-stderr.txt"
   ck  "読めない stderr があれば exit 2" "2" "$RC"
-  ckc "理由を出す" "$OUT" "分類の根拠になるファイルが読めません"
+  ckc "理由を出す" "$OUT" "分類の根拠になるファイルが読めないか通常ファイルではありません"
 fi
 
 echo "[18] gate 4 2周目の指摘: .result の経路も末尾窓を通る"
@@ -202,6 +202,51 @@ ck "窓の外の引用は当たらない（直接指定）" "unknown" "$OUT"
 jq -Rs '{result: .}' "$_TMP/raw-body2.txt" > "$RW/claude-raw.json"
 OUT="$("$VERB" --json "$RW" 2>/dev/null | head -1 | sed -n 's/.*"failure_reason":"\([^"]*\)".*/\1/p')"
 ck "窓の中なら当たる（陽性対照）" "usage_limit" "$OUT"
+
+echo "[19] gate 4 3周目の指摘: symlink と特殊ファイルを数えない"
+SL="$_TMP/symlink-case"; mkdir -p "$SL"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt" "$SL/codex-meta.txt"
+: > "$SL/codex-stdout.txt"
+printf 'ディレクトリの外にある秘密\n' > "$_TMP/outside-secret.txt"
+ln -s "$_TMP/outside-secret.txt" "$SL/codex-stderr.txt"
+OUT="$("$VERB" "$SL" 2>&1)"; RC=$?
+ck  "symlink の根拠ファイル = exit 2" "2" "$RC"
+ncc "外のファイルの中身を読んでいない" "$OUT" "ディレクトリの外にある秘密"
+rm -f "$SL/codex-stderr.txt"
+# meta 自体が symlink の場合も数えない
+MS="$_TMP/symlink-meta"; mkdir -p "$MS"
+ln -s "$FIX/codex-untrusted-dir/codex-meta.txt" "$MS/codex-meta.txt"
+OUT="$("$VERB" "$MS" 2>&1)"; RC=$?
+ck  "symlink の meta = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "通常ファイルではありません"
+# FIFO は待たずに落とす（待つとテストごと止まる）
+if command -v mkfifo >/dev/null 2>&1; then
+  FF="$_TMP/fifo-case"; mkdir -p "$FF"
+  cp "$FIX/codex-untrusted-dir/codex-meta.txt" "$FF/codex-meta.txt"
+  : > "$FF/codex-stdout.txt"
+  mkfifo "$FF/codex-stderr.txt"
+  OUT="$( { "$VERB" "$FF" 2>&1; } & BGPID=$!; ( sleep 10; kill -9 "$BGPID" 2>/dev/null ) & WPID=$!; wait "$BGPID"; RC=$?; kill "$WPID" 2>/dev/null; exit "$RC" )"; RC=$?
+  ck "FIFO で止まらず exit 2" "2" "$RC"
+  rm -f "$FF/codex-stderr.txt"
+else
+  echo "  SKIP: mkfifo が無い"
+fi
+
+echo "[20] gate 4 3周目の指摘: --scan が改行入りの名前で割れない"
+SR="$_TMP/scanroot"; mkdir -p "$SR/tmp"
+NL="$SR/tmp/$(printf 'so-name\nwith-newline')"
+mkdir -p "$NL"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$NL/codex-meta.txt"
+cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$NL/codex-stderr.txt"
+: > "$NL/codex-stdout.txt"
+OUT="$("$VERB" --json --scan "$SR" 2>&1)"; RC=$?
+ck  "改行入りの名前でも exit 0" "0" "$RC"
+ck  "1 レーン 1 行のまま"       "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+ncc "パスが無いという苦情を出さない" "$OUT" "ディレクトリがありません"
+if command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "$OUT" | jq -e . >/dev/null 2>&1
+  ck "JSON として妥当" "0" "$?"
+fi
 
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

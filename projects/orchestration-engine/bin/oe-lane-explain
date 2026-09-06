@@ -345,9 +345,19 @@ if [[ -n "$SCAN_ROOT" ]]; then
   if [[ ! -d "$SCAN_ROOT" ]]; then err "ディレクトリがありません: $SCAN_ROOT"; exit 2; fi
   scan_base="$SCAN_ROOT"
   [[ -d "${SCAN_ROOT}/tmp" ]] && scan_base="${SCAN_ROOT}/tmp"
-  while IFS= read -r d; do
+  # **NUL 区切りで読む。** 改行区切りだと、改行を含む合法なディレクトリ名が複数のパスへ割れる。
+  # 割れた断片が既存の相対パスに当たると、scan root の外を読みに行く（実装SO の3周目の指摘）。
+  # `sort` も NUL 区切りにする（-z が無い環境では並べ替えを諦める。順序は出力の見やすさの
+  # 問題であって、正しさの問題ではない）。
+  while IFS= read -r -d '' d; do
     [[ -n "$d" ]] && DIRS+=("$d")
-  done < <(find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) 2>/dev/null | sort)
+  done < <(
+    if printf '' | sort -z >/dev/null 2>&1; then
+      find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) -print0 2>/dev/null | sort -z
+    else
+      find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) -print0 2>/dev/null
+    fi
+  )
 fi
 
 if [[ ${#DIRS[@]} -eq 0 ]]; then
@@ -385,7 +395,17 @@ for d in "${DIRS[@]}"; do
   for tool in codex claude cursor; do
     for sfx in '' '.attempt1' '.attempt2'; do
       meta="${d}/${tool}-meta.txt${sfx}"
-      [[ -f "$meta" ]] || continue
+      [[ -e "$meta" ]] || continue
+      # **通常ファイルであり symlink でないことを要求する。**
+      # `-f` / `-r` は symlink の参照先を追う。出力ディレクトリを置ける相手がいる前提だと、
+      # `claude-raw.json` をディレクトリ外の読めるファイルへ向けるだけで、その中身を jq が読む。
+      # FIFO を置かれると `wc -c` が待ち続ける。**どちらも read-only の名乗りの外側にある**
+      # （意図しないファイルの読み出しと、止まらない実行）。実装SO の3周目の指摘。
+      if [[ -L "$meta" || ! -f "$meta" ]]; then
+        err "meta が通常ファイルではありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
       # **読めなかった記録を普通のレーンとして数えない。**
       # 読めない meta を素通りさせると、全項目が `-` で理由が unknown の、見た目は正常な行が
       # 1 件出る。これは「原因が分からないレーン」ではなく「観測できなかったレーン」で、
@@ -419,10 +439,12 @@ for d in "${DIRS[@]}"; do
       # 行として exit 0 を返していた。根拠を観測できていない census を成功にしない。
       unreadable_file=''
       for probe in "${d}/${tool}-stdout.txt${sfx}" "${d}/${tool}-stderr.txt${sfx}" "${d}/${tool}-raw.json${sfx}"; do
-        if [[ -e "$probe" && ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
+        [[ -e "$probe" ]] || continue
+        # symlink と非通常ファイル（FIFO・デバイス・ディレクトリ）はここで落とす。上の meta と同じ理由。
+        if [[ -L "$probe" || ! -f "$probe" || ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
       done
       if [[ -n "$unreadable_file" ]]; then
-        err "分類の根拠になるファイルが読めません（数えません）: $unreadable_file"
+        err "分類の根拠になるファイルが読めないか通常ファイルではありません（数えません）: $unreadable_file"
         UNREADABLE=$(( UNREADABLE + 1 ))
         continue
       fi
