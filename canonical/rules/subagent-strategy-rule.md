@@ -1,10 +1,13 @@
+---
+review-when: the harness changes its delegation defaults or where concurrency and nesting limits live
+---
+
 # Subagent Strategy
 
 ## Principles
-- Actively use subagents to keep the main context clean.
-- Delegate investigation, exploration, and parallel analysis to subagents.
 - One task per subagent — keep them focused.
 - When delegating implementation, enforce the `implementer-contract` skill (status enum, report format, self-review).
+- Concurrency and nesting limits for delegation belong to the harness, not to this rule. Do not write a numeric cap here; where a harness exposes such limits, set them there.
 
 ## Custom Agents First
 - Prefer domain-specific custom agents over generic subagents.
@@ -15,7 +18,7 @@
 - Fall back to standard subagents only when no custom agent matches.
 
 ## Routing Gate
-The harness already routes inline ⇄ subagent and selects custom agents — do not re-decide that; keep delegating investigation, exploration, and parallel analysis proactively. This gate adds only what the harness does not: a human-facing escalation signal and a PR-unit check.
+The harness already routes inline ⇄ subagent and selects custom agents — do not re-decide that. This gate adds only what the harness does not: a human-facing escalation signal and a PR-unit check.
 
 Default: subagent or inline. Surface a one-line recommendation to the user ONLY when escalation is warranted — when ≥2 escalate-lean axes hold, or judgment is dense with no objective gate. The model cannot open a thread, so this never blocks delegation:
 

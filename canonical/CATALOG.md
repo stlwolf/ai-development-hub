@@ -69,23 +69,23 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
 
-## Rules (14)
+## Rules (12)
+
+各 rule は frontmatter に `review-when` を1行持つ。何が変わったら見直すかを書いた行で、世代やモデルの名前は本文に焼かない。
 
 | Name | Description | Path |
 |------|-------------|------|
-| behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns | `rules/behavioral-rule.md` |
-| careful-operations-rule | Destructive command guardrails — three-tier pattern table (blocked / requires confirmation / exceptions) | `rules/careful-operations-rule.md` |
-| decision-pacing-rule | Separate problem reporting from action proposals; include "do nothing / defer" as an option | `rules/decision-pacing-rule.md` |
-| evidence-verification-rule | Concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
-| execution-policy-rule | Read-only before mutations; gates/checkpoints as TODO items; execution obligations | `rules/execution-policy-rule.md` |
+| behavioral-rule | Core principles: Evidence First, CLI Native, Safe Operations, Minimal Scope (WHAT/HOW separation), Incremental Steps, Follow Existing Patterns, Root Cause (address root causes; report which existing behavior you touched and how you checked it) | `rules/behavioral-rule.md` |
+| careful-operations-rule | Destructive command guardrails — three tiers (blocked / requires confirmation / exceptions); the blocked patterns and the safe-directory list live with the hooks, not in the rule | `rules/careful-operations-rule.md` |
+| decision-pacing-rule | Reporting a problem is not a decision to fix it; separate analysis from action proposals | `rules/decision-pacing-rule.md` |
+| evidence-verification-rule | Checking claims against external sources, not re-checking your own output; concretizes Evidence First into a checkable protocol: claim-level verification status (verified/unverified-summary/speculation) + source, and risk-proportional consumer spot-check | `rules/evidence-verification-rule.md` |
+| execution-policy-rule | Read-only before mutations; gates, checkpoints, and reviews as separate items between steps; execution obligations | `rules/execution-policy-rule.md` |
 | exhaustion-before-conclusion-rule | Complements Evidence First with exploration breadth: do not conclude while reachable paths or options remain unexamined. Illustrated by design (option) / bug-investigation (code-path) cases; design-domain soft layer landed as predecision-exploration (#77) + soft floor reframe-on-stall-rule (#161); deterministic hard gates (#77/#78) deferred; includes a minimal high-stakes discipline | `rules/exhaustion-before-conclusion-rule.md` |
-| implementation-gate-rule | Propose a planning phase before any code change; agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
-| implementation-principles-rule | Address root causes over hacky fixes; verify no existing behavior is broken | `rules/implementation-principles-rule.md` |
-| input-style-rule | Handle voice-input typos and fragments; prioritize intent over polish | `rules/input-style-rule.md` |
-| output-format-rule | Conclusion → evidence → steps → risks → links output structure; related links required when the turn created or updated an Issue / PR / in-repo doc (§5: heading pinned by the report's language, comments optional, bare `#N` insufficient, no padding, read-only turns exempt; operator-facing section, distinct from a subagent's `Links` field); URL form by destination (§6: bare URL to the terminal, `[label](url)` to Markdown renderers); plain-Japanese wording (§8: no decorative English, keep work-object names); operator-facing plain prose (§9: no telegram compression; chat + human-gate; reasoning / agent-channels / board exempt) | `rules/output-format-rule.md` |
+| implementation-gate-rule | Propose a planning phase before any code change; takes precedence over harness defaults that encourage proceeding on your own (rules and distributed artifacts count as code changes); agent MUST NOT self-apply exceptions | `rules/implementation-gate-rule.md` |
+| input-style-rule | Voice input and translated English are common; read for meaning, not syntax | `rules/input-style-rule.md` |
+| output-format-rule | Conclusion → evidence → steps → risks → links output structure; related links required when the turn created or updated an Issue / PR / in-repo doc (§5: a line-head label, not a heading, pinned by the report's language, comments optional, bare `#N` insufficient, no padding, read-only turns exempt; operator-facing block, distinct from a subagent's `Links` field); URL form by destination (§6: bare URL to the terminal, `[label](url)` to Markdown renderers); plain-Japanese wording (§8: no decorative English, keep work-object names); operator-facing plain prose (§9: no telegram compression; chat + human-gate; reasoning / agent-channels / board exempt) | `rules/output-format-rule.md` |
 | reframe-on-stall-rule | Always-on soft floor under exhaustion-before-conclusion: when exploration stalls (no material new information, lateral repetition), consider a zero-base rebuild before continuing. Qualitative trigger via observable signs (not a count); reconcile against discarded premises; low-risk carve-out; model-dependent (hard gate #77 backs high-stakes once it lands) | `rules/reframe-on-stall-rule.md` |
-| skill-first-operations-rule | Load and follow skills for routine dev operations; do NOT skip skill loading | `rules/skill-first-operations-rule.md` |
-| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
+| subagent-strategy-rule | Subagent delegation: custom agents first, one task per subagent, implementer-contract; concurrency / nesting limits belong to the harness, not to the rule; routing gate (new thread escalation signal, PR-unit) | `rules/subagent-strategy-rule.md` |
 | workflow-awareness-rule | GitHub Flow; autonomously start branching for issue-driven work | `rules/workflow-awareness-rule.md` |
 
 ## Hooks

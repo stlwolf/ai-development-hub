@@ -54,6 +54,7 @@ main() {
     require_pattern "Minimal Scope" "behavioral-rule / Minimal Scope"
     require_pattern "Incremental Steps" "behavioral-rule / Incremental Steps"
     require_pattern "Follow Existing Patterns" "behavioral-rule / Follow Existing Patterns"
+    require_pattern "Root Cause" "behavioral-rule / Root Cause"
 
     # decision-pacing-rule.md
     require_pattern "Decision Pacing" "decision-pacing-rule"
@@ -64,8 +65,6 @@ main() {
     # output-format-rule.md
     require_pattern "Output Contract" "output-format-rule"
 
-    # implementation-principles-rule.md
-    require_pattern "Implementation Principles" "implementation-principles-rule"
 
     # input-style-rule.md
     require_pattern "Input Handling" "input-style-rule"
@@ -76,8 +75,6 @@ main() {
     # implementation-gate-rule.md
     require_pattern "planning phase" "implementation-gate-rule"
 
-    # skill-first-operations-rule.md
-    require_pattern "Skill-First" "skill-first-operations-rule"
 
     if [[ "$missing_count" -gt 0 ]]; then
         error "Guardrails check failed (${missing_count} missing pattern(s))"

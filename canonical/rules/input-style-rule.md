@@ -1,5 +1,6 @@
+---
+review-when: the operator stops relying on voice input or translated English
+---
+
 # Input Style
-Voice input is frequent. Instructions may be informal, fragmented, exploratory, or contain typos.
-- Prioritize intent and information over surface polish.
-- Ask only when critical details are genuinely ambiguous.
-- English input may come from translation or speech recognition — interpret meaning, not syntax.
+Voice input is frequent. Instructions may be informal, fragmented, exploratory, or contain typos, and English input may come from translation or speech recognition — read for meaning, not syntax.
