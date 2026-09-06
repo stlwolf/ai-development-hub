@@ -540,6 +540,42 @@ commit_meta() {
     mv "$OUT_DIR/${tool}-meta.txt.tmp" "$OUT_DIR/${tool}-meta.txt"
 }
 
+# --- so-compare 自身の版の記録（#303） ---
+#
+# **なぜ要るか。** レーンの meta には CLI の版（`cli_version`）が入るが、**so-compare 自身の版は
+# 入っていなかった。** そのため過去の出力を集めて分類しようとすると、母集団に「すでに直った
+# 故障の残骸」と「いまも起きる故障」が混ざる。実際 #303 の調査では、収集期間中に so-compare が
+# 4 回変わっており、うち #296 は claude の stdout の意味そのものを変えていた（プロセス標準出力の
+# 落ち先が claude-raw.json へ移った）。**その記録から決めた観測点が、いまの経路では当たらなかった。**
+#
+# 値は2つに分ける。**宣言した版は読みやすいが嘘をつきうる**（振る舞いを変えたのに上げ忘れる）。
+# **ハッシュは嘘をつかないが読めない。** 層別するときはハッシュで束ね、人が読むときは宣言を見る。
+SO_COMPARE_VERSION="2026-09-07"
+
+# 自分自身のバイト列のハッシュ。~/bin からの symlink 経由で呼ばれても、実体を読むので値は同じ。
+# 取れなければ空欄にせず種別を書く（記録漏れと取得不能を区別する。cli_version_for と同じ規約）。
+so_compare_self_sha() {
+    local src="${BASH_SOURCE[0]}" out
+    if [[ -z "$src" || ! -r "$src" ]]; then
+        printf '%s\n' "unavailable:self-unreadable"
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        out="$(shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        out="$(sha256sum "$src" 2>/dev/null | awk '{print $1}')"
+    else
+        printf '%s\n' "unavailable:no-hasher"
+        return 0
+    fi
+    if [[ ! "$out" =~ ^[0-9a-f]{64}$ ]]; then
+        printf '%s\n' "unavailable:hash-failed"
+        return 0
+    fi
+    printf '%s\n' "${out:0:12}"
+}
+SO_COMPARE_SHA="$(so_compare_self_sha)"
+
 # --- CLI の版の取得（#298） ---
 #
 # SO の判定は committed 層から証跡リンクで引かれる。「どのモデルが答えたか」を
@@ -850,6 +886,8 @@ run_codex() {
         echo "model_resolved_source=config"
         echo "cli_version=$CODEX_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
+        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -945,6 +983,8 @@ run_claude() {
         echo "model_resolved_source=$model_source"
         echo "cli_version=$CLAUDE_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
+        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
@@ -1005,6 +1045,8 @@ run_cursor() {
         echo "model_resolved_source=none"
         echo "cli_version=$CURSOR_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
+        echo "so_compare_sha=$SO_COMPARE_SHA"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
