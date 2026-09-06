@@ -79,7 +79,7 @@ so-compare --with claude,cursor -w "$(pwd)" "プロンプト"
 so-compare --cursor -w "$(pwd)" "この設計方針を検証してください"
 
 # Cursor でモデル指定
-so-compare --cursor --cursor-model composer-1.5 -w "$(pwd)" "プロンプト"
+so-compare --cursor --cursor-model composer-2.5 -w "$(pwd)" "プロンプト"
 
 # Cursor のみ
 so-compare --cursor-only -w "$(pwd)" "プロンプト"
