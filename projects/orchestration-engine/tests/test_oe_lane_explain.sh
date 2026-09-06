@@ -218,7 +218,7 @@ MS="$_TMP/symlink-meta"; mkdir -p "$MS"
 ln -s "$FIX/codex-untrusted-dir/codex-meta.txt" "$MS/codex-meta.txt"
 OUT="$("$VERB" "$MS" 2>&1)"; RC=$?
 ck  "symlink の meta = exit 2" "2" "$RC"
-ckc "理由を出す" "$OUT" "通常ファイルではありません"
+ckc "理由を出す" "$OUT" "meta が symlink です"
 # FIFO は待たずに落とす（待つとテストごと止まる）
 if command -v mkfifo >/dev/null 2>&1; then
   FF="$_TMP/fifo-case"; mkdir -p "$FF"
@@ -247,6 +247,42 @@ if command -v jq >/dev/null 2>&1; then
   printf '%s\n' "$OUT" | jq -e . >/dev/null 2>&1
   ck "JSON として妥当" "0" "$?"
 fi
+
+echo "[21] gate 4 4周目の指摘: dangling symlink を「不在」と読まない"
+DS="$_TMP/dangling"; mkdir -p "$DS"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$DS/codex-meta.txt"
+cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$DS/codex-stderr.txt"
+ln -s "$_TMP/does-not-exist-at-all" "$DS/codex-stdout.txt"
+OUT="$("$VERB" "$DS" 2>&1)"; RC=$?
+ck  "参照先の無い symlink = exit 2" "2" "$RC"
+ckc "どのファイルかを stderr に出す" "$OUT" "分類の根拠になるファイルが読めないか通常ファイルではありません"
+# meta 自体が dangling symlink の場合も同じ
+DM="$_TMP/dangling-meta"; mkdir -p "$DM"
+ln -s "$_TMP/nothing-here" "$DM/codex-meta.txt"
+OUT="$("$VERB" "$DM" 2>&1)"; RC=$?
+ck  "dangling な meta = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "meta が symlink です"
+
+echo "[22] gate 4 4周目の指摘: symlink のディレクトリと symlink の tmp を拒否する"
+REAL="$_TMP/real-lane-dir"; mkdir -p "$REAL"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$REAL/codex-meta.txt"
+cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$REAL/codex-stderr.txt"
+: > "$REAL/codex-stdout.txt"
+ln -s "$REAL" "$_TMP/linked-lane-dir"
+OUT="$("$VERB" "$_TMP/linked-lane-dir" 2>&1)"; RC=$?
+ck  "symlink のディレクトリ = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "対象ディレクトリが symlink です"
+# 実体を直接渡せば今までどおり通る（陽性対照）
+"$VERB" "$REAL" >/dev/null 2>&1
+ck "実体のディレクトリは通る" "0" "$?"
+# --scan の tmp が symlink なら止める
+ER="$_TMP/evilroot"; mkdir -p "$ER" "$_TMP/outside-tmp/so-payload"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt" "$_TMP/outside-tmp/so-payload/codex-meta.txt"
+ln -s "$_TMP/outside-tmp" "$ER/tmp"
+OUT="$("$VERB" --scan "$ER" 2>&1)"; RC=$?
+ck  "tmp が symlink = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "が symlink です"
+ncc "外の so-* を読んでいない" "$OUT" "so-payload"
 
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

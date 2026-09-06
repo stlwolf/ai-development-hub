@@ -33,6 +33,19 @@
 #   meta に so-compare 自身の版は入っていないので、**観測できる目印だけを出す**（推定した
 #   「版」を1つの値にまとめない）。目印は era_markers に列挙する。
 #
+# 想定する脅威の範囲（**守れる範囲と守れない範囲を分けて書く**）:
+#   本 verb が読むのは、**同じ作業ツリーで so-compare が自分で作った出力**である。したがって
+#   守るのは「壊れた入力・想定外の入力で、黙って嘘の census を返さないこと」までで、
+#   **出力ディレクトリへ任意のファイルを書ける相手を想定した防御は、この道具では成立しない。**
+#     - **hard link は原理的に弾けない。** ハードリンクは通常ファイルそのもの（symlink ではない）で、
+#       外のファイルと inode を共有する。パスからは正当なファイルと区別がつかない。
+#     - **検査と読み出しの間の差し替え（TOCTOU）も塞げない。** 検査と `grep` / `wc` / `jq` は別々の
+#       名前解決なので、その間に置き換えられる。shell から fd を握ったまま検査する手段が無い。
+#   これらが問題になる状況（出力ディレクトリへ書ける相手がいる）では、**その相手は同じ作業ツリーの
+#   スクリプトや git hook も書き換えられる**ので、本 verb を固めても実質的な防御にならない。
+#   **弾けるものは弾く**（symlink・dangling symlink・FIFO やデバイス・symlink のディレクトリ・
+#   `--scan` の `tmp` が symlink の場合）。弾けないものは、ここに書いて隠さない。
+#
 # exit: 0 正常 / 2 前提が満たせない。**「観測できなかった」を成功に化かさない。**
 #   exit 2 になるのは次のすべてである。
 #     - 引数が無い / 不明なオプション / 閾値の環境変数が正の整数でない
@@ -343,6 +356,11 @@ done
 
 if [[ -n "$SCAN_ROOT" ]]; then
   if [[ ! -d "$SCAN_ROOT" ]]; then err "ディレクトリがありません: $SCAN_ROOT"; exit 2; fi
+  # `${SCAN_ROOT}/tmp` が symlink だと `[[ -d ]]` が参照先を追い、scan root の外を列挙する。
+  if [[ -L "${SCAN_ROOT}/tmp" ]]; then
+    err "${SCAN_ROOT}/tmp が symlink です（scan root の外を読みに行くので止めます）"
+    exit 2
+  fi
   scan_base="$SCAN_ROOT"
   [[ -d "${SCAN_ROOT}/tmp" ]] && scan_base="${SCAN_ROOT}/tmp"
   # **NUL 区切りで読む。** 改行区切りだと、改行を含む合法なディレクトリ名が複数のパスへ割れる。
@@ -390,11 +408,20 @@ if [[ "$MODE" == 'table' ]]; then
 fi
 
 for d in "${DIRS[@]}"; do
-  if [[ ! -d "$d" ]]; then err "ディレクトリがありません（飛ばします）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
-  if [[ ! -r "$d" ]]; then err "読めません（飛ばします）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ -L "$d" ]]; then err "対象ディレクトリが symlink です（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ ! -d "$d" ]]; then err "ディレクトリがありません（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ ! -r "$d" ]]; then err "読めません（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
   for tool in codex claude cursor; do
     for sfx in '' '.attempt1' '.attempt2'; do
       meta="${d}/${tool}-meta.txt${sfx}"
+      # **-L を -e より先に見る。** 参照先の無い symlink（dangling）は `-e` が偽になるので、
+      # 順序が逆だと「ファイルが無い」として素通りする。別に正常なレーンがあれば
+      # UNREADABLE=0 のまま exit 0 になり、欠けた census を成功として返していた。
+      if [[ -L "$meta" ]]; then
+        err "meta が symlink です（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
       [[ -e "$meta" ]] || continue
       # **通常ファイルであり symlink でないことを要求する。**
       # `-f` / `-r` は symlink の参照先を追う。出力ディレクトリを置ける相手がいる前提だと、
@@ -439,9 +466,11 @@ for d in "${DIRS[@]}"; do
       # 行として exit 0 を返していた。根拠を観測できていない census を成功にしない。
       unreadable_file=''
       for probe in "${d}/${tool}-stdout.txt${sfx}" "${d}/${tool}-stderr.txt${sfx}" "${d}/${tool}-raw.json${sfx}"; do
+        # dangling symlink を「不在」と読まないため、-L を -e より先に見る。
+        if [[ -L "$probe" ]]; then unreadable_file="$probe"; break; fi
         [[ -e "$probe" ]] || continue
-        # symlink と非通常ファイル（FIFO・デバイス・ディレクトリ）はここで落とす。上の meta と同じ理由。
-        if [[ -L "$probe" || ! -f "$probe" || ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
+        # 非通常ファイル（FIFO・デバイス・ディレクトリ）と読めないものはここで落とす。
+        if [[ ! -f "$probe" || ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
       done
       if [[ -n "$unreadable_file" ]]; then
         err "分類の根拠になるファイルが読めないか通常ファイルではありません（数えません）: $unreadable_file"
