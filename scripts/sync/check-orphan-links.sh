@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # check-orphan-links.sh — 配布先に残った symlink のうち、正本から消えたものを列挙する。
-# 読み取り専用。何も削除しない。
+# 既定は読み取り専用で、何も削除しない。--prune を付けたときだけ削除する。
 #
 # なぜ要るか:
 #   配置も検査も正本の側からファイルを列挙して配布先を見に行く形になっている。
@@ -157,8 +157,12 @@ fi
 _realpath_raw() {
     if command -v realpath >/dev/null 2>&1; then
         realpath "$1" 2>/dev/null
-    else
+    elif command -v python3 >/dev/null 2>&1; then
         python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1" 2>/dev/null
+    else
+        # どちらも無い環境では静かに失敗する。正常時は黙るという契約を、
+        # 見つからないコマンドの叫びで壊さない。
+        return 1
     fi
 }
 
@@ -174,7 +178,8 @@ resolve_path() {
             base="$(_realpath_raw "${cur}")"
             if [[ -n "${base}" ]]; then
                 # base が / のときに // にならないよう、連続するスラッシュだけ潰す。
-                printf '%s' "${base}${rest}" | sed 's|//*|/|g'
+                # 2個以上の連続だけを1つに畳む（//* だと単一のスラッシュにも当たる）。
+                printf '%s' "${base}${rest}" | sed 's|//\{1,\}|/|g'
                 return 0
             fi
             break

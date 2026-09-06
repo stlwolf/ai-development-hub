@@ -46,13 +46,20 @@ cp "$CANON/claude/settings.harness.json" "$SCRATCH/canonical/claude/" 2>/dev/nul
 SCRATCH_SYNC="$SCRATCH/scripts/sync/sync-claude.sh"
 
 fresh() { HOMEDIR="$_TMP_DIR/$1"; mkdir -p "$HOMEDIR/.claude"; rm -f "$SCRATCH/canonical/output-styles"/*.md; }
-run()   { OUT="$(env HOME="$HOMEDIR" "$SCRATCH_SYNC" 2>&1)"; RC=$?; }
+# shebang 任せにせず、いま走っているシェルで起動する。そうしないと
+# テストを bash 3.2 で回してもスクリプトは PATH の bash 5 で動き、
+# 版差の主張が空になる。
+run()   { OUT="$(env HOME="$HOMEDIR" "$BASH" "$SCRATCH_SYNC" 2>&1)"; RC=$?; }
 
 # ============================================================================
 echo "[1] canonical の正本ディレクトリが存在する"
 ck  "canonical/output-styles がある" "true" "$([[ -d "$CANON/output-styles" ]] && echo true || echo false)"
 ck  "README.txt は .md ではない" "true" "$([[ -f "$CANON/output-styles/README.txt" ]] && echo true || echo false)"
-ck  "実 canonical にテスト用の .md を置いていない" "0" "$(find "$CANON/output-styles" -name '*.md' | wc -l | tr -d ' ')"
+# 件数を決め打ちすると、本物の style が入った時点で落ちる。開始時の値を
+# 覚えておき、テストを通した後で変わっていないことを見る。
+BASE_MD_COUNT="$(find "$CANON/output-styles" -name '*.md' | wc -l | tr -d ' ')"
+BASE_FILE_COUNT="$(find "$CANON/output-styles" -type f | wc -l | tr -d ' ')"
+ck  "開始時の件数を記録できた" "true" "$([[ -n "$BASE_MD_COUNT" && -n "$BASE_FILE_COUNT" ]] && echo true || echo false)"
 
 echo "[2] .md を配り、.md でないものは配らない"
 fresh h2
@@ -95,8 +102,8 @@ ck  "孤児として拾う" "1" "$RC"
 ckc "output-styles の孤児と出る" "$OUT" "orphan-canonical output-styles/gone.md"
 
 echo "[7] テストが実 canonical を汚していない"
-ck  "実 canonical に .md が無いまま" "0" "$(find "$CANON/output-styles" -name '*.md' | wc -l | tr -d ' ')"
-ck  "実 canonical の中身は README.txt だけ" "1" "$(find "$CANON/output-styles" -type f | wc -l | tr -d ' ')"
+ck  "実 canonical の .md の数が変わらない" "$BASE_MD_COUNT" "$(find "$CANON/output-styles" -name '*.md' | wc -l | tr -d ' ')"
+ck  "実 canonical のファイル数が変わらない" "$BASE_FILE_COUNT" "$(find "$CANON/output-styles" -type f | wc -l | tr -d ' ')"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

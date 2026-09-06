@@ -747,6 +747,17 @@ expanded="$("$BASH" -c "eval printf '%s' $saved" 2>/dev/null)"
 ncc "評価してもチルダのままにならない" "$expanded" '~/'
 ckc "ホームに展開される" "$expanded" "$HOME"
 
+echo "[49] items が配列でない宣言を拒む（Copilot 指摘の回帰）"
+fresh c49
+printf '%s' '{"theme":"dark"}' > "$ST"
+for bad in '"abc"' '5' '{"a":1}'; do
+  printf '%s' "{\"version\":1,\"items\":$bad,\"unchecked_scopes\":[\"x\"]}" > "$CASE/decl.json"
+  run_d "$CASE/decl.json"
+  ck  "items=$bad を拒む" "2" "$RC"
+  ckc "配列でないと言う" "$OUT" "items が配列ではありません"
+done
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

@@ -68,6 +68,12 @@ command -v jq >/dev/null 2>&1 || { error "jq が必要です"; exit 2; }
 [[ -f "${DECLARATION}" ]] || { error "宣言ファイルが読めません: ${DECLARATION}"; exit 2; }
 jq -e 'type' "${DECLARATION}" >/dev/null 2>&1 || { error "宣言ファイルが JSON として読めません: ${DECLARATION}"; exit 2; }
 
+# 件数を読む前に、items が配列であることを確かめる。文字列や数値でも length は
+# 値を返すので、確かめずに数えると中身の無い宣言で先へ進んでしまう。
+if ! jq -e '(.items | type) == "array"' "${DECLARATION}" >/dev/null 2>&1; then
+    error "宣言の items が配列ではありません: ${DECLARATION}"
+    exit 2
+fi
 decl_count="$(jq '.items | length' "${DECLARATION}")"
 if [[ "${decl_count}" -eq 0 ]]; then
     error "宣言に項目がありません: ${DECLARATION}"
@@ -100,7 +106,7 @@ while IFS=$'\t' read -r pointer op handler src_file src_pointer; do
     # 形だけでは足りない。"/" は / で始まるが、解いた結果は空になって
     # 文書全体を指す。実際に解いた長さで確かめる。
     ptr_len="$(jq -rn --arg p "${pointer}" '
-        def ptr2path($x): if $x == "" then []
+        def ptr2path($x): if $x == "" or $x == "/" then []
           else ($x | ltrimstr("/") | split("/")
                 | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
         ptr2path($p) | length' 2>/dev/null || echo 0)"
@@ -216,7 +222,7 @@ info "Applying ${decl_count} declared item(s) → $(basename "${SETTINGS}")"
 JQ_APPLY='
 # JSON Pointer: 空文字が文書全体を指し、"/" は空文字のキーを指す。
 # 添字は解決時に弾いているので、ここでは文字列のキーだけを扱う。
-def ptr2path($p): if $p == "" then []
+def ptr2path($p): if $p == "" or $p == "/" then []
   else ($p | ltrimstr("/") | split("/") | map(gsub("~1"; "/") | gsub("~0"; "~"))) end;
 
 def apply_item($item):

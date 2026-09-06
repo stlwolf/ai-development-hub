@@ -68,6 +68,10 @@ fi
 
 # 宣言が空だと「差分なし」を名乗れてしまう。0 件のループが緑を返すのと、
 # 本当に一致しているのを区別できなくなる（sync-bin.sh --check と同じ姿勢）。
+if ! jq -e '(.items | type) == "array"' "${DECLARATION}" >/dev/null 2>&1; then
+    error "宣言の items が配列ではありません: ${DECLARATION}"
+    exit 2
+fi
 decl_count="$(jq '.items | length' "${DECLARATION}")"
 if [[ "${decl_count}" -eq 0 ]]; then
     error "宣言に項目がありません（母集団が空のまま緑を返さない）: ${DECLARATION}"

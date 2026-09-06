@@ -143,9 +143,9 @@ ncc "allowlist 外は拾わない" "$OUT" "statsig"
 ckc "0件走査" "$OUT" "走査した symlink: 0 件"
 
 echo "[10] ターゲット未指定 / 不正引数"
-OUT="$("$CHECK" 2>&1)"; RC=$?
+OUT="$("$BASH" "$CHECK" 2>&1)"; RC=$?
 ck  "ターゲットなし → exit 2" "2" "$RC"
-OUT="$("$CHECK" nosuchtool 2>&1)"; RC=$?
+OUT="$("$BASH" "$CHECK" nosuchtool 2>&1)"; RC=$?
 ck  "知らないターゲット → exit 2" "2" "$RC"
 
 echo "[11] .. がパスの深さを超える相対リンクでも落ちない（実装SO 指摘の回帰）"
