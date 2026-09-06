@@ -526,6 +526,12 @@ write_meta_start() {
         echo "attempt=$attempt"
         echo "attempt_state=running"
         echo "timeout_limit_seconds=$tool_timeout"
+        # 版は**開始側にも書く**。ここに無いと、中断された実行（attempt_state=running のまま
+        # 残る記録）が版で層別できない。**中断された実行は失敗の記録そのもの**なので、
+        # 「失敗を版で分ける」という目的から見て、いちばん要る場所で欠けることになる（#303 の
+        # 実装SO が指摘）。完了側と同じ値を書くので、mv で差し替わっても値は変わらない。
+        echo "so_compare_version=$SO_COMPARE_VERSION"
+        echo "so_compare_sha=$SO_COMPARE_SHA"
     } | commit_meta "$tool"
 }
 
