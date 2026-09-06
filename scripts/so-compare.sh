@@ -571,10 +571,15 @@ so_compare_self_sha() {
     # そこで関数が即座に終わり、下の `unavailable:hash-failed` へ落ちる経路に届かない。
     # さらにトップレベルの代入まで非ゼロになるので、**レーンを1本も起動しないままスクリプトが
     # 終わる**（実装SO が bash 3.2 / 5.2 の POSIX mode で exit 9 を再現した）。
+    # **上限を掛ける。** `|| out=''` が受けるのは非ゼロ終了だけで、応答しない hasher（PATH 上の
+    # 壊れたラッパー・止まったプロセス）には効かない。この処理は**レーンを1本も起動する前の
+    # トップレベル**で走るので、掛けないと付随的な版記録のせいで SO 全体が無期限に止まる
+    # （実装SO の3周目の指摘）。**同じファイルの `cli_version_for()` が `--version` に対して
+    # まったく同じ理由で `timeout 5` を掛けている。先例がある場所で先例を外していた。**
     if command -v shasum >/dev/null 2>&1; then
-        out="$(shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')" || out=''
+        out="$(timeout 5 shasum -a 256 "$src" 2>/dev/null | awk '{print $1}')" || out=''
     elif command -v sha256sum >/dev/null 2>&1; then
-        out="$(sha256sum "$src" 2>/dev/null | awk '{print $1}')" || out=''
+        out="$(timeout 5 sha256sum "$src" 2>/dev/null | awk '{print $1}')" || out=''
     else
         printf '%s\n' "unavailable:no-hasher"
         return 0
