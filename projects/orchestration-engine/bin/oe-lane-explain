@@ -33,8 +33,12 @@
 #   meta に so-compare 自身の版は入っていないので、**観測できる目印だけを出す**（推定した
 #   「版」を1つの値にまとめない）。目印は era_markers に列挙する。
 #
-# exit: 0 正常 / 2 前提が満たせない（引数が無い・ディレクトリが読めない・レーンが1件も無い）。
-#   空表を「0 件」として exit 0 で返さない（読めていないことを成功に化かさない）。
+# exit: 0 正常 / 2 前提が満たせない。**「観測できなかった」を成功に化かさない。**
+#   exit 2 になるのは次のすべてである。
+#     - 引数が無い / 不明なオプション / 閾値の環境変数が正の整数でない
+#     - 指定されたディレクトリが無い・読めない
+#     - レーンの記録が1件も見つからない（空表を「0 件」として返さない）
+#     - **読めなかった meta が1件でもある**（母集団の数え上げに使うので、欠けた census を返さない）
 
 set -uo pipefail
 
@@ -79,6 +83,24 @@ meta_get() {
 
 # シグネチャを当てる範囲（実測で決めた・下の理由を参照）
 SIG_TAIL_LINES="${OE_LANE_EXPLAIN_TAIL_LINES:-200}"
+
+# 閾値の環境変数は**入口で正の整数だけを通す**。
+#
+# **未検証のまま算術式へ入れるとコマンドが走る。** bash の `(( ))` は中の配列添字を再展開するので、
+# `OE_LANE_EXPLAIN_SMALL_BYTES='DIRS[$(command)0]'` のような値で任意のコマンドが実行できる。
+# read-only を名乗る verb でこれが通ると、名乗りそのものが嘘になる。実装SO が実際に
+# 副作用のない payload を走らせて実証した（#303 の gate 4）。
+#
+# `tail -n` へ渡す側も同じ入口で弾く。こちらは実行はされないが、非数値だと tail が落ちて
+# 判定が静かに変わる（当たらなくなるだけなので気づきにくい）。
+for _t_var in OE_LANE_EXPLAIN_TAIL_LINES OE_LANE_EXPLAIN_SMALL_BYTES; do
+  _t_val="${!_t_var:-}"
+  if [[ -n "$_t_val" && ! "$_t_val" =~ ^[1-9][0-9]*$ ]]; then
+    err "${_t_var} は正の整数で指定してください: ${_t_val}"
+    exit 2
+  fi
+done
+unset _t_var _t_val
 
 # 行頭に錨を打ち、末尾 SIG_TAIL_LINES 行だけを見る。
 #
@@ -263,8 +285,31 @@ classify_lane() {
   return 0
 }
 
+# JSON 文字列のエスケープ。**制御文字まで見る。**
+# ディレクトリ名には改行やタブを入れられるので、`\` と `"` だけを潰す実装では
+# 不正な JSON を出し、改行が入れば「1 レーン 1 行」の JSONL の約束も破れる（実装SO の指摘）。
+# LC_ALL=C でバイト単位に固定するので、多バイト文字はそのまま通る（JSON は UTF-8 を許す）。
 json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+  LC_ALL=C awk -v s="$1" '
+    BEGIN {
+      for (i = 0; i < 256; i++) ord[sprintf("%c", i)] = i
+      out = ""
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        o = ord[c]
+        if (c == "\"") { out = out "\\\"" }
+        else if (c == "\\") { out = out "\\\\" }
+        else if (o == 8)  { out = out "\\b" }
+        else if (o == 9)  { out = out "\\t" }
+        else if (o == 10) { out = out "\\n" }
+        else if (o == 12) { out = out "\\f" }
+        else if (o == 13) { out = out "\\r" }
+        else if (o < 32 || o == 127) { out = out sprintf("\\u%04x", o) }
+        else { out = out c }
+      }
+      printf "%s", out
+    }'
 }
 
 emit_json() {
@@ -341,6 +386,21 @@ for d in "${DIRS[@]}"; do
     for sfx in '' '.attempt1' '.attempt2'; do
       meta="${d}/${tool}-meta.txt${sfx}"
       [[ -f "$meta" ]] || continue
+      # **読めなかった記録を普通のレーンとして数えない。**
+      # 読めない meta を素通りさせると、全項目が `-` で理由が unknown の、見た目は正常な行が
+      # 1 件出る。これは「原因が分からないレーン」ではなく「観測できなかったレーン」で、
+      # 母集団の数え上げとしては別物である（実装SO の指摘・#303 の gate 4）。
+      if [[ ! -r "$meta" ]]; then
+        err "meta が読めません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # 読めても中身がレーンの meta でなければ観測できていない（切れた・壊れた）。
+      if ! grep -q '^tool=' "$meta" 2>/dev/null; then
+        err "meta の中身がレーンの記録ではありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
       classify_lane "$d" "$tool" "$sfx"
       LANE_COUNT=$(( LANE_COUNT + 1 ))
       case "$MODE" in
@@ -367,7 +427,15 @@ fi
 
 # 空表を「0 件」として成功にしない。
 if [[ "$LANE_COUNT" -eq 0 ]]; then
-  err "レーンの記録が1件も見つかりませんでした（対象 ${#DIRS[@]} ディレクトリ・読めなかったもの ${UNREADABLE} 件）"
+  err "レーンの記録が1件も見つかりませんでした（対象 ${#DIRS[@]} ディレクトリ・観測できなかったもの ${UNREADABLE} 件）"
+  exit 2
+fi
+
+# **観測できなかったものが1件でもあれば成功にしない。**
+# 本 verb の出力は母集団の数え上げに使われる（#303 の M-1）。数え落としがあるのに exit 0 を
+# 返すと、欠けた census がそのまま判断の材料になる。件数は上の stderr に1件ずつ出してある。
+if [[ "$UNREADABLE" -gt 0 ]]; then
+  err "観測できなかった対象が ${UNREADABLE} 件あります（分類できたレーンは ${LANE_COUNT} 件）"
   exit 2
 fi
 

@@ -61,3 +61,23 @@ so-compare 自身の版は meta に無いので `unavailable:not-recorded` と�
 - `shellcheck` は verb もテストも緑。
 - `tests/test_oe_lane_explain.sh` — pass=29 fail=0。
 - **`scripts/so-compare.sh` の diff が空**（`git diff origin/master -- scripts/so-compare.sh` が何も返さない）。配布物を触らない契約が守られている。
+
+### 2026-09-07 gate 4（実装SO・弱2レーン）1周目 — refuted・material 3件
+
+`oe-review --lanes 2 --base master`（audit_id `20260906182103G28QNG644KA1`）。**codex が material な欠陥を3件出し、cursor は survived。** 保守側の集約なので全体は `refuted`。
+
+**3件とも直した。どれも私の見落としである。**
+
+1. **read-only を名乗りながらコマンドが走る穴があった（P1）。** `OE_LANE_EXPLAIN_SMALL_BYTES` を未検証のまま `(( sz <= SIG_SMALL_BYTES ))` に入れていた。bash の算術式は中の配列添字を再展開するので、`DIRS[$(command)0]` の形で任意のコマンドが実行できる。**レビュー側は実際に副作用のない payload を走らせて実証している。** さらに関数が command substitution の中で呼ばれるため、算術エラーのあとも最終 exit は 0 だった。
+   - 直し方: 閾値の環境変数2つを入口で正の整数だけ通す（`scripts/so-compare.sh` が `SO_TIMEOUT` に対してやっているのと同じ形）。
+   - **テストで固定した。** 不正な値で exit 2 になることに加えて、**sentinel ファイルが作られていないこと**を見ている。「弾いた」だけでなく「走っていない」を直接確かめる形にした。
+2. **読めなかった記録を普通のレーンとして数えていた（P1）。** ディレクトリの可読性しか見ておらず、meta が読めない場合も `grep` の失敗を握り潰して、全項目が `-`・理由が `unknown` の行を1件出していた。**「原因が分からないレーン」と「観測できなかったレーン」を同じ行にしていた。** この verb の出力は #303 の M-1 で母集団の数え上げに使うので、欠けた census を成功として返すのは致命的である。
+   - 直し方: 読めない meta と、中身がレーンの記録でない meta を数えず、1件ずつ stderr に出し、**1件でもあれば exit 2** にする。
+3. **`--json` が制御文字で壊れた（P2）。** エスケープが `\` と `"` だけだったので、ディレクトリ名に改行やタブが入ると不正な JSON になり、改行なら「1 レーン 1 行」の約束も破れる。
+   - 直し方: 制御文字を `\uXXXX`（および `\n` `\t` 等）へ落とす。`LC_ALL=C` でバイト単位に固定するので多バイト文字はそのまま通る。
+
+**1件目が一番痛い。** この verb は「read-only / 非検出」を冒頭に大書きしている。**名乗りと実装が食い違っていたのを、自分では見つけられなかった。** 見つけたのは、生成に関わっていない独立したレーンである。
+
+昇格の印: read-only を名乗る verb で、未検証の環境変数を算術式に入れない（bash は添字を再展開する）
+
+修正後: `shellcheck` 緑・テスト **pass=43 fail=0**・過去の出力 276 レーンへの再走で分類は変わらず（`unknown` 39 / `environment` 4 / `invalid_input` 2 / `usage_limit` 2）。

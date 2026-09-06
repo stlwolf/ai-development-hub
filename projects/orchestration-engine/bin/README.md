@@ -627,9 +627,12 @@ oe-lane-explain --summary --scan .            # 版の目印で層別した件�
 - **錨が使えない文言（シェルが出す `<path>: line N: ... Operation not permitted` など）だけは、小さいファイルに限り部分一致を許す。** 上限は `OE_LANE_EXPLAIN_SMALL_BYTES`（既定 16384）。誤検出の元が数百KB の TUI 描画なので、小ささを条件にすれば経路を塞げる。
 - **「ファイルが不在」と「ファイルが空」を畳まない。** `stdout_state` / `stderr_state` / `raw_state` は `absent` / `empty` / `present` の3値である。不在は「そのファイルを作らない版がこの記録を生成した」という証拠を運んでいる。
 - **so-compare 自身の版は meta に無いので `unavailable:not-recorded` と書く。** 代わりに観測できる目印を `era_markers` に出す（`claude-raw-absent` なら #296 より前、`limit-recorded` なら #328 以降）。**推定した「版」を1つの値にまとめない。**
-- exit は 0 正常 / 2 前提が満たせない（引数なし・読めない・**レーンの記録が1件も無い**）。空表を「0 件」として exit 0 で返さない。
+- **閾値の環境変数は入口で正の整数だけを通す。** 未検証のまま bash の算術式へ入れると、`(( ))` が配列添字を再展開するため任意のコマンドが走る（`OE_LANE_EXPLAIN_SMALL_BYTES='DIRS[$(command)0]'`）。read-only を名乗る verb でこれが通ると名乗り自体が嘘になる。実装SO が実際に payload を走らせて実証した。
+- **読めなかった meta を普通のレーンとして数えない。** 素通りさせると、全項目が `-` で理由が `unknown` の、見た目は正常な行が1件出る。「原因が分からないレーン」と「観測できなかったレーン」は母集団の数え上げでは別物である。1件ずつ stderr に出し、**1件でもあれば exit 2** にする（出力が census に使われるので、欠けたまま成功を返さない）。
+- **`--json` は制御文字までエスケープする。** ディレクトリ名には改行やタブを入れられるので、`\` と `"` だけを潰す実装では不正な JSON になり、改行が入れば「1 レーン 1 行」の約束も破れる。
+- exit は 0 正常 / 2 前提が満たせない（引数なし・**閾値の環境変数が正の整数でない**・読めない・**レーンの記録が1件も無い**・**読めなかった meta が1件でもある**）。空表を「0 件」として exit 0 で返さない。
 
-関連: `tests/test_oe_lane_explain.sh`（29 件）/ `tests/fixtures/so-lane-failures/SOURCE.md`（fixture の出所と2つの陰性対照）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（I-1）。
+関連: `tests/test_oe_lane_explain.sh`（43 件）/ `tests/fixtures/so-lane-failures/SOURCE.md`（fixture の出所と2つの陰性対照）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（I-1）。
 
 ---
 

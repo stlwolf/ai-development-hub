@@ -89,5 +89,60 @@ else
   echo "  SKIP: so-compare.sh not found from test dir"
 fi
 
+echo "[12] gate 4 の指摘1: 閾値の環境変数からコマンドが走らない"
+# bash の (( )) は中の配列添字を再展開するので、未検証の値を入れると任意のコマンドが走る。
+SENTINEL="$_TMP/pwned"
+OUT="$(OE_LANE_EXPLAIN_SMALL_BYTES="DIRS[\$(touch '$SENTINEL')0]" "$VERB" "$FIX/claude-not-permitted" 2>&1)"; RC=$?
+ck  "不正な閾値 = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "正の整数で指定してください"
+if [[ -e "$SENTINEL" ]]; then echo "  FAIL: コマンドが実行された（read-only 契約が破れている）"; FAIL=$((FAIL+1));
+else echo "  PASS: コマンドは実行されていない"; PASS=$((PASS+1)); fi
+OUT="$(OE_LANE_EXPLAIN_TAIL_LINES='abc' "$VERB" "$FIX/claude-not-permitted" 2>&1)"; RC=$?
+ck "非数値の窓 = exit 2" "2" "$RC"
+# 正当な値は今までどおり通る（陽性対照）
+OE_LANE_EXPLAIN_SMALL_BYTES=4096 OE_LANE_EXPLAIN_TAIL_LINES=50 "$VERB" "$FIX/claude-not-permitted" >/dev/null 2>&1
+ck "正当な閾値は通る" "0" "$?"
+
+echo "[13] gate 4 の指摘2: 読めなかった記録を普通のレーンとして数えない"
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "  SKIP: root では chmod 000 が効かない"
+else
+  UR="$_TMP/unreadable"
+  mkdir -p "$UR"
+  cp "$FIX/claude-not-permitted/claude-meta.txt" "$UR/claude-meta.txt"
+  cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$UR/codex-meta.txt"
+  cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$UR/codex-stderr.txt"
+  chmod 000 "$UR/claude-meta.txt"
+  OUT="$("$VERB" "$UR" 2>&1)"; RC=$?
+  chmod 644 "$UR/claude-meta.txt"
+  ck  "読めない meta があれば exit 2" "2" "$RC"
+  ckc "1件ずつ stderr に出す"          "$OUT" "meta が読めません"
+  ckc "件数も出す"                     "$OUT" "観測できなかった対象が"
+  ncc "読めない側を行として出さない"    "$OUT" "claude  "
+fi
+# 中身がレーンの記録でない meta も数えない
+BAD="$_TMP/bad-meta"
+mkdir -p "$BAD"
+printf 'これは meta ではありません\n' > "$BAD/codex-meta.txt"
+OUT="$("$VERB" "$BAD" 2>&1)"; RC=$?
+ck  "壊れた meta = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "レーンの記録ではありません"
+
+echo "[14] gate 4 の指摘3: --json が制御文字で壊れない"
+WEIRD="$_TMP/$(printf 'dir\twith\ttab')"
+mkdir -p "$WEIRD"
+cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$WEIRD/codex-meta.txt"
+cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$WEIRD/codex-stderr.txt"
+: > "$WEIRD/codex-stdout.txt"
+OUT="$("$VERB" --json "$WEIRD" 2>/dev/null)"
+ck  "1 レーン 1 行のまま" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+ckc "タブがエスケープされている" "$OUT" 'dir\twith\ttab'
+if command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "$OUT" | jq -e . >/dev/null 2>&1
+  ck "JSON として妥当" "0" "$?"
+else
+  echo "  SKIP: jq が無いので JSON の妥当性は見ない"
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
