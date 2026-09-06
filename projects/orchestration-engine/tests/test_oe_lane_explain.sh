@@ -94,7 +94,7 @@ echo "[12] gate 4 の指摘1: 閾値の環境変数からコマンドが走ら�
 SENTINEL="$_TMP/pwned"
 OUT="$(OE_LANE_EXPLAIN_SMALL_BYTES="DIRS[\$(touch '$SENTINEL')0]" "$VERB" "$FIX/claude-not-permitted" 2>&1)"; RC=$?
 ck  "不正な閾値 = exit 2" "2" "$RC"
-ckc "理由を出す" "$OUT" "正の整数で指定してください"
+ckc "理由を出す" "$OUT" "の整数で指定してください"
 if [[ -e "$SENTINEL" ]]; then echo "  FAIL: コマンドが実行された（read-only 契約が破れている）"; FAIL=$((FAIL+1));
 else echo "  PASS: コマンドは実行されていない"; PASS=$((PASS+1)); fi
 OUT="$(OE_LANE_EXPLAIN_TAIL_LINES='abc' "$VERB" "$FIX/claude-not-permitted" 2>&1)"; RC=$?
@@ -143,6 +143,65 @@ if command -v jq >/dev/null 2>&1; then
 else
   echo "  SKIP: jq が無いので JSON の妥当性は見ない"
 fi
+
+echo "[15] gate 4 2周目の指摘: 巨大な閾値で静かに偽陰性にならない"
+# 9223372036854775808 は正の整数の形だが bash の算術で負数へ overflow し、
+# 既知の environment が unknown へ落ちていた（実装SO が実証）。
+OUT="$(OE_LANE_EXPLAIN_SMALL_BYTES=9223372036854775808 "$VERB" "$FIX/claude-not-permitted" 2>&1)"; RC=$?
+ck  "桁あふれする値 = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "の整数で指定してください"
+ck  "既定では今までどおり environment" "environment" "$(val_of claude-not-permitted failure_reason)"
+
+echo "[16] gate 4 2周目の指摘: meta が別レーンや壊れた値でも数えない"
+MM="$_TMP/meta-mismatch"; mkdir -p "$MM"
+printf 'tool=claude\nattempt_state=finished\nexit_code=1\n' > "$MM/codex-meta.txt"
+OUT="$("$VERB" "$MM" 2>&1)"; RC=$?
+ck  "codex-meta.txt に tool=claude = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "このレーンの記録ではありません"
+MG="$_TMP/meta-garbage"; mkdir -p "$MG"
+printf 'tool=garbage\n' > "$MG/codex-meta.txt"
+"$VERB" "$MG" >/dev/null 2>&1
+ck "tool=garbage = exit 2" "2" "$?"
+# 古い形式（attempt_state が無い #328 より前の記録）は今までどおり数える（陽性対照）
+MO="$_TMP/meta-old"; mkdir -p "$MO"
+printf 'tool=codex\nexit_code=1\ntimeout_status=error\nelapsed_seconds=0\n' > "$MO/codex-meta.txt"
+: > "$MO/codex-stdout.txt"; : > "$MO/codex-stderr.txt"
+"$VERB" "$MO" >/dev/null 2>&1
+ck "attempt_state の無い古い meta は数える" "0" "$?"
+
+echo "[17] gate 4 2周目の指摘: 根拠のファイルが読めないものも数えない"
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "  SKIP: root では chmod 000 が効かない"
+else
+  UF="$_TMP/unreadable-stderr"; mkdir -p "$UF"
+  cp "$FIX/codex-untrusted-dir/codex-meta.txt"   "$UF/codex-meta.txt"
+  cp "$FIX/codex-untrusted-dir/codex-stderr.txt" "$UF/codex-stderr.txt"
+  : > "$UF/codex-stdout.txt"
+  chmod 000 "$UF/codex-stderr.txt"
+  OUT="$("$VERB" "$UF" 2>&1)"; RC=$?
+  chmod 644 "$UF/codex-stderr.txt"
+  ck  "読めない stderr があれば exit 2" "2" "$RC"
+  ckc "理由を出す" "$OUT" "分類の根拠になるファイルが読めません"
+fi
+
+echo "[18] gate 4 2周目の指摘: .result の経路も末尾窓を通る"
+RW="$_TMP/raw-window"; mkdir -p "$RW"
+printf 'tool=claude\nattempt_state=finished\nexit_code=1\ntimeout_status=error\nelapsed_seconds=9\n' > "$RW/claude-meta.txt"
+: > "$RW/claude-stdout.txt"; : > "$RW/claude-stderr.txt"
+# 先頭で故障の文言を引用し、その後ろに窓（既定 200 行）を超える本文を置く
+{ printf 'You'"'"'ve hit your usage limit — これは引用である\n'
+  for i in $(seq 1 250); do printf 'line %s\n' "$i"; done
+} > "$_TMP/raw-body.txt"
+jq -Rs '{result: .}' "$_TMP/raw-body.txt" > "$RW/claude-raw.json"
+OUT="$("$VERB" --json "$RW" 2>/dev/null | head -1 | sed -n 's/.*"failure_reason":"\([^"]*\)".*/\1/p')"
+ck "窓の外の引用は当たらない（直接指定）" "unknown" "$OUT"
+# 窓の中にあれば当たる（陽性対照）
+{ for i in $(seq 1 5); do printf 'line %s\n' "$i"; done
+  printf 'You'"'"'ve hit your usage limit — 末尾に出た本物\n'
+} > "$_TMP/raw-body2.txt"
+jq -Rs '{result: .}' "$_TMP/raw-body2.txt" > "$RW/claude-raw.json"
+OUT="$("$VERB" --json "$RW" 2>/dev/null | head -1 | sed -n 's/.*"failure_reason":"\([^"]*\)".*/\1/p')"
+ck "窓の中なら当たる（陽性対照）" "usage_limit" "$OUT"
 
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

@@ -44,6 +44,12 @@ set -uo pipefail
 
 err() { printf 'oe-lane-explain: %s\n' "$*" >&2; }
 
+# **jq を前提にする。** 無いと2つのことが起きる。claude の raw.json から本文を取り出せず、
+# 同じ保存済みの記録がホストによって別の分類になる（判定がホスト依存になる）。もう1つは
+# JSON の組み立てを自前でやることになり、エスケープの欠陥を持ち込む。どちらも「前提が
+# 満たせない」であって degrade ではないので exit 2 で止める。
+command -v jq >/dev/null 2>&1 || { err "jq が要ります（分類も --json も jq に依存します）"; exit 2; }
+
 usage() {
   cat >&2 <<'EOF'
 usage:
@@ -95,8 +101,11 @@ SIG_TAIL_LINES="${OE_LANE_EXPLAIN_TAIL_LINES:-200}"
 # 判定が静かに変わる（当たらなくなるだけなので気づきにくい）。
 for _t_var in OE_LANE_EXPLAIN_TAIL_LINES OE_LANE_EXPLAIN_SMALL_BYTES; do
   _t_val="${!_t_var:-}"
-  if [[ -n "$_t_val" && ! "$_t_val" =~ ^[1-9][0-9]*$ ]]; then
-    err "${_t_var} は正の整数で指定してください: ${_t_val}"
+  if [[ -n "$_t_val" && ! "$_t_val" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    # 桁数も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
+    # overflow し、既知の故障が静かに unknown へ落ちる（実装SO が実証）。tail(1) も
+    # 実装ごとに上限があり、超えると黙って失敗して判定だけが変わる。
+    err "${_t_var} は 1〜999999999 の整数で指定してください: ${_t_val}"
     exit 2
   fi
 done
@@ -154,8 +163,11 @@ claude_body_hit() {
   local pat="$1" out="$2" raw="$3"
   line_starts_with "$pat" "$out" && return 0
   line_starts_with "$pat" "$raw" && return 0
-  if [[ -s "$raw" ]] && command -v jq >/dev/null 2>&1; then
+  if [[ -s "$raw" ]]; then
+    # **ここも末尾窓を通す。** 通さないと、先頭で故障の文言を引用してから長い回答を続けた
+    # 出力が、窓の外にあるのに当たってしまう（実装SO が到達可能な経路として実証）。
     jq -r '.result? // empty' "$raw" 2>/dev/null \
+      | tail -n "$SIG_TAIL_LINES" \
       | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { found = 1 } END { exit !found }' && return 0
   fi
   return 1
@@ -285,42 +297,30 @@ classify_lane() {
   return 0
 }
 
-# JSON 文字列のエスケープ。**制御文字まで見る。**
-# ディレクトリ名には改行やタブを入れられるので、`\` と `"` だけを潰す実装では
-# 不正な JSON を出し、改行が入れば「1 レーン 1 行」の JSONL の約束も破れる（実装SO の指摘）。
-# LC_ALL=C でバイト単位に固定するので、多バイト文字はそのまま通る（JSON は UTF-8 を許す）。
-json_escape() {
-  LC_ALL=C awk -v s="$1" '
-    BEGIN {
-      for (i = 0; i < 256; i++) ord[sprintf("%c", i)] = i
-      out = ""
-      n = length(s)
-      for (i = 1; i <= n; i++) {
-        c = substr(s, i, 1)
-        o = ord[c]
-        if (c == "\"") { out = out "\\\"" }
-        else if (c == "\\") { out = out "\\\\" }
-        else if (o == 8)  { out = out "\\b" }
-        else if (o == 9)  { out = out "\\t" }
-        else if (o == 10) { out = out "\\n" }
-        else if (o == 12) { out = out "\\f" }
-        else if (o == 13) { out = out "\\r" }
-        else if (o < 32 || o == 127) { out = out sprintf("\\u%04x", o) }
-        else { out = out c }
-      }
-      printf "%s", out
-    }'
-}
-
+# JSON は **jq に組ませる**。
+#
+# 自前でエスケープしていたが、実装SO が2つの欠陥を実証した。
+#   - `awk -v s="$1"` は**代入の時点で awk がバックスラッシュを解釈する**ので、`A\nB` という
+#     合法なディレクトリ名が実際の改行に化け、`\q` はバックスラッシュが落ちた。可逆でない。
+#   - 0x80-0xff を無条件に通していたので、不正な UTF-8 を含むファイル名では**不正な JSON** を
+#     exit 0 で出していた。
+# jq は両方を正しく扱う（不正なバイトは U+FFFD へ置換されるので、出力は常に妥当な JSON になる）。
 emit_json() {
-  printf '{"dir":"%s","lane":"%s","attempt":"%s","attempt_state":"%s","timeout_status":"%s","exit_code":"%s","elapsed_seconds":"%s","timeout_limit_seconds":"%s","model_requested":"%s","cli_version":"%s","so_compare_version":"%s","stdout_state":"%s","stderr_state":"%s","raw_state":"%s","stdout_bytes":"%s","stderr_bytes":"%s","era_markers":"%s","failure_reason":"%s","failure_evidence":"%s"}\n' \
-    "$(json_escape "$R_DIR")" "$(json_escape "$R_TOOL")" "$(json_escape "$R_ATTEMPT")" \
-    "$(json_escape "$R_STATE")" "$(json_escape "$R_STATUS")" "$(json_escape "$R_EXIT")" \
-    "$(json_escape "$R_ELAPSED")" "$(json_escape "$R_LIMIT")" "$(json_escape "$R_MODEL")" \
-    "$(json_escape "$R_CLI")" "$(json_escape "$R_SOVER")" \
-    "$(json_escape "$R_OUT_STATE")" "$(json_escape "$R_ERR_STATE")" "$(json_escape "$R_RAW_STATE")" \
-    "$(json_escape "$R_OUT_BYTES")" "$(json_escape "$R_ERR_BYTES")" \
-    "$(json_escape "$R_MARKERS")" "$(json_escape "$R_REASON")" "$(json_escape "$R_EVIDENCE")"
+  jq -cn \
+    --arg dir "$R_DIR" --arg lane "$R_TOOL" --arg attempt "$R_ATTEMPT" \
+    --arg attempt_state "$R_STATE" --arg timeout_status "$R_STATUS" --arg exit_code "$R_EXIT" \
+    --arg elapsed_seconds "$R_ELAPSED" --arg timeout_limit_seconds "$R_LIMIT" \
+    --arg model_requested "$R_MODEL" --arg cli_version "$R_CLI" --arg so_compare_version "$R_SOVER" \
+    --arg stdout_state "$R_OUT_STATE" --arg stderr_state "$R_ERR_STATE" --arg raw_state "$R_RAW_STATE" \
+    --arg stdout_bytes "$R_OUT_BYTES" --arg stderr_bytes "$R_ERR_BYTES" \
+    --arg era_markers "$R_MARKERS" --arg failure_reason "$R_REASON" --arg failure_evidence "$R_EVIDENCE" \
+    '{dir:$dir, lane:$lane, attempt:$attempt, attempt_state:$attempt_state,
+      timeout_status:$timeout_status, exit_code:$exit_code, elapsed_seconds:$elapsed_seconds,
+      timeout_limit_seconds:$timeout_limit_seconds, model_requested:$model_requested,
+      cli_version:$cli_version, so_compare_version:$so_compare_version,
+      stdout_state:$stdout_state, stderr_state:$stderr_state, raw_state:$raw_state,
+      stdout_bytes:$stdout_bytes, stderr_bytes:$stderr_bytes, era_markers:$era_markers,
+      failure_reason:$failure_reason, failure_evidence:$failure_evidence}'
 }
 
 # --- 引数 ---
@@ -395,9 +395,34 @@ for d in "${DIRS[@]}"; do
         UNREADABLE=$(( UNREADABLE + 1 ))
         continue
       fi
-      # 読めても中身がレーンの meta でなければ観測できていない（切れた・壊れた）。
-      if ! grep -q '^tool=' "$meta" 2>/dev/null; then
-        err "meta の中身がレーンの記録ではありません（数えません）: $meta"
+      # 読めても中身がこのレーンの meta でなければ観測できていない（切れた・壊れた・別レーン）。
+      # `tool=` が在るかだけでは足りない。`tool=garbage` や、codex-meta.txt に `tool=claude` が
+      # 入っている場合も、全項目 `-`・理由 unknown の正常な行として数えていた（実装SO の指摘）。
+      if ! grep -qx "tool=${tool}" "$meta" 2>/dev/null; then
+        err "meta がこのレーンの記録ではありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # 分類の根拠になる項目が1つも無い meta も観測できていない。
+      # **`attempt_state` の有無で判定しない。** あのキーは #328（2026-08-14）で入ったもので、
+      # それ以前の記録には無い。無いことを不正と読むと、この verb の主目的である
+      # 「過去の出力に遡って当てる」が古い記録に対して丸ごと効かなくなる（実際に踏んだ）。
+      # 見るのは exit_code で、まだ走っている meta（attempt_state=running）だけ例外にする。
+      if ! grep -q '^exit_code=' "$meta" 2>/dev/null \
+         && ! grep -qx 'attempt_state=running' "$meta" 2>/dev/null; then
+        err "meta に分類の根拠がありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # **分類の根拠になるファイルが読めないものも数えない。** meta だけを見ていたので、
+      # 在るのに読めない stdout / stderr / raw を握り潰し、`present/` かつ理由 unknown の
+      # 行として exit 0 を返していた。根拠を観測できていない census を成功にしない。
+      unreadable_file=''
+      for probe in "${d}/${tool}-stdout.txt${sfx}" "${d}/${tool}-stderr.txt${sfx}" "${d}/${tool}-raw.json${sfx}"; do
+        if [[ -e "$probe" && ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
+      done
+      if [[ -n "$unreadable_file" ]]; then
+        err "分類の根拠になるファイルが読めません（数えません）: $unreadable_file"
         UNREADABLE=$(( UNREADABLE + 1 ))
         continue
       fi
