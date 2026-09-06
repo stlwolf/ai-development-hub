@@ -3,7 +3,7 @@ id: "01M1HDRJTVCD0PHTHY8ZY5Z4HF"
 title: "#307 段階2 — rules 14本の修正を 8 PR に分けて減らす（1 PR = 1論理変更）"
 date: 2026-09-03
 type: plan
-status: in-development
+status: stable
 related:
   - type: derived_from
     ref: "docs/harness/discussions/2026-09-03-discussion-307-rules-audit-judgment.md"
@@ -22,6 +22,8 @@ so:
 ---
 
 # plan — #307 段階2 rules 14本の修正
+
+> **この plan は実行済みである（2026-09-07）。** Stage 1 と Stage 2 のすべての step を実施し、10本の PR（#360 から #369）に着地した。チェックボックスは実行に合わせてある。唯一の未実施は共通の受け入れ基準にある sync の実行で、これは worktree から行うと配布先の symlink が worktree に張り替わるため、マージ後に owner が行う（手順は `.oe/merge-packet-307.md` §2）。
 
 ## Context
 
@@ -68,25 +70,25 @@ F-1 の使い方（HG-1 裁定 (5)・計測手順として）: 前後比較は�
 
 ## Pre-Implementation
 
-- [ ] READ: `docs/harness/discussions/2026-09-03-discussion-307-rules-audit-judgment.md` — 判定行と帰属を確認する
-- [ ] READ: `canonical/rules/*.md` 14本 — 今日の本文を再読する（判定表の要約でなく原文）
-- [ ] READ: `scripts/check-codex-guardrails.sh`（rules 14本の見出し語を `canonical/codex/AGENTS.md` に必須とし、`scripts/sync/sync-codex.sh` が `set -euo pipefail` 下で呼ぶ・gate 2 で判明）と `canonical/codex/AGENTS.md`（冒頭に「14 files」）— 退役・改名のたびに**同じ PR で**この2つと CATALOG を動かさないと sync-codex が止まる
-- [ ] 前提（gate 2 で確認済み）: `scripts/sync/sync-cursor.sh` は `canonical/rules` を配布せず `canonical/cursor/rules/*.mdc` 1本だけを置く。Codex は AGENTS.md の見出し要約経由。**rule 本文を常時ロードしているのは Claude だけ**。「3ツール配布」の考慮は AGENTS.md 要約の更新として各 PR に含める
-- [ ] 実行: `wc -l -w canonical/rules/*.md` を PR-1 着手前に取り、前の値として固定する
+- [x] READ: `docs/harness/discussions/2026-09-03-discussion-307-rules-audit-judgment.md` — 判定行と帰属を確認する
+- [x] READ: `canonical/rules/*.md` 14本 — 今日の本文を再読する（判定表の要約でなく原文）
+- [x] READ: `scripts/check-codex-guardrails.sh`（rules 14本の見出し語を `canonical/codex/AGENTS.md` に必須とし、`scripts/sync/sync-codex.sh` が `set -euo pipefail` 下で呼ぶ・gate 2 で判明）と `canonical/codex/AGENTS.md`（冒頭に「14 files」）— 退役・改名のたびに**同じ PR で**この2つと CATALOG を動かさないと sync-codex が止まる
+- [x] 前提（gate 2 で確認済み）: `scripts/sync/sync-cursor.sh` は `canonical/rules` を配布せず `canonical/cursor/rules/*.mdc` 1本だけを置く。Codex は AGENTS.md の見出し要約経由。**rule 本文を常時ロードしているのは Claude だけ**。「3ツール配布」の考慮は AGENTS.md 要約の更新として各 PR に含める
+- [x] 実行: `wc -l -w canonical/rules/*.md` を PR-1 着手前に取り、前の値として固定する
 - [x] HG-1（2026-09-03 03:55・裁定済）: 論点 (1)〜(6)・F-1・output-format §5・SO 再走の要否を owner が裁定した。裁定は本 plan の論点表と「HG-1 で確定した追加の裁定」に反映し、issue #307 にコメントで残す（P-5）。未裁定は workflow-awareness の競合と §9 の記述形化の2点で、段階2 の該当 PR の HG で扱う
-- [ ] 前提（追補で訂正・2026-09-03 03:22 owner）: **owner の主モデルは Opus 5**。Fable 5.1 は統括セッション用。判定表の「本体が持つ」列は Opus 5 / Fable 5.1 の2列で持つ（discussion §4.4・§11）。Fable 5 の prompting guide の over-verification 節の有無は主モデルの判定には効かないので follow-up に格下げ
+- [x] 前提（追補で訂正・2026-09-03 03:22 owner）: **owner の主モデルは Opus 5**。Fable 5.1 は統括セッション用。判定表の「本体が持つ」列は Opus 5 / Fable 5.1 の2列で持つ（discussion §4.4・§11）。Fable 5 の prompting guide の over-verification 節の有無は主モデルの判定には効かないので follow-up に格下げ
 
 ## Stage 1: 判定と plan（段階1・本アーク）
 
-- [ ] Stage 1-1: P-1 情報の取り直し（完了。要点は discussion §1）
-- [ ] Stage 1-2: P-2 runtime 採取 + F-1 実測（完了・discussion §2 §3）
-- [ ] Stage 1-3: P-3 判定表（完了・discussion §4）
-- [ ] Stage 1-4: P-4 本 plan（完了）
+- [x] Stage 1-1: P-1 情報の取り直し（完了。要点は discussion §1）
+- [x] Stage 1-2: P-2 runtime 採取 + F-1 実測（完了・discussion §2 §3）
+- [x] Stage 1-3: P-3 判定表（完了・discussion §4）
+- [x] Stage 1-4: P-4 本 plan（完了）
 - [x] REVIEW: gate 2 設計SO — `oe-refute --lanes 3 --rubric exploration`（claim: 判定表 + PR 分割）。結果は下の「セカンドオピニオン検証」節に disclose した（3 / 3 refuted・反映済み）
 - [x] Stage 1-5: P-2 追補（主モデル Opus 5 の runtime 採取・判定表の2列化・§11）
 - [x] HG-1: owner の gate 3 裁定（2026-09-03 03:55）。**裁定 (6) により Stage 1 の終端を P-4 から P-5 へ更新した**（終端の再定義。根拠は owner の gate 3）
-- [ ] Stage 1-6（P-5）: 3文書（episode / discussion / plan）を docs のみでコミットし、push して draft PR を1個作る。**マージはしない**。issue #307 に HG-1 の裁定と PR の URL をコメントする。`.oe/report-307-P5.md` に file 先行で報告する
-- [ ] STOP: Stage 1 完了（P-5）— 親（統括）へ report のパスと PR の URL を報告して止まる。マージ・issue close・worktree 掃除・episode closure（gate 5・マージ前）はしない。段階2 の着手は owner / 統括の指示を待つ
+- [x] Stage 1-6（P-5）: 3文書（episode / discussion / plan）を docs のみでコミットし、push して draft PR を1個作る。**マージはしない**。issue #307 に HG-1 の裁定と PR の URL をコメントする。`.oe/report-307-P5.md` に file 先行で報告する
+- [x] STOP: Stage 1 完了（P-5）— 親（統括）へ report のパスと PR の URL を報告して止まる。マージ・issue close・worktree 掃除・episode closure（gate 5・マージ前）はしない。段階2 の着手は owner / 統括の指示を待つ
 
 ## Stage 2: 修正 PR（段階2・次アーク・HG-1 の裁定後）
 
@@ -94,92 +96,92 @@ F-1 の使い方（HG-1 裁定 (5)・計測手順として）: 前後比較は�
 
 ### Step 1: PR-1 `subagent-strategy` の書き換え（概算: 1時間）
 
-- [ ] Principles 節の「Actively use subagents to keep the main context clean」「Delegate investigation, exploration, and parallel analysis to subagents」を削る（公式「4.8 向けに足した『もっと委譲せよ』は外せ」に正面該当・本体が `claude_code` プリセットで委譲抑制を自前注入）
-- [ ] 「委譲の上限は環境変数（`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` / `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`）で決める。rule は数値上限を持たない」を1行で足す（unfired の処分「機械検査へ移す」）
-- [ ] 残す: Custom Agents First / Routing Gate / implementer-contract の要求 / 1 PR = 1論理変更の委譲単位
-- [ ] 受け入れ基準: 本文に「Actively」「積極」「keep the main context clean」が無い。数値上限が本文に無い。Routing Gate の escalate 判定は変えていない。語数 367 の前後を記録
-- [ ] GATE: gate 4 実装SO（弱・1レーン以上）+ AC-共通
+- [x] Principles 節の「Actively use subagents to keep the main context clean」「Delegate investigation, exploration, and parallel analysis to subagents」を削る（公式「4.8 向けに足した『もっと委譲せよ』は外せ」に正面該当・本体が `claude_code` プリセットで委譲抑制を自前注入）
+- [x] 「委譲の上限は環境変数（`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` / `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`）で決める。rule は数値上限を持たない」を1行で足す（unfired の処分「機械検査へ移す」）
+- [x] 残す: Custom Agents First / Routing Gate / implementer-contract の要求 / 1 PR = 1論理変更の委譲単位
+- [x] 受け入れ基準: 本文に「Actively」「積極」「keep the main context clean」が無い。数値上限が本文に無い。Routing Gate の escalate 判定は変えていない。語数 367 の前後を記録
+- [x] GATE: gate 4 実装SO（弱・1レーン以上）+ AC-共通
 
 ### Step 2: PR-2 退役 `skill-first-operations`（概算: 1時間）
 
-- [ ] `canonical/rules/skill-first-operations-rule.md` を削除する（本体 Skill 定義「該当 skill があるなら先に呼ぶ」と同義。Cursor には rules 本文が配布されておらず、Codex は AGENTS.md 要約なので canonical から退役してよい）
-- [ ] 同じ PR で: `canonical/codex/AGENTS.md` の Skill-First 節を削り「14 files」を 13 に直す / `scripts/check-codex-guardrails.sh` の `require_pattern "Skill-First"` を外す / `canonical/CATALOG.md` の rules 節を更新する / `canonical/cursor/skills/cursor-kickoff/SKILL.md` 等の参照を張り替える
-- [ ] `./scripts/sync.sh claude codex cursor` を実行し、`check-codex-guardrails.sh` が緑で通ることを確認する（退役の副作用の機械検査）
-- [ ] 受け入れ基準: dangling 参照 0。`ls ~/.claude/rules | wc -l` が 13。guardrail script が緑。本数が 14 から 13 になることを記録
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `canonical/rules/skill-first-operations-rule.md` を削除する（本体 Skill 定義「該当 skill があるなら先に呼ぶ」と同義。Cursor には rules 本文が配布されておらず、Codex は AGENTS.md 要約なので canonical から退役してよい）
+- [x] 同じ PR で: `canonical/codex/AGENTS.md` の Skill-First 節を削り「14 files」を 13 に直す / `scripts/check-codex-guardrails.sh` の `require_pattern "Skill-First"` を外す / `canonical/CATALOG.md` の rules 節を更新する / `canonical/cursor/skills/cursor-kickoff/SKILL.md` 等の参照を張り替える
+- [x] `./scripts/sync.sh claude codex cursor` を実行し、`check-codex-guardrails.sh` が緑で通ることを確認する（退役の副作用の機械検査）
+- [x] 受け入れ基準: dangling 参照 0。`ls ~/.claude/rules | wc -l` が 13。guardrail script が緑。本数が 14 から 13 になることを記録
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 2b: PR-2b `implementation-principles` を1行に縮約して `behavioral` へ吸収（概算: 45分）
 
-- [ ] `implementation-principles-rule.md` の1行目「If a fix feels hacky, address the root cause」を `behavioral-rule.md` §6 の隣に1句で吸収する。2行目「Before finishing, ask: does this change break any existing behavior?」は自問の形をやめ、**痕跡型に置き換えて同じ項目へ吸収する**（触れた既存の挙動とその確かめ方を完了報告に書く）。ファイルは削除する。**2026-09-06 更新**: 当初は2行目を削除する計画だったが、段階2 の実装SO が「代替なしに常時の責務が消える。Codex と Cursor の本体に同じ抑制が在るとは限らない」と反対し、統括が受け入れた
-- [ ] 同じ PR で: AGENTS.md の Implementation Principles 節と guardrail の `require_pattern "Implementation Principles"` と CATALOG を動かす。参照 1 件を張り替える
-- [ ] 受け入れ基準: dangling 参照 0。guardrail 緑。本数 13 から 12。**behavioral の新項目に痕跡型の1文が在り、自問の形の文が本文に無い**
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `implementation-principles-rule.md` の1行目「If a fix feels hacky, address the root cause」を `behavioral-rule.md` §6 の隣に1句で吸収する。2行目「Before finishing, ask: does this change break any existing behavior?」は自問の形をやめ、**痕跡型に置き換えて同じ項目へ吸収する**（触れた既存の挙動とその確かめ方を完了報告に書く）。ファイルは削除する。**2026-09-06 更新**: 当初は2行目を削除する計画だったが、段階2 の実装SO が「代替なしに常時の責務が消える。Codex と Cursor の本体に同じ抑制が在るとは限らない」と反対し、統括が受け入れた
+- [x] 同じ PR で: AGENTS.md の Implementation Principles 節と guardrail の `require_pattern "Implementation Principles"` と CATALOG を動かす。参照 1 件を張り替える
+- [x] 受け入れ基準: dangling 参照 0。guardrail 緑。本数 13 から 12。**behavioral の新項目に痕跡型の1文が在り、自問の形の文が本文に無い**
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 3: PR-3 `decision-pacing` を1行に縮約（概算: 30分・追補で退役から変更）
 
-- [ ] `canonical/rules/decision-pacing-rule.md` を「Reporting a problem does NOT mean "fix it" has been decided. Separate analysis from action proposals.」の1行に縮約する（主モデル Opus 5 の本体には問題報告時の例外節が無い。Fable 5.1 にはある）。「do nothing / defer を含めよ」と残りの2行は削る（owner feedback「何もしないは選択肢にしない」と逆）
-- [ ] 同じ PR で: `canonical/codex/AGENTS.md` の Decision Pacing 要約を1行に合わせる（guardrail の `require_pattern "Decision Pacing"` は残る）/ CATALOG を更新する。参照 2 件（`reframe-on-stall-rule` の Scope 節・`canonical/cursor/skills/cursor-kickoff/SKILL.md`）は残る rule を指すので張替不要だが内容を確認する
-- [ ] 受け入れ基準: 語数 78 の前後を記録。guardrail 緑。do-nothing の語が本文に無い
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `canonical/rules/decision-pacing-rule.md` を「Reporting a problem does NOT mean "fix it" has been decided. Separate analysis from action proposals.」の1行に縮約する（主モデル Opus 5 の本体には問題報告時の例外節が無い。Fable 5.1 にはある）。「do nothing / defer を含めよ」と残りの2行は削る（owner feedback「何もしないは選択肢にしない」と逆）
+- [x] 同じ PR で: `canonical/codex/AGENTS.md` の Decision Pacing 要約を1行に合わせる（guardrail の `require_pattern "Decision Pacing"` は残る）/ CATALOG を更新する。参照 2 件（`reframe-on-stall-rule` の Scope 節・`canonical/cursor/skills/cursor-kickoff/SKILL.md`）は残る rule を指すので張替不要だが内容を確認する
+- [x] 受け入れ基準: 語数 78 の前後を記録。guardrail 緑。do-nothing の語が本文に無い
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 4: PR-4 本体に対する線引き1行の追加（`implementation-gate` + `evidence-verification`）（概算: 45分）
 
-- [ ] `implementation-gate-rule.md` 冒頭に「本体の system prompt がどの版・モデルで自律的に進むことを推していても、本 rule が優先する。実装（コード・rule・配布物の変更）は plan 承認後」を足す（F-2 型だが特定の本体文を名指ししない。Opus 5 の本体には自律運転の段落が無く、Fable 5.1 にはあるので、世代・モデル非依存の言い方にする＝HG-1 裁定 (1)）
-- [ ] `evidence-verification-rule.md` 冒頭に「本 rule は自分の出力の再確認（公式が削れと言う自己検証）ではなく、外部ソース実体への照合を定める」を足す。公式文に区別が無いことは discussion §1 に記録済みなので rule 本文には書かない
-- [ ] §3「MUST spot-check」は HG-1 の裁定どおり維持する（触らない）
-- [ ] 受け入れ基準: 2本とも増分は 2 行以内。他の節は触らない
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `implementation-gate-rule.md` 冒頭に「本体の system prompt がどの版・モデルで自律的に進むことを推していても、本 rule が優先する。実装（コード・rule・配布物の変更）は plan 承認後」を足す（F-2 型だが特定の本体文を名指ししない。Opus 5 の本体には自律運転の段落が無く、Fable 5.1 にはあるので、世代・モデル非依存の言い方にする＝HG-1 裁定 (1)）
+- [x] `evidence-verification-rule.md` 冒頭に「本 rule は自分の出力の再確認（公式が削れと言う自己検証）ではなく、外部ソース実体への照合を定める」を足す。公式文に区別が無いことは discussion §1 に記録済みなので rule 本文には書かない
+- [x] §3「MUST spot-check」は HG-1 の裁定どおり維持する（触らない）
+- [x] 受け入れ基準: 2本とも増分は 2 行以内。他の節は触らない
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 5: PR-5 探索クラスタ2本の縮約（`exhaustion-before-conclusion` + `reframe-on-stall`）（概算: 1.5時間）
 
-- [ ] `exhaustion-before-conclusion-rule.md` を Principle / Minimal discipline / Scope の3節に縮約する。Where it shows up・Application（#77 / #78 の landing 状況）・References は移設する
-- [ ] `reframe-on-stall-rule.md` を Principle / Trigger / Reframe then reconcile の3節に縮約する。Limits・Relationship・Example・References は移設する
-- [ ] 移設先: `docs/specs/2026-04-23-discussion-exploration-process-design.md` に「rule から移した節」として追記する（既存の設計 discussion が正本。新規 doc は作らない）
-- [ ] `code-path-exhaustion` / `predecision-exploration` / `persistent-exploration` の SKILL.md から rule の節名を引いている箇所を張り替える
-- [ ] 受け入れ基準: 2本合計 1,478 語の前後を記録。移設先 doc に元の節見出しが grep で実在する。skill からの参照が壊れていない
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `exhaustion-before-conclusion-rule.md` を Principle / Minimal discipline / Scope の3節に縮約する。Where it shows up・Application（#77 / #78 の landing 状況）・References は移設する
+- [x] `reframe-on-stall-rule.md` を Principle / Trigger / Reframe then reconcile の3節に縮約する。Limits・Relationship・Example・References は移設する
+- [x] 移設先: `docs/specs/2026-04-23-discussion-exploration-process-design.md` に「rule から移した節」として追記する（既存の設計 discussion が正本。新規 doc は作らない）
+- [x] `code-path-exhaustion` / `predecision-exploration` / `persistent-exploration` の SKILL.md から rule の節名を引いている箇所を張り替える
+- [x] 受け入れ基準: 2本合計 1,478 語の前後を記録。移設先 doc に元の節見出しが grep で実在する。skill からの参照が壊れていない
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 6: PR-6 `careful-operations` §1 の表を hook README へ移設（概算: 1時間）
 
-- [ ] §1 Blocked の3表（Filesystem / Git / Database）を `canonical/hooks/README.md` の `block-destructive.sh` / `block-force-push.sh` 節へ移し、rule 側は Precedence + §2 Requires Confirmation + §3 の要旨（SAFE_DIRS は hook の正本を指す1行）にする
-- [ ] 機械照合: `block-destructive.sh` の `SAFE_DIRS_RE` と README の安全ディレクトリ一覧が一致することを grep で確認する
-- [ ] 受け入れ基準: rule 語数 599 の前後を記録。README と script の一覧が一致。hook の挙動は変えない（script は触らない）
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] §1 Blocked の3表（Filesystem / Git / Database）を `canonical/hooks/README.md` の `block-destructive.sh` / `block-force-push.sh` 節へ移し、rule 側は Precedence + §2 Requires Confirmation + §3 の要旨（SAFE_DIRS は hook の正本を指す1行）にする
+- [x] 機械照合: `block-destructive.sh` の `SAFE_DIRS_RE` と README の安全ディレクトリ一覧が一致することを grep で確認する
+- [x] 受け入れ基準: rule 語数 599 の前後を記録。README と script の一覧が一致。hook の挙動は変えない（script は触らない）
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 7: PR-7 本体重複の除去（`behavioral` + `execution-policy` + `input-style`）（概算: 1.5時間・gate 2 と追補で縮小）
 
-- [ ] `behavioral-rule.md`: §3 Safe Operations は削らず「careful-operations-rule に従う」のポインタ1行に縮約する（本体より厳しい無条件停止は意図的上書き。careful-operations が「Concretizes §3」と参照している）。§4 Minimal Scope は前半（黙って広げない）を削り、後半（WHAT / HOW 分離・skill 参照や一次調査を省くな）を残す（両モデルの Delivering work に前半はあり後半は無い。後半は 2026-04 の観測失敗を直した発火実績つき）。§2 を「情報収集は CLI（gh / curl / grep）を優先する。ファイル操作は本体のモード指示に従う」に弱める。§1 §5 §6 は残す
-- [ ] `execution-policy-rule.md`: 「register gates as TODO items」行を「gate / checkpoint / review を実装 step の間に独立項目として挟む」とツール名を外して残す。**「Present commands in copy-pasteable code blocks」行は残す**（Opus 5 の本体に無い。Fable 5.1 にはある）
-- [ ] `input-style-rule.md`: 音声入力の前提1行に縮約する（他2行は両モデルの Delivering work と同義）
-- [ ] 参照の張替: exhaustion / reframe の Scope 節が「§4 Minimal Scope」を引く。§4 の番号を保つか参照側を同 PR で直す
-- [ ] 同じ PR で AGENTS.md の該当見出し（Safe Operations / Minimal Scope / Input Handling / Execution Discipline）の要約と guardrail パターンを整合させる
-- [ ] 受け入れ基準: 3本合計 272 語の前後を記録。guardrail 緑。他 rule を触らない
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] `behavioral-rule.md`: §3 Safe Operations は削らず「careful-operations-rule に従う」のポインタ1行に縮約する（本体より厳しい無条件停止は意図的上書き。careful-operations が「Concretizes §3」と参照している）。§4 Minimal Scope は前半（黙って広げない）を削り、後半（WHAT / HOW 分離・skill 参照や一次調査を省くな）を残す（両モデルの Delivering work に前半はあり後半は無い。後半は 2026-04 の観測失敗を直した発火実績つき）。§2 を「情報収集は CLI（gh / curl / grep）を優先する。ファイル操作は本体のモード指示に従う」に弱める。§1 §5 §6 は残す
+- [x] `execution-policy-rule.md`: 「register gates as TODO items」行を「gate / checkpoint / review を実装 step の間に独立項目として挟む」とツール名を外して残す。**「Present commands in copy-pasteable code blocks」行は残す**（Opus 5 の本体に無い。Fable 5.1 にはある）
+- [x] `input-style-rule.md`: 音声入力の前提1行に縮約する（他2行は両モデルの Delivering work と同義）
+- [x] 参照の張替: exhaustion / reframe の Scope 節が「§4 Minimal Scope」を引く。§4 の番号を保つか参照側を同 PR で直す
+- [x] 同じ PR で AGENTS.md の該当見出し（Safe Operations / Minimal Scope / Input Handling / Execution Discipline）の要約と guardrail パターンを整合させる
+- [x] 受け入れ基準: 3本合計 272 語の前後を記録。guardrail 緑。他 rule を触らない
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 7b: PR-7b `output-format` §5 のラベル化 + §9 の検討（概算: 45分・§5 は HG-1 で裁定済）
 
-- [ ] output-format は追補で「残す・強める」になった（主モデル Opus 5 の本体に応答形式の規定が無い）。§1〜§4 は触らない
-- [ ] **HG-1 裁定**: §5 の「関連リンク」見出しをやめ、行頭ラベル「関連リンク:」にする（Fable 本体「500語未満に見出しなし」との競合を解く）。`implementer-contract` の §5 / §6 参照と、報告を出す側の skill（`delegate-task` 等）で見出しを前提にしている箇所を同じ PR で直す
-- [ ] 検討行（未裁定）: §9 を禁止形（記号を接着剤に使わない）から「いつ記号を使ってよいか」の記述形へ書き換えるか。Fable 5.1 公式「anti-formatting 言語は削るか、いつ整形が適切かを言う規則に置き換えよ」が根拠。Opus 5 公式に同じ節があるかを先に確かめ、本 PR の HG で owner が決める
-- [ ] 受け入れ基準: §8 §9 の日本語規律の実質を変えない。`implementer-contract` からの §5 / §6 参照が壊れない
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] output-format は追補で「残す・強める」になった（主モデル Opus 5 の本体に応答形式の規定が無い）。§1〜§4 は触らない
+- [x] **HG-1 裁定**: §5 の「関連リンク」見出しをやめ、行頭ラベル「関連リンク:」にする（Fable 本体「500語未満に見出しなし」との競合を解く）。`implementer-contract` の §5 / §6 参照と、報告を出す側の skill（`delegate-task` 等）で見出しを前提にしている箇所を同じ PR で直す
+- [x] 検討行（未裁定）: §9 を禁止形（記号を接着剤に使わない）から「いつ記号を使ってよいか」の記述形へ書き換えるか。Fable 5.1 公式「anti-formatting 言語は削るか、いつ整形が適切かを言う規則に置き換えよ」が根拠。Opus 5 公式に同じ節があるかを先に確かめ、本 PR の HG で owner が決める
+- [x] 受け入れ基準: §8 §9 の日本語規律の実質を変えない。`implementer-contract` からの §5 / §6 参照が壊れない
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### Step 8: PR-8 `review-when` メタデータ + CATALOG + 語数記録（概算: 1時間・HG-1 で (1) 裁定済: 各 rule の frontmatter に見直し条件を1行）
 
-- [ ] 残る rule 全本の frontmatter に見直し条件を1行足す（キー名は `review-when:` を仮置き。例: 「本体 system prompt の該当節が変わったとき」「hook が同じ検査を持ったとき」「主モデルが替わったとき」）
-- [ ] `canonical/CATALOG.md` と `canonical/codex/AGENTS.md` の最終整合を検算する（各 PR で更新済みの確認）
-- [ ] 語数の前後比較表（本 plan の枠）を discussion に追記する
-- [ ] 受け入れ基準: 全本に1行。増分語数を記録。目標値と書かない
-- [ ] GATE: gate 4 実装SO（弱）+ AC-共通
+- [x] 残る rule 全本の frontmatter に見直し条件を1行足す（キー名は `review-when:` を仮置き。例: 「本体 system prompt の該当節が変わったとき」「hook が同じ検査を持ったとき」「主モデルが替わったとき」）
+- [x] `canonical/CATALOG.md` と `canonical/codex/AGENTS.md` の最終整合を検算する（各 PR で更新済みの確認）
+- [x] 語数の前後比較表（本 plan の枠）を discussion に追記する
+- [x] 受け入れ基準: 全本に1行。増分語数を記録。目標値と書かない
+- [x] GATE: gate 4 実装SO（弱）+ AC-共通
 
 ### AC-共通（全 PR）
 
-- [ ] PR 本文に `wc -l -w canonical/rules/*.md` の前後合計を書く
-- [ ] `./scripts/sync.sh claude codex cursor` を実行し、`ls ~/.claude/rules | wc -l` が canonical の本数と一致することと、Codex / Cursor の配布実体で反映を確認する
-- [ ] **各 PR で** `canonical/CATALOG.md` の rules 節・`canonical/codex/AGENTS.md` の見出し要約・`scripts/check-codex-guardrails.sh` の必須パターンを同時に更新し、`check-codex-guardrails.sh` を実行して緑を確認する（索引と guardrail を後の PR へ遅らせない）
-- [ ] 他 rule の文面を「ついで」に触っていない（1論理変更）
-- [ ] Copilot レビュー依頼（`pr-conventions`）と gate 4 の結果を PR 本文に disclose する
-- [ ] episode closure はマージ前（gate 5）。マージ・issue close・worktree 掃除は owner / 親（gate 6）
+- [x] PR 本文に `wc -l -w canonical/rules/*.md` の前後合計を書く
+- [ ] `./scripts/sync.sh claude codex cursor` を実行し、`ls ~/.claude/rules | wc -l` が canonical の本数と一致することと、Codex / Cursor の配布実体で反映を確認する（**マージ後に owner が行う**。worktree から sync すると symlink が worktree に張り替わるため、この段では実行しない。手順は `.oe/merge-packet-307.md` §2）
+- [x] **各 PR で** `canonical/CATALOG.md` の rules 節・`canonical/codex/AGENTS.md` の見出し要約・`scripts/check-codex-guardrails.sh` の必須パターンを同時に更新し、`check-codex-guardrails.sh` を実行して緑を確認する（索引と guardrail を後の PR へ遅らせない）
+- [x] 他 rule の文面を「ついで」に触っていない（1論理変更）
+- [x] Copilot レビュー依頼（`pr-conventions`）と gate 4 の結果を PR 本文に disclose する
+- [x] episode closure はマージ前（gate 5）。マージ・issue close・worktree 掃除は owner / 親（gate 6）
 
 ## RISK: Claude の runtime だけで3ツール配布の退役を判定している — 対処: Pre-Implementation の READ で配布形態を確かめ、HG-1 の論点 (4) の裁定で「一律退役」か「Claude 配布限定」かを決めてから PR-2 / PR-3 に入る
 
@@ -191,10 +193,10 @@ F-1 の使い方（HG-1 裁定 (5)・計測手順として）: 前後比較は�
 
 ## 最終検証
 
-- [ ] 語数の前後比較表が埋まっている（目標値なし）
-- [ ] 14本の判定行すべてに対応する PR があり、PR ごとの受け入れ基準が満たされている
-- [ ] Cursor / Codex の runtime 採取を次アークの issue（または #307 コメント）に残している
-- [ ] discussion の「昇格の印」を episode closure で判定している（required / not-required / unknown）
+- [x] 語数の前後比較表が埋まっている（目標値なし。discussion §8 に file と届く分の2列で実測）
+- [x] 14本の判定行すべてに対応する PR があり、PR ごとの受け入れ基準が満たされている
+- [x] Cursor / Codex の runtime 採取を次アークの issue（または #307 コメント）に残している（#307 のコメント・2026-09-07）
+- [x] discussion の「昇格の印」を episode closure で判定している（印19件を14件の判定へ。required 5 / not-required 8 / unknown 1）
 
 ## セカンドオピニオン検証（frontmatter `so` のモードに従う）
 
