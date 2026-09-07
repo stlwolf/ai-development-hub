@@ -183,11 +183,11 @@ ck  "--prev に NUL = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:contains-nul 
 OUT="$(PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o34" "問い" -c "$OK_CTX" 2>&1)"; RC=$?
 ck "NUL なしの -c は通る" "0" "$RC"
 
-echo "[17] gate 4 2周目の指摘: iconv の前提確認は UTF-8 検査より前に置く"
-# **構造の検査である。** iconv を PATH から外す実行は、so-compare が使う他のコマンドまで
-# 巻き添えにするので、ここでは順序だけを見る。順序が逆だと iconv 不在時に
+echo "[17] gate 4 2周目の指摘: 検証器の前提確認は UTF-8 検査より前に置く"
+# **構造の検査である。** 検証器を PATH から外す実行は、so-compare が使う他のコマンドまで
+# 巻き添えにするので、ここでは順序だけを見る。順序が逆だと不在時に
 # command-not-found が invalid:not-utf8 に化け、妥当なファイルを拒否する。
-GUARD_LINE="$(grep -n 'unavailable:iconv' "$SO" | head -1 | cut -d: -f1)"
+GUARD_LINE="$(grep -n 'unavailable:perl' "$SO" | head -1 | cut -d: -f1)"
 # shellcheck disable=SC2016  # 展開させずにソース中の文字列そのものを探している
 CHECK_LINE="$(grep -n 'is_valid_utf8_file "$_cf"' "$SO" | head -1 | cut -d: -f1)"
 if [[ -n "$GUARD_LINE" && -n "$CHECK_LINE" ]] && (( GUARD_LINE < CHECK_LINE )); then
@@ -280,6 +280,75 @@ else
   ck  "stdin から -n を渡しても通る" "0" "$RC"
   ck  "空ファイルにならない" "-n" "$(cat "$_TMP/o67/prompt.txt" 2>/dev/null)"
 fi
+
+echo "[26] 実運用の呼び方が全部通る（陽性対照の組・統括指示）"
+# **これまで4回、拒否を足すたびに正当な入力を落とす形を作った。**
+# （PREV_MAX_BYTES=1 の全損誤判定 / 非アクティブなレーンの --prev / iconv の順序 /
+#   回さないレーンの設定値）。**通す側を測る組をここに固定する。**
+#
+# 形は oe-refute / oe-review が実際に渡すものに揃える:
+#   so-compare --with <providers> -w <workspace> -f <prompt file> -o <out dir>
+PC="$_TMP/positive"; mkdir -p "$PC/ws" "$PC/prev"
+ALLSTUB="$_TMP/allstub"; mkdir -p "$ALLSTUB"
+printf '#!/bin/sh\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
+printf '#!/bin/sh\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
+printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude-safe"
+chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude-safe"
+
+# レビュー級の大きさのプロンプト（日本語を含む・複数行）
+{ printf '# 設計の妥当性を検証してください\n\n'
+  for i in $(seq 1 60); do printf -- '- 観点 %s: 日本語を含む行である。境界のバイトを踏ませる。\n' "$i"; done
+} > "$PC/prompt.md"
+# 実サイズの前回出力（既定の PREV_MAX_BYTES=4000 を超えるので切り詰めが起きる）
+for t in codex claude cursor; do
+  { for i in $(seq 1 200); do printf -- '前回の %s の回答の %s 行目である。日本語で書かれている。\n' "$t" "$i"; done
+  } > "$PC/prev/${t}-stdout.txt"
+done
+printf 'ワークスペースのファイル\n' > "$PC/ws/note.md"
+
+pc_run() {
+  local label="$1"; shift
+  local out rc
+  out="$(PATH="$ALLSTUB:$PATH" "$@" 2>&1)"; rc=$?
+  ck "$label" "0" "$rc"
+  if [[ "$rc" != "0" ]]; then printf '%s\n' "$out" | tail -3 | sed 's/^/      /'; fi
+}
+
+# 1) oe-refute / oe-review が渡す形そのまま（3レーン）
+pc_run "oe-refute 相当（--with codex,claude,cursor）" \
+  env SO_TIMEOUT=120 "$SO" --with codex,claude,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out1"
+# 2) 実装SO の既定（2レーン）
+pc_run "oe-review 相当（--with codex,cursor）" \
+  env SO_TIMEOUT=120 "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out2"
+# 3) 非アクティブなレーンの設定が入っていても通る
+pc_run "非アクティブなレーンの設定つき" \
+  env SO_TIMEOUT=120 SO_CLAUDE_EFFORT=bogus SO_CLAUDE_MODEL="$(printf 'a\nb=c')" \
+      "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out3"
+# 4) 実サイズの --prev つき（既定の上限で切り詰めが起きる）
+pc_run "実サイズの --prev つき" \
+  env SO_TIMEOUT=120 "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out4" --prev "$PC/prev"
+# 5) 既定のモデル名のまま（cursor の既定は composer-2.5）
+pc_run "既定のモデル名のまま（--cursor-only）" \
+  env SO_TIMEOUT=120 "$SO" --cursor-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out5"
+ckc "cursor の既定が meta に入る" "$(cat "$PC/out5/cursor-meta.txt" 2>/dev/null)" "model_requested=composer-2.5"
+# 6) 明示したモデル名も通る
+pc_run "モデルを明示（--cursor-model auto）" \
+  env SO_TIMEOUT=120 "$SO" --cursor-only --cursor-model auto -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out6"
+# 7) 位置引数のプロンプト（-f を使わない形）
+pc_run "位置引数のプロンプト" \
+  env SO_TIMEOUT=120 "$SO" --codex-only -w "$PC/ws" -o "$PC/out7" "この設計を検証してください。"
+# 8) 出力先を省略（既定の tmp/so-... を使う）
+( cd "$PC" && PATH="$ALLSTUB:$PATH" SO_TIMEOUT=120 "$SO" --codex-only "問い" >/dev/null 2>&1 )
+ck "出力先を省略しても通る" "0" "$?"
+
+# どの実行でも meta の行が壊れていないこと
+BAD_TOTAL=0
+for f in "$PC"/out*/**-meta.txt "$PC"/out*/*-meta.txt; do
+  [[ -f "$f" ]] || continue
+  n="$(grep -vcE '^[A-Za-z_][A-Za-z0-9_]*=' "$f" || true)"
+  BAD_TOTAL=$(( BAD_TOTAL + n ))
+done
+ck "全 meta に key=value でない行が無い" "0" "$BAD_TOTAL"
 
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

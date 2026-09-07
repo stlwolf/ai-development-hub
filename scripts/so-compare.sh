@@ -123,11 +123,19 @@ has_nul_byte() {
 }
 
 # ファイルが UTF-8 として妥当かを見る。妥当でなければ 1 を返す。
-# iconv が要る。無い場合は呼び出し側が unavailable:iconv で拒否する（検査を黙って飛ばさない
-# ＝同じ入力がホストによって通ったり通らなかったりする形にしない）。
+#
+# **iconv を検証器に使わない。macOS の iconv は妥当なファイルを不正と判定する。**
+# 実測（同じ本文の先頭に 0〜5 バイトの詰め物を足しただけ）:
+#   pad=0 4972B NG / pad=1 4973B NG / pad=2 4974B OK / pad=3 4975B NG / pad=4 4976B NG / pad=5 4977B OK
+# 内容ではなく**バイトの位置**で結果が変わる（内部バッファの境界に多バイト文字が跨ると
+# `iconv(): Inappropriate ioctl for device` で落ちる）。**レビュー級のプロンプトはこの大きさに
+# 入るので、これを検証器にすると SO のゲートが正当な入力で止まる。** 陽性対照の組を足した
+# ときに実際に落ちて分かった（統括指示で追加した組・実装SO ではなく陽性対照が捕まえた）。
+#
+# perl は macOS にも主要な Linux にも標準で入っており、`utf8::decode` が仕様どおりに判定する。
 is_valid_utf8_file() {
     local f="$1"
-    iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1
+    perl -e '''open my $fh, "<:raw", $ARGV[0] or exit 2; local $/; my $d = <$fh> // ""; exit(utf8::decode($d) ? 0 : 1)''' "$f"
 }
 
 
@@ -418,8 +426,8 @@ done
 # 通ったり通らなかったりする。** そして**この確認は検査より前に置く**必要がある。後ろに置くと、
 # iconv 不在時に `is_valid_utf8_file` の command-not-found が `invalid:not-utf8` に化け、
 # **妥当なファイルを「不正な UTF-8」として拒否する**（実装SO の2周目の指摘）。
-command -v iconv &>/dev/null \
-    || reject "unavailable:iconv" "環境" "入力が UTF-8 として妥当かを見るのに iconv を使います"
+command -v perl &>/dev/null \
+    || reject "unavailable:perl" "環境" "入力が UTF-8 として妥当かを見るのに perl を使います（macOS の iconv は妥当な入力を不正と判定するため使えません）"
 
 #
 # 基準は「**その入力の権威がどこにあるか**」である。**利用者が明示的に指定したもの**（-c / -f / -w）
@@ -451,45 +459,6 @@ if [[ -n "$WORKSPACE" ]]; then
     [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
     [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
 fi
-
-# モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
-# **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
-# **回すレーンの値だけを見る。** 全部見ると、`--codex-only` なのに `SO_CURSOR_MODEL` に
-# 改行が入っているだけで落ちる。`--prev` を非アクティブなレーンで見ないようにしたのと同じ
-# 条件分離が、設定値にも要る（実装SO の4周目の指摘。**自分の都合で正当な入力を拒否する形を
-# これで4回目に作っている**）。
-_v_names=()
-$RUN_CODEX  && _v_names+=(CODEX_MODEL SANDBOX_MODE)
-$RUN_CLAUDE && _v_names+=(CLAUDE_MODEL CLAUDE_EFFORT)
-$RUN_CURSOR && _v_names+=(CURSOR_MODEL)
-for _v_name in ${_v_names[@]+"${_v_names[@]}"}; do
-    _v_val="${!_v_name}"
-    [[ -n "$_v_val" ]] || continue
-    if has_line_breaking_bytes "$_v_val"; then
-        reject "invalid:control-character" "$_v_name" "行を壊すバイト（改行・タブ・制御文字）を含みます"
-    fi
-    # **高位バイトは行を壊さないので上の検査を通る。** しかし不正な UTF-8 のモデル名は
-    # `model_requested=` に入って meta を非 UTF-8 にし、レーンの引数としても壊れる。
-    _v_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
-        || reject "unavailable:mktemp" "$_v_name" "一時ファイルを作れません"
-    printf '%s' "$_v_val" > "$_v_tmp"
-    if ! is_valid_utf8_file "$_v_tmp"; then
-        rm -f "$_v_tmp"
-        reject "invalid:not-utf8" "$_v_name" "UTF-8 として妥当ではありません"
-    fi
-    rm -f "$_v_tmp"
-done
-unset _v_name _v_val _v_tmp _v_names
-
-# エフォートは**こちらが usage に列挙している**値なので、渡す前に見る。
-# モデル名と sandbox モードは列挙しない（下記の理由）。
-if [[ -n "$CLAUDE_EFFORT" ]] && ! [[ "$CLAUDE_EFFORT" =~ ^(low|medium|high|xhigh|max)$ ]]; then
-    reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $CLAUDE_EFFORT"
-fi
-# **モデル名と -s（sandbox モード）は列挙しない。** どちらも**相手の CLI が持つ語彙**で、
-# こちらが列挙すると CLI 側が増やした値を落とす。skill doc も「任意のモデル名はそのまま
-# 透過で渡る」と書いており、その契約をこちらの検査で壊さない。不正な値はレーンの
-# エラーとして結果に出る（`error` / `error_partial`）。
 
 # -o の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる**
 # （「1＝部分成功」と衝突する・実装SO の2周目の指摘）。
@@ -532,6 +501,47 @@ fi
 if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
     reject "invalid:bad-value" "プロバイダ指定" "実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）"
 fi
+
+# モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
+# **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
+# **回すレーンの値だけを見る。** 全部見ると、`--codex-only` なのに `SO_CURSOR_MODEL` に
+# 改行が入っているだけで落ちる。`--prev` を非アクティブなレーンで見ないようにしたのと同じ
+# 条件分離が、設定値にも要る（実装SO の4周目の指摘。**自分の都合で正当な入力を拒否する形を
+# これで4回目に作っている**）。
+_v_names=()
+$RUN_CODEX  && _v_names+=(CODEX_MODEL SANDBOX_MODE)
+$RUN_CLAUDE && _v_names+=(CLAUDE_MODEL CLAUDE_EFFORT)
+$RUN_CURSOR && _v_names+=(CURSOR_MODEL)
+for _v_name in ${_v_names[@]+"${_v_names[@]}"}; do
+    _v_val="${!_v_name}"
+    [[ -n "$_v_val" ]] || continue
+    if has_line_breaking_bytes "$_v_val"; then
+        reject "invalid:control-character" "$_v_name" "行を壊すバイト（改行・タブ・制御文字）を含みます"
+    fi
+    # **高位バイトは行を壊さないので上の検査を通る。** しかし不正な UTF-8 のモデル名は
+    # `model_requested=` に入って meta を非 UTF-8 にし、レーンの引数としても壊れる。
+    _v_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
+        || reject "unavailable:mktemp" "$_v_name" "一時ファイルを作れません"
+    printf '%s' "$_v_val" > "$_v_tmp"
+    if ! is_valid_utf8_file "$_v_tmp"; then
+        rm -f "$_v_tmp"
+        reject "invalid:not-utf8" "$_v_name" "UTF-8 として妥当ではありません"
+    fi
+    rm -f "$_v_tmp"
+done
+unset _v_name _v_val _v_tmp _v_names
+
+# エフォートは**こちらが usage に列挙している**値なので、渡す前に見る。
+# モデル名と sandbox モードは列挙しない（下記の理由）。
+# **これも回すレーンのときだけ見る。** claude を回さないのに claude 用の値で落ちてはいけない。
+if $RUN_CLAUDE && [[ -n "$CLAUDE_EFFORT" ]] && ! [[ "$CLAUDE_EFFORT" =~ ^(low|medium|high|xhigh|max)$ ]]; then
+    reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $CLAUDE_EFFORT"
+fi
+# **モデル名と -s（sandbox モード）は列挙しない。** どちらも**相手の CLI が持つ語彙**で、
+# こちらが列挙すると CLI 側が増やした値を落とす。skill doc も「任意のモデル名はそのまま
+# 透過で渡る」と書いており、その契約をこちらの検査で壊さない。不正な値はレーンの
+# エラーとして結果に出る（`error` / `error_partial`）。
+
 
 # --- コマンド存在チェック ---
 if ! command -v timeout &>/dev/null; then
