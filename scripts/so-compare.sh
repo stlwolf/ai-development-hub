@@ -93,6 +93,19 @@ reject() {
     exit "$EXIT_INPUT_REJECTED"
 }
 
+# ファイルが NUL を含むかを見る。含めば 1 を返す。
+#
+# **NUL は iconv では弾けない。** UTF-8 として妥当なバイトだからである。しかし bash の
+# コマンド置換（`$(cat ...)`）は NUL を**黙って捨てる**ので、`-f` / `-c` / `--prev` から
+# 読んだ内容が変質し、**レーンには元と違う本文が渡る**。最後の網は変質後の prompt.txt を
+# 見るので素通りする（実装SO の2周目の指摘）。読んだ時点で弾くしかない。
+has_nul_byte() {
+    local f="$1" a b
+    a="$(wc -c < "$f" | tr -d ' ')"
+    b="$(LC_ALL=C tr -d '\000' < "$f" | wc -c | tr -d ' ')"
+    [[ "$a" != "$b" ]]
+}
+
 # ファイルが UTF-8 として妥当かを見る。妥当でなければ 1 を返す。
 # iconv が要る。無い場合は呼び出し側が unavailable:iconv で拒否する（検査を黙って飛ばさない
 # ＝同じ入力がホストによって通ったり通らなかったりする形にしない）。
@@ -259,6 +272,8 @@ while [[ $# -gt 0 ]]; do
             [[ -e "$2" ]] || reject "invalid:not-found" "-f" "$2"
             [[ -f "$2" ]] || reject "invalid:not-a-file" "-f" "通常ファイルではありません: $2"
             [[ -r "$2" ]] || reject "invalid:not-readable" "-f" "読めません: $2"
+            # NUL はコマンド置換で黙って落ちるので、読む前に弾く。
+            has_nul_byte "$2" && reject "invalid:contains-nul" "-f" "NUL バイトを含みます（読み込みで黙って落ちます）: $2"
             PROMPT=$(cat "$2")
             shift 2
             ;;
@@ -370,6 +385,14 @@ done
 
 # --- 入力の妥当性（#344・レーンへ渡す前に拒否する） ---
 #
+# iconv は入力の UTF-8 検査に使う。**無い環境で検査だけ飛ばすと、同じ入力がホストによって
+# 通ったり通らなかったりする。** そして**この確認は検査より前に置く**必要がある。後ろに置くと、
+# iconv 不在時に `is_valid_utf8_file` の command-not-found が `invalid:not-utf8` に化け、
+# **妥当なファイルを「不正な UTF-8」として拒否する**（実装SO の2周目の指摘）。
+command -v iconv &>/dev/null \
+    || reject "unavailable:iconv" "環境" "入力が UTF-8 として妥当かを見るのに iconv を使います"
+
+#
 # 基準は「**その入力の権威がどこにあるか**」である。**利用者が明示的に指定したもの**（-c / -f / -w）
 # は拒否する。黙って削ると、削られた前提でレーンが答えるからである。**ツールが自分で作った参考情報**
 # （--prev の切り詰め）は修復してよい（#340 の owner 裁定）。ただし全損したときは拒否に倒す。
@@ -387,6 +410,7 @@ if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
         [[ -f "$_cf" ]] || reject "invalid:not-a-file" "-c" "通常ファイルではありません: $_cf"
         [[ -r "$_cf" ]] || reject "invalid:not-readable" "-c" "読めません: $_cf"
         [[ -s "$_cf" ]] || reject "invalid:empty" "-c" "中身が空です: $_cf"
+        has_nul_byte "$_cf" && reject "invalid:contains-nul" "-c" "NUL バイトを含みます（読み込みで黙って落ちます）: $_cf"
         is_valid_utf8_file "$_cf" \
             || reject "invalid:not-utf8" "-c" "UTF-8 として妥当ではありません: $_cf"
     done
@@ -397,6 +421,21 @@ fi
 if [[ -n "$WORKSPACE" ]]; then
     [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
     [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
+fi
+
+# -o の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる**
+# （「1＝部分成功」と衝突する・実装SO の2周目の指摘）。
+if [[ -n "$OUT_DIR" ]]; then
+    if [[ -e "$OUT_DIR" && ! -d "$OUT_DIR" ]]; then
+        reject "invalid:not-a-directory" "-o" "ディレクトリではありません: $OUT_DIR"
+    fi
+    if [[ -d "$OUT_DIR" && ! -w "$OUT_DIR" ]]; then
+        reject "invalid:not-writable" "-o" "書き込めません: $OUT_DIR"
+    fi
+    if [[ ! -e "$OUT_DIR" ]]; then
+        mkdir -p "$OUT_DIR" 2>/dev/null \
+            || reject "invalid:not-writable" "-o" "作れません: $OUT_DIR"
+    fi
 fi
 
 # 数値の環境変数（SO_TIMEOUT 系は入口で見ているので、残りをここで揃える）。
@@ -426,11 +465,6 @@ if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
 fi
 
 # --- コマンド存在チェック ---
-# iconv は入力の UTF-8 検査に使う。**無い環境で検査だけ飛ばすと、同じ入力がホストによって
-# 通ったり通らなかったりする**（実装SO の指摘）。前提が満たせないので degrade せず止める。
-command -v iconv &>/dev/null \
-    || reject "unavailable:iconv" "環境" "入力が UTF-8 として妥当かを見るのに iconv を使います"
-
 if ! command -v timeout &>/dev/null; then
     reject "unavailable:timeout" "環境" "macOS の場合: brew install coreutils"
 fi
@@ -494,6 +528,7 @@ if [[ -n "$PREV_DIR" ]]; then
                 # iconv は上限未満の前回出力にも走るので、切断由来でない不正（前回の
                 # レーンが壊れた出力を残した等）も健全化される。これは意図した副次効果として
                 # 受け入れているため、存在確認も「非空の --prev」全体に掛かる。
+                has_nul_byte "$prev_file" && reject "invalid:contains-nul" "--prev" "NUL バイトを含みます（読み込みで黙って落ちます）: $prev_file"
                 prev_raw=$(head -c "$PREV_MAX_BYTES" "$prev_file")
                 # iconv は末尾が不完全な文字のとき rc=1 を返すが、出力は正しく不正バイトを
                 # 落としている。set -euo pipefail 下で落ちないよう rc を握り潰す（握り潰しが

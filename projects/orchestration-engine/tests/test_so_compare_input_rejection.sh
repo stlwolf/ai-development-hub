@@ -160,5 +160,41 @@ else
   echo "  SKIP: oe-review が見つからない"
 fi
 
+echo "[15] gate 4 2周目の指摘: -o の出力先を先に見る"
+run_reject "$SO" --codex-only -o "$OK_CTX" "問い"
+ck  "通常ファイルを -o に渡す = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:not-a-directory -o"
+# 正常な -o は今までどおり（陽性対照）
+OUT="$(PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o30/nested" "問い" 2>&1)"; RC=$?
+ck "作れる -o は通る" "0" "$RC"
+
+echo "[16] gate 4 2周目の指摘: NUL を含む入力を読む前に弾く"
+# NUL は iconv では弾けない（UTF-8 として妥当なバイト）が、bash のコマンド置換が黙って落とす。
+NULF="$_TMP/with-nul.md"
+printf 'head\000tail\n' > "$NULF"
+run_reject "$SO" --codex-only -o "$_TMP/o31" -f "$NULF"
+ck  "-f に NUL = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:contains-nul -f"
+run_reject "$SO" --codex-only -o "$_TMP/o32" "問い" -c "$NULF"
+ck  "-c に NUL = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:contains-nul -c"
+PNUL="$_TMP/prev-nul"; mkdir -p "$PNUL"
+printf 'head\000tail\n' > "$PNUL/codex-stdout.txt"
+run_reject "$SO" --codex-only -o "$_TMP/o33" --prev "$PNUL" "問い"
+ck  "--prev に NUL = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:contains-nul --prev"
+# NUL を含まない妥当なファイルは通る（陽性対照）
+OUT="$(PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o34" "問い" -c "$OK_CTX" 2>&1)"; RC=$?
+ck "NUL なしの -c は通る" "0" "$RC"
+
+echo "[17] gate 4 2周目の指摘: iconv の前提確認は UTF-8 検査より前に置く"
+# **構造の検査である。** iconv を PATH から外す実行は、so-compare が使う他のコマンドまで
+# 巻き添えにするので、ここでは順序だけを見る。順序が逆だと iconv 不在時に
+# command-not-found が invalid:not-utf8 に化け、妥当なファイルを拒否する。
+GUARD_LINE="$(grep -n 'unavailable:iconv' "$SO" | head -1 | cut -d: -f1)"
+# shellcheck disable=SC2016  # 展開させずにソース中の文字列そのものを探している
+CHECK_LINE="$(grep -n 'is_valid_utf8_file "$_cf"' "$SO" | head -1 | cut -d: -f1)"
+if [[ -n "$GUARD_LINE" && -n "$CHECK_LINE" ]] && (( GUARD_LINE < CHECK_LINE )); then
+  echo "  PASS: iconv の前提確認が -c の UTF-8 検査より前にある（${GUARD_LINE} < ${CHECK_LINE}）"; PASS=$((PASS+1))
+else
+  echo "  FAIL: 順序が逆（guard=${GUARD_LINE} check=${CHECK_LINE}）"; FAIL=$((FAIL+1))
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
