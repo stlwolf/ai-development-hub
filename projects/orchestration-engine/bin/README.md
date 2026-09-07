@@ -644,6 +644,36 @@ oe-lane-explain --summary --scan .            # 版の目印で層別した件�
 
 ---
 
+## oe-lane-canary — 空で返ったレーンへ極小の1往復を投げて原因を切る（#303 M-2・**実験**）
+
+```bash
+oe-lane-canary tmp/oe-refute-XXXX              # 既定=何もしない（何を投げるかだけ出す）
+OE_LANE_CANARY=1 oe-lane-canary tmp/so-XXXX    # 実際に投げる（使用量を消費する）
+OE_LANE_CANARY=1 oe-lane-canary --lane claude --timeout 90 tmp/so-XXXX
+```
+
+**これは実験である。既定では何もしない。** `OE_LANE_CANARY=1` を付けたときだけ実際に CLI を呼ぶ。**本番の経路には入れていない**（`so-compare` は `~/bin` の symlink で全セッションへ即時反映されるので、測定のための往復を配布物の critical path に置かない）。
+
+**何を切るのか。** レーンが空で返ったとき、その原因は meta からは分かれない。とくに claude の「exit 124・経過が上限ちょうど・stdout も stderr も 0 バイト」は、**普通の時間切れと使用量上限で記録が完全に一致する**（#303 の主痛）。そこで同じ CLI へ極小の1往復を投げ、**CLI がいま応答するか**で分ける。
+
+**期待値は測る前に宣言してある**（verb のヘッダ）。本走行が時間切れなら canary は成功し、使用量上限なら canary も上限の文言つきで非ゼロ、認証切れなら認証の文言つきでほぼ0秒、である。
+
+- **`canary_state`**: `success` / `usage_limit` / `auth_required` / `environment` / `invalid_input` / `canary_timeout` / `unknown` / `unavailable`。
+- **`canary_timeout` を `unknown` に畳まない。** 「証拠が無い」と「極小のプロンプトにも応答しなかった」は別の情報である。**上限を短く置いたときに実際にここへ落ちるのを踏んだ**ので値を分けた。
+- **既定の上限は 60 秒で、実測から決めた。** cursor へ `1+1` を投げた所要は **9 / 10 / 13 / 17 秒**（4回）。最初 10 秒にしていたら **canary 自身が時間切れになり、CLI は応答するのに応答しないと読む偽陰性**を作った。
+- シグネチャの文言と作法（行頭に錨・末尾 200 行）は `oe-lane-canary` と `oe-lane-explain` で同じにしてある。
+- exit は 0 正常 / 2 前提が満たせない（引数なし・`jq` 不在・読めない・**空で返ったレーンが1件も無い**）。
+
+**限界（先に書く）**
+
+- **時間窓がずれる。** 本走行の直後ではなく、あとから走らせる。使用量上限は数時間続くので読めるが、**負荷の波のような短い要因は本走行と同じ状態を見ていない。**
+- **canary は本走行と同じ重さではない。** 極小のプロンプトで通るからといって本走行のプロンプトが通るとは言えない。**分けられるのは「CLI が応答するか」までである。**
+- **実機で取れたのは時間切れの型だけ**（3レーンとも）。使用量上限・認証切れ・環境エラーは**スタブで分類器を確かめただけ**である。cursor の上限は当リポに実例が無い。
+
+関連: `tests/test_oe_lane_canary.sh`（30 件）/ `bin/oe-lane-explain`（事後の分類）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（M-2）。
+
+---
+
 ## oe-vitals — 統括 vital 監視 watchdog（#239 段階1・read-only・cron 可）
 
 statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane, server_pid, model}`。`server_pid` と `model` は #327 で additive に追加。本 verb が読むのは従来の3キーだけ）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。

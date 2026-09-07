@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# oe-lane-canary — 空で返ったレーンへ極小の1往復を投げて原因を切る（#303 M-2・**実験**）
+#
+# usage:
+#   OE_LANE_CANARY=1 oe-lane-canary <so 出力ディレクトリ>
+#   oe-lane-canary <dir>            フラグ無し = 何もしない（何を投げるかだけ出す）
+#   oe-lane-canary --lane <tool> <dir>
+#   oe-lane-canary --timeout <秒> <dir>   既定 10
+#   oe-lane-canary -h | --help
+#
+# **これは実験である。既定では何もしない。** `OE_LANE_CANARY=1` を付けたときだけ実際に CLI を
+# 呼ぶ。フラグ無しでは「どのレーンへ何を投げるか」を出して終わる（`plan` 相当）。
+#
+# **本番の経路には入れていない。** `so-compare` は `~/bin` から repo への symlink で配布され、
+# マージした瞬間に全セッションへ反映される。#344 の単位で、そこへ検査を足すたびに正当な入力を
+# 落とす形を7回作った。**測定のための往復を配布物の critical path に入れない**（#303 の plan v2
+# が M-2 に「本番の経路には入れない」と書いている理由でもある）。
+#
+# ## 何を測るか（期待値を先に宣言する）
+#
+# `so-compare` のレーンが「空で返った」とき、その原因は meta からは分かれない。とくに claude の
+# 「exit 124・経過が上限ちょうど・stdout も stderr も 0 バイト」は、**普通の時間切れと使用量上限で
+# 記録が完全に一致する**（#303 の主痛）。そこで**同じ CLI へ数秒の上限で極小の1往復を投げ**、
+# その結果で分ける。
+#
+#   本走行が時間切れ      → canary は **成功する**（数秒で返る）
+#   本走行が使用量上限    → canary も **上限の文言つきで非ゼロ**（数秒）
+#   本走行が認証切れ      → canary も **認証の文言つきで非ゼロ**（ほぼ0秒）
+#   本走行が環境エラー    → canary も **環境の文言つきで非ゼロ**（ほぼ0秒）
+#   canary 自身が上限に達した → `canary_timeout`（**`unknown` に畳まない**。極小の
+#                              プロンプトにも応答しなかった、という別の情報である）
+#
+# **この宣言は測る前に書いた。** 結果を見てから期待を作らないためである。
+#
+# ## 限界（先に書く）
+#
+# - **時間窓がずれる。** 本走行の直後ではなく、あとから走らせる。使用量上限は数時間続くので
+#   ずれても読めるが、**負荷の波のような短い要因は本走行と同じ状態を見ていない**。
+# - **canary は本走行と同じ重さではない。** 極小のプロンプトで通るからといって、本走行の
+#   プロンプトが通るとは言えない。**分けられるのは「CLI が応答するか」までである。**
+# - **cursor の使用量上限は当リポに実例が無い。** 期待値は書いたが未検証である。
+# - 呼ぶのは実際の CLI なので**使用量を消費する**。だから既定で無効にしてある。
+#
+# exit: 0 正常 / 2 前提が満たせない（引数なし・jq 不在・読めない・レーンの記録が1件も無い）
+
+set -uo pipefail
+
+err() { printf 'oe-lane-canary: %s\n' "$*" >&2; }
+
+command -v jq >/dev/null 2>&1 || { err "jq が要ります"; exit 2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  OE_LANE_CANARY=1 oe-lane-canary [--lane <tool>] [--timeout <秒>] <so 出力ディレクトリ>
+
+  --lane <tool>     codex / claude / cursor のいずれかだけを対象にする
+  --timeout <秒>    canary の上限（既定 10）
+  -h, --help        このヘルプを表示
+
+**既定では何もしない。** OE_LANE_CANARY=1 を付けたときだけ実際に CLI を呼ぶ。
+付けない場合は「どのレーンへ何を投げるか」を出して終わる。
+
+出力: stdout に JSON（1 レーン 1 行）。キーは
+  lane / main_status / main_exit / canary_ran / canary_exit / canary_elapsed /
+  canary_state / canary_evidence
+exit: 0 正常 / 2 前提が満たせない
+EOF
+}
+
+CANARY_PROMPT='1+1 の答えを数字だけで答えてください。'
+# **既定の上限は実測から決めた。** 最初 10 秒にしていたら **canary 自身が時間切れになり**、
+# 「CLI は応答するのに応答しないと読む」偽陰性を作った（実測で踏んだ）。
+# cursor へ極小の1往復（`1+1`）を投げた所要は **9 / 10 / 13 / 17 秒**（4回）。
+# 10 秒は最小値の付近なので、そこに置くと半分くらい落ちる。60 秒は最大実測 17 秒に対して
+# 約 3.5 倍の余裕で、本走行の上限（240〜1200 秒）に比べれば十分小さい。
+CANARY_TIMEOUT=60
+ONLY_LANE=''
+TARGET_DIR=''
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --lane)
+      [[ $# -ge 2 && -n "${2:-}" ]] || { err "--lane にはレーン名が要ります"; exit 2; }
+      case "$2" in codex|claude|cursor) ONLY_LANE="$2" ;; *) err "不明なレーン: $2"; exit 2 ;; esac
+      shift 2 ;;
+    --timeout)
+      [[ $# -ge 2 && "${2:-}" =~ ^[1-9][0-9]{0,3}$ ]] || { err "--timeout は 1〜9999 の整数（秒）"; exit 2; }
+      CANARY_TIMEOUT="$2"; shift 2 ;;
+    -*) err "不明なオプション: $1"; usage; exit 2 ;;
+    *)  TARGET_DIR="$1"; shift ;;
+  esac
+done
+
+[[ -n "$TARGET_DIR" ]] || { err "対象のディレクトリがありません"; usage; exit 2; }
+[[ -L "$TARGET_DIR" ]] && { err "対象ディレクトリが symlink です: $TARGET_DIR"; exit 2; }
+[[ -d "$TARGET_DIR" && -r "$TARGET_DIR" ]] || { err "読めません: $TARGET_DIR"; exit 2; }
+
+meta_get() {
+  local meta="$1" key="$2"
+  grep -m1 "^${key}=" "$meta" 2>/dev/null | cut -d= -f2- || true
+}
+
+# レーンごとの CLI と、極小の1往復の引数。so-compare の形に合わせる（余計なものは付けない）。
+canary_cmd() {
+  case "$1" in
+    codex)  printf '%s\n' codex ;;
+    claude) printf '%s\n' claude-safe ;;
+    cursor) printf '%s\n' agent ;;
+  esac
+}
+canary_args() {
+  case "$1" in
+    codex)  printf '%s\n' exec -s read-only ;;
+    claude) printf '%s\n' -p ;;
+    cursor) printf '%s\n' -p -f --mode ask --output-format text ;;
+  esac
+}
+
+# canary の結果を分類する。シグネチャの文言と作法（行頭に錨・末尾 200 行）は
+# oe-lane-explain と同じにしてある（同じ文言を2箇所で別に書かない）。
+starts_with_line() {
+  local pat="$1" f="$2"
+  [[ -s "$f" ]] || return 1
+  tail -n 200 "$f" 2>/dev/null | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { f = 1 } END { exit !f }'
+}
+
+classify_canary() {
+  local tool="$1" rc="$2" out="$3" errf="$4"
+  if [[ "$rc" == "0" ]]; then
+    printf 'success\tnone\n'
+    return 0
+  fi
+  # **canary 自身の時間切れを unknown に畳まない。** 畳むと「証拠が無い」と
+  # 「極小のプロンプトにも応答しなかった」が同じ値になる。**後者は情報である**
+  # （本走行が重かったのではなく、CLI がいま応答していない側に寄る）。
+  # 上限を短く置いたときに実際にここへ落ちるのを踏んだので、値を分けた。
+  if [[ "$rc" == "124" ]]; then
+    printf 'canary_timeout\tnone\n'
+    return 0
+  fi
+  case "$tool" in
+    codex)
+      if starts_with_line "ERROR: You've hit your usage limit" "$errf"; then
+        printf 'usage_limit\tcodex-stderr\n'; return 0
+      fi
+      if starts_with_line 'Not inside a trusted directory' "$errf"; then
+        printf 'environment\tcodex-stderr\n'; return 0
+      fi
+      if starts_with_line 'error: invalid UTF-8 was detected' "$errf"; then
+        printf 'invalid_input\tcodex-stderr\n'; return 0
+      fi
+      ;;
+    claude)
+      if starts_with_line "You've hit your session limit" "$out"; then
+        printf 'usage_limit\tclaude-stdout\n'; return 0
+      fi
+      if starts_with_line "You've hit your usage limit" "$out"; then
+        printf 'usage_limit\tclaude-stdout\n'; return 0
+      fi
+      if starts_with_line 'API Error:' "$out"; then
+        printf 'unknown\tclaude-api-error\n'; return 0
+      fi
+      ;;
+    cursor)
+      if starts_with_line 'Error: Authentication required' "$errf"; then
+        printf 'auth_required\tcursor-stderr\n'; return 0
+      fi
+      ;;
+  esac
+  printf 'unknown\tnone\n'
+  return 0
+}
+
+WORK=''
+# shellcheck disable=SC2317  # trap から呼ばれる
+cleanup() { [[ -n "$WORK" ]] && rm -rf "$WORK"; }
+trap cleanup EXIT
+
+LANES=0
+for tool in codex claude cursor; do
+  [[ -z "$ONLY_LANE" || "$ONLY_LANE" == "$tool" ]] || continue
+  meta="${TARGET_DIR}/${tool}-meta.txt"
+  [[ -f "$meta" && -r "$meta" ]] || continue
+  grep -qx "tool=${tool}" "$meta" 2>/dev/null || continue
+  main_status="$(meta_get "$meta" timeout_status)"; [[ -n "$main_status" ]] || main_status='-'
+  main_exit="$(meta_get "$meta" exit_code)"; [[ -n "$main_exit" ]] || main_exit='-'
+  sout="${TARGET_DIR}/${tool}-stdout.txt"
+  # 対象は「空で返ったレーン」だけ。返っているレーンに canary を投げる意味は無い。
+  if [[ "$main_exit" == "0" && -s "$sout" ]]; then continue; fi
+  LANES=$(( LANES + 1 ))
+
+  cmd="$(canary_cmd "$tool")"
+  mapfile -t cargs < <(canary_args "$tool")
+
+  if [[ "${OE_LANE_CANARY:-}" != "1" ]]; then
+    jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" \
+           --arg cmd "$cmd" --arg to "$CANARY_TIMEOUT" \
+      '{lane:$lane, main_status:$ms, main_exit:$me, canary_ran:false,
+        would_run:($cmd + " …（極小プロンプト・上限 " + $to + "秒）"),
+        note:"OE_LANE_CANARY=1 を付けると実際に投げます（使用量を消費します）"}'
+    continue
+  fi
+
+  command -v "$cmd" >/dev/null 2>&1 || {
+    jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" --arg cmd "$cmd" \
+      '{lane:$lane, main_status:$ms, main_exit:$me, canary_ran:false,
+        canary_state:"unavailable", canary_evidence:("command not found: " + $cmd)}'
+    continue
+  }
+
+  [[ -n "$WORK" ]] || WORK="$(mktemp -d)" || { err "一時ディレクトリを作れません"; exit 2; }
+  co="$WORK/${tool}-canary-stdout.txt"; ce="$WORK/${tool}-canary-stderr.txt"
+  start=$(date +%s)
+  rc=0
+  timeout "$CANARY_TIMEOUT" "$cmd" ${cargs[@]+"${cargs[@]}"} "$CANARY_PROMPT" > "$co" 2> "$ce" || rc=$?
+  end=$(date +%s)
+  IFS=$'\t' read -r cstate cevid < <(classify_canary "$tool" "$rc" "$co" "$ce")
+  jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" \
+         --arg rc "$rc" --arg el "$(( end - start ))" \
+         --arg st "$cstate" --arg ev "$cevid" \
+         --arg ob "$(wc -c < "$co" | tr -d ' ')" --arg eb "$(wc -c < "$ce" | tr -d ' ')" \
+    '{lane:$lane, main_status:$ms, main_exit:$me, canary_ran:true,
+      canary_exit:$rc, canary_elapsed:$el, canary_stdout_bytes:$ob, canary_stderr_bytes:$eb,
+      canary_state:$st, canary_evidence:$ev}'
+done
+
+if [[ "$LANES" -eq 0 ]]; then
+  err "空で返ったレーンが見つかりませんでした（対象: ${TARGET_DIR}）"
+  exit 2
+fi
+exit 0
