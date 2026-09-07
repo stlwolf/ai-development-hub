@@ -133,9 +133,17 @@ printf '前回の claude の回答\n' > "$PSUB/claude-stdout.txt"
 STUB2="$_TMP/stub2"; mkdir -p "$STUB2"
 # so-compare は jq があると claude を --output-format json で走らせ、.result から本文を取る。
 # 素のテキストを返すスタブでは抽出に失敗して success_empty（部分成功）になるので JSON を返す。
-printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$STUB2/claude-safe"; chmod +x "$STUB2/claude-safe"
+# スタブ名は CLAUDE_CMD と一致させる（#303 で claude-safe から claude へ変えた）。
+# 名前がずれると so-compare は PATH 上の実物の claude を呼び、スタブが一度も
+# 使われないまま緑になる。--version で自分を名乗らせ、meta で使用を固定する。
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$STUB2/claude"; chmod +x "$STUB2/claude"
 OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only -o "$_TMP/o22" --prev "$PSUB" "問い" 2>&1)"; RC=$?
 ck  "--claude-only は codex の壊れた前回出力で落ちない" "0" "$RC"
+# 実物の claude が呼ばれていないことを観測で固定する。スタブ名が CLAUDE_CMD と
+# ずれると実物が答えて緑になるので、緑の理由まで確かめる。
+ck  "claude レーンはスタブを呼んだ（実物ではない）" "0.0.0-stub" \
+    "$(grep '^cli_version=' "$_TMP/o22/claude-meta.txt" | cut -d= -f2-)"
 run_reject "$SO" --codex-only -o "$_TMP/o23" --prev "$PSUB" "問い"
 ck  "--codex-only なら拒否する" "4" "$RC"; ckc "型" "$OUT" "invalid:not-utf8 --prev"
 
@@ -292,8 +300,9 @@ PC="$_TMP/positive"; mkdir -p "$PC/ws" "$PC/prev"
 ALLSTUB="$_TMP/allstub"; mkdir -p "$ALLSTUB"
 printf '#!/bin/sh\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
 printf '#!/bin/sh\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
-printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude-safe"
-chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude-safe"
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude"
+chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude"
 
 # レビュー級の大きさのプロンプト（日本語を含む・複数行）
 { printf '# 設計の妥当性を検証してください\n\n'

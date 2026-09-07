@@ -36,7 +36,7 @@ so-compare [OPTIONS] "プロンプト"
 
 `ambiguous-args` / `bad-value` / `contains-nul` / `control-character` / `empty` / `missing-argument` / `not-a-directory` / `not-a-file` / `not-a-number` / `not-found` / `not-readable` / `not-utf8` / `not-writable` / `unknown-option`
 
-環境に足りないものは `unavailable:<コマンド>` である（`perl` / `timeout` / `mktemp` / `codex` / `claude-safe` / `agent`）。
+環境に足りないものは `unavailable:<コマンド>` である（`perl` / `timeout` / `mktemp` / `codex` / `claude` / `agent`）。
 
 - **`3` は使っていない。** `oe-refute` / `oe-review` が反証（`refuted`）に割り当てているためで、**入力の不備が「設計が反証された」として上位に届かない**ようにしてある。
 - **呼び方の誤りも `4` である。** 以前は `1` を返しており、「呼び方を間違えた」と「一部だけ返った」が同じ値だった。
@@ -87,7 +87,7 @@ so-compare -f prompt.txt -w "$(pwd)"
 # イテレーション（前回の回答を踏まえて再質問）
 so-compare --prev tmp/so-20260304-001234 -w "$(pwd)" "前回の指摘を踏まえて再評価してください"
 
-# Codex のみ（claude-safe 未導入環境）
+# Codex のみ（claude CLI 未導入環境）
 so-compare -w "$(pwd)" "プロンプト" --codex-only
 
 # 任意の2社（従来は codex+cursor / claude+cursor が指定不可だった）
@@ -422,11 +422,11 @@ SO 実行前に以下を確認する:
 
 ### フォールバック
 
-`claude-safe` 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。
+`claude` CLI 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。
 
 ## 注意事項
 
-- 実行には `codex` CLI と `claude-safe` が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）
+- 実行には `codex` CLI と `claude` CLI が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）。claude レーンは以前 `claude-safe` というラッパー経由だったが、#303 で外して直接呼びにした（ラッパーが timeout で切られると出力を捨てるため。理由は `scripts/so-compare.sh` の `CLAUDE_CMD` のコメント）
 - Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時はエラー終了）
 - `SO_TIMEOUT` のデフォルトは240秒（codex / cursor）。claude は `SO_CLAUDE_TIMEOUT` の1200秒で、既定が分かれている。理由は下記「レーンごとの所要時間」
 - 出力は `tmp/` 配下で gitignore 対象
