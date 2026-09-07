@@ -320,10 +320,19 @@ pc_run "oe-refute 相当（--with codex,claude,cursor）" \
 # 2) 実装SO の既定（2レーン）
 pc_run "oe-review 相当（--with codex,cursor）" \
   env SO_TIMEOUT=120 "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out2"
-# 3) 非アクティブなレーンの設定が入っていても通る
+# 3) 非アクティブなレーンの設定が入っていても通る（モデル・エフォート・**タイムアウト**）
 pc_run "非アクティブなレーンの設定つき" \
   env SO_TIMEOUT=120 SO_CLAUDE_EFFORT=bogus SO_CLAUDE_MODEL="$(printf 'a\nb=c')" \
+      SO_CLAUDE_TIMEOUT=bogus \
       "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out3"
+# 3b) 逆向き: claude だけ回すなら codex/cursor 用のタイムアウトが不正でも通る
+pc_run "逆向き（--claude-only + 不正な SO_TIMEOUT）" \
+  env SO_TIMEOUT=bogus SO_CLAUDE_TIMEOUT=120 \
+      "$SO" --claude-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out3b"
+# 3c) 回すレーンのタイムアウトが不正なら拒否する（陰性側）
+run_reject env SO_TIMEOUT=bogus "$SO" --codex-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out3c"
+ck  "回すレーンのタイムアウトが不正 = exit 4" "4" "$RC"
+ckc "型" "$OUT" "invalid:not-a-number SO_TIMEOUT"
 # 4) 実サイズの --prev つき（既定の上限で切り詰めが起きる）
 pc_run "実サイズの --prev つき" \
   env SO_TIMEOUT=120 "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/out4" --prev "$PC/prev"

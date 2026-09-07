@@ -187,14 +187,6 @@ SO_RETRY_TIMEOUT_FACTOR=1.5
 #     クラッシュせず黙ってリトライ秒数が化けるので、こちらのほうが質が悪い。
 # なお非数値（`abc` 等）は timeout(1) が exit 125 で即座に落ち、classify_result が
 # timeout_empty とみなすのは exit 124 だけなので、リトライにも awk にも届かない。
-for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
-    # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
-    # 桁あふれし、**受理したのに意味が変わる**（実装SO の指摘・#303 の M-1 でも同じ形を踏んだ）。
-    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]{0,8}$ ]]; then
-        reject "invalid:not-a-number" "${_t_var}" "1〜999999999 の整数（秒）で指定してください: ${!_t_var}"
-    fi
-done
-unset _t_var
 
 # レーンごとの基準タイムアウト。リトライ時間の算出にも使う。
 base_timeout_for() {
@@ -501,6 +493,23 @@ fi
 if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
     reject "invalid:bad-value" "プロバイダ指定" "実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）"
 fi
+
+# **回すレーンのタイムアウトだけを見る。** 全部見ると、`--with codex,cursor` のように
+# claude を回さない実行が、`SO_CLAUDE_TIMEOUT` の値が不正なだけで落ちる（実装SO の5周目の
+# 指摘。**「自分の都合で正当な入力を拒否する」形はこれで7回目である**）。
+# ここへ移せるのは、値を実際に使うのが `base_timeout_for` / `retry_timeout_for` の呼び出し時
+# （レーンの起動時）だからである。
+_t_vars=()
+{ $RUN_CODEX || $RUN_CURSOR; } && _t_vars+=(SO_TIMEOUT)
+$RUN_CLAUDE && _t_vars+=(SO_CLAUDE_TIMEOUT)
+for _t_var in ${_t_vars[@]+"${_t_vars[@]}"}; do
+    # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
+    # 桁あふれし、**受理したのに意味が変わる**（実装SO の指摘・#303 の M-1 でも同じ形を踏んだ）。
+    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+        reject "invalid:not-a-number" "${_t_var}" "1〜999999999 の整数（秒）で指定してください: ${!_t_var}"
+    fi
+done
+unset _t_var _t_vars
 
 # モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
 # **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
