@@ -133,9 +133,17 @@ printf '前回の claude の回答\n' > "$PSUB/claude-stdout.txt"
 STUB2="$_TMP/stub2"; mkdir -p "$STUB2"
 # so-compare は jq があると claude を --output-format json で走らせ、.result から本文を取る。
 # 素のテキストを返すスタブでは抽出に失敗して success_empty（部分成功）になるので JSON を返す。
-printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$STUB2/claude-safe"; chmod +x "$STUB2/claude-safe"
+# スタブ名は CLAUDE_CMD と一致させる（#303 で claude-safe から claude へ変えた）。
+# 名前がずれると so-compare は PATH 上の実物の claude を呼び、スタブが一度も
+# 使われないまま緑になる。--version で自分を名乗らせ、meta で使用を固定する。
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$STUB2/claude"; chmod +x "$STUB2/claude"
 OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only -o "$_TMP/o22" --prev "$PSUB" "問い" 2>&1)"; RC=$?
 ck  "--claude-only は codex の壊れた前回出力で落ちない" "0" "$RC"
+# 実物の claude が呼ばれていないことを観測で固定する。スタブ名が CLAUDE_CMD と
+# ずれると実物が答えて緑になるので、緑の理由まで確かめる。
+ck  "claude レーンはスタブを呼んだ（実物ではない）" "0.0.0-stub" \
+    "$(grep '^cli_version=' "$_TMP/o22/claude-meta.txt" | cut -d= -f2-)"
 run_reject "$SO" --codex-only -o "$_TMP/o23" --prev "$PSUB" "問い"
 ck  "--codex-only なら拒否する" "4" "$RC"; ckc "型" "$OUT" "invalid:not-utf8 --prev"
 
@@ -257,6 +265,8 @@ run_reject "$SO" --claude-only --claude-effort bogus -o "$_TMP/o63" "問い"
 ck  "未知のエフォート = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:bad-value --claude-effort"
 OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only --claude-effort high -o "$_TMP/o64" "問い" 2>&1)"; RC=$?
 ck  "正当なエフォートは通る" "0" "$RC"
+ck  "正当なエフォートの経路もスタブが答えた" "0.0.0-stub" \
+    "$(grep '^cli_version=' "$_TMP/o64/claude-meta.txt" | cut -d= -f2-)"
 
 echo "[24] gate 4 4周目の指摘: --prev のファイルも通常ファイル・可読を見る"
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -290,10 +300,15 @@ echo "[26] 実運用の呼び方が全部通る（陽性対照の組・統括指
 #   so-compare --with <providers> -w <workspace> -f <prompt file> -o <out dir>
 PC="$_TMP/positive"; mkdir -p "$PC/ws" "$PC/prev"
 ALLSTUB="$_TMP/allstub"; mkdir -p "$ALLSTUB"
-printf '#!/bin/sh\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
-printf '#!/bin/sh\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
-printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude-safe"
-chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude-safe"
+# 3レーンとも --version で自分を名乗る。下の pc_run が meta の cli_version を見て
+# 「実物の CLI ではなくスタブが答えた」ことを固定するため（gate 4 の cursor の指摘）。
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude"
+chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude"
 
 # レビュー級の大きさのプロンプト（日本語を含む・複数行）
 { printf '# 設計の妥当性を検証してください\n\n'
@@ -306,12 +321,40 @@ for t in codex claude cursor; do
 done
 printf 'ワークスペースのファイル\n' > "$PC/ws/note.md"
 
+# 走ったレーンが実物の CLI ではなくスタブだったことを、meta の cli_version で固定する。
+# 個別の検査を並べるのではなく pc_run 自身に持たせる（スタブ名と CLAUDE_CMD の結合で
+# 実物が答えても緑になる型を、site ごとに塞ぐと必ずどこかが漏れる。gate 4 の cursor の指摘）。
+# **-o を渡していない呼び出しは対象外である**（出力先を特定できないため）。その形は
+# 下では「位置引数のプロンプト」と、既定の出力先へ書く1件だけである。
+ck_lanes_used_stub() {
+  local dir="$1" label="$2" m lane ver bad="" found=0
+  for m in "$dir"/*-meta.txt; do
+    [[ -f "$m" ]] || continue
+    found=$((found+1))
+    lane="$(basename "$m" -meta.txt)"
+    ver="$(grep -m1 '^cli_version=' "$m" | cut -d= -f2-)"
+    [[ "$ver" == "0.0.0-stub" ]] || bad="$bad $lane=$ver"
+  done
+  # meta が1件も無ければ空振りで通ってしまう（Copilot の指摘）。この関数を呼ぶのは
+  # 「exit 0 で少なくとも1レーンが走った」直後だけなので、0件は検査が届いていない
+  # ことを意味する。**0件を合格にしない。**
+  if [[ "$found" -eq 0 ]]; then
+    bad=" meta が1件も無い（出力先がずれたか meta の生成が壊れている）"
+  fi
+  ck "$label: 走ったレーンは全部スタブ" "" "$bad"
+}
+
 pc_run() {
   local label="$1"; shift
-  local out rc
+  local out rc odir="" prev=""
+  for a in "$@"; do
+    [[ "$prev" == "-o" ]] && odir="$a"
+    prev="$a"
+  done
   out="$(PATH="$ALLSTUB:$PATH" "$@" 2>&1)"; rc=$?
   ck "$label" "0" "$rc"
   if [[ "$rc" != "0" ]]; then printf '%s\n' "$out" | tail -3 | sed 's/^/      /'; fi
+  [[ -n "$odir" && -d "$odir" ]] && ck_lanes_used_stub "$odir" "$label"
 }
 
 # 1) oe-refute / oe-review が渡す形そのまま（3レーン）

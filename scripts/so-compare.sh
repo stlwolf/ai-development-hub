@@ -57,7 +57,7 @@ Exit codes:
   not-a-file / not-a-number / not-found / not-readable / not-utf8 /
   not-writable / unknown-option。
   unavailable:<コマンド> は環境に足りないもの（perl / timeout / mktemp /
-  codex / claude-safe / agent）。
+  codex / claude / agent）。
   3 を使わないのは oe-refute / oe-review が反証（refuted）に割り当てて
   いるためで、入力の不備が「設計が反証された」として上位に届かない
   ようにしている。
@@ -145,7 +145,14 @@ is_valid_utf8_file() {
 
 # --- 設定 ---
 CODEX_CMD="codex"
-CLAUDE_CMD="claude-safe"
+# claude だけ以前 claude-safe というラッパー経由だった。Cursor / VS Code の統合
+# ターミナルから claude を呼ぶと TTY を奪い合ってハングする問題を避けるための
+# 道具で、Cursor が主ツールだった頃の対策である。#303 で外した。理由は、この
+# ラッパーが claude の出力を一時ファイルへ溜めて wait の後に cat する作りで、
+# timeout で切られると cat に到達せず、さらに trap で一時ファイルを消すため、
+# 上限の文言もろとも証拠が消えることを実測したからである（codex と cursor は
+# 以前からラッパー無しで直接呼んでいる）。
+CLAUDE_CMD="claude"
 CURSOR_CMD="agent"
 SANDBOX_MODE="read-only"
 OUT_DIR=""
@@ -824,7 +831,10 @@ commit_meta() {
 # **上げ忘れは別の層で捕まえる。** `tests/test_so_compare_version.sh` がこのファイルのハッシュを
 # 固定値と突き合わせ、中身が変わったのに宣言が据え置きなら落ちる。**検査を実行時からテスト時へ
 # 移した**ので、止まっても見えるところで止まり、SO のゲートは巻き込まれない。
-SO_COMPARE_VERSION="2026-09-07"
+# **同じ日に2回変えたら英字を足す。** 版は日付だけだと同日の2回目が前と同じ値になり、
+# 観測を版で層別できなくなる（#303 がまさにこれを必要としている）。a は付けず、2回目を
+# b、3回目を c とする。
+SO_COMPARE_VERSION="2026-09-07b"
 
 # --- CLI の版の取得（#298） ---
 #

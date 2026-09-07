@@ -37,7 +37,7 @@ SO のレーンが返らないとき、`so-compare` は原因の違う複数の�
 
 ## 2. 実測（P-1・一次情報）
 
-走査した母集団は当リポの SO 出力 114 ディレクトリ・レーン記録 276 件。**stdout が空だったレーンは 45 件**で、その全件について stderr と stdout を内容まで開いた。全文と抽出手順は `/Users/eddy/work/repos/github.com/stlwolf/ai-development-hub/.oe/report-303-P1.md` にある。
+走査した母集団は当リポの SO 出力 114 ディレクトリ・レーン記録 276 件。**stdout が空だったレーンは 45 件**で、その全件について stderr と stdout を内容まで開いた。抽出手順は次のとおりである（`.oe/` は gitignore 対象で消えるので、committed 側だけで再計算できるように手順をここへ写す）。リポジトリ内の `tmp/so-*` と `tmp/oe-refute-*` の各ディレクトリについて、`<tool>-meta.txt` を1件1レーンとして数え、`stdout_bytes=0` の行を空返しとして拾い、その全件について `<tool>-stdout.txt` / `<tool>-stderr.txt` / `<tool>-raw.json` を内容まで開いた。ファイルが存在しないことと空であることは別に数えた（この区別を最初に取り違えたので、負の知見として `docs/orchestration-engine/knowledge/items/01M1VX9MH72K7G940R6WC7M218.md` に収穫してある）。
 
 見分けられる形は7種あった。
 
@@ -183,6 +183,28 @@ I-1 ──→ M-1 ──────────────→ M-2 ──→ M-
 - **ここで設計SO を1周回す**（gate 2 の2周目・弱3レーン・1本ずつ）。
 - **この報告で STOP する。** I-2 の確定版はその後の裁定で決める。
 
+## 7.5 M-3 の結果 — 契約は確定できず、観測点が壊れていた（2026-09-07）
+
+M-3 で提案した分類の契約を設計SO にかけたところ、**3レーンとも反証した**（`oe-refute --lanes 3 --rubric exploration`・audit `20260907123946HYASVVT06ZYM`・codex は `gpt-5.6-sol`、claude は `claude-fable-5-1`、cursor は記録なし。3レーンとも実返却あり）。
+
+崩れた点は3つである。`retryable=yes` を立てる経路がどこにも無い（canary の結果は一時ディレクトリに書かれて終了時に消える）。`no` は claude レーンで実機の観測がゼロで、#296 以前のシグネチャに依存している。「canary が `unknown` の唯一の解消手段」は、このプラン自身が別の手段を §12 に記録しているので矛盾する。持ちこたえたのは「exit code を増やさない」1点だけで、それも「exit だけを見る消費者は非対応」と明記することが条件になった。
+
+### 主症状は claude ではなくラッパーが作っていた
+
+反証のうち最も重いものを一次情報で確かめた結果、**#303 の主症状（claude レーンの stdout も stderr も 0 バイト）は claude が無言だからではなく、`claude-safe` というラッパーが証拠を捨てるために必ずそう見える形だった。**
+
+ラッパーは claude の出力を `~/.claude_wrapper/` の一時ファイルへ溜め、`wait` が返った後に `cat` で自分の標準出力へ流す。`trap cleanup EXIT` で一時ファイルを消す。so-compare は `timeout` でこのラッパーを打ち切るので、`cat` の行に到達しない。**つまり出力は読まれないだけでなく、消される。**
+
+**実測（同じスタブ・同じ上限5秒・変えたのは `CLAUDE_CMD` の1行だけ）:**
+
+| 記録先 | ラッパー経由 | 直接呼び |
+|---|---|---|
+| `claude-raw.json` | 0 バイト | 47 バイト（途中の本文が残る） |
+| `claude-stderr.txt` | 120 バイト（**中身は bash の Terminated 通知で claude 由来の内容はゼロ**） | 62 バイト（claude が出した文言そのもの） |
+| `oe-lane-explain` の判定 | `unknown` / evidence `none` | **`usage_limit` / evidence `claude-body:usage-limit`** |
+
+ラッパー経由の 120 バイトは証拠のように見えて中身が無い。**「stderr が 0 バイトでないことを合格条件にしてはいけない」という既存の注意書き（skill の `stderr_bytes` の節）が、ここで実害として出ている。**
+
 ## 8. 実装の列（I）
 
 ### I-1: 読み取り専用の外部分類コマンド
@@ -253,6 +275,15 @@ I-1 ──→ M-1 ──────────────→ M-2 ──→ M-
 - [ ] 誤ったときの revert 手順が PR 本文にある（#344 の受け入れ条件）
 - [ ] `shellcheck` が緑・既存テストが緑・gate 4・Copilot
 
+### I-4: 観測点を直す（claude レーンをラッパー越しにしない）
+
+owner の裁定（2026-09-07）: **`claude-safe` はもともと Cursor / VS Code の統合ターミナルから claude を呼ぶための道具で、claude が主ツールの今は so-compare には要らない。** codex レーンと cursor レーンは以前からラッパー無しで直接呼んでおり、直接呼びが成り立つ証拠になっている。ラッパーを「流しながら書く」形に直すのではなく、**so-compare の claude レーンを直接呼びに変える。**
+
+- 本体の変更は `scripts/so-compare.sh` の `CLAUDE_CMD` を `claude-safe` から `claude` へ変える1行だけである。`claude-safe` 本体（dotfiles 由来）と、それを使い続ける別プロジェクト `projects/second-opinion-verification` には触らない。
+- **入れ子で動くことを実機で確かめた。** Claude Code のセッションの中から so-compare を走らせると claude を claude の中から呼ぶ入れ子になり、ラッパーが最初に解こうとしたのはこの種のハングだった。確かめた結果、**6秒・exit 0・本文あり・リトライなし**で返った（`body_source=json-result`）。ハングしない。
+- **同じ結論が engine の中に既にあった。** `lib/spawn.sh` は `claude` と `claude-safe` のどちらを指定されても直接 `claude` を起動する形になっており、コメントに「claude 直接（wez pane の独立 pty で TTY 競合なし）」と書かれている（`projects/orchestration-engine/lib/spawn.sh:206-210`）。**engine 側では以前から「この使い方ならラッパーは要らない」と結論が出ていて、so-compare だけが古い前提のまま残っていた。** この変更を入れる前にここを見ていなかったのは探索漏れである。
+- **これで直るのは観測点だけである。** 分類の契約（M-3 の5点）は閉じていない。上限・認証切れの実機取得は §12.4 の follow-up のまま。
+
 ## 9. 陽性対照と陰性対照の fixture
 
 P-1 の7種を再現する fixture を `projects/orchestration-engine/tests/fixtures/so-lane-failures/` に置く。**過去の実物から作り、作文はしない。**
@@ -313,6 +344,14 @@ P-1 の7種を再現する fixture を `projects/orchestration-engine/tests/fixt
 
 **I-3 の契約は so-compare の入口までしか効かない。** 直すなら消費者の側で doc を変数化せずファイルのまま渡す形になり、`oe-refute` / `oe-review` のプロンプト組み立てを変えることになる。**I-3 の claim の2点（レーン未起動なのに 4 以外で終わる / 正当な入力を落とす）の枠外なので、I-3 では直していない。** 新しい issue は立てず、issue #344 のコメントと PR #381 の本文に残してある（owner 裁定・2026-09-07）。
 
+## 12.6 follow-up（I-4 から出た・別単位）
+
+**claude の stderr が初めて生きた証拠の経路になったのに、分類器がそこを見ていない。** `oe-lane-explain` の claude のシグネチャ（`claude-body:session-limit` / `claude-body:usage-limit`）は stdout と `raw.json` だけを走査する。ラッパー越しだった頃は claude の stderr に claude 由来の内容が来なかったので、それで足りていた。直接呼びにすると claude が stderr へ出す文言が届くようになるため、**走査対象に claude の stderr を足すかどうかを決める必要がある。** I-4 の1論理変更（`CLAUDE_CMD` を変える）の枠外なので直していない。
+
+**モデル ID にブラケットが入ると解決後モデルの記録が落ちる。** `so-compare` の `extract_claude_models` は meta の行を壊さないためモデル ID を `^[A-Za-z0-9._:+-]+$` で検査するが、`claude-opus-5[1m]` はブラケットで落ちて `unavailable:schema-unexpected` になる。**`modelUsage` は正しく取れているのに記録だけが落ちる。** I-4 の入れ子確認で実際に踏んだ（`cli_version` の検査で「実在する版を落とす許可リスト」を一度やっており、同じ型が別の場所に残っていた）。I-4 の変更とは独立した既存の欠陥で、私の変更はこの検査に触れていない。
+
+**テストのスタブ名が実物の CLI を呼ぶ形に化けていた。** `tests/test_so_compare_input_rejection.sh` は claude レーンのスタブを `claude-safe` という名前で置いていた。`CLAUDE_CMD` を変えた時点で名前がずれ、so-compare は PATH 上の**実物の claude** を呼ぶようになる。テストは exit 0 を見ているだけなので実物が答えても緑になり、**スタブが一度も使われないまま通る**。I-4 でスタブ名を直し、あわせて `cli_version` がスタブの名乗る値であることを検査に足した（欠陥を戻すと赤くなることを確かめてある）。
+
 ## 13. まだ見ていない範囲
 
 - **別リポの生出力は見ていない。** 認証切れ（C）と、他リポで観測された H は #303 のコメントの記載を一次情報として扱った。当リポには実物が無い。
@@ -322,3 +361,5 @@ P-1 の7種を再現する fixture を `projects/orchestration-engine/tests/fixt
 - **CLI の版とシグネチャの対応を測っていない。**
 - **シグネチャが腐ったことを観測する形が決まっていない。** M-1 の `unknown` 率を版ごとに並べるのが候補だが、閾値も警報の形も決めていない。
 - **`success_empty`（exit 0 で空）の実例が1件も無い。** この値が実際に起こりうるのか材料が無い。
+- **直接呼びにしたあと、claude が上限のときに文言がどのチャネルへ出るかは未測定。** I-4 で確かめたのは「途中出力と stderr が消えなくなる」ことまでで、実物の上限の文言と落ち先は取れていない（上限は人為的に作れない）。
+- **入れ子の確認は1回・軽いプロンプト1件だけである。** レビュー級の重いプロンプトを入れ子で走らせたときにハングしないかは確かめていない。
