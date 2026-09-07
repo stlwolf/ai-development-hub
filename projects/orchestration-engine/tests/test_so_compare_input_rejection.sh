@@ -118,5 +118,47 @@ else
   echo "  SKIP: oe-refute が見つからない"
 fi
 
+echo "[10] gate 4 の指摘: 未知オプションも 4 に寄せる"
+run_reject "$SO" --bogus -o "$_TMP/o20" "問い"
+ck  "未知オプション = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:unknown-option"
+
+echo "[11] gate 4 の指摘: -c がファイルを1件も取らない形を素通りさせない"
+run_reject "$SO" "問い" -c --codex-only -o "$_TMP/o21"
+ck  "-c の後ろがオプション = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:missing-argument -c"
+
+echo "[12] gate 4 の指摘: --prev はアクティブなレーンだけを見る"
+PSUB="$_TMP/prev-subset"; mkdir -p "$PSUB"
+printf '\377\376\377\376\n' > "$PSUB/codex-stdout.txt"
+printf '前回の claude の回答\n' > "$PSUB/claude-stdout.txt"
+STUB2="$_TMP/stub2"; mkdir -p "$STUB2"
+# so-compare は jq があると claude を --output-format json で走らせ、.result から本文を取る。
+# 素のテキストを返すスタブでは抽出に失敗して success_empty（部分成功）になるので JSON を返す。
+printf '#!/bin/sh\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$STUB2/claude-safe"; chmod +x "$STUB2/claude-safe"
+OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only -o "$_TMP/o22" --prev "$PSUB" "問い" 2>&1)"; RC=$?
+ck  "--claude-only は codex の壊れた前回出力で落ちない" "0" "$RC"
+run_reject "$SO" --codex-only -o "$_TMP/o23" --prev "$PSUB" "問い"
+ck  "--codex-only なら拒否する" "4" "$RC"; ckc "型" "$OUT" "invalid:not-utf8 --prev"
+
+echo "[13] gate 4 の指摘: 自分の切り詰めが原因の全損を拒否しない"
+PJP="$_TMP/prev-jp"; mkdir -p "$PJP"
+printf '日本語で始まる妥当な前回出力\n' > "$PJP/codex-stdout.txt"
+OUT="$(PATH="$STUB:$PATH" PREV_MAX_BYTES=1 "$SO" --codex-only -o "$_TMP/o24" --prev "$PJP" "問い" 2>&1)"; RC=$?
+ck  "PREV_MAX_BYTES=1 でも拒否しない" "0" "$RC"
+ckc "代わりに警告で伝える" "$OUT" "PREV_MAX_BYTES"
+
+echo "[14] gate 4 の指摘: oe-review も拒否を「反証」と取り違えない"
+REVIEW="$SCRIPT_DIR/../bin/oe-review"
+if [[ -x "$REVIEW" ]]; then
+  RG="$_TMP/reviewrepo"; mkdir -p "$RG"
+  ( cd "$RG" && git init -q . && git config user.email t@e && git config user.name t \
+    && printf 'a\n' > a.txt && git add a.txt && git commit -qm "test: seed" \
+    && git branch -M master && printf 'b\n' >> a.txt && git add a.txt && git commit -qm "test: change" ) >/dev/null 2>&1
+  OUT="$(cd "$RG" && OE_REVIEW_SO_COMPARE="$REJ/so-compare" "$REVIEW" --lanes 2 --base master~1 2>&1)"; RC=$?
+  ck  "oe-review は refuted(3) にしない" "2" "$RC"
+  ckc "理由を出す" "$OUT" "入力を拒否しました"
+else
+  echo "  SKIP: oe-review が見つからない"
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

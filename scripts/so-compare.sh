@@ -264,10 +264,16 @@ while [[ $# -gt 0 ]]; do
             ;;
         -c)
             shift
+            _c_taken=0
             while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
                 CONTEXT_FILES+=("$1")
+                _c_taken=$(( _c_taken + 1 ))
                 shift
             done
+            # **1件も取らなかった形を拒否する。** `so-compare '問い' -c --codex-only` のように
+            # 次がオプションだと -c は何も取らず、**検査を素通りしてレーンが起動していた**（#344）。
+            (( _c_taken > 0 )) || reject "invalid:missing-argument" "-c" "コンテキストファイルが1件も指定されていません"
+            unset _c_taken
             ;;
         -w)
             require_arg "$1" "${2:-}"
@@ -352,9 +358,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -*)
-            echo "Unknown option: $1" >&2
             usage >&2
-            exit 1
+            reject "invalid:unknown-option" "$1" "知らないオプションです"
             ;;
         *)
             PROMPT="$1"
@@ -377,8 +382,6 @@ if [[ -z "$PROMPT" && ${#CONTEXT_FILES[@]} -gt 0 ]]; then
 fi
 
 if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
-    command -v iconv >/dev/null 2>&1 \
-        || reject "unavailable:iconv" "-c" "添付ファイルが UTF-8 として妥当かを見るのに iconv を使います"
     for _cf in "${CONTEXT_FILES[@]}"; do
         [[ -e "$_cf" ]] || reject "invalid:not-found" "-c" "$_cf"
         [[ -f "$_cf" ]] || reject "invalid:not-a-file" "-c" "通常ファイルではありません: $_cf"
@@ -423,6 +426,11 @@ if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
 fi
 
 # --- コマンド存在チェック ---
+# iconv は入力の UTF-8 検査に使う。**無い環境で検査だけ飛ばすと、同じ入力がホストによって
+# 通ったり通らなかったりする**（実装SO の指摘）。前提が満たせないので degrade せず止める。
+command -v iconv &>/dev/null \
+    || reject "unavailable:iconv" "環境" "入力が UTF-8 として妥当かを見るのに iconv を使います"
+
 if ! command -v timeout &>/dev/null; then
     reject "unavailable:timeout" "環境" "macOS の場合: brew install coreutils"
 fi
@@ -470,7 +478,13 @@ if [[ -n "$PREV_DIR" ]]; then
         echo "Warning: 前回の出力ディレクトリが見つかりません: $PREV_DIR" >&2
     else
         PROMPT="${PROMPT}"$'\n\n--- 前回のレビュー回答（参考） ---'
-        for tool in codex claude cursor; do
+        # **アクティブなレーンの前回出力だけを見る。** 全レーンを回すと `--claude-only` のような
+        # 正当なサブセット再実行が、**今回使わないレーンの壊れた前回出力に足を取られる**（#344）。
+        _prev_tools=()
+        $RUN_CODEX  && _prev_tools+=(codex)
+        $RUN_CLAUDE && _prev_tools+=(claude)
+        $RUN_CURSOR && _prev_tools+=(cursor)
+        for tool in ${_prev_tools[@]+"${_prev_tools[@]}"}; do
             prev_file="$PREV_DIR/${tool}-stdout.txt"
             if [[ -f "$prev_file" && -s "$prev_file" ]]; then
                 # #340: head -c はバイト境界で切るので、日本語（3バイト文字）の途中で切れると
@@ -480,9 +494,6 @@ if [[ -n "$PREV_DIR" ]]; then
                 # iconv は上限未満の前回出力にも走るので、切断由来でない不正（前回の
                 # レーンが壊れた出力を残した等）も健全化される。これは意図した副次効果として
                 # 受け入れているため、存在確認も「非空の --prev」全体に掛かる。
-                if ! command -v iconv &>/dev/null; then
-                    reject "unavailable:iconv" "--prev" "前回出力の UTF-8 健全化に iconv を使います: $prev_file"
-                fi
                 prev_raw=$(head -c "$PREV_MAX_BYTES" "$prev_file")
                 # iconv は末尾が不完全な文字のとき rc=1 を返すが、出力は正しく不正バイトを
                 # 落としている。set -euo pipefail 下で落ちないよう rc を握り潰す（握り潰しが
@@ -494,7 +505,12 @@ if [[ -n "$PREV_DIR" ]]; then
                 # 出力の空 / 非空を「健全化が成功したか」の判定に使わない。上限が 1 文字の幅より
                 # 小さければ空になるのが正しく、部分出力して失敗する iconv は非空のまま通る。
                 # どちらも量でしか見えないので、量を必ず伝える形にしてある（下の注記と警告）。
-                if (( raw_bytes > 0 && prev_bytes == 0 )); then
+                # **自分で切り詰めていないときだけ拒否に倒す。** 上限が 1 文字の幅より小さいと
+                # こちらの切断が原因で全損になる（PREV_MAX_BYTES=1 に日本語で始まる妥当なファイル
+                # を渡すと起きる）。**自分の都合で正当な入力を拒否しない**（実装SO の指摘）。
+                if (( raw_bytes > 0 && prev_bytes == 0 && orig_size > PREV_MAX_BYTES )); then
+                    echo "Warning: 前回出力から妥当な UTF-8 が得られませんでした。PREV_MAX_BYTES (${PREV_MAX_BYTES}) が 1 文字の幅より小さい可能性があります: $prev_file" >&2
+                elif (( raw_bytes > 0 && prev_bytes == 0 )); then
                     # 妥当な UTF-8 が 1 バイトも残らなかった。原因は「前回出力自体が UTF-8 でない」
                     # 「上限が 1 文字の幅より小さい」「iconv の失敗」のいずれもありえ、出力からは
                     # 区別できないので原因を断定しない。切り詰め注記は付くが stderr には出ないため
@@ -502,7 +518,7 @@ if [[ -n "$PREV_DIR" ]]; then
                     # **全損は拒否に倒す。** 参考情報だから修復してよい、という基準は
                     # 「削っても本題が残る」ことが前提である。1 バイトも残らないなら本題ごと
                     # 消えているので、警告して続けると**空の参考情報を渡したことに気づけない**。
-                    reject "invalid:not-utf8" "--prev" "前回出力から妥当な UTF-8 が 1 バイトも得られませんでした（前回出力が UTF-8 でない / 上限が小さすぎる / iconv の失敗のいずれか）: $prev_file"
+                    reject "invalid:not-utf8" "--prev" "前回出力から妥当な UTF-8 が 1 バイトも得られませんでした（前回出力が UTF-8 でない / iconv の失敗のいずれか）: $prev_file"
                 elif (( orig_size <= PREV_MAX_BYTES && prev_bytes < raw_bytes )); then
                     # 切り詰めが起きていないのに短くなったのなら、前回出力そのものが
                     # 不正な UTF-8 だったということ。注記が付かない経路なので警告で伝える。
@@ -541,10 +557,8 @@ echo "$PROMPT" > "$OUT_DIR/prompt.txt"
 # `iconv(): Inappropriate ioctl for device` で落ちることがあり、**妥当な本文を不正と判定した**
 # （実装中に踏んだ）。ここで見るのは実際にレーンへ渡る本文そのものなので、保存後に見るほうが
 # 対象としても正確である。
-if command -v iconv >/dev/null 2>&1; then
-    is_valid_utf8_file "$OUT_DIR/prompt.txt" \
-        || reject "invalid:not-utf8" "プロンプト" "組み立て後の本文が UTF-8 として妥当ではありません: $OUT_DIR/prompt.txt"
-fi
+is_valid_utf8_file "$OUT_DIR/prompt.txt" \
+    || reject "invalid:not-utf8" "プロンプト" "組み立て後の本文が UTF-8 として妥当ではありません: $OUT_DIR/prompt.txt"
 
 # 上限バイト数での拒否は入れていない。現状は 50KB 超で警告するだけで、**拒否の閾値を決める
 # 根拠がまだ無い**（#303 の plan v2 §8 でも「過去のプロンプト長の分布を見てから決める」と
