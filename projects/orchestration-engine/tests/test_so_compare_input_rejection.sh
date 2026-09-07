@@ -359,5 +359,34 @@ for f in "$PC"/out*/**-meta.txt "$PC"/out*/*-meta.txt; do
 done
 ck "全 meta に key=value でない行が無い" "0" "$BAD_TOTAL"
 
+echo "[27] 性質: 回さないレーンの設定は、どんな値でも exit に影響しない"
+# **個別の検査を並べるのではなく、非アクティブ側に不正値を全部入れて通ることを見る。**
+# この癖（回さないレーンの入力まで見て落とす）は個別修正で7回潰しても別の場所で出た。
+# 位置で構造的に塞いだうえで、**性質そのもの**をここで固定する。
+NL="$(printf 'a\nb=c')"
+pc_run "codex を回さない（codex 用の値は全部不正）" \
+  env SO_CODEX_MODEL="$NL" SO_TIMEOUT=99999999999999999999 \
+      SO_CLAUDE_TIMEOUT=120 \
+      "$SO" --claude-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p1"
+pc_run "claude を回さない（claude 用の値は全部不正）" \
+  env SO_CLAUDE_MODEL="$NL" SO_CLAUDE_EFFORT=bogus SO_CLAUDE_TIMEOUT=08 \
+      SO_TIMEOUT=120 \
+      "$SO" --with codex,cursor -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p2"
+pc_run "cursor を回さない（cursor 用の値は全部不正）" \
+  env SO_CURSOR_MODEL="$NL" SO_TIMEOUT=120 SO_CLAUDE_TIMEOUT=120 \
+      "$SO" --with codex,claude -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p3"
+pc_run "cursor だけ回す（他レーンの値は全部不正）" \
+  env SO_CODEX_MODEL="$NL" SO_CLAUDE_MODEL="$NL" SO_CLAUDE_EFFORT=bogus \
+      SO_CLAUDE_TIMEOUT=9223372036854775808 SO_TIMEOUT=120 \
+      "$SO" --cursor-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p4"
+# 裏返し: 回すレーンの値が不正なら必ず落ちる（性質の対）
+for pair in "codex:SO_CODEX_MODEL" "cursor:SO_CURSOR_MODEL"; do
+  lane="${pair%%:*}"; var="${pair##*:}"
+  OUT="$(env "$var=$NL" SO_TIMEOUT=120 "$SO" "--${lane}-only" -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p5-$lane" 2>&1)"; RC=$?
+  ck "${lane} を回すなら ${var} の不正で落ちる" "4" "$RC"
+done
+OUT="$(env SO_CLAUDE_EFFORT=bogus SO_CLAUDE_TIMEOUT=120 "$SO" --claude-only -w "$PC/ws" -f "$PC/prompt.md" -o "$PC/p6" 2>&1)"; RC=$?
+ck "claude を回すなら SO_CLAUDE_EFFORT の不正で落ちる" "4" "$RC"
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

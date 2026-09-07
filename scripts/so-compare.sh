@@ -153,6 +153,8 @@ RUN_CODEX=true
 RUN_CLAUDE=true
 RUN_CURSOR=false
 PROVIDERS_RAW=""
+PROMPT_FILE=""
+PROMPT_FROM_STDIN=false
 WITH_SPECIFIED=false
 LEGACY_PROVIDER_FLAG=false
 CLAUDE_WEB=false
@@ -285,14 +287,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -f)
             require_arg "$1" "${2:-}"
-            # 実在を明示的に見る。見ないと `set -euo pipefail` の下で cat が落ち、
-            # **引数解析の途中で理由の分からない終了**になる（#344）。
-            [[ -e "$2" ]] || reject "invalid:not-found" "-f" "$2"
-            [[ -f "$2" ]] || reject "invalid:not-a-file" "-f" "通常ファイルではありません: $2"
-            [[ -r "$2" ]] || reject "invalid:not-readable" "-f" "読めません: $2"
-            # NUL はコマンド置換で黙って落ちるので、読む前に弾く。
-            has_nul_byte "$2" && reject "invalid:contains-nul" "-f" "NUL バイトを含みます（読み込みで黙って落ちます）: $2"
-            PROMPT=$(cat "$2")
+            # **ここでは読まない。** 入力の検査は1箇所（下記「入力の検査」節）へ集めてある。
+            PROMPT_FILE="$2"
             shift 2
             ;;
         -c)
@@ -387,18 +383,8 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -)
-            # **stdin も NUL で変質する。** `$(cat)` は NUL を黙って落とすので、-f / -c / --prev と
-            # 同じ検査が要る。ストリームなので一度ファイルへ落としてから見る（実装SO の3周目の指摘）。
-            _stdin_tmp="$(mktemp "${TMPDIR:-/tmp}/so-stdin.XXXXXX")" \
-                || reject "unavailable:mktemp" "stdin" "一時ファイルを作れません"
-            cat > "$_stdin_tmp"
-            if has_nul_byte "$_stdin_tmp"; then
-                rm -f "$_stdin_tmp"
-                reject "invalid:contains-nul" "stdin" "NUL バイトを含みます（読み込みで黙って落ちます）"
-            fi
-            PROMPT=$(cat "$_stdin_tmp")
-            rm -f "$_stdin_tmp"
-            unset _stdin_tmp
+            # **ここでは読まない。** 入力の検査は1箇所（下記「入力の検査」節）へ集めてある。
+            PROMPT_FROM_STDIN=true
             shift
             ;;
         -*)
@@ -411,73 +397,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# --- 入力の妥当性（#344・レーンへ渡す前に拒否する） ---
-#
-# iconv は入力の UTF-8 検査に使う。**無い環境で検査だけ飛ばすと、同じ入力がホストによって
-# 通ったり通らなかったりする。** そして**この確認は検査より前に置く**必要がある。後ろに置くと、
-# iconv 不在時に `is_valid_utf8_file` の command-not-found が `invalid:not-utf8` に化け、
-# **妥当なファイルを「不正な UTF-8」として拒否する**（実装SO の2周目の指摘）。
-command -v perl &>/dev/null \
-    || reject "unavailable:perl" "環境" "入力が UTF-8 として妥当かを見るのに perl を使います（macOS の iconv は妥当な入力を不正と判定するため使えません）"
-
-#
-# 基準は「**その入力の権威がどこにあるか**」である。**利用者が明示的に指定したもの**（-c / -f / -w）
-# は拒否する。黙って削ると、削られた前提でレーンが答えるからである。**ツールが自分で作った参考情報**
-# （--prev の切り詰め）は修復してよい（#340 の owner 裁定）。ただし全損したときは拒否に倒す。
-
-# -c は「ハイフンで始まらない引数」を全部食う。`so-compare -c a.md "問い"` と書くと問いが
-# コンテキストファイル扱いになり、プロンプト無しで終わる。**この形を先に名指しする**（後段の
-# 「プロンプトが指定されていません」だけでは、なぜそうなったかが利用者に見えない）。
-if [[ -z "$PROMPT" && ${#CONTEXT_FILES[@]} -gt 0 ]]; then
-    reject "invalid:ambiguous-args" "-c" "-c がプロンプトを取り込んだ可能性があります（-c はハイフンで始まらない引数を全部取ります）。プロンプトを -c より前に置くか、-f でファイルから渡してください: ${CONTEXT_FILES[*]}"
-fi
-
-if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
-    for _cf in "${CONTEXT_FILES[@]}"; do
-        [[ -e "$_cf" ]] || reject "invalid:not-found" "-c" "$_cf"
-        [[ -f "$_cf" ]] || reject "invalid:not-a-file" "-c" "通常ファイルではありません: $_cf"
-        [[ -r "$_cf" ]] || reject "invalid:not-readable" "-c" "読めません: $_cf"
-        [[ -s "$_cf" ]] || reject "invalid:empty" "-c" "中身が空です: $_cf"
-        has_nul_byte "$_cf" && reject "invalid:contains-nul" "-c" "NUL バイトを含みます（読み込みで黙って落ちます）: $_cf"
-        is_valid_utf8_file "$_cf" \
-            || reject "invalid:not-utf8" "-c" "UTF-8 として妥当ではありません: $_cf"
-    done
-    unset _cf
-fi
-
-# -w はプロンプト本文にパスとして載り、各 CLI へも別経路で渡る。不在なら参照先が無い。
-if [[ -n "$WORKSPACE" ]]; then
-    [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
-    [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
-fi
-
-# -o の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる**
-# （「1＝部分成功」と衝突する・実装SO の2周目の指摘）。
-if [[ -n "$OUT_DIR" ]]; then
-    if [[ -e "$OUT_DIR" && ! -d "$OUT_DIR" ]]; then
-        reject "invalid:not-a-directory" "-o" "ディレクトリではありません: $OUT_DIR"
-    fi
-    if [[ -d "$OUT_DIR" && ! -w "$OUT_DIR" ]]; then
-        reject "invalid:not-writable" "-o" "書き込めません: $OUT_DIR"
-    fi
-    if [[ ! -e "$OUT_DIR" ]]; then
-        mkdir -p "$OUT_DIR" 2>/dev/null \
-            || reject "invalid:not-writable" "-o" "作れません: $OUT_DIR"
-    fi
-fi
-
-# 数値の環境変数（SO_TIMEOUT 系は入口で見ているので、残りをここで揃える）。
-# 桁も縛る（上の SO_TIMEOUT 系と同じ理由。受理したのに算術で意味が変わる形を作らない）。
-if [[ -n "${PREV_MAX_BYTES:-}" && ! "${PREV_MAX_BYTES}" =~ ^[1-9][0-9]{0,8}$ ]]; then
-    reject "invalid:not-a-number" "PREV_MAX_BYTES" "1〜999999999 の整数（バイト）で指定してください: ${PREV_MAX_BYTES}"
-fi
-
-if [[ -z "$PROMPT" ]]; then
-    echo "" >&2
-    usage >&2
-    reject "invalid:empty" "プロンプト" "指定されていません"
-fi
 
 if $LEGACY_PROVIDER_FLAG && $WITH_SPECIFIED; then
     reject "invalid:bad-value" "--with" "--codex-only / --claude-only / --cursor-only / --cursor と併用できません"
@@ -494,63 +413,147 @@ if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
     reject "invalid:bad-value" "プロバイダ指定" "実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）"
 fi
 
-# **回すレーンのタイムアウトだけを見る。** 全部見ると、`--with codex,cursor` のように
-# claude を回さない実行が、`SO_CLAUDE_TIMEOUT` の値が不正なだけで落ちる（実装SO の5周目の
-# 指摘。**「自分の都合で正当な入力を拒否する」形はこれで7回目である**）。
-# ここへ移せるのは、値を実際に使うのが `base_timeout_for` / `retry_timeout_for` の呼び出し時
-# （レーンの起動時）だからである。
-_t_vars=()
-{ $RUN_CODEX || $RUN_CURSOR; } && _t_vars+=(SO_TIMEOUT)
-$RUN_CLAUDE && _t_vars+=(SO_CLAUDE_TIMEOUT)
-for _t_var in ${_t_vars[@]+"${_t_vars[@]}"}; do
-    # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
-    # 桁あふれし、**受理したのに意味が変わる**（実装SO の指摘・#303 の M-1 でも同じ形を踏んだ）。
-    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]{0,8}$ ]]; then
-        reject "invalid:not-a-number" "${_t_var}" "1〜999999999 の整数（秒）で指定してください: ${!_t_var}"
-    fi
-done
-unset _t_var _t_vars
+# =============================================================================
+# 入力の検査（#344）— **1箇所に集め、回すレーンの入力だけを見る**
+# =============================================================================
+#
+# **なぜ1箇所なのか。** 検査を散らばらせていたとき、「回さないレーンの入力まで見て落とす」
+# 欠陥を**7回**作った（`--prev` の全損 / 非アクティブなレーンの `--prev` / iconv の順序 /
+# モデル名 / その検査の位置 / エフォート / タイムアウト）。原因は毎回同じで、**検査を書いた
+# 位置が、その検査が使う値（どのレーンを回すか）の確定より前だった**ことである。個別に直すと
+# 同じ形が別の場所で出る。**位置で構造的に塞ぐ。**
+#
+# **この節より前で入力を読まない。** `-f` と stdin は引数解析では読まず、ここまで持ち越す。
+# 引数解析に残してあるのは**argv の形の検査だけ**である（引数の欠落・`-c` が1件も取らない・
+# 未知のオプション・`--with` の値）。あれらは「どのレーンを回すか」に依存しない。
+#
+# 基準は「**その入力の権威がどこにあるか**」である。**利用者が明示的に指定したもの**
+# （`-c` / `-f` / `-w`）は拒否する。黙って削ると、削られた前提でレーンが答えるからである。
+# **ツールが自分で作った参考情報**（`--prev` の切り詰め）は修復してよい（#340 の owner 裁定）。
+# ただし全損したときは拒否に倒す。
 
-# モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
-# **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
-# **回すレーンの値だけを見る。** 全部見ると、`--codex-only` なのに `SO_CURSOR_MODEL` に
-# 改行が入っているだけで落ちる。`--prev` を非アクティブなレーンで見ないようにしたのと同じ
-# 条件分離が、設定値にも要る（実装SO の4周目の指摘。**自分の都合で正当な入力を拒否する形を
-# これで4回目に作っている**）。
-_v_names=()
-$RUN_CODEX  && _v_names+=(CODEX_MODEL SANDBOX_MODE)
-$RUN_CLAUDE && _v_names+=(CLAUDE_MODEL CLAUDE_EFFORT)
-$RUN_CURSOR && _v_names+=(CURSOR_MODEL)
-for _v_name in ${_v_names[@]+"${_v_names[@]}"}; do
-    _v_val="${!_v_name}"
-    [[ -n "$_v_val" ]] || continue
-    if has_line_breaking_bytes "$_v_val"; then
-        reject "invalid:control-character" "$_v_name" "行を壊すバイト（改行・タブ・制御文字）を含みます"
-    fi
-    # **高位バイトは行を壊さないので上の検査を通る。** しかし不正な UTF-8 のモデル名は
-    # `model_requested=` に入って meta を非 UTF-8 にし、レーンの引数としても壊れる。
-    _v_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
-        || reject "unavailable:mktemp" "$_v_name" "一時ファイルを作れません"
-    printf '%s' "$_v_val" > "$_v_tmp"
-    if ! is_valid_utf8_file "$_v_tmp"; then
-        rm -f "$_v_tmp"
-        reject "invalid:not-utf8" "$_v_name" "UTF-8 として妥当ではありません"
-    fi
-    rm -f "$_v_tmp"
-done
-unset _v_name _v_val _v_tmp _v_names
+# --- (1) 検証器の前提（検査より前に置く） ---
+# 不在のまま検査へ進むと command-not-found が `invalid:not-utf8` に化け、**妥当なファイルを
+# 不正と判定する**（実装SO の2周目の指摘）。
+# **iconv は検証器に使わない。** macOS の iconv はバイトの位置で妥当な UTF-8 を不正と判定する
+# （詰め物1バイトで NG/NG/OK/NG/NG/OK。episode の「macOS の iconv」節）。
+command -v perl &>/dev/null \
+    || reject "unavailable:perl" "環境" "入力が UTF-8 として妥当かを見るのに perl を使います（macOS の iconv は妥当な入力を不正と判定するため使えません）"
 
-# エフォートは**こちらが usage に列挙している**値なので、渡す前に見る。
-# モデル名と sandbox モードは列挙しない（下記の理由）。
-# **これも回すレーンのときだけ見る。** claude を回さないのに claude 用の値で落ちてはいけない。
-if $RUN_CLAUDE && [[ -n "$CLAUDE_EFFORT" ]] && ! [[ "$CLAUDE_EFFORT" =~ ^(low|medium|high|xhigh|max)$ ]]; then
-    reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $CLAUDE_EFFORT"
+# --- (2) 回すレーンの設定値だけを見る ---
+# **回さないレーンの設定は、どんな値でも exit に影響しない。** これは性質としてテストに固定
+# してある（`test_so_compare_input_rejection.sh` の「非アクティブ側に不正値を全部入れて通る」）。
+_lane_vars=()
+$RUN_CODEX  && _lane_vars+=(CODEX_MODEL SANDBOX_MODE SO_TIMEOUT)
+$RUN_CURSOR && _lane_vars+=(CURSOR_MODEL SO_TIMEOUT)
+$RUN_CLAUDE && _lane_vars+=(CLAUDE_MODEL CLAUDE_EFFORT SO_CLAUDE_TIMEOUT)
+for _lv in ${_lane_vars[@]+"${_lane_vars[@]}"}; do
+    _lval="${!_lv}"
+    [[ -n "$_lval" ]] || continue
+    case "$_lv" in
+        SO_TIMEOUT|SO_CLAUDE_TIMEOUT)
+            # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で
+            # 負数へ桁あふれし、**受理したのに意味が変わる**。
+            [[ "$_lval" =~ ^[1-9][0-9]{0,8}$ ]] \
+                || reject "invalid:not-a-number" "$_lv" "1〜999999999 の整数（秒）で指定してください: $_lval"
+            ;;
+        CLAUDE_EFFORT)
+            # **こちらが usage に列挙している値**なので渡す前に見る。
+            [[ "$_lval" =~ ^(low|medium|high|xhigh|max)$ ]] \
+                || reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $_lval"
+            ;;
+        *)
+            # モデル名と sandbox モードは**相手の CLI が持つ語彙**なので値域は列挙しない
+            # （列挙すると CLI 側が増やした値を落とす）。見るのは meta とレーンの引数を
+            # 壊すかどうかだけである。
+            has_line_breaking_bytes "$_lval" \
+                && reject "invalid:control-character" "$_lv" "行を壊すバイト（改行・タブ・制御文字）を含みます"
+            _lv_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
+                || reject "unavailable:mktemp" "$_lv" "一時ファイルを作れません"
+            printf '%s' "$_lval" > "$_lv_tmp"
+            if ! is_valid_utf8_file "$_lv_tmp"; then
+                rm -f "$_lv_tmp"
+                reject "invalid:not-utf8" "$_lv" "UTF-8 として妥当ではありません"
+            fi
+            rm -f "$_lv_tmp"
+            ;;
+    esac
+done
+unset _lv _lval _lv_tmp _lane_vars
+
+# --- (3) プロンプトの取り込み（ここで初めて読む） ---
+if [[ -n "$PROMPT_FILE" ]]; then
+    [[ -e "$PROMPT_FILE" ]] || reject "invalid:not-found" "-f" "$PROMPT_FILE"
+    [[ -f "$PROMPT_FILE" ]] || reject "invalid:not-a-file" "-f" "通常ファイルではありません: $PROMPT_FILE"
+    [[ -r "$PROMPT_FILE" ]] || reject "invalid:not-readable" "-f" "読めません: $PROMPT_FILE"
+    # NUL はコマンド置換で黙って落ちるので、読む前に弾く。
+    has_nul_byte "$PROMPT_FILE" && reject "invalid:contains-nul" "-f" "NUL バイトを含みます（読み込みで黙って落ちます）: $PROMPT_FILE"
+    PROMPT=$(cat "$PROMPT_FILE")
 fi
-# **モデル名と -s（sandbox モード）は列挙しない。** どちらも**相手の CLI が持つ語彙**で、
-# こちらが列挙すると CLI 側が増やした値を落とす。skill doc も「任意のモデル名はそのまま
-# 透過で渡る」と書いており、その契約をこちらの検査で壊さない。不正な値はレーンの
-# エラーとして結果に出る（`error` / `error_partial`）。
+if $PROMPT_FROM_STDIN; then
+    # ストリームなので一度ファイルへ落としてから見る。
+    _stdin_tmp="$(mktemp "${TMPDIR:-/tmp}/so-stdin.XXXXXX")" \
+        || reject "unavailable:mktemp" "stdin" "一時ファイルを作れません"
+    cat > "$_stdin_tmp"
+    if has_nul_byte "$_stdin_tmp"; then
+        rm -f "$_stdin_tmp"
+        reject "invalid:contains-nul" "stdin" "NUL バイトを含みます（読み込みで黙って落ちます）"
+    fi
+    PROMPT=$(cat "$_stdin_tmp")
+    rm -f "$_stdin_tmp"
+    unset _stdin_tmp
+fi
 
+# --- (4) 明示指定されたファイル・パス ---
+# `-c` は「ハイフンで始まらない引数」を全部食う。`so-compare -c a.md "問い"` と書くと問いが
+# コンテキストファイル扱いになり、プロンプト無しで終わる。**この形を先に名指しする。**
+if [[ -z "$PROMPT" && ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    reject "invalid:ambiguous-args" "-c" "-c がプロンプトを取り込んだ可能性があります（-c はハイフンで始まらない引数を全部取ります）。プロンプトを -c より前に置くか、-f でファイルから渡してください: ${CONTEXT_FILES[*]}"
+fi
+if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    for _cf in "${CONTEXT_FILES[@]}"; do
+        [[ -e "$_cf" ]] || reject "invalid:not-found" "-c" "$_cf"
+        [[ -f "$_cf" ]] || reject "invalid:not-a-file" "-c" "通常ファイルではありません: $_cf"
+        [[ -r "$_cf" ]] || reject "invalid:not-readable" "-c" "読めません: $_cf"
+        [[ -s "$_cf" ]] || reject "invalid:empty" "-c" "中身が空です: $_cf"
+        has_nul_byte "$_cf" && reject "invalid:contains-nul" "-c" "NUL バイトを含みます（読み込みで黙って落ちます）: $_cf"
+        is_valid_utf8_file "$_cf" \
+            || reject "invalid:not-utf8" "-c" "UTF-8 として妥当ではありません: $_cf"
+    done
+    unset _cf
+fi
+
+# `-w` はプロンプト本文にパスとして載り、各 CLI へも別経路で渡る。不在なら参照先が無い。
+if [[ -n "$WORKSPACE" ]]; then
+    [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
+    [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
+fi
+
+# `-o` の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる。**
+if [[ -n "$OUT_DIR" ]]; then
+    if [[ -e "$OUT_DIR" && ! -d "$OUT_DIR" ]]; then
+        reject "invalid:not-a-directory" "-o" "ディレクトリではありません: $OUT_DIR"
+    fi
+    if [[ -d "$OUT_DIR" && ! -w "$OUT_DIR" ]]; then
+        reject "invalid:not-writable" "-o" "書き込めません: $OUT_DIR"
+    fi
+    if [[ ! -e "$OUT_DIR" ]]; then
+        mkdir -p "$OUT_DIR" 2>/dev/null \
+            || reject "invalid:not-writable" "-o" "作れません: $OUT_DIR"
+    fi
+fi
+
+# --- (5) レーンに依らない数値 ---
+if [[ -n "${PREV_MAX_BYTES:-}" && ! "${PREV_MAX_BYTES}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    reject "invalid:not-a-number" "PREV_MAX_BYTES" "1〜999999999 の整数（バイト）で指定してください: ${PREV_MAX_BYTES}"
+fi
+
+# --- (6) 本文が在るか ---
+if [[ -z "$PROMPT" ]]; then
+    echo "" >&2
+    usage >&2
+    reject "invalid:empty" "プロンプト" "指定されていません"
+fi
 
 # --- コマンド存在チェック ---
 if ! command -v timeout &>/dev/null; then
