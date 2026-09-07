@@ -63,7 +63,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 ````markdown
 ## 規律（固定・必ず守る）
 
-- **plan-first**: 実装を進めるのは owner HG（ゲート3）の後。それまでは計画だけ作って STOP し、plan doc のパスを親へ報告する。HG の前に plan を **draft PR** に載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない）。**plan は作業の枝に載せ、実装の最初の PR と一緒に着地させる** — plan だけを単独の PR で default ブランチへ着地させない。同じ枝で作った episode・knowledge もその枝の PR に載せる（別 PR に分ける例外は `episode-retrospective` の収穫フローが持つ）。文書だけの PR を着地させてよいのは、owner が明示的にそう裁定したときだけ。
+- **plan-first**: 実装を進めるのは owner HG（ゲート3）の後。それまでは計画だけ作って STOP し、plan doc のパスを親へ報告する。HG の前に plan を **draft PR** に載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない）。**plan は作業の枝に載せ、実装の最初の PR と一緒に着地させる** — plan だけの PR を単独で default ブランチへ着地させてよいのは、owner が明示的にそう裁定したときだけ。同じ枝で作った episode・knowledge もその枝の PR に載せる（別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない）。
 - **worktree は子が自作**（`branch-naming` に従う）・統括は hands-off（事前作成しない）。
 - **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。**追記は closure から指せる形で残す** — 判断の why・失敗と撤回の経緯・棄却した選択肢・tier のトリガに当たる出来事は、起きたその場で節を立てて書く。closure ではそれを再掲せず本文を指す（`episode-retrospective` の read/write 契約）。
 - **昇格の印**: 「これは昇格を考えるべきかもしれない」と思った**その場で**、本文に `昇格の印: <1行>` を**行頭の裸行**として置く（**囲むと印にならない**）。規約は `document-format.md`「ライフサイクル規範」節。印は候補であって判定ではないので、迷ったら置く。

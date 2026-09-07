@@ -639,7 +639,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 (0) は毎回ではなく**必要時の soft gate**（(3)/(5)/(6) の owner HG のような必須ゲートとは別）。§10 遷移規則の「設計判断が多い → discussion（QDD 併用）」がこの (0) に対応する（DJ-6）— 入口層 discussion での QDD と gate (0) は同じ「人間とのすり合わせ」を指す。
 
-**plan の着地先**: committed 層の plan は、それだけで PR を立てず、作業の枝に載せて**実装の最初の PR と一緒に着地させる**（ゲート3 で承認された計画が、ゲート5 でその実装と同じ PR に入る）。同じ枝で作った episode・knowledge もその枝の PR に載せる（knowledge を別 PR に分ける例外は `episode-retrospective` の収穫フローが持つ）。ゲート3 の前に plan を draft PR へ載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない・実装そのものはゲート3 の後）。文書だけの PR を着地させてよいのは、owner が明示的にそう裁定したときだけ。これは §13.3 の「作業層 plan の扱い」（`.oe/` の plan を昇格するかどうか）とは別で、こちらは committed 層の plan doc をどの PR で commit するかを決める。
+**plan の着地先**: committed 層の plan は、それだけで PR を立てず、作業の枝に載せて**実装の最初の PR と一緒に着地させる**（ゲート3 で承認された計画が、ゲート5 でその実装と同じ PR に入る）。plan だけの PR を単独で着地させてよいのは、owner が明示的にそう裁定したときだけ。ゲート3 の前に plan を draft PR へ載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない・実装そのものはゲート3 の後）。同じ枝で作った episode・knowledge もその枝の PR に載せる（knowledge を別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない）。これは §13.3 の「作業層 plan の扱い」（`.oe/` の plan を昇格するかどうか）とは別で、こちらは committed 層の plan doc をどの PR で commit するかを決める。
 
 ガードレール枠（#248）の固定節はこの配置図を参照する。
 
