@@ -28,17 +28,20 @@ EXPECTED_VERSION="2026-09-07"
 PASS=0; FAIL=0
 ck() { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
 
+# **hasher が無いときに期待値を実測値へ代入しない。** 代入すると [1] が「検査していないのに
+# PASS」になり、**検査が空回りしていることが緑で隠れる**（Copilot の指摘）。
+# 無いときは [1] だけを SKIP にして PASS も FAIL も増やさない。
+ACTUAL_SHA=""
 if command -v shasum >/dev/null 2>&1; then
   ACTUAL_SHA="$(shasum -a 256 "$TARGET" | awk '{print $1}')"
 elif command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_SHA="$(sha256sum "$TARGET" | awk '{print $1}')"
-else
-  echo "SKIP: shasum も sha256sum も無いのでハッシュを確かめられない"
-  ACTUAL_SHA="$EXPECTED_SHA"
 fi
 
 echo "[1] 宣言した版が中身と食い違っていない"
-if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+if [[ -z "$ACTUAL_SHA" ]]; then
+  echo "  SKIP: shasum も sha256sum も無いのでハッシュを確かめられない（PASS にはしない）"
+elif [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
   echo "  FAIL: so-compare.sh の中身が変わっているのに宣言した版が据え置きかもしれない"
   echo "        期待: $EXPECTED_SHA"
   echo "        実際: $ACTUAL_SHA"
