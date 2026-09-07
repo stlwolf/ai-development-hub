@@ -5,7 +5,7 @@
 #   OE_LANE_CANARY=1 oe-lane-canary <so 出力ディレクトリ>
 #   oe-lane-canary <dir>            フラグ無し = 何もしない（何を投げるかだけ出す）
 #   oe-lane-canary --lane <tool> <dir>
-#   oe-lane-canary --timeout <秒> <dir>   既定 10
+#   oe-lane-canary --timeout <秒> <dir>   既定 60
 #   oe-lane-canary -h | --help
 #
 # **これは実験である。既定では何もしない。** `OE_LANE_CANARY=1` を付けたときだけ実際に CLI を
@@ -54,7 +54,7 @@ usage:
   OE_LANE_CANARY=1 oe-lane-canary [--lane <tool>] [--timeout <秒>] <so 出力ディレクトリ>
 
   --lane <tool>     codex / claude / cursor のいずれかだけを対象にする
-  --timeout <秒>    canary の上限（既定 10）
+  --timeout <秒>    canary の上限（既定 60）
   -h, --help        このヘルプを表示
 
 **既定では何もしない。** OE_LANE_CANARY=1 を付けたときだけ実際に CLI を呼ぶ。
@@ -138,6 +138,16 @@ set_canary_args() {
 # oe-lane-explain と同じにしてある（同じ文言を2箇所で別に書かない）。
 # 錨が使えない文言のための逃し弁（oe-lane-explain と同じ考え方）。
 # 誤検出の元は数百KB まで育つ TUI の描画なので、小ささを条件にすれば経路を塞げる。
+# **この値を未検証のまま算術式へ入れてはいけない。** bash は `(( ))` の中の配列添字を
+# 再展開するので、`OE_LANE_CANARY_SMALL_BYTES='DIRS[$(command)0]'` で任意のコマンドが走る。
+# **これは I-1（oe-lane-explain）で一度直した欠陥である。** あちらから逃し弁の関数だけを
+# 写して、**同じファイルに書いてあった入口の検証を写し忘れた**（実装SO の2周目の指摘）。
+# 桁も縛る（桁あふれで負数になると比較の意味が変わる）。
+if [[ -n "${OE_LANE_CANARY_SMALL_BYTES:-}" \
+      && ! "${OE_LANE_CANARY_SMALL_BYTES}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+  err "OE_LANE_CANARY_SMALL_BYTES は 1〜999999999 の整数で指定してください: ${OE_LANE_CANARY_SMALL_BYTES}"
+  exit 2
+fi
 CANARY_SMALL_BYTES="${OE_LANE_CANARY_SMALL_BYTES:-16384}"
 contains_in_small_file() {
   local pat="$1" f="$2" sz
@@ -267,7 +277,12 @@ for tool in codex claude cursor; do
   co="$WORK/${tool}-canary-stdout.txt"; ce="$WORK/${tool}-canary-stderr.txt"
   start=$(date +%s)
   rc=0
-  timeout "$CANARY_TIMEOUT" "$cmd" ${CANARY_ARGS[@]+"${CANARY_ARGS[@]}"} "$CANARY_PROMPT" > "$co" 2> "$ce" || rc=$?
+  # **stdin を /dev/null に固定する。** so-compare が #352 で同じことをしている。
+  # codex exec は stdin が TTY でないとき入力を待ち、上限をフルに使ってから落ちる。
+  # 固定しないと**健全な codex を `canary_timeout` と誤分類する**（実装SO の2周目の指摘）。
+  # **配布物の側に既にある直しを、こちらへ写していなかった。**
+  timeout "$CANARY_TIMEOUT" "$cmd" ${CANARY_ARGS[@]+"${CANARY_ARGS[@]}"} "$CANARY_PROMPT" \
+    < /dev/null > "$co" 2> "$ce" || rc=$?
   end=$(date +%s)
   IFS=$'\t' read -r cstate cevid < <(classify_canary "$tool" "$rc" "$co" "$ce")
   jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" \

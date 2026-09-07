@@ -224,5 +224,44 @@ OUT="$(OE_LANE_CANARY=1 PATH="$COREBIN2" "$VERB" "$D" 2>&1)"; RC=$?
 ck  "timeout 不在 = exit 2" "2" "$RC"
 ckc "理由を出す" "$OUT" "timeout が要ります"
 
+echo "[16] gate 4 2周目の指摘: 閾値の環境変数からコマンドが走らない"
+# **I-1 で一度直した欠陥の再発である。** あちらから逃し弁の関数だけ写して入口の検証を写し忘れた。
+SENT="$_TMP/canary-pwned"
+D="$_TMP/d17"; mk_empty_lane "$D" claude timeout_empty 124
+OUT="$(OE_LANE_CANARY_SMALL_BYTES="DIRS[\$(touch '$SENT')0]" "$VERB" "$D" 2>&1)"; RC=$?
+ck  "不正な閾値 = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "の整数で指定してください"
+if [[ -e "$SENT" ]]; then echo "  FAIL: コマンドが実行された"; FAIL=$((FAIL+1));
+else echo "  PASS: コマンドは実行されていない"; PASS=$((PASS+1)); fi
+OUT="$(OE_LANE_CANARY_SMALL_BYTES=9223372036854775808 "$VERB" "$D" 2>&1)"; RC=$?
+ck "桁あふれ = exit 2" "2" "$RC"
+# 正当な値は通る（陽性対照）
+OE_LANE_CANARY_SMALL_BYTES=4096 "$VERB" "$D" >/dev/null 2>&1
+ck "正当な閾値は通る" "0" "$?"
+
+echo "[17] gate 4 2周目の指摘: stdin を /dev/null に固定する"
+# so-compare が #352 で同じことをしている。固定しないと codex が入力を待ち、
+# 健全な CLI を canary_timeout と誤分類する。
+# shellcheck disable=SC2016  # 展開させずにソース中の文字列そのものを探している
+if grep -qF '< /dev/null > "$co"' "$VERB"; then
+  echo "  PASS: canary の実行が stdin を /dev/null に固定している"; PASS=$((PASS+1))
+else
+  echo "  FAIL: stdin を固定していない（codex が入力待ちで上限をフルに使う）"; FAIL=$((FAIL+1))
+fi
+# stdin を読もうとするスタブが即座に返ることで、固定が効いていることを見る
+printf '#!/bin/sh\ncat > /dev/null\necho 2\nexit 0\n' > "$STUB/codex"; chmod +x "$STUB/codex"
+D="$_TMP/d18"; mk_empty_lane "$D" codex timeout_empty 124
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" --timeout 5 "$D" 2>/dev/null)"
+ck "stdin を読むスタブでも success" "success" "$(val_of "$OUT" canary_state)"
+
+echo "[18] ヘッダと help の既定値が実装と一致する"
+IMPL="$(grep -m1 '^CANARY_TIMEOUT=' "$VERB" | cut -d= -f2)"
+HDR="$(grep -c "既定 ${IMPL}" "$VERB")"
+if (( HDR >= 2 )); then
+  echo "  PASS: ヘッダと help がどちらも既定 ${IMPL} 秒と書いている"; PASS=$((PASS+1))
+else
+  echo "  FAIL: 実装は ${IMPL} 秒だが、そう書いてある箇所が ${HDR} 件しかない"; FAIL=$((FAIL+1))
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
