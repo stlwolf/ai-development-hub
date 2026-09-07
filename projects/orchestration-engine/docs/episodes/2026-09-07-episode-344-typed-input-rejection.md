@@ -321,3 +321,38 @@ perl -e 'open my $fh, "<:raw", $ARGV[0] or exit 2; local $/; my $d = <$fh> // ""
 - `shellcheck` — so-compare・oe-refute・oe-review・テストとも緑。
 - `tests/test_so_compare_input_rejection.sh` — **pass=105 fail=0**。
 - 既存テスト `test_oe_refute.sh`（pass=63）/ `test_oe_review.sh`（pass=64）は緑。実機の SO も1本 exit 0。
+
+### 2026-09-07 gate 4 の6周目 — cursor は survived・codex の指摘は2点の枠外
+
+audit_id `20260907030720WNWSZKGF5VG3`。claim は5周目と同じ2点。
+
+**cursor は `survived`。**
+
+> レーン起動前の失敗はすべて `reject`→exit 4 に集約され、`RUN_*` 確定後の `_lane_vars` 単一検査と `oe-refute` / `oe-review` の exit 4 処理で、指定2観点の material な穴は反証的レビューでは確認できなかった。
+
+**codex は `refuted` で1件出したが、2点の枠外である。**
+
+> `oe-refute` / `oe-review` は入力文書を bash のコマンド置換で変数化する。NUL はこの時点で脱落するため、生成後の一時ファイルを検査する so-compare では検出不能。実際の consumer 経路では NUL 入りの claim / context が exit 4 にならず、改変された内容でレーンが起動する。
+
+**指摘は正しい。実物で確かめた。**
+
+- `oe-refute` は claim doc の body を `BODY="$(awk ... "$CLAIM_DOC")"` で取る。
+- `oe-review` は context を `CONTEXT_BODY="$(cat "$CONTEXT_DOC")"` で取る。
+- bash のコマンド置換は NUL を落とす（10 バイトの入力が 8 バイトになることを実測。警告 `コマンド代入: 入力のヌルバイトを無視しました` も出る）。
+
+**なぜ2点の枠外か。** claim の観点は (1)「レーン未起動なのに 4 以外で終わる経路」と (2)「正当な入力を落とす経路」だった。**この指摘はどちらでもない。** 「**不正な入力を拒否できない**」であって、(2) の裏返しである。
+
+**そして本 PR が作った欠陥ではない。** `oe-refute` / `oe-review` が doc をコマンド置換で読むのは以前からの実装で、本 PR が触ったのは exit 4 の受け側だけである。
+
+**統括の指示（枠外なら直さず開示して止める）に従い、直していない。** 開示すべき事実は次の2つである。
+
+1. **本 PR の契約は so-compare の入口までしか効かない。** その手前で内容を変質させる消費者がいると、so-compare は変質後の妥当な入力を見ることになる。
+2. **同じ形は `-c` の経路にもある**（so-compare 自身は `-c` の NUL を弾くが、消費者が先に落としていれば弾く対象が残っていない）。
+
+**別単位で見る価値がある。** 直すなら消費者の側で doc を変数化せずファイルのまま渡す形になり、`oe-refute` / `oe-review` のプロンプト組み立てを変えることになる。
+
+### 2026-09-07 6周を終えての状態
+
+- **gate 4 の集約 verdict は `refuted`**（保守側の集約なので、1レーンでも refuted なら全体が refuted）。**したがって PR は draft のままにする**（「ready は gate 4 が通ってから」という指示に従う）。
+- 2点の枠内では、6周目で新たな欠陥は出ていない。
+- 累計の指摘は19件。**17件を直して回帰テストで固定し、2件は理由つきで範囲外にした。** これに加えて自己点検で1件、陽性対照の組で2件を自分で見つけて直している。
