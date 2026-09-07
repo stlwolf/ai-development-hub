@@ -51,10 +51,13 @@ Exit codes:
   2  全プロバイダ失敗（起動はした）
   4  入力を拒否した（レーンを1本も起動していない）
 
-  4 の理由は stderr に型で出る。invalid:<種別> は利用者の入力の誤り
-  （not-found / not-a-file / not-readable / empty / not-utf8 /
-   not-a-number / bad-value / missing-argument / ambiguous-args /
-   not-a-directory）、unavailable:<コマンド> は環境に足りないもの。
+  4 の理由は stderr に型で出る。invalid:<種別> は利用者の入力の誤りで、
+  次の14種である。ambiguous-args / bad-value / contains-nul /
+  control-character / empty / missing-argument / not-a-directory /
+  not-a-file / not-a-number / not-found / not-readable / not-utf8 /
+  not-writable / unknown-option。
+  unavailable:<コマンド> は環境に足りないもの（perl / timeout / mktemp /
+  codex / claude-safe / agent）。
   3 を使わないのは oe-refute / oe-review が反証（refuted）に割り当てて
   いるためで、入力の不備が「設計が反証された」として上位に届かない
   ようにしている。
@@ -109,7 +112,8 @@ has_line_breaking_bytes() {
     [[ "$bad" != "0" ]]
 }
 
-# ファイルが NUL を含むかを見る。含めば 1 を返す。
+# ファイルが NUL を含むかを見る。**含めば真（終了ステータス 0）を返す。**
+# 呼び出し側は `has_nul_byte "$f" && reject ...` の形で使う。
 #
 # **NUL は iconv では弾けない。** UTF-8 として妥当なバイトだからである。しかし bash の
 # コマンド置換（`$(cat ...)`）は NUL を**黙って捨てる**ので、`-f` / `-c` / `--prev` から
@@ -702,7 +706,10 @@ is_valid_utf8_file "$OUT_DIR/prompt.txt" \
 # している）。根拠のない閾値を配布物に焼くと、正当な大きい入力を落とす。
 
 # --- プロンプトサイズ警告 ---
-PROMPT_BYTES=$(echo "$PROMPT" | wc -c | tr -d ' ')
+# **保存したファイルを測る。** `echo "$PROMPT"` だとプロンプトがちょうど `-n` のとき
+# echo がそれをオプションと解釈して 0 バイトと誤計測する（保存側は printf に直したが、
+# ここが echo のまま残っていた）。レーンへ渡るのはこのファイルの内容なので、対象としても正確。
+PROMPT_BYTES=$(wc -c < "$OUT_DIR/prompt.txt" | tr -d ' ')
 if (( PROMPT_BYTES > 50000 )); then
     echo "Warning: プロンプトサイズが ${PROMPT_BYTES} bytes（>50KB）です。タイムアウトやアンカリングの原因になります。-w の使用を検討してください。" >&2
 fi

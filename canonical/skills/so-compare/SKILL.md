@@ -32,7 +32,11 @@ so-compare [OPTIONS] "プロンプト"
 | `2` | 全プロバイダ失敗（**起動はした**） |
 | `4` | **入力を拒否した（レーンを1本も起動していない）** |
 
-**`4` の理由は stderr に型で出る。** 利用者の入力の誤りは `invalid:<種別>`（`not-found` / `not-a-file` / `not-readable` / `not-a-directory` / `empty` / `not-utf8` / `not-a-number` / `bad-value` / `missing-argument` / `ambiguous-args` / `unknown-option`）、環境に足りないものは `unavailable:<コマンド>` である。
+**`4` の理由は stderr に型で出る。** 利用者の入力の誤りは `invalid:<種別>` で、次の14種である。
+
+`ambiguous-args` / `bad-value` / `contains-nul` / `control-character` / `empty` / `missing-argument` / `not-a-directory` / `not-a-file` / `not-a-number` / `not-found` / `not-readable` / `not-utf8` / `not-writable` / `unknown-option`
+
+環境に足りないものは `unavailable:<コマンド>` である（`perl` / `timeout` / `mktemp` / `codex` / `claude-safe` / `agent`）。
 
 - **`3` は使っていない。** `oe-refute` / `oe-review` が反証（`refuted`）に割り当てているためで、**入力の不備が「設計が反証された」として上位に届かない**ようにしてある。
 - **呼び方の誤りも `4` である。** 以前は `1` を返しており、「呼び方を間違えた」と「一部だけ返った」が同じ値だった。
