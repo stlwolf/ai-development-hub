@@ -164,8 +164,10 @@ SO_RETRY_TIMEOUT_FACTOR=1.5
 # なお非数値（`abc` 等）は timeout(1) が exit 125 で即座に落ち、classify_result が
 # timeout_empty とみなすのは exit 124 だけなので、リトライにも awk にも届かない。
 for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
-    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]*$ ]]; then
-        reject "invalid:not-a-number" "${_t_var}" "正の整数（秒）で指定してください: ${!_t_var}"
+    # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
+    # 桁あふれし、**受理したのに意味が変わる**（実装SO の指摘・#303 の M-1 でも同じ形を踏んだ）。
+    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+        reject "invalid:not-a-number" "${_t_var}" "1〜999999999 の整数（秒）で指定してください: ${!_t_var}"
     fi
 done
 unset _t_var
@@ -369,7 +371,18 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -)
-            PROMPT=$(cat)
+            # **stdin も NUL で変質する。** `$(cat)` は NUL を黙って落とすので、-f / -c / --prev と
+            # 同じ検査が要る。ストリームなので一度ファイルへ落としてから見る（実装SO の3周目の指摘）。
+            _stdin_tmp="$(mktemp "${TMPDIR:-/tmp}/so-stdin.XXXXXX")" \
+                || reject "unavailable:mktemp" "stdin" "一時ファイルを作れません"
+            cat > "$_stdin_tmp"
+            if has_nul_byte "$_stdin_tmp"; then
+                rm -f "$_stdin_tmp"
+                reject "invalid:contains-nul" "stdin" "NUL バイトを含みます（読み込みで黙って落ちます）"
+            fi
+            PROMPT=$(cat "$_stdin_tmp")
+            rm -f "$_stdin_tmp"
+            unset _stdin_tmp
             shift
             ;;
         -*)
@@ -439,8 +452,9 @@ if [[ -n "$OUT_DIR" ]]; then
 fi
 
 # 数値の環境変数（SO_TIMEOUT 系は入口で見ているので、残りをここで揃える）。
-if [[ -n "${PREV_MAX_BYTES:-}" && ! "${PREV_MAX_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
-    reject "invalid:not-a-number" "PREV_MAX_BYTES" "正の整数（バイト）で指定してください: ${PREV_MAX_BYTES}"
+# 桁も縛る（上の SO_TIMEOUT 系と同じ理由。受理したのに算術で意味が変わる形を作らない）。
+if [[ -n "${PREV_MAX_BYTES:-}" && ! "${PREV_MAX_BYTES}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    reject "invalid:not-a-number" "PREV_MAX_BYTES" "1〜999999999 の整数（バイト）で指定してください: ${PREV_MAX_BYTES}"
 fi
 
 if [[ -z "$PROMPT" ]]; then

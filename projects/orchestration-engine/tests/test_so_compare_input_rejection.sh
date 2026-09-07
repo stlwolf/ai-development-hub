@@ -196,5 +196,30 @@ else
   echo "  FAIL: 順序が逆（guard=${GUARD_LINE} check=${CHECK_LINE}）"; FAIL=$((FAIL+1))
 fi
 
+echo "[18] gate 4 3周目の指摘: stdin の NUL も読む前に弾く"
+OUT="$(printf 'head\000tail\n' | "$SO" --codex-only -o "$_TMP/o40" - 2>&1)"; RC=$?
+ck  "stdin に NUL = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:contains-nul stdin"
+# NUL の無い stdin は今までどおり通る（陽性対照）
+OUT="$(printf '問い\n' | PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o41" - 2>&1)"; RC=$?
+ck  "NUL なしの stdin は通る" "0" "$RC"
+ckc "本文が保存されている" "$(cat "$_TMP/o41/prompt.txt" 2>/dev/null)" "問い"
+
+echo "[19] gate 4 3周目の指摘: 受理した数値が算術で意味を変えない"
+# 先頭ゼロは bash の算術で8進数として読まれ、head と算術で値が食い違う。
+run_reject env PREV_MAX_BYTES=08 "$SO" --codex-only -o "$_TMP/o42" "問い"
+ck  "先頭ゼロ = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:not-a-number PREV_MAX_BYTES"
+run_reject env PREV_MAX_BYTES=010 "$SO" --codex-only -o "$_TMP/o43" "問い"
+ck  "010 も拒否" "4" "$RC"
+# 桁あふれする値も拒否する（受理すると算術で負数になる）
+run_reject env PREV_MAX_BYTES=9223372036854775808 "$SO" --codex-only -o "$_TMP/o44" "問い"
+ck  "桁あふれ = exit 4" "4" "$RC"
+run_reject env SO_TIMEOUT=08 "$SO" --codex-only -o "$_TMP/o45" "問い"
+ck  "SO_TIMEOUT の先頭ゼロ = exit 4" "4" "$RC"
+run_reject env SO_TIMEOUT=9223372036854775808 "$SO" --codex-only -o "$_TMP/o46" "問い"
+ck  "SO_TIMEOUT の桁あふれ = exit 4" "4" "$RC"
+# 正当な値は通る（陽性対照）
+OUT="$(PATH="$STUB:$PATH" PREV_MAX_BYTES=4000 SO_TIMEOUT=120 "$SO" --codex-only -o "$_TMP/o47" "問い" 2>&1)"; RC=$?
+ck "正当な数値は通る" "0" "$RC"
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
