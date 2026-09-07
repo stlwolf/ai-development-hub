@@ -247,7 +247,7 @@ so-compare の claude レーンは `claude` を直接呼ばず `claude-safe` を
 - **昇格の判定**: 3件を1件ずつ frontmatter の `promotion` に置いた。うち1件は negative knowledge として同じ PR で収穫した。
 - **status 確定**: `stable` のまま据え置く（同じ issue の実行記録を追記している）。達成度は **達成**（観測点の修正・入れ子確認・対照・テスト固定・plan 書き戻しまで完了）。分類の契約は I-4 の範囲外で、そちらは未達のまま。
 - **evidence anchor**: `.oe/` の報告に頼らず、M-3 の要点と I-4 の実測値を plan（§7.5 / §I-4 / §12.6）へ転記した。M-3 が指摘した「committed だけでは再計算できない」穴も §2 で塞いだ。
-- **SO 証跡**: gate 4 の結果は PR 本文に記す。
+- **SO 証跡**: gate 4 は弱2レーンで2周。1周目は audit `20260907144034E2KJVSZTFVZH`（codex が時間切れで返らず保守側に倒れて `refuted`・cursor は `survived`）、2周目は audit `202609071456149SEK69RRM017`（`SO_TIMEOUT=900` に上げて両レーン `survived`）。1周目の cursor が挙げた実在のギャップ1件（`cli_version` の検査が1箇所にしかない）は `0799a2f` で塞いだ。Copilot の指摘1件（その検査が meta 0件で空振りする）は `81ed2ac` で塞ぎ、全スレッドに返信した。内訳と正直に書いた限界は PR #384 の本文にある。
 - **観測の書き戻し**: 注入された item は `01M00KCCHNMFPHP5HAGX2DZ1MK`（陽性対照は理由まで見る）。観測を1レコード足した。
 
 ### 事実・失敗
