@@ -1,0 +1,9 @@
+tool=codex
+model_requested=default
+model_resolved=gpt-5.6-sol
+model_resolved_source=config
+exit_code=124
+timeout_status=timeout_empty
+elapsed_seconds=480
+stdout_lines=0
+stdout_bytes=0

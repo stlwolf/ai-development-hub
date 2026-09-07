@@ -8,7 +8,11 @@ prediction: "プロンプトが短いレーンほど空返しになる。プロ�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-28-episode-327-session-model-ctx.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-07
+    ref: "#303"
+    state: followed
+    note: "SO へ渡す claim を、材料を読ませない自己完結の要約として書いた。冒頭に「この文書の中で完結している。ファイルを開きに行く必要はない」と明記し、証拠の表と文言を全部インラインした。上限も 480 秒へ上げた。結果として設計SO の3レーンとも attempt 1 で実返却し、空返しは1本も出ていない。ただし plan の側では時間切れの判定に読ませた量を併記する設計をしておらず、この item の後半は使えていない"
 exclusions:
   - "材料をプロンプトに全文インラインできる場合（claim doc を渡す設計SO 等）。読みに行く必要がないので既定の上限で足りる"
   - "レーンが1本でよい確認（軽い相談・方向性の確認）。合意の担保が要らない場合は空返しの損失が小さい"
