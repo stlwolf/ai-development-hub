@@ -48,9 +48,100 @@ Environment:
 Exit codes:
   0  全プロバイダ成功
   1  部分成功（一部のプロバイダのみ応答）
-  2  全プロバイダ失敗
+  2  全プロバイダ失敗（起動はした）
+  4  入力を拒否した（レーンを1本も起動していない）
+
+  4 の理由は stderr に型で出る。invalid:<種別> は利用者の入力の誤りで、
+  次の14種である。ambiguous-args / bad-value / contains-nul /
+  control-character / empty / missing-argument / not-a-directory /
+  not-a-file / not-a-number / not-found / not-readable / not-utf8 /
+  not-writable / unknown-option。
+  unavailable:<コマンド> は環境に足りないもの（perl / timeout / mktemp /
+  codex / claude-safe / agent）。
+  3 を使わないのは oe-refute / oe-review が反証（refuted）に割り当てて
+  いるためで、入力の不備が「設計が反証された」として上位に届かない
+  ようにしている。
 USAGE
 }
+
+# --- 入力の拒否（#344） ---
+#
+# **レーンへ渡す前に、入力の妥当性を型付きの理由で拒否する。** これまでは不正な入力もそのまま
+# 渡し、CLI 側で落ちるのを待っていた。落ち方は CLI ごとに違い、**1レーンだけが静かに死ぬ**形に
+# なりうる。実際 #340 では `--prev` の切り詰めが作った不正な UTF-8 で codex が exit 2 で即死し、
+# 3レーンで計画した検証が2レーンで進んだ。**「返らなかったレーンがあること」も「その原因」も
+# 消費者に届いていなかった。**
+#
+# 型は2つの接頭辞に分ける。**利用者の入力の誤り**は `invalid:`、**環境に足りないもの**は
+# `unavailable:` である。どちらも「レーンを1本も起動していない」点では同じなので終了コードは
+# 同じにし、どちらなのかは stderr の型で分ける。
+#
+# 終了コードを **4** にしたのは、**3 が使えない**からである。`oe-refute` / `oe-review` は
+# 反証（`refuted`）に exit 3 を割り当てている（`lib/so-verdict.sh` の `so_verdict_exit`）。
+# 入力の拒否に 3 を使うと、**入力の不備が「設計が反証された」として上位に届く**。
+#
+# あわせて、これまで入力の誤りに使っていた `exit 1` もここへ寄せる。1 は「部分成功（一部の
+# プロバイダのみ応答）」の番号で、**「呼び方を間違えた」と「一部だけ返った」が同じ値だった。**
+EXIT_INPUT_REJECTED=4
+
+# reject <型> <文脈> [<詳細>]
+#   型は invalid:<種別> または unavailable:<コマンド>。文脈は経路（-c / -f / -w / --prev / 環境変数名）。
+reject() {
+    local kind="$1" where="$2" detail="${3:-}"
+    if [[ -n "$detail" ]]; then
+        echo "Error: ${kind} ${where}: ${detail}" >&2
+    else
+        echo "Error: ${kind} ${where}" >&2
+    fi
+    exit "$EXIT_INPUT_REJECTED"
+}
+
+# 値が meta の行を壊すバイトを含むかを見る。含めば 0 を返す（＝壊す）。
+#
+# meta は 1 行 1 組の `key=value` である。**モデル名やエフォートは環境変数とフラグから来る
+# 素の値のまま `model_requested=` に書かれる**ので、改行が入ると行が割れ、**偽のキーが
+# meta に混入する**（`SO_CURSOR_MODEL=$'a\nb=c'` で `model_requested=a` と `b=c` の2行になる。
+# 実機で再現した）。読む側は `key=value` の形しか見ないので、混入に気づけない。
+#
+# 拒否するのは**行を壊すバイトだけ**にする。`cli_version_for()` が同じ理由で採っている
+# denylist の考え方で、許可リストを列挙すると実在する値を落とす。`=` は許す
+# （読む側は `cut -d= -f2-` で取るため）。
+has_line_breaking_bytes() {
+    local v="$1" bad
+    bad="$(printf '%s' "$v" | LC_ALL=C tr -d '\040-\176\200-\377' | wc -c | tr -d ' ')"
+    [[ "$bad" != "0" ]]
+}
+
+# ファイルが NUL を含むかを見る。**含めば真（終了ステータス 0）を返す。**
+# 呼び出し側は `has_nul_byte "$f" && reject ...` の形で使う。
+#
+# **NUL は iconv では弾けない。** UTF-8 として妥当なバイトだからである。しかし bash の
+# コマンド置換（`$(cat ...)`）は NUL を**黙って捨てる**ので、`-f` / `-c` / `--prev` から
+# 読んだ内容が変質し、**レーンには元と違う本文が渡る**。最後の網は変質後の prompt.txt を
+# 見るので素通りする（実装SO の2周目の指摘）。読んだ時点で弾くしかない。
+has_nul_byte() {
+    local f="$1" a b
+    a="$(wc -c < "$f" | tr -d ' ')"
+    b="$(LC_ALL=C tr -d '\000' < "$f" | wc -c | tr -d ' ')"
+    [[ "$a" != "$b" ]]
+}
+
+# ファイルが UTF-8 として妥当かを見る。妥当でなければ 1 を返す。
+#
+# **iconv を検証器に使わない。macOS の iconv は妥当なファイルを不正と判定する。**
+# 実測（同じ本文の先頭に 0〜5 バイトの詰め物を足しただけ）:
+#   pad=0 4972B NG / pad=1 4973B NG / pad=2 4974B OK / pad=3 4975B NG / pad=4 4976B NG / pad=5 4977B OK
+# 内容ではなく**バイトの位置**で結果が変わる（内部バッファの境界に多バイト文字が跨ると
+# `iconv(): Inappropriate ioctl for device` で落ちる）。**レビュー級のプロンプトはこの大きさに
+# 入るので、これを検証器にすると SO のゲートが正当な入力で止まる。** 陽性対照の組を足した
+# ときに実際に落ちて分かった（統括指示で追加した組・実装SO ではなく陽性対照が捕まえた）。
+#
+# perl は macOS にも主要な Linux にも標準で入っており、`utf8::decode` が仕様どおりに判定する。
+is_valid_utf8_file() {
+    local f="$1"
+    perl -e '''open my $fh, "<:raw", $ARGV[0] or exit 2; local $/; my $d = <$fh> // ""; exit(utf8::decode($d) ? 0 : 1)''' "$f"
+}
+
 
 # --- 設定 ---
 CODEX_CMD="codex"
@@ -66,6 +157,8 @@ RUN_CODEX=true
 RUN_CLAUDE=true
 RUN_CURSOR=false
 PROVIDERS_RAW=""
+PROMPT_FILE=""
+PROMPT_FROM_STDIN=false
 WITH_SPECIFIED=false
 LEGACY_PROVIDER_FLAG=false
 CLAUDE_WEB=false
@@ -100,13 +193,6 @@ SO_RETRY_TIMEOUT_FACTOR=1.5
 #     クラッシュせず黙ってリトライ秒数が化けるので、こちらのほうが質が悪い。
 # なお非数値（`abc` 等）は timeout(1) が exit 125 で即座に落ち、classify_result が
 # timeout_empty とみなすのは exit 124 だけなので、リトライにも awk にも届かない。
-for _t_var in SO_TIMEOUT SO_CLAUDE_TIMEOUT; do
-    if [[ ! "${!_t_var}" =~ ^[1-9][0-9]*$ ]]; then
-        echo "Error: ${_t_var} は正の整数（秒）で指定してください: ${!_t_var}" >&2
-        exit 1
-    fi
-done
-unset _t_var
 
 # レーンごとの基準タイムアウト。リトライ時間の算出にも使う。
 base_timeout_for() {
@@ -145,8 +231,7 @@ fi
 # --- 引数解析 ---
 require_arg() {
     if [[ $# -lt 2 || "$2" =~ ^- ]]; then
-        echo "Error: $1 にはアーギュメントが必要です" >&2
-        exit 1
+        reject "invalid:missing-argument" "$1" "アーギュメントが必要です"
     fi
 }
 
@@ -169,14 +254,12 @@ apply_providers() {
     for raw in "${parts[@]}"; do
         p=$(trim_ws "$raw")
         if [[ -z "$p" ]]; then
-            echo "Error: --with のプロバイダリストに空要素があります" >&2
-            exit 1
+            reject "invalid:bad-value" "--with" "プロバイダリストに空要素があります"
         fi
         if [[ ${#seen[@]} -gt 0 ]]; then
             for s in "${seen[@]}"; do
                 if [[ "$s" == "$p" ]]; then
-                    echo "Error: プロバイダが重複しています: $p" >&2
-                    exit 1
+                    reject "invalid:bad-value" "--with" "プロバイダが重複しています: $p"
                 fi
             done
         fi
@@ -186,14 +269,12 @@ apply_providers() {
             claude) RUN_CLAUDE=true ;;
             cursor) RUN_CURSOR=true ;;
             *)
-                echo "Error: 未知のプロバイダ: ${p} (codex / claude / cursor を指定)" >&2
-                exit 1
+                reject "invalid:bad-value" "--with" "未知のプロバイダ: ${p}（codex / claude / cursor を指定）"
                 ;;
         esac
     done
     if [[ ${#seen[@]} -eq 0 ]]; then
-        echo "Error: --with に有効なプロバイダが指定されていません" >&2
-        exit 1
+        reject "invalid:bad-value" "--with" "有効なプロバイダが指定されていません"
     fi
 }
 
@@ -210,15 +291,22 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -f)
             require_arg "$1" "${2:-}"
-            PROMPT=$(cat "$2")
+            # **ここでは読まない。** 入力の検査は1箇所（下記「入力の検査」節）へ集めてある。
+            PROMPT_FILE="$2"
             shift 2
             ;;
         -c)
             shift
+            _c_taken=0
             while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
                 CONTEXT_FILES+=("$1")
+                _c_taken=$(( _c_taken + 1 ))
                 shift
             done
+            # **1件も取らなかった形を拒否する。** `so-compare '問い' -c --codex-only` のように
+            # 次がオプションだと -c は何も取らず、**検査を素通りしてレーンが起動していた**（#344）。
+            (( _c_taken > 0 )) || reject "invalid:missing-argument" "-c" "コンテキストファイルが1件も指定されていません"
+            unset _c_taken
             ;;
         -w)
             require_arg "$1" "${2:-}"
@@ -299,13 +387,13 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -)
-            PROMPT=$(cat)
+            # **ここでは読まない。** 入力の検査は1箇所（下記「入力の検査」節）へ集めてある。
+            PROMPT_FROM_STDIN=true
             shift
             ;;
         -*)
-            echo "Unknown option: $1" >&2
             usage >&2
-            exit 1
+            reject "invalid:unknown-option" "$1" "知らないオプションです"
             ;;
         *)
             PROMPT="$1"
@@ -314,47 +402,175 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$PROMPT" ]]; then
-    echo "Error: プロンプトが指定されていません" >&2
-    echo "" >&2
-    usage >&2
-    exit 1
-fi
-
 if $LEGACY_PROVIDER_FLAG && $WITH_SPECIFIED; then
-    echo "Error: --with は --codex-only / --claude-only / --cursor-only / --cursor と併用できません" >&2
-    exit 1
+    reject "invalid:bad-value" "--with" "--codex-only / --claude-only / --cursor-only / --cursor と併用できません"
 fi
 
 if $WITH_SPECIFIED; then
     if [[ -z "$PROVIDERS_RAW" ]]; then
-        echo "Error: --with にはプロバイダリストが必要です (例: codex,cursor)" >&2
-        exit 1
+        reject "invalid:missing-argument" "--with" "プロバイダリストが必要です（例: codex,cursor）"
     fi
     apply_providers
 fi
 
 if ! $RUN_CODEX && ! $RUN_CLAUDE && ! $RUN_CURSOR; then
-    echo "Error: 実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）" >&2
-    exit 1
+    reject "invalid:bad-value" "プロバイダ指定" "実行対象のプロバイダがありません（--codex-only と --claude-only の同時指定等）"
+fi
+
+# =============================================================================
+# 入力の検査（#344）— **1箇所に集め、回すレーンの入力だけを見る**
+# =============================================================================
+#
+# **なぜ1箇所なのか。** 検査を散らばらせていたとき、「回さないレーンの入力まで見て落とす」
+# 欠陥を**7回**作った（`--prev` の全損 / 非アクティブなレーンの `--prev` / iconv の順序 /
+# モデル名 / その検査の位置 / エフォート / タイムアウト）。原因は毎回同じで、**検査を書いた
+# 位置が、その検査が使う値（どのレーンを回すか）の確定より前だった**ことである。個別に直すと
+# 同じ形が別の場所で出る。**位置で構造的に塞ぐ。**
+#
+# **この節より前で入力を読まない。** `-f` と stdin は引数解析では読まず、ここまで持ち越す。
+# 引数解析に残してあるのは**argv の形の検査だけ**である（引数の欠落・`-c` が1件も取らない・
+# 未知のオプション・`--with` の値）。あれらは「どのレーンを回すか」に依存しない。
+#
+# 基準は「**その入力の権威がどこにあるか**」である。**利用者が明示的に指定したもの**
+# （`-c` / `-f` / `-w`）は拒否する。黙って削ると、削られた前提でレーンが答えるからである。
+# **ツールが自分で作った参考情報**（`--prev` の切り詰め）は修復してよい（#340 の owner 裁定）。
+# ただし全損したときは拒否に倒す。
+
+# --- (1) 検証器の前提（検査より前に置く） ---
+# 不在のまま検査へ進むと command-not-found が `invalid:not-utf8` に化け、**妥当なファイルを
+# 不正と判定する**（実装SO の2周目の指摘）。
+# **iconv は検証器に使わない。** macOS の iconv はバイトの位置で妥当な UTF-8 を不正と判定する
+# （詰め物1バイトで NG/NG/OK/NG/NG/OK。episode の「macOS の iconv」節）。
+command -v perl &>/dev/null \
+    || reject "unavailable:perl" "環境" "入力が UTF-8 として妥当かを見るのに perl を使います（macOS の iconv は妥当な入力を不正と判定するため使えません）"
+
+# --- (2) 回すレーンの設定値だけを見る ---
+# **回さないレーンの設定は、どんな値でも exit に影響しない。** これは性質としてテストに固定
+# してある（`test_so_compare_input_rejection.sh` の「非アクティブ側に不正値を全部入れて通る」）。
+_lane_vars=()
+$RUN_CODEX  && _lane_vars+=(CODEX_MODEL SANDBOX_MODE SO_TIMEOUT)
+$RUN_CURSOR && _lane_vars+=(CURSOR_MODEL SO_TIMEOUT)
+$RUN_CLAUDE && _lane_vars+=(CLAUDE_MODEL CLAUDE_EFFORT SO_CLAUDE_TIMEOUT)
+for _lv in ${_lane_vars[@]+"${_lane_vars[@]}"}; do
+    _lval="${!_lv}"
+    [[ -n "$_lval" ]] || continue
+    case "$_lv" in
+        SO_TIMEOUT|SO_CLAUDE_TIMEOUT)
+            # 桁も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で
+            # 負数へ桁あふれし、**受理したのに意味が変わる**。
+            [[ "$_lval" =~ ^[1-9][0-9]{0,8}$ ]] \
+                || reject "invalid:not-a-number" "$_lv" "1〜999999999 の整数（秒）で指定してください: $_lval"
+            ;;
+        CLAUDE_EFFORT)
+            # **こちらが usage に列挙している値**なので渡す前に見る。
+            [[ "$_lval" =~ ^(low|medium|high|xhigh|max)$ ]] \
+                || reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $_lval"
+            ;;
+        *)
+            # モデル名と sandbox モードは**相手の CLI が持つ語彙**なので値域は列挙しない
+            # （列挙すると CLI 側が増やした値を落とす）。見るのは meta とレーンの引数を
+            # 壊すかどうかだけである。
+            has_line_breaking_bytes "$_lval" \
+                && reject "invalid:control-character" "$_lv" "行を壊すバイト（改行・タブ・制御文字）を含みます"
+            _lv_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
+                || reject "unavailable:mktemp" "$_lv" "一時ファイルを作れません"
+            printf '%s' "$_lval" > "$_lv_tmp"
+            if ! is_valid_utf8_file "$_lv_tmp"; then
+                rm -f "$_lv_tmp"
+                reject "invalid:not-utf8" "$_lv" "UTF-8 として妥当ではありません"
+            fi
+            rm -f "$_lv_tmp"
+            ;;
+    esac
+done
+unset _lv _lval _lv_tmp _lane_vars
+
+# --- (3) プロンプトの取り込み（ここで初めて読む） ---
+if [[ -n "$PROMPT_FILE" ]]; then
+    [[ -e "$PROMPT_FILE" ]] || reject "invalid:not-found" "-f" "$PROMPT_FILE"
+    [[ -f "$PROMPT_FILE" ]] || reject "invalid:not-a-file" "-f" "通常ファイルではありません: $PROMPT_FILE"
+    [[ -r "$PROMPT_FILE" ]] || reject "invalid:not-readable" "-f" "読めません: $PROMPT_FILE"
+    # NUL はコマンド置換で黙って落ちるので、読む前に弾く。
+    has_nul_byte "$PROMPT_FILE" && reject "invalid:contains-nul" "-f" "NUL バイトを含みます（読み込みで黙って落ちます）: $PROMPT_FILE"
+    PROMPT=$(cat "$PROMPT_FILE")
+fi
+if $PROMPT_FROM_STDIN; then
+    # ストリームなので一度ファイルへ落としてから見る。
+    _stdin_tmp="$(mktemp "${TMPDIR:-/tmp}/so-stdin.XXXXXX")" \
+        || reject "unavailable:mktemp" "stdin" "一時ファイルを作れません"
+    cat > "$_stdin_tmp"
+    if has_nul_byte "$_stdin_tmp"; then
+        rm -f "$_stdin_tmp"
+        reject "invalid:contains-nul" "stdin" "NUL バイトを含みます（読み込みで黙って落ちます）"
+    fi
+    PROMPT=$(cat "$_stdin_tmp")
+    rm -f "$_stdin_tmp"
+    unset _stdin_tmp
+fi
+
+# --- (4) 明示指定されたファイル・パス ---
+# `-c` は「ハイフンで始まらない引数」を全部食う。`so-compare -c a.md "問い"` と書くと問いが
+# コンテキストファイル扱いになり、プロンプト無しで終わる。**この形を先に名指しする。**
+if [[ -z "$PROMPT" && ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    reject "invalid:ambiguous-args" "-c" "-c がプロンプトを取り込んだ可能性があります（-c はハイフンで始まらない引数を全部取ります）。プロンプトを -c より前に置くか、-f でファイルから渡してください: ${CONTEXT_FILES[*]}"
+fi
+if [[ ${#CONTEXT_FILES[@]} -gt 0 ]]; then
+    for _cf in "${CONTEXT_FILES[@]}"; do
+        [[ -e "$_cf" ]] || reject "invalid:not-found" "-c" "$_cf"
+        [[ -f "$_cf" ]] || reject "invalid:not-a-file" "-c" "通常ファイルではありません: $_cf"
+        [[ -r "$_cf" ]] || reject "invalid:not-readable" "-c" "読めません: $_cf"
+        [[ -s "$_cf" ]] || reject "invalid:empty" "-c" "中身が空です: $_cf"
+        has_nul_byte "$_cf" && reject "invalid:contains-nul" "-c" "NUL バイトを含みます（読み込みで黙って落ちます）: $_cf"
+        is_valid_utf8_file "$_cf" \
+            || reject "invalid:not-utf8" "-c" "UTF-8 として妥当ではありません: $_cf"
+    done
+    unset _cf
+fi
+
+# `-w` はプロンプト本文にパスとして載り、各 CLI へも別経路で渡る。不在なら参照先が無い。
+if [[ -n "$WORKSPACE" ]]; then
+    [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
+    [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
+fi
+
+# `-o` の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる。**
+if [[ -n "$OUT_DIR" ]]; then
+    if [[ -e "$OUT_DIR" && ! -d "$OUT_DIR" ]]; then
+        reject "invalid:not-a-directory" "-o" "ディレクトリではありません: $OUT_DIR"
+    fi
+    if [[ -d "$OUT_DIR" && ! -w "$OUT_DIR" ]]; then
+        reject "invalid:not-writable" "-o" "書き込めません: $OUT_DIR"
+    fi
+    if [[ ! -e "$OUT_DIR" ]]; then
+        mkdir -p "$OUT_DIR" 2>/dev/null \
+            || reject "invalid:not-writable" "-o" "作れません: $OUT_DIR"
+    fi
+fi
+
+# --- (5) レーンに依らない数値 ---
+if [[ -n "${PREV_MAX_BYTES:-}" && ! "${PREV_MAX_BYTES}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    reject "invalid:not-a-number" "PREV_MAX_BYTES" "1〜999999999 の整数（バイト）で指定してください: ${PREV_MAX_BYTES}"
+fi
+
+# --- (6) 本文が在るか ---
+if [[ -z "$PROMPT" ]]; then
+    echo "" >&2
+    usage >&2
+    reject "invalid:empty" "プロンプト" "指定されていません"
 fi
 
 # --- コマンド存在チェック ---
 if ! command -v timeout &>/dev/null; then
-    echo "Error: timeout コマンドが見つかりません。macOS の場合: brew install coreutils" >&2
-    exit 1
+    reject "unavailable:timeout" "環境" "macOS の場合: brew install coreutils"
 fi
 if $RUN_CODEX && ! command -v "$CODEX_CMD" &>/dev/null; then
-    echo "Error: $CODEX_CMD が見つかりません。--claude-only で Claude のみ実行できます。" >&2
-    exit 1
+    reject "unavailable:${CODEX_CMD}" "環境" "--claude-only で Claude のみ実行できます"
 fi
 if $RUN_CLAUDE && ! command -v "$CLAUDE_CMD" &>/dev/null; then
-    echo "Error: $CLAUDE_CMD が見つかりません。--codex-only で Codex のみ実行できます。" >&2
-    exit 1
+    reject "unavailable:${CLAUDE_CMD}" "環境" "--codex-only で Codex のみ実行できます"
 fi
 if $RUN_CURSOR && ! command -v "$CURSOR_CMD" &>/dev/null; then
-    echo "Error: $CURSOR_CMD が見つかりません。--cursor を外すか、agent CLI をインストールしてください。" >&2
-    exit 1
+    reject "unavailable:${CURSOR_CMD}" "環境" "--cursor を外すか、agent CLI をインストールしてください"
 fi
 
 # claude の解決後モデル記録（#295）は --output-format json と jq に依存する。
@@ -391,7 +607,13 @@ if [[ -n "$PREV_DIR" ]]; then
         echo "Warning: 前回の出力ディレクトリが見つかりません: $PREV_DIR" >&2
     else
         PROMPT="${PROMPT}"$'\n\n--- 前回のレビュー回答（参考） ---'
-        for tool in codex claude cursor; do
+        # **アクティブなレーンの前回出力だけを見る。** 全レーンを回すと `--claude-only` のような
+        # 正当なサブセット再実行が、**今回使わないレーンの壊れた前回出力に足を取られる**（#344）。
+        _prev_tools=()
+        $RUN_CODEX  && _prev_tools+=(codex)
+        $RUN_CLAUDE && _prev_tools+=(claude)
+        $RUN_CURSOR && _prev_tools+=(cursor)
+        for tool in ${_prev_tools[@]+"${_prev_tools[@]}"}; do
             prev_file="$PREV_DIR/${tool}-stdout.txt"
             if [[ -f "$prev_file" && -s "$prev_file" ]]; then
                 # #340: head -c はバイト境界で切るので、日本語（3バイト文字）の途中で切れると
@@ -401,10 +623,12 @@ if [[ -n "$PREV_DIR" ]]; then
                 # iconv は上限未満の前回出力にも走るので、切断由来でない不正（前回の
                 # レーンが壊れた出力を残した等）も健全化される。これは意図した副次効果として
                 # 受け入れているため、存在確認も「非空の --prev」全体に掛かる。
-                if ! command -v iconv &>/dev/null; then
-                    echo "Error: iconv が見つかりません。--prev は前回出力の UTF-8 健全化に iconv を使います: $prev_file" >&2
-                    exit 1
-                fi
+                # 通常ファイルで読めることを先に見る。見ないと `head` が落ちて
+                # **レーン未起動のまま exit 1** になる（実装SO の4周目の指摘）。
+                [[ -L "$prev_file" ]] && reject "invalid:not-a-file" "--prev" "symlink です: $prev_file"
+                [[ -f "$prev_file" ]] || reject "invalid:not-a-file" "--prev" "通常ファイルではありません: $prev_file"
+                [[ -r "$prev_file" ]] || reject "invalid:not-readable" "--prev" "読めません: $prev_file"
+                has_nul_byte "$prev_file" && reject "invalid:contains-nul" "--prev" "NUL バイトを含みます（読み込みで黙って落ちます）: $prev_file"
                 prev_raw=$(head -c "$PREV_MAX_BYTES" "$prev_file")
                 # iconv は末尾が不完全な文字のとき rc=1 を返すが、出力は正しく不正バイトを
                 # 落としている。set -euo pipefail 下で落ちないよう rc を握り潰す（握り潰しが
@@ -416,12 +640,20 @@ if [[ -n "$PREV_DIR" ]]; then
                 # 出力の空 / 非空を「健全化が成功したか」の判定に使わない。上限が 1 文字の幅より
                 # 小さければ空になるのが正しく、部分出力して失敗する iconv は非空のまま通る。
                 # どちらも量でしか見えないので、量を必ず伝える形にしてある（下の注記と警告）。
-                if (( raw_bytes > 0 && prev_bytes == 0 )); then
+                # **自分で切り詰めていないときだけ拒否に倒す。** 上限が 1 文字の幅より小さいと
+                # こちらの切断が原因で全損になる（PREV_MAX_BYTES=1 に日本語で始まる妥当なファイル
+                # を渡すと起きる）。**自分の都合で正当な入力を拒否しない**（実装SO の指摘）。
+                if (( raw_bytes > 0 && prev_bytes == 0 && orig_size > PREV_MAX_BYTES )); then
+                    echo "Warning: 前回出力から妥当な UTF-8 が得られませんでした。PREV_MAX_BYTES (${PREV_MAX_BYTES}) が 1 文字の幅より小さい可能性があります: $prev_file" >&2
+                elif (( raw_bytes > 0 && prev_bytes == 0 )); then
                     # 妥当な UTF-8 が 1 バイトも残らなかった。原因は「前回出力自体が UTF-8 でない」
                     # 「上限が 1 文字の幅より小さい」「iconv の失敗」のいずれもありえ、出力からは
                     # 区別できないので原因を断定しない。切り詰め注記は付くが stderr には出ないため
                     # ここで伝える。
-                    echo "Warning: 前回出力から妥当な UTF-8 が得られませんでした（前回出力が UTF-8 でない / 上限が小さすぎる / iconv の失敗のいずれか）: $prev_file" >&2
+                    # **全損は拒否に倒す。** 参考情報だから修復してよい、という基準は
+                    # 「削っても本題が残る」ことが前提である。1 バイトも残らないなら本題ごと
+                    # 消えているので、警告して続けると**空の参考情報を渡したことに気づけない**。
+                    reject "invalid:not-utf8" "--prev" "前回出力から妥当な UTF-8 が 1 バイトも得られませんでした（前回出力が UTF-8 でない / iconv の失敗のいずれか）: $prev_file"
                 elif (( orig_size <= PREV_MAX_BYTES && prev_bytes < raw_bytes )); then
                     # 切り詰めが起きていないのに短くなったのなら、前回出力そのものが
                     # 不正な UTF-8 だったということ。注記が付かない経路なので警告で伝える。
@@ -444,13 +676,40 @@ fi
 if [[ -z "$OUT_DIR" ]]; then
     OUT_DIR="tmp/so-$(date +%Y%m%d-%H%M%S)"
 fi
-mkdir -p "$OUT_DIR"
+# 既定の出力先も失敗を拾う。拾わないと書けない cwd で **レーン未起動のまま exit 1** になり、
+# 「1＝部分成功」と衝突する（実装SO の4周目の指摘）。
+mkdir -p "$OUT_DIR" 2>/dev/null \
+    || reject "invalid:not-writable" "-o" "出力ディレクトリを作れません: $OUT_DIR"
 
 # --- プロンプト保存 ---
-echo "$PROMPT" > "$OUT_DIR/prompt.txt"
+# **`echo` を使わない。** プロンプトがちょうど `-n` だと echo がそれをオプションと解釈して
+# **空のファイル**を作り、最後の UTF-8 の網も空を正常として通す（実装SO の4周目の指摘）。
+printf '%s\n' "$PROMPT" > "$OUT_DIR/prompt.txt" \
+    || reject "invalid:not-writable" "-o" "プロンプトを書けません: $OUT_DIR/prompt.txt"
+
+# --- 最後の網（#344・組み立て完了時点） ---
+#
+# 経路ごとの検査を通り抜けたものを、ここでもう一度だけ見る。**1箇所にまとめないのは、
+# 組み立て後には「どの経路の不正か」が復元できない**からである（-c の不在は本文に載らないので
+# 消えるし、-w はパスとして本文に溶ける）。経路名を型に載せるには経路の側で見るしかない。
+# ここが見るのは「最終的に渡る本文が UTF-8 として妥当か」だけである。
+#
+# **保存したファイルを見る（パイプで渡さない）。** macOS の iconv はパイプから読ませると
+# `iconv(): Inappropriate ioctl for device` で落ちることがあり、**妥当な本文を不正と判定した**
+# （実装中に踏んだ）。ここで見るのは実際にレーンへ渡る本文そのものなので、保存後に見るほうが
+# 対象としても正確である。
+is_valid_utf8_file "$OUT_DIR/prompt.txt" \
+    || reject "invalid:not-utf8" "プロンプト" "組み立て後の本文が UTF-8 として妥当ではありません: $OUT_DIR/prompt.txt"
+
+# 上限バイト数での拒否は入れていない。現状は 50KB 超で警告するだけで、**拒否の閾値を決める
+# 根拠がまだ無い**（#303 の plan v2 §8 でも「過去のプロンプト長の分布を見てから決める」と
+# している）。根拠のない閾値を配布物に焼くと、正当な大きい入力を落とす。
 
 # --- プロンプトサイズ警告 ---
-PROMPT_BYTES=$(echo "$PROMPT" | wc -c | tr -d ' ')
+# **保存したファイルを測る。** `echo "$PROMPT"` だとプロンプトがちょうど `-n` のとき
+# echo がそれをオプションと解釈して 0 バイトと誤計測する（保存側は printf に直したが、
+# ここが echo のまま残っていた）。レーンへ渡るのはこのファイルの内容なので、対象としても正確。
+PROMPT_BYTES=$(wc -c < "$OUT_DIR/prompt.txt" | tr -d ' ')
 if (( PROMPT_BYTES > 50000 )); then
     echo "Warning: プロンプトサイズが ${PROMPT_BYTES} bytes（>50KB）です。タイムアウトやアンカリングの原因になります。-w の使用を検討してください。" >&2
 fi

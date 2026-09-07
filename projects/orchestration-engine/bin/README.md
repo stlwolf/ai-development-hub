@@ -49,6 +49,7 @@ oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
 - 出力（stdout JSON）: `{verdict, reason, rubric, lanes, dissent:[{lane,verdict,note}], output_dir, audit_id}`。`output_dir` は so-compare 生出力のパス（確定時証跡のアンカー用）、`audit_id` は ULID
 - 集約は **conservative**: 1 レーンでも material に refuted → 全体 refuted。全レーン survived のときのみ survived。verdict を取れないレーンは survived 扱いにせず `error` とし、dissent に記録した上で survived 確定を阻む（保守側）
 - exit: `survived`→0 / `refuted`→3（**Stage A は advisory**・JSON が正本）
+- **so-compare が入力を拒否したら（exit 4）ここで止める**（stderr に理由・exit 2）。通すと 0 レーンの出力から VERDICT が取れず、保守側の集約が `refuted` を作るため、**入力の不備が「設計が反証された」に化ける**（#344）
 - 最小 audit を `<OE_DATA_DIR|project>/audit/oe-refute.jsonl` に 1 行追記
 
 関連 lib: `session.sh`（`oe_generate_session_id`）。バックエンド: `so-compare`（`OE_REFUTE_SO_COMPARE` で実体を上書き可）
@@ -70,6 +71,7 @@ oe-review [--lanes N] [--base <ref>] [--context <doc>]
 - **diff 注入**: reviewed diff を反証プロンプトに注入（`OE_REVIEW_DIFF_MAX_BYTES`=既定 30000 以内なら inline、超過時は changed-files＋base ref＋「`git diff <base>...HEAD` をレビューせよ」指示で workspace フォールバック）
 - 集約は **conservative**（`oe-refute` と同様）: 1 レーンでも material な欠陥検出→全体 refuted。verdict を取れないレーンは `error` とし survived 確定を阻む
 - exit: `survived`→0 / `refuted`→3（**advisory**・JSON が正本）
+- **so-compare が入力を拒否したら（exit 4）ここで止める**（stderr に理由・exit 2）。通すと 0 レーンの出力から VERDICT が取れず、保守側の集約が `refuted` を作るため、**入力の不備が「設計が反証された」に化ける**（#344）
 - 最小 audit を `<OE_DATA_DIR|project>/audit/oe-review.jsonl` に 1 行追記
 - 限界: 「レーンが実 diff を読んだ」ことは機械検証できない（どの SO 経路でも同じ）。本 verb は stale 検知の binding を残すのが役割で、レビュー品質の保証は Copilot/人が担う
 
