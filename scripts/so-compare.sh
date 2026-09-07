@@ -526,6 +526,11 @@ write_meta_start() {
         echo "attempt=$attempt"
         echo "attempt_state=running"
         echo "timeout_limit_seconds=$tool_timeout"
+        # 版は**開始側にも書く**。ここに無いと、中断された実行（attempt_state=running のまま
+        # 残る記録）が版で層別できない。**中断された実行は失敗の記録そのもの**なので、
+        # 「失敗を版で分ける」という目的から見て、いちばん要る場所で欠けることになる（#303 の
+        # 実装SO が指摘）。完了側と同じ値を書くので、mv で差し替わっても値は変わらない。
+        echo "so_compare_version=$SO_COMPARE_VERSION"
     } | commit_meta "$tool"
 }
 
@@ -539,6 +544,28 @@ commit_meta() {
     cat > "$OUT_DIR/${tool}-meta.txt.tmp"
     mv "$OUT_DIR/${tool}-meta.txt.tmp" "$OUT_DIR/${tool}-meta.txt"
 }
+
+# --- so-compare 自身の版の記録（#303） ---
+#
+# **なぜ要るか。** レーンの meta には CLI の版（`cli_version`）が入るが、**so-compare 自身の版は
+# 入っていなかった。** そのため過去の出力を集めて分類すると、母集団に「すでに直った故障の残骸」と
+# 「いまも起きる故障」が混ざる。#303 の調査では収集期間中に so-compare が4回変わっており、うち
+# #296 は claude の stdout の意味そのものを変えていた。**その記録から決めた観測点が、いまの
+# 経路では当たらなかった。**
+#
+# **実行時にハッシュを計算しない。** 当初は「宣言した版は上げ忘れると嘘をつくので、スクリプト
+# 自身のバイト列のハッシュも書く」設計にしていた。しかし実装SO が4周かけて、その1行のために
+# **レーンを1本も起動しないうちに SO 全体が止まる経路**を次々と実証した（`pipefail` で落ちる /
+# 応答しない hasher で無期限に待つ / `timeout` は TERM を送るだけなので TERM を無視する hasher
+# には効かない / パイプ後段の `awk` は上限の外）。**塞ぐたびに同じ壁の次の割れ目が出た。**
+#
+# 根にあるのは「**由来を記録するためだけに、どのレーンも始まる前の critical path で外部コマンドを
+# 走らせている**」ことである。そこで**外部コマンドをやめた**。meta に書くのは宣言した版だけにする。
+#
+# **上げ忘れは別の層で捕まえる。** `tests/test_so_compare_version.sh` がこのファイルのハッシュを
+# 固定値と突き合わせ、中身が変わったのに宣言が据え置きなら落ちる。**検査を実行時からテスト時へ
+# 移した**ので、止まっても見えるところで止まり、SO のゲートは巻き込まれない。
+SO_COMPARE_VERSION="2026-09-07"
 
 # --- CLI の版の取得（#298） ---
 #
@@ -850,6 +877,7 @@ run_codex() {
         echo "model_resolved_source=config"
         echo "cli_version=$CODEX_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
@@ -945,6 +973,7 @@ run_claude() {
         echo "model_resolved_source=$model_source"
         echo "cli_version=$CLAUDE_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
         echo "body_source=$body_source"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
@@ -1005,6 +1034,7 @@ run_cursor() {
         echo "model_resolved_source=none"
         echo "cli_version=$CURSOR_CLI_VERSION"
         echo "cli_version_source=$CLI_VERSION_SOURCE"
+        echo "so_compare_version=$SO_COMPARE_VERSION"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
         echo "elapsed_seconds=$elapsed"
