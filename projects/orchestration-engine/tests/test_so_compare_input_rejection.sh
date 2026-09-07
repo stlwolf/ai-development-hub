@@ -327,13 +327,20 @@ printf 'ワークスペースのファイル\n' > "$PC/ws/note.md"
 # **-o を渡していない呼び出しは対象外である**（出力先を特定できないため）。その形は
 # 下では「位置引数のプロンプト」と、既定の出力先へ書く1件だけである。
 ck_lanes_used_stub() {
-  local dir="$1" label="$2" m lane ver bad=""
+  local dir="$1" label="$2" m lane ver bad="" found=0
   for m in "$dir"/*-meta.txt; do
     [[ -f "$m" ]] || continue
+    found=$((found+1))
     lane="$(basename "$m" -meta.txt)"
     ver="$(grep -m1 '^cli_version=' "$m" | cut -d= -f2-)"
     [[ "$ver" == "0.0.0-stub" ]] || bad="$bad $lane=$ver"
   done
+  # meta が1件も無ければ空振りで通ってしまう（Copilot の指摘）。この関数を呼ぶのは
+  # 「exit 0 で少なくとも1レーンが走った」直後だけなので、0件は検査が届いていない
+  # ことを意味する。**0件を合格にしない。**
+  if [[ "$found" -eq 0 ]]; then
+    bad=" meta が1件も無い（出力先がずれたか meta の生成が壊れている）"
+  fi
   ck "$label: 走ったレーンは全部スタブ" "" "$bad"
 }
 

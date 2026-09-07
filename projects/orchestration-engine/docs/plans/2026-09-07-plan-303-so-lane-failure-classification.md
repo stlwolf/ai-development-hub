@@ -281,6 +281,7 @@ owner の裁定（2026-09-07）: **`claude-safe` はもともと Cursor / VS Cod
 
 - 本体の変更は `scripts/so-compare.sh` の `CLAUDE_CMD` を `claude-safe` から `claude` へ変える1行だけである。`claude-safe` 本体（dotfiles 由来）と、それを使い続ける別プロジェクト `projects/second-opinion-verification` には触らない。
 - **入れ子で動くことを実機で確かめた。** Claude Code のセッションの中から so-compare を走らせると claude を claude の中から呼ぶ入れ子になり、ラッパーが最初に解こうとしたのはこの種のハングだった。確かめた結果、**6秒・exit 0・本文あり・リトライなし**で返った（`body_source=json-result`）。ハングしない。
+- **同じ結論が engine の中に既にあった。** `lib/spawn.sh` は `claude` と `claude-safe` のどちらを指定されても直接 `claude` を起動する形になっており、コメントに「claude 直接（wez pane の独立 pty で TTY 競合なし）」と書かれている（`projects/orchestration-engine/lib/spawn.sh:206-210`）。**engine 側では以前から「この使い方ならラッパーは要らない」と結論が出ていて、so-compare だけが古い前提のまま残っていた。** この変更を入れる前にここを見ていなかったのは探索漏れである。
 - **これで直るのは観測点だけである。** 分類の契約（M-3 の5点）は閉じていない。上限・認証切れの実機取得は §12.4 の follow-up のまま。
 
 ## 9. 陽性対照と陰性対照の fixture
