@@ -454,13 +454,42 @@ fi
 
 # モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
 # **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
-for _v_name in CURSOR_MODEL CLAUDE_MODEL CODEX_MODEL CLAUDE_EFFORT SANDBOX_MODE; do
+# **回すレーンの値だけを見る。** 全部見ると、`--codex-only` なのに `SO_CURSOR_MODEL` に
+# 改行が入っているだけで落ちる。`--prev` を非アクティブなレーンで見ないようにしたのと同じ
+# 条件分離が、設定値にも要る（実装SO の4周目の指摘。**自分の都合で正当な入力を拒否する形を
+# これで4回目に作っている**）。
+_v_names=()
+$RUN_CODEX  && _v_names+=(CODEX_MODEL SANDBOX_MODE)
+$RUN_CLAUDE && _v_names+=(CLAUDE_MODEL CLAUDE_EFFORT)
+$RUN_CURSOR && _v_names+=(CURSOR_MODEL)
+for _v_name in ${_v_names[@]+"${_v_names[@]}"}; do
     _v_val="${!_v_name}"
-    if [[ -n "$_v_val" ]] && has_line_breaking_bytes "$_v_val"; then
+    [[ -n "$_v_val" ]] || continue
+    if has_line_breaking_bytes "$_v_val"; then
         reject "invalid:control-character" "$_v_name" "行を壊すバイト（改行・タブ・制御文字）を含みます"
     fi
+    # **高位バイトは行を壊さないので上の検査を通る。** しかし不正な UTF-8 のモデル名は
+    # `model_requested=` に入って meta を非 UTF-8 にし、レーンの引数としても壊れる。
+    _v_tmp="$(mktemp "${TMPDIR:-/tmp}/so-val.XXXXXX")" \
+        || reject "unavailable:mktemp" "$_v_name" "一時ファイルを作れません"
+    printf '%s' "$_v_val" > "$_v_tmp"
+    if ! is_valid_utf8_file "$_v_tmp"; then
+        rm -f "$_v_tmp"
+        reject "invalid:not-utf8" "$_v_name" "UTF-8 として妥当ではありません"
+    fi
+    rm -f "$_v_tmp"
 done
-unset _v_name _v_val
+unset _v_name _v_val _v_tmp _v_names
+
+# エフォートは**こちらが usage に列挙している**値なので、渡す前に見る。
+# モデル名と sandbox モードは列挙しない（下記の理由）。
+if [[ -n "$CLAUDE_EFFORT" ]] && ! [[ "$CLAUDE_EFFORT" =~ ^(low|medium|high|xhigh|max)$ ]]; then
+    reject "invalid:bad-value" "--claude-effort" "low / medium / high / xhigh / max のいずれかを指定してください: $CLAUDE_EFFORT"
+fi
+# **モデル名と -s（sandbox モード）は列挙しない。** どちらも**相手の CLI が持つ語彙**で、
+# こちらが列挙すると CLI 側が増やした値を落とす。skill doc も「任意のモデル名はそのまま
+# 透過で渡る」と書いており、その契約をこちらの検査で壊さない。不正な値はレーンの
+# エラーとして結果に出る（`error` / `error_partial`）。
 
 # -o の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる**
 # （「1＝部分成功」と衝突する・実装SO の2周目の指摘）。
@@ -568,6 +597,11 @@ if [[ -n "$PREV_DIR" ]]; then
                 # iconv は上限未満の前回出力にも走るので、切断由来でない不正（前回の
                 # レーンが壊れた出力を残した等）も健全化される。これは意図した副次効果として
                 # 受け入れているため、存在確認も「非空の --prev」全体に掛かる。
+                # 通常ファイルで読めることを先に見る。見ないと `head` が落ちて
+                # **レーン未起動のまま exit 1** になる（実装SO の4周目の指摘）。
+                [[ -L "$prev_file" ]] && reject "invalid:not-a-file" "--prev" "symlink です: $prev_file"
+                [[ -f "$prev_file" ]] || reject "invalid:not-a-file" "--prev" "通常ファイルではありません: $prev_file"
+                [[ -r "$prev_file" ]] || reject "invalid:not-readable" "--prev" "読めません: $prev_file"
                 has_nul_byte "$prev_file" && reject "invalid:contains-nul" "--prev" "NUL バイトを含みます（読み込みで黙って落ちます）: $prev_file"
                 prev_raw=$(head -c "$PREV_MAX_BYTES" "$prev_file")
                 # iconv は末尾が不完全な文字のとき rc=1 を返すが、出力は正しく不正バイトを
@@ -616,10 +650,16 @@ fi
 if [[ -z "$OUT_DIR" ]]; then
     OUT_DIR="tmp/so-$(date +%Y%m%d-%H%M%S)"
 fi
-mkdir -p "$OUT_DIR"
+# 既定の出力先も失敗を拾う。拾わないと書けない cwd で **レーン未起動のまま exit 1** になり、
+# 「1＝部分成功」と衝突する（実装SO の4周目の指摘）。
+mkdir -p "$OUT_DIR" 2>/dev/null \
+    || reject "invalid:not-writable" "-o" "出力ディレクトリを作れません: $OUT_DIR"
 
 # --- プロンプト保存 ---
-echo "$PROMPT" > "$OUT_DIR/prompt.txt"
+# **`echo` を使わない。** プロンプトがちょうど `-n` だと echo がそれをオプションと解釈して
+# **空のファイル**を作り、最後の UTF-8 の網も空を正常として通す（実装SO の4周目の指摘）。
+printf '%s\n' "$PROMPT" > "$OUT_DIR/prompt.txt" \
+    || reject "invalid:not-writable" "-o" "プロンプトを書けません: $OUT_DIR/prompt.txt"
 
 # --- 最後の網（#344・組み立て完了時点） ---
 #

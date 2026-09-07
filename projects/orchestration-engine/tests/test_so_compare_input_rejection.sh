@@ -239,5 +239,47 @@ ckc "meta にそのまま入る" "$(cat "$_TMP/o53/codex-meta.txt" 2>/dev/null)"
 BADLINES="$(grep -vcE '^[A-Za-z_][A-Za-z0-9_]*=' "$_TMP/o53/codex-meta.txt" 2>/dev/null || true)"
 ck  "meta に key=value でない行が無い" "0" "$BADLINES"
 
+echo "[21] gate 4 4周目の指摘: 回すレーンの値だけを見る"
+# --codex-only なのに SO_CURSOR_MODEL の改行で落ちてはいけない（陽性対照）
+NLMODEL2="$(printf 'a\nb=c')"
+OUT="$(PATH="$STUB:$PATH" SO_CURSOR_MODEL="$NLMODEL2" "$SO" --codex-only -o "$_TMP/o60" "問い" 2>&1)"; RC=$?
+ck  "--codex-only は cursor の壊れた値で落ちない" "0" "$RC"
+# cursor を回すなら拒否する
+run_reject env SO_CURSOR_MODEL="$NLMODEL2" "$SO" --cursor-only -o "$_TMP/o61" "問い"
+ck  "--cursor-only なら拒否する" "4" "$RC"
+
+echo "[22] gate 4 4周目の指摘: 不正な UTF-8 のモデル名を弾く"
+run_reject env SO_CODEX_MODEL="$(printf 'model\377x')" "$SO" --codex-only -o "$_TMP/o62" "問い"
+ck  "不正な UTF-8 のモデル名 = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:not-utf8 CODEX_MODEL"
+
+echo "[23] gate 4 4周目の指摘: 列挙している値は列挙で見る"
+run_reject "$SO" --claude-only --claude-effort bogus -o "$_TMP/o63" "問い"
+ck  "未知のエフォート = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:bad-value --claude-effort"
+OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only --claude-effort high -o "$_TMP/o64" "問い" 2>&1)"; RC=$?
+ck  "正当なエフォートは通る" "0" "$RC"
+
+echo "[24] gate 4 4周目の指摘: --prev のファイルも通常ファイル・可読を見る"
+if [[ "$(id -u)" -ne 0 ]]; then
+  PUR="$_TMP/prev-unreadable"; mkdir -p "$PUR"
+  printf '前回の回答\n' > "$PUR/codex-stdout.txt"; chmod 000 "$PUR/codex-stdout.txt"
+  run_reject "$SO" --codex-only -o "$_TMP/o65" --prev "$PUR" "問い"
+  chmod 644 "$PUR/codex-stdout.txt"
+  ck  "読めない前回出力 = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:not-readable --prev"
+else
+  echo "  SKIP: root では chmod 000 が効かない"
+fi
+
+echo "[25] gate 4 4周目の指摘: プロンプトが -n でも空にならない"
+OUT="$(PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o66" -- -n 2>&1)"; RC=$?
+if [[ "$RC" == "0" ]]; then
+  SAVED="$(cat "$_TMP/o66/prompt.txt" 2>/dev/null)"
+  ck "プロンプト -n が空ファイルにならない" "-n" "$SAVED"
+else
+  # -- を区切りとして扱わない parser なので、この形は拒否される。空ファイルを作らないことだけ見る。
+  OUT="$(printf -- '-n\n' | PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o67" - 2>&1)"; RC=$?
+  ck  "stdin から -n を渡しても通る" "0" "$RC"
+  ck  "空ファイルにならない" "-n" "$(cat "$_TMP/o67/prompt.txt" 2>/dev/null)"
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
