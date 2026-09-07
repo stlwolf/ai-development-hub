@@ -170,7 +170,10 @@ classify_canary() {
     # **exit 0 だけで success と読まない。** 応答が空なら「CLI が答えた」とは言えない
     # （so-compare にも success_empty という同じ形がある）。**canary の中心の判定なので、
     # ここで偽陽性を作ると測定そのものが嘘になる**（実装SO の指摘）。
-    if [[ -s "$out" ]]; then
+    # **バイトが在ることだけで success と読まない。** 改行や空白だけの応答は
+    # 「答えた」とは言えず、足したばかりの success_empty の偽陽性防止を迂回する
+    # （実装SO の3周目の指摘）。**可視文字が1つでも在ることを条件にする。**
+    if [[ -s "$out" ]] && LC_ALL=C tr -d '[:space:]' < "$out" 2>/dev/null | grep -q .; then
       printf 'success\tnone\n'
     else
       printf 'success_empty\tnone\n'
@@ -240,6 +243,26 @@ for tool in codex claude cursor; do
   main_status="$(meta_get "$meta" timeout_status)"; [[ -n "$main_status" ]] || main_status='-'
   main_exit="$(meta_get "$meta" exit_code)"; [[ -n "$main_exit" ]] || main_exit='-'
   sout="${TARGET_DIR}/${tool}-stdout.txt"
+  # **「空で返った」と「観測できない」を区別する。** 借り元の `oe-lane-explain` は
+  # `absent` / `empty` / `present` の3値で見ているのに、こちらは `[[ -s ]]` だけで
+  # **不在・不可読・空を同一視していた**（実装SO の3周目の指摘）。**この単位で自分が収穫した
+  # knowledge item（`01M1VX9MH72K7G940R6WC7M218`「不在と空を畳むな」）そのものを踏んでいる。**
+  # 観測できない記録に canary を投げると、**使用量を消費したうえで意味の無い数字を得る。**
+  # **-L を -e より先に見る。** 参照先の無い symlink は `-e` が偽になるので、順序が逆だと
+  # 「ファイルが無い」と読む。**I-1 の gate 4 の4周目でまったく同じ順序を指摘されたのに、
+  # こちらで同じ書き方をしていた。**
+  if [[ -L "$sout" ]]; then
+    err "stdout が通常ファイルとして読めません（投げません・symlink です）: $sout"
+    continue
+  fi
+  if [[ ! -e "$sout" ]]; then
+    err "stdout のファイルがありません（投げません）: $sout"
+    continue
+  fi
+  if [[ ! -f "$sout" || ! -r "$sout" ]]; then
+    err "stdout が通常ファイルとして読めません（投げません）: $sout"
+    continue
+  fi
   # **対象は「空で返ったレーン」だけ。** 判定は stdout が空かどうかで行う。
   # exit 0 のときだけ非空を除外していたので、`timeout_partial` / `error_partial`
   # （非ゼロで stdout はある）にも投げていた。**返っているレーンに投げるのは使用量の無駄で、

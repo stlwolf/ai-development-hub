@@ -263,5 +263,69 @@ else
   echo "  FAIL: 実装は ${IMPL} 秒だが、そう書いてある箇所が ${HDR} 件しかない"; FAIL=$((FAIL+1))
 fi
 
+echo "[19] gate 4 3周目の指摘: 不在・不可読を「空」と畳まない"
+# **この単位で自分が収穫した教訓（不在と空を畳むな）そのものを踏んでいた。**
+# 観測できない記録に投げると、使用量を消費して意味の無い数字を得る。
+D="$_TMP/d19"; mkdir -p "$D"
+printf 'tool=claude\nattempt=1\nattempt_state=finished\nexit_code=124\ntimeout_status=timeout_empty\n' > "$D/claude-meta.txt"
+# stdout が不在
+OUT="$("$VERB" "$D" 2>&1)"; RC=$?
+ck  "stdout が不在 = 投げない（exit 2）" "2" "$RC"
+ckc "理由を出す" "$OUT" "stdout のファイルがありません"
+# stdout が symlink
+ln -s "$_TMP/nowhere" "$D/claude-stdout.txt"
+OUT="$("$VERB" "$D" 2>&1)"; RC=$?
+ck  "stdout が symlink = 投げない（exit 2）" "2" "$RC"
+ckc "理由を出す" "$OUT" "通常ファイルとして読めません"
+rm -f "$D/claude-stdout.txt"
+# 読めない stdout
+if [[ "$(id -u)" -ne 0 ]]; then
+  : > "$D/claude-stdout.txt"; chmod 000 "$D/claude-stdout.txt"
+  OUT="$("$VERB" "$D" 2>&1)"; RC=$?
+  chmod 644 "$D/claude-stdout.txt"
+  ck "読めない stdout = 投げない（exit 2）" "2" "$RC"
+else
+  echo "  SKIP: root では chmod 000 が効かない"
+fi
+# 空で実在するなら投げる（陽性対照）
+: > "$D/claude-stdout.txt"
+OUT="$("$VERB" "$D" 2>&1)"; RC=$?
+ck  "空で実在するなら対象になる" "0" "$RC"
+ckc "canary_ran の行が出る" "$OUT" '"canary_ran":false'
+
+echo "[20] gate 4 3周目の指摘: 空白だけの応答を success と読まない"
+printf '#!/bin/sh\nprintf "\\n   \\n"\nexit 0\n' > "$STUB/claude-safe"; chmod +x "$STUB/claude-safe"
+D="$_TMP/d20"; mk_empty_lane "$D" claude timeout_empty 124
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "改行と空白だけ → success_empty" "success_empty" "$(val_of "$OUT" canary_state)"
+# 可視文字が1つでもあれば success（陽性対照）
+printf '#!/bin/sh\nprintf "2\\n"\nexit 0\n' > "$STUB/claude-safe"
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "可視文字があれば success" "success" "$(val_of "$OUT" canary_state)"
+
+echo "[21] gate 4 3周目の指摘: README の状態の一覧とテスト件数が実装と合う"
+RM="$SCRIPT_DIR/../bin/README.md"
+if [[ -f "$RM" ]]; then
+  # 実装が返す状態が全部 README に載っているか
+  MISSING=""
+  for st in success success_empty usage_limit auth_required environment invalid_input canary_timeout unknown unavailable; do
+    grep -qF "\`$st\`" "$RM" || MISSING="$MISSING $st"
+  done
+  if [[ -z "$MISSING" ]]; then
+    echo "  PASS: canary_state の一覧が実装と一致する"; PASS=$((PASS+1))
+  else
+    echo "  FAIL: README に無い状態:$MISSING"; FAIL=$((FAIL+1))
+  fi
+  # テスト件数の記載がこのファイルの実際の件数と合っているか
+  DOCN="$(grep -o 'test_oe_lane_canary.sh`（[0-9]* 件）' "$RM" | grep -o '[0-9]*' | head -1)"
+  if [[ -n "$DOCN" ]] && (( DOCN == PASS + FAIL + 1 )); then
+    echo "  PASS: README のテスト件数（${DOCN}）が実際と一致する"; PASS=$((PASS+1))
+  else
+    echo "  NOTE: README の件数は ${DOCN}。実際の合計は最後の RESULT 行を見よ（件数の自動一致は取らない）"
+  fi
+else
+  echo "  SKIP: bin/README.md が見つからない"
+fi
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

@@ -658,7 +658,9 @@ OE_LANE_CANARY=1 oe-lane-canary --lane claude --timeout 90 tmp/so-XXXX
 
 **期待値は測る前に宣言してある**（verb のヘッダ）。本走行が時間切れなら canary は成功し、使用量上限なら canary も上限の文言つきで非ゼロ、認証切れなら認証の文言つきでほぼ0秒、である。
 
-- **`canary_state`**: `success` / `usage_limit` / `auth_required` / `environment` / `invalid_input` / `canary_timeout` / `unknown` / `unavailable`。
+- **`canary_state`**: `success` / **`success_empty`** / `usage_limit` / `auth_required` / `environment` / `invalid_input` / `canary_timeout` / `unknown` / `unavailable`。
+- **`success_empty` を `success` に畳まない。** exit 0 でも応答に可視文字が無ければ「答えた」とは言えない。**バイト数ではなく可視文字で見る**（改行だけの応答を success と読まないため）。
+- **「空で返った」と「観測できない」を区別する。** stdout が不在・symlink・非通常ファイル・不可読の記録には**投げない**（使用量を消費して意味の無い数字を得ないため）。
 - **`canary_timeout` を `unknown` に畳まない。** 「証拠が無い」と「極小のプロンプトにも応答しなかった」は別の情報である。**上限を短く置いたときに実際にここへ落ちるのを踏んだ**ので値を分けた。
 - **既定の上限は 60 秒で、実測から決めた。** cursor へ `1+1` を投げた所要は **9 / 10 / 13 / 17 秒**（4回）。最初 10 秒にしていたら **canary 自身が時間切れになり、CLI は応答するのに応答しないと読む偽陰性**を作った。
 - シグネチャの文言と作法（行頭に錨・末尾 200 行）は `oe-lane-canary` と `oe-lane-explain` で同じにしてある。
@@ -670,7 +672,7 @@ OE_LANE_CANARY=1 oe-lane-canary --lane claude --timeout 90 tmp/so-XXXX
 - **canary は本走行と同じ重さではない。** 極小のプロンプトで通るからといって本走行のプロンプトが通るとは言えない。**分けられるのは「CLI が応答するか」までである。**
 - **実機で取れたのは時間切れの型だけ**（3レーンとも）。使用量上限・認証切れ・環境エラーは**スタブで分類器を確かめただけ**である。cursor の上限は当リポに実例が無い。
 
-関連: `tests/test_oe_lane_canary.sh`（30 件）/ `bin/oe-lane-explain`（事後の分類）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（M-2）。
+関連: `tests/test_oe_lane_canary.sh`（65 件）/ `bin/oe-lane-explain`（事後の分類）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（M-2）。
 
 ---
 
