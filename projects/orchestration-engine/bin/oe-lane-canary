@@ -29,6 +29,7 @@
 #   本走行が環境エラー    → canary も **環境の文言つきで非ゼロ**（ほぼ0秒）
 #   canary 自身が上限に達した → `canary_timeout`（**`unknown` に畳まない**。極小の
 #                              プロンプトにも応答しなかった、という別の情報である）
+#   exit 0 だが応答が空       → `success_empty`（**`success` に畳まない**。答えていない）
 #
 # **この宣言は測る前に書いた。** 結果を見てから期待を作らないためである。
 #
@@ -47,8 +48,6 @@ set -uo pipefail
 
 err() { printf 'oe-lane-canary: %s\n' "$*" >&2; }
 
-command -v jq >/dev/null 2>&1 || { err "jq が要ります"; exit 2; }
-
 usage() {
   cat >&2 <<'EOF'
 usage:
@@ -60,6 +59,9 @@ usage:
 
 **既定では何もしない。** OE_LANE_CANARY=1 を付けたときだけ実際に CLI を呼ぶ。
 付けない場合は「どのレーンへ何を投げるか」を出して終わる。
+
+--timeout の既定は 60 秒である（極小の1往復の実測が 9〜17 秒なので、
+10 秒に置くと canary 自身が時間切れになる偽陰性が出る）。
 
 出力: stdout に JSON（1 レーン 1 行）。キーは
   lane / main_status / main_exit / canary_ran / canary_exit / canary_elapsed /
@@ -93,6 +95,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+command -v jq >/dev/null 2>&1 || { err "jq が要ります"; exit 2; }
+# **timeout の存在も見る。** 無いと exit 127 になり、それを「CLI が応答しなかった」と
+# 読んでしまう（実装SO の指摘）。前提が満たせないので degrade せず止める。
+if [[ "${OE_LANE_CANARY:-}" == "1" ]]; then
+  command -v timeout >/dev/null 2>&1 \
+    || { err "timeout が要ります（canary に上限を掛けるため）。macOS の場合: brew install coreutils"; exit 2; }
+fi
+
 [[ -n "$TARGET_DIR" ]] || { err "対象のディレクトリがありません"; usage; exit 2; }
 [[ -L "$TARGET_DIR" ]] && { err "対象ディレクトリが symlink です: $TARGET_DIR"; exit 2; }
 [[ -d "$TARGET_DIR" && -r "$TARGET_DIR" ]] || { err "読めません: $TARGET_DIR"; exit 2; }
@@ -110,16 +120,34 @@ canary_cmd() {
     cursor) printf '%s\n' agent ;;
   esac
 }
-canary_args() {
+# **mapfile を使わない。** あれは bash 4+ 専用で、macOS の /bin/bash 3.2 では
+# `mapfile: command not found` になる。**しかも `set -e` を張っていないので、失敗しても
+# 続行して「必須の引数が欠けたまま CLI を起動する」**（実装SO の指摘）。
+# この repo は bash 3.2 / 5.2 の両対応なので、素の配列代入で書く。
+CANARY_ARGS=()
+set_canary_args() {
   case "$1" in
-    codex)  printf '%s\n' exec -s read-only ;;
-    claude) printf '%s\n' -p ;;
-    cursor) printf '%s\n' -p -f --mode ask --output-format text ;;
+    codex)  CANARY_ARGS=(exec -s read-only) ;;
+    claude) CANARY_ARGS=(-p) ;;
+    cursor) CANARY_ARGS=(-p -f --mode ask --output-format text) ;;
+    *)      CANARY_ARGS=() ;;
   esac
 }
 
 # canary の結果を分類する。シグネチャの文言と作法（行頭に錨・末尾 200 行）は
 # oe-lane-explain と同じにしてある（同じ文言を2箇所で別に書かない）。
+# 錨が使えない文言のための逃し弁（oe-lane-explain と同じ考え方）。
+# 誤検出の元は数百KB まで育つ TUI の描画なので、小ささを条件にすれば経路を塞げる。
+CANARY_SMALL_BYTES="${OE_LANE_CANARY_SMALL_BYTES:-16384}"
+contains_in_small_file() {
+  local pat="$1" f="$2" sz
+  [[ -s "$f" ]] || return 1
+  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
+  [[ -n "$sz" ]] || return 1
+  (( sz <= CANARY_SMALL_BYTES )) || return 1
+  LC_ALL=C grep -qF -- "$pat" "$f" 2>/dev/null
+}
+
 starts_with_line() {
   local pat="$1" f="$2"
   [[ -s "$f" ]] || return 1
@@ -129,7 +157,14 @@ starts_with_line() {
 classify_canary() {
   local tool="$1" rc="$2" out="$3" errf="$4"
   if [[ "$rc" == "0" ]]; then
-    printf 'success\tnone\n'
+    # **exit 0 だけで success と読まない。** 応答が空なら「CLI が答えた」とは言えない
+    # （so-compare にも success_empty という同じ形がある）。**canary の中心の判定なので、
+    # ここで偽陽性を作ると測定そのものが嘘になる**（実装SO の指摘）。
+    if [[ -s "$out" ]]; then
+      printf 'success\tnone\n'
+    else
+      printf 'success_empty\tnone\n'
+    fi
     return 0
   fi
   # **canary 自身の時間切れを unknown に畳まない。** 畳むと「証拠が無い」と
@@ -151,6 +186,9 @@ classify_canary() {
       if starts_with_line 'error: invalid UTF-8 was detected' "$errf"; then
         printf 'invalid_input\tcodex-stderr\n'; return 0
       fi
+      if starts_with_line 'WARNING: proceeding, even though we could not create PATH aliases' "$errf"; then
+        printf 'environment\tcodex-stderr\n'; return 0
+      fi
       ;;
     claude)
       if starts_with_line "You've hit your session limit" "$out"; then
@@ -161,6 +199,11 @@ classify_canary() {
       fi
       if starts_with_line 'API Error:' "$out"; then
         printf 'unknown\tclaude-api-error\n'; return 0
+      fi
+      # claude-safe の書き込み失敗は行頭が機械ごとに変わるので、**小さいファイルに限り**
+      # 部分一致を許す（oe-lane-explain と同じ逃し弁）。
+      if contains_in_small_file 'Operation not permitted' "$errf"; then
+        printf 'environment\tclaude-stderr\n'; return 0
       fi
       ;;
     cursor)
@@ -187,12 +230,22 @@ for tool in codex claude cursor; do
   main_status="$(meta_get "$meta" timeout_status)"; [[ -n "$main_status" ]] || main_status='-'
   main_exit="$(meta_get "$meta" exit_code)"; [[ -n "$main_exit" ]] || main_exit='-'
   sout="${TARGET_DIR}/${tool}-stdout.txt"
-  # 対象は「空で返ったレーン」だけ。返っているレーンに canary を投げる意味は無い。
-  if [[ "$main_exit" == "0" && -s "$sout" ]]; then continue; fi
+  # **対象は「空で返ったレーン」だけ。** 判定は stdout が空かどうかで行う。
+  # exit 0 のときだけ非空を除外していたので、`timeout_partial` / `error_partial`
+  # （非ゼロで stdout はある）にも投げていた。**返っているレーンに投げるのは使用量の無駄で、
+  # 契約にも反する**（実装SO の指摘）。
+  if [[ -s "$sout" ]]; then continue; fi
+  # **まだ走っている記録には投げない。** attempt_state=running は「その試行の途中」で、
+  # 空なのは当然である。ここへ投げると走行中のレーンと二重に叩く。
+  mstate="$(meta_get "$meta" attempt_state)"
+  if [[ "$mstate" == "running" ]]; then continue; fi
+  # exit_code が無い meta は観測できていない（切れた・壊れた）。投げる根拠が無い。
+  if [[ "$main_exit" == "-" ]]; then continue; fi
   LANES=$(( LANES + 1 ))
 
   cmd="$(canary_cmd "$tool")"
-  mapfile -t cargs < <(canary_args "$tool")
+  set_canary_args "$tool"
+  [[ ${#CANARY_ARGS[@]} -gt 0 ]] || { err "レーンの引数を組めません: $tool"; exit 2; }
 
   if [[ "${OE_LANE_CANARY:-}" != "1" ]]; then
     jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" \
@@ -214,7 +267,7 @@ for tool in codex claude cursor; do
   co="$WORK/${tool}-canary-stdout.txt"; ce="$WORK/${tool}-canary-stderr.txt"
   start=$(date +%s)
   rc=0
-  timeout "$CANARY_TIMEOUT" "$cmd" ${cargs[@]+"${cargs[@]}"} "$CANARY_PROMPT" > "$co" 2> "$ce" || rc=$?
+  timeout "$CANARY_TIMEOUT" "$cmd" ${CANARY_ARGS[@]+"${CANARY_ARGS[@]}"} "$CANARY_PROMPT" > "$co" 2> "$ce" || rc=$?
   end=$(date +%s)
   IFS=$'\t' read -r cstate cevid < <(classify_canary "$tool" "$rc" "$co" "$ce")
   jq -cn --arg lane "$tool" --arg ms "$main_status" --arg me "$main_exit" \

@@ -147,5 +147,82 @@ else
   echo "  FAIL: 既定が ${DEF} 秒。極小の1往復の実測は 9〜17 秒なので、ここに置くと偽陰性が出る"; FAIL=$((FAIL+1))
 fi
 
+echo "[11] gate 4 の指摘: bash 3.2 で動く"
+# **verb を shebang 経由で走らせるだけでは bash 5 しか通らない。** この repo は 3.2/5.2 の
+# 両対応なので、3.2 を明示して走らせる（mapfile は 4+ 専用で、3.2 では引数が空になる）。
+if [[ -x /bin/bash ]] && /bin/bash --version 2>/dev/null | head -1 | grep -q 'version 3\.'; then
+  /bin/bash -n "$VERB" 2>/dev/null; ck "bash 3.2 で構文が通る" "0" "$?"
+  D="$_TMP/b32"; mk_empty_lane "$D" claude timeout_empty 124
+  OUT="$(/bin/bash "$VERB" "$D" 2>&1)"; RC=$?
+  ck  "bash 3.2 で走る" "0" "$RC"
+  ckc "出力が壊れない" "$OUT" '"canary_ran":false'
+  ncc_out="$(/bin/bash "$VERB" "$D" 2>&1)"
+  if printf '%s' "$ncc_out" | grep -qF 'mapfile'; then
+    echo "  FAIL: mapfile を使っている（bash 3.2 では引数が空になる）"; FAIL=$((FAIL+1))
+  else
+    echo "  PASS: mapfile に依存していない"; PASS=$((PASS+1))
+  fi
+  # 実際に投げる経路も 3.2 で確かめる（スタブなので使用量は消費しない）
+  printf '#!/bin/sh\necho 2\nexit 0\n' > "$STUB/claude-safe"; chmod +x "$STUB/claude-safe"
+  OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" /bin/bash "$VERB" "$D" 2>/dev/null)"
+  ck "bash 3.2 でも success を出せる" "success" "$(val_of "$OUT" canary_state)"
+else
+  echo "  SKIP: bash 3.2 が /bin/bash に無い"
+fi
+
+echo "[12] gate 4 の指摘: 空の応答を success と読まない"
+printf '#!/bin/sh\nexit 0\n' > "$STUB/claude-safe"; chmod +x "$STUB/claude-safe"
+D="$_TMP/d10"; mk_empty_lane "$D" claude timeout_empty 124
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "exit 0 だが空 → success_empty" "success_empty" "$(val_of "$OUT" canary_state)"
+# 非空なら success（陽性対照）
+printf '#!/bin/sh\necho 2\nexit 0\n' > "$STUB/claude-safe"
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "非空なら success" "success" "$(val_of "$OUT" canary_state)"
+
+echo "[13] gate 4 の指摘: 空で返っていないレーンに投げない"
+# timeout_partial / error_partial（非ゼロで stdout はある）にも投げていた
+D="$_TMP/d11"; mkdir -p "$D"
+printf 'tool=claude\nattempt=1\nattempt_state=finished\nexit_code=1\ntimeout_status=error_partial\nstdout_bytes=61\n' > "$D/claude-meta.txt"
+printf "You've hit your session limit\n" > "$D/claude-stdout.txt"; : > "$D/claude-stderr.txt"
+OUT="$("$VERB" "$D" 2>&1)"; RC=$?
+ck  "error_partial には投げない = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "空で返ったレーンが見つかりませんでした"
+# 走っている記録にも投げない
+D="$_TMP/d12"; mkdir -p "$D"
+printf 'tool=codex\nattempt=1\nattempt_state=running\ntimeout_limit_seconds=240\n' > "$D/codex-meta.txt"
+: > "$D/codex-stdout.txt"
+"$VERB" "$D" >/dev/null 2>&1; ck "attempt_state=running には投げない = exit 2" "2" "$?"
+# exit_code の無い meta にも投げない
+D="$_TMP/d13"; mkdir -p "$D"
+printf 'tool=codex\nattempt=1\nattempt_state=finished\ntimeout_status=error\n' > "$D/codex-meta.txt"
+: > "$D/codex-stdout.txt"
+"$VERB" "$D" >/dev/null 2>&1; ck "exit_code の無い meta には投げない = exit 2" "2" "$?"
+
+echo "[14] gate 4 の指摘: シグネチャを oe-lane-explain に揃える"
+printf '#!/bin/sh\nprintf "%%s\\n" "WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted" >&2\nexit 1\n' > "$STUB/codex"; chmod +x "$STUB/codex"
+D="$_TMP/d14"; mk_empty_lane "$D" codex error 1
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "codex の PATH aliases → environment" "environment" "$(val_of "$OUT" canary_state)"
+printf '#!/bin/sh\nprintf "%%s\\n" "/Users/x/bin/claude-safe: line 34: /Users/x/out.txt: Operation not permitted" >&2\nexit 1\n' > "$STUB/claude-safe"
+D="$_TMP/d15"; mk_empty_lane "$D" claude error 1
+OUT="$(OE_LANE_CANARY=1 PATH="$STUB:$PATH" "$VERB" "$D" 2>/dev/null)"
+ck "claude の書き込み失敗 → environment" "environment" "$(val_of "$OUT" canary_state)"
+
+echo "[15] gate 4 の指摘: help と jq/timeout の前提"
+OUT="$("$VERB" --help 2>&1)"; RC=$?
+ck  "--help = exit 0" "0" "$RC"
+ckc "既定の 60 秒を案内する" "$OUT" "既定は 60 秒"
+# timeout が無ければ、投げる前に止まる
+COREBIN2="$_TMP/corebin2"; mkdir -p "$COREBIN2"
+for c in jq grep cut tail awk wc date mktemp rm sed head tr env bash sh; do
+  src="$(command -v "$c" 2>/dev/null)" || continue
+  [[ -n "$src" ]] && ln -sf "$src" "$COREBIN2/$c"
+done
+D="$_TMP/d16"; mk_empty_lane "$D" claude timeout_empty 124
+OUT="$(OE_LANE_CANARY=1 PATH="$COREBIN2" "$VERB" "$D" 2>&1)"; RC=$?
+ck  "timeout 不在 = exit 2" "2" "$RC"
+ckc "理由を出す" "$OUT" "timeout が要ります"
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

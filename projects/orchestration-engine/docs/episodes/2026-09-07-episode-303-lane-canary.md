@@ -100,3 +100,28 @@ canary_exit=124 canary_elapsed=10 canary_state=unknown
 - `tests/test_oe_lane_canary.sh` — **pass=30 fail=0**。
 - `scripts/so-compare.sh` の diff が空（配布物を触っていない）。
 - 実機の測定は上の表のとおり（3レーン × 時間切れの型）。
+
+### 2026-09-07 gate 4（実装SO・弱2レーン）— 両レーン refuted・6件
+
+audit_id `202609070900484YSYS9C24NGK`。**6件とも実在した。**
+
+| # | 指摘 | 直し方 |
+|---|---|---|
+| 1 | **`mapfile` は bash 4+ 専用。** macOS の `/bin/bash` 3.2.57 では `mapfile: command not found` になり、**`set -e` を張っていないので続行して「必須の引数が欠けたまま CLI を起動する」** | 素の配列代入（`set_canary_args`）に替えた。空なら止める |
+| 2 | **exit 0 だけで `success` と判定していた。** 応答が空でも「CLI が答えた」と読む。**canary の中心の判定に偽陽性** | `success` は非空のときだけ。空は `success_empty` にした |
+| 3 | **空で返っていないレーンにも投げていた。** 非空を除外するのが exit 0 のときだけだったので `timeout_partial` / `error_partial` にも投げる。`exit_code` の無い meta や `attempt_state=running` も対象になっていた | 判定を stdout が空かどうかに変え、走行中と観測できていない meta を外した |
+| 4 | **`timeout` の存在を見ていなかった。** 無いと exit 127 になり、それを「CLI が応答しなかった」と読む | 実際に投げるときだけ前提として要求する |
+| 5 | **「`oe-lane-explain` と同じシグネチャ」と書いたのに2件欠けていた**（codex の PATH aliases・claude の書き込み失敗） | 足した。claude の側は行頭が機械ごとに変わるので、小さいファイルに限る逃し弁を同じ形で用意した |
+| 6 | **help が既定を 10 秒と案内していた**（実装は 60 秒）。**`jq` の確認が引数解析より前で、`jq` 不在だと `--help` すら exit 2** | help を直し、`jq` の確認を引数解析の後ろへ移した |
+
+**1 が最も重い。** この repo は bash 3.2 / 5.2 の両対応で、`so-verdict.sh` にもその旨が書いてある。**知っていたのに `mapfile` を書き、しかもテストは shebang 経由でしか走らせていなかったので 3.2 を1度も通していない。** cursor がその点（テストがこの経路を覆えていない）まで指摘した。
+
+**5 も自分の書き方の問題である。** 「同じシグネチャにしてある」と書いておきながら、実際には2件写し漏れていた。**書いた宣言を自分で検算していない。**
+
+### 2026-09-07 修正後の検証
+
+- `shellcheck` — verb・テストとも緑。
+- **`/bin/bash` 3.2.57 で構文・実行・実際に投げる経路まで確認**（テストに固定した）。
+- `tests/test_oe_lane_canary.sh` — **pass=47 fail=0**。
+- `scripts/so-compare.sh` の diff が空。
+- **実機の測定は修正後も同じ**（claude の主痛の形に対して canary が `success` を返す）。
