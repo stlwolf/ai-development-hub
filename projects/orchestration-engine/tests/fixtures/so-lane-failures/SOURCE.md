@@ -1,6 +1,6 @@
 # so-lane-failures — fixture の出所
 
-`oe-lane-explain`（#303 の I-1）の回帰テスト用。**すべて当リポの実際の SO 出力から取った。**
+`oe-lane-explain`（#303 の I-1）の回帰テスト用。**11 件のうち 10 件は当リポの実際の SO 出力から取った。** 残る1件（`success-quoting-limit-phrase`）だけは実物が無いので構成した（理由は下記「構成したものは1件だけである」節）。
 
 `tmp/` は gitignore 対象で消えるので、判定に要る部分だけを切り出して置いてある。切り出したのは meta と、stdout / stderr である。**プロンプト本文は入れていない。**
 
