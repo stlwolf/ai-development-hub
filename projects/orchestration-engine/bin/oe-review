@@ -209,6 +209,13 @@ mkdir -p "$OUTPUT_DIR"
 so_rc=0
 "$OE_REVIEW_SO_COMPARE" --with "$PROVIDERS" -w "$WORKSPACE" -f "$PROMPT_FILE" -o "$OUTPUT_DIR" \
   >"${OUTPUT_DIR}/so-compare-stdout.txt" 2>"${OUTPUT_DIR}/so-compare-stderr.txt" || so_rc=$?
+# so-compare が入力を拒否した（exit 4・レーンを1本も起動していない）。
+# **ここで止める。** 通すと、0 レーンの出力から VERDICT を取れないまま error として数えられ、
+# 保守側の集約が `refuted` を作る。**入力の不備が「設計が反証された」に化ける**（#344）。
+if [[ "$so_rc" -eq 4 ]]; then
+  err "so-compare が入力を拒否しました（exit 4）。理由は so-compare の stderr を見てください: ${OUTPUT_DIR}/so-compare-stderr.txt"
+  exit 2
+fi
 if [[ "$so_rc" -eq 2 ]]; then
   err "warning: so-compare reported all-provider failure (rc=2); lanes will be treated as error"
 fi
