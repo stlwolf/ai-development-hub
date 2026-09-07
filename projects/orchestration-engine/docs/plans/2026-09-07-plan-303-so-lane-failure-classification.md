@@ -307,6 +307,38 @@ P-1 の7種を再現する fixture を `projects/orchestration-engine/tests/fixt
 | 非同期実行＋ポーリング | cursor | 同期1プロセスの前提を外す | **採らない。** 各 CLI の対応が前提で、確かめる材料が無い |
 | claude の上限を statusLine の `rate_limits` から先行検知 | 本セッションが P-1 で発見 | 外部の観測源を使う | **起票しない**（owner の HG-D 裁定）。board にメモを残すのは統括の担当 |
 
+## 12.4 M-2 の結果（canary）と、上限側が未取得であること
+
+**canary は #303 の主痛を切れた。** 短い上限で本当に空返しを作ってから投げ、3レーンとも実機で確かめた。
+
+| レーン | 本走行 | canary |
+|---|---|---|
+| cursor | `timeout_empty` / exit 124 / stdout 0 / stderr 0 | **success** / 10秒 |
+| codex | `timeout_empty` / exit 124 / stdout 0 / stderr 4051 | **success** / 7秒 |
+| **claude** | `timeout_empty` / exit 124 / **stdout 0 / stderr 0** | **success** / 6〜9秒 |
+
+**claude の行は B-3（meta からは使用量上限と区別できない形）とまったく同じ記録である。** その形に対して canary が数秒で答えを出した。
+
+**ただし上限の側は実機で1例も取れていない。**
+
+| 型 | 実機 | 理由 |
+|---|---|---|
+| 時間切れ | **取得**（3レーン） | 短い上限で人為的に作れる |
+| 使用量上限 | **未取得** | 人為的に作れない。起きるまで待つしかない |
+| 認証切れ | **未取得** | ログアウトは破壊的で owner の環境を壊す |
+| 環境エラー | **未取得** | 同上 |
+| cursor の上限 | **未取得** | 当リポに実例が無く、形そのものが未知 |
+
+**この4つはスタブで分類器だけを確かめた。** 論理は「上限が効いていれば canary も上限の文言つきで落ちる」だが、**実機で確かめていない。** M-3 の契約はこの線引きの上で書く。
+
+### follow-up: 実物が出たら fixture を差し替える（待たない）
+
+**owner 裁定（2026-09-07）で「待たない」。** 上限・認証切れ・環境エラーの実例が実機で出たときに、スタブで作っていた対照を**実物からの切り出しに差し替える**。
+
+- 対象: `oe-lane-canary` のテストのスタブ（上限3種）と、`oe-lane-explain` の fixture の `cursor-auth-required`（当リポに実物が無いため未作成のまま）。
+- 差し替えの合図: SO の出力に上限・認証切れの実例が残ったとき（`oe-lane-explain --scan` で `usage_limit` / `auth_required` が付いた記録が出たとき）。
+- **新しい issue は立てない**（この節が行き先）。
+
 ## 12.5 follow-up（I-3 から出た・別単位）
 
 **消費者が so-compare より前に入力を変質させる。** `oe-refute` は claim body を `$(awk ...)`、`oe-review` は context を `$(cat ...)` で変数化する。**bash はコマンド置換で NUL を落とす**ので、NUL 入りの claim / context は so-compare へ届く前に変質し、**so-compare は変質後の妥当な入力を見るため拒否できない。** 実物で確かめてある（10 バイトが 8 バイトになり、bash が警告を出す）。
