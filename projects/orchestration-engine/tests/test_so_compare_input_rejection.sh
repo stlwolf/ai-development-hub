@@ -265,6 +265,8 @@ run_reject "$SO" --claude-only --claude-effort bogus -o "$_TMP/o63" "問い"
 ck  "未知のエフォート = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:bad-value --claude-effort"
 OUT="$(PATH="$STUB2:$PATH" "$SO" --claude-only --claude-effort high -o "$_TMP/o64" "問い" 2>&1)"; RC=$?
 ck  "正当なエフォートは通る" "0" "$RC"
+ck  "正当なエフォートの経路もスタブが答えた" "0.0.0-stub" \
+    "$(grep '^cli_version=' "$_TMP/o64/claude-meta.txt" | cut -d= -f2-)"
 
 echo "[24] gate 4 4周目の指摘: --prev のファイルも通常ファイル・可読を見る"
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -298,8 +300,12 @@ echo "[26] 実運用の呼び方が全部通る（陽性対照の組・統括指
 #   so-compare --with <providers> -w <workspace> -f <prompt file> -o <out dir>
 PC="$_TMP/positive"; mkdir -p "$PC/ws" "$PC/prev"
 ALLSTUB="$_TMP/allstub"; mkdir -p "$ALLSTUB"
-printf '#!/bin/sh\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
-printf '#!/bin/sh\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
+# 3レーンとも --version で自分を名乗る。下の pc_run が meta の cli_version を見て
+# 「実物の CLI ではなくスタブが答えた」ことを固定するため（gate 4 の cursor の指摘）。
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
+# shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
 # shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
 printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\nprintf %%s "{\\"result\\":\\"VERDICT: survived\\"}"\nexit 0\n' > "$ALLSTUB/claude"
 chmod +x "$ALLSTUB/codex" "$ALLSTUB/agent" "$ALLSTUB/claude"
@@ -315,12 +321,33 @@ for t in codex claude cursor; do
 done
 printf 'ワークスペースのファイル\n' > "$PC/ws/note.md"
 
+# 走ったレーンが実物の CLI ではなくスタブだったことを、meta の cli_version で固定する。
+# 個別の検査を並べるのではなく pc_run 自身に持たせる（スタブ名と CLAUDE_CMD の結合で
+# 実物が答えても緑になる型を、site ごとに塞ぐと必ずどこかが漏れる。gate 4 の cursor の指摘）。
+# **-o を渡していない呼び出しは対象外である**（出力先を特定できないため）。その形は
+# 下では「位置引数のプロンプト」と、既定の出力先へ書く1件だけである。
+ck_lanes_used_stub() {
+  local dir="$1" label="$2" m lane ver bad=""
+  for m in "$dir"/*-meta.txt; do
+    [[ -f "$m" ]] || continue
+    lane="$(basename "$m" -meta.txt)"
+    ver="$(grep -m1 '^cli_version=' "$m" | cut -d= -f2-)"
+    [[ "$ver" == "0.0.0-stub" ]] || bad="$bad $lane=$ver"
+  done
+  ck "$label: 走ったレーンは全部スタブ" "" "$bad"
+}
+
 pc_run() {
   local label="$1"; shift
-  local out rc
+  local out rc odir="" prev=""
+  for a in "$@"; do
+    [[ "$prev" == "-o" ]] && odir="$a"
+    prev="$a"
+  done
   out="$(PATH="$ALLSTUB:$PATH" "$@" 2>&1)"; rc=$?
   ck "$label" "0" "$rc"
   if [[ "$rc" != "0" ]]; then printf '%s\n' "$out" | tail -3 | sed 's/^/      /'; fi
+  [[ -n "$odir" && -d "$odir" ]] && ck_lanes_used_stub "$odir" "$label"
 }
 
 # 1) oe-refute / oe-review が渡す形そのまま（3レーン）
