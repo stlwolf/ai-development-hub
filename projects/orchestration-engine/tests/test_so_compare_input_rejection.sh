@@ -221,5 +221,23 @@ ck  "SO_TIMEOUT の桁あふれ = exit 4" "4" "$RC"
 OUT="$(PATH="$STUB:$PATH" PREV_MAX_BYTES=4000 SO_TIMEOUT=120 "$SO" --codex-only -o "$_TMP/o47" "問い" 2>&1)"; RC=$?
 ck "正当な数値は通る" "0" "$RC"
 
+echo "[20] 自分の観点で洗って見つけた分: meta の行を壊す値を渡さない"
+# meta は 1 行 1 組の key=value。モデル名は素の値のまま model_requested= に書かれるので、
+# 改行が入ると行が割れて**偽のキーが混入する**（実機で再現した）。
+NLMODEL="$(printf 'a\nb=c')"
+run_reject env SO_CURSOR_MODEL="$NLMODEL" "$SO" --cursor-only -o "$_TMP/o50" "問い"
+ck  "改行入りのモデル名 = exit 4" "4" "$RC"; ckc "型" "$OUT" "invalid:control-character CURSOR_MODEL"
+run_reject env SO_CLAUDE_EFFORT="$(printf 'high\nx=y')" "$SO" --claude-only -o "$_TMP/o51" "問い"
+ck  "改行入りのエフォート = exit 4" "4" "$RC"
+run_reject "$SO" --codex-only -s "$(printf 'read-only\nz=1')" -o "$_TMP/o52" "問い"
+ck  "改行入りの sandbox モード = exit 4" "4" "$RC"
+# 正当なモデル名は通る（陽性対照）
+OUT="$(PATH="$STUB:$PATH" SO_CODEX_MODEL="gpt-5.6-sol" "$SO" --codex-only -o "$_TMP/o53" "問い" 2>&1)"; RC=$?
+ck  "正当なモデル名は通る" "0" "$RC"
+ckc "meta にそのまま入る" "$(cat "$_TMP/o53/codex-meta.txt" 2>/dev/null)" "model_requested=gpt-5.6-sol"
+# meta の行が壊れていないこと
+BADLINES="$(grep -vcE '^[A-Za-z_][A-Za-z0-9_]*=' "$_TMP/o53/codex-meta.txt" 2>/dev/null || true)"
+ck  "meta に key=value でない行が無い" "0" "$BADLINES"
+
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

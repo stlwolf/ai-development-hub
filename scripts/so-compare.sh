@@ -93,6 +93,22 @@ reject() {
     exit "$EXIT_INPUT_REJECTED"
 }
 
+# 値が meta の行を壊すバイトを含むかを見る。含めば 0 を返す（＝壊す）。
+#
+# meta は 1 行 1 組の `key=value` である。**モデル名やエフォートは環境変数とフラグから来る
+# 素の値のまま `model_requested=` に書かれる**ので、改行が入ると行が割れ、**偽のキーが
+# meta に混入する**（`SO_CURSOR_MODEL=$'a\nb=c'` で `model_requested=a` と `b=c` の2行になる。
+# 実機で再現した）。読む側は `key=value` の形しか見ないので、混入に気づけない。
+#
+# 拒否するのは**行を壊すバイトだけ**にする。`cli_version_for()` が同じ理由で採っている
+# denylist の考え方で、許可リストを列挙すると実在する値を落とす。`=` は許す
+# （読む側は `cut -d= -f2-` で取るため）。
+has_line_breaking_bytes() {
+    local v="$1" bad
+    bad="$(printf '%s' "$v" | LC_ALL=C tr -d '\040-\176\200-\377' | wc -c | tr -d ' ')"
+    [[ "$bad" != "0" ]]
+}
+
 # ファイルが NUL を含むかを見る。含めば 1 を返す。
 #
 # **NUL は iconv では弾けない。** UTF-8 として妥当なバイトだからである。しかし bash の
@@ -435,6 +451,16 @@ if [[ -n "$WORKSPACE" ]]; then
     [[ -e "$WORKSPACE" ]] || reject "invalid:not-found" "-w" "$WORKSPACE"
     [[ -d "$WORKSPACE" ]] || reject "invalid:not-a-directory" "-w" "ディレクトリではありません: $WORKSPACE"
 fi
+
+# モデル名・エフォート・sandbox モードは素の値のまま meta やレーンの引数へ渡る。
+# **行を壊すバイトが入ると meta に偽のキーが混入する**ので、渡す前に弾く。
+for _v_name in CURSOR_MODEL CLAUDE_MODEL CODEX_MODEL CLAUDE_EFFORT SANDBOX_MODE; do
+    _v_val="${!_v_name}"
+    if [[ -n "$_v_val" ]] && has_line_breaking_bytes "$_v_val"; then
+        reject "invalid:control-character" "$_v_name" "行を壊すバイト（改行・タブ・制御文字）を含みます"
+    fi
+done
+unset _v_name _v_val
 
 # -o の出力先。**先に見ないと、レーン未起動のまま mkdir が失敗して exit 1 になる**
 # （「1＝部分成功」と衝突する・実装SO の2周目の指摘）。

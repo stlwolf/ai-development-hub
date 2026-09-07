@@ -143,3 +143,27 @@ audit_id `202609070231495JHT9XY7QN2X`。**2件とも実在した。しかも1件
 - `tests/test_so_compare_input_rejection.sh` — **pass=67 fail=0**。
 - 陽性対照をさらに足した: NUL なしの stdin は通り本文が保存される / 正当な数値（`PREV_MAX_BYTES=4000` / `SO_TIMEOUT=120`）は通る。
 - 既存テスト `test_oe_refute.sh`（pass=63）/ `test_oe_review.sh`（pass=64）は緑。実機の SO も1本 exit 0。
+
+### 2026-09-07 自分の観点を自分のコードへ当てて1件見つけた
+
+3周目の指摘10（stdin の NUL）で「**自分で立てた観点を、自分のコード全体に一通り当ててから外へ出す**」と書いた。**それをその場で実行した。**
+
+外部の値が変数へ入る経路と、算術で使う値を全部洗ったところ、**モデル名とエフォートと sandbox モードが素の値のまま meta へ書かれている**ことに気づいた。実機で確かめると、
+
+```text
+model_requested=a
+b=c
+```
+
+**`SO_CURSOR_MODEL=$'a\nb=c'` を渡すと meta の行が割れ、偽のキー `b=c` が混入する。** 読む側は `key=value` の形しか見ないので、混入に気づけない。**meta は SO の証跡として committed 層から引かれるものなので、そこに偽のキーが入る形は残せない。**
+
+拒否するのは**行を壊すバイトだけ**にした。同じファイルの `cli_version_for()` が同じ理由で採っている denylist の考え方で、許可リストを列挙すると実在する値を落とす（あの関数のコメントが「一度やっている」と書いている）。`=` は許す（読む側は `cut -d= -f2-` で取るため）。
+
+**この1件は SO ではなく自分の掃除で見つけた。** 3周分の指摘を受けて、ようやく指摘される前に同じ種類のものを取れた。
+
+### 2026-09-07 検証（自己発見分の反映後）
+
+- `shellcheck` — so-compare・oe-refute・oe-review・テストとも緑。
+- `tests/test_so_compare_input_rejection.sh` — **pass=74 fail=0**。
+- 陽性対照: 正当なモデル名（`gpt-5.6-sol`）は通り、meta にそのまま入り、**`key=value` でない行が0件**であることまで見ている。
+- 既存テスト `test_oe_refute.sh`（pass=63）/ `test_oe_review.sh`（pass=64）は緑。
