@@ -1,0 +1,310 @@
+{
+ "cut": "2026-09-05T12:05:39Z",
+ "per_axis": 3,
+ "axis_candidates": {
+  "強調記号": 3,
+  "内部語": 2,
+  "文の数": 13,
+  "英語語": 11
+ },
+ "dropped_axes": [
+  {
+   "axis": "内部語",
+   "candidates": 2
+  }
+ ],
+ "note": "題の全文は作業層にのみ置く。ここには先頭 80 字の抜粋を、別リポ識別子を伏せた形で載せる。",
+ "picked": [
+  {
+   "id": "q00",
+   "sess": "6052b2d5",
+   "resp_idx": 61,
+   "ctx": "owner 発話",
+   "selected_for": "強調記号",
+   "axes": [
+    {
+     "axis": "強調記号",
+     "key": "emphasis_raw",
+     "thr": 1,
+     "value": 3
+    }
+   ],
+   "resp_chars": 1673,
+   "request_excerpt": "今別のサービス開発のリポでアーティファクト作らせようとしてんだけど、また僕の理解用に。なんかあの、<repo-A>でも作らさせたのも含めて、読みやすい、読みやす",
+   "request_chars": 200,
+   "scrubbed": true
+  },
+  {
+   "id": "q01",
+   "sess": "6052b2d5",
+   "resp_idx": 21,
+   "ctx": "中継",
+   "selected_for": "強調記号",
+   "axes": [
+    {
+     "axis": "強調記号",
+     "key": "emphasis_raw",
+     "thr": 1,
+     "value": 2
+    }
+   ],
+   "resp_chars": 1366,
+   "request_excerpt": "#348 実例3 を読んで反映した（R-1 には進まず・裁定待ち継続）。統括の読み8が当たり、私の診断を1つ取り下げた＝実例1 の「見出し0で構造が無い」は t",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q02",
+   "sess": "6052b2d5",
+   "resp_idx": 27,
+   "ctx": "owner 発話",
+   "selected_for": "強調記号",
+   "axes": [
+    {
+     "axis": "強調記号",
+     "key": "emphasis_raw",
+     "thr": 1,
+     "value": 1
+    }
+   ],
+   "resp_chars": 1789,
+   "request_excerpt": "ちょっとこれまた派生の文脈という、なんだけど、まあ今生成文書に関して、生成文書じゃない、生成結果に対してのわかりやすさを重視してるんだけど、まあそれとは別に人間",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q03",
+   "sess": "5cb2121d",
+   "resp_idx": 4,
+   "ctx": "owner 発話",
+   "selected_for": "文の数",
+   "axes": [
+    {
+     "axis": "文の数",
+     "key": "sentences",
+     "thr": 37,
+     "value": 68
+    }
+   ],
+   "resp_chars": 3571,
+   "request_excerpt": "forAIってのは、特定のモデルに関して当然言ってることではなくて、単純にモデルが学習する時とかに必要なデータのフォーマットとか書き方みたいなのが、モデルLLM",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q04",
+   "sess": "5cb2121d",
+   "resp_idx": 5,
+   "ctx": "owner 発話",
+   "selected_for": "文の数",
+   "axes": [
+    {
+     "axis": "文の数",
+     "key": "sentences",
+     "thr": 37,
+     "value": 62
+    }
+   ],
+   "resp_chars": 4084,
+   "request_excerpt": "> 理由は、人間が書かないなら書きやすさを最適化する意味がなく、検証可能性を最適化すべきだから 日本は僕らのアイデアもこれが前提ではある。どっちかというと、もっ",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q05",
+   "sess": "5cb2121d",
+   "resp_idx": 3,
+   "ctx": "owner 発話",
+   "selected_for": "文の数",
+   "axes": [
+    {
+     "axis": "文の数",
+     "key": "sentences",
+     "thr": 37,
+     "value": 59
+    }
+   ],
+   "resp_chars": 4221,
+   "request_excerpt": "例えばそういった返答や文章に関する事例とか、同じ悩みとか対策スキルとか、どれだけあるかちょっと調べてみ。まあそう。そもそもこの4層ドキュメントの文脈というか、な",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q06",
+   "sess": "c7db7f29",
+   "resp_idx": 32,
+   "ctx": "owner 発話",
+   "selected_for": "英語語",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 49.03
+    }
+   ],
+   "resp_chars": 1116,
+   "request_excerpt": "あー、参考にした記事のリンクほしい https://github.com/stlwolf/ai-development-hub/blob/master/docs",
+   "request_chars": 127,
+   "scrubbed": false
+  },
+  {
+   "id": "q07",
+   "sess": "6052b2d5",
+   "resp_idx": 17,
+   "ctx": "中継",
+   "selected_for": "英語語",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 41.81
+    }
+   ],
+   "resp_chars": 1206,
+   "request_excerpt": "五点はまあよう、特にこだわらないんで推奨案でOK。分かりづらいやつね。うーん、付近でそう言われると見ないといけないから難しいな。ちょっと細かくやると難しいんで、",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q08",
+   "sess": "6052b2d5",
+   "resp_idx": 12,
+   "ctx": "中継",
+   "selected_for": "英語語",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 35.2
+    }
+   ],
+   "resp_chars": 1133,
+   "request_excerpt": "#307 P-2 追補反映済・P-4 再報告: /Users/eddy/work/repos/github.com/stlwolf/ai-development",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q09",
+   "sess": "6052b2d5",
+   "resp_idx": 8,
+   "ctx": "中継",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "内部語",
+     "key": "jargon_kinds",
+     "thr": 4,
+     "value": 5
+    },
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 26.79
+    }
+   ],
+   "resp_chars": 2417,
+   "request_excerpt": "#307 P-4 完了・STOP。report: /Users/eddy/work/repos/github.com/stlwolf/ai-developmen",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q10",
+   "sess": "1a7f2f59",
+   "resp_idx": 3,
+   "ctx": "owner 発話",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "文の数",
+     "key": "sentences",
+     "thr": 37,
+     "value": 50
+    }
+   ],
+   "resp_chars": 4120,
+   "request_excerpt": "仮に Pro プランにした時に、なんかもっと有用な API を取ってフィードを後で読むにしたやつを取れるっていうメリットは一旦使えるとして、その他になんかこうキ",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q11",
+   "sess": "1a7f2f59",
+   "resp_idx": 10,
+   "ctx": "owner 発話",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "文の数",
+     "key": "sentences",
+     "thr": 37,
+     "value": 52
+    }
+   ],
+   "resp_chars": 2710,
+   "request_excerpt": "いやー、結構この辺は共通的な観点で、僕がピックするときに、そのときにやっぱ興味のあるというか、作業してる部分に関連がありそうなのをピックしてるんで、全部が全部、",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q12",
+   "sess": "6052b2d5",
+   "resp_idx": 19,
+   "ctx": "中継",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 28.23
+    }
+   ],
+   "resp_chars": 1319,
+   "request_excerpt": "#348 R-0 追補完了（R-1 には進まず・再 HG 待ち継続）。実例1 を測ったら病理の中身が想定と違った＝長さ（中央値の2.9倍）と見出し0の平坦な長文",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q13",
+   "sess": "6052b2d5",
+   "resp_idx": 23,
+   "ctx": "中継",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 33.06
+    }
+   ],
+   "resp_chars": 562,
+   "request_excerpt": "#348 材料2件を反映（R-1 未着手・裁定待ち継続・終端不変）。設計に効く2点は gh api で spot-check して一致を確認。穴が3つ出た: (",
+   "request_chars": 200,
+   "scrubbed": false
+  },
+  {
+   "id": "q14",
+   "sess": "6052b2d5",
+   "resp_idx": 57,
+   "ctx": "owner 発話",
+   "selected_for": "追加",
+   "axes": [
+    {
+     "axis": "英語語",
+     "key": "english_per1k",
+     "thr": 26.52,
+     "value": 28.09
+    }
+   ],
+   "resp_chars": 731,
+   "request_excerpt": "skill-creatorを入れたときの記憶がないけど、これって明示的に入れてるってことだよね？それとも公式で入る？",
+   "request_chars": 58,
+   "scrubbed": false
+  }
+ ]
+}
