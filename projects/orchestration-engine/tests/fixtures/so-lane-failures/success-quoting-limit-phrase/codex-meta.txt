@@ -1,0 +1,11 @@
+tool=codex
+attempt=1
+attempt_state=finished
+timeout_limit_seconds=480
+model_requested=default
+exit_code=0
+timeout_status=success
+elapsed_seconds=131
+stdout_lines=3
+stdout_bytes=118
+stderr_bytes=0

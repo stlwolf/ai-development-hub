@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+#
+# check-orphan-links.sh — 配布先に残った symlink のうち、正本から消えたものを列挙する。
+# 既定は読み取り専用で、何も削除しない。--prune を付けたときだけ削除する。
+#
+# なぜ要るか:
+#   配置も検査も正本の側からファイルを列挙して配布先を見に行く形になっている。
+#   そのため正本から消したファイルの配布先は、配置でも検査でも一度も訪れられない。
+#   訪れられない場所に残ったリンクは、解決先が消えても誰も見ない（#359）。
+#
+# Usage:
+#   ./scripts/sync/check-orphan-links.sh claude
+#   ./scripts/sync/check-orphan-links.sh cursor
+#   ./scripts/sync/check-orphan-links.sh codex
+#   ./scripts/sync/check-orphan-links.sh claude --base /tmp/fake-home/.claude
+#   ./scripts/sync/check-orphan-links.sh claude --canonical /path/to/canonical
+#   ./scripts/sync/check-orphan-links.sh claude --verbose   # 何も無くても内訳を出す
+#   ./scripts/sync/check-orphan-links.sh claude --prune     # 孤児を削除する（明示のときだけ）
+#
+# 分類:
+#   orphan-canonical  リンク先が今の正本ディレクトリ配下を指しているのに、正本にその実体が無い。
+#                     これだけが後の掃除（--prune）の対象になる。
+#   dangling-outside  リンク先が解決できないが、正本配下でもない。報告だけ。別の仕組みが
+#                     張ったリンクを消さないため。
+#   alive-outside     リンク先は生きているが正本の外（別のチェックアウトや worktree）。
+#                     触らないが、配備が古い場所に固定されている状態なので分けて報告する。
+#
+# 通常ファイルは対象にしない。正本から消えた後に残る通常ファイルは別の負債として扱う。
+# ここに足すと運用者が手で置いたファイルを消しにかかる。
+#
+# Exit:
+#   0  孤児なし
+#   1  孤児あり（--prune 無し）／ 消さなかった孤児が残った（--prune 有り）
+#   2  検査を実行できない（正本が見つからない・引数が不正・配布先を走査できない 等）
+#
+# 「孤児があった」と「そもそも判定できなかった」は別の状態なので終了コードを分ける。
+# 呼び出し側（sync.sh --check）は 0 以外をすべて差分として扱うので、検知は落ちない。
+
+# -e は付けない。孤児を数え上げてから結論を出す設計で、途中で抜けると
+# 走査が尻切れになったことと孤児が無かったことが区別できなくなる。
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+CANONICAL="${REPO_ROOT}/canonical"
+BASE=""
+TARGET=""
+VERBOSE=false
+PRUNE=false
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+# printf を使う。echo -e だと、リンク先に含まれるバックスラッシュを
+# エスケープとして解釈してしまい、報告が実際のリンク先と違う文字列になる。
+info() { printf '%b[INFO]%b %s\n' "${GREEN}" "${NC}" "$1"; }
+warn() { printf '%b[WARN]%b %s\n' "${YELLOW}" "${NC}" "$1"; }
+error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
+
+# 配布先ディレクトリの allowlist。sync が書き込む場所だけを歩く。
+# ~/.claude 全体を歩くとセッションデータや cache に触るか、ノイズで溺れる。
+claude_dirs=(rules skills agents commands hooks orchestration-spec statusline output-styles)
+cursor_dirs=(rules skills agents commands hooks orchestration-spec)
+codex_dirs=(skills agents commands-registry hooks orchestration-spec)
+
+# 「いま配布規則がこの名前を配ろうとしているか」の判定。
+#
+# 配布先ごとの対応表を手で持つ形にしていたが、それでは足りなかった。理由が3つある。
+#   - 正本の側が入れ子になっている配布がある（canonical/commands の下は分類ごとの
+#     ディレクトリで、配布は basename だけを見て平らに置く）
+#   - 同じ配布先に複数の正本がある（Cursor の skills は共通と Cursor 専用の2つ、
+#     commands は共通と archive-title の2つ）
+#   - ツールごとに正本の場所が違う（Cursor の rules は canonical/cursor/rules の .mdc）
+#
+# 手で書いた表は、配布の側が変わると黙って古くなる。掃除は取り返しがつかないので、
+# 表を持たずに正本の木そのものへ問い合わせる形にした。同じ名前が正本のどこかに
+# あるなら配られうると見なして、消さない。
+#
+# この判定は意図的に緩い。消しすぎるより、消し損ねる方がよい。無関係な場所に
+# たまたま同じ名前があれば、本当の孤児を残すことになるが、それは報告に残る。
+would_be_distributed() {
+    local entry_name="$1" is_dir="$2" found="" rc=0
+    # find の -name は中身を glob として読む。名前に * や ? や [ が入っていると
+    # 自分自身の名前に一致せず、配られているのに「配布対象ではない」と判定して
+    # 消してしまう。特別な意味を持つ文字を打ち消してから渡す。
+    local pat
+    pat="$(printf '%s' "${entry_name}" | sed 's/[][*?\\]/\\&/g')"
+    if [[ "${is_dir}" == true ]]; then
+        # ディレクトリの配布（skills）は SKILL.md を持つ同名ディレクトリを探す。
+        found="$(find "${CANONICAL_REAL}" -type d -name "${pat}" \
+                   -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null | head -1)" || rc=$?
+    else
+        # 配布の関数はいずれも拡張子で絞っている（.md / .mdc / .sh）。ここは配布先ごとの
+        # 表ではなく、配布の仕組みそのものの性質なので、表に戻すことなく使える。
+        case "${entry_name}" in
+            *.md|*.mdc|*.sh) ;;
+            *) return 1 ;;
+        esac
+        found="$(find "${CANONICAL_REAL}" -type f -name "${pat}" 2>/dev/null | head -1)" || rc=$?
+    fi
+
+    # 見つかったなら配られうる。
+    [[ -n "${found}" ]] && return 0
+
+    # 見つからなかったとき、それが「無い」からなのか「探せなかった」からなのかを
+    # 区別する。探索そのものが失敗した場合は、配られうる側に倒して消さない。
+    # この判定は削除の安全弁なので、失敗が消してよい側へ倒れてはいけない。
+    if [[ "${rc}" -ne 0 ]]; then
+        warn "    配布対象かを確かめられませんでした。安全側に倒して残します: ${entry_name}"
+        return 0
+    fi
+    return 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        claude|cursor|codex) TARGET="$1"; shift ;;
+        --base)      [[ $# -ge 2 ]] || { error "--base に値がありません"; exit 2; }
+                     BASE="$2"; shift 2 ;;
+        --canonical) [[ $# -ge 2 ]] || { error "--canonical に値がありません"; exit 2; }
+                     CANONICAL="$2"; shift 2 ;;
+        -v|--verbose) VERBOSE=true; shift ;;
+        --prune)      PRUNE=true; shift ;;
+        -h|--help)
+            sed -n '/^# Usage:/,/^set -.*pipefail/p' "$0" | sed '$d' | sed -e 's/^# //' -e 's/^#$//'
+            exit 0 ;;
+        *) error "Unknown argument: $1"; exit 2 ;;
+    esac
+done
+
+if [[ -z "${TARGET}" ]]; then
+    error "ターゲットを指定してください（claude / cursor / codex）"
+    exit 2
+fi
+
+case "${TARGET}" in
+    claude) dirs=("${claude_dirs[@]}"); default_base="${HOME}/.claude" ;;
+    cursor) dirs=("${cursor_dirs[@]}"); default_base="${HOME}/.cursor" ;;
+    codex)  dirs=("${codex_dirs[@]}");  default_base="${HOME}/.codex" ;;
+esac
+[[ -z "${BASE}" ]] && BASE="${default_base}"
+
+# 正本が見つからない状態で歩くと、配備物のすべてが孤児に見える。
+# worktree から sync した後にその worktree を消す事故が実際に起きているので、
+# ここで止める（掃除の側では致命的になる）。
+if [[ ! -d "${CANONICAL}" ]]; then
+    error "正本ディレクトリが見つかりません: ${CANONICAL}"
+    error "  この状態で歩くと配備物のすべてが孤児に見えます。検査を中止します。"
+    exit 2
+fi
+
+# 解決できないパスでも必ず答えを返す。realpath は実装によって、存在しない
+# パスを解決する版と失敗する版がある（macOS は解決し、GNU は -m 無しだと失敗する）。
+# 版差で分類が変わると、掃除の対象までぶれる。存在する祖先まで解決して残りを
+# 継ぎ足す形にして、どちらの版でも同じ答えにする。
+_realpath_raw() {
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$1" 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1" 2>/dev/null
+    else
+        # どちらも無い環境では静かに失敗する。正常時は黙るという契約を、
+        # 見つからないコマンドの叫びで壊さない。
+        return 1
+    fi
+}
+
+# 常に「存在する祖先まで解決して残りを継ぎ足す」1つの手順で答えを出す。
+# 存在しないパスをそのまま渡すと、解決する実装（macOS の realpath / python の
+# os.path.realpath）と失敗する実装（GNU の realpath）で答えが変わり、
+# 掃除の対象がぶれる。渡す先を必ず「存在するパス」に揃えることで版差を消す。
+resolve_path() {
+    local p="$1" rest="" cur base
+    cur="$p"
+    while [[ -n "${cur}" && "${cur}" != "/" && "${cur}" != "." ]]; do
+        if [[ -e "${cur}" ]]; then
+            base="$(_realpath_raw "${cur}")"
+            if [[ -n "${base}" ]]; then
+                # base が / のときに // にならないよう、連続するスラッシュだけ潰す。
+                # 2個以上の連続だけを1つに畳む（//* だと単一のスラッシュにも当たる）。
+                printf '%s' "${base}${rest}" | sed 's|//\{1,\}|/|g'
+                return 0
+            fi
+            break
+        fi
+        rest="/$(basename "${cur}")${rest}"
+        cur="$(dirname "${cur}")"
+    done
+    printf '%s' "$p"
+}
+
+CANONICAL_REAL="$(resolve_path "${CANONICAL}")"
+[[ -z "${CANONICAL_REAL}" ]] && CANONICAL_REAL="${CANONICAL}"
+
+# macOS の既定のファイルシステムは大文字小文字を区別しない。綴りだけが違う
+# リンク先は、文字列の前方一致では正本配下と判定できず、孤児を見落とす。
+# 実際に試して確かめる（決め打ちしない）。
+# 判定はファイルを作らずに行う。読み取り専用の検査が正本の隣にファイルを
+# 作って消すのは、たとえ一時的でも筋が悪い（同名ファイルを壊しうるし、
+# 割り込まれると残る）。既にあるパスの綴りを変えて到達できるかで見る。
+CASE_INSENSITIVE=false
+_case_probe() {
+    local alt="$1"
+    # 存在するだけでは足りない。区別する FS に綴り違いの別ディレクトリがあると
+    # 誤判定し、他人のリンクを掃除の対象にしてしまう。同じ実体かどうかを見る。
+    [[ "${alt}" != "${CANONICAL_REAL}" && -e "${alt}" && "${alt}" -ef "${CANONICAL_REAL}" ]]
+}
+if _case_probe "$(printf '%s' "${CANONICAL_REAL}" | tr '[:lower:]' '[:upper:]')" \
+   || _case_probe "$(printf '%s' "${CANONICAL_REAL}" | tr '[:upper:]' '[:lower:]')"; then
+    CASE_INSENSITIVE=true
+fi
+
+# 前方一致。区別しないファイルシステムでは綴りを揃えてから比べる。
+under_prefix() {
+    local path="$1" prefix="$2"
+    if [[ "${CASE_INSENSITIVE}" == true ]]; then
+        path="$(printf '%s' "${path}" | tr '[:upper:]' '[:lower:]')"
+        prefix="$(printf '%s' "${prefix}" | tr '[:upper:]' '[:lower:]')"
+    fi
+    [[ "${path}" == "${prefix}" || "${path}" == "${prefix}/"* ]]
+}
+
+orphan_count=0
+orphan_paths=()
+orphan_dirs=()
+scan_failed=false
+listing=""
+find_rc=0
+outside_dangling_count=0
+outside_alive_count=0
+scanned=0
+
+# 何も見つからないときは既定では黙る。sync.sh --check の正常時の出力を
+# 変えないという契約のため。--verbose を付けると走査の内訳を出す。
+if [[ "${VERBOSE}" == true ]]; then
+    echo "配布先の孤児 symlink（${TARGET}: ${BASE}）"
+    echo "  正本: ${CANONICAL_REAL}"
+fi
+
+for d in "${dirs[@]}"; do
+    dir="${BASE}/${d}"
+    if [[ ! -d "${dir}" ]]; then
+        # 「無い」のか「あるが辿れない」のかを区別する。親が辿れないと -d は
+        # 偽になるので、黙って飛ばすと走査できなかったことが緑に化ける。
+        if [[ -e "${dir}" ]]; then
+            error "  配布先がディレクトリではありません: ${dir}"
+            scan_failed=true
+        elif [[ -d "${BASE}" && ! -x "${BASE}" ]]; then
+            error "  配布先の親を辿れないので確かめられません: ${dir}"
+            scan_failed=true
+        fi
+        continue
+    fi
+    # process substitution だと find の終了コードが取れないので、いったん受ける。
+    if ! listing="$(mktemp)" || [[ -z "${listing}" ]]; then
+        error "作業ファイルを作れません"
+        exit 2
+    fi
+    find_rc=0
+    # 名前に改行が入りうるので NUL 区切りで受ける。行区切りだと1件が2件に割れる。
+    # 末尾のスラッシュを付ける。付けないと、走査ルート自体が symlink のときに
+    # find が中へ降りず、孤児を全件見落として緑を返す。
+    find "${dir}/" -maxdepth 1 -mindepth 1 -type l -print0 > "${listing}" 2>/dev/null || find_rc=$?
+    while IFS= read -r -d '' entry; do
+        [[ -n "${entry}" ]] || continue
+        scanned=$((scanned + 1))
+        raw="$(readlink "${entry}")"
+        # 相対リンクはリンクのあるディレクトリからの相対として絶対化する。
+        abs="${raw}"
+        # 相対リンクはリンクのあるディレクトリからの相対。ここで .. を字句的に
+        # 畳んではいけない。途中に symlink があると a/link/../b は a/b ではなく、
+        # 畳むと外向きのリンクを正本配下と誤って判定して掃除の対象に混ぜてしまう。
+        # .. の解決はファイルシステムに任せる（resolve_path が行う）。
+        [[ "${abs}" != /* ]] && abs="$(dirname "${entry}")/${abs}"
+
+        # 正本配下かどうかは、解決できた実パスと生のターゲット文字列の両方で見る。
+        # 解決先が消えていると realpath は失敗するので、生の文字列が要る。
+        under_canonical=false
+        real="$(resolve_path "${abs}")"
+        # resolve_path は常に答えを返す。存在する祖先まで解決してから残りを
+        # 継ぎ足すので、正本配下の中間 symlink が外を指す場合もここで外れる。
+        # 生の文字列だけを見る分岐は置かない（解決結果と食い違う判定になるため）。
+        under_prefix "${real}" "${CANONICAL_REAL}" && under_canonical=true
+
+        alive=false
+        [[ -e "${entry}" ]] && alive=true
+
+        rel="${d}/$(basename "${entry}")"
+        if [[ "${under_canonical}" == true ]]; then
+            if [[ "${alive}" == false ]]; then
+                warn "  orphan-canonical ${rel} → ${raw}"
+                warn "    正本を指していますが、そこに実体がありません"
+                orphan_count=$((orphan_count + 1))
+                orphan_paths+=("${entry}")
+                orphan_dirs+=("${d}")
+            fi
+        else
+            if [[ "${alive}" == false ]]; then
+                warn "  dangling-outside ${rel} → ${raw}"
+                warn "    解決できませんが正本の外なので触りません（別の仕組みが張った可能性）"
+                outside_dangling_count=$((outside_dangling_count + 1))
+            else
+                # 生きている外向きリンクは、worktree から走らせると配備物の全部が
+                # 該当する。既定では1件ずつ出さず、末尾の要約だけにする。
+                if [[ "${VERBOSE}" == true ]]; then
+                    warn "  alive-outside ${rel} → ${raw}"
+                    warn "    生きていますが正本の外を指しています（別のチェックアウトに固定されている可能性）"
+                fi
+                outside_alive_count=$((outside_alive_count + 1))
+            fi
+        fi
+    done < "${listing}"
+    # 走査そのものが失敗したら、孤児が無かったのか見られなかったのかを区別できない。
+    # 黙って次のディレクトリへ進むと、母集団が縮んだまま緑を返せてしまう。
+    if [[ "${find_rc}" -ne 0 ]]; then
+        error "  配布先を走査できませんでした: ${dir}"
+        scan_failed=true
+    fi
+    rm -f "${listing}"
+done
+
+if [[ "${VERBOSE}" == true ]]; then
+    echo ""
+    info "  走査した symlink: ${scanned} 件"
+fi
+if [[ "${outside_dangling_count}" -gt 0 || "${outside_alive_count}" -gt 0 ]]; then
+    info "  正本の外: 解決できない ${outside_dangling_count} 件 / 生きている ${outside_alive_count} 件（掃除の対象外）"
+fi
+
+if [[ "${scan_failed}" == true ]]; then
+    # 「孤児があった」(1) とは別の状態なので、終了コードも分ける。
+    # 呼び出し側は 0 以外をすべて差分として扱うので、検知は落ちない。
+    error "  ${TARGET}: 走査できなかった配布先があるため、孤児の有無を判定できません"
+    exit 2
+fi
+
+if [[ "${orphan_count}" -gt 0 && "${PRUNE}" == true ]]; then
+    echo ""
+    info "  掃除を始めます（--prune が指定されています）"
+
+    # 正本の側が壊れている状態で掃除を走らせると、配備物のすべてが孤児に見える。
+    # worktree から sync した後にその worktree を消す事故は実際に起きている。
+    # ディレクトリだけ残って中身が消えた状態も「空」として扱う。数えるのはファイル。
+    canon_entries="$(find "${CANONICAL_REAL}" -type f 2>/dev/null | head -1 | wc -l | tr -d ' ')"
+    if [[ "${canon_entries}" -eq 0 ]]; then
+        error "  正本の側が空です。この状態では配備物のすべてが孤児に見えるので掃除しません"
+        exit 2
+    fi
+    # 孤児が配備物の大半を占めるなら、正本の側が壊れている疑いが強い。
+    if [[ "${scanned}" -gt 0 && $(( orphan_count * 2 )) -gt "${scanned}" ]]; then
+        error "  孤児が配備物の半分を超えています（${orphan_count} / ${scanned}）。正本の側が壊れている疑いがあるので掃除しません"
+        exit 2
+    fi
+
+    pruned=0
+    kept=0
+    for i in "${!orphan_paths[@]}"; do
+        entry="${orphan_paths[$i]}"
+        dir_name="${orphan_dirs[$i]}"
+        entry_name="$(basename "${entry}")"
+
+        # 順序が要になる。全木の探索は時間がかかるので先に済ませ、その後に
+        # 安い再確認を置いて、そのまま削除へ入る。逆にすると、再確認と削除の
+        # 間に全木の探索が挟まり、その隙に通常ファイルへ変わったものを消しうる。
+
+        # まず、いま配布規則がこの名前を配ろうとしているか（重い判定）。
+        entry_is_dir=false
+        [[ "${dir_name}" == "skills" ]] && entry_is_dir=true
+        if would_be_distributed "${entry_name}" "${entry_is_dir}"; then
+            info "  いまも配布の対象なので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+
+        # ここから下は安い判定だけを置く。削除の直前にやり直す意味がある。
+        if [[ ! -L "${entry}" ]]; then
+            info "  もう symlink ではないので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        if [[ -e "${entry}" ]]; then
+            info "  解決できるようになったので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        # リンク先が今も正本配下を指しているか、物理的に解決して確かめ直す。
+        raw2="$(readlink "${entry}")"
+        abs2="${raw2}"
+        [[ "${abs2}" != /* ]] && abs2="$(dirname "${entry}")/${abs2}"
+        real2="$(resolve_path "${abs2}")"
+        if ! under_prefix "${real2}" "${CANONICAL_REAL}"; then
+            info "  正本の外を指しているので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+        # 最後にもう一度だけ symlink であることを見る。ここと削除の間には何も置かない。
+        if [[ ! -L "${entry}" ]]; then
+            info "  直前に symlink でなくなったので触りません: ${dir_name}/${entry_name}"
+            kept=$((kept + 1)); continue
+        fi
+
+        if rm -f "${entry}"; then
+            info "  削除: ${dir_name}/${entry_name} → ${raw2}"
+            pruned=$((pruned + 1))
+        else
+            error "  削除できませんでした: ${dir_name}/${entry_name}"
+            kept=$((kept + 1))
+        fi
+    done
+
+    echo ""
+    info "  削除 ${pruned} 件 / 残した ${kept} 件"
+    if [[ "${kept}" -gt 0 ]]; then
+        error "  ${TARGET}: 消さなかった孤児が ${kept} 件あります"
+        exit 1
+    fi
+    info "  ${TARGET}: 孤児を掃除しました"
+    exit 0
+fi
+
+if [[ "${orphan_count}" -gt 0 ]]; then
+    error "  ${TARGET}: 正本から消えた配布先が ${orphan_count} 件残っています"
+    info "  消すには --prune を付けてください（既定では報告だけです）"
+    exit 1
+fi
+[[ "${VERBOSE}" == true ]] && info "  ${TARGET}: 正本から消えた配布先はありません"
+exit 0

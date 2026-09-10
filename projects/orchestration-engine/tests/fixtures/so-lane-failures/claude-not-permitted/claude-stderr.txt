@@ -1,0 +1,2 @@
+/Users/eddy/bin/claude-safe: line 34: /Users/eddy/.claude_wrapper/output_28052.txt: Operation not permitted
+cat: /Users/eddy/.claude_wrapper/output_28052.txt: No such file or directory

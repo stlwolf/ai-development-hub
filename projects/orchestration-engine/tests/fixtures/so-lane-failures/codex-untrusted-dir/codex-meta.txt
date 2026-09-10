@@ -1,0 +1,8 @@
+tool=codex
+model_requested=default
+model_resolved=gpt-5.5
+exit_code=1
+timeout_status=error
+elapsed_seconds=0
+stdout_lines=0
+stdout_bytes=0

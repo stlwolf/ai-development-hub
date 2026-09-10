@@ -13,7 +13,11 @@ exclusions:
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-01-episode-293-exploration-promotion.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-07
+    ref: "#303"
+    state: injected_not_used
+    note: "適用機会はあったが使わなかった。gate 2 も gate 4 も全レーンが実返却したので未返却の判定そのものには当たらなかったが、この item は「partial の開示と再走の規約を分類と一緒に設計する」ことを求めており、その設計機会は plan にあった。plan は分類と入力拒否だけを扱い、遅れて返るレーンの扱いを設計していない。設計SO の3レーンも別方向から同じ穴を指摘している（分類が消費者の集約に接続されていない）"
 ---
 
 未返却のレーンを「返らないレーン」と同一視してはいけない。**遅れて返るレーンは、判定に足す1票ではなく、判定の前提を崩す側に回ることがある。**

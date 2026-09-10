@@ -1,0 +1,529 @@
+#!/usr/bin/env bash
+# oe-lane-explain — SO のレーンが返らなかった理由を、過去の出力から読み取る read-only 観測 verb (#303)
+#
+# usage:
+#   oe-lane-explain <dir>...        指定した SO 出力ディレクトリのレーンを分類して表で出す
+#   oe-lane-explain --scan <root>   <root>/tmp 配下の SO 出力ディレクトリを全部集めて当てる
+#   oe-lane-explain --json ...      1 レーン 1 行の JSON（JSONL）で出す
+#   oe-lane-explain --summary ...   版の目印で層別した件数を出す
+#   oe-lane-explain -h | --help
+#
+# なぜ so-compare の外に置くか（#303 の設計SO で3レーン中2レーンが独立に出した案）:
+#   so-compare は ~/bin から repo への symlink で配布されており、触ると全セッションへ即座に
+#   反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。
+#   本 verb は出力ディレクトリを読むだけなので、シグネチャを直しても誰の実行にも影響しない。
+#   加えて **過去の出力へ遡って当てられる**（配布物側に入れると当てられるのは今後の実行だけ）。
+#
+# read-only / 非検出: 読むのは引数で指定された出力ディレクトリ配下のファイルだけである。
+#   write path を持たず、engine state（events / registry / session-state）にも触れない。
+#
+# 分類の契約（#303 の plan v2 §8 I-1）:
+#   - **「ファイルが不在」と「ファイルが空」を畳まない。** 不在は「そのファイルを作らない版が
+#     この記録を生成した」という証拠を運んでいる。畳むとレコードの出自を取り違える
+#     （knowledge/items/01M1VX9MH72K7G940R6WC7M218.md）。
+#   - **exit_code=0 のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を
+#     引用しただけのものを故障と読まないため（設計SO の指摘）。
+#   - **当たらなければ unknown に倒す。** 断定しない。evidence は none と書く。
+#   - **経過秒と上限の一致を原因の判定に使わない。** 上限で kill されたことは timeout_status が
+#     すでに表しており、その原因が時間なのか使用量上限なのかは決まらない。
+#
+# 版の目印（so_compare_version が meta に無い記録のための代替）:
+#   so-compare は 2026-08-02 以降に4回変わり、うち #296 は claude の stdout の意味そのものを
+#   変えた（JSON 形式で受けるようになり、プロセス標準出力は claude-raw.json へ落ちる）。
+#   meta に so-compare 自身の版は入っていないので、**観測できる目印だけを出す**（推定した
+#   「版」を1つの値にまとめない）。目印は era_markers に列挙する。
+#
+# 想定する脅威の範囲（**守れる範囲と守れない範囲を分けて書く**）:
+#   本 verb が読むのは、**同じ作業ツリーで so-compare が自分で作った出力**である。したがって
+#   守るのは「壊れた入力・想定外の入力で、黙って嘘の census を返さないこと」までで、
+#   **出力ディレクトリへ任意のファイルを書ける相手を想定した防御は、この道具では成立しない。**
+#     - **hard link は原理的に弾けない。** ハードリンクは通常ファイルそのもの（symlink ではない）で、
+#       外のファイルと inode を共有する。パスからは正当なファイルと区別がつかない。
+#     - **検査と読み出しの間の差し替え（TOCTOU）も塞げない。** 検査と `grep` / `wc` / `jq` は別々の
+#       名前解決なので、その間に置き換えられる。shell から fd を握ったまま検査する手段が無い。
+#   これらが問題になる状況（出力ディレクトリへ書ける相手がいる）では、**その相手は同じ作業ツリーの
+#   スクリプトや git hook も書き換えられる**ので、本 verb を固めても実質的な防御にならない。
+#   **弾けるものは弾く**（symlink・dangling symlink・FIFO やデバイス・symlink のディレクトリ・
+#   `--scan` の `tmp` が symlink の場合）。弾けないものは、ここに書いて隠さない。
+#
+# exit: 0 正常 / 2 前提が満たせない。**「観測できなかった」を成功に化かさない。**
+#   exit 2 になるのは次のすべてである。
+#     - 引数が無い / 不明なオプション / 閾値の環境変数が正の整数でない
+#     - 指定されたディレクトリが無い・読めない
+#     - レーンの記録が1件も見つからない（空表を「0 件」として返さない）
+#     - **読めなかった meta が1件でもある**（母集団の数え上げに使うので、欠けた census を返さない）
+
+set -uo pipefail
+
+err() { printf 'oe-lane-explain: %s\n' "$*" >&2; }
+
+# **jq を前提にする。** 無いと2つのことが起きる。claude の raw.json から本文を取り出せず、
+# 同じ保存済みの記録がホストによって別の分類になる（判定がホスト依存になる）。もう1つは
+# JSON の組み立てを自前でやることになり、エスケープの欠陥を持ち込む。どちらも「前提が
+# 満たせない」であって degrade ではないので exit 2 で止める。
+command -v jq >/dev/null 2>&1 || { err "jq が要ります（分類も --json も jq に依存します）"; exit 2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-lane-explain [--json|--summary] <dir>...
+  oe-lane-explain [--json|--summary] --scan <root>
+
+  --scan <root>   <root>/tmp 配下の so-* / oe-refute-* / oe-review-* を集めて当てる
+  --json          1 レーン 1 行の JSON（JSONL）で出す
+  --summary       版の目印で層別した件数を出す
+  -h, --help      このヘルプを表示
+
+出力（既定の表）: DIR / LANE / ATT / STATUS / EXIT / ELAPSED / OUT / ERR / REASON / EVIDENCE
+exit: 0 正常 / 2 前提が満たせない（引数なし・jq 不在・閾値が範囲外・読めない・
+      レーンが1件も無い・観測できなかった記録が1件でもある）
+
+前提: 出力ディレクトリは信頼できる書き手だけが書く。
+  本 verb が読むのは、同じ作業ツリーで so-compare が自分で作った出力である。壊れた入力や
+  想定外の入力で黙って嘘の集計を返さないようにはしてあるが、そのディレクトリへ任意のファイルを
+  書ける相手を想定した防御はしていない。hard link は通常ファイルそのものでパスからは正当な
+  ファイルと区別がつかず、検査と読み出しの間の差し替え（TOCTOU）も shell からは塞げないため、
+  この道具では原理的に閉じられない。そもそもそこへ書ける相手は、同じ木のスクリプトや git hook
+  も書き換えられるので、本 verb だけを固めても実質的な防御にならない。弾けるもの（symlink・
+  参照先の無い symlink・FIFO やデバイス・symlink のディレクトリ・--scan の tmp が symlink）は
+  弾く。
+EOF
+}
+
+# --- ファイルの状態（不在と空を畳まない） ---
+# 出力: absent / empty / present
+file_state() {
+  local f="$1"
+  if [[ ! -e "$f" ]]; then printf 'absent'; return; fi
+  if [[ ! -s "$f" ]]; then printf 'empty'; return; fi
+  printf 'present'
+}
+
+file_bytes() {
+  local f="$1"
+  if [[ ! -e "$f" ]]; then printf '-'; return; fi
+  wc -c < "$f" 2>/dev/null | tr -d ' '
+}
+
+meta_get() {
+  local meta="$1" key="$2" v
+  v="$(grep -m1 "^${key}=" "$meta" 2>/dev/null | cut -d= -f2- || true)"
+  printf '%s' "$v"
+}
+
+# シグネチャを当てる範囲（実測で決めた・下の理由を参照）
+SIG_TAIL_LINES="${OE_LANE_EXPLAIN_TAIL_LINES:-200}"
+
+# 閾値の環境変数は**入口で正の整数だけを通す**。
+#
+# **未検証のまま算術式へ入れるとコマンドが走る。** bash の `(( ))` は中の配列添字を再展開するので、
+# `OE_LANE_EXPLAIN_SMALL_BYTES='DIRS[$(command)0]'` のような値で任意のコマンドが実行できる。
+# read-only を名乗る verb でこれが通ると、名乗りそのものが嘘になる。実装SO が実際に
+# 副作用のない payload を走らせて実証した（#303 の gate 4）。
+#
+# `tail -n` へ渡す側も同じ入口で弾く。こちらは実行はされないが、非数値だと tail が落ちて
+# 判定が静かに変わる（当たらなくなるだけなので気づきにくい）。
+for _t_var in OE_LANE_EXPLAIN_TAIL_LINES OE_LANE_EXPLAIN_SMALL_BYTES; do
+  _t_val="${!_t_var:-}"
+  if [[ -n "$_t_val" && ! "$_t_val" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    # 桁数も縛る。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ
+    # overflow し、既知の故障が静かに unknown へ落ちる（実装SO が実証）。tail(1) も
+    # 実装ごとに上限があり、超えると黙って失敗して判定だけが変わる。
+    err "${_t_var} は 1〜999999999 の整数で指定してください: ${_t_val}"
+    exit 2
+  fi
+done
+unset _t_var _t_val
+
+# 行頭に錨を打ち、末尾 SIG_TAIL_LINES 行だけを見る。
+#
+# **素の部分一致では誤検出する。実物で踏んだ。** codex のレーンは stderr に TUI の描画を流すので、
+# ワークスペースの本文がそのままエコーされる。tmp/so-288-h3 の stderr は 831KB・6964 行あり、
+# その 2095 行目に「codex が引数を拒否していた（`error: invalid UTF-8 was detected ...`）」という
+# **リポジトリの散文**が入っている。素の grep はこれを故障のシグネチャとして拾い、本当は
+# timeout_empty のレーンを invalid_input と誤って断定した。
+#
+# 錨と末尾の2つを課すと分かれる。**本物は行頭に立ち、末尾に出る**（プロセスが死ぬ直前に出すため）。
+#   本物 : tmp/so-288-gate2-r2 の stderr は 6 行で、1 行目が `error: invalid UTF-8 ...`
+#   エコー: tmp/so-288-h3 は 6964 行中 2095 行目・行の途中（散文の中）
+# 上限を上げれば拾えるものが増えるが、同時に誤検出も増える。**拾えないほうへ倒す**（当たらなければ
+# unknown になるだけで、断定はしない）。
+line_starts_with() {
+  local pat="$1" f="$2"
+  [[ -s "$f" ]] || return 1
+  tail -n "$SIG_TAIL_LINES" "$f" 2>/dev/null \
+    | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { found = 1 } END { exit !found }'
+}
+
+# 錨が使えない文言のための逃し弁。**小さいファイルに限り**、行頭の錨なしで部分一致を許す。
+#
+# シェルが出す `<path>: line N: <path>: Operation not permitted` のように、**行頭が機械ごとに
+# 変わる**ものは錨を打てない。一方で誤検出の元はレーンの stderr に流れ込む TUI の描画（数百KB
+# まで育つ）なので、**小ささを条件にすれば誤検出の経路を塞げる**。上限は実測から決めた
+# （診断だけの stderr は 115〜7254 バイト・TUI が乗ると 168KB 以上）。
+SIG_SMALL_BYTES="${OE_LANE_EXPLAIN_SMALL_BYTES:-16384}"
+
+contains_in_small_file() {
+  local pat="$1" f="$2" sz
+  [[ -s "$f" ]] || return 1
+  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
+  [[ -n "$sz" ]] || return 1
+  (( sz <= SIG_SMALL_BYTES )) || return 1
+  LC_ALL=C grep -qF -- "$pat" "$f" 2>/dev/null
+}
+
+sig_hit_small() {
+  local label="$1" pat="$2" f="$3"
+  if contains_in_small_file "$pat" "$f"; then
+    printf '%s' "$label"
+    return 0
+  fi
+  return 1
+}
+
+# claude の本文は版で落ち先が変わる（#296 以降はプロセス標準出力が raw.json へ行く）。
+# stdout・raw.json の素の中身・raw.json の .result の3つを見る。
+claude_body_hit() {
+  local pat="$1" out="$2" raw="$3"
+  line_starts_with "$pat" "$out" && return 0
+  line_starts_with "$pat" "$raw" && return 0
+  if [[ -s "$raw" ]]; then
+    # **ここも末尾窓を通す。** 通さないと、先頭で故障の文言を引用してから長い回答を続けた
+    # 出力が、窓の外にあるのに当たってしまう（実装SO が到達可能な経路として実証）。
+    jq -r '.result? // empty' "$raw" 2>/dev/null \
+      | tail -n "$SIG_TAIL_LINES" \
+      | LC_ALL=C awk -v p="$pat" 'index($0, p) == 1 { found = 1 } END { exit !found }' && return 0
+  fi
+  return 1
+}
+
+# 指定ファイル群のいずれかにシグネチャが当たれば、当たった側のラベルを返す。
+# 使い方: sig_hit <label> <pattern> <file>...
+sig_hit() {
+  local label="$1" pat="$2"; shift 2
+  local f
+  for f in "$@"; do
+    if line_starts_with "$pat" "$f"; then
+      printf '%s' "$label"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# claude 専用（本文の落ち先が版で変わるため）
+sig_hit_claude_body() {
+  local label="$1" pat="$2" out="$3" raw="$4"
+  if claude_body_hit "$pat" "$out" "$raw"; then
+    printf '%s' "$label"
+    return 0
+  fi
+  return 1
+}
+
+# --- レーン1件を分類する ---
+# 出力はグローバル R_* に置く（bash 3.2 互換のため連想配列を使わない）。
+classify_lane() {
+  local dir="$1" tool="$2" sfx="$3"
+  local meta="${dir}/${tool}-meta.txt${sfx}"
+  local out="${dir}/${tool}-stdout.txt${sfx}"
+  local errf="${dir}/${tool}-stderr.txt${sfx}"
+  local raw="${dir}/${tool}-raw.json${sfx}"
+
+  R_DIR="$(basename "$dir")"
+  R_TOOL="$tool"
+  R_ATTEMPT="$(meta_get "$meta" attempt)"
+  [[ -n "$R_ATTEMPT" ]] || R_ATTEMPT='-'
+  R_STATE="$(meta_get "$meta" attempt_state)"
+  [[ -n "$R_STATE" ]] || R_STATE='-'
+  R_STATUS="$(meta_get "$meta" timeout_status)"
+  [[ -n "$R_STATUS" ]] || R_STATUS='-'
+  R_EXIT="$(meta_get "$meta" exit_code)"
+  [[ -n "$R_EXIT" ]] || R_EXIT='-'
+  R_ELAPSED="$(meta_get "$meta" elapsed_seconds)"
+  [[ -n "$R_ELAPSED" ]] || R_ELAPSED='-'
+  R_LIMIT="$(meta_get "$meta" timeout_limit_seconds)"
+  [[ -n "$R_LIMIT" ]] || R_LIMIT='-'
+  R_MODEL="$(meta_get "$meta" model_requested)"
+  [[ -n "$R_MODEL" ]] || R_MODEL='-'
+  R_CLI="$(meta_get "$meta" cli_version)"
+  [[ -n "$R_CLI" ]] || R_CLI='-'
+
+  # so-compare 自身の版。いまの meta には入っていないので、入っていなければそう書く。
+  R_SOVER="$(meta_get "$meta" so_compare_version)"
+  [[ -n "$R_SOVER" ]] || R_SOVER='unavailable:not-recorded'
+
+  R_OUT_STATE="$(file_state "$out")"
+  R_ERR_STATE="$(file_state "$errf")"
+  R_RAW_STATE="$(file_state "$raw")"
+  R_OUT_BYTES="$(file_bytes "$out")"
+  R_ERR_BYTES="$(file_bytes "$errf")"
+
+  # 版の目印（推定した版を1つの値にまとめない）
+  local markers=''
+  if [[ "$tool" == 'claude' ]]; then
+    if [[ "$R_RAW_STATE" == 'absent' ]]; then
+      markers='claude-raw-absent'   # JSON 形式で受ける前（#296 より前）の記録
+    else
+      markers='claude-raw-present'  # #296 以降
+    fi
+  fi
+  if [[ -n "$(meta_get "$meta" timeout_limit_seconds)" ]]; then
+    markers="${markers:+${markers},}limit-recorded"   # #328 以降
+  else
+    markers="${markers:+${markers},}limit-not-recorded"
+  fi
+  R_MARKERS="$markers"
+
+  # --- 原因の判定 ---
+  R_REASON='unknown'
+  R_EVIDENCE='none'
+
+  # 成功したレーンにはシグネチャを当てない（陰性対照）。
+  if [[ "$R_EXIT" == '0' ]]; then
+    R_REASON='none'
+    R_EVIDENCE='none'
+    return 0
+  fi
+
+  local hit=''
+  case "$tool" in
+    codex)
+      hit="$(sig_hit 'codex-stderr:usage-limit'   "ERROR: You've hit your usage limit"                           "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:invalid-utf8'  'error: invalid UTF-8 was detected'                            "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:untrusted-dir' 'Not inside a trusted directory'                               "$errf")" ||
+      hit="$(sig_hit 'codex-stderr:path-aliases'  'WARNING: proceeding, even though we could not create PATH aliases' "$errf")" ||
+      hit=''
+      ;;
+    claude)
+      hit="$(sig_hit_claude_body 'claude-body:session-limit' "You've hit your session limit" "$out" "$raw")" ||
+      hit="$(sig_hit_claude_body 'claude-body:usage-limit'   "You've hit your usage limit"   "$out" "$raw")" ||
+      hit="$(sig_hit_small 'claude-stderr:not-permitted' 'Operation not permitted' "$errf")" ||
+      hit="$(sig_hit_claude_body 'claude-body:api-error'     'API Error:'                    "$out" "$raw")" ||
+      hit=''
+      ;;
+    cursor)
+      hit="$(sig_hit 'cursor-stderr:auth-required' 'Error: Authentication required' "$errf")" ||
+      hit=''
+      ;;
+  esac
+
+  [[ -n "$hit" ]] || return 0
+  R_EVIDENCE="$hit"
+  case "$hit" in
+    *:usage-limit|*:session-limit) R_REASON='usage_limit' ;;
+    *:auth-required)               R_REASON='auth_required' ;;
+    *:invalid-utf8)                R_REASON='invalid_input' ;;
+    *:untrusted-dir|*:path-aliases|*:not-permitted) R_REASON='environment' ;;
+    # 通信断は「再走で救えるか」が決まらないので断定しない。証拠だけ残す。
+    *:api-error)                   R_REASON='unknown' ;;
+  esac
+  return 0
+}
+
+# JSON は **jq に組ませる**。
+#
+# 自前でエスケープしていたが、実装SO が2つの欠陥を実証した。
+#   - `awk -v s="$1"` は**代入の時点で awk がバックスラッシュを解釈する**ので、`A\nB` という
+#     合法なディレクトリ名が実際の改行に化け、`\q` はバックスラッシュが落ちた。可逆でない。
+#   - 0x80-0xff を無条件に通していたので、不正な UTF-8 を含むファイル名では**不正な JSON** を
+#     exit 0 で出していた。
+# jq は両方を正しく扱う（不正なバイトは U+FFFD へ置換されるので、出力は常に妥当な JSON になる）。
+emit_json() {
+  jq -cn \
+    --arg dir "$R_DIR" --arg lane "$R_TOOL" --arg attempt "$R_ATTEMPT" \
+    --arg attempt_state "$R_STATE" --arg timeout_status "$R_STATUS" --arg exit_code "$R_EXIT" \
+    --arg elapsed_seconds "$R_ELAPSED" --arg timeout_limit_seconds "$R_LIMIT" \
+    --arg model_requested "$R_MODEL" --arg cli_version "$R_CLI" --arg so_compare_version "$R_SOVER" \
+    --arg stdout_state "$R_OUT_STATE" --arg stderr_state "$R_ERR_STATE" --arg raw_state "$R_RAW_STATE" \
+    --arg stdout_bytes "$R_OUT_BYTES" --arg stderr_bytes "$R_ERR_BYTES" \
+    --arg era_markers "$R_MARKERS" --arg failure_reason "$R_REASON" --arg failure_evidence "$R_EVIDENCE" \
+    '{dir:$dir, lane:$lane, attempt:$attempt, attempt_state:$attempt_state,
+      timeout_status:$timeout_status, exit_code:$exit_code, elapsed_seconds:$elapsed_seconds,
+      timeout_limit_seconds:$timeout_limit_seconds, model_requested:$model_requested,
+      cli_version:$cli_version, so_compare_version:$so_compare_version,
+      stdout_state:$stdout_state, stderr_state:$stderr_state, raw_state:$raw_state,
+      stdout_bytes:$stdout_bytes, stderr_bytes:$stderr_bytes, era_markers:$era_markers,
+      failure_reason:$failure_reason, failure_evidence:$failure_evidence}'
+}
+
+# --- 引数 ---
+MODE='table'
+SCAN_ROOT=''
+DIRS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --json)    MODE='json'; shift ;;
+    --summary) MODE='summary'; shift ;;
+    --scan)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then err "--scan にはディレクトリが要ります"; usage; exit 2; fi
+      SCAN_ROOT="$2"; shift 2 ;;
+    -*) err "不明なオプション: $1"; usage; exit 2 ;;
+    *)  DIRS+=("$1"); shift ;;
+  esac
+done
+
+if [[ -n "$SCAN_ROOT" ]]; then
+  if [[ ! -d "$SCAN_ROOT" ]]; then err "ディレクトリがありません: $SCAN_ROOT"; exit 2; fi
+  # `${SCAN_ROOT}/tmp` が symlink だと `[[ -d ]]` が参照先を追い、scan root の外を列挙する。
+  if [[ -L "${SCAN_ROOT}/tmp" ]]; then
+    err "${SCAN_ROOT}/tmp が symlink です（scan root の外を読みに行くので止めます）"
+    exit 2
+  fi
+  scan_base="$SCAN_ROOT"
+  [[ -d "${SCAN_ROOT}/tmp" ]] && scan_base="${SCAN_ROOT}/tmp"
+  # **NUL 区切りで読む。** 改行区切りだと、改行を含む合法なディレクトリ名が複数のパスへ割れる。
+  # 割れた断片が既存の相対パスに当たると、scan root の外を読みに行く（実装SO の3周目の指摘）。
+  # `sort` も NUL 区切りにする（-z が無い環境では並べ替えを諦める。順序は出力の見やすさの
+  # 問題であって、正しさの問題ではない）。
+  while IFS= read -r -d '' d; do
+    [[ -n "$d" ]] && DIRS+=("$d")
+  done < <(
+    if printf '' | sort -z >/dev/null 2>&1; then
+      find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) -print0 2>/dev/null | sort -z
+    else
+      find "$scan_base" -maxdepth 1 -type d \( -name 'so-*' -o -name 'oe-refute-*' -o -name 'oe-review-*' \) -print0 2>/dev/null
+    fi
+  )
+fi
+
+if [[ ${#DIRS[@]} -eq 0 ]]; then
+  err "対象のディレクトリがありません"
+  usage
+  exit 2
+fi
+
+# --- 走査 ---
+LANE_COUNT=0
+UNREADABLE=0
+SUM_KEYS=()
+SUM_VALS=()
+
+sum_add() {
+  local key="$1" i
+  for (( i = 0; i < ${#SUM_KEYS[@]}; i++ )); do
+    if [[ "${SUM_KEYS[$i]}" == "$key" ]]; then
+      SUM_VALS[i]=$(( SUM_VALS[i] + 1 ))
+      return
+    fi
+  done
+  SUM_KEYS+=("$key")
+  SUM_VALS+=(1)
+}
+
+if [[ "$MODE" == 'table' ]]; then
+  printf '%-34s %-7s %-3s %-14s %-4s %-7s %-16s %-16s %-13s %s\n' \
+    DIR LANE ATT STATUS EXIT ELAPSED OUT ERR REASON EVIDENCE
+fi
+
+for d in "${DIRS[@]}"; do
+  if [[ -L "$d" ]]; then err "対象ディレクトリが symlink です（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ ! -d "$d" ]]; then err "ディレクトリがありません（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  if [[ ! -r "$d" ]]; then err "読めません（数えません）: $d"; UNREADABLE=$(( UNREADABLE + 1 )); continue; fi
+  for tool in codex claude cursor; do
+    for sfx in '' '.attempt1' '.attempt2'; do
+      meta="${d}/${tool}-meta.txt${sfx}"
+      # **-L を -e より先に見る。** 参照先の無い symlink（dangling）は `-e` が偽になるので、
+      # 順序が逆だと「ファイルが無い」として素通りする。別に正常なレーンがあれば
+      # UNREADABLE=0 のまま exit 0 になり、欠けた census を成功として返していた。
+      if [[ -L "$meta" ]]; then
+        err "meta が symlink です（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      [[ -e "$meta" ]] || continue
+      # **通常ファイルであり symlink でないことを要求する。**
+      # `-f` / `-r` は symlink の参照先を追う。出力ディレクトリを置ける相手がいる前提だと、
+      # `claude-raw.json` をディレクトリ外の読めるファイルへ向けるだけで、その中身を jq が読む。
+      # FIFO を置かれると `wc -c` が待ち続ける。**どちらも read-only の名乗りの外側にある**
+      # （意図しないファイルの読み出しと、止まらない実行）。実装SO の3周目の指摘。
+      if [[ -L "$meta" || ! -f "$meta" ]]; then
+        err "meta が通常ファイルではありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # **読めなかった記録を普通のレーンとして数えない。**
+      # 読めない meta を素通りさせると、全項目が `-` で理由が unknown の、見た目は正常な行が
+      # 1 件出る。これは「原因が分からないレーン」ではなく「観測できなかったレーン」で、
+      # 母集団の数え上げとしては別物である（実装SO の指摘・#303 の gate 4）。
+      if [[ ! -r "$meta" ]]; then
+        err "meta が読めません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # 読めても中身がこのレーンの meta でなければ観測できていない（切れた・壊れた・別レーン）。
+      # `tool=` が在るかだけでは足りない。`tool=garbage` や、codex-meta.txt に `tool=claude` が
+      # 入っている場合も、全項目 `-`・理由 unknown の正常な行として数えていた（実装SO の指摘）。
+      if ! grep -qx "tool=${tool}" "$meta" 2>/dev/null; then
+        err "meta がこのレーンの記録ではありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # 分類の根拠になる項目が1つも無い meta も観測できていない。
+      # **`attempt_state` の有無で判定しない。** あのキーは #328（2026-08-14）で入ったもので、
+      # それ以前の記録には無い。無いことを不正と読むと、この verb の主目的である
+      # 「過去の出力に遡って当てる」が古い記録に対して丸ごと効かなくなる（実際に踏んだ）。
+      # 見るのは exit_code で、まだ走っている meta（attempt_state=running）だけ例外にする。
+      if ! grep -q '^exit_code=' "$meta" 2>/dev/null \
+         && ! grep -qx 'attempt_state=running' "$meta" 2>/dev/null; then
+        err "meta に分類の根拠がありません（数えません）: $meta"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      # **分類の根拠になるファイルが読めないものも数えない。** meta だけを見ていたので、
+      # 在るのに読めない stdout / stderr / raw を握り潰し、`present/` かつ理由 unknown の
+      # 行として exit 0 を返していた。根拠を観測できていない census を成功にしない。
+      unreadable_file=''
+      for probe in "${d}/${tool}-stdout.txt${sfx}" "${d}/${tool}-stderr.txt${sfx}" "${d}/${tool}-raw.json${sfx}"; do
+        # dangling symlink を「不在」と読まないため、-L を -e より先に見る。
+        if [[ -L "$probe" ]]; then unreadable_file="$probe"; break; fi
+        [[ -e "$probe" ]] || continue
+        # 非通常ファイル（FIFO・デバイス・ディレクトリ）と読めないものはここで落とす。
+        if [[ ! -f "$probe" || ! -r "$probe" ]]; then unreadable_file="$probe"; break; fi
+      done
+      if [[ -n "$unreadable_file" ]]; then
+        err "分類の根拠になるファイルが読めないか通常ファイルではありません（数えません）: $unreadable_file"
+        UNREADABLE=$(( UNREADABLE + 1 ))
+        continue
+      fi
+      classify_lane "$d" "$tool" "$sfx"
+      LANE_COUNT=$(( LANE_COUNT + 1 ))
+      case "$MODE" in
+        json)  emit_json ;;
+        summary) sum_add "${R_MARKERS}|${R_TOOL}|${R_STATUS}|${R_REASON}" ;;
+        table)
+          printf '%-34s %-7s %-3s %-14s %-4s %-7s %-16s %-16s %-13s %s\n' \
+            "${R_DIR:0:34}" "$R_TOOL" "$R_ATTEMPT" "$R_STATUS" "$R_EXIT" "$R_ELAPSED" \
+            "${R_OUT_STATE}/${R_OUT_BYTES}" "${R_ERR_STATE}/${R_ERR_BYTES}" "$R_REASON" "$R_EVIDENCE"
+          ;;
+      esac
+    done
+  done
+done
+
+if [[ "$MODE" == 'summary' ]]; then
+  printf '%-34s %-7s %-14s %-13s %s\n' ERA_MARKERS LANE STATUS REASON COUNT
+  for (( i = 0; i < ${#SUM_KEYS[@]}; i++ )); do
+    IFS='|' read -r m t s r <<< "${SUM_KEYS[$i]}"
+    printf '%-34s %-7s %-14s %-13s %s\n' "$m" "$t" "$s" "$r" "${SUM_VALS[$i]}"
+  done
+  printf '\n合計レーン: %s\n' "$LANE_COUNT"
+fi
+
+# 空表を「0 件」として成功にしない。
+if [[ "$LANE_COUNT" -eq 0 ]]; then
+  err "レーンの記録が1件も見つかりませんでした（対象 ${#DIRS[@]} ディレクトリ・観測できなかったもの ${UNREADABLE} 件）"
+  exit 2
+fi
+
+# **観測できなかったものが1件でもあれば成功にしない。**
+# 本 verb の出力は母集団の数え上げに使われる（#303 の M-1）。数え落としがあるのに exit 0 を
+# 返すと、欠けた census がそのまま判断の材料になる。件数は上の stderr に1件ずつ出してある。
+if [[ "$UNREADABLE" -gt 0 ]]; then
+  err "観測できなかった対象が ${UNREADABLE} 件あります（分類できたレーンは ${LANE_COUNT} 件）"
+  exit 2
+fi
+
+exit 0

@@ -35,7 +35,7 @@ depends:
 - 合意に至るまで Step 3〜4 を繰り返す
 - 最大3イテレーションを目安とし、それでも合意しない場合は残存する差異を明示して判断を仰ぐ
 
-**フォールバック**: `claude-safe` 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。`--codex-only` / `--claude-only` 使用時はこのルールを適用する。
+**フォールバック**: `claude` CLI 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。`--codex-only` / `--claude-only` 使用時はこのルールを適用する。
 
 ## フロー
 
@@ -191,8 +191,8 @@ tags: [peer-review, so-compare]
 # Codex CLI
 command -v codex &>/dev/null && echo "codex: $(codex --version 2>&1 | tail -1)" || echo "codex: 未インストール"
 
-# Claude Code (claude-safe)
-command -v claude-safe &>/dev/null && echo "claude-safe: OK" || echo "claude-safe: 未インストール（Codexのみで実行可能）"
+# Claude Code
+command -v claude &>/dev/null && echo "claude: OK" || echo "claude: 未インストール（Codexのみで実行可能）"
 
 # 比較スクリプト
 command -v so-compare &>/dev/null && echo "so-compare: OK" || echo "so-compare: 未インストール（scripts/sync/sync-bin.sh を実行）"

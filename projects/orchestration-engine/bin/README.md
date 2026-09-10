@@ -49,6 +49,7 @@ oe-refute --claim <doc> [--lanes N] [--rubric consensus|exploration]
 - 出力（stdout JSON）: `{verdict, reason, rubric, lanes, dissent:[{lane,verdict,note}], output_dir, audit_id}`。`output_dir` は so-compare 生出力のパス（確定時証跡のアンカー用）、`audit_id` は ULID
 - 集約は **conservative**: 1 レーンでも material に refuted → 全体 refuted。全レーン survived のときのみ survived。verdict を取れないレーンは survived 扱いにせず `error` とし、dissent に記録した上で survived 確定を阻む（保守側）
 - exit: `survived`→0 / `refuted`→3（**Stage A は advisory**・JSON が正本）
+- **so-compare が入力を拒否したら（exit 4）ここで止める**（stderr に理由・exit 2）。通すと 0 レーンの出力から VERDICT が取れず、保守側の集約が `refuted` を作るため、**入力の不備が「設計が反証された」に化ける**（#344）
 - 最小 audit を `<OE_DATA_DIR|project>/audit/oe-refute.jsonl` に 1 行追記
 
 関連 lib: `session.sh`（`oe_generate_session_id`）。バックエンド: `so-compare`（`OE_REFUTE_SO_COMPARE` で実体を上書き可）
@@ -70,6 +71,7 @@ oe-review [--lanes N] [--base <ref>] [--context <doc>]
 - **diff 注入**: reviewed diff を反証プロンプトに注入（`OE_REVIEW_DIFF_MAX_BYTES`=既定 30000 以内なら inline、超過時は changed-files＋base ref＋「`git diff <base>...HEAD` をレビューせよ」指示で workspace フォールバック）
 - 集約は **conservative**（`oe-refute` と同様）: 1 レーンでも material な欠陥検出→全体 refuted。verdict を取れないレーンは `error` とし survived 確定を阻む
 - exit: `survived`→0 / `refuted`→3（**advisory**・JSON が正本）
+- **so-compare が入力を拒否したら（exit 4）ここで止める**（stderr に理由・exit 2）。通すと 0 レーンの出力から VERDICT が取れず、保守側の集約が `refuted` を作るため、**入力の不備が「設計が反証された」に化ける**（#344）
 - 最小 audit を `<OE_DATA_DIR|project>/audit/oe-review.jsonl` に 1 行追記
 - 限界: 「レーンが実 diff を読んだ」ことは機械検証できない（どの SO 経路でも同じ）。本 verb は stale 検知の binding を残すのが役割で、レビュー品質の保証は Copilot/人が担う
 
@@ -603,6 +605,42 @@ oe-hookfire --json       # 機械可読
 - **この台帳の値打ちは、読み手が実際に走ることに条件付けられている。** 定期実行の配線は #301 で未着手で、人が打つまで動かない。bin sync の配布対象には入れたので、sync 実行後は `oe-hookfire` の名前で打てる。
 
 関連: `canonical/hooks/README.md`（3本の記録契約と陽性対照の手順）/ `bin/oe-selfcheck`（同じ3値契約の姉妹 verb）。
+
+---
+
+## oe-lane-explain — SO のレーンが返らなかった理由を読み取る（#303・read-only）
+
+`so-compare` / `oe-refute` / `oe-review` の出力ディレクトリを読み、レーンごとに**なぜ返らなかったか**を分類する read-only 観測 verb。何も書き換えない。
+
+```bash
+oe-lane-explain tmp/oe-refute-XXXX            # 表形式
+oe-lane-explain --scan .                      # <root>/tmp 配下を全部集めて当てる
+oe-lane-explain --json tmp/so-XXXX            # 1 レーン 1 行の JSON
+oe-lane-explain --summary --scan .            # 版の目印で層別した件数
+```
+
+**なぜ `so-compare` の中に入れないか。** `so-compare` は `~/bin` から repo への symlink で配布されており、触ると全セッションへ即座に反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。外に置くと**過去の出力へ遡って当てられる**利点もある（配布物側に入れると当てられるのは今後の実行だけ）。#303 の設計SO で3レーン中2レーンが独立に出した案である。
+
+**分類の契約**（`failure_reason`）は `none` / `usage_limit` / `auth_required` / `invalid_input` / `environment` / `unknown` の6値で、`failure_evidence` にどのシグネチャが当たったかを書く。**当たらなければ `unknown` と `none` に倒す。断定しない。**
+
+- **`timeout` という値は置いていない。** 「上限に達して kill された」は `timeout_status` がすでに表しており、その原因が時間なのか使用量上限なのかは meta からは決まらない。原因の軸に `timeout` を置くと、分けられないものを分けたことにしてしまう。
+- **`exit_code=0` のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を引用しただけのものを故障と読まないためである。
+- **シグネチャは行頭に錨を打ち、末尾 200 行だけを見る。** 素の部分一致では誤検出する（実物で踏んだ）。codex のレーンは stderr に TUI の描画を流すので、ワークスペースの本文がそのままエコーされる。831KB・6964 行の stderr の 2095 行目に入っていたリポジトリの散文を、素の grep は故障のシグネチャとして拾った。窓は `OE_LANE_EXPLAIN_TAIL_LINES` で変えられる。
+- **錨が使えない文言（シェルが出す `<path>: line N: ... Operation not permitted` など）だけは、小さいファイルに限り部分一致を許す。** 上限は `OE_LANE_EXPLAIN_SMALL_BYTES`（既定 16384）。誤検出の元が数百KB の TUI 描画なので、小ささを条件にすれば経路を塞げる。
+- **「ファイルが不在」と「ファイルが空」を畳まない。** `stdout_state` / `stderr_state` / `raw_state` は `absent` / `empty` / `present` の3値である。不在は「そのファイルを作らない版がこの記録を生成した」という証拠を運んでいる。
+- **so-compare 自身の版は meta に無いので `unavailable:not-recorded` と書く。** 代わりに観測できる目印を `era_markers` に出す（`claude-raw-absent` なら #296 より前、`limit-recorded` なら #328 以降）。**推定した「版」を1つの値にまとめない。**
+- **閾値の環境変数は入口で正の整数だけを通す。** 未検証のまま bash の算術式へ入れると、`(( ))` が配列添字を再展開するため任意のコマンドが走る（`OE_LANE_EXPLAIN_SMALL_BYTES='DIRS[$(command)0]'`）。read-only を名乗る verb でこれが通ると名乗り自体が嘘になる。実装SO が実際に payload を走らせて実証した。
+- **読めなかった meta を普通のレーンとして数えない。** 素通りさせると、全項目が `-` で理由が `unknown` の、見た目は正常な行が1件出る。「原因が分からないレーン」と「観測できなかったレーン」は母集団の数え上げでは別物である。1件ずつ stderr に出し、**1件でもあれば exit 2** にする（出力が census に使われるので、欠けたまま成功を返さない）。
+- **`--json` は制御文字までエスケープする。** ディレクトリ名には改行やタブを入れられるので、`\` と `"` だけを潰す実装では不正な JSON になり、改行が入れば「1 レーン 1 行」の約束も破れる。
+- **`jq` を前提にする。** 無いと claude の `raw.json` から本文を取り出せず、**同じ保存済みの記録がホストによって別の分類になる**（判定がホスト依存になる）。JSON の組み立ても jq に任せる。どちらも degrade ではなく前提不成立なので exit 2 で止める。
+- **閾値は桁数も縛る**（1〜999999999）。`9223372036854775808` は正の整数の形をしているが bash の算術で負数へ overflow し、既知の故障が静かに `unknown` へ落ちる。
+- **meta の妥当性は `tool=<そのレーン>` の完全一致と、分類の根拠（`exit_code`）の有無で見る。** `attempt_state` の有無では見ない（あのキーは #328 以降にしか無く、それ以前の記録を丸ごと落とすため）。
+**前提: 出力ディレクトリは信頼できる書き手だけが書く。** 本 verb が読むのは、同じ作業ツリーで `so-compare` が自分で作った出力である。壊れた入力や想定外の入力で黙って嘘の集計を返さないようにはしてあるが、**そのディレクトリへ任意のファイルを書ける相手を想定した防御はしていない。** hard link は通常ファイルそのものでパスからは正当なファイルと区別がつかず、検査と読み出しの間の差し替え（TOCTOU）も shell からは塞げないため、この道具では原理的に閉じられない。そもそもそこへ書ける相手は、同じ木のスクリプトや git hook も書き換えられるので、本 verb だけを固めても実質的な防御にならない。**弾けるもの（symlink・参照先の無い symlink・FIFO やデバイス・symlink のディレクトリ・`--scan` の `tmp` が symlink）は弾き、弾けないものは help と本節に書いて隠さない。**
+- **レーンのファイルは「通常ファイルであり symlink でない」ことを要求する。** `-f` / `-r` は symlink の参照先を追うので、出力ディレクトリを置ける相手がいる前提だと、`claude-raw.json` を外の読めるファイルへ向けるだけで中身が読まれる。FIFO を置かれると `wc -c` が待ち続ける。どちらも read-only の名乗りの外側にある。
+- **`--scan` は NUL 区切りで読み、`tmp` が symlink なら止める。** 改行区切りだと、改行を含む合法なディレクトリ名が複数のパスへ割れ、断片が既存の相対パスに当たると scan root の外を読みに行く。
+- exit は 0 正常 / 2 前提が満たせない（引数なし・**`jq` 不在**・**閾値が範囲外**・読めない・**レーンの記録が1件も無い**・**観測できなかった記録が1件でもある**）。空表を「0 件」として exit 0 で返さない。
+
+関連: `tests/test_oe_lane_explain.sh`（73 件）/ `tests/fixtures/so-lane-failures/SOURCE.md`（fixture の出所と2つの陰性対照）/ `docs/plans/2026-09-07-plan-303-so-lane-failure-classification.md`（I-1）。
 
 ---
 

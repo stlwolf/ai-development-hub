@@ -1,0 +1,12 @@
+
+## 聞きたいこと
+
+1. この設計に、運用上壊れる経路が残っているか。特に、CLI が走っている最中に配布を走らせた場合、複数セッションが同時に設定を書く場合。
+2. 適用のしかた5種類の enum は過不足があるか。表現できない既存の振る舞いが残っていないか。
+3. 検査が「宣言との一致」と「上位スコープの同名キー」の2つで足りるか。運用者が本当に知りたい状態を取り逃していないか。
+4. 実装の分け方の順序は妥当か。先に検査だけ入れる判断は正しいか。
+5. 孤児 symlink の検出条件に見落としがあるか。
+2026-09-05T17:02:45.801456Z ERROR codex_core::shell_snapshot: Shell snapshot validation failed: Snapshot command exited with status exit status: 2: /Users/eddy/.codex/shell_snapshots/01a07285-c610-7283-9367-bee31ff98553.tmp-1788627764764393000: 行 28286: 予期しないトークン `(' 周辺に構文エラーがあります
+
+ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 4:03 AM.
+ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 4:03 AM.

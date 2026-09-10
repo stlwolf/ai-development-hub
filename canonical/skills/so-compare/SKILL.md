@@ -23,6 +23,25 @@ Shell ツールで実行する:
 so-compare [OPTIONS] "プロンプト"
 ```
 
+### 終了コード（#344）
+
+| code | 意味 |
+|------|------|
+| `0` | 全プロバイダ成功 |
+| `1` | 部分成功（一部のプロバイダのみ応答） |
+| `2` | 全プロバイダ失敗（**起動はした**） |
+| `4` | **入力を拒否した（レーンを1本も起動していない）** |
+
+**`4` の理由は stderr に型で出る。** 利用者の入力の誤りは `invalid:<種別>` で、次の14種である。
+
+`ambiguous-args` / `bad-value` / `contains-nul` / `control-character` / `empty` / `missing-argument` / `not-a-directory` / `not-a-file` / `not-a-number` / `not-found` / `not-readable` / `not-utf8` / `not-writable` / `unknown-option`
+
+環境に足りないものは `unavailable:<コマンド>` である（`perl` / `timeout` / `mktemp` / `codex` / `claude` / `agent`）。
+
+- **`3` は使っていない。** `oe-refute` / `oe-review` が反証（`refuted`）に割り当てているためで、**入力の不備が「設計が反証された」として上位に届かない**ようにしてある。
+- **呼び方の誤りも `4` である。** 以前は `1` を返しており、「呼び方を間違えた」と「一部だけ返った」が同じ値だった。
+- `oe-refute` / `oe-review` は `4` を受けると**判定を作らずに exit 2 で止まる**。
+
 ### オプション一覧
 
 | オプション | 説明 | デフォルト |
@@ -37,7 +56,7 @@ so-compare [OPTIONS] "プロンプト"
 | `--claude-only` | Claude のみ実行 | 両方実行 |
 | `--cursor` | Cursor CLI (agent) も実行（デフォルト: 無効） | 無効 |
 | `--cursor-only` | Cursor のみ実行 | 両方実行 |
-| `--cursor-model MODEL` | Cursor で使用するモデル | `auto` |
+| `--cursor-model MODEL` | Cursor で使用するモデル | `composer-2.5` |
 | `--claude-model MODEL` | Claude で使用するモデル（エイリアス `opus`/`sonnet`/`haiku` 可） | CLI 既定 |
 | `--codex-model MODEL` | Codex で使用するモデル | CLI 既定 |
 | `--claude-effort LEVEL` | Claude のエフォート（`low`/`medium`/`high`/`xhigh`/`max`） | CLI 既定 |
@@ -51,7 +70,7 @@ so-compare [OPTIONS] "プロンプト"
 | `SO_TIMEOUT` | codex / cursor のタイムアウト秒数 | `240` |
 | `SO_CLAUDE_TIMEOUT` | claude のタイムアウト秒数（claude だけ既定が長い。下記「レーンごとの所要時間」を見よ） | `1200` |
 | `PREV_MAX_BYTES` | `--prev` で追記する回答の上限バイト数 | `4000` |
-| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `auto` |
+| `SO_CURSOR_MODEL` | Cursor のデフォルトモデル（`--cursor-model` で上書き可） | `composer-2.5` |
 | `SO_CLAUDE_MODEL` | Claude のデフォルトモデル（`--claude-model` で上書き可） | CLI 既定 |
 | `SO_CODEX_MODEL` | Codex のデフォルトモデル（`--codex-model` で上書き可） | CLI 既定 |
 | `SO_CLAUDE_EFFORT` | Claude のデフォルトエフォート（`--claude-effort` で上書き可） | CLI 既定 |
@@ -68,7 +87,7 @@ so-compare -f prompt.txt -w "$(pwd)"
 # イテレーション（前回の回答を踏まえて再質問）
 so-compare --prev tmp/so-20260304-001234 -w "$(pwd)" "前回の指摘を踏まえて再評価してください"
 
-# Codex のみ（claude-safe 未導入環境）
+# Codex のみ（claude CLI 未導入環境）
 so-compare -w "$(pwd)" "プロンプト" --codex-only
 
 # 任意の2社（従来は codex+cursor / claude+cursor が指定不可だった）
@@ -78,8 +97,8 @@ so-compare --with claude,cursor -w "$(pwd)" "プロンプト"
 # Cursor も含めた3者比較
 so-compare --cursor -w "$(pwd)" "この設計方針を検証してください"
 
-# Cursor でモデル指定
-so-compare --cursor --cursor-model composer-1.5 -w "$(pwd)" "プロンプト"
+# Cursor でモデル指定（既定の composer-2.5 から auto へ明示的に戻す例）
+so-compare --cursor --cursor-model auto -w "$(pwd)" "プロンプト"
 
 # Cursor のみ
 so-compare --cursor-only -w "$(pwd)" "プロンプト"
@@ -102,10 +121,10 @@ so-compare --codex-model gpt-5.5 -w "$(pwd)" "プロンプト"
 ### 使い分けの目安
 
 - 設計判断・反証など重い SO → Claude を `--claude-model opus --claude-effort high`（必要なら `max`）に上げる
-- 軽い確認 → 既定モデルのまま（フラグ未指定＝従来挙動）
+- 軽い確認 → 既定モデルのまま（フラグ未指定でよい。ただし cursor の既定だけは so-compare 側が `composer-2.5` を指定する。下記参照）
 - 指定したモデル名が無効・未契約の場合、そのレーンはエラー（`error` / `error_partial`）として結果サマリに現れる
 
-未指定なら各 CLI の既定モデルで動作し、従来と挙動は変わらない。
+未指定なら claude / codex は各 CLI の既定モデルで動作する。**cursor だけは so-compare 側の既定 `composer-2.5` を渡す**（`auto` は解決先が実行ごとに変わり高コストのモデルを引くため。#375）。`auto` に戻したいときは `--cursor-model auto` を明示する。
 
 ## 出力ディレクトリ構成
 
@@ -177,7 +196,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
 
-SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor の既定は `auto` で実行時に選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
+SO の判定は plan / episode / discussion から証跡リンクで引かれ、committed 層に残る。したがって「この判定を出したのはどのモデルか」を後から言えることに意味がある。`model_requested` だけでは言えない。cursor は `auto` を指定すると実行時に解決先が選ばれるし、claude はエイリアス（`opus` / `sonnet`）と CLI 既定の解決が入るためである。
 
 各レーンの meta には次のキーが入る。
 
@@ -228,7 +247,7 @@ SO の判定は plan / episode / discussion から証跡リンクで引かれ、
 
 ### cursor の解決後モデルを手で調べる手順
 
-**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（既定の `auto` では `Auto Balance` としか出ない）。
+**cursor の具体的なモデル名は自動記録していない。** CLI が出さないためで、`--output-format json` / `stream-json` に出る `model` は表示名止まりである（`auto` を指定したときは `Auto Balance` としか出ない）。
 
 具体名は Cursor 内部の SQLite に残っており、手で辿れば取得できる。**ただしこれは公開された形式ではなく、Cursor の更新で変わりうる。** 自動記録がこれに依存していないのは意図的な判断である（内部形式への無言の依存を作らないため）。
 
@@ -246,6 +265,8 @@ sqlite3 "$D/store.db" "select data from blobs;" | grep -oE '"modelName":"[^"]+"'
 ```
 
 ### `auto` は実行ごとに解決先が変わる（レーンの多様性を読むときの注意）
+
+so-compare の cursor 既定は `composer-2.5` なので、この節は `--cursor-model auto` を明示したときの話である（#375 以降）。
 
 同一プロンプト・同一条件で `auto` を3回走らせ、解決先を上の手順で確認した実測がある。
 
@@ -401,11 +422,11 @@ SO 実行前に以下を確認する:
 
 ### フォールバック
 
-`claude-safe` 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。
+`claude` CLI 未導入等で2者しか参加できない場合、「2者合意 + ユーザーの明示承認」で代替可。
 
 ## 注意事項
 
-- 実行には `codex` CLI と `claude-safe` が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）
+- 実行には `codex` CLI と `claude` CLI が PATH 上に必要（片方のみの場合は `--codex-only` / `--claude-only`）。claude レーンは以前 `claude-safe` というラッパー経由だったが、#303 で外して直接呼びにした（ラッパーが timeout で切られると出力を捨てるため。理由は `scripts/so-compare.sh` の `CLAUDE_CMD` のコメント）
 - Cursor レーンは `--cursor` でオプトイン。`agent` CLI が PATH 上に必要（未インストール時はエラー終了）
 - `SO_TIMEOUT` のデフォルトは240秒（codex / cursor）。claude は `SO_CLAUDE_TIMEOUT` の1200秒で、既定が分かれている。理由は下記「レーンごとの所要時間」
 - 出力は `tmp/` 配下で gitignore 対象
