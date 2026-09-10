@@ -322,12 +322,53 @@ check_retention_horizon() {
   add "retention-horizon" "info" "最も古い transcript の最終更新は ${mt}（受け手側の記録はこれより前へ遡れない。良し悪しは判定していない）"
 }
 
+# --- 6. 常駐の見張りが黙っていないか（#336）---
+# **停止を報告する主体を、停止しうる当人に置かない。** 送信の到達を見張る `oe-confirm` は
+# launchd で回るが、その job 自身が止まったことを job 自身は言えない。ここで **別の主体**が
+# 最終走査時刻の陳腐化として拾う。
+#
+# 判定を 3 値に分けるのが肝である:
+#   - latest.json が無い     → indeterminate（**ok ではない**）。常駐が一度も走っていないか
+#                              未配線かの区別が付かない。「0 件だったから異常なし」と読ませない。
+#   - 走査が新しい           → ok
+#   - 走査が古い             → broken（見張りが黙っている）
+#   - 読めない / 壊れている  → indeterminate
+#
+# 限界（正直に）: **この検査自身を誰がいつ走らせるかは本 verb の外である。** 定期実行の配線は
+# #301 が park 中で、人が打つまで動かない。つまり「別の主体が拾える」ことは示せるが、
+# 「常に自動で拾う」までは本増分では言えない。輪の最後は人に残っている。
+check_watchdog_freshness() {
+  local latest max_age scanned age
+  latest="${EVENT_DIR}/oe-confirm/latest.json"
+  max_age="${OE_SELFCHECK_WATCHDOG_MAX_AGE_SEC:-900}"
+  case "$max_age" in ''|*[!0-9]*) max_age=900 ;; esac
+  if [[ -z "$EVENT_DIR" ]]; then
+    add "watchdog-freshness" "indeterminate" "状態の置き場が決まらないので見張りの鮮度を見られない"; return
+  fi
+  if [[ ! -r "$latest" ]]; then
+    add "watchdog-freshness" "indeterminate" "見張りの最終走査記録が無い（${latest}）— 未配線か一度も走っていない。ok ではない"; return
+  fi
+  scanned="$(jq -r '.scanned_at_epoch // empty' "$latest" 2>/dev/null)" || scanned=""
+  case "$scanned" in ''|*[!0-9]*) add "watchdog-freshness" "indeterminate" "最終走査時刻を読めない（${latest} が壊れている疑い）"; return ;; esac
+  local now_epoch
+  now_epoch="${OE_SELFCHECK_NOW_EPOCH:-$(date +%s)}"
+  case "$now_epoch" in ''|*[!0-9]*) now_epoch="$(date +%s)" ;; esac
+  age=$(( now_epoch - scanned ))
+  [[ "$age" -lt 0 ]] && age=0
+  if [[ "$age" -gt "$max_age" ]]; then
+    add "watchdog-freshness" "broken" "見張り（oe-confirm）の最終走査から ${age} 秒（上限 ${max_age} 秒）— 常駐が黙っている疑い"
+  else
+    add "watchdog-freshness" "ok" "見張り（oe-confirm）の最終走査は ${age} 秒前（上限 ${max_age} 秒）"
+  fi
+}
+
 scan_transcripts
 check_marker_window
 check_hook_contract
 check_transcript_format
 check_pane_bridge
 check_retention_horizon
+check_watchdog_freshness
 
 if [[ "$JSON" -eq 1 ]]; then
   printf '%s\n' "${ROWS[@]}" \

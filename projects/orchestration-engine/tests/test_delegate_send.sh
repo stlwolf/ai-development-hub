@@ -277,5 +277,58 @@ else
   echo "  PASS: --no-enter にはタグを付けない"; pass=$((pass+1))
 fi
 
+# === #336: message_sent を書く位置 ===
+# 記録が transport の**前**に無いと、注入は済んだのにログを書く前に送り手が死んだとき、
+# 配送済みなのに outstanding record が残らない（dual-write gap）。逆に注入の**前**に書くと
+# 注入失敗の幽霊レコードが残り、既存 consumer が通常送信として算入する。正しい位置は
+# 「literal 注入が成功した直後・Enter の前」である。
+#
+# emit は送信ログと同じ列へマーカーを積む形でモックする。こうすると **順序そのもの**を
+# 1 本の列で読める（別々の変数に取ると前後関係が落ちる）。
+oe_event_message_sent() { MOCK_SENDKEYS_LOG+="EMIT-message_sent $*"$'\n'; return 0; }
+
+echo "[27] #336: emit は literal 注入の直後・Enter の前に 1 回だけ"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+OE_SEND_NONCE=1 oe_send_line "%5" "ORDERED" >/dev/null 2>&1
+order="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -nE 'send-keys -l|EMIT-message_sent|send-keys -t %5 Enter' | sed 's/:.*send-keys -l.*/:LITERAL/; s/:.*EMIT-message_sent.*/:EMIT/; s/:.*Enter.*/:ENTER/' | cut -d: -f2 | tr '\n' ',')"
+ck "順序は 注入→emit→Enter" "LITERAL,EMIT,ENTER," "$order"
+ck "emit は 1 回だけ" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+
+echo "[28] #336: emit には nonce が載り delivery_signal は none"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+OE_SEND_NONCE=1 oe_send_line "%5" "WITHNONCE" >/dev/null 2>&1
+emit="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep 'EMIT-message_sent' | head -1)"
+if printf '%s' "$emit" | grep -qE 'none [0-9A-HJKMNP-TV-Z]{26}$'; then
+  echo "  PASS: delivery_signal=none と nonce が載る"; pass=$((pass+1))
+else
+  echo "  FAIL: emit の引数が想定と違う (got=[$emit])"; fail=$((fail+1))
+fi
+
+echo "[29] #336: literal 注入が失敗したら emit しない（幽霊レコードを作らない）"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+MOCK_SENDKEYS_FAIL=1
+rc=0; OE_SEND_NONCE=1 oe_send_line "%5" "INJECT-FAILS" >/dev/null 2>&1 || rc=$?
+MOCK_SENDKEYS_FAIL=""
+ck "注入失敗は rc=2" "2" "$rc"
+ck "注入失敗では emit しない" "0" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+
+echo "[30] #336: --no-enter では emit しない（タグも付かないので突き合わせ先が無い）"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+OE_SEND_NONCE=1 oe_send_line "%5" "STAGE-ONLY" 0 >/dev/null 2>&1
+ck "--no-enter では emit しない" "0" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+
+echo "[31] #336: finalize が走っても emit は増えない（append-only で二重計上しない）"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+export OE_SEND_FINALIZE=1
+MOCK_CAP_SEQ=("$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')")
+OE_SEND_NONCE=1 oe_send_line "%5" "FINALIZED" >/dev/null 2>&1
+ck "finalize 有効でも emit は 1 回" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+export OE_SEND_FINALIZE=0
+
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

@@ -7,7 +7,7 @@ scripts は役割別に次の 22 本（`bin/` 直下の実行可能エントリ�
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
 - **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
 ---
@@ -333,7 +333,7 @@ oe-activity --timeline # 時系列: 関係内の各送信を turn 順に 1 行�
 
 - 出す情報は 5 つだけ（**lifecycle-end / stall は推論しない** ＝ DJ-188-2 尊重）:
   - `TRIPS` … 関係内の `message_sent` 数（往復回数）
-  - `DELIVERY` … 直近 message の `delivery_signal`（`unknown`|`none`・`delivered` は名乗らない）
+  - `DELIVERY` … 直近 message の `delivery_signal`。**#336 以降、新しい記録では常に `none` である** — `message_sent` を finalize より前（literal 注入の直後）に書くようになり、finalize の観測を焼く経路が無くなったため。過去レコードには `unknown` / `suspected_miss` が残るので、この列は「古い値も混じる履歴」として読む。**到達を見る列ではない**（下の注意を参照）
   - **【#299 注意】`MISS` 列と `suspected_miss` を未着の根拠に使わないこと。** 実測でこの値は配送失敗と**逆**を指していた（最も厳しい突合で `suspected_miss` 側 244/250=97.6% が到達確認・`none` 側 162/217=74.7%）。#299 P0 で書き込みは止めたが、**過去レコードには 342 件残っており本ビューはそれを数え続ける。** 到達を見るなら `oe-undelivered`（受領印基準・#299 P4）を使う。この列の是正は #299 のスコープ外（surface のみ）
   - `PREVIEW` … 直近 message 先頭 ~100 字
   - `LIVE` … 子(worker)ペインの mux 存在 query（`alive`|`gone`|`?`）。report の送信元＝子なので「報告者がまだ居るか」を honest に示す。ended/stalled の分類はしない（在る=alive / 無い=gone / tmux 不在=?）
@@ -510,6 +510,39 @@ server pid＝`display-message` の `#{pid}` / `pane_title`＝ラベル解決の�
 `spawn-registry` 段は使わない（`_oe_reg_label` の第3引数を 0 で呼ぶ）。write path は持たず、ペイン
 出力も読まない。exit は 0 正常 / 2 前提が満たせない（jq 不在・置き場が決まらない・
 tmux 不在や `list-panes` 失敗）。**空表を「0 件」として exit 0 で返さない**（#322 DJ-3）。
+
+## oe-confirm — 送信 1 件ごとの到達照合 + 常駐の見張り（#336・read-only・launchd 可）
+
+```bash
+oe-confirm                              # 既定: 窓 600 秒・確認できていないものだけ・通知しない
+oe-confirm --all                        # received も出す
+oe-confirm --json                       # 機械可読
+oe-confirm --reports /path/to/.oe       # report 新規も見る
+oe-confirm --notify --write-latest      # 常駐用（launchd）: ping + 最終走査時刻を残す
+```
+
+`oe-send` の exit 0 は**送出の成功であって到達ではない**。本 verb は送信記録（`message_sent`）と受け手側の取り込み印（`prompt_received`）を **nonce と宛先ペインの両方**で突き合わせ、送信 1 件ごとに状態を返す。**双方向**（親→子・子→親）を見る。
+
+状態は 6 つで、**received を最初に判定する**（`unconfirmed` を終状態にしないため）:
+
+| 状態 | 意味 |
+|---|---|
+| `received` | 宛先ペイン自身の取り込み印が nonce 一致で在る |
+| `received-delayed` | 同上だが窓を過ぎてから着いた（遅延受領・実測 156/295/948 秒の実例あり） |
+| `cannot-confirm` | 印は無いが、受け手が「印を書けなかった」診断を同じ nonce で残している。**未着ではない** |
+| `instrumentation-unknown` | 印も診断も無く、宛先の計装を鮮度窓内で確認できない。**未着と断定しない** |
+| `unconfirmed` | 印も診断も無く、宛先は鮮度窓内で計装済みと確認でき、窓を過ぎた |
+| `pending` | まだ窓の内 |
+
+**`unconfirmed` は終状態ではない。** 毎回イベントログから再計算するので、後から印が来れば `received-delayed` へ変わる。人向けの文言は「届かなかった」と断定せず「**N 分経っても受領を確認できていない**」と書く。窓の既定 600 秒は実測の最大遅延（948 秒）より短く、遅れて着く送信が一度ここに出ることを**承知で**選んでいる（owner 裁定: 30 分では人が先に気づくので機械が言う意味が無い・欲しいのは 10 分前後）。裾に合わせない代わりに、遷移と文言で誤報を防ぐ。
+
+**通知は `unconfirmed` / pane 消滅 / report 新規だけに撃つ。** `cannot-confirm` と `instrumentation-unknown` では撃たない — 実測でこの 2 つが見かけの不達の大半を占め、鳴らすと空振りが増えて読み手が検知器を無視するようになる（#144 の marker・#330 の型）。durable signal（stdout と `latest.json`）には全部出す。
+
+`oe-undelivered` とは別物である。あちらは **child→parent の報告**が ack されたかを frontier で見る（kick は数えない）。本 verb は**双方向の送信が会話に着いたか**を nonce で見る。`report_received`（読んだ）の層は使わない。
+
+**検知器自身の沈黙**: `--write-latest` が書く `latest.json` の陳腐化を、**別の主体**（`oe-selfcheck` の `watchdog-freshness` 検査枝）が拾う。停止を報告する主体を停止しうる当人に置かないため。ただし「陳腐化を誰がいつ読むか」の自動化は #301（park 中）の論点で、本 verb は検査枝と陽性対照までを担う。
+
+常駐の置き方は `projects/orchestration-engine/launchd/com.stlwolf.oe-confirm.plist.template`（**worktree のパスを焼かないこと**）。
 
 ## oe-undelivered — 報告未達検知 watchdog（#239 段階0・read-only・cron 可）
 

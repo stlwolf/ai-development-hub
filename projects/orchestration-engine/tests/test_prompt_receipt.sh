@@ -319,5 +319,30 @@ if [[ -r "$MEASURE" ]] && command -v python3 >/dev/null 2>&1; then
   ck "短文で落ちた件数を可視化する"      "1" "$(printf '%s\n' "$OUT_M" | grep -c '本文が短く突合鍵を作れない=1')"
 fi
 
+# === #336: 診断行に突き合わせ鍵（nonce / pane）を載せる ===
+# これが無いと送り手は「どの送信が印を書けなかったか」を時刻の近さでしか推し量れない。
+# 同時刻に複数の送信があると多対多になり、「届いたが印を書けなかった」の一次証拠にならない
+# （#336 の設計SO で反証された）。nonce を載せて初めて送信 1 件ごとに判定できる。
+echo "[#336-1] no-tmux-pane の診断は nonce を持つ（pane は取れないので空）"
+new_env
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+ck "診断の nonce"  "$NONCE" "$(jq -rs '[ .[] | select(.reason=="no-tmux-pane") ][0].nonce' "$DIAG" 2>/dev/null)"
+ck "診断の pane は空" ""     "$(jq -rs '[ .[] | select(.reason=="no-tmux-pane") ][0].pane' "$DIAG" 2>/dev/null)"
+ck "既存の reason は変えない" "no-tmux-pane" "$(jq -rs '.[0].reason' "$DIAG" 2>/dev/null)"
+
+echo "[#336-2] nonce を取り出せない経路では空のまま（嘘の確証を作らない）"
+new_env
+printf '%s' '{"prompt":"タグの形が違う [oe:NOT-A-ULID]"}' \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+# ULID の形でないタグは「データの問題」として無音で抜ける（診断も出ない）のが従来の契約。
+ck "形の違うタグでは診断も出さない" "0" "$([[ -f "$DIAG" ]] && wc -l < "$DIAG" | tr -d '[:space:]' || echo 0)"
+
+echo "[#336-3] 診断行は 1 行の壊れていない JSON のままである（後段の集計対象）"
+new_env
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+ck "全行が JSON として読める" "1" "$(jq -rs 'length' "$DIAG" 2>/dev/null)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

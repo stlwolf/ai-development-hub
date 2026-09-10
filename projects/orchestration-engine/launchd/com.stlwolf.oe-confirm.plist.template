@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  oe-confirm を session の外で回す launchd job（#336 Layer 2）。
+
+  なぜ session の外か: 統括セッションが死ぬと、そのセッションに載せた見張りも一緒に死ぬ。
+  停止を報告する主体を停止しうる当人に置かないため、常駐は launchd に置く。
+
+  置き方（**repo の中では動かない**）:
+    1. __HUB_ROOT__ を hub の絶対パスへ置換して ~/Library/LaunchAgents/ へ置く。
+    2. __REPORT_DIR__ を統括が読む .oe/ の絶対パスへ置換する。
+    3. launchctl load ~/Library/LaunchAgents/com.stlwolf.oe-confirm.plist
+
+  **worktree のパスを焼かないこと。** worktree は消えるので、消えた瞬間に job は静かに
+  失敗し続ける（#301 が同じ形を踏んでいる）。main の作業コピーを指すこと。
+
+  OE_EVENT_DIR を明示して渡す: 送り手（event-bus）・受け手 hook・この job が別々に
+  解決すると、イベントログと受け手診断が分裂して cannot-confirm が読めなくなり、
+  届いた送信が unconfirmed に化ける。3 者で同じ場所を指すのが前提である。
+
+  StandardOutPath は durable signal である（通知が届かなくてもここに残る）。ただし
+  #301 で cron.log が 2953 行・385KB まで育って誰も読まなかった実績があるので、
+  肥大したら切ること。ログに残っていることは「知らせた」ことを意味しない。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stlwolf.oe-confirm</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HUB_ROOT__/projects/orchestration-engine/bin/oe-confirm</string>
+        <string>--notify</string>
+        <string>--write-latest</string>
+        <string>--reports</string>
+        <string>__REPORT_DIR__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>OE_EVENT_DIR</key>
+        <string>__HOME__/.claude/state</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/.claude/state/oe-confirm/cron.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.claude/state/oe-confirm/cron.log</string>
+</dict>
+</plist>

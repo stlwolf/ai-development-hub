@@ -61,7 +61,9 @@ so:
 2. 到達は速いが遅延の裾は数分。固定の短い N は遅れて着信する受け手を誤検知する。→ 短窓と長窓の二段。
 3. 親側の常駐は `oe-vitals` が launchd 900 秒で out-of-session に回る前例がある。停止を報告する主体を当人（統括session）に置くなという注入知見から、常駐は session 外に置く。
 
-## 3. 設計判断（DJ・gate 1 と gate 2 を反映した v2）
+## 3. 設計判断（DJ・gate 1 と gate 2 を反映し owner 裁定で v3 へ）
+
+> **v3（2026-09-11・owner の HG 裁定）**: 裁定 4 件のうち plan を変えるのは 1 件で、**未確認と見なす窓を 1800 秒から 600 秒程度へ下げ、`silent` を終状態にしない**（DJ-3 v3・DJ-6 v3・§5）。owner の理由は「30 分経てば自分が気づいて見に行くので機械が 30 分後に言っても意味が無い。欲しいのは『まだやっているのかな、でも見に行くほどではない』の 10 分前後」で、**実測の最大遅延（948 秒）に合わせる必要はない**という判断である。残り 3 件（非同期照会でよい／直 plist で回し #301 は起こさない／no-tmux-pane は統括が別 issue に起票済み）は v2 のままでよい。
 
 gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5F72CY3F18S`）で暫定設計は refuted され、方向（受領印との突合で到達を守る）は否定されず「インライン待ち」「診断相関で送信単位 3 値」「wez notify で到達」「これが最善」の 4 点が崩れた。さらに gate 2（設計SO・弱・codex→cursor の 2 レーン・1 本ずつ）が確定を止める欠陥を 7 件出し、両レーンとも「明文化すれば survived」で一致した。本 v2 はその両方を反映した確定案で、各 DJ に棄却案と反証・レビューの要旨を残す。
 
@@ -76,15 +78,17 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 - **確定（v2・gate2 反映）**: `oe_send_line` は `message_sent`（nonce つき・`delivery_signal="none"`）を **`tmux send-keys -l`（literal 注入）が成功した直後・Enter/finalize の前**に emit する。注入自体が失敗（`return 2`）したときは emit しない。現在は注入・Enter・finalize の**後**に emit するため、注入後・記録前に送り手が死ぬと配送済みでも記録が残らず Layer 2 が監視できない（codex 反証 #3）。
 - **gate2 が止めた点と対処**: 「注入の前」に emit すると注入失敗でも幽霊レコードが残り、既存 consumer（`oe-ack` frontier・`oe-activity`・`oe-undelivered`）が通常送信として算入する（codex #1・cursor 1(b)）。→ emit を **`send-keys -l` 成功の直後**に限定し、注入失敗では出さない（cursor 案A・codex の attempted/terminal 分離より軽い最小形）。**finalize 内の第 2 emit（`delegate-send.sh:287-299` 付近）は削除**し、イベントログは注入直後の 1 行だけにする（append-only bus で二重計上を避ける・cursor 1(c)）。
 - **残る窓の開示**: `send-keys -l` 成功後に Enter が失敗（`return 2`）した場合、message は入力欄に staged された状態で `message_sent` が残る。これは「消えた」ではなく「見える形で止まった」失敗で、Enter 失敗は stderr に出る。reconciler は event log だけからは Enter 失敗を判別できないので、この稀な経路は silent に見えうる点を開示する（実測の主対象＝計装済み受け手への間欠不達には影響しない）。
-- 契約影響: `oe-undelivered` / `oe-activity` / `oe-ack` の frontier は `message_sent` の**存在と ts・jsonl 順序**に依存し emit タイミングには依存しない（cursor 1(a)・`oe-undelivered:246-251` で確認）。emit を数秒早めるのは 1800 秒窓で無視できる。既存テストで非回帰を示す。
+- 契約影響: `oe-undelivered` / `oe-activity` / `oe-ack` の frontier は `message_sent` の**存在と ts・jsonl 順序**に依存し emit タイミングには依存しない（cursor 1(a)・`oe-undelivered:246-251` で確認）。emit を数秒早めるのは 600 秒窓で無視できる。既存テストで非回帰を示す。
+- **`delivery_signal` の表示が変わる（開示・v3 実装時に判明）**: `oe-activity` は DELIVERY 列で `delivery_signal` を**表示**している（`oe-activity:171`・README「DELIVERY … `unknown`|`none`」）。emit を finalize より前へ移すと、記録は常に `none` になり `unknown` は出なくなる。#299 の実測ではこの signal は配送の成否と**逆**を指していた（rc=3 側の 97.6% が到達確認済み）ので、誤解を招く表示が消えるのは改善だが、**挙動の変化なので README と `oe-activity` の注記を直す**。判定に使う consumer は無い（`oe-undelivered` は明示的に不使用）。
 
 ### DJ-3: 3 値（+ 鮮度）の出所は受け手診断への nonce 付与（v2）
 
+- **窓（v3）**: 未確認と見なすまでの既定は **600 秒**。実測の遅延受領の裾（max 948 秒）より短いので、遅れて着信する送信が一度 `silent` に出ることがある。**それを許容し、遷移と文言で担保する**のが owner の裁定である（30 分では人間のポーリングと重なって機械が言う意味が無い）。
 - **確定**: 受け手 hook `oe-prompt-receipt.sh` が「印を書けなかった系」のエラー（`no-tmux-pane`・`encode-failed`・`append-failed` 等・nonce が取れている経路）を診断へ残すとき、**nonce（と取れれば pane）を診断行へ載せる**。reconciler は送信単位で次に分ける。
   - **received**: nonce + 宛先ペイン一致の `prompt_received` がある。
   - **cannot-confirm**: 受領印は無いが、その nonce の診断がある（取り込まれたが印を書けなかった）。
   - **instrumentation-unknown（v2 で追加）**: 受領印も診断も無く、宛先ペインの計装状態が鮮度窓内で確認できない（初回 kick 先・hook 失効の疑い）。**silent と断じない。**
-  - **silent**: 受領印も診断も無く、宛先ペインが**鮮度窓内で**計装済みと確認できる（直近に受領印を出している）。#336 中核（計装済み `%53` 宛ての間欠不達）はここに落ちる。
+  - **silent（v3: 終状態ではない）**: 受領印も診断も無く、宛先ペインが**鮮度窓内で**計装済みと確認でき、送信から 600 秒（既定）を過ぎている。#336 中核（計装済みの統括宛ての間欠不達）はここに落ちる。**後から受領印が来たら `received`（遅延受領）へ遷移する。** 分類は毎回イベントログから再計算するので遷移は自然に起きる。人向けの文言は「届かなかった」ではなく**「10 分経っても受領を確認できていない」**とし、遅延受領の実例（156 / 295 / 948 秒）が誤報として読まれないようにする（owner 裁定 v3）。
 - **gate2 が止めた点と対処**: 「一度でも受領印あり＝計装済み」は session epoch / 鮮度が無く誤分類する（pane ID 再利用で旧 session の印が新 session を silent に化かす・hook 失効後も永久に計装済み扱い・新 pane の初回真 silent が cannot-confirm になる。codex #3・`oe-selfcheck:171` が同じ罠を直近窓で回避済み）。→ 計装判定を**鮮度窓**（直近 N の受領印・既定は送信元の観測窓と揃える）で行い、証拠が無ければ `instrumentation-unknown`。
 - **`OE_EVENT_DIR` の配線（codex #4・cursor 2）**: hook は `${OE_EVENT_DIR:-$HOME/.claude/state}`、reconciler は `_oe_state_dir OE_EVENT_DIR` で各々解決する。hook 環境に `OE_EVENT_DIR` が伝播しないと events と diag が分裂し診断 nonce が読めず偽陽性 silent になる。→ **既定運用（未設定＝$HOME/.claude/state で一致）を正とし、custom dir は「hook へ配線する／非対応と明記」のどちらかを実装 SO で確定**（本 plan は既定運用前提を明記）。jq 不在系（`jq-missing`）は nonce 抽出に jq が要るため診断に nonce を載せられない＝この経路は instrumentation-unknown に落ちることを開示。
 - 棄却 案A（診断＋時刻 ±5 秒相関で送信単位分類）: gate1 反証。現診断は nonce も宛先も持たず、相関は多対多で「届いた」の一次証拠にならない。
@@ -93,7 +97,8 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 ### DJ-4: 送信 3 値は新 verb `oe-confirm`・常駐は #301 に揃える（`oe-watch` は使わない・v2）
 
 - **確定（v2・gate2 反映）**:
-  - **送信到達の 3 値投影は新 read-only verb `oe-confirm`**（双方向＝child→parent と parent→child・DJ-3 の分類を event log ＋診断 nonce から投影）。`oe-undelivered` は **child→parent の report 未達**という現契約のまま非回帰で残す（`test_oe_undelivered.sh:96` が「kick は数えない」を固定）。frontier の jq は `oe-undelivered`/`oe-ack`/`oe-activity` の「3 つ目の copy」を含め**共有 lib へ切り出して** `oe-confirm` と共用する。
+  - **送信到達の 3 値投影は新 read-only verb `oe-confirm`**（双方向＝child→parent と parent→child・DJ-3 の分類を event log ＋診断 nonce から投影）。`oe-undelivered` は **child→parent の report 未達**という現契約のまま非回帰で残す（`test_oe_undelivered.sh:96` が「kick は数えない」を固定）。
+    - **v3 の簡素化（実装時に判明）**: `oe-confirm` は `report_received` の frontier を**必要としない**。`oe-confirm` が見るのは nonce による message_sent ↔ prompt_received ↔ 診断の対応で、`oe-ack` の「読んだ」層（frontier）とは別レイヤだからである。したがって frontier の共有 lib 切り出し（既存 3 verb の refactor）は本アークから外し、follow-up として surface する。4 つ目の copy は作らない（そもそも使わない）。
   - **report 新規と pane 消滅の検知**は read-only の観測として持つ（`oe-confirm` の追加セクションか小さな別検出のどちらにするかは実装 SO で確定・DJ-5）。
   - **常駐スケジューリングと相互鮮度監視は `oe-watch` を新設せず #301 に揃える。** `oe-watch` は #301（parked・plan `:95`/`:286`）が「既存 verb を `--json` で呼び `latest.json` を原子更新・verb 隔離・相互鮮度監視」する汎用ランナーとして予約済みで、#336 の直接検出とは別契約。本増分は**当面 `oe-vitals` 型の直 plist で `oe-confirm` を回し**、runner 統合（#301 の revive で `oe-confirm` も走らせる）は #301 側の判断に委ねる。
 - **gate2 が止めた点と対処**: (i) DJ-4 が双方向 `oe-undelivered` を棄却しつつ S1-3 が双方向化する自己矛盾（codex #5・cursor 3）→ `oe-confirm` へ寄せて解消。(ii) `oe-watch` 名が #301 と衝突（codex #5・事実確認済み）→ 名を使わない。(iii) 通知フィルタ未記載（codex #7・cursor 3）→ 下記 DJ-6 で `cannot-confirm`/`instrumentation-unknown` を ping から除外。
@@ -115,7 +120,8 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 ### DJ-6: 通知は silent/pane 消滅/report 新規だけを ping・沈黙検知の出口は #301 に揃える（v2）
 
 - **確定（v2・gate2 反映）**:
-  - **通知フィルタ（cursor 3・codex #7 の要）**: stdout には 3 種すべて FLAG（観測用の durable signal）。`--notify`（owner ping）は **silent ＋ pane 消滅 ＋ report 新規のみ**。**cannot-confirm と instrumentation-unknown は ping しない**（stdout どまり）。これが 142/210 の偽陽性で読み手を慣れさせる #144/#330 型を防ぐ肝。
+  - **通知フィルタ（cursor 3・codex #7 の要）**: stdout には全種を FLAG（観測用の durable signal）。`--notify`（owner ping）は **silent ＋ pane 消滅 ＋ report 新規のみ**。**cannot-confirm と instrumentation-unknown は ping しない**（stdout どまり）。これが 142/210 の偽陽性で読み手を慣れさせる #144/#330 型を防ぐ肝。
+  - **文言（v3・owner 裁定）**: silent の人向け表示・通知は「届かなかった」と断定せず**「10 分経っても受領を確認できていない」**と書く。`silent` は終状態でなく、後から受領印が来れば `received`（遅延受領・遅延秒数つき）に変わる。
   - **経路**: durable signal（stdout ＋ `latest.json`＋ cron.log）が正本。ping は #301 既決の OSC 777（`notify.sh` 型）を優先し raw `wez notify` は fallback。送出成功で恒久抑止しない（seen cache は kind＋対象＋ts のメッセージ単位・`oe-undelivered` P4-4）。
   - **検知器自身の沈黙**: 機構（`latest.json` の最終走査時刻の陳腐化を別主体が読む）＋陽性対照（片方の job を止め、もう片方が stale を報告する）を本増分で持つ。ただし**自動で回る輪（誰がいつ `oe-selfcheck` を実行し結果を読むか）は #301 の parked な出口問題そのもの**であり、本増分では「検査枝が在り fixture で別主体の検知を示す」までを担う。常時自動化は #301 の revive に委ねる（同じ「出口の無い検知」を再生産しないための線引き）。
 - 反証根拠: #301 は raw `wez notify` を gate2 不成立で棄却、cron.log が 2953 行まで育って未読だった実測、stale socket 失敗、共通原因故障（plist 未 load・worktree 削除・状態置き場破損）。#301 が park された理由（出口未確定）と本 DJ の沈黙検知は同じ論点。
@@ -128,12 +134,13 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 ### Stage 1 — 送り手側の土台（record-before-transport ＋ 診断 nonce ＋ 3 値 query）
 
 - [ ] S1-1: `lib/delegate-send.sh` の `oe_send_line` で `message_sent` の emit を **`send-keys -l`（literal 注入）成功の直後・Enter/finalize の前**へ移す（DJ-2）。注入失敗（`return 2`）では emit しない。**finalize パス内の第 2 emit（`:287-299` 付近）は削除**し、ログは注入直後の 1 行だけにする。finalize は rc のみ（best-effort・据え置き）。nonce は従来どおり載せる。
-  - 検証: `bash projects/orchestration-engine/tests/test_delegate_send.sh` が全緑。(a) 注入成功時に send-keys ログの直後・Enter の前に emit が 1 回だけ出る (b) 注入失敗（mock で send-keys -l を失敗）時に emit が出ない、の 2 case を足す。
+  - 検証: `bash projects/orchestration-engine/tests/test_delegate_send.sh` が全緑。(a) 注入成功時に send-keys ログの直後・Enter の前に emit が 1 回だけ出る (b) 注入失敗（mock で send-keys -l を失敗）時に emit が出ない (c) `--no-enter` では emit しない（従来どおり）、の 3 case を足す。
+  - 併せて: `delivery_signal` が常に `none` になる挙動変更を `bin/README.md` の DELIVERY 列の説明と `oe-activity` の冒頭注記に反映する（DJ-2 の開示）。
 - [ ] S1-2: `canonical/hooks/scripts/oe-prompt-receipt.sh` の `note_env_error` 系に nonce（と取れれば pane）を載せ、`no-tmux-pane` 診断行を `{..., "nonce":"<26桁>", "pane":"<%N|空>"}` に拡張（DJ-3）。stdout は汚さない・exit 0 据え置き。
   - 検証: `bash projects/orchestration-engine/tests/test_prompt_receipt.sh` が全緑。`TMUX_PANE` 空 fixture で診断に nonce が載ることを足す。
 - [ ] gate（Stage 1a レビュー）: S1-1/S1-2 の非回帰（既存 test_delegate_send / test_prompt_receipt / test_event_bus）を確認してから次へ。
-- [ ] S1-3: 新 read-only verb **`bin/oe-confirm`** を作る（DJ-4）。event log ＋診断 nonce から**双方向**（child→parent・parent→child）で received / cannot-confirm / instrumentation-unknown / silent を送信単位に投影する。計装判定は鮮度窓（DJ-3）。`oe-undelivered` の child→parent 契約は触らない。frontier の jq は**共有 lib（例 `lib/frontier.sh`）へ切り出し** `oe-undelivered`/`oe-ack`/`oe-activity`/`oe-confirm` で共用（再コピーを止める）。
-  - 検証: 新規テスト `tests/test_oe_confirm.sh`。fixture で 4 値それぞれを作り分けて投影を確かめる。特に**陽性対照**（message_sent あり・prompt_received なし・宛先が鮮度窓内で計装済み → silent）と、注入失敗で残った記録を silent と混同しない case。共有 lib 切り出し後に `test_oe_undelivered`/`test_oe_ack`/`test_oe_activity` が全緑（非回帰）。
+- [ ] S1-3: 新 read-only verb **`bin/oe-confirm`** を作る（DJ-4）。event log ＋診断 nonce から**双方向**（child→parent・parent→child）で received / cannot-confirm / instrumentation-unknown / silent を送信単位に投影する。窓は既定 600 秒（v3）。計装判定は鮮度窓（DJ-3）。`oe-undelivered` の child→parent 契約は触らない。**frontier の共有 lib 切り出しは行わない**（v3 の簡素化・`oe-confirm` は frontier を使わない）。
+  - 検証: 新規テスト `tests/test_oe_confirm.sh`。fixture で 4 値それぞれを作り分けて投影を確かめる。特に**陽性対照**（message_sent あり・prompt_received なし・宛先が鮮度窓内で計装済み → silent）と、**遅延受領の遷移**（silent 相当の age でも受領印が在れば received・遅延秒数を出す）。`test_oe_undelivered`/`test_oe_ack`/`test_oe_activity`/`test_oe_vitals` が全緑（非回帰）。
 - [ ] gate（Stage 1 実装 SO＝ゲート4・弱・2レーン）: `oe-review`（codex+cursor）＋テスト実行＋ Copilot。
 
 ### Stage 2 — 親側の常駐（`oe-confirm` を launchd で回す・`oe-watch` は新設しない）
@@ -147,7 +154,7 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 - [ ] S2-4: launchd 配線（当面の直 plist）。`com.stlwolf.oe-confirm.plist`（`oe-vitals` plist と同型・StartInterval 300・`OE_BOARD_FILE`/`OE_WATCH_REPORT_DIR`/**`OE_EVENT_DIR`** を env で渡す＝DJ-3 の分裂回避）。plist は repo 外の手置きなので配線手順を README と episode に残す（#301 の学び）。cron.log の肥大（#301 は 2953 行）に上限運用を注記。
   - 検証: `plutil -lint` と手動 `launchctl load` で走ることを確認。
 - [ ] gate（Stage 2 実装 SO＝ゲート4・弱・2レーン）: `oe-review`（codex+cursor）＋テスト実行＋ Copilot。
-- [ ] follow-up（子からは追わない・報告に surface）: #301 の revive で `oe-confirm` を runner に統合し、相互鮮度監視で常時自動化するか。
+- [ ] follow-up（子からは追わない・報告に surface）: (a) #301 の revive で `oe-confirm` を runner に統合し相互鮮度監視で常時自動化するか (b) frontier jq の共有 lib 切り出し（`oe-undelivered`/`oe-ack`/`oe-activity` の 3 copy・本アークでは不要と判明）。
 
 ### Layer 3（brief テンプレのみ・今回）
 
@@ -161,11 +168,11 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 
 ## 5. 受け入れ基準と検証の対応（brief より・plan で検証可能な形に固定）
 
-**N の二段定義（gate2 反映）**: 送り手が到達を知る時間は 2 つに分ける。**N_received（速い・数秒級）**＝ record-before-transport（DJ-2）＋既存受領印で `received` が数秒で分かる（実測 約 710/717 が 3 秒以内相当）。**N_silent（遅い・断定用）**＝ 生存する計装済み受け手の遅延受領の裾（実測 max 948 秒）を偽陽性なく越えるため window を `oe-undelivered` 既定の 1800 秒に置く（根拠＝観測裾 948 秒＋余裕）。「N 秒以内に届いていないと知れる」は N_received で満たし、`silent` の確定は N_silent。launchd poll=300 秒なので pane 消滅・report 新規は最大約 300 秒＋jitter で拾う。
+**N の二段定義（v3・owner 裁定）**: 送り手が到達を知る時間は 2 つに分ける。**N_received（速い・数秒級）**＝ record-before-transport（DJ-2）＋既存受領印で `received` が数秒で分かる（実測 約 710/717 が 3 秒以内相当）。**N_unconfirmed（既定 600 秒）**＝「まだ受領を確認できていない」と人に告げるまでの時間。**実測の最大遅延（948 秒）には合わせない** — owner の裁定は「30 分では自分が先に気づくので機械が言う意味が無い。欲しいのは 10 分前後の『まだやっているのかな』」である。600 秒は裾より短いので遅延受領が一度出ることを許容し、**`silent` を終状態にせず受領印が来たら `received`（遅延受領）へ遷移させる**ことと、文言を「10 分経っても受領を確認できていない」にすることで担保する。launchd poll=300 秒なので pane 消滅・report 新規は最大約 300 秒＋jitter で拾う。
 
 | 受け入れ基準 | 検証方法（実装後・owner HG の後に実行） |
 |---|---|
-| 送り手が「届いていない」を N 秒以内に知れる | `received` は N_received（数秒）で分かることを fixture で確認。`silent` は N_silent（1800 秒窓）で断定することと根拠を明記。二段の定義を上に固定 |
+| 送り手が「届いていない」を N 秒以内に知れる | `received` は N_received（数秒）で分かることを fixture で確認。未確認は N_unconfirmed（既定 600 秒）で告げる。**加えて「一度 silent に出た送信が、後から受領印が来たら received（遅延受領）へ遷移する」ことを fixture でテストする**（v3・終状態でないことの担保） |
 | 親が「子 pane が消えた」「新しい report file が置かれた」「送ったのに届いていない」を通知で知れる | 3 つそれぞれに fixture（pane gone・新規 report file・未達 message_sent）を置き、FLAG 行が stdout に出ることをテスト。**`--notify` は silent/pane 消滅/report 新規のみ発火し cannot-confirm/instrumentation-unknown は発火しない**ことも確認 |
 | 通知の送出成功を到達と読まない（#330 の型） | durable signal（stdout/`latest.json`）が正本・OSC 777 優先で wez は fallback・送出成功で恒久抑止しない、をコード規律とテストで示す |
 | 統括が `capture-pane` を手で読みに行かなくてよい | report 新規と pane 消滅を拾うことで手組み Monitor が不要になることを示す |
@@ -175,7 +182,7 @@ gate 1（`oe-refute --rubric exploration --lanes 2`・audit_id `20260910184850F5
 
 ## 6. リスク・未確認事項
 
-- **N（silent と断ずるまでの時間）の下限は原理的に遅い。** 生存している計装済み受け手が忙しくて数分後にターン確定する裾（実測 max 948 秒）があるため、「本当に沈黙」を偽陽性なく断ずるには window をその裾＋余裕まで広げる要がある。`oe-undelivered` 既定 1800 秒（30 分）を踏襲し、根拠（観測裾 948 秒＋余裕）を残す。速い received は record-before-transport ＋ 既存受領印で数秒で分かるので、遅いのは silent 断定だけ。この限界は開示する（注入知見 3 件目・測った鎖の範囲を明示）。
+- **窓 600 秒は遅延受領の裾（実測 max 948 秒）より短い（v3・意図的）。** 遅れて着信する送信が一度 `silent` に出る。owner の裁定は「30 分では人間のポーリングと重なって意味が無い・欲しいのは 10 分前後」なので、**裾に合わせないことを選んだ**。誤報として読まれないための担保は 2 つ: (a) `silent` を終状態にせず受領印が来たら `received`（遅延受領）へ遷移させる (b) 文言を「10 分経っても受領を確認できていない」にする。この選択と根拠は開示する（注入知見 3 件目・測った鎖の範囲を明示）。
 - **record-before-transport の残り窓（開示）。** emit を `send-keys -l` 成功直後に限ったので注入失敗の幽霊レコードは出ないが、`send-keys -l` 成功後に Enter が失敗すると message が staged された状態で `message_sent` が残り、reconciler からは silent に見えうる。Enter 失敗は stderr に出るが event log からは判別できない。稀な経路として開示し、実測の主対象（計装済み受け手への間欠不達）には影響しないことを明記する。
 - **診断 nonce 付与は hook 契約（版依存）に乗る。** hook が撃たなくなれば診断も出ない。`oe-selfcheck` が hook 発火を見ているので、そこに乗せて壊れたら気づける形にする。
 - **launchd の共通原因故障（#301）** は本増分で完全には塞げない。plist 未 load・worktree 削除・状態置き場破損は残る。`latest.json` 陳腐化を別主体が拾う相互監視で「見張りが黙った」ことは拾えるようにするが、相互監視そのものの停止までは追わない（開示）。

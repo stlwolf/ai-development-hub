@@ -1,0 +1,542 @@
+#!/usr/bin/env bash
+# oe-confirm — 送信が受け手の会話に着いたかを送信 1 件ごとに読む read-only 照合器（#336）
+#
+# usage:
+#   oe-confirm [--window <sec>] [--lookback <sec>] [--instr-window <sec>]
+#              [--reports <dir>] [--all] [--json] [--notify] [--write-latest]
+#              [--start-after <epoch|now>] [--set-start-after <epoch|now>]
+#   oe-confirm -h | --help
+#
+# なぜ要るか:
+#   `oe-send` の exit 0 は送出の成功であって到達ではない。送り手はこれまで「届かなかった」を
+#   知る手立てを持たず、統括は子の画面を capture して確かめ、見張りの輪を手で組んでいた。
+#   受け手側の取り込み印（prompt_received・#299）は既に在るので、本 verb は送信記録と印を
+#   **送信 1 件ごとに**突き合わせて状態を返す。
+#
+# 待つ主体は AI ではない:
+#   設計の初版は `oe-send` にインラインの待ちを足す形だったが、ゼロベース反証で棄却された。
+#   AI は戻り値を消費せず次へ進むのが実態で、同期ツール境界を数十秒ブロックするのは
+#   並列ツール呼び出し・ツールタイムアウトと衝突する。**待つのは常駐のこの verb** で、
+#   送り手は非同期に照会する。
+#
+# 状態は 5 つで、received を最初に判定する（**unconfirmed を終状態にしないため**）:
+#   received            宛先ペイン自身の取り込み印が nonce 一致で在る。
+#   received-delayed    同上だが窓を過ぎてから着いた（遅延受領・実測 156/295/948 秒の実例が在る）。
+#   cannot-confirm      印は無いが、受け手が「印を書けなかった」診断を同じ nonce で残している。
+#                       ＝取り込まれたが記録できなかった側で、**未着ではない**。
+#   instrumentation-unknown  印も診断も無く、宛先ペインが鮮度窓内で印を出した形跡が無い。
+#                       未計装・hook 失効・pane ID の再利用が混ざる。**未着と断定しない。**
+#   unconfirmed         印も診断も無く、宛先ペインは鮮度窓内で計装済みと確認でき、窓を過ぎた。
+#                       #336 の中核（計装済みの受け手への間欠不達）はここに落ちる。
+#
+# **`unconfirmed` は終状態ではない。** 分類は毎回イベントログから再計算するので、後から印が
+#   来れば `received-delayed` に変わる。人向けの文言は「届かなかった」と断定せず
+#   **「N 分経っても受領を確認できていない」** と書く。窓（既定 600 秒）は実測の最大遅延
+#   （948 秒）より短く、遅れて着く送信が一度ここに出ることを**承知で**選んでいる — owner の
+#   裁定は「30 分では自分が先に気づくので機械が言う意味が無い。欲しいのは 10 分前後の
+#   『まだやっているのかな』」である。裾に合わせない代わりに、遷移と文言で誤報を防ぐ。
+#   （plan v2 で `silent` と呼んでいた状態を v3 で `unconfirmed` に改名した。値そのものが
+#   「届かなかった」と読めないようにするためで、意味は同じである。）
+#
+# 位置づけ（read-only 観測 family = oe-status / oe-activity / oe-undelivered / oe-vitals と同群）:
+#   - engine state を一切 mutate しない。読むのはイベントログ・受け手診断・tmux のペイン存在・
+#     report ディレクトリのみ。ペイン出力は capture しない（決定論・#144 の marker を踏まない）。
+#   - `oe-undelivered` とは別物である。あちらは **child→parent の報告**が ack されたかを
+#     frontier で見る。本 verb は**双方向**の送信が会話に着いたかを nonce で見る。
+#     `oe-undelivered` の契約（kick は数えない）は触っていない。
+#   - `report_received`（読んだ・oe-ack）の frontier は**使わない**。届いたことと読んだことは
+#     別の層で、本 verb が見るのは前者だけである。
+#
+# 常駐の見張り（#336 Layer 2）としての 3 面:
+#   (1) 上の送信 1 件ごとの状態  (2) 子ペインの消滅  (3) 新しい report file
+#   通知（--notify）は **unconfirmed / pane 消滅 / report 新規だけ**に撃つ。
+#   **cannot-confirm と instrumentation-unknown では撃たない** — 実測でこの 2 つは見かけの
+#   不達の大半を占め、鳴らすと 4 件に 1 件が空振りになって読み手が検知器を無視するようになる
+#   （#144 の marker・#330 の型）。durable signal（stdout と latest.json）には全部出す。
+#
+# 通知の送出成功を到達と読まない:
+#   ping は best-effort で、正本は stdout と latest.json である。抑止キーは**送信 1 件ごと**
+#   （nonce 単位）なので、同じ相手の新しい未確認は必ず新しいキーになり再飽和しない。
+#   ping が owner に実際に見えたかは本 verb では確かめられない（#330 の領分・未解決）。
+#
+# 検知器自身の沈黙:
+#   `--write-latest` で最終走査時刻を latest.json に書く。**その陳腐化を拾うのは別の主体**
+#   （`oe-selfcheck` の検査枝）である。停止を報告する主体を停止しうる当人に置かない。
+#   ただし「陳腐化を誰がいつ読むか」の自動化は #301（park 中）の論点で、本 verb は
+#   検査枝と陽性対照までを担う。
+#
+# exit: 常に 0（observer）。usage の誤りのみ 2 / 投影の失敗のみ 1。
+
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 会話到達面へ出す preview を read 側でも無害化する共有 helper（oe-undelivered と同型）。
+_SANITIZE_LIB="${BIN_DIR}/../lib/sanitize.sh"
+# shellcheck source=../lib/sanitize.sh
+if [[ -r "$_SANITIZE_LIB" ]]; then source "$_SANITIZE_LIB"; fi
+declare -F oe_sanitize_conversation >/dev/null 2>&1 || oe_sanitize_conversation() { printf '%s' "$1"; }
+
+err() { echo "oe-confirm: $*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  oe-confirm [options]            送信 1 件ごとの到達状態・子ペイン消滅・report 新規を出す
+  oe-confirm -h | --help
+
+  --window <sec>        受領を確認できないと告げるまでの秒数（既定 600）。OE_CONFIRM_WINDOW_SEC でも可
+  --lookback <sec>      さかのぼって見る範囲（既定 86400）。OE_CONFIRM_LOOKBACK_SEC でも可
+  --instr-window <sec>  宛先の計装を確かめる鮮度窓（既定 3600）。OE_CONFIRM_INSTR_WINDOW_SEC でも可
+  --reports <dir>       report 新規を見るディレクトリ。OE_CONFIRM_REPORT_DIR でも可（未指定なら見ない）
+  --all                 received も出す（既定は確認できていないものだけ）
+  --json                機械可読な JSON で出す
+  --notify              owner へ ping する（既定は撃たない）。unconfirmed / pane 消滅 / report 新規のみ
+  --write-latest        latest.json に最終走査時刻と件数を書く（常駐時）
+  --start-after <e|now> この実行だけ観測の起点を置く（0 で全期間）
+  --set-start-after <e|now>  起点を保存して終了する（過去のイベントは消さない）
+
+状態: received / received-delayed / cannot-confirm / instrumentation-unknown / unconfirmed / pending
+      received を最初に判定するので、後から印が来た送信は received-delayed へ遷移する
+      （unconfirmed は終状態ではない）。
+read-only: イベントログ・受け手診断・tmux のペイン存在・report ディレクトリだけを読む。
+EOF
+}
+
+WINDOW="${OE_CONFIRM_WINDOW_SEC:-600}"
+LOOKBACK="${OE_CONFIRM_LOOKBACK_SEC:-86400}"
+INSTR_WINDOW="${OE_CONFIRM_INSTR_WINDOW_SEC:-3600}"
+REPORT_DIR="${OE_CONFIRM_REPORT_DIR:-}"
+SHOW_ALL=0
+AS_JSON=0
+NOTIFY=0
+WRITE_LATEST=0
+START_AFTER=""
+SET_START_AFTER=""
+
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    --window) shift; [[ -n "${1:-}" ]] || { err "--window は秒数が必要です"; usage; exit 2; }; WINDOW="$1"; shift ;;
+    --window=*) WINDOW="${1#--window=}"; shift ;;
+    --lookback) shift; [[ -n "${1:-}" ]] || { err "--lookback は秒数が必要です"; usage; exit 2; }; LOOKBACK="$1"; shift ;;
+    --lookback=*) LOOKBACK="${1#--lookback=}"; shift ;;
+    --instr-window) shift; [[ -n "${1:-}" ]] || { err "--instr-window は秒数が必要です"; usage; exit 2; }; INSTR_WINDOW="$1"; shift ;;
+    --instr-window=*) INSTR_WINDOW="${1#--instr-window=}"; shift ;;
+    --reports) shift; [[ -n "${1:-}" ]] || { err "--reports はディレクトリが必要です"; usage; exit 2; }; REPORT_DIR="$1"; shift ;;
+    --reports=*) REPORT_DIR="${1#--reports=}"; shift ;;
+    --all) SHOW_ALL=1; shift ;;
+    --json) AS_JSON=1; shift ;;
+    --notify) NOTIFY=1; shift ;;
+    --write-latest) WRITE_LATEST=1; shift ;;
+    --start-after) shift; [[ -n "${1:-}" ]] || { err "--start-after は epoch 秒 か now が必要です"; usage; exit 2; }; START_AFTER="$1"; shift ;;
+    --start-after=*) START_AFTER="${1#--start-after=}"; shift ;;
+    --set-start-after) shift; [[ -n "${1:-}" ]] || { err "--set-start-after は epoch 秒 か now が必要です"; usage; exit 2; }; SET_START_AFTER="$1"; shift ;;
+    --set-start-after=*) SET_START_AFTER="${1#--set-start-after=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) err "unknown option: $1"; usage; exit 2 ;;
+  esac
+done
+[[ $# -eq 0 ]] || { err "unexpected argument: $1"; usage; exit 2; }
+
+for v in WINDOW LOOKBACK INSTR_WINDOW; do
+  val="${!v}"
+  [[ "$val" =~ ^[0-9]+$ && "$val" -gt 0 ]] || { err "${v} は正の整数（秒）: got [$val]"; usage; exit 2; }
+done
+
+command -v jq >/dev/null 2>&1 || { err "jq が必要です（突き合わせに使用）"; exit 2; }
+
+# HOME を暗黙の既定パスに使ってよいかを決める（#322・engine 全体で byte 一致させる）。
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+declare -F _oe_state_dir >/dev/null 2>&1 || _oe_state_dir() {
+  local _n="$1"
+  if   [ -n "${!_n+x}" ]; then printf '%s' "${!_n}"
+  elif _oe_home_usable; then printf '%s%s' "$HOME" "$2"
+  fi
+}
+
+OE_EVENT_DIR="$(_oe_state_dir OE_EVENT_DIR "/.claude/state")"
+# 置き場が決まらないのは「記録が無い」ではない（#322 DJ-3）。0 件と混ぜて exit 0 で返すと、
+# 読めていないことが成功に化ける。
+if [[ -z "$OE_EVENT_DIR" ]]; then
+  err "活動ログの置き場が決まりません（HOME 未設定・OE_EVENT_DIR も未指定）"; exit 2
+fi
+EVENT_FILE="${OE_EVENT_DIR}/oe-events.jsonl"
+DIAG_FILE="${OE_EVENT_DIR}/oe-receipt-diag.jsonl"
+STATE_DIR="${OE_EVENT_DIR}/oe-confirm"
+SEEN_FILE="${STATE_DIR}/seen"
+START_FILE="${STATE_DIR}/start-after"
+REPORTS_STATE="${STATE_DIR}/reports-state"
+LATEST_FILE="${STATE_DIR}/latest.json"
+
+NOW_EPOCH="${OE_CONFIRM_NOW_EPOCH:-$(date +%s)}"
+[[ "$NOW_EPOCH" =~ ^[0-9]+$ ]] || { err "OE_CONFIRM_NOW_EPOCH は epoch 秒（整数）: got [$NOW_EPOCH]"; exit 2; }
+
+resolve_epoch() {
+  local v="$1"
+  [[ "$v" == "now" ]] && { printf '%s' "$NOW_EPOCH"; return 0; }
+  [[ "$v" =~ ^[0-9]+$ ]] && { printf '%s' "$v"; return 0; }
+  return 1
+}
+
+if [[ -n "$SET_START_AFTER" ]]; then
+  if ! _sa="$(resolve_epoch "$SET_START_AFTER")"; then err "--set-start-after は epoch 秒 か now: got [$SET_START_AFTER]"; exit 2; fi
+  mkdir -p "$STATE_DIR" 2>/dev/null || { err "起点を書けません（${STATE_DIR} を作成できない）"; exit 2; }
+  printf '%s\n' "$_sa" > "$START_FILE" 2>/dev/null || { err "起点を書けません（${START_FILE}）"; exit 2; }
+  echo "oe-confirm: 観測の起点を ${_sa} に置きました（これ以前の送信は出しません。過去は消していません）"
+  exit 0
+fi
+
+AFTER=0
+if [[ -n "$START_AFTER" ]]; then
+  if ! AFTER="$(resolve_epoch "$START_AFTER")"; then err "--start-after は epoch 秒 か now: got [$START_AFTER]"; exit 2; fi
+elif [[ -r "$START_FILE" ]]; then
+  _saved="$(cat "$START_FILE" 2>/dev/null || true)"
+  if [[ "$_saved" =~ ^[0-9]+$ ]]; then AFTER="$_saved"
+  else err "保存された起点が壊れています（${START_FILE}）— 全期間を対象にします"; fi
+fi
+
+# 活動の記録がまだ無くても**抜けない**。report 新規の検知はイベントログに依存しないので、
+# ここで exit すると「送信履歴の無い環境では report が一切拾われない」という穴になる
+# （テストが実際にこれを捕まえた）。送信と子ペインの投影だけを空にして先へ進む。
+HAVE_EVENTS=1
+if [[ ! -s "$EVENT_FILE" ]]; then HAVE_EVENTS=0; fi
+
+# --- liveness（mux 存在 query のみ・capture しない。oe-undelivered と同型）---
+TMUX_AVAIL=0
+LIVE_SET=""
+if command -v tmux >/dev/null 2>&1; then
+  if LIVE_SET="$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)"; then TMUX_AVAIL=1; fi
+fi
+liveness_of() {
+  local pane="$1"
+  [[ -n "$pane" ]] || { printf '?'; return; }
+  [[ "$TMUX_AVAIL" == "1" ]] || { printf '?'; return; }
+  if printf '%s\n' "$LIVE_SET" | grep -qxF -- "$pane"; then printf 'alive'; else printf 'gone'; fi
+}
+
+fmt_age() {
+  local s="$1" h m
+  [[ "$s" =~ ^[0-9]+$ ]] || { printf '%s' "$s"; return; }
+  h=$(( s / 3600 )); m=$(( (s % 3600) / 60 ))
+  if [[ "$h" -gt 0 ]]; then printf '%dh%dm' "$h" "$m"; else printf '%dm' "$m"; fi
+}
+
+# 行の区切り。**tab を使ってはいけない** — tab は IFS 空白文字なので、bash の read が
+# 連続した区切り（＝空フィールド）を畳んでしまい、ラベルが空の行で桁がずれる。実測で
+# tlabel が空の送信が ts を飲み込む形で壊れた。US（0x1f）は IFS 空白文字ではないので
+# 空フィールドがそのまま保たれる。ソースに生の制御バイトを置かないよう実行時に作る。
+SEP="$(printf '\037')"
+
+seen_has() { [[ -r "$SEEN_FILE" ]] && grep -qxF -- "$1" "$SEEN_FILE" 2>/dev/null; }
+seen_add() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || return 1
+  printf '%s\n' "$1" >> "$SEEN_FILE" 2>/dev/null || return 1
+}
+
+# --- 受け手が「印を書けなかった」と残した nonce の集合 -------------------------
+# これが cannot-confirm の一次証拠である。nonce を持たない診断行（jq 不在・タグを取り出せない
+# 経路）は突き合わせ先が無いので集合に入らない＝その送信は instrumentation-unknown へ落ちる。
+# 嘘の確証を作らないための縮退で、意図した挙動である。
+DIAG_NONCES='[]'
+if [[ -s "$DIAG_FILE" ]]; then
+  DIAG_NONCES="$(jq -R 'fromjson? // empty' "$DIAG_FILE" 2>/dev/null \
+    | jq -sc '[ .[] | select(.kind=="env-error") | (.nonce // "") | select(. != "") ] | unique' 2>/dev/null)" || DIAG_NONCES='[]'
+  [[ -n "$DIAG_NONCES" ]] || DIAG_NONCES='[]'
+fi
+
+# --- 送信 1 件ごとの投影 -------------------------------------------------------
+project_delivery() {
+  jq -R 'fromjson? // empty' "$EVENT_FILE" \
+  | jq -rs --argjson now "$NOW_EPOCH" --argjson window "$WINDOW" --argjson lookback "$LOOKBACK" \
+           --argjson instrwin "$INSTR_WINDOW" --argjson after "$AFTER" --argjson diagn "$DIAG_NONCES" \
+           --arg sep "$SEP" '
+    def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
+
+    ( [ .[] | select(.type=="prompt_received") | select((.nonce // "") != "") ] ) as $recv
+    # nonce -> 印を出したペインと時刻。**宛先ペインまで一致を見る** — nonce だけで消すと、
+    # 別のペインが同じタグを submit しただけで未達が消える（marker と同型の誤り）。
+    | ( reduce $recv[] as $r ({};
+          .[$r.nonce] = ((.[$r.nonce] // []) + [{ pane: ($r.from.pane // ""), t: ts_epoch($r.ts) }]) ) ) as $rcpt
+    # ペイン -> そのペインが印を出した時刻の列（計装の鮮度を測る材料）
+    | ( reduce $recv[] as $r ({};
+          .[($r.from.pane // "")] = ((.[($r.from.pane // "")] // []) + [ts_epoch($r.ts)]) ) ) as $instr
+    | [ .[] | select(.type=="message_sent") | select((.delivery_receipt.nonce // "") != "") ]
+    | map(
+        . as $m
+        | ts_epoch($m.ts) as $mt
+        | select($mt != null)
+        | select($mt > $after)
+        | select(($now - $mt) <= $lookback)
+        | ($m.delivery_receipt.nonce) as $n
+        | ($m.to.pane // "") as $dst
+        | ( ($rcpt[$n] // []) | map(select(.pane == $dst and .t != null)) | sort_by(.t) ) as $hit
+        | ( if ($hit | length) > 0 then $hit[0].t else null end ) as $rt
+        | ( ($instr[$dst] // [])
+            | map(select(. != null and . >= ($mt - $instrwin) and . <= ($mt + $instrwin)))
+            | length ) as $instr_n
+        | ( if $rt != null then
+              (if ($rt - $mt) > $window then "received-delayed" else "received" end)
+            elif (($diagn | index($n)) != null) then "cannot-confirm"
+            elif $instr_n == 0 then "instrumentation-unknown"
+            elif ($now - $mt) > $window then "unconfirmed"
+            else "pending" end ) as $state
+        | { state: $state,
+            nonce: $n,
+            from: ($m.from.pane // ""),
+            to: $dst,
+            flabel: (($m.from.label // "") | gsub("[[:cntrl:]]"; " ")),
+            tlabel: (($m.to.label // "") | gsub("[[:cntrl:]]"; " ")),
+            ts: $m.ts,
+            age: ($now - $mt),
+            delay: (if $rt != null then ($rt - $mt) else -1 end),
+            prev: (($m.preview // "") | gsub("[[:cntrl:]]"; " ")) } )
+    | sort_by(-.age)
+    | .[] | [ .state, .nonce, .from, .to, .flabel, .tlabel, .ts, (.age|tostring), (.delay|tostring), .prev ]
+    | join($sep)
+  '
+}
+
+DELIV_ROWS=""
+if [[ "$HAVE_EVENTS" == "1" ]]; then
+  DELIV_ROWS="$(project_delivery 2>/dev/null)" || { err "イベントログを投影できませんでした（壊れた jsonl?）: ${EVENT_FILE}"; exit 1; }
+fi
+
+# --- 子ペインの消滅 ------------------------------------------------------------
+# child_spawned で登記された子のうち、いま tmux に居ないもの。lookback で範囲を切る。
+project_panes() {
+  jq -R 'fromjson? // empty' "$EVENT_FILE" \
+  | jq -rs --argjson now "$NOW_EPOCH" --argjson lookback "$LOOKBACK" --argjson after "$AFTER" --arg sep "$SEP" '
+    def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
+    [ .[] | select(.type=="child_spawned") ]
+    | map( . as $c | ts_epoch($c.ts) as $t
+           | select($t != null) | select($t > $after) | select(($now - $t) <= $lookback)
+           | { pane: ($c.to.pane // ""), label: (($c.to.label // "") | gsub("[[:cntrl:]]"; " ")),
+               parent: ($c.from.pane // ""), ts: $c.ts, age: ($now - $t) } )
+    | map(select(.pane != ""))
+    | unique_by(.pane)
+    | sort_by(-.age)
+    | .[] | [ .pane, .label, .parent, .ts, (.age|tostring) ] | join($sep)
+  '
+}
+PANE_ROWS=""
+if [[ "$HAVE_EVENTS" == "1" ]]; then
+  PANE_ROWS="$(project_panes 2>/dev/null)" || PANE_ROWS=""
+fi
+
+# --- report 新規 ---------------------------------------------------------------
+# poll ＋ seen-set。**2 回の走査で size と mtime が変わらないこと**を完成条件にする。
+# mtime の古さだけで完成と見ると、writer が open のまま止まった半端な file を新規報告として
+# 読んでしまう。初回は既存を全部 watermark して鳴らさない（初回に過去分が一斉に鳴るのを防ぐ）。
+REPORT_NEW=""
+REPORT_STATE_NEXT=""
+scan_reports() {
+  [[ -n "$REPORT_DIR" ]] || return 0
+  [[ -d "$REPORT_DIR" ]] || { err "report ディレクトリが在りません（${REPORT_DIR}）— report 新規は見ません"; return 0; }
+  local first_run=0
+  [[ -r "$REPORTS_STATE" ]] || first_run=1
+  local f base size mtime prev prev_size prev_mtime prev_state
+  while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    base="$(basename "$f")"
+    size="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || size=""
+    mtime="$(date -r "$f" +%s 2>/dev/null)" || mtime=""
+    [[ -n "$size" && -n "$mtime" ]] || continue
+    prev=""
+    if [[ -r "$REPORTS_STATE" ]]; then
+      prev="$(grep -F "${f}"$'\t' "$REPORTS_STATE" 2>/dev/null | head -1)" || prev=""
+    fi
+    if [[ -z "$prev" ]]; then
+      if [[ "$first_run" == "1" ]]; then
+        # 初回は既存を既知として記録するだけ（watermark）。鳴らさない。
+        REPORT_STATE_NEXT+="${f}"$'\t'"${size}"$'\t'"${mtime}"$'\t'"done"$'\n'
+      else
+        # 新しく現れた。まだ書いている途中かもしれないので次回まで待つ。
+        REPORT_STATE_NEXT+="${f}"$'\t'"${size}"$'\t'"${mtime}"$'\t'"pending"$'\n'
+      fi
+      continue
+    fi
+    prev_size="$(printf '%s' "$prev" | cut -f2)"
+    prev_mtime="$(printf '%s' "$prev" | cut -f3)"
+    prev_state="$(printf '%s' "$prev" | cut -f4)"
+    if [[ "$prev_state" == "done" ]]; then
+      REPORT_STATE_NEXT+="${f}"$'\t'"${size}"$'\t'"${mtime}"$'\t'"done"$'\n'
+      continue
+    fi
+    if [[ "$prev_size" == "$size" && "$prev_mtime" == "$mtime" ]]; then
+      # 2 回の走査で変わらなかった＝書き終わっている。ここで初めて新規として出す。
+      REPORT_NEW+="${base}${SEP}${f}${SEP}${size}"$'\n'
+      REPORT_STATE_NEXT+="${f}"$'\t'"${size}"$'\t'"${mtime}"$'\t'"done"$'\n'
+    else
+      REPORT_STATE_NEXT+="${f}"$'\t'"${size}"$'\t'"${mtime}"$'\t'"pending"$'\n'
+    fi
+  done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name 'report-*.md' 2>/dev/null | sort)
+  return 0
+}
+scan_reports
+
+# --- 通知（best-effort・送出成功を到達と読まない）--------------------------------
+# #301 の裁定に沿って OSC 777 を先に試し、駄目なら wez notify に落とす。どちらも「送れた」
+# までしか言えないので、正本は stdout と latest.json である。
+notify_owner() {
+  local title="$1" body="$2" pane_tty=""
+  if [[ -n "${OE_CONFIRM_NOTIFY_PANE:-}" ]] && command -v tmux >/dev/null 2>&1; then
+    pane_tty="$(tmux display-message -p -t "${OE_CONFIRM_NOTIFY_PANE}" '#{pane_tty}' 2>/dev/null)" || pane_tty=""
+  fi
+  if [[ -n "$pane_tty" && -w "$pane_tty" ]]; then
+    # tmux passthrough で OSC 777 を通す（notify.sh と同型）。
+    printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" > "$pane_tty" 2>/dev/null && return 0
+  fi
+  if command -v wez >/dev/null 2>&1; then
+    wez notify "$title" "$body" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+# --- 出力 ----------------------------------------------------------------------
+n_unconfirmed=0; n_cannot=0; n_instr=0; n_received=0; n_delayed=0; n_pending=0
+n_gone=0; n_reports=0
+notify_hits=()
+
+deliv_out=""
+if [[ -n "$DELIV_ROWS" ]]; then
+  while IFS="$SEP" read -r state nonce from to flabel tlabel ts age delay prev; do
+    [[ -n "$state" ]] || continue
+    case "$state" in
+      received) n_received=$((n_received+1)) ;;
+      received-delayed) n_delayed=$((n_delayed+1)) ;;
+      cannot-confirm) n_cannot=$((n_cannot+1)) ;;
+      instrumentation-unknown) n_instr=$((n_instr+1)) ;;
+      unconfirmed) n_unconfirmed=$((n_unconfirmed+1)) ;;
+      pending) n_pending=$((n_pending+1)) ;;
+    esac
+    if [[ "$SHOW_ALL" != "1" ]]; then
+      case "$state" in received|pending) continue ;; esac
+    fi
+    local_note=""
+    case "$state" in
+      unconfirmed) local_note="$(( WINDOW / 60 )) 分経っても受領を確認できていない" ;;
+      received-delayed) local_note="遅延して受領（${delay}秒後）" ;;
+      cannot-confirm) local_note="取り込まれたが受け手が印を書けなかった（未着ではない）" ;;
+      instrumentation-unknown) local_note="宛先の計装を確認できず判定できない" ;;
+      received) local_note="受領" ;;
+      pending) local_note="まだ窓の内" ;;
+    esac
+    deliv_out+="$(printf '%-24s %-8s %s -> %s  %s  %s  %s' \
+      "$state" "$(fmt_age "$age")" \
+      "$( [[ -n "$flabel" ]] && printf '%s(%s)' "$flabel" "$from" || printf '%s' "$from" )" \
+      "$( [[ -n "$tlabel" ]] && printf '%s(%s)' "$tlabel" "$to" || printf '%s' "$to" )" \
+      "$local_note" "$ts" "$(oe_sanitize_conversation "$prev")")"$'\n'
+    if [[ "$state" == "unconfirmed" ]]; then
+      notify_hits+=("delivery|${nonce}|${to}")
+    fi
+  done <<< "$DELIV_ROWS"
+fi
+
+pane_out=""
+if [[ -n "$PANE_ROWS" ]]; then
+  while IFS="$SEP" read -r pane label parent ts age; do
+    [[ -n "$pane" ]] || continue
+    [[ "$(liveness_of "$pane")" == "gone" ]] || continue
+    n_gone=$((n_gone+1))
+    pane_out+="$(printf '%-24s %-8s %s  親=%s  %s' "pane-gone" "$(fmt_age "$age")" \
+      "$( [[ -n "$label" ]] && printf '%s(%s)' "$label" "$pane" || printf '%s' "$pane" )" "$parent" "$ts")"$'\n'
+    notify_hits+=("pane|${pane}")
+  done <<< "$PANE_ROWS"
+fi
+
+report_out=""
+if [[ -n "$REPORT_NEW" ]]; then
+  while IFS="$SEP" read -r base path size; do
+    [[ -n "$base" ]] || continue
+    n_reports=$((n_reports+1))
+    report_out+="$(printf '%-24s %s  (%s bytes)  %s' "report-new" "$base" "$size" "$path")"$'\n'
+    notify_hits+=("report|${path}")
+  done <<< "$REPORT_NEW"
+fi
+
+if [[ "$AS_JSON" == "1" ]]; then
+  jq -n --argjson w "$WINDOW" --argjson uc "$n_unconfirmed" --argjson cc "$n_cannot" \
+        --argjson iu "$n_instr" --argjson rc "$n_received" --argjson rd "$n_delayed" \
+        --argjson pd "$n_pending" --argjson pg "$n_gone" --argjson rn "$n_reports" \
+        --arg ts "$(date -u -r "$NOW_EPOCH" +%Y-%m-%dT%H:%M:%S+00:00 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+    '{scanned_at:$ts, window_sec:$w,
+      delivery:{unconfirmed:$uc, cannot_confirm:$cc, instrumentation_unknown:$iu,
+                received:$rc, received_delayed:$rd, pending:$pd},
+      panes_gone:$pg, reports_new:$rn}'
+else
+  printf '=== oe-confirm (read-only · window=%ss · lookback=%ss · instr-window=%ss) ===\n' \
+    "$WINDOW" "$LOOKBACK" "$INSTR_WINDOW"
+  if [[ -n "$deliv_out" || -n "$pane_out" || -n "$report_out" ]]; then
+    [[ -n "$deliv_out" ]] && printf '%s' "$deliv_out"
+    [[ -n "$pane_out" ]] && printf '%s' "$pane_out"
+    [[ -n "$report_out" ]] && printf '%s' "$report_out"
+  elif [[ "$HAVE_EVENTS" == "0" ]]; then
+    echo "検知なし。ただし活動の記録がまだありません（${EVENT_FILE}）— 送信と子ペインは判定していません。"
+  else
+    echo "検知なし（確認できていない送信・消えた子ペイン・新しい report file はありません）"
+  fi
+  printf -- '--- 内訳: unconfirmed=%s cannot-confirm=%s instrumentation-unknown=%s received=%s received-delayed=%s pending=%s / pane-gone=%s report-new=%s\n' \
+    "$n_unconfirmed" "$n_cannot" "$n_instr" "$n_received" "$n_delayed" "$n_pending" "$n_gone" "$n_reports"
+  if [[ "$n_cannot" -gt 0 || "$n_instr" -gt 0 ]]; then
+    echo "注: cannot-confirm と instrumentation-unknown は未着ではありません（通知も撃ちません）。"
+  fi
+fi
+
+# --- 通知（unconfirmed / pane 消滅 / report 新規のみ）-----------------------------
+if [[ "$NOTIFY" == "1" && "${#notify_hits[@]}" -gt 0 ]]; then
+  for key in "${notify_hits[@]}"; do
+    seen_has "$key" && continue
+    kind="${key%%|*}"
+    case "$kind" in
+      delivery) title="oe-confirm: 受領を確認できていない送信"
+                body="$(( WINDOW / 60 )) 分経っても受領を確認できていません（届かなかったとは限りません）: ${key#delivery|}" ;;
+      pane)     title="oe-confirm: 子ペインが消えました"; body="${key#pane|}" ;;
+      report)   title="oe-confirm: 新しい report file"; body="${key#report|}" ;;
+      *)        continue ;;
+    esac
+    # 通知できたときだけ seen へ焼く。失敗時に先へ焼くと、通知していないのに既読になり
+    # owner ping が永久に抑止される（oe-undelivered / oe-vitals と同じ規律）。
+    if notify_owner "$title" "$body"; then
+      seen_add "$key" || err "seen cache を書けませんでした（${SEEN_FILE}）— 二重通知抑止は無効・検知は継続"
+    fi
+  done
+fi
+
+# --- report の走査状態を保存（同一 dir へ temp + rename で原子的に置く）-----------
+# **走査結果が空でも書く。** 書かないと状態ファイルが出来ず、次回もまた「初回」と判定して、
+# その間に置かれた report を watermark として黙って飲み込んでしまう（テストが捕まえた）。
+# 空の状態ファイルは「一度走査した」という事実そのものを表す。
+if [[ -n "$REPORT_DIR" && -d "$REPORT_DIR" ]]; then
+  if mkdir -p "$STATE_DIR" 2>/dev/null; then
+    tmpf="$(mktemp "${STATE_DIR}/reports-state.XXXXXX" 2>/dev/null)" || tmpf=""
+    if [[ -n "$tmpf" ]]; then
+      if printf '%s' "$REPORT_STATE_NEXT" > "$tmpf" 2>/dev/null && mv -f "$tmpf" "$REPORTS_STATE" 2>/dev/null; then
+        :
+      else
+        rm -f "$tmpf" 2>/dev/null || true
+      fi
+    fi
+  fi
+fi
+
+# --- latest.json（最終走査時刻・別主体が陳腐化を拾うための痕跡）--------------------
+if [[ "$WRITE_LATEST" == "1" ]]; then
+  if mkdir -p "$STATE_DIR" 2>/dev/null; then
+    tmpf="$(mktemp "${STATE_DIR}/latest.json.XXXXXX" 2>/dev/null)" || tmpf=""
+    if [[ -n "$tmpf" ]]; then
+      if jq -n --argjson e "$NOW_EPOCH" --argjson w "$WINDOW" --argjson uc "$n_unconfirmed" \
+              --argjson cc "$n_cannot" --argjson iu "$n_instr" --argjson pg "$n_gone" --argjson rn "$n_reports" \
+          '{scanned_at_epoch:$e, window_sec:$w,
+            counts:{unconfirmed:$uc, cannot_confirm:$cc, instrumentation_unknown:$iu,
+                    panes_gone:$pg, reports_new:$rn}}' > "$tmpf" 2>/dev/null \
+         && mv -f "$tmpf" "$LATEST_FILE" 2>/dev/null; then
+        :
+      else
+        rm -f "$tmpf" 2>/dev/null || true
+      fi
+    fi
+  fi
+fi
+
+exit 0
