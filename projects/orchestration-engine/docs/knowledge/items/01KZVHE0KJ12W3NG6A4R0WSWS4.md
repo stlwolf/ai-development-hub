@@ -8,7 +8,11 @@ prediction: "報告する主体と止まる主体が同じなので、止まっ�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-11-episode-301-selfcheck-scheduling.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-11
+    ref: "#336"
+    state: externally_verified
+    note: "常駐の見張りを session 外（launchd）に置き、その最終走査時刻の陳腐化を別主体（oe-selfcheck の watchdog-freshness）が読む形にした。ただし設計SO が『検査枝を足しただけで誰がいつ実行し誰が読むかが未配線＝#301 が park された出口の無い検知を再生産している』と指摘し、予測どおりの穴が外部から検出された。輪の最後は #301 に残ると明記して線引きした"
 ---
 
 **停止を報告する主体を、停止しうる当人に置いてはならない。** 別の主体に置き、片方が死ねばもう片方が言う形にする。
