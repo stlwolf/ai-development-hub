@@ -8,7 +8,11 @@ prediction: "被検査物の欠陥だけを直し、検査器は素直に書く�
 source:
   ref: "docs/harness/episodes/2026-09-04-episode-348-output-style-verification.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-10
+    ref: "#348"
+    state: contradicted
+    note: "同じ型を3回目で踏んだ。確認器の欠陥を測定中に直したが、直したのは tmp に置いた実行用の複製で、配られる側の正本ではなかった。PR の bot レビューが committed の側にそのまま残っているのを指摘した。episode には「直した」と書いたが、どちらを直したかを書いていない。教訓を「検査器を疑え」で止めず、「直したと書く前に、直した対象が配られる側かを見る」まで伸ばす"
 exclusions:
   - "検査器が被検査物と別の機構で動く場合（外部のコマンド・別のプロトコル）"
 ---
