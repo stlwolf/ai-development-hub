@@ -394,13 +394,16 @@ scan_reports() {
   # 空状態と区別が付かないからである（この判定を素朴に書いて実際に取り違えた）。
   #
   # そこで先頭にヘッダ行を置き、**ヘッダの有無で「一度走査した」を表す**。ヘッダが無ければ
-  # 破損とみなして watermark を引き直す（鳴らさずに現状を既知として取り込む）。ヘッダが在って
-  # データ行が 0 なら、それは「走査したが対象が無かった」という正常な状態である。
+  # 読めないものとして watermark を引き直す（鳴らさずに現状を既知として取り込む）。ヘッダが
+  # 在ってデータ行が 0 なら、それは「走査したが対象が無かった」という正常な状態である。
+  #
+  # ヘッダ無しは破損だけでなく**ヘッダ導入前に書かれた旧形式**でも起きる。どちらも扱いは同じ
+  # （引き直して鳴らさない）で安全側なので区別しないが、文言は破損と断定しない。
   if [[ ! -r "$REPORTS_STATE" ]]; then
     first_run=1
   elif [[ "$(head -1 "$REPORTS_STATE" 2>/dev/null)" != "$REPORTS_STATE_HEADER" ]]; then
     first_run=1
-    err "report の走査状態が壊れています（${REPORTS_STATE}）— 現状を既知として取り込み直します（今回は鳴らしません）"
+    err "report の走査状態を読めません（${REPORTS_STATE}・破損か旧形式）— 現状を既知として取り込み直します（今回は鳴らしません）"
   fi
   local f base size mtime prev prev_size prev_mtime prev_state
   while IFS= read -r f; do

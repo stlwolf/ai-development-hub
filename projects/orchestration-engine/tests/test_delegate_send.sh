@@ -283,10 +283,11 @@ else
 fi
 
 # === #336: message_sent を書く位置 ===
-# 記録が transport の**前**に無いと、注入は済んだのにログを書く前に送り手が死んだとき、
-# 配送済みなのに outstanding record が残らない（dual-write gap）。逆に注入の**前**に書くと
-# 注入失敗の幽霊レコードが残り、既存 consumer が通常送信として算入する。正しい位置は
-# 「literal 注入が成功した直後・Enter の前」である。
+# 記録を finalize の**後**に書くと、注入も submit も済んだのにログを書く前に送り手が死んだとき、
+# 配送済みなのに outstanding record が残らない（dual-write gap・finalize は既定 3 秒観測する）。
+# 逆に Enter の**前**に書くと、Enter 失敗（rc=2）でも記録が残り「message_sent＝submit 済み」の
+# 既存契約が静かに変わって既存 consumer が算入する。正しい位置は
+# 「Enter が成功した直後・finalize の前」である。
 #
 # emit は送信ログと同じ列へマーカーを積む形でモックする。こうすると **順序そのもの**を
 # 1 本の列で読める（別々の変数に取ると前後関係が落ちる）。

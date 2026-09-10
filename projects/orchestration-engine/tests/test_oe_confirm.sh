@@ -318,7 +318,7 @@ printf 'a
 run 1789129200 --reports "$RD3" >/dev/null                 # 初回 watermark
 : > "$EVDIR/oe-confirm/reports-state"                       # truncate されたことにする
 OUT="$(run 1789129200 --reports "$RD3" 2>&1)"
-ckc "破損を告げる"           "$OUT" "走査状態が壊れています"
+ckc "読めないことを告げる"   "$OUT" "走査状態を読めません"
 ncc "既存を一斉に鳴らさない" "$OUT" "report-a.md"
 OUT="$(run 1789129200 --reports "$RD3" 2>&1)"
 ncc "引き直した後も鳴らさない" "$OUT" "report-a.md"
@@ -333,8 +333,45 @@ printf 'c
 ' > "$RD4/report-c.md"
 run 1789129200 --reports "$RD4" >/dev/null                  # c は pending
 OUT="$(run 1789129200 --reports "$RD4" 2>&1)"
-ncc "壊れた行が在っても破損扱いにしない" "$OUT" "走査状態が壊れています"
+ncc "壊れた行が在っても引き直しにしない" "$OUT" "走査状態を読めません"
 ckc "新しい file は通常どおり出る"       "$OUT" "report-c.md"
+
+# ============================================================================
+echo "[19] **遷移を 2 回の走査で確かめる** — 先に unconfirmed と出た送信が、後から印が来たら received へ変わる"
+# owner の裁定の核心。「10 分経っても受領を確認できていない」と一度言った送信を、そのまま
+# 「届かなかった」で固定してはいけない。**同じイベントログに印が追記されたら判定が変わる**
+# ことを、1 回の run の中ではなく **2 回の run をまたいで**確かめる。
+mkfix f19
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "WILL-ARRIVE-LATE"
+sent "2026-09-11T11:59:00+00:00" "%61" "%53" "$N2" "OTHER"
+recv "2026-09-11T11:59:01+00:00" "%53" "$N2"
+OUT1="$(run 1789129200)"                       # 1 回目: まだ印が無い
+ckc "1 回目は unconfirmed"        "$OUT1" "unconfirmed"
+ckc "1 回目は対象が出る"          "$OUT1" "WILL-ARRIVE-LATE"
+ck  "1 回目 unconfirmed=1" "1" "$(run 1789129200 --json | jq -r '.delivery.unconfirmed')"
+recv "2026-09-11T12:25:00+00:00" "%53" "$N1"   # 後から印が届いた（1500 秒後）
+OUT2="$(run 1789129800)"                       # 2 回目: now=12:30
+ncc "2 回目は unconfirmed で出ない" "$OUT2" "WILL-ARRIVE-LATE  10 分"
+ck  "2 回目 unconfirmed=0（終状態ではない）" "0" "$(run 1789129800 --json | jq -r '.delivery.unconfirmed')"
+ck  "2 回目 received_delayed=1"              "1" "$(run 1789129800 --json | jq -r '.delivery.received_delayed')"
+ckc "遅延秒数を出す"                          "$(run 1789129800)" "1500秒後"
+
+echo "[20] 通知に失敗したら seen へ焼かない（通知していないのに既読にしない）"
+mkfix f20
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "NOTIFY-FAILS"
+sent "2026-09-11T11:59:00+00:00" "%61" "%53" "$N2" "OTHER"
+recv "2026-09-11T11:59:01+00:00" "%53" "$N2"
+# 通知経路を失敗させる（wez を非 0 で返す stub に差し替える）
+FAILBIN="$_TMP_DIR/failbin"; mkdir -p "$FAILBIN"
+cp "$STUB_BIN/tmux" "$FAILBIN/tmux"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$FAILBIN/wez"; chmod +x "$FAILBIN/wez"
+env PATH="$FAILBIN:$PATH" OE_EVENT_DIR="$EVDIR" OE_CONFIRM_NOW_EPOCH=1789129200 \
+  bash "$OE_CONFIRM" --notify >/dev/null 2>&1
+ck "通知失敗なら seen は空" "0" "$( [[ -r "$EVDIR/oe-confirm/seen" ]] && wc -l < "$EVDIR/oe-confirm/seen" | tr -d ' ' || echo 0 )"
+# 通知経路が戻れば撃てる（恒久抑止になっていない）
+: > "$WEZ_LOG"
+run 1789129200 --notify >/dev/null
+ck "経路が戻れば通知できる" "1" "$(grep -c "$N1" "$WEZ_LOG" || true)"
 
 echo ""
 echo "=== test_oe_confirm: PASS=$PASS FAIL=$FAIL ==="
