@@ -59,7 +59,10 @@ def main():
     a = ap.parse_args()
 
     excl = set()
-    if a.exclude_ids and os.path.exists(a.exclude_ids):
+    if a.exclude_ids:
+        # 渡された path が無いときに黙って「除外なし」にしない（aggregate-arms.py と同じ）。
+        if not os.path.exists(a.exclude_ids):
+            ap.error(f'--exclude-ids のファイルが無い: {a.exclude_ids}')
         excl = {x.strip() for x in io.open(a.exclude_ids, encoding='utf-8') if x.strip()}
 
     cands = []
@@ -104,6 +107,10 @@ def main():
             dropped_axes.append((n, len(by_axis[n])))
             continue
         for c in pool[:a.per_axis]:
+            # 上限は軸ごとの選択にも効かせる。ここで見ないと、軸の数 × per-axis
+            # まで積めてしまい --max を超える（軸4本 × per-axis 3 で最大12件）。
+            if len(picked) >= a.max:
+                break
             seen.add((c['sess'], c['idx']))
             c['selected_for'] = n
             picked.append(c)

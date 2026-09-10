@@ -103,6 +103,16 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | 通知 | `hooks/scripts/notify.sh` | エージェントの完了・入力待ちを macOS 通知（advisory、並走時のポーリング解消）。loc にセッション名を表示 |
 | セッション命名 | `hooks/scripts/session-name.sh` | セッション名を自動設定（Claude Code のみ・UserPromptSubmit）。worktree は `#<issue> <slug>`（`scripts/wt/wt-pane-issue.sh`＝worktrunk post-switch と連携）、非 wt は現在 git ブランチ名（issue規約→`#<issue> <slug>` / デフォルト・非git→リポ名）でブランチ変化に追従。並列セッション識別用 |
 
+## Output Styles (1)
+
+会話面（main conversation）の応答の書き方を指定する設定文。`~/.claude/output-styles/` へ配られ、`settings.json` の `outputStyle` で選ぶ。**セッション開始時にだけ読まれる**（起動中の切り替えは次のセッションから効く）。適用先は main conversation だけで、subagent には乗らない。
+
+| 名前 | 説明 | パス |
+|------|------|------|
+| readable-conversation | 会話面の応答を、作業を見ていない運用者が一度読んで次の一手を選べる形で書く | `output-styles/readable-conversation.md` |
+
+**2026-09-10 時点で暫定採用である**（#348）。実運用で観察しており、採否は確定していない。
+
 ## ツール固有拡張
 
 canonical/ 内のツール固有レイヤー。各ディレクトリの README を参照。

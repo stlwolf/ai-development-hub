@@ -11,7 +11,20 @@ args=(-p --model opus --output-format json)
 # NORULES=1 で操作者の設定を全部落とす。project,local では project の CLAUDE.md が残るので
 # 「指示がまったく無い floor」にならない（計画 §7）。空文字列で user / project / local を落とす。
 if [[ "${NORULES:-}" == "1" ]]; then args+=(--setting-sources ""); fi
-if [[ "$style" != "none" ]]; then
+if [[ "$style" == "none" ]]; then
+  # 「指定しない」は、既定が空のときだけ「設定文なし」になる。live に
+  # outputStyle が入っていれば、それを受け継ぐ（#348 R-4b はこれで無効になった）。
+  # NORULES=1 は --setting-sources "" で user / project / local を落とすので安全。
+  if [[ "${NORULES:-}" != "1" ]]; then
+    cat >&2 <<'MSG'
+style に none を使えるのは NORULES=1 のときだけである。
+それ以外で --settings を省くと live の outputStyle を受け継ぐので、
+「設定文なし」の条件にならない。本文の無い空の設定文を明示して渡すこと。
+雛形: projects/orchestration-engine/scripts/register-metrics/fixtures/oe348-empty.md
+MSG
+    exit 2
+  fi
+else
   args+=(--settings "{\"outputStyle\":\"${style}\"}")
 fi
 started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -41,5 +54,17 @@ try:
     print(','.join(mu.keys()) or d.get('model','?'))
 except Exception: print('?')
 ")"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$tag" "$cond" "$style" "$pname" "$rep" "$started" "$ended" "$model" "$cliver" >> "$outdir/manifest.tsv"
-echo "[done] $tag rc=$rc model=$model chars=$(python3 -c "import io;print(len(io.open('$outdir/${tag}.txt',encoding='utf-8').read()))")"
+# 成否は応答ファイルの有無では見えない。上限で落ちた run も 55 文字程度の
+# 正常な JSON として存在する。is_error と rc を読み、manifest の末尾に残す。
+is_error="$(python3 -c "
+import json,io
+try:
+    d=json.load(io.open('$outdir/${tag}.json',encoding='utf-8'))
+    print('1' if d.get('is_error') else '0')
+except Exception: print('1')
+")"
+chars="$(python3 -c "import io;print(len(io.open('$outdir/${tag}.txt',encoding='utf-8').read()))")"
+if [[ "$rc" -ne 0 || "$is_error" == "1" ]]; then status=failed; else status=ok; fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$tag" "$cond" "$style" "$pname" "$rep" "$started" "$ended" "$model" "$cliver" "$status" "$rc" "$is_error" >> "$outdir/manifest.tsv"
+echo "[done] $tag status=$status rc=$rc is_error=$is_error model=$model chars=$chars"
+[[ "$status" == "ok" ]] || exit 1

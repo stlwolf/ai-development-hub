@@ -38,11 +38,32 @@ python3 aggregate-arms.py \
 python3 metrics.py --prompt <題のfile> --required <required.json> <題名> <応答のfile>
 ```
 
+## 対照の腕の作り方（省略しないこと）
+
+**対照の腕でも設定文の名前を明示する。** `--settings` を省くと live の `outputStyle` を受け継ぐので、両腕が同じ設定文になり対比較が成立しない。#348 の R-4b はこれで無効になった。
+
+本文の無い空の設定文を `~/.claude/output-styles/` に置き、その名前を対照に渡す。雛形は `fixtures/oe348-empty.md` にある。
+
+```bash
+cp fixtures/oe348-empty.md ~/.claude/output-styles/
+runners/run-fork-batch.sh <RUN> oe348-empty readable-conversation
+```
+
+`run-fork.sh` に `none` を渡すと止まる。`run-one.sh` の `none` は `NORULES=1`（`--setting-sources ""` で user / project / local を全部落とす）のときだけ使える。
+
+## 成否の見方
+
+**応答ファイルの有無で成否を見ない。** 使用量の上限で落ちた run も、55 文字程度の正常な JSON として存在する。
+
+runner は `is_error` と `rc` を読み、manifest の末尾に `status` / `rc` / `is_error` の3列を足す。失敗した run では runner 自身も非0で終わる。`run-fork-batch.sh` は失敗が1本でもあれば非0で終わる。
+
+`verify-style-injection.py` は、全行が `ok` のときだけ0を返す。1行も確認できなければ2を返す（母集団が空でも緑になる穴を塞ぐため）。検証の門として使える。
+
 ## 凍結した閾値（2026-09-05 の HG-2 承認時に固定）
 
 | 軸 | 閾値 |
 |---|---|
-| 強調記号（`⚠ ❗ ‼ ★ 🔴 🚨 ✅ ❌`） | 1 個以上 |
+| 強調記号（`⚠ ❗ ‼ ★ ☆ 🔴 🚨 ✅ ❌`） | 1 個以上 |
 | 内部語の種類数 | 4 以上 |
 | 文の数 | 37 以上 |
 | 英語語の密度（1,000 文字あたり） | 26.52 以上 |

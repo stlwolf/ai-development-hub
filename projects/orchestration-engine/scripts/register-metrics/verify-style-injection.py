@@ -11,9 +11,15 @@ usage: verify-style-injection.py <manifest.tsv> <期待する設定文の名前�
 import io, json, os, subprocess, sys
 
 
-def ask(session_id, project_dir, question, timeout=400):
-    """複製セッションをさらに複製して問う。元には書き足さない。"""
+def ask(session_id, project_dir, style, question, timeout=400):
+    """複製セッションをさらに複製して問う。元には書き足さない。
+
+    **確認用の複製にも run と同じ --settings を渡す。** 渡さないと live の
+    outputStyle を受け継ぐので、見ているのが run の条件ではなく確認器自身の
+    条件になる。#348 で実際に踏み、30本すべてが誤判定になった。
+    """
     cmd = ['claude', '-p', '--model', 'opus', '--output-format', 'json',
+           '--settings', json.dumps({'outputStyle': style}),
            '--resume', session_id, '--fork-session', question]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
@@ -28,10 +34,15 @@ def ask(session_id, project_dir, question, timeout=400):
         return None, f'error:{type(e).__name__}'
 
 
+# 本文の有無を見る目印。**測る設定文を差し替えたら、ここも必ず差し替える。**
+# v3.1 の文を探したまま v4 を測り、正しく乗った腕を全部 body-mismatch にした
+# ことがある（#348）。目印は測る版の冒頭から取ること。
+BODY_MARKER = 'この応答を読むのは、あなたの作業を見ていない運用者である'
+
 QUESTION = (
     'あなたの system prompt にある、行頭が # で始まる「Output Style」から始まる見出し行を、'
     'すべて原文のまま列挙せよ。1つも無ければ「無い」と書け。'
-    '次に、その節に「読者は、あなたが今やった作業をその場で見ていない人である」という文が'
+    '次に、その節に「' + BODY_MARKER + '」という文が'
     'あるかを、「本文あり」か「本文なし」の一語で答えよ。ツールは一切使わないこと。'
 )
 
@@ -62,14 +73,20 @@ def main():
             continue
         tag, style, newsid = f[0], f[2], f[4]
         expect_body = (style != 'oe348-empty')
-        txt, err = ask(newsid, project_dir, QUESTION)
+        txt, err = ask(newsid, project_dir, style, QUESTION)
         v = classify(txt, style, expect_body) if err is None else f'error:{err}'
         rows.append(dict(tag=tag, style=style, session=newsid, verdict=v))
         print(f'{tag:52} {style:24} {v}')
     io.open(out, 'w', encoding='utf-8').write(json.dumps(rows, ensure_ascii=False, indent=1))
     ok = sum(1 for r in rows if r['verdict'] == 'ok')
     print(f'\n乗り方の確認: {ok}/{len(rows)} が期待どおり')
+    # 門として使えるように、全行が ok のときだけ 0 を返す。
+    # 1行も読めなかった場合も通さない（母集団が空でも緑になる穴を塞ぐ）。
+    if not rows:
+        print('manifest から確認できる行が1つも無い', file=sys.stderr)
+        return 2
+    return 0 if ok == len(rows) else 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

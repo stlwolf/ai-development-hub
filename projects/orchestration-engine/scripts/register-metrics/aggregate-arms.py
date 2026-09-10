@@ -75,7 +75,12 @@ def main():
     a = ap.parse_args()
 
     excl = set()
-    if a.exclude_ids and os.path.exists(a.exclude_ids):
+    if a.exclude_ids:
+        # 渡された path が無いときに黙って「除外なし」にしない。fork 由来の
+        # セッションは既知の汚染源なので、それが混ざった値はもっともらしく
+        # 見えてしまう。除外しないなら --exclude-ids を外して回すこと。
+        if not os.path.exists(a.exclude_ids):
+            ap.error(f'--exclude-ids のファイルが無い: {a.exclude_ids}')
         excl = {x.strip() for x in io.open(a.exclude_ids, encoding='utf-8') if x.strip()}
 
     rows, sess_meta, dropped = [], {}, {}
