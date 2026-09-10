@@ -1,3 +1,7 @@
+---
+review-when: the hook scripts change which patterns they block, or a new tier of destructive operation appears
+---
+
 # Careful Operations — Destructive Command Guardrails
 
 Three-tier classification of destructive operations: Blocked / Requires Confirmation / Exceptions.
@@ -8,38 +12,15 @@ Three-tier classification of destructive operations: Blocked / Requires Confirma
 2. **Hook passes + §2 match → ask user.** Context (prod/dev/target) matters. Present the command and blast radius, then stop.
 3. **§3 exception applies → allow** even if the pattern matches §1. Hooks recognize the same exceptions.
 
-In environments without hooks, apply §1 patterns as agent-side blocks (same as §2). The principles of this rule are independent of hook availability.
+In environments without hooks, refuse the blocked patterns yourself — they are hard blocks, not the ask-first tier of §2. §1 below names every blocked family, so this rule stands on its own where hooks do not run. The principles of this rule are independent of hook availability.
 
 Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the primary application. §1 is enforced by hooks.
 
 ## 1. Blocked (hook-enforced)
 
-Hooks mechanically block these. The command is denied.
+Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories of §3; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied.
 
-### Filesystem
-
-| Pattern | Block condition |
-|---------|----------------|
-| `rm -rf` | `-r` + `-f` targeting absolute paths, home, or root outside safe directories (§3) |
-| `chmod -R 777 /` | Recursive permission change under root |
-| `chown -R ... /` | Recursive owner change under root |
-| `mkfs` | Filesystem creation |
-| `dd of=/dev/` | Direct device write |
-
-### Git
-
-| Pattern | Block condition |
-|---------|----------------|
-| `git push --force` / `-f` | Bare `--force`. `--force-with-lease` is allowed (§3) |
-| `git reset --hard` | Always blocked |
-| `git clean -fdx` | `-f` + `-d` + `-x` combined |
-
-### Database
-
-| Pattern | Block condition |
-|---------|----------------|
-| `DROP TABLE` / `DROP DATABASE` | Case-insensitive |
-| `TRUNCATE TABLE` | Case-insensitive |
+**The exact patterns live with the hook scripts** — `block-destructive.sh` and `block-force-push.sh`, described for maintainers in `canonical/hooks/README.md`. That README is not distributed with these rules, so do not send an agent to read it: the families above are what an agent acts on, and the scripts are authoritative for the exact matching.
 
 ## 2. Requires Confirmation (not hook-decidable — rule-enforced)
 
@@ -80,9 +61,7 @@ Context-dependent — hooks cannot decide these. Stop before executing. Present 
 
 ### Safe directories for rm -rf
 
-Build artifacts and caches — allowed as `rm -rf` targets (`block-destructive.sh` `SAFE_DIRS_RE`):
-
-`node_modules`, `dist`, `.next`, `build`, `coverage`, `__pycache__`, `.cache`, `tmp`, `.turbo`, `.parcel-cache`
+Build artifacts and caches are allowed as `rm -rf` targets: `node_modules`, `dist`, `.next`, `build`, `coverage`, `__pycache__`, `.cache`, `tmp`, `.turbo`, `.parcel-cache`. This list is named here because an agent needs it where hooks do not run and would otherwise refuse a safe delete. `SAFE_DIRS_RE` in `block-destructive.sh` is authoritative if the two ever disagree.
 
 ### Safe Git alternatives
 
