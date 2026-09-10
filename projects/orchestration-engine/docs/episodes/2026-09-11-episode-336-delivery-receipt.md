@@ -3,7 +3,7 @@ id: "01M2674K3AX1A8FP27ZR7FZN64"
 title: "#336 親子の指示・報告の到達を仕組みで守る（plan-first・設計ゲートまで）"
 date: 2026-09-11
 type: episode
-status: draft
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/336"
 scope: orchestration-engine
 related:
@@ -17,6 +17,22 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/239"
     reason: "統括 watchdog（oe-undelivered / oe-vitals）の出所。親側の見張りはこの上に足す"
 tags: [oe-send, prompt_received, delivery-receipt, watchdog, event-bus, hooks]
+promotion:
+  - subject: "常駐の見張りを session 外に置き、その沈黙を別主体に検知させる"
+    verdict: required
+    ref: "本文: gate 2 — 設計 SO（弱・2 レーン・1 本ずつ・2026-09-11）"
+  - subject: "unconfirmed を終状態にせず遅延受領で遷移させ、文言で断定しない"
+    verdict: unknown
+    ref: "本文: owner の HG 裁定と plan v3（2026-09-11）"
+  - subject: "既存契約の意味が変わる変更を開示で済ませようとした"
+    verdict: required
+    ref: "本文: gate 4 — 実装 SO（弱・2 レーン・1 本ずつ・2026-09-11）"
+  - subject: "受け手診断に nonce を載せて送信単位で判定できるようにする"
+    verdict: not-required
+    ref: "本文: gate 1 — ゼロベース代替探索（2026-09-11・oe-refute exploration・2レーン）"
+  - subject: "no-tmux-pane の根本原因を本アークから外す"
+    verdict: not-required
+    ref: "本文: gate 0 の判断（2026-09-11・統括が確定）"
 ---
 
 # #336 親子の指示・報告の到達を仕組みで守る — 作業記録
@@ -169,3 +185,67 @@ codex → cursor の順で 1 本ずつ回した。**レーンの間で修正を�
 ## 判断の why・棄却した選択肢・撤回の経緯
 
 （起きたその場で節を立てて追記する）
+
+## closure（2026-09-11・マージ前・実装SO 後／Copilot は未達）
+
+**tier: heavy。** heavy トリガに 3 つ該当する。実行中に失敗と撤回があった（対話ツールの誤用・設計の組み替え・自分の判断の誤り）。品質ゲート目的で外部レビューを明示起動した（gate 1 / gate 2 / gate 4 の SO 計 6 レーン）。非自明な設計判断を複数下し、棄却した選択肢が在る。Step 4（外部チェック）は gate 2 と gate 4 の SO で充足している。
+
+### Context / なぜ
+
+冒頭「なぜこの作業が始まったか」に自己完結して書いてある。
+
+### 次の消費者
+
+- **#336 の後続（Layer 3 の hook 強制・#301 の revive）を担当する人／セッション。** 本アークが Layer 3 を brief 1 行に留め、常駐の出口を #301 に委ねた線引きの理由を、ここで読める。
+- **`oe-confirm` を運用する統括。** 状態の意味（とくに `cannot-confirm` と `instrumentation-unknown` で通知しない理由）と、窓 600 秒が実測の裾より短いことを承知で選んでいる理由。
+- **engine の既存 verb を触る実装者。** `message_sent` の emit 位置と `delivery_signal` の挙動変化。
+
+### follow-up の行き先
+
+- `oe-watch`（#301 の parked な汎用ランナー）と本アークの常駐を統合するか → **#301 へ**（本文 gate 2・PR 本文の「残る限界」に記載）。
+- frontier jq の共有 lib 切り出し（`oe-undelivered`/`oe-ack`/`oe-activity` の 3 copy）→ **PR #387 の follow-up 節へ surface 済み**。本アークでは不要と判明したので実施しない。
+- `no-tmux-pane` の根本原因 → **統括が別 issue に起票済み**（本アークでは触らない）。
+- Layer 3 の Stop hook 強制 → **defer**（owner 裁定）。Layer 2 の見張りが子の沈黙を拾えば当面代替できる。
+- 計装の鮮度窓の外にある送信が通知されない件 → **追わない**。未着と断定しないための意図的な縮退であり、`instrumentation-unknown` として stdout には出ている。
+
+### 昇格の判定
+
+frontmatter `promotion` に 5 件。うち `required` は 2 件である。
+
+1. **常駐の見張りを session 外に置き、その沈黙を別主体に検知させる（required）**: #301 が park された理由（出口の無い検知）と本アークの Layer 2 は同じ論点で、片方だけを見ると同じ穴をもう一度掘る。統合の設計判断は decision 級で、置き場は engine の `docs/discussions/` か `decisions/`。**判定までが本 closure の担当で、実行はゲート 6。**
+2. **既存契約の意味が変わる変更を開示で済ませようとした（required）**: negative knowledge として収穫した（`01M26JN76NB52NMBJFZ7FKVH3V`）。基準 4 つを満たす（非自明・再発しうる・行動を変える・未着地）。
+3. **unconfirmed を終状態にせず文言で断定しない（unknown）**: 一般化できる原則に見えるが、別の検知器が同じ緊張（裾に合わせると遅すぎる／合わせないと誤報に見える）に当たった実例をまだ 1 件しか持たない。**2 例目が出れば決まる。** それまでは本 episode と README の記述に留める。
+4. **受け手診断に nonce を載せる（not-required）**: plan と PR とコード注記に理由が残っており、engine 内で閉じた実装判断である。
+5. **no-tmux-pane を本アークから外す（not-required）**: 統括が別 issue に起票済みで、判断は owner の側に移っている。
+
+### status 確定
+
+`draft` → `stable`。**達成度は「達成」。** plan v3 の Stage 1 / Stage 2 / Layer 3 をすべて実装し、受け入れ基準 7 項目に検証を対応づけて全部通した。ただし「検知器の沈黙を別主体が検知できる」は**検査枝と陽性対照までの達成**で、自動で回る輪は #301 に残る（PR 本文と本文 gate 4 に開示済み）。
+
+### Copilot が未達であること（closure の前提の欠け）
+
+**gate 4 の Copilot だけ通っていない。** draft では依頼が付かず、裁定を受けて ready にした後も `gh pr edit --add-reviewer @copilot` と API の requested_reviewers 指定の両方で依頼が一覧に残らず、コミットを push しても レビューは 0 件のままだった。このリポジトリで Copilot 自体は動いている（直近 3 本の PR にレビューが在る）が、それらは **draft を経ずに作られた PR** である。**draft で作って後から ready にした PR では作成時の自動起動が掛からない**というのが今の観測で、API の挙動を一次情報で確かめてはいないので断定はしない。裁定に「再依頼はしない」とあるのでそれ以上は依頼していない。
+
+したがって本 closure は**実装SO 2 レーンを外部チェックとして閉じている**。Copilot が未達であることは報告と PR に残した。heavy tier の Step 4（外部チェック）そのものは gate 2 と gate 4 の SO で満たしている。
+
+### SO 証跡
+
+gate 1: `oe-refute --rubric exploration --lanes 2`（audit_id `20260910184850F5F72CY3F18S`・refuted）。gate 2: `so-compare` を codex → cursor の順に 1 本ずつ（両レーンとも確定を止める判定・欠陥 7 件）。gate 4: 同じく codex → cursor（codex 6 件 → 修正 → cursor survived）。**生出力のディレクトリは永続しないので、verdict と指摘の要旨は本文の各 gate 節へ転記してある。**
+
+### 注入された negative knowledge（期待集合・分母の復元用）
+
+`01KZVHE0KJ12W3NG6A4R0WSWS4` / `01KZKWJM1KTAFN22XK0WP0F96J` / `01KZVHE0KFDPXMY6EED80RN9ZR` の 3 件。全件に観測を 1 レコードずつ書き戻した（`externally_verified` 2 件・`followed` 1 件）。書き戻しの過程で YAML を壊し、`validate-knowledge` が捕まえて直した。
+
+## フィードバック
+
+- **想定外だった点**: 実測が「見かけの不達 210 件のうち約 142 件は届いている」と示したこと。#336 の問題は当初「届かない」だったが、**大半は「届いたが記録できなかった」**で、検知器を作るなら先にこの 2 つを分ける必要があった。分けずに鳴らすと 4 件に 1 件が空振りになり、検知器そのものが無視されるようになる。
+- **規約遵守状況**: plan-first を守り、gate 0/1/2 を通してから owner HG で止まった。委譲子として対話ツールを使おうとして止められ、質問は file + `oe-send` の非同期経路に統一した。Copilot が draft PR に付かない件は自分で決めず、指示の矛盾として質問ファイルで裁定を仰いだ（統括から「正しい手順だった」と返答）。**ただし裁定に従って ready にした後も Copilot は動かず、gate 4 の 1 要素が未達のまま closure に入った。** 未達を達成に見せないことを優先した。
+- **ADR 昇格候補**: 上記「昇格の判定」1 件目（#301 との統合）。
+- **次の消費者 / follow-up の行き先**: 上記のとおり。
+
+### 効果測定に使える数字
+
+- 実装レビューが捕まえた欠陥: gate 2 で 7 件、gate 4 で 6 件。**うち 1 件は私が「開示で足りる」と明示的に判断した箇所**で、レビューが無ければ通っていた。
+- テストが捕まえた欠陥: 2 件（空ログで report 検知が走らない・空走査で状態ファイルを書かず次回も初回扱い）。どちらも「検知器が黙る」型。
+- 自分でリハーサルして気づいた欠陥: 1 件（plist の置換漏れ検査の式が自分自身にヒットする）。
+- **合計 16 件のうち、自力で気づいたのは 3 件（テスト 2・リハーサル 1）である。** 残り 13 件は外部のレビューが出した。
