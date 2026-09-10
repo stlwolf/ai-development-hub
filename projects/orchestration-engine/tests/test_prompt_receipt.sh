@@ -344,23 +344,36 @@ printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
   | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
 ck "全行が JSON として読める" "1" "$(jq -rs 'length' "$DIAG" 2>/dev/null)"
 
-echo "[#336-4] 診断の detail に制御文字が混じっても JSONL を壊さない"
-# detail には環境由来の任意の文字列（パス等）が入りうる。素の printf で書く経路（jq 不在時にも
-# 通る）で生の制御バイトを JSON 文字列へ入れると 1 行が壊れ、以後この診断ファイルを読めなくなる。
-new_env
-EVIL_DIR="$_TMP_DIR/evil$(printf '\033')x$(printf '\010')y"
-mkdir -p "$EVIL_DIR" 2>/dev/null || EVIL_DIR="$_TMP_DIR/evilfallback"
-mkdir -p "$EVIL_DIR" 2>/dev/null || true
-# event dir を書けない場所にして event-dir-unwritable を踏ませる（detail に dir 名が載る）
-printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
-  | OE_EVENT_DIR="$EVDIR" TMUX_PANE="$(printf 'p%%\033[31m66')" TMUX="oe,9999,0" \
-    bash "$HOOK" >/dev/null 2>&1 || true
-if [[ -s "$DIAG" ]]; then
-  ck "診断は全行 JSON として読める" "0" "$(jq -e -s 'length >= 0' "$DIAG" >/dev/null 2>&1; echo $?)"
-else
-  # 診断が出ない経路なら、少なくとも受領印側が壊れていないことを見る
-  ck "受領印は全行 JSON として読める" "0" "$(jq -e -s 'length >= 0' "$EVFILE" >/dev/null 2>&1; echo $?)"
+echo "[#336-4] 診断の detail に制御文字が混じっても JSONL を壊さない（実際に踏ませる）"
+# detail には環境由来の任意の文字列（パス等）が入る。素の printf で書く経路で生の制御バイトを
+# JSON 文字列へ入れると 1 行が壊れ、以後この診断ファイルを読めなくなる。
+#
+# **踏ませる経路の選び方**: event-dir-unwritable は診断そのものも書けない（note_env_error が
+# 同じ event_dir へ mkdir するため）ので、そこを狙っても診断は残らない。代わりに
+# **append-failed** を踏ませる。ディレクトリは書けるがイベントログへの追記だけが失敗する状態を
+# 作れば、detail にそのパス（＝制御文字入り）が載った診断が実際に書かれる。
+# 初版はここを踏ませておらず、書き込める EVDIR を渡したまま「受領印が読める」ことだけを
+# 見ていた＝通るが何も確かめていないテストだった（Copilot 指摘）。
+EVIL_DIR="$_TMP_DIR/$(printf 'evil\033x\010y')"
+if ! mkdir -p "$EVIL_DIR" 2>/dev/null; then
+  EVIL_DIR="$_TMP_DIR/evil-plain"; mkdir -p "$EVIL_DIR"
+  echo "  NOTE: 制御文字を含むディレクトリ名を作れないため通常名で代替（escape 単体は [#336-5]）"
 fi
+# oe-events.jsonl をディレクトリにして追記を失敗させる（append-failed を踏ませる）
+mkdir -p "$EVIL_DIR/oe-events.jsonl"
+EVIL_DIAG="$EVIL_DIR/oe-receipt-diag.jsonl"
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVIL_DIR" TMUX_PANE="%66" TMUX="oe,9999,0" bash "$HOOK" >/dev/null 2>&1 || true
+ck "append-failed の診断が実際に書かれる" "1" \
+  "$(jq -rs '[ .[] | select(.reason=="append-failed") ] | length' "$EVIL_DIAG" 2>/dev/null || echo 0)"
+ck "その診断に nonce が載る" "$NONCE" \
+  "$(jq -rs '[ .[] | select(.reason=="append-failed") ][0].nonce' "$EVIL_DIAG" 2>/dev/null)"
+ck "診断は全行が壊れていない JSON" "0" \
+  "$(jq -e -s 'length > 0' "$EVIL_DIAG" >/dev/null 2>&1; echo $?)"
+# grep -c は 0 件でも exit 1 を返すので `|| echo 0` を足すと 0 が二重に出る。
+# パイプの終端を head にして終了状態を 0 にし、値だけを取る。
+ck "detail に生の ESC が残らない" "0" \
+  "$(LC_ALL=C grep -c "$(printf '\033')" "$EVIL_DIAG" 2>/dev/null | head -1)"
 
 echo "[#336-5] _json_escape 単体: 制御文字を落として有効な JSON にする"
 # 関数だけを取り出して直接叩く（hook 本体の分岐に依存しない検証）。

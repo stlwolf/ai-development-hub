@@ -58,7 +58,13 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+        <!--
+          __HOME__/bin を必ず含める。launchd の job にはペインの tty が無いので OSC 777 の
+          経路が使えず、通知は wez notify の fallback に落ちる。その wez は sync-bin.sh が
+          __HOME__/bin へ置くので、ここから外すと **--notify が黙って何も送らない**
+          （Copilot 指摘）。送出できなかったことは seen にも焼かれないので、次回また試みる。
+        -->
+        <string>__HOME__/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
         <key>OE_EVENT_DIR</key>
         <string>__HOME__/.claude/state</string>
     </dict>
