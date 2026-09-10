@@ -344,5 +344,38 @@ printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
   | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
 ck "全行が JSON として読める" "1" "$(jq -rs 'length' "$DIAG" 2>/dev/null)"
 
+echo "[#336-4] 診断の detail に制御文字が混じっても JSONL を壊さない"
+# detail には環境由来の任意の文字列（パス等）が入りうる。素の printf で書く経路（jq 不在時にも
+# 通る）で生の制御バイトを JSON 文字列へ入れると 1 行が壊れ、以後この診断ファイルを読めなくなる。
+new_env
+EVIL_DIR="$_TMP_DIR/evil$(printf '\033')x$(printf '\010')y"
+mkdir -p "$EVIL_DIR" 2>/dev/null || EVIL_DIR="$_TMP_DIR/evilfallback"
+mkdir -p "$EVIL_DIR" 2>/dev/null || true
+# event dir を書けない場所にして event-dir-unwritable を踏ませる（detail に dir 名が載る）
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVDIR" TMUX_PANE="$(printf 'p%%\033[31m66')" TMUX="oe,9999,0" \
+    bash "$HOOK" >/dev/null 2>&1 || true
+if [[ -s "$DIAG" ]]; then
+  ck "診断は全行 JSON として読める" "0" "$(jq -e -s 'length >= 0' "$DIAG" >/dev/null 2>&1; echo $?)"
+else
+  # 診断が出ない経路なら、少なくとも受領印側が壊れていないことを見る
+  ck "受領印は全行 JSON として読める" "0" "$(jq -e -s 'length >= 0' "$EVFILE" >/dev/null 2>&1; echo $?)"
+fi
+
+echo "[#336-5] _json_escape 単体: 制御文字を落として有効な JSON にする"
+# 関数だけを取り出して直接叩く（hook 本体の分岐に依存しない検証）。
+ESCTEST="$_TMP_DIR/esctest.sh"
+{
+  sed -n '/^_json_escape() {/,/^}/p' "$HOOK"
+  # 生成するスクリプトの本文なので、ここでは展開させない（意図的な単一引用）。
+  # shellcheck disable=SC2016
+  printf '%s\n' 'printf "{\"d\":\"%s\"}\n" "$(_json_escape "$1")"'
+} > "$ESCTEST"
+raw="$(printf 'a\033[31mb\010c"d\\e\tf')"
+out="$(bash "$ESCTEST" "$raw")"
+ck "有効な JSON になる" "0" "$(printf '%s' "$out" | jq -e . >/dev/null 2>&1; echo $?)"
+ck "引用符は escape される" "1" "$(printf '%s' "$out" | grep -c '\\"')"
+ck "生の ESC は残らない"   "0" "$(printf '%s' "$out" | LC_ALL=C grep -c "$(printf '\033')" || true)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

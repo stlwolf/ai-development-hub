@@ -259,6 +259,83 @@ run 1789129200 --notify --write-latest >/dev/null
 SUM_AFTER="$(cat "$EVFILE" "$DIAGFILE" | shasum | cut -d' ' -f1)"
 ck "入力を変更しない" "$SUM_BEFORE" "$SUM_AFTER"
 
+# ============================================================================
+echo "[16] 診断は宛先ペインまで見る — 別ペインが出した診断で cannot-confirm にしない"
+mkfix f16
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "WRONGPANE-DIAG"
+diag "2026-09-11T12:00:01+00:00" "$N1" "%99"      # 宛先ではないペインが出した診断
+sent "2026-09-11T11:59:00+00:00" "%61" "%53" "$N2" "OTHER"
+recv "2026-09-11T11:59:01+00:00" "%53" "$N2"
+ck "別ペインの診断では cannot-confirm にしない" "0" "$(run 1789129200 --json | jq -r '.delivery.cannot_confirm')"
+ck "unconfirmed のまま"                          "1" "$(run 1789129200 --json | jq -r '.delivery.unconfirmed')"
+# 宛先が出した診断なら数える
+mkfix f16b
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "RIGHTPANE-DIAG"
+diag "2026-09-11T12:00:01+00:00" "$N1" "%53"
+ck "宛先が出した診断は cannot-confirm" "1" "$(run 1789129200 --json | jq -r '.delivery.cannot_confirm')"
+# pane を束縛できなかった診断（no-tmux-pane）は空のまま突き合わせを許す
+mkfix f16c
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "EMPTYPANE-DIAG"
+diag "2026-09-11T12:00:01+00:00" "$N1" ""
+ck "pane が空の診断は cannot-confirm" "1" "$(run 1789129200 --json | jq -r '.delivery.cannot_confirm')"
+
+# ============================================================================
+echo "[17] 同時起動 — ロックを取れなければ表示だけ行い、通知と状態保存は見送る"
+mkfix f17
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "LOCKED"
+sent "2026-09-11T11:59:00+00:00" "%61" "%53" "$N2" "OTHER"
+recv "2026-09-11T11:59:01+00:00" "%53" "$N2"
+mkdir -p "$EVDIR/oe-confirm/.lock"          # 別プロセスがロックを持っている状態
+: > "$WEZ_LOG"
+# now を未来に固定しているので、既定の stale 秒（1800）だと作りたてのロックが「古い」と判定
+# されて回収されてしまう。ここでは回収されない側を見たいので十分大きくする。
+OUT="$(env PATH="$STUB_BIN:$PATH" OE_EVENT_DIR="$EVDIR" OE_CONFIRM_NOW_EPOCH=1789129200 \
+  OE_CONFIRM_LOCK_STALE_SEC=999999999 bash "$OE_CONFIRM" --notify --write-latest 2>&1)"
+ckc "検知の表示は出る"       "$OUT" "unconfirmed"
+ckc "見送ったことを告げる"   "$OUT" "通知は見送りました"
+ck  "通知は撃たない"         "0" "$(grep -c "$N1" "$WEZ_LOG" || true)"
+ck  "latest.json を書かない" "0" "$( [[ -r "$EVDIR/oe-confirm/latest.json" ]] && echo 1 || echo 0 )"
+rmdir "$EVDIR/oe-confirm/.lock" 2>/dev/null || true
+OUT="$(run 1789129200 --notify --write-latest 2>&1)"
+ck  "ロックが空けば書ける" "1" "$( [[ -r "$EVDIR/oe-confirm/latest.json" ]] && echo 1 || echo 0 )"
+
+echo "[17b] 古いロックは回収する（プロセス死の残骸で永久に黙らない）"
+mkfix f17b
+sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "STALELOCK"
+mkdir -p "$EVDIR/oe-confirm/.lock"
+OUT="$(env PATH="$STUB_BIN:$PATH" OE_EVENT_DIR="$EVDIR" OE_CONFIRM_NOW_EPOCH=1789129200 \
+  OE_CONFIRM_LOCK_STALE_SEC=0 bash "$OE_CONFIRM" --write-latest 2>&1)"
+ckc "古いロックを回収したと告げる" "$OUT" "古いロックを回収しました"
+ck  "回収後は書ける" "1" "$( [[ -r "$EVDIR/oe-confirm/latest.json" ]] && echo 1 || echo 0 )"
+
+# ============================================================================
+echo "[18] 走査状態の破損 — 壊れていたら watermark を引き直す（一斉に鳴らさない）"
+mkfix f18
+RD3="$_TMP_DIR/reports3"; mkdir -p "$RD3"
+printf 'a
+' > "$RD3/report-a.md"; printf 'b
+' > "$RD3/report-b.md"
+run 1789129200 --reports "$RD3" >/dev/null                 # 初回 watermark
+: > "$EVDIR/oe-confirm/reports-state"                       # truncate されたことにする
+OUT="$(run 1789129200 --reports "$RD3" 2>&1)"
+ckc "破損を告げる"           "$OUT" "走査状態が壊れています"
+ncc "既存を一斉に鳴らさない" "$OUT" "report-a.md"
+OUT="$(run 1789129200 --reports "$RD3" 2>&1)"
+ncc "引き直した後も鳴らさない" "$OUT" "report-a.md"
+# 壊れた行が混じっていても、有効な行が在れば通常どおり動く
+mkfix f18b
+RD4="$_TMP_DIR/reports4"; mkdir -p "$RD4"
+printf 'a
+' > "$RD4/report-a.md"
+run 1789129200 --reports "$RD4" >/dev/null
+printf 'これは壊れた行\n' >> "$EVDIR/oe-confirm/reports-state"
+printf 'c
+' > "$RD4/report-c.md"
+run 1789129200 --reports "$RD4" >/dev/null                  # c は pending
+OUT="$(run 1789129200 --reports "$RD4" 2>&1)"
+ncc "壊れた行が在っても破損扱いにしない" "$OUT" "走査状態が壊れています"
+ckc "新しい file は通常どおり出る"       "$OUT" "report-c.md"
+
 echo ""
 echo "=== test_oe_confirm: PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

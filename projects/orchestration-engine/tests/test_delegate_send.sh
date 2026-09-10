@@ -44,7 +44,12 @@ tmux() {
       local use="$idx"; [[ "$use" -ge "$n" ]] && use=$((n-1))
       printf '%s\n' "${MOCK_CAP_SEQ[$use]}"
       echo $((idx+1)) > "$CAP_IDXFILE" ;;
-    "send-keys"*) MOCK_SENDKEYS_LOG+="tmux $*"$'\n'; [[ "${MOCK_SENDKEYS_FAIL:-}" == "1" ]] && return 1 || return 0 ;;
+    "send-keys"*)
+      MOCK_SENDKEYS_LOG+="tmux $*"$'\n'
+      # #336: literal は通るが Enter だけ失敗する経路を作れるようにする（emit の位置を
+      # 検証するのに要る。両方まとめて失敗させると「literal 失敗」としか区別できない）。
+      if [[ "${MOCK_ENTER_FAIL:-}" == "1" && "$*" == *" Enter" ]]; then return 1; fi
+      [[ "${MOCK_SENDKEYS_FAIL:-}" == "1" ]] && return 1 || return 0 ;;
     "display"*) printf '%s\n' "${MOCK_PANE_IN_MODE:-0}" ;;  # display / display-message: #{pane_in_mode}
     *) return 0 ;;
   esac
@@ -287,12 +292,12 @@ fi
 # 1 本の列で読める（別々の変数に取ると前後関係が落ちる）。
 oe_event_message_sent() { MOCK_SENDKEYS_LOG+="EMIT-message_sent $*"$'\n'; return 0; }
 
-echo "[27] #336: emit は literal 注入の直後・Enter の前に 1 回だけ"
+echo "[27] #336: emit は Enter 成功の直後に 1 回だけ（finalize では増えない）"
 reset_fin
 MOCK_SENDKEYS_LOG=""
 OE_SEND_NONCE=1 oe_send_line "%5" "ORDERED" >/dev/null 2>&1
 order="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -nE 'send-keys -l|EMIT-message_sent|send-keys -t %5 Enter' | sed 's/:.*send-keys -l.*/:LITERAL/; s/:.*EMIT-message_sent.*/:EMIT/; s/:.*Enter.*/:ENTER/' | cut -d: -f2 | tr '\n' ',')"
-ck "順序は 注入→emit→Enter" "LITERAL,EMIT,ENTER," "$order"
+ck "順序は 注入→Enter→emit" "LITERAL,ENTER,EMIT," "$order"
 ck "emit は 1 回だけ" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
 
 echo "[28] #336: emit には nonce が載り delivery_signal は none"
@@ -328,6 +333,29 @@ export OE_SEND_FINALIZE=1
 MOCK_CAP_SEQ=("$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')")
 OE_SEND_NONCE=1 oe_send_line "%5" "FINALIZED" >/dev/null 2>&1
 ck "finalize 有効でも emit は 1 回" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+export OE_SEND_FINALIZE=0
+
+echo "[32] #336: Enter が失敗したら emit しない（message_sent＝submit 済みの意味を保つ）"
+# ここが崩れると、rc=2 で返るのに通常の送信記録が残り、oe-ack の frontier / oe-activity /
+# oe-undelivered / oe-confirm が submit 済みとして算入する。呼び出し側が再送すれば二重になる。
+reset_fin
+MOCK_SENDKEYS_LOG=""
+MOCK_ENTER_FAIL=1
+rc=0; OE_SEND_NONCE=1 oe_send_line "%5" "ENTER-FAILS" >/dev/null 2>&1 || rc=$?
+MOCK_ENTER_FAIL=""
+ck "Enter 失敗は rc=2" "2" "$rc"
+ck "literal は流れている" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'send-keys -l -t %5')"
+ck "Enter 失敗では emit しない" "0" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
+
+echo "[33] #336: emit は Enter 成功の直後・finalize の前"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+export OE_SEND_FINALIZE=1
+MOCK_CAP_SEQ=("$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')" "$(printf '❯ \n')")
+OE_SEND_NONCE=1 oe_send_line "%5" "AFTER-ENTER" >/dev/null 2>&1
+order="$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -nE 'send-keys -l|EMIT-message_sent|send-keys -t %5 Enter' | sed 's/:.*send-keys -l.*/:LITERAL/; s/:.*EMIT-message_sent.*/:EMIT/; s/:.*Enter.*/:ENTER/' | cut -d: -f2 | tr '\n' ',')"
+ck "順序は 注入→Enter→emit" "LITERAL,ENTER,EMIT," "$order"
+ck "emit は 1 回だけ" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
 export OE_SEND_FINALIZE=0
 
 echo "=== RESULT: pass=${pass} fail=${fail} ==="

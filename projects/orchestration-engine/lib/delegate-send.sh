@@ -251,34 +251,6 @@ oe_send_line() {
     return 2
   fi
 
-  # #336: 活動ログ（#206）への記録を **literal 注入が成功した直後・Enter の前** に置く。
-  #
-  # なぜここか（dual-write gap）: 旧実装は Enter と finalize の**後**に emit していた。注入は
-  # 済んだのにログを書く前に送り手が死ぬと、**配送されたのに outstanding record が無い**状態が
-  # 残り、常駐の照合器（oe-confirm）はそもそも存在しない送信を監視できなかった。記録を
-  # transport の直後へ寄せてこの窓を閉じる。
-  #
-  # なぜ「注入の前」ではないか: 注入前に置くと `send-keys -l` が失敗した送信まで記録が残り、
-  # 既存 consumer（oe-ack の frontier / oe-activity / oe-undelivered）が通常の送信として
-  # 算入してしまう（設計SO codex/cursor の指摘）。注入成功後に限れば幽霊レコードは出ない。
-  #
-  # 残る窓（開示）: `send-keys -l` 成功後に Enter が失敗すると、payload が入力欄に staged された
-  # まま記録だけ残る。これは「消えた」ではなく「見える形で止まった」失敗で Enter 失敗は stderr に
-  # 出るが、イベントログだけからは判別できない。
-  #
-  # `send_enter=0`（--no-enter・ステージのみ）では従来どおり emit しない。nonce を載せていない
-  # ので突き合わせ先の無い受領印（dangling）を作らないためである。
-  #
-  # delivery_signal は常に `none`。finalize より前に書くので finalize の観測は載らない。#299 の
-  # 実測でこの signal は配送の成否と**逆**を指していた（rc=3 側の 97.6% が到達確認済み）ため、
-  # 判定に使う consumer は無い（oe-undelivered は明示的に不使用）。表示していた oe-activity の
-  # DELIVERY 列は常に `none` になる（README と oe-activity の注記に反映済み）。
-  if [[ "$send_enter" != "0" ]]; then
-    if declare -F oe_event_message_sent >/dev/null 2>&1; then
-      oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "none" "$nonce" || true
-    fi
-  fi
-
   if [[ "$send_enter" != "0" ]]; then
     # リテラル送信の直後に Enter を撃つと、Claude Code TUI の paste 検知で Enter が
     # 「paste 内の改行」として吸収され submit されないことがある（dogfood で間欠確認）。
@@ -287,6 +259,31 @@ oe_send_line() {
     if ! tmux send-keys -t "$pane" Enter; then
       echo "oe_send_line: tmux send-keys Enter failed on ${pane}" >&2
       return 2
+    fi
+
+    # #336: 活動ログ（#206）への記録を **Enter が成功した直後・finalize の前** に置く。
+    #
+    # なぜ finalize の前か（dual-write gap）: 旧実装は finalize の**後**に emit していた。finalize は
+    # 既定 3 秒ほど画面を観測するので、その間に送り手が死ぬと **submit 済みなのに outstanding
+    # record が無い**状態が残り、常駐の照合器（oe-confirm）はそもそも存在しない送信を監視でき
+    # なかった。emit を前へ寄せると、この窓が約 3.3 秒（Enter 前の小休止 + finalize）から
+    # 「Enter が返ってから追記するまで」へ縮む。
+    #
+    # なぜ Enter の**前**ではないか: 前に置くと Enter が失敗した送信（rc=2）にも記録が残り、
+    # `message_sent` の意味が「submit 済み」から「literal を流した」へ静かに変わる。既存 consumer
+    # （`oe-ack` の frontier / `oe-activity` / `oe-undelivered` / `oe-confirm`）はそれを通常の
+    # 送信として算入するので、呼び出し側が再送すると二重レコードになる（実装SO codex の指摘）。
+    # **契約を変えずに窓だけ縮めるのが正しい位置である。**
+    #
+    # `send_enter=0`（--no-enter・ステージのみ）では従来どおり emit しない。nonce を載せていない
+    # ので突き合わせ先の無い受領印（dangling）を作らないためである。
+    #
+    # delivery_signal は常に `none`。finalize より前に書くので finalize の観測は載らない。#299 の
+    # 実測でこの signal は配送の成否と**逆**を指していた（rc=3 側の 97.6% が到達確認済み）ため、
+    # 判定に使う consumer は無い（oe-undelivered は明示的に不使用）。表示していた oe-activity の
+    # DELIVERY 列は常に `none` になる（README と oe-activity の注記に反映済み）。
+    if declare -F oe_event_message_sent >/dev/null 2>&1; then
+      oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "none" "$nonce" || true
     fi
     # 観測ベース finalize（best-effort）。Enter 吸収の after-the-fact 回復。
     # finalize は未着候補（suspected miss / stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ

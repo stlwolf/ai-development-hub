@@ -167,6 +167,9 @@ STATE_DIR="${OE_EVENT_DIR}/oe-confirm"
 SEEN_FILE="${STATE_DIR}/seen"
 START_FILE="${STATE_DIR}/start-after"
 REPORTS_STATE="${STATE_DIR}/reports-state"
+# 状態ファイルの先頭に置く目印。**空ファイルと破損ファイルを区別する**ためにある
+# （空は「走査したが対象が無かった」・ヘッダ無しは「壊れた」）。
+REPORTS_STATE_HEADER="#oe-confirm-reports-state v1"
 LATEST_FILE="${STATE_DIR}/latest.json"
 
 NOW_EPOCH="${OE_CONFIRM_NOW_EPOCH:-$(date +%s)}"
@@ -228,6 +231,48 @@ fmt_age() {
 # 空フィールドがそのまま保たれる。ソースに生の制御バイトを置かないよう実行時に作る。
 SEP="$(printf '\037')"
 
+# --- 排他（同時起動）-----------------------------------------------------------
+# 状態を書く区間（通知の seen 追記・report 走査状態の rename）は read-modify-write なので、
+# 2 プロセスが重なると (a) 同じ検知を二重に通知する (b) 後の rename が他方の走査結果を
+# 上書きする。launchd の定期実行と人の手動実行は普通に重なるので、実際に起こりうる。
+#
+# **読むほうは止めない。** 手動で状態を見たいだけのときにロック待ちで固まるのは使い勝手を
+# 損なう。ロックを取れなければ**投影と表示はそのまま行い、書く操作（通知と状態保存）だけを
+# 見送る**。見送ったことは stderr に出す（黙って落とさない）。
+MUTATE_OK=1
+LOCK_DIR=""
+_acquire_lock() {
+  local d="${STATE_DIR}/.lock"
+  mkdir -p "$STATE_DIR" 2>/dev/null || { MUTATE_OK=0; return 0; }
+  if mkdir "$d" 2>/dev/null; then LOCK_DIR="$d"; return 0; fi
+  # 取れなかった。古いロックは残骸の可能性が高いので一度だけ回収を試みる（プロセス死や
+  # kill でディレクトリが残る）。閾値は poll 間隔（300 秒）より十分長くとる。
+  local lock_mtime age
+  lock_mtime="$(date -r "$d" +%s 2>/dev/null)" || lock_mtime=""
+  if [[ -n "$lock_mtime" ]]; then
+    age=$(( NOW_EPOCH - lock_mtime ))
+    if [[ "$age" -gt "${OE_CONFIRM_LOCK_STALE_SEC:-1800}" ]]; then
+      rmdir "$d" 2>/dev/null || true
+      if mkdir "$d" 2>/dev/null; then
+        LOCK_DIR="$d"
+        err "古いロックを回収しました（${age} 秒前・${d}）"
+        return 0
+      fi
+    fi
+  fi
+  MUTATE_OK=0
+  err "他の実行がロックを持っています — 表示だけ行い、通知と状態の保存は見送ります（${d}）"
+  return 0
+}
+# trap から呼ぶので shellcheck からは到達不能に見える（SC2317 の既知の誤検知）。
+# shellcheck disable=SC2317
+_release_lock() {
+  if [[ -n "$LOCK_DIR" ]]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+}
+trap '_release_lock' EXIT
+
+_acquire_lock
+
 seen_has() { [[ -r "$SEEN_FILE" ]] && grep -qxF -- "$1" "$SEEN_FILE" 2>/dev/null; }
 seen_add() {
   mkdir -p "$STATE_DIR" 2>/dev/null || return 1
@@ -238,18 +283,24 @@ seen_add() {
 # これが cannot-confirm の一次証拠である。nonce を持たない診断行（jq 不在・タグを取り出せない
 # 経路）は突き合わせ先が無いので集合に入らない＝その送信は instrumentation-unknown へ落ちる。
 # 嘘の確証を作らないための縮退で、意図した挙動である。
-DIAG_NONCES='[]'
+# nonce だけの集合にはしない。**どのペインが書いた診断か**まで持つ。nonce だけで判定すると、
+# 別のペインが同じタグを（引用・貼り付け・誤配送で）submit して診断を出しただけで、元の送信が
+# cannot-confirm に化ける — 受領印の側で塞いだ「別ペインの同一タグ」問題が診断経路に残る
+# （実装SO codex の指摘）。pane が本質的に空になる経路（no-tmux-pane＝まさに束縛できなかった
+# 場合）は空のまま突き合わせを許し、pane が取れている診断は宛先一致を要求する。
+DIAG_MAP='{}'
 if [[ -s "$DIAG_FILE" ]]; then
-  DIAG_NONCES="$(jq -R 'fromjson? // empty' "$DIAG_FILE" 2>/dev/null \
-    | jq -sc '[ .[] | select(.kind=="env-error") | (.nonce // "") | select(. != "") ] | unique' 2>/dev/null)" || DIAG_NONCES='[]'
-  [[ -n "$DIAG_NONCES" ]] || DIAG_NONCES='[]'
+  DIAG_MAP="$(jq -R 'fromjson? // empty' "$DIAG_FILE" 2>/dev/null \
+    | jq -sc 'reduce ( .[] | select(.kind=="env-error") | select((.nonce // "") != "") ) as $d
+                ({}; .[$d.nonce] = ((.[$d.nonce] // []) + [($d.pane // "")]) )' 2>/dev/null)" || DIAG_MAP='{}'
+  [[ -n "$DIAG_MAP" ]] || DIAG_MAP='{}'
 fi
 
 # --- 送信 1 件ごとの投影 -------------------------------------------------------
 project_delivery() {
   jq -R 'fromjson? // empty' "$EVENT_FILE" \
   | jq -rs --argjson now "$NOW_EPOCH" --argjson window "$WINDOW" --argjson lookback "$LOOKBACK" \
-           --argjson instrwin "$INSTR_WINDOW" --argjson after "$AFTER" --argjson diagn "$DIAG_NONCES" \
+           --argjson instrwin "$INSTR_WINDOW" --argjson after "$AFTER" --argjson diagm "$DIAG_MAP" \
            --arg sep "$SEP" '
     def ts_epoch(t): ((t | sub("\\+00:00$"; "Z") | fromdateiso8601?) // null);
 
@@ -275,9 +326,12 @@ project_delivery() {
         | ( ($instr[$dst] // [])
             | map(select(. != null and . >= ($mt - $instrwin) and . <= ($mt + $instrwin)))
             | length ) as $instr_n
+        # 診断は「宛先ペインが書いた」か「ペインを束縛できなかった（空）」ものだけ数える。
+        | ( ($diagm[$n] // []) ) as $dp
+        | ( (($dp | index("")) != null) or (($dp | index($dst)) != null) ) as $diag_hit
         | ( if $rt != null then
               (if ($rt - $mt) > $window then "received-delayed" else "received" end)
-            elif (($diagn | index($n)) != null) then "cannot-confirm"
+            elif $diag_hit then "cannot-confirm"
             elif $instr_n == 0 then "instrumentation-unknown"
             elif ($now - $mt) > $window then "unconfirmed"
             else "pending" end ) as $state
@@ -334,7 +388,20 @@ scan_reports() {
   [[ -n "$REPORT_DIR" ]] || return 0
   [[ -d "$REPORT_DIR" ]] || { err "report ディレクトリが在りません（${REPORT_DIR}）— report 新規は見ません"; return 0; }
   local first_run=0
-  [[ -r "$REPORTS_STATE" ]] || first_run=1
+  # **「読める」だけで有効扱いにしない。** 状態ファイルが truncate / 破損すると、既存の report が
+  # 全部「初めて見た」に落ち、次の走査で一斉に report-new として鳴る（通知の嵐・実装SO codex の
+  # 指摘）。かといって「行が 0 なら破損」とも言えない — 対象ディレクトリが空だったときの正常な
+  # 空状態と区別が付かないからである（この判定を素朴に書いて実際に取り違えた）。
+  #
+  # そこで先頭にヘッダ行を置き、**ヘッダの有無で「一度走査した」を表す**。ヘッダが無ければ
+  # 破損とみなして watermark を引き直す（鳴らさずに現状を既知として取り込む）。ヘッダが在って
+  # データ行が 0 なら、それは「走査したが対象が無かった」という正常な状態である。
+  if [[ ! -r "$REPORTS_STATE" ]]; then
+    first_run=1
+  elif [[ "$(head -1 "$REPORTS_STATE" 2>/dev/null)" != "$REPORTS_STATE_HEADER" ]]; then
+    first_run=1
+    err "report の走査状態が壊れています（${REPORTS_STATE}）— 現状を既知として取り込み直します（今回は鳴らしません）"
+  fi
   local f base size mtime prev prev_size prev_mtime prev_state
   while IFS= read -r f; do
     [[ -f "$f" ]] || continue
@@ -342,9 +409,11 @@ scan_reports() {
     size="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || size=""
     mtime="$(date -r "$f" +%s 2>/dev/null)" || mtime=""
     [[ -n "$size" && -n "$mtime" ]] || continue
+    # 参照する側でも行の形を検査する。壊れた行は無かったことにする（grep でそのまま拾うと
+    # cut が空や非数値を返し、比較が静かに常に不一致になって pending から抜けられなくなる）。
     prev=""
-    if [[ -r "$REPORTS_STATE" ]]; then
-      prev="$(grep -F "${f}"$'\t' "$REPORTS_STATE" 2>/dev/null | head -1)" || prev=""
+    if [[ -r "$REPORTS_STATE" && "$first_run" == "0" ]]; then
+      prev="$(awk -F'\t' -v path="$f" 'NF==4 && $1==path && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && ($4=="done" || $4=="pending") {print; exit}' "$REPORTS_STATE" 2>/dev/null)" || prev=""
     fi
     if [[ -z "$prev" ]]; then
       if [[ "$first_run" == "1" ]]; then
@@ -484,7 +553,10 @@ else
 fi
 
 # --- 通知（unconfirmed / pane 消滅 / report 新規のみ）-----------------------------
-if [[ "$NOTIFY" == "1" && "${#notify_hits[@]}" -gt 0 ]]; then
+if [[ "$NOTIFY" == "1" && "$MUTATE_OK" != "1" ]]; then
+  err "ロックを取れなかったので通知は見送りました（検知は上の表示に出ています）"
+fi
+if [[ "$NOTIFY" == "1" && "$MUTATE_OK" == "1" && "${#notify_hits[@]}" -gt 0 ]]; then
   for key in "${notify_hits[@]}"; do
     seen_has "$key" && continue
     kind="${key%%|*}"
@@ -507,11 +579,11 @@ fi
 # **走査結果が空でも書く。** 書かないと状態ファイルが出来ず、次回もまた「初回」と判定して、
 # その間に置かれた report を watermark として黙って飲み込んでしまう（テストが捕まえた）。
 # 空の状態ファイルは「一度走査した」という事実そのものを表す。
-if [[ -n "$REPORT_DIR" && -d "$REPORT_DIR" ]]; then
+if [[ -n "$REPORT_DIR" && -d "$REPORT_DIR" && "$MUTATE_OK" == "1" ]]; then
   if mkdir -p "$STATE_DIR" 2>/dev/null; then
     tmpf="$(mktemp "${STATE_DIR}/reports-state.XXXXXX" 2>/dev/null)" || tmpf=""
     if [[ -n "$tmpf" ]]; then
-      if printf '%s' "$REPORT_STATE_NEXT" > "$tmpf" 2>/dev/null && mv -f "$tmpf" "$REPORTS_STATE" 2>/dev/null; then
+      if printf '%s\n%s' "$REPORTS_STATE_HEADER" "$REPORT_STATE_NEXT" > "$tmpf" 2>/dev/null && mv -f "$tmpf" "$REPORTS_STATE" 2>/dev/null; then
         :
       else
         rm -f "$tmpf" 2>/dev/null || true
@@ -521,7 +593,7 @@ if [[ -n "$REPORT_DIR" && -d "$REPORT_DIR" ]]; then
 fi
 
 # --- latest.json（最終走査時刻・別主体が陳腐化を拾うための痕跡）--------------------
-if [[ "$WRITE_LATEST" == "1" ]]; then
+if [[ "$WRITE_LATEST" == "1" && "$MUTATE_OK" == "1" ]]; then
   if mkdir -p "$STATE_DIR" 2>/dev/null; then
     tmpf="$(mktemp "${STATE_DIR}/latest.json.XXXXXX" 2>/dev/null)" || tmpf=""
     if [[ -n "$tmpf" ]]; then
