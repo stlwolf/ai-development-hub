@@ -8,7 +8,11 @@ prediction: "測ったのは経路の途中までで、主張はその先まで�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-11-episode-301-selfcheck-scheduling.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-10
+    ref: "#348"
+    state: followed
+    note: "測った鎖のリンクを毎回分けて書いた。段階1では設定から headless の system prompt に乗るまでを測り、対話でも乗るか、読みやすさが変わるか、owner が読みやすいと感じるかの3リンクを未測定として明示した。最後の判定でも、機械の側は方向の記述に留まり実例4型の読みづらさは機械では捕まえられない、と結果ノートに固定した"
 ---
 
 到達性を測ったなら、**測った範囲を鎖のリンク単位で書く。** 「実測した」の一言でまとめると、鎖の途中までしか測っていないことが主張の強さの中に隠れる。
