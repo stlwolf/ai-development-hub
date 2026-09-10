@@ -75,8 +75,12 @@ def responses(path, min_chars=0):
         if len(txt) < min_chars:
             continue
         idx += 1
+        # request は全文を持つ。題として送る用途があるので切らない。
+        # 表示や記録で短くしたいときは、使う側で切る（request_excerpt を使う）。
+        # 200 字で切っていた版は、fork の題がそのまま切れた質問になっていた（#348 R-6 の欠陥）。
         out.append(dict(text=txt, model=m.get('model', '?'), idx=idx,
-                        request=last_user[:200], ts=d.get('timestamp', '')))
+                        request=last_user, request_excerpt=last_user[:200],
+                        ts=d.get('timestamp', '')))
     return out
 
 # 層は「直前の user 発話」で切る（介入前の変数）。応答の中身で切ると style が層を動かす。

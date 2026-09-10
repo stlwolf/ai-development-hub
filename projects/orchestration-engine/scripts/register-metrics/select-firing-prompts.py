@@ -76,7 +76,9 @@ def main():
             continue
         for r in responses(p, 400):
             req = (r.get('request') or '').strip()
-            if not req or UNUSABLE.search(req[:200]) or not (15 <= len(req) <= 600):
+            # 長さの上限は題として現実的な範囲に置く。全文を送るので、
+            # 200 字で切られた版より上限を上げる（#348 R-6 の欠陥への対処）。
+            if not req or UNUSABLE.search(req[:200]) or not (15 <= len(req) <= 2000):
                 continue
             ctx = '中継' if RELAY.search(req[:300]) else 'owner 発話'
             m = measure_text(r['text'])
@@ -134,8 +136,17 @@ def main():
                             picked=picked), ensure_ascii=False, indent=1))
         os.makedirs(os.path.join(a.out, 'prompts'), exist_ok=True)
         for i, c in enumerate(picked):
+            # **題は発話の全文を書く。** 切り詰めた版を書くと、モデルが切れた質問に答える。
             io.open(os.path.join(a.out, 'prompts', f'q{i:02d}.txt'), 'w',
                     encoding='utf-8').write(c['request'])
+        # 送った題が元の発話と同じ長さかを、書いた直後に検査する。
+        bad = [f'q{i:02d}' for i, c in enumerate(picked)
+               if len(io.open(os.path.join(a.out, 'prompts', f'q{i:02d}.txt'),
+                              encoding='utf-8').read()) != len(c['request'])]
+        if bad:
+            print(f'題が元の発話と長さが違う: {bad}', file=sys.stderr)
+            raise SystemExit(2)
+        print('題の長さは元の発話と一致した（切り詰めなし）')
         print(f'\n書いた: {a.out}/firing-prompts.json と prompts/')
 
 
