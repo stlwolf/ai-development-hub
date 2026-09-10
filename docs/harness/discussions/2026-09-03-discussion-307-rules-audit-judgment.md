@@ -3,7 +3,7 @@ id: "01M1HDRJTVPDA1ADFCM0N4A3A3"
 title: "#307 段階1 — canonical rules 14本の判定表（競合 / 冗重 / ドリフト + 意図 / 根拠 / 鮮度 / 失効条件 + 発火実績）"
 date: 2026-09-03
 type: discussion
-status: draft
+status: stable
 related:
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/307"

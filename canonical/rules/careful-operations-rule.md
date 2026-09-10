@@ -12,7 +12,7 @@ Three-tier classification of destructive operations: Blocked / Requires Confirma
 2. **Hook passes + §2 match → ask user.** Context (prod/dev/target) matters. Present the command and blast radius, then stop.
 3. **§3 exception applies → allow** even if the pattern matches §1. Hooks recognize the same exceptions.
 
-In environments without hooks, refuse the blocked patterns yourself — they are hard blocks, not the ask-first tier of §2. Read that list from `canonical/hooks/README.md` before relying on this rule alone — §1 below is a summary, not the enumeration. The principles of this rule are independent of hook availability.
+In environments without hooks, refuse the blocked patterns yourself — they are hard blocks, not the ask-first tier of §2. §1 below names every blocked family, so this rule stands on its own where hooks do not run. The principles of this rule are independent of hook availability.
 
 Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the primary application. §1 is enforced by hooks.
 
@@ -20,7 +20,7 @@ Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the pri
 
 Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories of §3; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied.
 
-**The list of blocked patterns lives with the hooks, not here** — see the `block-destructive.sh` and `block-force-push.sh` sections of `canonical/hooks/README.md`. Keeping one copy next to the scripts is what makes the two agree; a second copy in an always-loaded rule drifts silently.
+**The exact patterns live with the hook scripts** — `block-destructive.sh` and `block-force-push.sh`, described for maintainers in `canonical/hooks/README.md`. That README is not distributed with these rules, so do not send an agent to read it: the families above are what an agent acts on, and the scripts are authoritative for the exact matching.
 
 ## 2. Requires Confirmation (not hook-decidable — rule-enforced)
 
@@ -61,7 +61,7 @@ Context-dependent — hooks cannot decide these. Stop before executing. Present 
 
 ### Safe directories for rm -rf
 
-Build artifacts and caches are allowed as `rm -rf` targets. The list is `SAFE_DIRS_RE` in `block-destructive.sh`, documented in the same section of `canonical/hooks/README.md`. Do not restate it here.
+Build artifacts and caches are allowed as `rm -rf` targets: `node_modules`, `dist`, `.next`, `build`, `coverage`, `__pycache__`, `.cache`, `tmp`, `.turbo`, `.parcel-cache`. This list is named here because an agent needs it where hooks do not run and would otherwise refuse a safe delete. `SAFE_DIRS_RE` in `block-destructive.sh` is authoritative if the two ever disagree.
 
 ### Safe Git alternatives
 

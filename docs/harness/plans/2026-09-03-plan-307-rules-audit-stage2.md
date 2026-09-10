@@ -1,6 +1,6 @@
 ---
 id: "01M1HDRJTVCD0PHTHY8ZY5Z4HF"
-title: "#307 段階2 — rules 14本の修正を 8 PR に分けて減らす（1 PR = 1論理変更）"
+title: "#307 段階2 — rules 14本の修正を 10 PR に分けて減らす（1 PR = 1論理変更）"
 date: 2026-09-03
 type: plan
 status: stable
