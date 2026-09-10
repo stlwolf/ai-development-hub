@@ -44,6 +44,11 @@ tmp/
 projects/orchestration-engine/audit/*.jsonl
 projects/orchestration-engine/state/*.state.json
 
+# #348 計測データ（本体は手元に置くが commit しない。数値は散文へ転記済み・
+# 読む機構は projects/orchestration-engine/scripts/register-metrics/ の集計器だけ）
+docs/harness/measurements/**/*.json
+docs/harness/measurements/**/*.txt
+
 # Python bytecode cache
 __pycache__/
 *.pyc

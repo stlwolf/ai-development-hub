@@ -30,6 +30,8 @@ python3 aggregate-arms.py \
   --out /tmp/348-arms
 ```
 
+**`docs/harness/measurements/` の中身は committed に置いていない**（owner 裁定・2026-09-10）。#348 を測った本人の手元にはあるが、clone しただけの環境には無い。**無ければ `--exclude-ids` を外して回せる**（fork で生まれたセッションが母集団に混じるだけで、集計器そのものは動く）。測った数値は `docs/harness/episodes/2026-09-07-episode-348-measurements.md` の散文にある。
+
 応答1件だけを測る:
 
 ```bash

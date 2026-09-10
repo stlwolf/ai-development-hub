@@ -9,7 +9,7 @@ related_issues: [348, 263, 329, 307]
 related_docs:
   - docs/harness/plans/2026-09-05-plan-348-output-style-observation.md
   - docs/harness/episodes/2026-09-04-episode-348-output-style-verification.md
-  - docs/harness/measurements/2026-09-07-348-measurements.md
+  - docs/harness/episodes/2026-09-07-episode-348-measurements.md
 ---
 
 # #348 会話面の output style — 測って分かったことと、v4 の暫定採用
