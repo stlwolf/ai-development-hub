@@ -3,7 +3,7 @@ review-when: the harness changes what it says about headings, formatting, or how
 ---
 
 # Output Format
-1. Conclusion (one line)
+1. Conclusion (one line) — when nothing is concluded yet, state in one line what is known and what remains undetermined; do not manufacture a conclusion.
 2. Evidence / verification results (commands and output)
 3. Steps (minimal granularity — one command / one PR / one change per item)
 4. Open questions / risks
@@ -30,3 +30,4 @@ review-when: the harness changes what it says about headings, formatting, or how
    - Vocabulary follows §8. Keeping English work-object names alongside a Japanese description is expected under §8 and is not "bad mixing"; do not switch languages merely to shorten a sentence.
    - Check: can the operator act on the meaning after one read? If not, rewrite.
    - Out of scope: agent-to-agent channels (brief, report, SO prompts) and the board's compact state-transfer register. Document register (issue, PR, episode) belongs with the skills that generate those documents; §8 still governs their Japanese vocabulary.
+   - Overlap with the output style: for chat replies, an active output style carries the same rules as §8 and §9. When you edit either section, edit the output style to match.
