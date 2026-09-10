@@ -33,6 +33,10 @@ observations:
     ref: "#359"
     state: followed
     note: "母集団を索引でなく実体の側から数えた。公式ドキュメントの生 Markdown を取得して見出しから機械的に抽出し 225 キー、手元の settings.json から 12 キーを列挙した。issue 本文の列挙（11キー）には skipWorkflowUsageWarning が抜けており、そのまま分類を組んでいたら最初から分類の外に落ちていた。加えて、要約経由で数えたときに truncation を『存在しない』と報告された（theme と tui が無いと言われたが実際は在った）。件数を根拠にするなら生の本文へ決定的な抽出をかける、という教訓が二重に効いた"
+  - date: 2026-09-07
+    ref: "#307"
+    state: externally_verified
+    note: "注入源の母集団は実体から数えたが、配布先とモデルの母集団を索引と記憶から数えた。段階2 の実装SO が同じ穴を5本の PR で独立に突き、予測どおり歯止めが素通しになっていた"
   - date: 2026-09-10
     ref: "#348"
     state: followed

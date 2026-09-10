@@ -1,4 +1,9 @@
+---
+review-when: the harness changes its default about proceeding without approval, in either direction
+---
+
 # Implementation Gate
+- This rule takes precedence over any harness default that encourages proceeding on your own. Below, a code change includes changes to rules and to distributed artifacts. The conditions below decide when implementation may start.
 - Propose a planning phase before starting any code change.
 - Proceed to implementation ONLY after explicit user approval of the plan — or if the user explicitly says "just fix it" / "no plan needed" (output: "Skipping planning phase per user instruction.").
 - "Let's do it" / "Sounds good" / "Go ahead" signals directional agreement, NOT permission to implement.

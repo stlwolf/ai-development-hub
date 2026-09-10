@@ -25,6 +25,11 @@ observations:
     ref: "#340"
     state: externally_verified
     note: "先例3件で前提が移らず、うち1件は gate 2 の2レーンが独立に検出した。(1) session-name.sh:106 の head -c + iconv -c || cat は候補そのものだが、|| cat の意味が「iconv が使えなければ無害化せず素通し」で、消費者が pane タイトルなら無害・codex の argv ならレーン即死に戻る。stub で実測し欠陥の復活を確認して棄却。(2) knowledge-list.sh:180 の ${var:0:N} は予算の単位が文字で、バイト予算の本件では 4000 のつもりが 6000〜7958 バイトに膨らむ。(3) 他レーンが提案した iconv validator の idiom を写したら全 fixture が fallback へ落ちた＝この環境の iconv は stdout がキャラクタデバイスかつマルチバイト 1024 バイト超で rc=1 を返す。外部検出は (c) の棄却理由を「iconv で同じ結果が得られる」と書いた誤りで、iconv -c は末尾だけでなく内部の不正バイトも落とすため同じ結果ではない"
+  - date: 2026-09-07
+    ref: "#307"
+    state: injected_not_used
+    note: "段階1 では先例の手順に足りない前提（hooks・skills・agent 型）を母集団表へ足した。しかし段階2 で「本体が持つから消せる」を移植するとき、その前提が Codex と Cursor に在るかを確かめずに消し、同じ失敗を繰り返した"
+
 ---
 
 **先例の規律を移植するときは、その規律が成り立っている前提も移植先に在るかを確かめる。** 規律は文面として写せるが、前提は写らない。
