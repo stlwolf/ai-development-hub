@@ -117,9 +117,16 @@ _notify_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) r
 # 素の $HOME は set -u の下で未設定だとここでシェルごと終了する（advisory の契約違反）。
 # 文を分けるのは [[ A || B ]] の短絡に頼らず、B 側で可否と存在を別々に見るためである。
 if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.notify-hook-debug" ]]; }; then
-  printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
-    "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
-    2>/dev/null >> /tmp/notify-hook.log || true
+  # 追記先が「存在するのに通常ファイルでない」なら触らない（止める側3本の hfr_appendable と
+  # 同じ扱い・block-destructive.sh）。FIFO への >> は reader が現れるまで open(2) でブロックし、
+  # サブシェル隔離では解けない。/tmp は誰でも書けるので先に FIFO として作られる経路があり、
+  # フックが止まるとハーネスのタイムアウトまでセッションが待たされる（雑音より重い）。
+  dbg_log=/tmp/notify-hook.log
+  if [[ ! -e "$dbg_log" || -f "$dbg_log" ]]; then
+    printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
+      "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
+      2>/dev/null >> "$dbg_log" || true
+  fi
 fi
 
 # --- 配信 ---
