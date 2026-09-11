@@ -23,6 +23,7 @@
 #   OE_HS_SERVER_PID        tmux server pid の上書き（主にテストの決定論化用）
 #   OE_HS_NOW_EPOCH         now の上書き（主にテストの決定論化用）
 #   OE_HS_RESUME_MAX_AGE_SEC  transcript を「開き直せる」と見なす鮮度の窓（既定 86400 秒）
+#   OE_HS_BEAT_MAX_AGE_SEC    拍動を「いまの前任のもの」と見なす鮮度の窓（既定 21600 秒）
 
 # HOME を暗黙の既定パスに使ってよいか（delegate-registry.sh と byte 一致させる・#322）。
 declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() {
@@ -87,7 +88,11 @@ oe_hs_children_of() {
   # 旧 server の残骸は pane 番号が再利用されているので、混ぜると無関係なペインを子に数える。
   for f in "$OE_DELEGATE_STATE_DIR/${spid}_"*.json; do
     [ -f "$f" ] || continue
-    pane="$(jq -r --arg p "$parent" 'select(.parent_pane == $p) | .pane // empty' "$f" 2>/dev/null)" || continue
+    # 壊れて読めない登記を黙って飛ばさない。**それが唯一の生きた子だったときに0件へ倒れる。**
+    # 読めないものが1つでもあれば「数えられない」として失敗する。
+    if ! pane="$(jq -r --arg p "$parent" 'select(.parent_pane == $p) | .pane // empty' "$f" 2>/dev/null)"; then
+      return 2
+    fi
     [ -n "$pane" ] || continue
     printf '%s\n' "$panes" | grep -qxF -- "$pane" || continue
     label="$(jq -r '.label // ""' "$f" 2>/dev/null)" || label=""
@@ -120,6 +125,16 @@ oe_hs_session_for_pane() {
     sid="$(basename "$f" .json)"
   done
   if [ "$count" -ne 1 ]; then printf 'unknown'; return 0; fi
+  # **1件に絞れただけでは、それが「いまの前任」だとは言えない。**
+  # pane が短い間に再利用され、新しいセッションがまだ拍動を書いていない場合、旧世代の
+  # sidecar が唯一の候補として残る。だから拍動そのものの鮮度も見る。窓は実測（統括の拍動は
+  # 2時間古くなることがある）より広く取り、OE_HS_BEAT_MAX_AGE_SEC で調整できるようにする。
+  local bts now age
+  bts="$(jq -r '.ts // empty' "${OE_HEARTBEAT_DIR}/${sid}.json" 2>/dev/null)" || bts=""
+  if [ -z "$bts" ]; then printf 'unknown'; return 0; fi
+  now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
+  age=$(( now - bts ))
+  if [ "$age" -gt "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ]; then printf 'unknown'; return 0; fi
   # **拍動だけでは足りない。** sidecar は掃除されないので、pane が再利用され、その番号の
   # 古い sidecar が1件だけ残っている状況では、上の絞り込みを通過してしまう。
   # この値の用途は「停止しても claude --resume で会話を開き直せる」ことの担保なので、

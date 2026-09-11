@@ -186,13 +186,23 @@ fi
 
 TMP="${OUT}.tmp.$$"
 MACHINE_FILE="${OUT}.machine.$$"
-printf '%s\n' "$MACHINE" >"$MACHINE_FILE"
+# 途中で落ちても一時ファイルを残さない（中身は引き継ぎ文書の全文なので、置き去りは漏洩でもある）。
+trap 'rm -f "$TMP" "$MACHINE_FILE" 2>/dev/null' EXIT HUP INT TERM
+# 書込みの成否を見る。見ないと、書けていない staging を awk が読んで
+# **機械の節が空の文書を本物に被せる**。
+if ! printf '%s\n' "$MACHINE" >"$MACHINE_FILE"; then
+  err "機械の節を書き出せませんでした: ${MACHINE_FILE}"
+  exit 2
+fi
 awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v mf="$MACHINE_FILE" '
   index($0, b) == 1 { while ((getline line < mf) > 0) print line; close(mf); skip = 1; next }
   index($0, e) == 1 { skip = 0; next }
   skip != 1 { print }
-' "$OUT" >"$TMP" || { rm -f "$TMP" "$MACHINE_FILE"; err "機械の節を差し替えられませんでした"; exit 2; }
-mv -f "$TMP" "$OUT" || { rm -f "$TMP" "$MACHINE_FILE"; err "書き戻せませんでした: ${OUT}"; exit 2; }
+' "$OUT" >"$TMP" || { err "機械の節を差し替えられませんでした"; exit 2; }
+# mv は tmp の権限を持ち込むので、元の文書の権限に揃える（umask で 0600 が 0644 に緩まない）。
+chmod --reference="$OUT" "$TMP" 2>/dev/null \
+  || chmod "$(stat -f %Lp "$OUT" 2>/dev/null || printf '644')" "$TMP" 2>/dev/null || true
+mv -f "$TMP" "$OUT" || { err "書き戻せませんでした: ${OUT}"; exit 2; }
 rm -f "$MACHINE_FILE"
 
 # --- 表示 ---
@@ -212,10 +222,12 @@ if [ "$CHILD_COUNT" = "unknown" ]; then
   printf '  2. **まだ交代できません。** 生きた委譲子を数えられませんでした。数えられないうちは席を動かせません。\n'
 elif [ "$CHILD_COUNT" != "0" ]; then
   printf '  2. **まだ交代できません。** 生きた委譲子 %s 件が片づくまで席は動かせません。\n' "$CHILD_COUNT"
+elif [ "$SID" = "unknown" ]; then
+  # 子のゲートと対称にする。ここで「次は start」と言うと、retire が止める状態なのに
+  # 「交代の準備ができた」と読める（片方だけ fail-open になる）。
+  printf '  2. **まだ交代できません。** 前任の session_id が引けていないので、停止が取り消せません。\n'
+  printf '     拍動と transcript のどちらか（または両方）が、いまの前任のものだと言える状態にありません。\n'
 else
   printf '  2. oe-handoff start で後継のペインを起こす（PR-2 で実装）\n'
-fi
-if [ "$SID" = "unknown" ]; then
-  printf '\n注意: 前任の session_id が引けていないので、このままでは retire が停止を止めます。\n'
 fi
 exit 0

@@ -54,9 +54,11 @@ export OE_TRANSCRIPT_ROOT="$TR"
 NOW_EPOCH="$(date +%s)"
 export OE_HS_NOW_EPOCH="$NOW_EPOCH"
 
-mk_beat() { # mk_beat <sid> <pane> <server_pid> <ctx>
-  jq -cn --arg p "$2" --arg s "$3" --argjson c "$4" \
-    '{ts:1, context_pct:$c, pane:$p, server_pid:$s}' > "$HB/$1.json"
+mk_beat() { # mk_beat <sid> <pane> <server_pid> <ctx> [age_sec]
+  # ts は「いまから <age_sec> 秒前」。古い固定値を使うと、鮮度の欠陥をテストが固定してしまう。
+  local ts=$(( NOW_EPOCH - ${5:-0} ))
+  jq -cn --arg p "$2" --arg s "$3" --argjson c "$4" --argjson t "$ts" \
+    '{ts:$t, context_pct:$c, pane:$p, server_pid:$s}' > "$HB/$1.json"
 }
 reg_key() { # reg_key <pane> — 実物と同じキー（"<server_pid>_<pane>" の非英数を _ に）
   printf '%s' "900_$1" | tr -c 'A-Za-z0-9' '_'
@@ -138,7 +140,7 @@ ck "登記の mtime が動かない"     "$r_before" "$(stat -f %m "$REG_FILE" 2
 echo "[10] session_id が引けないときは、停止できないと書く"
 OUT2="$WS/.oe/handoff2.md"
 out2="$("$OE_HANDOFF" prepare -w "$WS" --out "$OUT2" --predecessor '%99' 2>&1)" || true
-ckc "画面で注意する" "$out2" "retire が停止を止めます"
+ckc "画面で注意する" "$out2" "停止が取り消せません"
 ckc "文書にも書く" "$(cat "$OUT2")" "この状態では前任を"
 
 echo "[11] 呼び方の誤りと目印の欠落"
@@ -174,7 +176,7 @@ ck "transcript 不在は unknown" "unknown" "$(oe_hs_session_for_pane '%11')"
 echo "[15] transcript が古ければ unknown（pane 再利用で残った旧世代を掴まない）"
 mk_transcript "sid-nots" 999999
 ck "古い transcript は採らない" "unknown" "$(OE_HS_RESUME_MAX_AGE_SEC=3600 oe_hs_session_for_pane '%11')"
-ck "窓を広げれば採る" "sid-nots" "$(OE_HS_RESUME_MAX_AGE_SEC=99999999 oe_hs_session_for_pane '%11')"
+ck "窓を広げれば採る" "sid-nots" "$(OE_HS_RESUME_MAX_AGE_SEC=99999999 OE_HS_BEAT_MAX_AGE_SEC=99999999 oe_hs_session_for_pane '%11')"
 rm -f "$HB/sid-nots.json" "$TR/sid-nots.jsonl"
 
 echo "[16] 旧 server の登記は子に数えない（pane 番号が再利用されている）"
@@ -210,6 +212,35 @@ ck "重複でも文書を壊さない" "$before5" "$(cat "$OUT5")"
 echo "[19] repo 節は枝の名前を名乗り、open PR は workspace の中で引く"
 ckc "branch= を出す" "$(oe_hs_repo_state "$NOUP")" "branch="
 ckc "workspace が無ければ unknown" "$(oe_hs_open_prs "$_TMP_DIR/nonexistent")" "unknown workspace-not-found"
+
+echo "[20] 拍動が古ければ unknown（pane がすぐ再利用され、新セッションがまだ拍動を書いていない場合）"
+mk_beat "sid-oldbeat" "%11" "900" 55 999999
+mk_transcript "sid-oldbeat" 0
+ck "古い拍動は採らない" "unknown" "$(oe_hs_session_for_pane '%11')"
+ck "窓を広げれば採る" "sid-oldbeat" "$(OE_HS_BEAT_MAX_AGE_SEC=99999999 oe_hs_session_for_pane '%11')"
+rm -f "$HB/sid-oldbeat.json" "$TR/sid-oldbeat.jsonl"
+
+echo "[21] 壊れた登記を「子が居ない」に畳まない"
+printf 'not json at all\n' > "$REG/$(reg_key '%12').json"
+set +e
+oe_hs_children_of '%10' >/dev/null 2>&1; rc_broken_reg=$?
+set -e
+ck "読めない登記があれば失敗を返す" "2" "$rc_broken_reg"
+rm -f "$REG/$(reg_key '%12').json"
+
+echo "[22] session_id が引けないときは「次は start」と言わない（子のゲートと対称）"
+OUT6="$WS/.oe/handoff6.md"
+out6="$("$OE_HANDOFF" prepare -w "$WS" --out "$OUT6" --predecessor '%11' 2>&1)" || true
+ckc "まだ交代できないと言う" "$out6" "まだ交代できません"
+if printf '%s' "$out6" | grep -qF 'oe-handoff start で後継'; then
+  echo "  FAIL: start を勧めない"; FAIL=$((FAIL+1))
+else
+  echo "  PASS: start を勧めない"; PASS=$((PASS+1))
+fi
+
+echo "[23] 一時ファイルを残さない"
+ck "tmp が残らない"     "0" "$(find "$WS/.oe" -name '*.tmp.*' 2>/dev/null | grep -c '^' | tr -d ' ')"
+ck "staging が残らない" "0" "$(find "$WS/.oe" -name '*.machine.*' 2>/dev/null | grep -c '^' | tr -d ' ')"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
