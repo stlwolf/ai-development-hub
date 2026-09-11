@@ -4,10 +4,20 @@ title: "裁定に従うこと自体が、承認時に固定した baseline を�
 date: 2026-09-11
 type: discussion
 status: draft
-related_issues: [347, 391]
-related_docs:
-  - docs/harness/plans/2026-09-11-plan-347-notify-advisory-hygiene.md
-  - docs/harness/episodes/2026-09-11-episode-347-notify-advisory-hygiene.md
+related:
+  - type: derived_from
+    ref: "docs/harness/episodes/2026-09-11-episode-347-notify-advisory-hygiene.md"
+    reason: "この discussion は、当該 episode の promotion で required と判定した1件の昇格先"
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/347"
+    reason: "構造を踏んだ作業単位"
+  - type: future_hook
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/391"
+    reason: "規範（委譲の固定節 / implementer-contract）への反映は別単位で行う"
+  - type: reference
+    ref: "docs/harness/plans/2026-09-11-plan-347-notify-advisory-hygiene.md"
+    reason: "baseline を固定された当の plan"
+tags: [delegation, human-gate, baseline, governance]
 ---
 
 # 裁定に従うこと自体が、承認時に固定した baseline を動かす
