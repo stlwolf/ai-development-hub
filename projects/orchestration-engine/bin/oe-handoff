@@ -89,12 +89,20 @@ fi
 SPID="$(oe_hs_server_pid)"
 SID="$(oe_hs_session_for_pane "$PREDECESSOR")"
 CTX="$(oe_hs_context_for_session "$SID")"
-CHILDREN="$(oe_hs_children_of "$PREDECESSOR")" || CHILDREN=""
-CHILD_COUNT=0
-[ -z "$CHILDREN" ] || CHILD_COUNT="$(printf '%s\n' "$CHILDREN" | grep -c '^')"
+# 子を数えられなかったとき（jq 不在・登記の置き場が決まらない）を 0 件に化かさない。
+# 0 は「居ない」、unknown は「分からない」で、後段の停止の可否が逆になる。
+CHILDREN="$(oe_hs_children_of "$PREDECESSOR")"; CHILD_RC=$?
+if [ "$CHILD_RC" -ne 0 ]; then
+  CHILD_COUNT="unknown"
+  CHILDREN=""
+elif [ -z "$CHILDREN" ]; then
+  CHILD_COUNT=0
+else
+  CHILD_COUNT="$(printf '%s\n' "$CHILDREN" | grep -c '^' | tr -d ' ')"
+fi
 WATCHDOGS="$(oe_hs_watchdogs)"
 REPO="$(oe_hs_repo_state "$WORKSPACE")"
-PRS="$(oe_hs_open_prs)"
+PRS="$(oe_hs_open_prs "$WORKSPACE")"
 WORKTREES="$(git -C "$WORKSPACE" worktree list 2>/dev/null)" || WORKTREES="unknown"
 NOW="$(date '+%Y-%m-%d %H:%M %Z')"
 
@@ -121,11 +129,16 @@ MACHINE="$(
   printf '%s\n' '### 生きている委譲子'
   printf '\n'
   printf -- '- 件数: %s\n' "$CHILD_COUNT"
-  indent_or_none "$CHILDREN" "なし"
+  if [ "$CHILD_COUNT" = "unknown" ]; then
+    printf -- '- 数えられませんでした（登記の置き場が決まらないか jq がありません）\n'
+  else
+    indent_or_none "$CHILDREN" "なし"
+  fi
   printf '\n'
-  if [ "$CHILD_COUNT" -gt 0 ]; then
-    printf '%s\n' '**生きた委譲子が居るあいだは席を動かせない**（`take` が止める）。子の報告先は'
-    printf '%s\n' '起動時に前任のペインへ焼き込まれていて、あとから張り替えられないためである。'
+  if [ "$CHILD_COUNT" != "0" ]; then
+    printf '%s\n' '**生きた委譲子が居ない、と言える状態ではない。席は動かせない**（`take` が止める）。'
+    printf '%s\n' '子の報告先は起動時に前任のペインへ焼き込まれていて、あとから張り替えられない。'
+    printf '%s\n' '数えられなかった場合も同じ扱いにする（「分からない」を「居ない」に畳まない）。'
     printf '\n'
   fi
   printf '%s\n' '### open PR'
@@ -155,8 +168,19 @@ else
   CREATED=0
 fi
 
-if ! grep -qF -- "$MARK_BEGIN" "$OUT" || ! grep -qF -- "$MARK_END" "$OUT"; then
-  err "引き継ぎ文書に機械の節の目印がありません（${OUT}）。手で消したなら戻してください"
+# 目印は「在るか」だけでなく「1組だけか」「順序が正しいか」まで見る。
+# 見ないと、end が begin より前にある文書で awk が begin 以降を末尾まで捨てて上書きし、
+# **人が書いた節を復元できない形で壊す**。書き換える前に落とす。
+N_BEGIN="$(grep -cF -- "$MARK_BEGIN" "$OUT" | tr -d ' ')"
+N_END="$(grep -cF -- "$MARK_END" "$OUT" | tr -d ' ')"
+if [ "$N_BEGIN" != "1" ] || [ "$N_END" != "1" ]; then
+  err "機械の節の目印が1組になっていません（${OUT}・begin ${N_BEGIN} 個 / end ${N_END} 個）。手で直してください"
+  exit 2
+fi
+L_BEGIN="$(grep -nF -- "$MARK_BEGIN" "$OUT" | head -1 | cut -d: -f1)"
+L_END="$(grep -nF -- "$MARK_END" "$OUT" | head -1 | cut -d: -f1)"
+if [ -z "$L_BEGIN" ] || [ -z "$L_END" ] || [ "$L_BEGIN" -ge "$L_END" ]; then
+  err "機械の節の目印の順序が逆です（${OUT}・begin ${L_BEGIN} 行目 / end ${L_END} 行目）。手で直してください"
   exit 2
 fi
 
@@ -184,7 +208,9 @@ printf '\n'
 printf '次にやること:\n'
 printf '  1. %s の「人が書く」節を埋める（機械の節は触らない）\n' "$OUT"
 printf '     とくに「渡らないもの」と自己申告の残余は、ここでしか書けません。\n'
-if [ "$CHILD_COUNT" -gt 0 ]; then
+if [ "$CHILD_COUNT" = "unknown" ]; then
+  printf '  2. **まだ交代できません。** 生きた委譲子を数えられませんでした。数えられないうちは席を動かせません。\n'
+elif [ "$CHILD_COUNT" != "0" ]; then
   printf '  2. **まだ交代できません。** 生きた委譲子 %s 件が片づくまで席は動かせません。\n' "$CHILD_COUNT"
 else
   printf '  2. oe-handoff start で後継のペインを起こす（PR-2 で実装）\n'
