@@ -109,7 +109,14 @@ body="${branch}"
 title="$(printf '%s' "$title" | tr -d '\033\007;' | tr '\n\r' '  ')"
 body="$(printf '%s' "$body" | tr -d '\033\007;' | tr '\n\r' '  ')"
 
-if [[ -n "${NOTIFY_DEBUG:-}" || -f "$HOME/.notify-hook-debug" ]]; then
+# HOME の可否は非空では足りない。HOME=/ と HOME=// は「/」直下のマーカーを拾い、相対 HOME は
+# 作業ディレクトリ配下を拾う（CWD を握れる側がデバッグを立てられる）。engine 側の
+# _oe_home_usable（#341 DJ-2）と同じ述語を、単体配布のためインラインで持つ。
+_notify_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+
+# 素の $HOME は set -u の下で未設定だとここでシェルごと終了する（advisory の契約違反）。
+# 文を分けるのは [[ A || B ]] の短絡に頼らず、B 側で可否と存在を別々に見るためである。
+if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.notify-hook-debug" ]]; }; then
   printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
     "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
     >> /tmp/notify-hook.log 2>/dev/null || true
