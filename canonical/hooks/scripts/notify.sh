@@ -109,20 +109,43 @@ body="${branch}"
 title="$(printf '%s' "$title" | tr -d '\033\007;' | tr '\n\r' '  ')"
 body="$(printf '%s' "$body" | tr -d '\033\007;' | tr '\n\r' '  ')"
 
-if [[ -n "${NOTIFY_DEBUG:-}" || -f "$HOME/.notify-hook-debug" ]]; then
-  printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
-    "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
-    >> /tmp/notify-hook.log 2>/dev/null || true
+# HOME の可否は非空では足りない。HOME=/ と HOME=// は「/」直下のマーカーを拾い、相対 HOME は
+# 作業ディレクトリ配下を拾う（CWD を握れる側がデバッグを立てられる）。engine 側の
+# _oe_home_usable（#341 DJ-2）と同じ述語を、単体配布のためインラインで持つ。
+_notify_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
+
+# 素の $HOME は set -u の下で未設定だとここでシェルごと終了する（advisory の契約違反）。
+# 文を分けるのは短絡をやめるためではない（新しい形も || と && の短絡に頼っている）。
+# 素の ${HOME} の展開を条件式の外へ出し、可否の判定が偽なら展開に到達させないためである。
+if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.notify-hook-debug" ]]; }; then
+  # 追記先が「存在するのに通常ファイルでない」なら触らない（止める側3本の hfr_appendable と
+  # 同じ判定・block-destructive.sh）。ただし置き場の条件は向こうより悪い。向こうの追記先は
+  # ${HOME}/.claude/state/hook-firing で利用者が持つディレクトリだが、こちらは world-writable な
+  # /tmp なので、他の uid が先回りできる前提が実際に成り立つ。
+  # FIFO への >> は reader が現れるまで open(2) でブロックし、
+  # サブシェル隔離では解けない。/tmp は誰でも書けるので先に FIFO として作られる経路があり、
+  # フックが止まるとハーネスのタイムアウトまでセッションが待たされる（雑音より重い）。
+  # シンボリックリンクは -L で別に弾く。-f はリンクを辿るので通常ファイルへのリンクが通り、
+  # 壊れたリンクは -e が偽になって「無い」側へ回り、>> がリンク先を作る。どちらも /tmp から
+  # 任意のパスへ追記させる経路になる（実測で両方とも再現・Copilot 指摘）。
+  dbg_log=/tmp/notify-hook.log
+  if [[ ! -L "$dbg_log" && ( ! -e "$dbg_log" || -f "$dbg_log" ) ]]; then
+    printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
+      "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
+      2>/dev/null >> "$dbg_log" || true
+  fi
 fi
 
 # --- 配信 ---
+# リダイレクトは左から右へ処理されるので、2>/dev/null は書き先のリダイレクトより前に置く。
+# 後ろに置くと、書き先が開けなかったときの診断が advisory の stderr へ漏れる（#347）。
 delivered=0
 
 if [[ -n "${TMUX:-}" && -n "$pt" && -w "$pt" ]]; then
   # tmux: ペイン TTY へ DCS passthrough（内側 ESC を二重化、終端は ESC + \134=backslash）
-  printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" > "$pt" 2>/dev/null && delivered=1
+  printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" 2>/dev/null > "$pt" && delivered=1
 elif [[ -z "${TMUX:-}" && -w /dev/tty ]]; then
-  printf '\033]777;notify;%s;%s\007' "$title" "$body" > /dev/tty 2>/dev/null && delivered=1
+  printf '\033]777;notify;%s;%s\007' "$title" "$body" 2>/dev/null > /dev/tty && delivered=1
 fi
 
 # フォールバック（非 WezTerm / 非 tmux / headless 用）

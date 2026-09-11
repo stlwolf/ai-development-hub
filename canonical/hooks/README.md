@@ -158,6 +158,11 @@ Claude Code のみ。Cursor / Codex は `TaskCompleted` 相当のイベントを
 
 エージェントの「完了」「入力待ち」を macOS 通知し、複数セッション並走時のポーリング（まだ動いてる？の見に行き）をやめるための advisory フック。
 
+### 依存
+
+- **`jq` は 1.4 以上が要る。** `wait` メッセージの切り詰めに文字列スライスを使う。
+- **`-R -r` を `-Rr` へ縮めないこと。** 縮めると短オプションの連結になり、下限が 1.5 へ上がる。根拠は #343 のゲート4で jq のソース（`jq-1.4` の `jv_aux.c` と `main.c`）まで当てて確定した（#347）。理由の詳細は `notify.sh` の該当箇所のコメントにある
+
 ### 配信経路（WezTerm OSC 777）
 
 CLI/フック文脈からは macOS 通知 API（osascript/terminal-notifier）が表示されないことがあるため、**WezTerm（GUI アプリ）に OSC 777 通知を出させる**:
@@ -194,6 +199,9 @@ CLI/フック文脈からは macOS 通知 API（osascript/terminal-notifier）�
 ### デバッグ
 
 `NOTIFY_DEBUG=1` または `~/.notify-hook-debug` で `/tmp/notify-hook.log` に記録（tool / mode / repo / branch / loc / tmux）。
+
+- **マーカーファイルが効くのは `HOME` が絶対パス（`/` と `//` を除く）のときだけ**。それ以外は `NOTIFY_DEBUG` を使う（#347）
+- **書けなかったときは無言で諦める。** 追記先が通常ファイルでない（FIFO / ディレクトリ / シンボリックリンク）か開けない場合、記録せずに進み、診断も出さない。**「デバッグを立てたのにログが空」と「フックがそもそも呼ばれていない」は区別できない**ので、切り分けるときは `notify.sh` を手で叩いて確かめる（#347）
 
 ## 設定ファイル
 

@@ -8,7 +8,11 @@ prediction: "借り先が前提にしていない操作（外部プロセスへ�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-28-episode-327-session-model-ctx.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-11
+    ref: "#347"
+    state: followed
+    note: "2回当たり、2回目で足りないと分かった。1回目は engine の _oe_home_usable を写すかで、「書き込み前提だから写さない」と決めたが、設計SO が述語は「絶対パス要求」と「/ 排除」の2成分でできていて後者は読むだけの用途にも効くと示し、判断が覆った。写す/写さないの2値でなく成分に割るべきだった。2回目は block-destructive.sh の hfr_appendable で、判定は写したが置き場の条件（向こうは利用者のディレクトリ、こちらは world-writable な /tmp）が違うことを見ておらず、Copilot と実装SO 2レーンが独立にシンボリックリンク経由の追記を指摘した。借り物は「何をしていないか」だけでなく「どういう条件の下でそれをしているか」まで見る必要がある"
 exclusions:
   - "借りる対象が純粋な計算（文字列整形・算術）で、外部プロセスや環境に触らない場合。前提の差が生じる余地が無い"
   - "借り先と自分のコードが同じ関数を同じ引数で呼ぶだけの場合（idiom ではなく共通化）。その場合は共有関数へ切り出すのが正しい"
