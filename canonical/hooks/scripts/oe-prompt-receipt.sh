@@ -68,16 +68,33 @@ _json_escape() {
   s="${s//$'\n'/\\n}"
   s="${s//$'\r'/\\r}"
   s="${s//$'\t'/\\t}"
+  # 残りの制御文字（BS / FF / ESC / US 等）は **落とす**。JSON 文字列に生で入ると 1 行が壊れ、
+  # 以後この診断ファイルを読めなくなる（実装SO codex の指摘）。detail には環境由来の任意の
+  # 文字列（パス等）が入りうるので、素の printf で書く経路でも安全側に倒す。\uXXXX へ律儀に
+  # 変換しないのは、診断の detail は人が読む補助情報であって復元性を要さないからである。
+  s="$(printf '%s' "$s" | LC_ALL=C tr -d '\001-\010\013\014\016-\037\177' 2>/dev/null)"
   printf '%s' "$s"
 }
 
 # 環境エラーを診断ファイルへ記録する。ここが no-op になると「印が無い理由」が読めなくなるので、
 # jq が無い場合でも素の printf で 1 行残す（診断だけは最後まで落とさない）。
+#
+# #336: 第3引数に nonce、第4引数に pane を取る。**この2つが送信単位の突き合わせ鍵である。**
+#   旧実装は reason と detail しか残さなかったため、送り手は「どの送信が印を書けなかったか」を
+#   時刻の近さでしか推し量れなかった。時刻±数秒の相関は同時刻に複数送信があると多対多になり、
+#   「届いたが印を書けなかった」の一次証拠にならない（#336 の設計SO で反証された）。nonce を
+#   載せると `oe-confirm` が送信 1 件ごとに cannot-confirm を判定できる。
+#
+#   キーは値が空でも常に置く（スキーマを安定させ、読み手の jq を単純に保つ）。空は「不明」を
+#   honest に空で表す既存の規約に従う。nonce を取れない経路（jq 不在・`.prompt` からタグを
+#   取り出せない）では空のままになる — その送信は cannot-confirm と断定できず
+#   instrumentation-unknown に落ちる。これは設計どおりで、嘘の確証を作らないための縮退である。
 note_env_error() {
-  local reason="$1" detail="${2:-}"
+  local reason="$1" detail="${2:-}" nonce_v="${3:-}" pane_v="${4:-}"
   mkdir -p "$event_dir" 2>/dev/null || return 0
-  printf '{"ts":"%s","hook":"oe-prompt-receipt","kind":"env-error","reason":"%s","detail":"%s"}\n' \
+  printf '{"ts":"%s","hook":"oe-prompt-receipt","kind":"env-error","reason":"%s","detail":"%s","nonce":"%s","pane":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$(_json_escape "$reason")" "$(_json_escape "$detail")" \
+    "$(_json_escape "$nonce_v")" "$(_json_escape "$pane_v")" \
     >> "$diag_file" 2>/dev/null || true
   echo "oe-prompt-receipt: ${reason}${detail:+ (${detail})}" >&2
 }
@@ -116,7 +133,8 @@ fi
 # --- 受け手ペイン。取れなければ束縛できない = 環境エラーとして記録する ---
 pane="${TMUX_PANE:-}"
 if [ -z "$pane" ]; then
-  note_env_error "no-tmux-pane" "タグ付きの prompt を受け取ったがペインに束縛できない"
+  # #336: nonce を載せる。pane は取れなかったので空（それがこの分岐の理由そのものである）。
+  note_env_error "no-tmux-pane" "タグ付きの prompt を受け取ったがペインに束縛できない" "$nonce" ""
   exit 0
 fi
 
@@ -145,7 +163,7 @@ fi
 # --- 追記（1 行 JSON・O_APPEND で atomic）---
 # role は空にする。関係は突き合わせ先の message_sent が焼き込んでいるので再導出しない。
 if ! mkdir -p "$event_dir" 2>/dev/null; then
-  note_env_error "event-dir-unwritable" "$event_dir"
+  note_env_error "event-dir-unwritable" "$event_dir" "$nonce" "$pane"
   exit 0
 fi
 line="$(jq -cn \
@@ -155,10 +173,10 @@ line="$(jq -cn \
     from:{pane:$fp, role:"", label:$fl},
     to:{pane:$tp, role:"", label:""},
     nonce:$nc}' 2>/dev/null)" || {
-  note_env_error "encode-failed" "nonce=${nonce}"
+  note_env_error "encode-failed" "nonce=${nonce}" "$nonce" "$pane"
   exit 0
 }
-[ -n "$line" ] || { note_env_error "encode-empty" "nonce=${nonce}"; exit 0; }
-printf '%s\n' "$line" >> "$event_file" 2>/dev/null || note_env_error "append-failed" "$event_file"
+[ -n "$line" ] || { note_env_error "encode-empty" "nonce=${nonce}" "$nonce" "$pane"; exit 0; }
+printf '%s\n' "$line" >> "$event_file" 2>/dev/null || note_env_error "append-failed" "$event_file" "$nonce" "$pane"
 
 exit 0

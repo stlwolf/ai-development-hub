@@ -14,6 +14,10 @@
 # 出す情報は 5 つだけ（lifecycle-end / stall は推論しない ＝ DJ-188-2 尊重）:
 #   - 往復回数（TRIPS）  : 関係内の message_sent 数
 #   - 配送（DELIVERY）   : 直近 message の delivery_signal（suspected_miss|none、delivered は名乗らない）
+#                          **#336 以降、新しい記録では常に none である** — message_sent を finalize より
+#                          前（literal 注入の直後）に書くようになり、finalize の観測を焼く経路が消えた。
+#                          過去レコードには unknown / suspected_miss が残るので混在する。到達を送信 1 件
+#                          ごとに見るなら oe-confirm（受領印との nonce 突合・#336）を使う。
 #   - preview            : 直近 message の先頭 ~100 字
 #   - 送信元生存（LIVE） : 子(worker)ペインの mux 存在 query 結果（alive|gone|?）。
 #                          report の送信元 ＝ 子なので「報告者がまだ居るか」を honest に示す。

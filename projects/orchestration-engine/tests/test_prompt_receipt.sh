@@ -319,5 +319,76 @@ if [[ -r "$MEASURE" ]] && command -v python3 >/dev/null 2>&1; then
   ck "短文で落ちた件数を可視化する"      "1" "$(printf '%s\n' "$OUT_M" | grep -c '本文が短く突合鍵を作れない=1')"
 fi
 
+# === #336: 診断行に突き合わせ鍵（nonce / pane）を載せる ===
+# これが無いと送り手は「どの送信が印を書けなかったか」を時刻の近さでしか推し量れない。
+# 同時刻に複数の送信があると多対多になり、「届いたが印を書けなかった」の一次証拠にならない
+# （#336 の設計SO で反証された）。nonce を載せて初めて送信 1 件ごとに判定できる。
+echo "[#336-1] no-tmux-pane の診断は nonce を持つ（pane は取れないので空）"
+new_env
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+ck "診断の nonce"  "$NONCE" "$(jq -rs '[ .[] | select(.reason=="no-tmux-pane") ][0].nonce' "$DIAG" 2>/dev/null)"
+ck "診断の pane は空" ""     "$(jq -rs '[ .[] | select(.reason=="no-tmux-pane") ][0].pane' "$DIAG" 2>/dev/null)"
+ck "既存の reason は変えない" "no-tmux-pane" "$(jq -rs '.[0].reason' "$DIAG" 2>/dev/null)"
+
+echo "[#336-2] nonce を取り出せない経路では空のまま（嘘の確証を作らない）"
+new_env
+printf '%s' '{"prompt":"タグの形が違う [oe:NOT-A-ULID]"}' \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+# ULID の形でないタグは「データの問題」として無音で抜ける（診断も出ない）のが従来の契約。
+ck "形の違うタグでは診断も出さない" "0" "$([[ -f "$DIAG" ]] && wc -l < "$DIAG" | tr -d '[:space:]' || echo 0)"
+
+echo "[#336-3] 診断行は 1 行の壊れていない JSON のままである（後段の集計対象）"
+new_env
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVDIR" env -u TMUX_PANE bash "$HOOK" 2>/dev/null
+ck "全行が JSON として読める" "1" "$(jq -rs 'length' "$DIAG" 2>/dev/null)"
+
+echo "[#336-4] 診断の detail に制御文字が混じっても JSONL を壊さない（実際に踏ませる）"
+# detail には環境由来の任意の文字列（パス等）が入る。素の printf で書く経路で生の制御バイトを
+# JSON 文字列へ入れると 1 行が壊れ、以後この診断ファイルを読めなくなる。
+#
+# **踏ませる経路の選び方**: event-dir-unwritable は診断そのものも書けない（note_env_error が
+# 同じ event_dir へ mkdir するため）ので、そこを狙っても診断は残らない。代わりに
+# **append-failed** を踏ませる。ディレクトリは書けるがイベントログへの追記だけが失敗する状態を
+# 作れば、detail にそのパス（＝制御文字入り）が載った診断が実際に書かれる。
+# 初版はここを踏ませておらず、書き込める EVDIR を渡したまま「受領印が読める」ことだけを
+# 見ていた＝通るが何も確かめていないテストだった（Copilot 指摘）。
+EVIL_DIR="$_TMP_DIR/$(printf 'evil\033x\010y')"
+if ! mkdir -p "$EVIL_DIR" 2>/dev/null; then
+  EVIL_DIR="$_TMP_DIR/evil-plain"; mkdir -p "$EVIL_DIR"
+  echo "  NOTE: 制御文字を含むディレクトリ名を作れないため通常名で代替（escape 単体は [#336-5]）"
+fi
+# oe-events.jsonl をディレクトリにして追記を失敗させる（append-failed を踏ませる）
+mkdir -p "$EVIL_DIR/oe-events.jsonl"
+EVIL_DIAG="$EVIL_DIR/oe-receipt-diag.jsonl"
+printf '%s' "$(jq -cn --arg n "$NONCE" '{prompt:("x [oe:" + $n + "]")}')" \
+  | OE_EVENT_DIR="$EVIL_DIR" TMUX_PANE="%66" TMUX="oe,9999,0" bash "$HOOK" >/dev/null 2>&1 || true
+ck "append-failed の診断が実際に書かれる" "1" \
+  "$(jq -rs '[ .[] | select(.reason=="append-failed") ] | length' "$EVIL_DIAG" 2>/dev/null || echo 0)"
+ck "その診断に nonce が載る" "$NONCE" \
+  "$(jq -rs '[ .[] | select(.reason=="append-failed") ][0].nonce' "$EVIL_DIAG" 2>/dev/null)"
+ck "診断は全行が壊れていない JSON" "0" \
+  "$(jq -e -s 'length > 0' "$EVIL_DIAG" >/dev/null 2>&1; echo $?)"
+# grep -c は 0 件でも exit 1 を返すので `|| echo 0` を足すと 0 が二重に出る。
+# パイプの終端を head にして終了状態を 0 にし、値だけを取る。
+ck "detail に生の ESC が残らない" "0" \
+  "$(LC_ALL=C grep -c "$(printf '\033')" "$EVIL_DIAG" 2>/dev/null | head -1)"
+
+echo "[#336-5] _json_escape 単体: 制御文字を落として有効な JSON にする"
+# 関数だけを取り出して直接叩く（hook 本体の分岐に依存しない検証）。
+ESCTEST="$_TMP_DIR/esctest.sh"
+{
+  sed -n '/^_json_escape() {/,/^}/p' "$HOOK"
+  # 生成するスクリプトの本文なので、ここでは展開させない（意図的な単一引用）。
+  # shellcheck disable=SC2016
+  printf '%s\n' 'printf "{\"d\":\"%s\"}\n" "$(_json_escape "$1")"'
+} > "$ESCTEST"
+raw="$(printf 'a\033[31mb\010c"d\\e\tf')"
+out="$(bash "$ESCTEST" "$raw")"
+ck "有効な JSON になる" "0" "$(printf '%s' "$out" | jq -e . >/dev/null 2>&1; echo $?)"
+ck "引用符は escape される" "1" "$(printf '%s' "$out" | grep -c '\\"')"
+ck "生の ESC は残らない"   "0" "$(printf '%s' "$out" | LC_ALL=C grep -c "$(printf '\033')" || true)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

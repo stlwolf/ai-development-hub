@@ -250,6 +250,7 @@ oe_send_line() {
     echo "oe_send_line: tmux send-keys (literal) failed on ${pane}" >&2
     return 2
   fi
+
   if [[ "$send_enter" != "0" ]]; then
     # リテラル送信の直後に Enter を撃つと、Claude Code TUI の paste 検知で Enter が
     # 「paste 内の改行」として吸収され submit されないことがある（dogfood で間欠確認）。
@@ -259,44 +260,61 @@ oe_send_line() {
       echo "oe_send_line: tmux send-keys Enter failed on ${pane}" >&2
       return 2
     fi
+
+    # #336: 活動ログ（#206）への記録を **Enter が成功した直後・finalize の前** に置く。
+    #
+    # なぜ finalize の前か（dual-write gap）: 旧実装は finalize の**後**に emit していた。finalize は
+    # 既定 3 秒ほど画面を観測するので、その間に送り手が死ぬと **submit 済みなのに outstanding
+    # record が無い**状態が残り、常駐の照合器（oe-confirm）はそもそも存在しない送信を監視でき
+    # なかった。emit を前へ寄せると、この窓が約 3.3 秒（Enter 前の小休止 + finalize）から
+    # 「Enter が返ってから追記するまで」へ縮む。
+    #
+    # なぜ Enter の**前**ではないか: 前に置くと Enter が失敗した送信（rc=2）にも記録が残り、
+    # `message_sent` の意味が「submit 済み」から「literal を流した」へ静かに変わる。既存 consumer
+    # （`oe-ack` の frontier / `oe-activity` / `oe-undelivered` / `oe-confirm`）はそれを通常の
+    # 送信として算入するので、呼び出し側が再送すると二重レコードになる（実装SO codex の指摘）。
+    # **契約を変えずに窓だけ縮めるのが正しい位置である。**
+    #
+    # `send_enter=0`（--no-enter・ステージのみ）では従来どおり emit しない。nonce を載せていない
+    # ので突き合わせ先の無い受領印（dangling）を作らないためである。
+    #
+    # delivery_signal は常に `none`。finalize より前に書くので finalize の観測は載らない。#299 の
+    # 実測でこの signal は配送の成否と**逆**を指していた（rc=3 側の 97.6% が到達確認済み）ため、
+    # 判定に使う consumer は無い（oe-undelivered は明示的に不使用）。表示していた oe-activity の
+    # DELIVERY 列は常に `none` になる（README と oe-activity の注記に反映済み）。
+    if declare -F oe_event_message_sent >/dev/null 2>&1; then
+      oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "none" "$nonce" || true
+    fi
     # 観測ベース finalize（best-effort）。Enter 吸収の after-the-fact 回復。
     # finalize は未着候補（suspected miss / stage miss）で rc=3 を返す。OE_SEND_SIGNAL_MISS=1 のときだけ
     # それを rc=4（suspected non-delivery / stage miss）へ昇格し、呼び出し側のフォールバック/
     # リトライを可能にする（既定は従来どおり rc を変えない・#154）。「confirmed」ではなく「suspected」
     # なのは fast-submit を未着と誤判定し得るため（SO 指摘）。
-    local delivery_signal="none"
     if [[ "$fin_on" == "1" ]]; then
       local fin_rc=0
       # finalize は画面を見るので、実際に流した文字列（タグ込み）で照合する。
       _oe_send_finalize "$pane" "$wire_text" "$base_proc" "$base_staged" || fin_rc=$?
-      # #299 P0: rc=3 に `suspected_miss` を焼くのを止め、`unknown` を書く。
-      # 実測でこの観測は配送の成否と逆を指していた（最も厳しい突合＝typed 限定 + 宛先ペイン束縛 +
-      # 1対1排他割当で、rc=3 側は 244/250=97.6% が到達確認・rc=0 側は 162/217=74.7%）。原因は
-      # (a) finalize が Enter の後から観測を始める (b) marker が現行 claude の画面に無い
-      # (c) 折返した payload が `❯` 行と全文一致しない、の3点。いずれも P0 では直さない。
+      # #336: ここに在った message_sent の emit は注入直後へ移した（上記）。**再度 emit しない。**
+      # append-only のイベントバスでは後から書き換えられないので、2 回書くと frontier が二重に
+      # 計上する（設計SO cursor の指摘）。finalize は rc だけを返す best-effort のままにする。
       #
-      # **止めるのはここ1点だけである。** 次の2点は意図して据え置く（別判断・#299 に含めない）:
+      # これに伴い finalize の観測を `delivery_signal` へ焼く経路は消えた（値は常に `none`）。
+      # 惜しくはない: #299 の実測でこの観測は配送の成否と**逆**を指していた（最も厳しい突合で
+      # rc=3 側は 244/250=97.6% が到達確認・rc=0 側は 162/217=74.7%）。原因は (a) finalize が
+      # Enter の後から観測を始める (b) marker が現行 claude の画面に無い (c) 折返した payload が
+      # `❯` 行と全文一致しない、の3点。**到達の判定は受け手側の prompt_received を見ること**で、
+      # それを送信単位で読むのが `oe-confirm`（#336）である。
+      #
+      # 据え置く2点（別判断）:
       #   - OE_SEND_SIGNAL_MISS=1 のときの rc=4（呼び出し側のフォールバック）
       #   - finalize の回復状態機械そのもの（staged_idle の Enter 撃ち直し）
-      #
-      # `none` は上書きしない（「未着シグナル無し」の意味を静かに変えないため）。rc=0 は従来どおり
-      # `none` を書き、rc=3 だけが `unknown` になる。到達の判定は受け手側の prompt_received
-      # （#299 P1）を見ること。rc=3 が拾えていた真の stage miss（母集団で 6 件）は `unknown` の
-      # 中に残るが、`unknown` は未着を意味しない — 判別には受領印が要る。
-      [[ "$fin_rc" == "3" ]] && delivery_signal="unknown"
-      # 活動ログ（#206）: 送信を message_sent として best-effort emit（rc は不変・常に成功扱い）。
-      if declare -F oe_event_message_sent >/dev/null 2>&1; then
-        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" "$nonce" || true
-      fi
       if [[ "$fin_rc" == "3" && "${OE_SEND_SIGNAL_MISS:-0}" == "1" ]]; then
         echo "oe_send_line: signaling suspected non-delivery (stage miss) on ${pane} (rc=4; OE_SEND_SIGNAL_MISS=1)" >&2
         return 4
       fi
     else
-      # finalize 無効時は配送を観測しないため none（未着シグナル無し ＝ delivered の確証ではない）。
-      if declare -F oe_event_message_sent >/dev/null 2>&1; then
-        oe_event_message_sent "${TMUX_PANE:-}" "$pane" "$text" "$delivery_signal" "$nonce" || true
-      fi
+      # #336: finalize 無効時の emit も注入直後へ移した（上記）。ここでは何もしない。
+      :
     fi
   fi
 }

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  oe-confirm を session の外で回す launchd job（#336 Layer 2）。
+
+  なぜ session の外か: 統括セッションが死ぬと、そのセッションに載せた見張りも一緒に死ぬ。
+  停止を報告する主体を停止しうる当人に置かないため、常駐は launchd に置く。
+
+  置き方（**repo の中では動かない**）:
+    0. ログの置き場を先に作る。**これを飛ばすと job が起動しない** — launchd は
+       StandardOutPath の親ディレクトリを作ってくれないので、ディレクトリを作るはずの
+       oe-confirm 自身が起動できないという鶏と卵になる（実装SO codex の指摘）。
+         mkdir -p ~/.claude/state/oe-confirm
+    1. 置換するプレースホルダは **3 つ**ある。1 つでも残すと job は静かに失敗する。
+         __HUB_ROOT__    hub の絶対パス（**main の作業コピー**。worktree は不可）
+         __REPORT_DIR__  統括が読む .oe/ の絶対パス
+         __HOME__        $HOME の絶対パス（ProgramArguments には現れないが
+                         EnvironmentVariables と StandardOutPath / StandardErrorPath に在る）
+       例:
+         sed -e "s|__HUB_ROOT__|$HOME/work/repos/github.com/<owner>/<repo>|g" \
+             -e "s|__REPORT_DIR__|$HOME/work/repos/github.com/<owner>/<repo>/.oe|g" \
+             -e "s|__HOME__|$HOME|g" \
+             com.stlwolf.oe-confirm.plist.template \
+             > ~/Library/LaunchAgents/com.stlwolf.oe-confirm.plist
+    2. 残りが無いことを確かめる（在れば置換漏れである）。**検査の式そのものが検査対象の
+       文字列を含まないように書く** — 素朴に 2 連アンダースコアを grep すると、この手順の行が
+       自分自身にヒットして常に「残っている」と出る:
+         grep -nE '_{2}(HUB_ROOT|REPORT_DIR|HOME)_{2}' ~/Library/LaunchAgents/com.stlwolf.oe-confirm.plist
+         # 何も出なければ置換漏れなし
+         plutil -lint ~/Library/LaunchAgents/com.stlwolf.oe-confirm.plist
+    3. launchctl load ~/Library/LaunchAgents/com.stlwolf.oe-confirm.plist
+    4. 動いたことを確かめる（**load できたことは動いたことではない**）:
+         oe-selfcheck   # watchdog-freshness が ok になる（indeterminate なら走っていない）
+
+  **worktree のパスを焼かないこと。** worktree は消えるので、消えた瞬間に job は静かに
+  失敗し続ける（#301 が同じ形を踏んでいる）。main の作業コピーを指すこと。
+
+  OE_EVENT_DIR を明示して渡す: 送り手（event-bus）・受け手 hook・この job が別々に
+  解決すると、イベントログと受け手診断が分裂して cannot-confirm が読めなくなり、
+  届いた送信が unconfirmed に化ける。3 者で同じ場所を指すのが前提である。
+
+  StandardOutPath は durable signal である（通知が届かなくてもここに残る）。ただし
+  #301 で cron.log が 2953 行・385KB まで育って誰も読まなかった実績があるので、
+  肥大したら切ること。ログに残っていることは「知らせた」ことを意味しない。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stlwolf.oe-confirm</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HUB_ROOT__/projects/orchestration-engine/bin/oe-confirm</string>
+        <string>--notify</string>
+        <string>--write-latest</string>
+        <string>--reports</string>
+        <string>__REPORT_DIR__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <!--
+          __HOME__/bin を必ず含める。launchd の job にはペインの tty が無いので OSC 777 の
+          経路が使えず、通知は wez notify の fallback に落ちる。その wez は sync-bin.sh が
+          __HOME__/bin へ置くので、ここから外すと **--notify が黙って何も送らない**
+          （Copilot 指摘）。送出できなかったことは seen にも焼かれないので、次回また試みる。
+        -->
+        <string>__HOME__/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>OE_EVENT_DIR</key>
+        <string>__HOME__/.claude/state</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/.claude/state/oe-confirm/cron.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.claude/state/oe-confirm/cron.log</string>
+</dict>
+</plist>
