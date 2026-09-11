@@ -89,6 +89,7 @@ fi
 SPID="$(oe_hs_server_pid)"
 SID="$(oe_hs_session_for_pane "$PREDECESSOR")"
 CTX="$(oe_hs_context_for_session "$SID")"
+BEAT_AGE="$(oe_hs_beat_age_for_pane "$PREDECESSOR")"
 # 子を数えられなかったとき（jq 不在・登記の置き場が決まらない）を 0 件に化かさない。
 # 0 は「居ない」、unknown は「分からない」で、後段の停止の可否が逆になる。
 CHILDREN="$(oe_hs_children_of "$PREDECESSOR")"; CHILD_RC=$?
@@ -119,6 +120,7 @@ MACHINE="$(
   printf -- '- 前任のペイン: `%s`（tmux server pid `%s`）\n' "$PREDECESSOR" "${SPID:-unknown}"
   printf -- '- 前任の session_id: `%s`\n' "$SID"
   printf -- '- 前任の context%%: %s\n' "$CTX"
+  printf -- '- 前任の拍動の古さ: %s 秒前\n' "$BEAT_AGE"
   printf '\n'
   if [ "$SID" = "unknown" ]; then
     printf '%s\n' '**session_id が引けていない。** pane から逆引きできる sidecar がちょうど1件に'
@@ -162,7 +164,8 @@ MACHINE="$(
 # --- 書き出し（引き継ぎ文書だけを書く） ---
 mkdir -p "$(dirname "$OUT")" 2>/dev/null || { err "置き場を作れません: $(dirname "$OUT")"; exit 2; }
 if [ ! -f "$OUT" ]; then
-  cp "$TEMPLATE" "$OUT" || { err "テンプレートを置けません: ${OUT}"; exit 2; }
+  # 引き継ぎ文書は「会話にしか無かったもの」を載せる。umask 任せにせず最初から絞る。
+  if ! ( umask 077; cp "$TEMPLATE" "$OUT" ); then err "テンプレートを置けません: ${OUT}"; exit 2; fi
   CREATED=1
 else
   CREATED=0
@@ -171,14 +174,17 @@ fi
 # 目印は「在るか」だけでなく「1組だけか」「順序が正しいか」まで見る。
 # 見ないと、end が begin より前にある文書で awk が begin 以降を末尾まで捨てて上書きし、
 # **人が書いた節を復元できない形で壊す**。書き換える前に落とす。
-N_BEGIN="$(grep -cF -- "$MARK_BEGIN" "$OUT" | tr -d ' ')"
-N_END="$(grep -cF -- "$MARK_END" "$OUT" | tr -d ' ')"
+# **検査と置換で同じ規則を使う。** 検査が「行のどこかに在る」で、置換が「行頭に在る」だと、
+# 目印に空白が1つ付いただけで検査を通過し、awk が終わりを見つけられず人が書いた節を
+# 末尾まで消す。どちらも「その行が目印そのものである」に揃える。
+N_BEGIN="$(grep -cxF -- "$MARK_BEGIN" "$OUT" | tr -d ' ')"
+N_END="$(grep -cxF -- "$MARK_END" "$OUT" | tr -d ' ')"
 if [ "$N_BEGIN" != "1" ] || [ "$N_END" != "1" ]; then
   err "機械の節の目印が1組になっていません（${OUT}・begin ${N_BEGIN} 個 / end ${N_END} 個）。手で直してください"
   exit 2
 fi
-L_BEGIN="$(grep -nF -- "$MARK_BEGIN" "$OUT" | head -1 | cut -d: -f1)"
-L_END="$(grep -nF -- "$MARK_END" "$OUT" | head -1 | cut -d: -f1)"
+L_BEGIN="$(grep -nxF -- "$MARK_BEGIN" "$OUT" | head -1 | cut -d: -f1)"
+L_END="$(grep -nxF -- "$MARK_END" "$OUT" | head -1 | cut -d: -f1)"
 if [ -z "$L_BEGIN" ] || [ -z "$L_END" ] || [ "$L_BEGIN" -ge "$L_END" ]; then
   err "機械の節の目印の順序が逆です（${OUT}・begin ${L_BEGIN} 行目 / end ${L_END} 行目）。手で直してください"
   exit 2
@@ -190,15 +196,19 @@ MACHINE_FILE="${OUT}.machine.$$"
 trap 'rm -f "$TMP" "$MACHINE_FILE" 2>/dev/null' EXIT HUP INT TERM
 # 書込みの成否を見る。見ないと、書けていない staging を awk が読んで
 # **機械の節が空の文書を本物に被せる**。
-if ! printf '%s\n' "$MACHINE" >"$MACHINE_FILE"; then
+if ! ( umask 077; printf '%s\n' "$MACHINE" >"$MACHINE_FILE" ); then
   err "機械の節を書き出せませんでした: ${MACHINE_FILE}"
   exit 2
 fi
+( umask 077; : >"$TMP" ) || { err "一時ファイルを作れません: ${TMP}"; exit 2; }
 awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v mf="$MACHINE_FILE" '
-  index($0, b) == 1 { while ((getline line < mf) > 0) print line; close(mf); skip = 1; next }
-  index($0, e) == 1 { skip = 0; next }
+  $0 == b { while ((getline line < mf) > 0) print line; close(mf); skip = 1; next }
+  $0 == e { skip = 0; next }
   skip != 1 { print }
-' "$OUT" >"$TMP" || { err "機械の節を差し替えられませんでした"; exit 2; }
+' "$OUT" >"$TMP"; awk_rc=$?
+# 書いている最中も緩めない（全文が入るので、途中の一時ファイルも読まれてはいけない）。
+chmod 600 "$TMP" 2>/dev/null || true
+[ "$awk_rc" -eq 0 ] || { err "機械の節を差し替えられませんでした"; exit 2; }
 # mv は tmp の権限を持ち込むので、元の文書の権限に揃える（umask で 0600 が 0644 に緩まない）。
 chmod --reference="$OUT" "$TMP" 2>/dev/null \
   || chmod "$(stat -f %Lp "$OUT" 2>/dev/null || printf '644')" "$TMP" 2>/dev/null || true

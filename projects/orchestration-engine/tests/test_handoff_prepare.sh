@@ -83,10 +83,19 @@ mk_transcript "sid-aaa" 0
 ck "一致1件で session_id を返す" "sid-aaa" "$(oe_hs_session_for_pane '%10')"
 ck "その session の context% を返す" "42" "$(oe_hs_context_for_session 'sid-aaa')"
 
-echo "[2] pane 再利用: 同じ pane・同じ server_pid の sidecar が2件 → unknown"
-mk_beat "sid-bbb" "%10" "900" 77
-ck "曖昧なら値を書かない" "unknown" "$(oe_hs_session_for_pane '%10')"
-rm -f "$HB/sid-bbb.json"
+echo "[2] pane 再利用: 同じ pane に複数の世代が貯まっていても、いちばん新しい拍動を採る"
+mk_beat "sid-bbb" "%10" "900" 77 7200
+mk_transcript "sid-bbb" 7200
+ck "古いほうは採らない" "sid-aaa" "$(oe_hs_session_for_pane '%10')"
+# 実測で最も多い pane には7件貯まっていた。件数で unknown にすると、その pane では
+# 交代が永久に始められない（実装SO の指摘）。件数ではなく新しさで決める。
+mk_beat "sid-c1" "%10" "900" 10 9000
+mk_beat "sid-c2" "%10" "900" 11 9100
+mk_beat "sid-c3" "%10" "900" 12 9200
+mk_beat "sid-c4" "%10" "900" 13 9300
+mk_beat "sid-c5" "%10" "900" 14 9400
+ck "7件貯まっても unknown にしない" "sid-aaa" "$(oe_hs_session_for_pane '%10')"
+rm -f "$HB/sid-bbb.json" "$TR/sid-bbb.jsonl" "$HB"/sid-c?.json
 
 echo "[3] server_pid が違う sidecar しか無い → unknown（別世代を掴まない）"
 mk_beat "sid-old" "%11" "111" 90
@@ -241,6 +250,24 @@ fi
 echo "[23] 一時ファイルを残さない"
 ck "tmp が残らない"     "0" "$(find "$WS/.oe" -name '*.tmp.*' 2>/dev/null | grep -c '^' | tr -d ' ')"
 ck "staging が残らない" "0" "$(find "$WS/.oe" -name '*.machine.*' 2>/dev/null | grep -c '^' | tr -d ' ')"
+
+echo "[24] 目印の判定は検査と置換で同じ規則（空白が付いた目印を受理しない）"
+OUT7="$WS/.oe/handoff7.md"
+{ printf '%s\n' '<!-- oe-handoff:machine:begin -->'; printf '%s\n' '人の節 KEEP7'; printf ' %s\n' '<!-- oe-handoff:machine:end -->'; } > "$OUT7"
+before7="$(cat "$OUT7")"
+set +e
+"$OE_HANDOFF" prepare -w "$WS" --out "$OUT7" --predecessor '%10' >/dev/null 2>&1; rc_sp=$?
+set -e
+ck "空白付きの目印は通さない" "2" "$rc_sp"
+ck "人の節を消さない" "$before7" "$(cat "$OUT7")"
+
+echo "[25] 引き継ぎ文書の権限を umask 任せにしない"
+OUT8="$WS/.oe/handoff8.md"
+( umask 022; "$OE_HANDOFF" prepare -w "$WS" --out "$OUT8" --predecessor '%10' >/dev/null 2>&1 ) || true
+ck "新規作成は 600" "600" "$(stat -f %Lp "$OUT8" 2>/dev/null || stat -c %a "$OUT8")"
+
+echo "[26] 拍動の古さを文書に出す（人が判断できるように）"
+ckc "古さの行がある" "$(cat "$OUT")" "前任の拍動の古さ"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

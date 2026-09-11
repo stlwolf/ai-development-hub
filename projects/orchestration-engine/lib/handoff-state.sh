@@ -100,47 +100,67 @@ oe_hs_children_of() {
   done
 }
 
-# pane から session_id を逆引きする。**曖昧なら unknown を返す。**
+# pane から session_id を逆引きする。**いちばん新しい拍動を採り、それが使えるかを確かめる。**
 #
 # sidecar は掃除されないので、同じ pane 番号の別世代が貯まる（実測で pane を持つ sidecar
-# 198 件に対し異なる番号は 171 個）。pane だけで引くと古い世代を掴む。だから
-#   (1) いまの tmux server の pid が一致するものだけに絞り
-#   (2) 絞った結果がちょうど1件のときだけ値を返す
-# とする。0 件でも複数でも unknown で、**誤った session_id を書くくらいなら書かない**。
+# 198 件に対し異なる番号は 171 個。最も多い番号では7件が同じ pane に貯まっていた）。
+#
+# 最初は「現 server の一致がちょうど1件のときだけ採る」としたが、**それでは7件貯まった pane が
+# 永久に unknown になり、交代そのものが始められない**（実装SO の指摘）。件数で決めるのをやめ、
+# 次の3つで決める。
+#   (1) いまの tmux server の pid が一致するものだけに絞る
+#   (2) そのうち拍動がいちばん新しいものを採る（死んだ世代の拍動は止まっているので更新されない）
+#   (3) 採った候補の拍動と transcript が、どちらも鮮度の窓の中にあることを確かめる
+# どれかで決められなければ unknown を返す。**誤った session_id を書くくらいなら書かない。**
+#
+# 残る穴（塞げていないので明記する）: pane が短い間に再利用され、**新しいセッションがまだ一度も
+# 拍動を書いていない**あいだは、旧世代の拍動が唯一の候補として残る。それが窓の中なら旧世代の
+# session_id を返す。セッションが自分の id を名乗る経路が無いかぎり、この窓は閉じない。
 oe_hs_session_for_pane() {
-  local pane="${1:-}" spid hit count=0 sid=""
+  local pane="${1:-}" spid best_sid="" best_ts=-1 ts sid f
   [ -n "$pane" ] || { printf 'unknown'; return 0; }
   [ -n "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
   [ -d "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
   command -v jq >/dev/null 2>&1 || { printf 'unknown'; return 0; }
   spid="$(oe_hs_server_pid)"
   [ -n "$spid" ] || { printf 'unknown'; return 0; }
-  local f
   for f in "$OE_HEARTBEAT_DIR"/*.json; do
     [ -f "$f" ] || continue
-    hit="$(jq -r --arg p "$pane" --arg s "$spid" \
-      'select((.pane // "") == $p and ((.server_pid // "") | tostring) == $s) | "hit"' "$f" 2>/dev/null)" || continue
-    [ "$hit" = "hit" ] || continue
-    count=$((count + 1))
-    sid="$(basename "$f" .json)"
+    ts="$(jq -r --arg p "$pane" --arg s "$spid" \
+      'select((.pane // "") == $p and ((.server_pid // "") | tostring) == $s) | (.ts // empty)' "$f" 2>/dev/null)" || continue
+    [ -n "$ts" ] || continue
+    case "$ts" in ''|*[!0-9]*) continue ;; esac
+    if [ "$ts" -gt "$best_ts" ]; then best_ts="$ts"; best_sid="$(basename "$f" .json)"; fi
   done
-  if [ "$count" -ne 1 ]; then printf 'unknown'; return 0; fi
-  # **1件に絞れただけでは、それが「いまの前任」だとは言えない。**
-  # pane が短い間に再利用され、新しいセッションがまだ拍動を書いていない場合、旧世代の
-  # sidecar が唯一の候補として残る。だから拍動そのものの鮮度も見る。窓は実測（統括の拍動は
-  # 2時間古くなることがある）より広く取り、OE_HS_BEAT_MAX_AGE_SEC で調整できるようにする。
-  local bts now age
-  bts="$(jq -r '.ts // empty' "${OE_HEARTBEAT_DIR}/${sid}.json" 2>/dev/null)" || bts=""
-  if [ -z "$bts" ]; then printf 'unknown'; return 0; fi
+  [ -n "$best_sid" ] || { printf 'unknown'; return 0; }
+  # 拍動の鮮度。窓は実測（統括の拍動は2時間古くなることがある）より広く取る。
+  local now age
   now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
-  age=$(( now - bts ))
-  if [ "$age" -gt "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ]; then printf 'unknown'; return 0; fi
-  # **拍動だけでは足りない。** sidecar は掃除されないので、pane が再利用され、その番号の
-  # 古い sidecar が1件だけ残っている状況では、上の絞り込みを通過してしまう。
+  age=$(( now - best_ts ))
+  [ "$age" -le "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ] || { printf 'unknown'; return 0; }
   # この値の用途は「停止しても claude --resume で会話を開き直せる」ことの担保なので、
-  # 担保の実体（transcript が在り、最近書かれていること）を直接確かめる。
-  if ! oe_hs_transcript_usable "$sid"; then printf 'unknown'; return 0; fi
-  printf '%s' "$sid"
+  # 担保の実体（transcript が在り、最近書かれていること）も直接確かめる。
+  oe_hs_transcript_usable "$best_sid" || { printf 'unknown'; return 0; }
+  printf '%s' "$best_sid"
+}
+
+# pane の拍動の古さ（秒）。取れなければ unknown。文書に出して人が判断できるようにする。
+oe_hs_beat_age_for_pane() {
+  local pane="${1:-}" spid best_ts=-1 ts f now
+  if [ -z "$pane" ] || [ -z "$OE_HEARTBEAT_DIR" ] || [ ! -d "$OE_HEARTBEAT_DIR" ]; then printf 'unknown'; return 0; fi
+  command -v jq >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  spid="$(oe_hs_server_pid)"
+  [ -n "$spid" ] || { printf 'unknown'; return 0; }
+  for f in "$OE_HEARTBEAT_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    ts="$(jq -r --arg p "$pane" --arg s "$spid" \
+      'select((.pane // "") == $p and ((.server_pid // "") | tostring) == $s) | (.ts // empty)' "$f" 2>/dev/null)" || continue
+    case "$ts" in ''|*[!0-9]*) continue ;; esac
+    [ "$ts" -gt "$best_ts" ] && best_ts="$ts"
+  done
+  [ "$best_ts" -ge 0 ] || { printf 'unknown'; return 0; }
+  now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
+  printf '%s' "$(( now - best_ts ))"
 }
 
 # session_id の transcript が在って、最近書かれているか。
