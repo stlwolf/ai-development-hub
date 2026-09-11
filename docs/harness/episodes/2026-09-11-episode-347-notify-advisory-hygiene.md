@@ -3,7 +3,26 @@ id: "01M28491PJBMVBPZFKJ19E4KKZ"
 title: "#347 notify.sh の advisory 衛生3件"
 date: 2026-09-11
 type: episode
-status: draft
+status: stable
+promotion:
+  - subject: "hook 側と engine 側で HOME の可否の基準が揃っていない"
+    verdict: unknown
+    ref: "本文: Step 9: ゲート4（実装SO + Copilot）"
+  - subject: "借りてきた述語は写す / 写さないの2値でなく成分に割って要否を決める"
+    verdict: not-required
+    ref: "本文: Step 4: 設計SO（ゲート2・弱・2レーン）で3つの判断が覆った"
+  - subject: "走査は当たっていたのに走査結果の読み取りで取りこぼした"
+    verdict: unknown
+    ref: "本文: Step 8: 回帰確認（証拠を表で残す）"
+  - subject: "検証の足場が本番と違う環境を作ってしまう"
+    verdict: not-required
+    ref: "本文: closure（ゲート5・マージ前）"
+  - subject: "借りてきたガードは判定が同じでも置き場の条件まで同じとは限らない"
+    verdict: not-required
+    ref: "本文: Step 8: 回帰確認（証拠を表で残す）"
+  - subject: "裁定に従うこと自体が承認時の baseline を動かす場合がある"
+    verdict: required
+    ref: "本文: Step 5: ゲート3の裁定と baseline の張り直し"
 related:
   - type: derived_from
     ref: "https://github.com/stlwolf/ai-development-hub/issues/347"
@@ -302,3 +321,58 @@ claude レーンだけが挙げた指摘も2つ取り込んだ。コード中の
 `jq` の下限の記述は、両レーンが独立に jq のソース（`jq-1.4` の `jv_aux.c` と `main.c`、`jq-1.5` の `main.c`）まで当てて正確だと確認した。claude レーンは `."last-assistant-message"` と `//` の構文も `jq-1.4` の `parser.y` にあることまで当てている。置き場については claude レーンが「版の下限は依存の話で advisory 安全性とは関係が無い」と言うので、`notify.sh` 節の中に「依存」の小節を作って移した。ゲート3の裁定（「前提条件」節には書かない）とは衝突しない。
 
 **レーンの主張のうち、自分で当て直したもの**: 述語が通す値の一覧（実行して確認）、シンボリックリンク2通りの実害（実行して再現）、8本の `HOME` 参照位置（grep）、`~/` と `${!` の出現（grep）、`/private/tmp` が `drwxrwxrwt` であること（`ls -ld`）。
+
+## closure（ゲート5・マージ前）
+
+tier は **heavy**。実行中に撤回（DJ-2 が設計SO で覆り、ゲート3で足したガードに Copilot が穴を見つけた）があり、品質ゲート目的で `so-compare` を2回明示起動し、棄却した選択肢のある設計判断があり、昇格候補もある。
+
+### Context / なぜ
+
+冒頭「なぜこの作業が始まったか」節にある。`notify.sh` は advisory なのに、環境の事情で落ちる・雑音を出す箇所が3つ残っていた。#343 の実装子が範囲外として surface し、gate 4 の codex レーンが別 issue にすべきと言ったことから #347 が起票された。
+
+### 次の消費者
+
+- **`canonical/hooks/scripts/` を次に触る人**（本文: 「Step 8: 回帰確認（証拠を表で残す）」の足場の節）。hooks にテストの置き場が無いので、回帰を見るには足場を組み直すことになる。何を組んだかが書いてある。
+- **engine の `_oe_home_usable` の穴を閉じる人**（本文: 「Step 9: ゲート4（実装SO + Copilot）」）。同じ述語が2箇所にあり、engine 側は判定のあと `mkdir -p` まで進む。
+- **`hfr_appendable` を他所へ写そうとする人**（本文: 「Step 8」の追記先6通りの節）。判定を写しても置き場の条件は写らない。
+
+### follow-up の行き先
+
+| 残課題 | 行き先 |
+|--------|--------|
+| engine の `_oe_home_usable` が `///` ・ `/.` ・ `/..` ・ `/./` を通す（engine は `mkdir -p` まで進むので実害が大きい） | **Issue を起票する**（本 PR のマージ後・親 / owner の判断を仰ぐ） |
+| `notify.sh` のデバッグログの置き場を `${HOME}` 配下へ移す（world-writable な `/tmp` をやめる） | **同じ Issue に含める**（述語が使えるかの判定はもう手元にあるので、同じ単位で扱える） |
+| `block-destructive.sh` の `hfr_appendable` にも同じシンボリックリンクの穴がある | **同じ Issue に含める**（置き場が `${HOME}` 配下なので優先度は低い） |
+| `canonical/hooks/` にテストの置き場が無い | **追わない**。置き場を作るのは規約の決定で、この単位では決められない。必要になった人が起票する |
+| stdin が閉じられない場合に `cat` が戻らない | **追わない**（推測のまま。ハーネスが実際にそう起動する証拠が出たら起票する） |
+| `tr` や `basename` が無いときの stderr、README の「外部呼び出しは全て `|| true`」が厳密でない | **追わない**（通常の macOS では起きない） |
+| `session-name.sh` と `oe-prompt-receipt.sh` のリダイレクト順 | **追わない**（書き先が通常ファイルで、`/dev/tty` のような「guard を通るのに開けない」相手ではない） |
+
+### 昇格の判定
+
+frontmatter の `promotion` に1判定 = 1エントリで置いた。印は5つ置いてあり、印の無い判断を1つ closure で足した（baseline の件）。
+
+### negative knowledge の収穫
+
+**収穫なし。** 候補は2つあったが、どちらも既存 item に着地済みだった。
+
+- 「足場が本番と違う環境を作る」は `01M00KCCHNMFPHP5HAGX2DZ1MK` の行動変更 (2)「対照の足場は、測りたい対象と同じ場所・同じ解決規則の下に置く。複製を別の場所へ置くと、足場自身が持つパス解決や環境依存が新しい変数として入る」がそのまま当たる。新設せず観測に足した。
+- 「借りたガードは置き場の条件まで同じとは限らない」は `01M1272GA8CRXQKQWMF005NHCF`（借り物が何をしていないかを確かめよ）の一段深い形なので、同じく観測に足した。
+
+### 観測の書き戻し
+
+注入された item は3つで、id は次のとおりである（brief は作業層なので消える。分母を復元できるのはこの行だけである）。
+
+- `01M1272GA8CRXQKQWMF005NHCF`（借り物が何をしていないかを確かめよ）→ `followed`
+- `01M07QDKE73BTK0Q3K90FE4G9T`（走査の対照はパターンの外から取れ）→ `followed`
+- `01M00KCCHNMFPHP5HAGX2DZ1MK`（期待した色が出た理由まで確かめよ）→ `followed`
+
+3件とも `validate-knowledge` が通ることを確かめた。`landing: guard-candidate` の `01KZKBS28N0D8JF7DKYF9MW56C`（既定動作を書き換えるスクリプトにガードを足したときの挙動不変の確認）は自然文としては注入されていないが、内容は当たるので plan の検証 step に独立に組み込んだ（本文: 「Step 7」の挙動不変の確認）。
+
+### evidence anchor
+
+本文の表は揮発する一時領域（scratchpad）で測ったものだが、**数値と結論は本文へ転記済み**で、一時領域を開かなくても読める。足場の中身も文章で書いてある。設計SO と実装SO の生出力も同じ一時領域にあるが、指摘の中身と対応は本文（「Step 4」「Step 9」）に転記した。
+
+### status
+
+`stable` / 達成。issue #347 の受け入れ条件6つすべてに対応がある（plan の「受け入れ条件との対応」表）。ゲート3で足した1件と、Copilot・実装SO で見つかった追加の1件も入っている。マージは owner が判断する。
