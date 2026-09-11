@@ -137,3 +137,33 @@ cockpit を早めに整備し運用に回して改善を続ける。
 - 段階1（PR-C = board schema）の committed 正本: 本 decision（§2 = PR-C 設計 / §4 = Q8 置き場・粒度）+ 実装記録 `projects/orchestration-engine/docs/episodes/2026-07-10-episode-238-board-schema-validator.md`。上位アーキ全体は `projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md`（#250 で昇格元 working plan `.oe/ref-plan-stage1.md` を (b) 張替）
 - validator: `projects/orchestration-engine/scripts/validate-board.sh`
 - 踏襲した sibling validator: `projects/orchestration-engine/scripts/validate-envelope.sh` / `projects/orchestration-engine/scripts/validate-session-state.sh`
+
+## 9. amendment — 実 board は当面 legacy の自由記述を続ける（#390 から追記・2026-09-11）
+
+**本節は §3 の schema 契約を1文字も変えない。** 変えるのは「実 board をいつ移行するか」についての位置づけで、**当面は移行せず legacy の自由記述を続ける**ことを明記する。owner 裁定（2026-09-11・#390 のゲート3）による。
+
+### なぜ明記が要るのか
+
+§7 は schema の adoption を「board 保守側の作業で PR-C の scope 外」と書いた。**scope 外と書いただけでは「いつか誰かがやる」に見える。** #390 で統括の交代を verb にするにあたり、その verb は board の `現統括:` 行を機械的に読み書きする。**移行しないまま verb を作ると、決まっている形とは違う形を仕組みとして固定することになる。** どちらを選んだのかを記録に残さないと、後から読んだ人には「移行を忘れている」と「移行しないと決めた」の区別がつかない。
+
+### 実測（2026-09-11）
+
+- 実 board は 389,999 バイト。1行目が `# START HERE — cockpit 統括 succession board` という見出しで、**YAML frontmatter を持たない。**
+- `scripts/validate-board.sh` を実 board に当てると `WARN: YAML frontmatter block not found` の1件で `INVALID (1 issue; advisory)`、exit code は `1` である。
+- `現統括:` の宣言は line 3 にあり、その1行だけで 5,831 バイト、pane の表記が 42 個含まれる。
+
+### 決定
+
+- **実 board は当面いまの自由記述の形を続ける。** #390 の verb は legacy の `現統括:` 行を読み書きの対象として実装する。
+- **したがって `validate-board.sh` は当面 warn を1件出し続ける。** これは想定内であり、壊れた印ではない。**warn の件数が1件から増えたときだけ、board を壊したと読む。**（#390 の実装はこの差分をゲートに使う。）
+- `現統括:` 行を機械で書く側が守る不変条件は、schema ではなく**現行の読み取り実装**が決める。`bin/oe-vitals` は `grep -m1 -- '現統括:'` で最初の宣言行を取り、`sed -E 's/.*現統括//'`（**貪欲**）で行内の最後の marker まで落とし、そのあと最初の `%NNN` を採る。**条件は「`現統括` の語が行内に1回」ではなく、「最後の marker より後ろで、現統括の `%NNN` が他の `%NNN` より先に来る」ことである。**
+
+### なぜ移行を今やらないのか
+
+- 実 board は稼働中の実ファイルで、常駐の見張り（`oe-vitals`）が 15 分ごとに読んでいる。390KB の実ファイルの形を変える作業は、それ自体で1単位になる。
+- #390 と混ぜると、交代の verb が動いたのか board の移行が効いたのかを切り分けられなくなり、両方の完了判定が濁る。
+
+### 移行するときに何が起きるか（先に書いておく）
+
+- 移行後は frontmatter の `現統括` が正本になるので、`bin/oe-vitals` の解決と #390 の verb の書き込みの**両方**を同時に切り替える必要がある。片方だけ切り替えると、見張りが前任を見続けるか、書き込みが正本でない場所へ落ちる。
+- したがって移行は「board を書き換える作業」ではなく「board と読み手と書き手を同時に切り替える作業」である。移行を起票するときはその単位で切ること。
