@@ -19,7 +19,7 @@
 # 置き場の env（既存の verb と同じノブを共有する）:
 #   OE_DELEGATE_STATE_DIR   登記（既定 ~/.claude/state/oe-delegate）
 #   OE_HEARTBEAT_DIR        拍動 sidecar（既定 ~/.claude/state/oe-heartbeat・oe-vitals と共有）
-#   OE_TRANSCRIPT_ROOT      transcript の置き場（既定 ~/.claude/projects）
+#   OE_TRANSCRIPT_DIR       transcript の置き場（既定 ~/.claude/projects・oe-selfcheck と共有）
 #   OE_HS_SERVER_PID        tmux server pid の上書き（主にテストの決定論化用）
 #   OE_HS_NOW_EPOCH         now の上書き（主にテストの決定論化用）
 #   OE_HS_RESUME_MAX_AGE_SEC  transcript を「開き直せる」と見なす鮮度の窓（既定 86400 秒）
@@ -83,17 +83,25 @@ oe_hs_children_of() {
   # 生存判定を1回で引く。引けなければ「数えられない」として失敗する（0 件と言わない）。
   panes="$(oe_hs_alive_panes)" || return 2
   [ -d "$OE_DELEGATE_STATE_DIR" ] || return 0
-  local f pane label
+  # 置き場が読めない・辿れないときも「子0件」にしない。glob が展開されずループが回らないだけで、
+  # 「登記を見たが子は居なかった」と区別がつかなくなる。
+  [ -r "$OE_DELEGATE_STATE_DIR" ] && [ -x "$OE_DELEGATE_STATE_DIR" ] || return 2
+  local f pane label parent_of
   # 登記のファイル名は "<server_pid>_<pane>" の非英数を _ にしたもの。**現 server の分だけ見る。**
   # 旧 server の残骸は pane 番号が再利用されているので、混ぜると無関係なペインを子に数える。
   for f in "$OE_DELEGATE_STATE_DIR/${spid}_"*.json; do
     [ -f "$f" ] || continue
     # 壊れて読めない登記を黙って飛ばさない。**それが唯一の生きた子だったときに0件へ倒れる。**
-    # 読めないものが1つでもあれば「数えられない」として失敗する。
-    if ! pane="$(jq -r --arg p "$parent" 'select(.parent_pane == $p) | .pane // empty' "$f" 2>/dev/null)"; then
+    # JSON として壊れている場合と、必須の項目が欠けている（または文字列でない）場合の両方を
+    # 「数えられない」として扱う。親が違うだけの登記は正当なので、それとは区別する。
+    if ! parent_of="$(jq -r 'if (.parent_pane | type) == "string" and (.pane | type) == "string"
+                             then .parent_pane else "\u0000invalid" end' "$f" 2>/dev/null)"; then
       return 2
     fi
-    [ -n "$pane" ] || continue
+    case "$parent_of" in *invalid) return 2 ;; esac
+    [ "$parent_of" = "$parent" ] || continue
+    pane="$(jq -r '.pane' "$f" 2>/dev/null)" || return 2
+    [ -n "$pane" ] || return 2
     printf '%s\n' "$panes" | grep -qxF -- "$pane" || continue
     label="$(jq -r '.label // ""' "$f" 2>/dev/null)" || label=""
     printf '%s %s\n' "$pane" "$label"
@@ -117,7 +125,7 @@ oe_hs_children_of() {
 # 拍動を書いていない**あいだは、旧世代の拍動が唯一の候補として残る。それが窓の中なら旧世代の
 # session_id を返す。セッションが自分の id を名乗る経路が無いかぎり、この窓は閉じない。
 oe_hs_session_for_pane() {
-  local pane="${1:-}" spid best_sid="" best_ts=-1 ts sid f
+  local pane="${1:-}" spid best_sid="" best_ts=-1 ts f tie=0
   [ -n "$pane" ] || { printf 'unknown'; return 0; }
   [ -n "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
   [ -d "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
@@ -130,9 +138,16 @@ oe_hs_session_for_pane() {
       'select((.pane // "") == $p and ((.server_pid // "") | tostring) == $s) | (.ts // empty)' "$f" 2>/dev/null)" || continue
     [ -n "$ts" ] || continue
     case "$ts" in ''|*[!0-9]*) continue ;; esac
-    if [ "$ts" -gt "$best_ts" ]; then best_ts="$ts"; best_sid="$(basename "$f" .json)"; fi
+    if [ "$ts" -gt "$best_ts" ]; then
+      best_ts="$ts"; best_sid="$(basename "$f" .json)"; tie=0
+    elif [ "$ts" -eq "$best_ts" ]; then
+      # epoch 秒なので同率は起こりうる。同率のときは「どの世代か決められない」ので
+      # 先に見つけたほうを黙って採らない。
+      tie=1
+    fi
   done
   [ -n "$best_sid" ] || { printf 'unknown'; return 0; }
+  [ "${tie:-0}" -eq 0 ] || { printf 'unknown'; return 0; }
   # 拍動の鮮度。窓は実測（統括の拍動は2時間古くなることがある）より広く取る。
   local now age
   now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
@@ -169,7 +184,9 @@ oe_hs_beat_age_for_pane() {
 oe_hs_transcript_usable() {
   local sid="${1:-}" root age now mtime f
   [ -n "$sid" ] && [ "$sid" != "unknown" ] || return 1
-  root="${OE_TRANSCRIPT_ROOT:-}"
+  # 置き場のノブは engine の既存のもの（oe-selfcheck と同じ OE_TRANSCRIPT_DIR）を尊重する。
+  # ここだけ別のノブを見ると、非標準の置き場を指している環境で本物の transcript を見落とす。
+  root="${OE_TRANSCRIPT_DIR:-}"
   if [ -z "$root" ]; then
     _oe_home_usable || return 1
     root="${HOME}/.claude/projects"
@@ -177,7 +194,9 @@ oe_hs_transcript_usable() {
   [ -d "$root" ] || return 1
   f="$(find "$root" -maxdepth 2 -name "${sid}.jsonl" -type f 2>/dev/null | head -1)"
   [ -n "$f" ] || return 1
-  mtime="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" || return 1
+  # `date -r <file> +%s` は BSD / GNU どちらでも使える（oe-selfcheck の注記と同じ理由）。
+  # `stat -f %m` は GNU では filesystem の情報を返して**成功してしまう**ので使わない。
+  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
   [ -n "$mtime" ] || return 1
   now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
   age=$(( now - mtime ))
@@ -203,8 +222,13 @@ oe_hs_watchdogs() {
     printf 'unknown launchctl-not-found\n'
     return 0
   fi
-  local out
-  out="$(launchctl list 2>/dev/null | awk '$3 ~ /oe-/ {print $3" "$2}')" || out=""
+  local raw out
+  # `launchctl list` 自体が失敗したことを「見張り0本」に化かさない。
+  if ! raw="$(launchctl list 2>/dev/null)"; then
+    printf 'unknown launchctl-call-failed\n'
+    return 0
+  fi
+  out="$(printf '%s\n' "$raw" | awk '$3 ~ /oe-/ {print $3" "$2}')" || out=""
   if [ -z "$out" ]; then
     printf 'none registered\n'
   else

@@ -50,7 +50,7 @@ export OE_HEARTBEAT_DIR="$HB"
 export OE_DELEGATE_STATE_DIR="$REG"
 export OE_HS_SERVER_PID="900"
 TR="$_TMP_DIR/transcripts"; mkdir -p "$TR"
-export OE_TRANSCRIPT_ROOT="$TR"
+export OE_TRANSCRIPT_DIR="$TR"
 NOW_EPOCH="$(date +%s)"
 export OE_HS_NOW_EPOCH="$NOW_EPOCH"
 
@@ -70,9 +70,12 @@ mk_child() { # mk_child <pane> <parent_pane> <label> [server_pid]
     '{pane:$p, label:$l, workspace:"", parent_pane:$par, role:"child"}' > "$REG/${key}.json"
 }
 mk_transcript() { # mk_transcript <sid> [age_sec]
-  local age="${2:-0}"
+  # mtime の設定は perl の utime で行う。`date -r <epoch>` は BSD 専用（GNU では
+  # 第1引数がファイル名）なので、GNU 環境では黙って現在時刻へ落ちて鮮度テストが
+  # 何も検証しなくなる。
+  local t=$(( NOW_EPOCH - ${2:-0} ))
   printf '{"type":"x"}\n' > "$TR/$1.jsonl"
-  touch -t "$(date -r "$(( NOW_EPOCH - age ))" '+%Y%m%d%H%M.%S' 2>/dev/null || date '+%Y%m%d%H%M.%S')" "$TR/$1.jsonl" 2>/dev/null || true
+  perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1] or die' "$t" "$TR/$1.jsonl"
 }
 
 source "$PROJECT_DIR/lib/handoff-state.sh"
@@ -268,6 +271,38 @@ ck "新規作成は 600" "600" "$(stat -f %Lp "$OUT8" 2>/dev/null || stat -c %a 
 
 echo "[26] 拍動の古さを文書に出す（人が判断できるように）"
 ckc "古さの行がある" "$(cat "$OUT")" "前任の拍動の古さ"
+
+echo "[27] 拍動の ts が同率なら「決められない」として unknown"
+mk_beat "sid-t1" "%13" "900" 10 100
+mk_beat "sid-t2" "%13" "900" 11 100
+mk_transcript "sid-t1" 0; mk_transcript "sid-t2" 0
+ck "同率は曖昧扱い" "unknown" "$(oe_hs_session_for_pane '%13')"
+rm -f "$HB/sid-t1.json" "$HB/sid-t2.json" "$TR/sid-t1.jsonl" "$TR/sid-t2.jsonl"
+
+echo "[28] 登記の置き場が読めないときは「子0件」にしない"
+UNREAD="$_TMP_DIR/unreadable"; mkdir -p "$UNREAD"; chmod 000 "$UNREAD"
+set +e
+( OE_DELEGATE_STATE_DIR="$UNREAD" oe_hs_children_of '%10' >/dev/null 2>&1 ); rc_unread=$?
+set -e
+chmod 755 "$UNREAD"
+ck "読めない置き場は失敗を返す" "2" "$rc_unread"
+
+echo "[29] 必須の項目が欠けた登記も「数えられない」扱い"
+printf '{"label":"no-pane","parent_pane":"%%10"}\n' > "$REG/$(reg_key '%14').json"
+set +e
+oe_hs_children_of '%10' >/dev/null 2>&1; rc_missing=$?
+set -e
+ck "pane が無い登記は失敗を返す" "2" "$rc_missing"
+rm -f "$REG/$(reg_key '%14').json"
+
+echo "[30] transcript の置き場は既存のノブ（OE_TRANSCRIPT_DIR）で動く"
+ALT_TR="$_TMP_DIR/alt-transcripts"; mkdir -p "$ALT_TR"
+mk_beat "sid-alt" "%15" "900" 20 10
+printf '{"type":"x"}\n' > "$ALT_TR/sid-alt.jsonl"
+perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1] or die' "$NOW_EPOCH" "$ALT_TR/sid-alt.jsonl"
+ck "別の置き場を指せば引ける" "sid-alt" "$(OE_TRANSCRIPT_DIR="$ALT_TR" oe_hs_session_for_pane '%15')"
+ck "既定の置き場には無いので unknown" "unknown" "$(oe_hs_session_for_pane '%15')"
+rm -f "$HB/sid-alt.json"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
