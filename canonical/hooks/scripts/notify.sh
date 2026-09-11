@@ -119,17 +119,19 @@ _notify_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) r
 if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.notify-hook-debug" ]]; }; then
   printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
     "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
-    >> /tmp/notify-hook.log 2>/dev/null || true
+    2>/dev/null >> /tmp/notify-hook.log || true
 fi
 
 # --- 配信 ---
+# リダイレクトは左から右へ処理されるので、2>/dev/null は書き先のリダイレクトより前に置く。
+# 後ろに置くと、書き先が開けなかったときの診断が advisory の stderr へ漏れる（#347）。
 delivered=0
 
 if [[ -n "${TMUX:-}" && -n "$pt" && -w "$pt" ]]; then
   # tmux: ペイン TTY へ DCS passthrough（内側 ESC を二重化、終端は ESC + \134=backslash）
-  printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" > "$pt" 2>/dev/null && delivered=1
+  printf '\033Ptmux;\033\033]777;notify;%s;%s\007\033\134' "$title" "$body" 2>/dev/null > "$pt" && delivered=1
 elif [[ -z "${TMUX:-}" && -w /dev/tty ]]; then
-  printf '\033]777;notify;%s;%s\007' "$title" "$body" > /dev/tty 2>/dev/null && delivered=1
+  printf '\033]777;notify;%s;%s\007' "$title" "$body" 2>/dev/null > /dev/tty && delivered=1
 fi
 
 # フォールバック（非 WezTerm / 非 tmux / headless 用）
