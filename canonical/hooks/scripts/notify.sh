@@ -115,10 +115,14 @@ body="$(printf '%s' "$body" | tr -d '\033\007;' | tr '\n\r' '  ')"
 _notify_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 # 素の $HOME は set -u の下で未設定だとここでシェルごと終了する（advisory の契約違反）。
-# 文を分けるのは [[ A || B ]] の短絡に頼らず、B 側で可否と存在を別々に見るためである。
+# 文を分けるのは短絡をやめるためではない（新しい形も || と && の短絡に頼っている）。
+# 素の ${HOME} の展開を条件式の外へ出し、可否の判定が偽なら展開に到達させないためである。
 if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.notify-hook-debug" ]]; }; then
   # 追記先が「存在するのに通常ファイルでない」なら触らない（止める側3本の hfr_appendable と
-  # 同じ扱い・block-destructive.sh）。FIFO への >> は reader が現れるまで open(2) でブロックし、
+  # 同じ判定・block-destructive.sh）。ただし置き場の条件は向こうより悪い。向こうの追記先は
+  # ${HOME}/.claude/state/hook-firing で利用者が持つディレクトリだが、こちらは world-writable な
+  # /tmp なので、他の uid が先回りできる前提が実際に成り立つ。
+  # FIFO への >> は reader が現れるまで open(2) でブロックし、
   # サブシェル隔離では解けない。/tmp は誰でも書けるので先に FIFO として作られる経路があり、
   # フックが止まるとハーネスのタイムアウトまでセッションが待たされる（雑音より重い）。
   # シンボリックリンクは -L で別に弾く。-f はリンクを辿るので通常ファイルへのリンクが通り、
