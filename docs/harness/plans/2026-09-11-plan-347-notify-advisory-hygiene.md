@@ -159,7 +159,7 @@ DJ-4 の後半である。値を書かない1行なので害は小さいと見�
 
 - [ ] `canonical/hooks/scripts/notify.sh` に `_notify_home_usable` を足し、デバッグ判定を DJ-2 の形へ置き換える（`notify-hook-debug` で検索して当てる。行番号で指さない）
 - [ ] `shellcheck canonical/hooks/scripts/notify.sh` が clean
-- [ ] `HOME` 4通り（未設定 / 空文字 / `/` / `//` / 相対 / 通常）と `NOTIFY_DEBUG` の有無の組み合わせで、終了コードが 0・stdout が空・stderr が空
+- [ ] `HOME` 6通り（未設定 / 空文字 / `/` / `//` / 相対 / 通常）と `NOTIFY_DEBUG` の有無の組み合わせで、終了コードが 0・stdout が空・stderr が空
 - [ ] **陽性対照（DJ-6）**: 制御端末なしの足場で `env -u HOME` で起動し、偽の `terminal-notifier` の記録に title と body が現れる
 - [ ] **同じものが届いた確認**: `HOME` 設定時の記録と、`HOME` 未設定時の記録が一致する
 - [ ] **`/` を見に行かない確認**: `HOME=/`・`HOME=//`・`HOME=""` の3通りで、`bash -x` のトレースに `.notify-hook-debug` を見に行く行が現れない

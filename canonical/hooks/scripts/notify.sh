@@ -121,8 +121,11 @@ if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.noti
   # 同じ扱い・block-destructive.sh）。FIFO への >> は reader が現れるまで open(2) でブロックし、
   # サブシェル隔離では解けない。/tmp は誰でも書けるので先に FIFO として作られる経路があり、
   # フックが止まるとハーネスのタイムアウトまでセッションが待たされる（雑音より重い）。
+  # シンボリックリンクは -L で別に弾く。-f はリンクを辿るので通常ファイルへのリンクが通り、
+  # 壊れたリンクは -e が偽になって「無い」側へ回り、>> がリンク先を作る。どちらも /tmp から
+  # 任意のパスへ追記させる経路になる（実測で両方とも再現・Copilot 指摘）。
   dbg_log=/tmp/notify-hook.log
-  if [[ ! -e "$dbg_log" || -f "$dbg_log" ]]; then
+  if [[ ! -L "$dbg_log" && ( ! -e "$dbg_log" || -f "$dbg_log" ) ]]; then
     printf '%s tool=%s mode=%s repo=%s branch=%s loc=%s tmux=%s\n' \
       "$(date '+%H:%M:%S' 2>/dev/null || echo '?')" "$tool" "$mode" "$repo" "$branch" "$loc" "${TMUX:+yes}" \
       2>/dev/null >> "$dbg_log" || true
