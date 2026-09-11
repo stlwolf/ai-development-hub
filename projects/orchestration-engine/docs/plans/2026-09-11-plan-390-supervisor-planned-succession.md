@@ -19,6 +19,12 @@ related:
   - type: design_context
     ref: "projects/orchestration-engine/docs/discussions/2026-07-31-discussion-290-canon-verification-exploration.md"
     reason: "自己申告の弱読み（owner 裁定）と、消費時検証が反証を生き残ったことの出典"
+  - type: design_context
+    ref: "projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md"
+    reason: "board に frontmatter の 鮮度 / 現統括 / succession を要求する契約。実物の board は従っていないので、本 plan は整合を owner 判断へ出している"
+  - type: design_context
+    ref: "projects/orchestration-engine/docs/decisions/2026-09-11-decision-watchdog-outside-session.md"
+    reason: "常駐の見張りの置き場と、oe-selfcheck の watchdog-freshness が3値で返す理由。take がこの検査をどう読むかの前提"
   - type: derived_from
     ref: "projects/orchestration-engine/docs/episodes/2026-09-11-episode-390-supervisor-planned-succession.md"
     reason: "この plan を作る過程の記録。実測値と探索の軌跡はそちらにある"
@@ -100,7 +106,7 @@ so:
 1. `oe-register root --force --label cockpit` を自ペインで実行する。
 2. board の `現統括:` 行を自分の pane・世代・日付へ張り替える。系譜の散文はそのまま残す。
 3. **張替の直後に、`oe-vitals` と同じ解決規則で読み直し、自分の pane が返ることを検算する。**
-4. `oe-selfcheck` を呼んで見張りの生存（watchdog-freshness）を確かめる。
+4. 見張りの生存を確かめる。**`oe-selfcheck` の終了コードで判定しない。** 全検査を一括で走らせて broken が1つでもあれば 1 を返す作りなので、いま `screen-marker` が broken である以上、終了コードは常に 1 になる。[verified] `--json` を読み、見たい検査の行だけを判定する。あわせて、`watchdog-freshness` が見ているのは `oe-confirm` の最終走査であって `oe-vitals` ではない [verified] ので、`oe-vitals` の登録と最終走査は別に確かめる。
 5. succession イベントを1本 emit する（DJ-5）。
 6. できたことと、できなかったことを表示する。
 
@@ -113,7 +119,7 @@ so:
 issue 本文の設計の骨1は、後継が席を取りに行く理由を「席を見分ける材料は後継のプロセスの中にしか存在しない」と書いている。**この理由は実測と合わない。** 設計SO の指摘を受けて3経路を自分で確かめ、3つとも成立した。
 
 - 拍動 sidecar は `~/.claude/state/oe-heartbeat/<session_id>.json` で、ファイル名が session_id、本文に pane が入る。ディレクトリを読めば pane から session_id を引ける。[verified]
-- `lib/spawn.sh` は新しい pane の ID を `OE_SPAWN_PANE_ID` に受けるので、委譲で後継を spawn するなら前任は後継の pane を先に持つ。[verified]
+- `bin/oe-delegate` は `tmux split-window -P -F "#{pane_id}"` で子の pane ID を受け取る。委譲で後継を spawn するなら前任は後継の pane を先に持つ。[verified]（設計SO の指摘で引用先を訂正した。`lib/spawn.sh` の `OE_SPAWN_PANE_ID` は `wez pane split` を使う別経路で、親子委譲の tmux 経路ではない）
 - `lib/delegate-registry.sh` の `oe_reg_record <child_pane> <label> <workspace> <parent_pane>` は親が子の登記を書く関数である。他人の席を書けないという制約は engine に存在しない。[verified]
 
 **結論（後継が取りに行く）は維持するが、理由を次へ置き換える。** 席の宣言は後継が自分で書いたときだけ、書いた主体と席に座る主体が一致する。前任が代わりに書くと、書いた内容が正しいかを確かめる主体が誰もいなくなる。これに対して後継が書く形では、誤りがあれば後継が最初の被害者になるので、確かめる動機が書き手自身に付く。#290 の探索で反証を生き残った「消費時検証」がこの形で、そこでは実際に4件の誤りが後任の消費の瞬間に捕まり、書き手の自己検出はゼロだった。
@@ -127,6 +133,10 @@ issue 本文の設計の骨1は、後継が席を取りに行く理由を「席�
 根拠は3つある。第一に、`oe-register` が emit しないので着任の瞬間がどこにも残っていない（実読で確認済み）。第二に、討議 `2026-07-13-...-succession-recovery-and-observability.md` §5(2) がこのイベントを設計済みで、`oe-reseat` 相当の verb がその自然な emit 点だと書いている。第三に、`2026-07-31-discussion-290-...` §7.2 が「レコードに succession を表す type か role、および server identity を持たせると、境界判定の2つの穴が同時に閉じる」と位置まで特定している。
 
 lean の決定が却下したのは**拍動のイベント化**であって、理由は 1〜5 秒ごとの追記による log 肥大だった。交代あたり1本は O(1) なので、その理由は当たらない。board は declared のまま正本で、イベントは観測である（新しい正本を作らない）。
+
+**payload の契約をここで決める。** 型名だけでは実装SO を通せないと設計SO が指摘した。`supervisor_succession` は次を必須で持つ。前任の pane と役割、後継の pane と役割、世代番号、交代の理由（`context_exhaustion` などの enum）、現在の tmux server の pid（同じ pane 番号の別世代と区別するため。#290 §7.2 が「server identity を持たせると2つの穴が同時に閉じる」と書いた位置）。
+
+**emit したことを `take` が確かめる。** 既存の emit はログ無効・`jq` 不在・置き場不明・書込失敗をすべて飲み込んで常に成功を返す。[verified] だから emit の戻り値では「記録された」と言えない。`take` は追記したはずの1行を読み直して、無ければ「イベントは残らなかった」と表示する（席の取得自体は止めない。イベントは観測であって席の正本ではないため）。
 
 **ただし射程を正直に書く。** `schemas/oe-events.schema.json` の type の語彙は `child_spawned` / `message_sent` / `prompt_received` / `report_received` の4つで、交代に当たる型は無い。[verified] だから交代イベントを足すと schema を触ることになり、「席を取る工程を1コマンドに畳むだけ」より広い変更になる。設計SO がこの点を突いたので、ステップ側でも schema の変更を独立した項目として置いた。
 
@@ -154,44 +164,78 @@ negative knowledge `01KZVHE0KJ12W3NG6A4R0WSWS4` は「停止を報告する主�
 
 設計SO（codex レーン）が、席が移ったあとも前任は生きていて操作でき、後継と並行して委譲や board 更新ができると指摘した。lean の決定の下では、旧世代の権限を機械的に失効させる仕組み（fencing token）を新しい state として作れない。**したがってプロセスを閉じることが、この構成で使える唯一の fencing である。** 閉じずに席から降ろすだけの案（D-4）はこの理由で採らない。
 
-段階を分ける。
+**停止の形を決める。表示だけでは時間差の穴が塞がらない。** 設計SO が突いた点で、検査して停止コマンドを表示するだけの形だと、表示から人がコマンドを打つまでの間に新しい報告・新しい委譲・board の更新が入りうる。だから**再検査を停止と同じコマンドの中に入れる**。
 
-- **段階1**: `oe-handoff retire` は検査して**停止コマンドを表示するだけ**にする。実行しない。pane を閉じるのは取り消せない操作で、`careful-operations-rule` の確認が要る帯に当たる。
-- **段階2**: 段階1 を数回通して、表示された判定が実際に正しかったことを確かめてから、`--execute` を足すかを owner が決める。
+- `oe-handoff retire` は検査して結果を表示し、**停止はしない。** 表示する次の一手は生の `tmux kill-pane` ではなく `oe-handoff retire --execute` にする。
+- `oe-handoff retire --execute` は**検査をやり直してから**停止する。検査と停止の間に人の操作が挟まらないので、時間差の穴はここで閉じる。
+- 段階の分け方は「verb が停止できるかどうか」ではなく「誰が `--execute` を打つか」で分ける。**段階1 は owner だけが打つ**（`careful-operations-rule` の確認が要る帯）。段階2 へ進む（後継が自分で打つ）かどうかは、段階1 の判定が実際に正しかったことを確かめてから owner が決める。
 
 **停止してよい前提条件を1つ足す。前任の session_id が引き継ぎ記録に残っていること。** `claude --resume <session_id>` で会話を開き直せるので、記録があれば停止はほぼ取り消せる。記録が無ければ停止しない。session_id は拍動 sidecar の逆引きで機械的に取れる（実測済み）ので、この前提条件は人の手間を増やさない。
 
 **再検査は申告の時点ではなく、停止の直前に、同じコマンドの中で走らせる。** 申告と停止の間に届いた新着を拾うためである。
 
-### DJ-11: 生きた委譲子がいるあいだは前任を閉じない
-
-`bin/oe-delegate` は子の起動コマンドに `PARENT_TMUX_PANE=<親の pane> claude` を焼き込む。[verified] 環境変数は起動後に書き換えられないので、**前任の pane を閉じると、生きている子の戻し先が死ぬ。** これは lean の決定が mode3（チャネル脆弱）として挙げている故障そのもので、対策の `@seat` mailbox は「報告の stranding が再発したら導入する」という再開条件つきで defer されている。
-
-`bin/oe-report` は親を「環境変数が先、無ければ `/tmp/oe-parent-<自 pane>` ファイル」の順で解決するので、間接参照の口自体は既にある。[verified] ただし環境変数が優先されるうえ、README が推す `oe-send "$PARENT_TMUX_PANE"` の直書き経路はこの解決を通らない。したがって**いまある材料だけで戻し先を張り替えることはできない。**
-
-この単位での扱いを決める。**`oe-handoff retire` は、生きた委譲子が1体でもあるあいだは停止を許さない（fail-closed）。** 理由を表示して非0 で終わる。子が0 体になるまで交代の最後の一歩を止めるのは運用の制約だが、報告を虚空へ落とすよりは軽い。
-
-**これは lean の決定が名指しした再開条件そのものに触れる。** 実運用で「子が生きたまま交代したい」が繰り返し起きるなら、そのとき `@seat` mailbox の defer を解く材料になる。この単位では解かない。
-
-今日の交代は委譲子 0 体だったので、この故障を踏んでいない。設計SO の指摘で初めて視界に入った。
-
 ### DJ-8: 中間案（前任が board に「後継待ち」の行を作る）は採らない。重なり期間の表現だけ拾う
 
 issue が挙げた中間案は、前任が spawn の時点で board に「後継待ち」の行を作っておき、後継が自分の identity でそこを埋める形である。**採らない。** 後継の pane は後継しか知らないので、行を先に作っても後継が書き込む工程は消えない。前任の工程が1つ増えて、後継の工程は減らない。
 
-1点だけ拾う。重なり期間に `現統括:` が前任を指したままだと、`oe-vitals` が 15 分ごとに「交代しろ」を撃ち続ける。`take` が張替のときに、前任を「退任申告済み・停止待ち」として同じ行に併記すれば、この期間の状態が読める。**そのとき `現統括` という語は行の中で1回だけ使う**（DJ-4 の3番で挙げた罠を自分で踏まないため）。
+1点だけ拾う。重なり期間に `現統括:` が前任を指したままだと、`oe-vitals` が 15 分ごとに「交代しろ」を撃ち続ける。`take` が張替のときに、前任を「退任申告済み・停止待ち」として同じ行に併記すれば、この期間の状態が読める。
+
+**併記が安全である条件を、コードの実体から書き直す。** 当初この plan は「`現統括` という語を行の中で1回だけ使う」と書いていたが、設計SO が実体と合っていないと指摘した。`bin/oe-vitals` は `grep -m1 -- '現統括:'` で最初の宣言行を取り、`sed -E 's/.*現統括//'` が**貪欲**なので行内の最後の marker まで落とし、そのあと最初の `%NNN` を採る。[verified] したがって本当の条件は語の出現回数ではなく、**最後の marker より後ろで、後継の `%NNN` が前任の `%NNN` より先に現れること**である。この plan は前任の pane を同じ行に足す変更なので、この順序の条件に正面から依存する。
+
+**張替のあとに必ず検算する**（DJ-4 の3番）。検算は `oe-vitals` と同じ解決規則を使うので、条件を取り違えていればその場で分かる。
 
 ### DJ-9: 交代のきっかけは人のままにする。既存の context 検知を入口には使わない
 
 `oe-vitals` は統括の context% が 85% を超えたら交代を促す。これを交代の入口にする案があった。**採らない。**
 
-本日の実測で、統括の拍動が 2 時間 6 分古く、`oe-vitals` は何も検知していなかった。拍動は statusLine が書くので、セッションが描画しないあいだ更新されない。**統括の拍動が窓より古くなると、context 検知は沈黙する。** 「検知しなかった」と「健全だった」が読み手から区別できない形で、これは採用した negative knowledge の1つ目と同じ型である（拍動を書くのは統括自身のセッションだから）。
+本日の実測で、統括の拍動が 2 時間 6 分古く、`oe-vitals` は何も検知していなかった。**観測はここまでである。原因は書かない。** 当初この plan は「セッションが描画しないあいだ拍動が更新されないからだ」と原因まで書いていたが、設計SO がこれを material に否定した。配備されている statusLine の設定は `refreshInterval: 10` を持ち、producer 自身も「event 駆動 + refreshInterval の idle timer」で走ると書いている。[verified] つまり描画していなくても 10 秒ごとに走るはずである。**1件の観測から原因を1つに決めたのは早すぎた。** 設定が反映されていない・producer が失敗している・環境が伝わっていない・製品の挙動が変わった、のいずれもありうる。
 
-拍動の鮮度そのものはこの単位のスコープ外（復帰側の軸）なので、実測を添えて surface する。
+言えるのは2つだけである。**統括の拍動が窓より古くなると context 検知は沈黙する**（`oe-vitals` の出力がそう言っている）。そして**いま現に沈黙している**。「検知しなかった」と「健全だった」が読み手から区別できない形で、これは採用した negative knowledge の1つ目と同じ型である。
+
+**そのうえで、これは surface して終わりにしてよい話ではない可能性がある。** idle timer が動いているはずなのに統括の拍動だけ 2 時間古いのなら、稼働中の見張りの土台が壊れている疑いがある。原因の調査はこの単位のスコープ外（復帰側の軸）なので実装しないが、**「この単位への直接の害は無い」とは書かない。** 実測を添えて親へ上げる。
 
 ### DJ-10: 受入は次の交代を1回通すこと
 
 この単位の成果を、次の実際の交代で使う。plan フェーズでは実施しない。
+
+### DJ-11: 生きた委譲子が0体であることは、停止の条件ではなく**席を動かす前の条件**にする
+
+`bin/oe-delegate` は子の起動コマンドに `PARENT_TMUX_PANE=<親の pane> claude` を焼き込む。[verified] 環境変数は起動後に書き換えられないので、**前任の pane を閉じると、生きている子の戻し先が死ぬ。** これは lean の決定が mode3（チャネル脆弱）として挙げている故障そのもので、対策の `@seat` mailbox は「報告の stranding が再発したら導入する」という再開条件つきで defer されている。
+
+`bin/oe-report` は親を「環境変数が先、無ければ `/tmp/oe-parent-<自 pane>` ファイル」の順で解決するので、間接参照の口自体は既にある。[verified] ただし環境変数が優先されるうえ、README が推す `oe-send "$PARENT_TMUX_PANE"` の直書き経路はこの解決を通らない。したがって**いまある材料だけで戻し先を張り替えることはできない。**
+
+#### 検査の位置を `retire` から `take` の前へ移す
+
+最初の案は「`retire` が生きた子を見て停止を止める」だった。**設計SO がこれを material に否定した。** 席は `take` で動くので、`retire` で止めても、席が動いてから停止までのあいだ、権限を失っていない前任と後継が併存する。しかも DJ-11 が「子が居るあいだ前任を生かせ」と言うので、その併存は数時間に伸びうる。**検査を `take` の前に置けば、この期間は0 になる。**
+
+したがってこうする。
+
+- **`oe-handoff take` は、前任に生きた委譲子が1体でもあるあいだ席を動かさない。** 理由を表示して非0 で終わる。
+- `oe-handoff prepare` は同じ検査を先に走らせ、子が残っていれば「まだ交代できない」と表示する（前任が先に気づけるように）。
+- `retire` でも停止の直前にもう一度数える（DJ-7 の再検査に含める）。
+
+#### 子の数え方の錨を決める
+
+設計SO が指摘したとおり、`lib/delegate-registry.sh` の `oe_reg_list` は `parent_pane == 自ペイン` の entry だけを採る自己スコープである。[verified] `take` は後継のセッションで走るので、この既定で数えると**常に0体になり、fail-closed が fail-open へ反転する。**
+
+だから**前任の pane を錨にして数える**。`bin/oe-tree` の `children_of <pane>` に当たる経路を `lib/` へ切り出して使う。数えるのは「前任 pane を親とする entry のうち、pane が tmux に現存するもの」である。
+
+#### 後継自身を子にしない
+
+`oe-delegate` で後継を spawn すると、**後継自身が前任の生きた委譲子になる。** そのまま数えると `take` は永久に通らない。後継を数から除くと、今度は後継の `PARENT_TMUX_PANE` が停止した前任を指したまま残り、DJ-11 が防ごうとした故障を後継自身が踏む。どちらも壊れる。
+
+**だから後継は `oe-delegate` で spawn しない。** 前任の pane を親としない素の pane で `claude` を起こす。14 代目の交代は実際にこの形（手動で新しい pane を起こし、自ペインで `oe-register root --force`）で行われている。`prepare` が起動コマンドをそのまま表示するので、人が書く文面は増えない。
+
+**これは lean の決定が名指しした再開条件そのものに触れる。** 実運用で「子を抱えたまま交代したい」が繰り返し起きるなら、そのとき `@seat` mailbox の defer を解く材料になる。この単位では解かない。**どのくらいの頻度で起きるかは未測定である**（設計SO の指摘）。14 代目の交代は子0体だったので、この故障を踏んでいない。
+
+### DJ-12: `take` は途中で失敗しても状態が読める形にする
+
+設計SO の指摘。`take` は登記・board 張替・検算・見張り確認・イベントの5つを続けて行うので、途中で失敗すると外部の状態が半分だけ書き換わる。
+
+- **順序を「読むもの・確かめるもの」が先、「書き換えるもの」が後になるように並べる。** 前提の検査（子0体・board が読める・前任の session_id が引ける・見張りの状態）を全部先に済ませ、そのあとで登記と board 張替を行う。
+- **何度実行しても同じ結果になるようにする。** 登記は既に自分が root なら何もしない。board 張替は既に自分を指していれば書かない。
+- **途中で失敗したら、何が済んで何が済んでいないかを列挙して表示する。** 巻き戻しはしない（board の系譜は消してはならない散文なので、機械が巻き戻すほうが危ない）。もう一度 `take` を実行すれば続きから揃う、という形にする。
+- 各段階で失敗を注入するテストを書く。
 
 ## 棄却した案（ゲート1・ゼロベース代替探索）
 
@@ -229,6 +273,48 @@ issue が挙げた中間案は、前任が spawn の時点で board に「後継
 - **設計の骨1 の理由が実測と合わない。** → DJ-4 で理由を置き換え、owner に預ける判断の5番へ出した。
 - **交代イベントの追加は schema を触る。** → DJ-5 に射程を明示し、ステップで独立した項目にした。
 - **pane からの逆引きには pane 再利用の罠がある。** → DJ-2 に `server_pid` と鮮度での絞り込みを足した。
+
+## 設計SO（ゲート2）の結果
+
+`SO_TIMEOUT=900 SO_CLAUDE_TIMEOUT=1800 oe-refute --claim .oe/claim-390-gate2.md --lanes 3 --rubric consensus` を実行した。claim は plan の全文を貼った 46,682 バイトの自己完結の文書で、3レーンとも実返却した（空返し0本）。
+
+- verdict: `refuted`（3/3 レーンが material に反証）
+- audit_id: `20260911142659C063BRD7511J`
+- output_dir: `tmp/oe-refute-20260911142659C063BRD7511J`（永続しないので内容はここへ転記した）
+
+**弱 SO は1周で終了してよい**（`document-format.md` §4.1）ので、2周目は回していない。`refuted` なので**この plan はここでは確定しない。** 確定はゲート3（owner の Human Gate）である。以下は指摘を反映した結果で、反映せず残したものも理由つきで書く。
+
+### 覆った点（設計を変えたもの）
+
+| 指摘 | どのレーン | どう変えたか |
+| --- | --- | --- |
+| 生きた委譲子の検査を `retire` に置くと、席が動いてから停止までのあいだ前任と後継が無期限に併存する。検査は `take` の前に置くべき | codex | DJ-11 を書き直し、検査を `take` の前提へ移した。併存の期間が0 になる |
+| 後継を `oe-delegate` で spawn すると後継自身が生きた委譲子になり、`take` が永久に通らない | claude | DJ-11 に「後継は `oe-delegate` で spawn しない」を足した。`prepare` が起動コマンドを表示する |
+| 生きた委譲子の数え方に錨が無い。`oe_reg_list` は自己スコープなので `take` では常に0体になり、fail-closed が fail-open へ反転する | claude | DJ-11 に錨（前任の pane を親とする entry を数える）を明記し、Step 1-4 で `lib/` へ切り出す |
+| 停止コマンドを表示するだけでは時間差の穴が塞がらない（表示から実行までに新着が入る） | codex | DJ-7 を書き直し、表示する次の一手を `oe-handoff retire --execute` にして、再検査を停止と同じコマンドに入れた |
+| `take` の途中失敗の契約が無い（5工程の途中で外部状態が半分書き換わる） | codex | DJ-12 を新設した（確かめるものが先・書き換えるものが後・何度でも実行できる・途中で止まったら何が済んだか表示する） |
+| `oe-selfcheck` は全検査を一括で走らせ broken が1つでもあれば非0。いま `screen-marker` が broken なので、終了コードで判定すると常に失敗する。`watchdog-freshness` が見ているのは `oe-confirm` であって `oe-vitals` ではない | codex | DJ-4 の4番を書き直し、`--json` の行を読む形にして `oe-vitals` の確認を別に立てた |
+| `現統括:` 行の併記が安全である条件は「語が1回」ではなく「最後の marker より後ろで後継の pane が前任より先に来る」こと | claude | DJ-8 を実体から書き直し、Step 2-9 のテストの条件にした |
+| `oe-vitals` の解決は既に `tests/test_oe_vitals.sh` が pin している。新しいテストを作るだけで既存スイートを走らせない構成になっている | claude | Step 2-1 と GATE を書き直し、既存スイートの再実行を先に置いた |
+| succession イベントが type 名だけで payload の契約が無い。既存の emit は失敗を飲み込んで常に成功を返すので「記録された」と言えない | cursor / codex | DJ-5 に payload の必須フィールドと読み直しによる確認を足した |
+| DJ-9 が1件の観測から原因を断定している。配備されている statusLine は `refreshInterval: 10` を持ち、producer は idle timer でも走ると書いている | codex | DJ-9 を観測だけに戻し、原因を書かないようにした。あわせて「この単位への直接の害は無い」という書き方をやめた |
+| PR の順序が逆で、`take` だけがマージされた状態では引き継ぎ文書も停止の検査も無いまま席を動かせる | cursor | PR の順序を入れ替え、読むだけの `prepare` を先頭にした。`take` は `prepare` の記録が無ければ止まる |
+| owner 判断 1・5・6 は follow-up ではなく未裁定の設計分岐で、答えによって DJ が書き直しになる | codex / cursor | 「着手前に答えが要るもの」の節を足し、4件（1・5・6・7）を名指しした |
+| 先行の board schema の決定（frontmatter を要求）と実物が食い違ったまま、その legacy 行を仕組みに固定している | codex | owner に預ける判断の7番を新設した |
+| DJ-4 が引いた `lib/spawn.sh` の `OE_SPAWN_PANE_ID` は `wez pane split` の経路で、親子委譲の tmux 経路ではない | claude | 引用先を `bin/oe-delegate` の `tmux split-window -P -F "#{pane_id}"` へ訂正した（結論は変わらない） |
+| `take` のあと `oe-tree` に cockpit の root が2本並ぶ（`oe-register root` は前任の登記を失効させない） | cursor | 直さないが、Step 4-2 で README に明記する項目にした |
+
+### 持ちこたえた点
+
+- DJ-6 の圧縮の穴を「塞げない」と書いたこと自体は妥当だと3レーンとも認めた。ただし **DJ-11 の「塞げない」の書き方は狭すぎた**という指摘があり（塞げていないのは不便ではなく「前任が誰にも見られないまま子の戻し先で在り続ける」ことのほう）、これは DJ-11 の書き直しで解消した。
+- DJ-11 の fail-closed という判断そのものは lean の決定と整合しており、反証にはならないと cursor が明示した。
+- DJ-2 / DJ-4 / DJ-7 の lean との整合は概ね妥当と cursor が評価した。
+
+### 反映せずに残したもの（理由つき）
+
+- **段階1 が「半完成の運用契約」である点**（cursor）。そのとおりだが、段階を踏むこと自体が `careful-operations-rule` の要求であり、一度に完成形を入れるほうがリスクが高い。受入の主張を弱めることで対応する（owner 判断6 が (a) なら「残余の完全性は保証しない試験運用」と書く）。
+- **委譲子ありの交代がどのくらいの頻度で起きるかの実測**（cursor）。過去の交代の記録から数えられる可能性はあるが、board の散文を遡る作業になるので、この plan では未測定と明記するにとどめた。
+- **registry の二重 root の解消**（cursor）。lean の決定が「topology の歪みは段階1 の外」と明示しているので、この単位では直さない。README に明記する。
 
 ## owner に預ける判断
 
@@ -271,51 +357,78 @@ issue が挙げた中間案は、前任が spawn の時点で board に「後継
 - 選択肢: (a) この単位では配線せず、`oe-handoff prepare` を人が任意の時点で呼ぶ形に留める。(b) `PreCompact` の配線を #390 に含める。(c) 別 issue を立てて、ハーネス層の軸としてまとめて扱う。
 - 推奨は (c) である。hook の配線は全セッションに効くハーネス層の変更で、#390 の verb とは影響範囲が違う。ただし (a) のままだと DJ-6 の穴が開いたままなので、(c) を立てることを前提に (a) で進めたい。
 
+### 7. board を schema へ移すか、legacy を続けると明記するか
+
+- 前提: `2026-07-10-decision-238-board-schema.md`（accepted）は board に YAML frontmatter の `鮮度` / `現統括` / `succession` を要求する。実物の board は1行目が見出しで frontmatter を持たず、`scripts/validate-board.sh` は「frontmatter block not found」を警告する。[verified] board 自身の gotchas 節にもこの状態が記録されている。
+- 本 plan はこの legacy の1行（5,831 バイト）を読み書きの対象として固定している。**先行の決定と整合していない状態を、そのまま仕組みにすることになる。**
+- 選択肢: (a) board を schema へ移してから verb を作る。(b) legacy を続けると明記する amendment を書いてから verb を作る。(c) 何も決めずに進める。
+- 推奨は (b) である。(a) は 390KB の実ファイルの移行で、稼働中の見張りが読んでいるものを触るため、この単位と混ぜると両方の完了判定が濁る。(c) は「決まっていることと違う形を仕組みに固める」ことになるので採らない。
+
+### この6件と7件目のうち、着手前に答えが要るもの
+
+設計SO が3レーンとも「未裁定の分岐を残したまま確定はできない」と指摘した。**着手前に答えが要るのは 1・5・6・7 の4件である。**
+
+- 判断1 が (b) なら DJ-4 と DJ-7 は書き直しになる。
+- 判断5 が (b) なら設計の骨1 から引き直しになる。
+- 判断6 が (a) 固定なら、DJ-6 の残余は構造的に壊れたまま運用に入る。**その場合、この単位の受入の主張を「残余の完全性は保証しない試験運用」まで弱める。**
+- 判断7 が (a) なら board の移行が先に入るので、ステップの順序が変わる。
+
+判断2 と判断3 と判断4 は着手後でも答えられる（2 は別軸への材料、3 は PR-2 の中身、4 は名前）。**ただし判断3 が「移設しない」なら、PR-2 は「確立した運用」を brief から落とさない構成にする**（落としたうえで移設もしないと、規律がどこにも無くなる）。
+
 ## ステップ
 
-実装は owner の Human Gate（ゲート3）が下りてから始める。PR は4本に分ける。
+実装は owner の Human Gate（ゲート3）が下りてから始める。**着手前に owner 判断 1・5・6・7 の答えが要る**（上記）。
 
-### PR-1: 席を取る経路（lib + `take` + イベント）
+PR は4本に分ける。**順序は「読むだけのもの」を先、「書き換えるもの」を後にする。** 当初は `take` を先頭に置いていたが、設計SO が「PR-1 だけがマージされた状態では、引き継ぎ文書も停止の検査も無いまま席だけ動かせてしまう」と指摘したので入れ替えた。
 
-- [ ] Step 1-1: `oe-vitals` の現在の `現統括:` 解決の挙動を固定するテストを書く（`projects/orchestration-engine/tests/test_seat.sh` を新設。現行の board の line 3 を fixture にして、解決結果が pane 1つに定まることを確かめる）
-- [ ] Step 1-2: 解決・張替・検算を `projects/orchestration-engine/lib/seat.sh` へ切り出す（関数は `oe_seat_resolve` / `oe_seat_rewrite` / `oe_seat_verify` の3本）
-- [ ] Step 1-3: `oe-vitals` が `lib/seat.sh` を読むように差し替え、Step 1-1 のテストを再実行して挙動が変わっていないことを確かめる
-- [ ] GATE: `bash projects/orchestration-engine/tests/test_seat.sh` が通ること。加えて `OE_BOARD_FILE=<board> ./bin/oe-vitals` の出力が差し替え前と一致すること（差し替え前の出力を先に取っておく）
-- [ ] Step 1-4: `projects/orchestration-engine/schemas/oe-events.schema.json` の type の語彙に `supervisor_succession` を足す（既存4型には触れない追記のみ）
-- [ ] Step 1-5: `event-bus.sh` に `supervisor_succession` の emit 関数を足す（既存の `oe_event_emit` を呼ぶだけ）
-- [ ] GATE: 既存のイベントを流すテストが通り、追加前に書かれた既存の `oe-events.jsonl` が新しい schema でも valid のままであること
-- [ ] Step 1-6: `bin/oe-handoff` を新設し、`take` subcommand を実装する（登記・張替・検算・`oe-selfcheck` 呼び出し・イベント emit・結果の表示）
-- [ ] Step 1-7: `take` のテストを書く（board の fixture に対して張替が1回だけ起き、検算が自ペインを返し、`現統括` の語が行に1回しか出ないことを確かめる）
-- [ ] GATE: `shellcheck projects/orchestration-engine/bin/oe-handoff projects/orchestration-engine/lib/seat.sh` が通ること
-- [ ] GATE: 実装SO（`so.impl` = weak）を1周通す
-- [ ] Step 1-8: PR-1 を出す。plan doc と episode をこの PR に載せる
+### PR-1: 状態を集めて引き継ぎ文書を書く（`prepare`・読むだけ）
 
-### PR-2: 引き継ぎ文書の生成（`prepare` + 立ち上げプロンプトの縮約）
+- [ ] Step 1-1: 引き継ぎ文書の書式を決めて `projects/orchestration-engine/docs/` 配下にテンプレートとして置く（機械が書く節と人が書く節を見出しで分ける）
+- [ ] Step 1-2: 状態の収集を `projects/orchestration-engine/lib/handoff-state.sh` に置く（open PR・worktree・master HEAD・未 push・生きた委譲子・常駐の見張りの登録と最終走査・前任の session_id と context%）
+- [ ] Step 1-3: 前任の session_id の逆引きに pane 再利用への手当てを入れる。現在の tmux server の pid（sidecar の `server_pid`）と拍動の新しさで絞り、一致が複数あるか server_pid が合わなければ値を書かず `unknown` にする（DJ-2）
+- [ ] Step 1-4: 生きた委譲子の数え方を `lib/` に置く。**錨は前任の pane** で、`bin/oe-tree` の `children_of <pane>` に当たる経路を使う。`oe_reg_list` の自己スコープは使わない（DJ-11）
+- [ ] Step 1-5: `bin/oe-handoff` を新設し `prepare` を実装する。機械の節はまるごと上書きし、人の節は既存の内容を保つ。生きた委譲子が残っていれば「まだ交代できない」と表示する。後継を起こすコマンド（前任の pane を親としない素の pane で `claude` を起動する形）を表示する
+- [ ] Step 1-6: テストを書く（機械の節だけが上書きされること・人の節が保たれること・pane 再利用の fixture で `unknown` に倒れること・子が居るときに警告すること）
+- [ ] GATE: `shellcheck projects/orchestration-engine/bin/oe-handoff projects/orchestration-engine/lib/handoff-state.sh` が通ること
+- [ ] GATE: `prepare` が何も書き換えないこと（board・登記・イベントログの mtime が変わらないことをテストで確かめる）
+- [ ] Step 1-7: PR-1 を出す。**plan doc と episode をこの PR に載せる**
 
-- [ ] Step 2-1: 引き継ぎ文書の書式を決めて `projects/orchestration-engine/docs/` 配下にテンプレートとして置く（機械が書く節と人が書く節を見出しで分ける）
-- [ ] Step 2-2: `oe-handoff prepare` を実装する（open PR・worktree・`oe-tree`・`launchctl list`・master HEAD・未 push・前任の session_id と context% を集めて機械の節を書き出す）
-- [ ] Step 2-3: 機械の節は毎回まるごと上書きし、人の節は既存の内容を保つことをテストで確かめる
-- [ ] Step 2-4: 立ち上げプロンプトのテンプレートを短縮する（`take` が吸収した工程を削り、identity 宣言と brief への pointer だけ残す）
+### PR-2: 席を取る（`take`・書き換えあり）
+
+- [ ] Step 2-1: 既存の回帰ガードを先に確認する。`projects/orchestration-engine/tests/test_oe_vitals.sh` は `現統括:` の解決を既に pin しており、freeform の board で前任を併記した行から現統括を解決するケース（ケース17）まで持っている。**新しいテストを作る前にこれを走らせて基準を取る**
+- [ ] Step 2-2: 解決・張替・検算を `projects/orchestration-engine/lib/seat.sh` へ切り出す（`oe_seat_resolve` / `oe_seat_rewrite` / `oe_seat_verify`）。解決は `oe-vitals` の現行実装と1文字も挙動が変わらないようにする
+- [ ] Step 2-3: `oe-vitals` が `lib/seat.sh` を読むように差し替える
+- [ ] GATE: `bash projects/orchestration-engine/tests/test_oe_vitals.sh` が差し替え前と同じく全件通ること。加えて実物の board（`OE_BOARD_FILE`）に対する `oe-vitals` の出力が差し替え前後で一致すること（差し替え前の出力を Step 2-1 で取っておく）
+- [ ] Step 2-4: `schemas/oe-events.schema.json` の type の語彙に `supervisor_succession` を足し、payload の必須フィールド（前任の pane と役割・後継の pane と役割・世代・理由・tmux server の pid）を定義する（既存4型には触れない追記のみ）
+- [ ] Step 2-5: `lib/event-bus.sh` に `supervisor_succession` の emit を足す。**emit の戻り値を信用せず、追記したはずの1行を読み直して確かめる**（既存の emit は失敗を飲み込んで常に成功を返す）
+- [ ] GATE: 追加前に書かれた既存の `oe-events.jsonl` が新しい schema でも valid のままであること
+- [ ] Step 2-6: `oe-handoff take` を実装する。順序は「確かめるものが先、書き換えるものが後」で、(1) 前提の検査（生きた委譲子0体・board が読める・前任の session_id が引ける・`prepare` の記録がある）(2) 見張りの状態を `oe-selfcheck --json` の行として読む（終了コードでは判定しない）と `oe-vitals` の登録・最終走査の確認 (3) `oe-register root --force --label cockpit` (4) board 張替（前任を「退任申告済み・停止待ち」として併記） (5) 検算 (6) イベント emit と読み直し (7) できたこと・できなかったことの表示
+- [ ] Step 2-7: 何度実行しても同じ結果になるようにする（既に自分が root なら登記しない・既に自分を指していれば board を書かない）
+- [ ] Step 2-8: 途中失敗のテストを書く（各段階で失敗を注入し、何が済んで何が済んでいないかが表示されること・もう一度実行すれば揃うこと）
+- [ ] Step 2-9: board 張替のテストを書く。**確かめる条件は「`現統括` の語が1回」ではなく「最後の marker より後ろで後継の `%NNN` が前任の `%NNN` より先に来ること」**（DJ-8）
 - [ ] GATE: `shellcheck` が通ること
-- [ ] Step 2-5: PR-2 を出す
+- [ ] GATE: `bash projects/orchestration-engine/scripts/validate-board.sh <張替後の board>` を走らせ、**張替の前後で警告の件数と内容が増えていないこと**（board は元々この validator を通らないので、通ることではなく悪化しないことを見る）
+- [ ] GATE: 実装SO（`so.impl` = weak）を1周通す
+- [ ] Step 2-10: PR-2 を出す
 
 ### PR-3: 停止の判定（`retire`）
 
 - [ ] Step 3-1: `oe-handoff retire` を実装する（機械の検査をやり直し、前任の申告と突き合わせ、食い違いを列挙する）
-- [ ] Step 3-2: 停止の前提条件を2つとも必須の検査として入れる。前任の session_id が引き継ぎ記録に残っていること（`claude --resume` で開き直せる）と、**生きた委譲子が0体であること**（DJ-11）
-- [ ] Step 3-2b: 前任の session_id を pane から逆引きするとき、現在の tmux server の pid と拍動の新しさで絞る。一致が複数あるか server_pid が合わなければ値を書かず止まる（DJ-2）
-- [ ] Step 3-3: 判定が通ったときに停止コマンドを**表示する**（実行しない）。判定が通らないときは理由を列挙して exit を非0 にする
-- [ ] Step 3-4: テストを書く（食い違いがあるときに停止コマンドを表示しないこと・session_id が無いときに止まること・生きた委譲子が1体でもあるときに止まること）
+- [ ] Step 3-2: 停止の必須条件を3つ入れる。前任の session_id が引き継ぎ記録に残っていること（`claude --resume` で開き直せる）・生きた委譲子が0体であること・前任の申告の各項目に処分が付いていること
+- [ ] Step 3-3: 判定が通ったときに表示する次の一手を `oe-handoff retire --execute` にする（生の `tmux kill-pane` は表示しない）。判定が通らないときは理由を列挙して非0 で終わる
+- [ ] Step 3-4: `--execute` は**検査をやり直してから**停止する（表示と実行のあいだに人の操作が挟まらないので、時間差の穴がここで閉じる）。段階1 では owner だけが打つものとして README に明記する
+- [ ] Step 3-5: テストを書く（食い違いがあるとき・session_id が無いとき・生きた委譲子が居るときに、いずれも停止しないこと。`--execute` が再検査を先に走らせること）
 - [ ] GATE: `shellcheck` が通ること
-- [ ] Step 3-5: PR-3 を出す
+- [ ] Step 3-6: PR-3 を出す
 
 ### PR-4: 文書と受入
 
 - [ ] Step 4-1: `projects/orchestration-engine/bin/README.md` に `oe-handoff` の節を足す（既存の verb と同じ体裁で、契約・引数・制約・関連 lib を書く）
-- [ ] Step 4-2: board の `## succession 手順（後任がやること）` 節を、新しい verb を使う形に書き換える案を作る（**書き換えは owner の承認を得てから**。board は稼働中の実ファイルである）
+- [ ] Step 4-2: 残っている歪みを README に明記する。`oe-register root` は前任の root の登記を失効させないので、交代のあと `oe-tree` に cockpit の root が2本並ぶ。lean の決定が「topology の歪みは段階1 の外」としている範囲で、この単位では直さない
+- [ ] Step 4-3: board の `## succession 手順（後任がやること）` 節を新しい verb を使う形に書き換える案を作る（**書き換えは owner の承認を得てから**。board は稼働中の実ファイルである）
 - [ ] HG: owner に board の書き換えを承認してもらう
-- [ ] Step 4-3: PR-4 を出す
-- [ ] Step 4-4: 受入。次の実際の交代で `prepare` → `take` → `retire` を1回通し、結果を episode へ追記する
+- [ ] Step 4-4: PR-4 を出す
+- [ ] Step 4-5: 受入。次の実際の交代で `prepare` → `take` → `retire` を1回通し、結果を episode へ追記する
 
 ## リスク・未確認事項
 
@@ -324,18 +437,21 @@ issue が挙げた中間案は、前任が spawn の時点で board に「後継
 - **`oe-vitals` に手を入れるので、常駐の見張りの挙動を壊す可能性がある。** Step 1-1 で先に挙動を固定するテストを書くのはこのためである。差し替えの前後で出力が一致することを確かめる。
 - **統括の拍動が古くなると context 検知が沈黙する**（本日実測）。この単位では入口を人のままにするので直接の害は無いが、`oe-vitals` の交代促しを当てにしている運用があるなら、その前提はいま成り立っていない。
 - **段階1 の `retire` は停止を実行しない。** 実際に閉じるのは人の操作のままなので、この単位だけでは「あまりプロンプトを使わないでできる形」は半分しか達成しない。段階2 に進むかは実績を見て owner が決める。
-- **生きた委譲子がいるあいだ交代の最後の一歩が止まる。** DJ-11 の fail-closed は運用の制約であり、「子を抱えたまま交代したい」場面では不便になる。その不便が繰り返し出るなら、lean の決定が defer した `@seat` mailbox の再開条件に当たる材料になる。
+- **生きた委譲子がいるあいだ交代そのものが始められない。** DJ-11 の検査を `take` の前に置いたので、子が残っているかぎり席が動かない。「子を抱えたまま交代したい」場面では交代が止まる。その不便が繰り返し出るなら、lean の決定が defer した `@seat` mailbox の再開条件に当たる材料になる。**どのくらいの頻度で起きるかは未測定である。**
+- **統括の拍動が古くなる原因が分かっていない。** idle timer が 10 秒で回っているはずなのに統括の拍動だけ 2 時間古い。稼働中の見張りの土台が壊れている疑いがあり、原因はこの単位では調べない。ただし「害が無い」とは言えない。
+- **交代のあと `oe-tree` に cockpit の root が2本並ぶ。** `oe-register root` は前任の登記を失効させない。lean の決定が「topology の歪みは段階1 の外」としている範囲なので直さないが、後継が機械で状態を取るときにこの歪みを踏む。
+- **board が先行の schema の決定に従っていない状態を、そのまま仕組みに固める。** owner 判断7 が (b) でなければ、決まっていることと違う形が固定される。
 - **`--execute` へ進む合格条件を、この plan は数字で決めていない。** 設計SO が「D-5 から D-2 へ移る実績の合格条件が定義されていない」と指摘した。段階1 を何回通せば十分かは運用を見て決めるべきで、いま決め打ちしない。
 
 ## #390 の「やること」6項目との対応
 
 | issue の項目 | この plan での扱い |
 | --- | --- |
-| 引き継ぎ文書の生成を仕組みにする | DJ-2 / DJ-3 / PR-2 |
-| 後継が席を取りに行く工程を1コマンドに畳む | DJ-4 / DJ-5 / PR-1 |
-| 前任の自己申告の形を決める | DJ-6 / PR-2 の Step 2-1 と PR-3 |
-| 前任を閉じる経路を決める | DJ-7 / DJ-11 / PR-3 |
+| 引き継ぎ文書の生成を仕組みにする | DJ-2 / DJ-3 / PR-1 |
+| 後継が席を取りに行く工程を1コマンドに畳む | DJ-4 / DJ-5 / DJ-12 / PR-2 |
+| 前任の自己申告の形を決める | DJ-6 / PR-1 の Step 1-1 と PR-3 |
+| 前任を閉じる経路を決める | DJ-7 / DJ-11 / DJ-12 / PR-3 |
 | 中間案（board に「後継待ち」の行）を評価する | DJ-8（棄却・1点だけ採用） |
-| 受入は交代を1回通す | DJ-10 / PR-4 の Step 4-4 |
+| 受入は交代を1回通す | DJ-10 / PR-4 の Step 4-5 |
 
 落とした項目は無い。
