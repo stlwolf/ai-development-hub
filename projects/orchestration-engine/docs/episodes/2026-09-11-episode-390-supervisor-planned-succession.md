@@ -262,3 +262,28 @@ digest の変化は申告済み。step の削除は無く、3件（Step 1-0 / 2-
 
 昇格の印: 段階分けの軸を「誰が打つか」から「何を壊しうるか」へ引き直した判断
 
+### PR-1 の実装 — 状態を集めて引き継ぎ文書を書く（2026-09-11）
+
+Step 1-0 から 1-6 まで実装した。入れたものは4つである。
+
+- `projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md` への amendment（Step 1-0）
+- `projects/orchestration-engine/lib/handoff-state.sh`（状態の収集・read-only）
+- `projects/orchestration-engine/templates/handoff.md.template`（引き継ぎ文書の書式）
+- `projects/orchestration-engine/bin/oe-handoff` の `prepare`
+
+#### plan から1点ずらした置き場と、その理由
+
+plan の Step 1-1 はテンプレートの置き場を「`projects/orchestration-engine/docs/` 配下」と書いていた。**`templates/` の下に置いた。** 理由は、engine の `docs/` が蒸留木そのもの（`plans` / `episodes` / `decisions` / `discussions` / `knowledge`）で、そこに層でないディレクトリを足すと「どの規約で読む文書なのか」が名前から分からなくなるからである。`document-format.md` §9 が同じ形の混在を戒めている。あわせて `launchd/com.stlwolf.oe-confirm.plist.template` という先例があるので、そちらに倣った。
+
+#### 設計として効いた点
+
+**逆引きは「曖昧なら書かない」に倒した。** pane から session_id を引くとき、いまの tmux server の pid が一致する sidecar がちょうど1件のときだけ値を返す。0 件でも複数でも `unknown` にする。実測で pane を持つ sidecar 198 件に対し異なる pane 番号は 171 個しかなく、**同じ番号の別世代が既に貯まっている**からである。誤った session_id を書くと、停止の前提条件（`claude --resume` で開き直せること）が嘘になる。
+
+**子を数える錨を引数の pane にした。** 既存の `oe_reg_list` は「parent_pane == 自ペイン」で数える。`take` と `retire` は後継のセッションで走るので、この既定で数えると常に0件になり、**fail-closed がそのまま fail-open へ反転する**。設計SO が突いた点で、テスト [5] がこの反転を直接見ている（`%10` の子を数えると1件、`%11` を親にすると0件）。
+
+#### ゲートの結果
+
+- `shellcheck`（verb・lib・テスト）= exit 0。Markdown のバッククォートに対する SC2016 は既存の `oe-review` と同じ形で理由つきに抑止した。
+- `bash tests/test_handoff_prepare.sh` = 26 件すべて PASS。
+- 「`prepare` が引き継ぎ文書以外を書き換えない」はテスト [9] が board・イベントログ・登記の mtime で見ている。
+

@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# oe-handoff — 統括の計画的な交代（前任が応答できる場合）の verb（#390）
+#
+# 交代は4工程で、走るセッションが違う。
+#   prepare  前任のセッション。機械で取れる状態を引き継ぎ文書へ書く（他は何も書き換えない）
+#   start    前任のセッション。後継のペインを起こして引き継ぎ文書のパスを送る（PR-2）
+#   take     後継のセッション。席を取りに行く（PR-2）
+#   retire   後継のセッション。前任を閉じてよいかを判定し、通れば閉じる（PR-3）
+#
+# 応答しない前任からの復帰は本 verb の担当ではない（#355 の別 verb）。分かれ目は前任が
+# 自分の状態を申告できるかどうかの1点である。
+#
+# usage:
+#   oe-handoff prepare [-w <workspace>] [--out <path>] [--predecessor <%pane>]
+#   oe-handoff -h | --help
+#
+# exit: 0 正常 / 2 呼び方の誤り・前提コマンドの不在
+
+set -uo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/handoff-state.sh
+source "${BIN_DIR}/../lib/handoff-state.sh"
+
+TEMPLATE="${BIN_DIR}/../templates/handoff.md.template"
+MARK_BEGIN='<!-- oe-handoff:machine:begin -->'
+MARK_END='<!-- oe-handoff:machine:end -->'
+
+err() { printf '%s\n' "oe-handoff: $*" >&2; }
+
+usage() {
+  cat <<'EOF'
+usage:
+  oe-handoff prepare [-w <workspace>] [--out <path>] [--predecessor <%pane>]
+
+  prepare — 前任のセッションで走らせる。機械で取れる状態を引き継ぎ文書へ書き出し、
+            人が書く節は空枠のまま残す。引き継ぎ文書以外は何も書き換えない。
+
+  -w <workspace>      作業ディレクトリ（既定: git のトップレベル、無ければ cwd）
+  --out <path>        引き継ぎ文書の置き場（既定: <workspace>/.oe/handoff.md）
+  --predecessor <%N>  前任のペイン（既定: $TMUX_PANE）
+
+  環境変数:
+    OE_HANDOFF_FILE       --out の既定を上書きする
+    OE_DELEGATE_STATE_DIR 登記の置き場
+    OE_HEARTBEAT_DIR      拍動 sidecar の置き場
+EOF
+}
+
+# --- 引数 ---
+SUB="${1:-}"
+case "$SUB" in
+  -h|--help) usage; exit 0 ;;
+  prepare)   shift ;;
+  "")        err "subcommand がありません"; usage >&2; exit 2 ;;
+  *)         err "未知の subcommand: ${SUB}"; usage >&2; exit 2 ;;
+esac
+
+WORKSPACE=""
+OUT=""
+PREDECESSOR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -w)            WORKSPACE="${2:-}"; shift 2 || { err "-w に値がありません"; exit 2; } ;;
+    --out)         OUT="${2:-}"; shift 2 || { err "--out に値がありません"; exit 2; } ;;
+    --predecessor) PREDECESSOR="${2:-}"; shift 2 || { err "--predecessor に値がありません"; exit 2; } ;;
+    -h|--help)     usage; exit 0 ;;
+    *)             err "未知の引数: $1"; usage >&2; exit 2 ;;
+  esac
+done
+
+command -v jq >/dev/null 2>&1 || { err "jq が要ります"; exit 2; }
+
+if [ -z "$WORKSPACE" ]; then
+  WORKSPACE="$(git rev-parse --show-toplevel 2>/dev/null)" || WORKSPACE=""
+  [ -n "$WORKSPACE" ] || WORKSPACE="$PWD"
+fi
+[ -d "$WORKSPACE" ] || { err "workspace がありません: ${WORKSPACE}"; exit 2; }
+
+[ -n "$OUT" ] || OUT="${OE_HANDOFF_FILE:-${WORKSPACE}/.oe/handoff.md}"
+[ -n "$PREDECESSOR" ] || PREDECESSOR="${TMUX_PANE:-}"
+if [ -z "$PREDECESSOR" ]; then
+  err "前任のペインが決まりません（tmux の外なら --predecessor で渡してください）"
+  exit 2
+fi
+[ -f "$TEMPLATE" ] || { err "テンプレートがありません: ${TEMPLATE}"; exit 2; }
+
+# --- 状態を集める（read-only） ---
+SPID="$(oe_hs_server_pid)"
+SID="$(oe_hs_session_for_pane "$PREDECESSOR")"
+CTX="$(oe_hs_context_for_session "$SID")"
+CHILDREN="$(oe_hs_children_of "$PREDECESSOR")" || CHILDREN=""
+CHILD_COUNT=0
+[ -z "$CHILDREN" ] || CHILD_COUNT="$(printf '%s\n' "$CHILDREN" | grep -c '^')"
+WATCHDOGS="$(oe_hs_watchdogs)"
+REPO="$(oe_hs_repo_state "$WORKSPACE")"
+PRS="$(oe_hs_open_prs)"
+WORKTREES="$(git -C "$WORKSPACE" worktree list 2>/dev/null)" || WORKTREES="unknown"
+NOW="$(date '+%Y-%m-%d %H:%M %Z')"
+
+indent_or_none() { # <text> <空のときの文言>
+  if [ -z "$1" ]; then printf -- '- %s\n' "$2"; else printf '%s\n' "$1" | sed 's/^/- /'; fi
+}
+
+# shellcheck disable=SC2016  # backticks は Markdown のインラインコードで、展開させない
+MACHINE="$(
+  printf '%s\n' "$MARK_BEGIN"
+  printf '%s\n' '## 観測できる状態（機械が書く・毎回上書き・手で直さない）'
+  printf '\n'
+  printf -- '- 生成時刻: %s\n' "$NOW"
+  printf -- '- 前任のペイン: `%s`（tmux server pid `%s`）\n' "$PREDECESSOR" "${SPID:-unknown}"
+  printf -- '- 前任の session_id: `%s`\n' "$SID"
+  printf -- '- 前任の context%%: %s\n' "$CTX"
+  printf '\n'
+  if [ "$SID" = "unknown" ]; then
+    printf '%s\n' '**session_id が引けていない。** pane から逆引きできる sidecar がちょうど1件に'
+    printf '%s\n' '絞れなかった（0 件か、同じ pane 番号の別世代が複数ある）。**この状態では前任を'
+    printf '%s\n' '停止できない**（`claude --resume` で開き直せなくなるため・`retire` が止める）。'
+    printf '\n'
+  fi
+  printf '%s\n' '### 生きている委譲子'
+  printf '\n'
+  printf -- '- 件数: %s\n' "$CHILD_COUNT"
+  indent_or_none "$CHILDREN" "なし"
+  printf '\n'
+  if [ "$CHILD_COUNT" -gt 0 ]; then
+    printf '%s\n' '**生きた委譲子が居るあいだは席を動かせない**（`take` が止める）。子の報告先は'
+    printf '%s\n' '起動時に前任のペインへ焼き込まれていて、あとから張り替えられないためである。'
+    printf '\n'
+  fi
+  printf '%s\n' '### open PR'
+  printf '\n'
+  indent_or_none "$PRS" "なし"
+  printf '\n'
+  printf '%s\n' '### worktree'
+  printf '\n'
+  indent_or_none "$WORKTREES" "unknown"
+  printf '\n'
+  printf '%s\n' '### repo'
+  printf '\n'
+  indent_or_none "$REPO" "unknown"
+  printf '\n'
+  printf '%s\n' '### 常駐の見張り'
+  printf '\n'
+  indent_or_none "$WATCHDOGS" "unknown"
+  printf '%s\n' "$MARK_END"
+)"
+
+# --- 書き出し（引き継ぎ文書だけを書く） ---
+mkdir -p "$(dirname "$OUT")" 2>/dev/null || { err "置き場を作れません: $(dirname "$OUT")"; exit 2; }
+if [ ! -f "$OUT" ]; then
+  cp "$TEMPLATE" "$OUT" || { err "テンプレートを置けません: ${OUT}"; exit 2; }
+  CREATED=1
+else
+  CREATED=0
+fi
+
+if ! grep -qF -- "$MARK_BEGIN" "$OUT" || ! grep -qF -- "$MARK_END" "$OUT"; then
+  err "引き継ぎ文書に機械の節の目印がありません（${OUT}）。手で消したなら戻してください"
+  exit 2
+fi
+
+TMP="${OUT}.tmp.$$"
+MACHINE_FILE="${OUT}.machine.$$"
+printf '%s\n' "$MACHINE" >"$MACHINE_FILE"
+awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v mf="$MACHINE_FILE" '
+  index($0, b) == 1 { while ((getline line < mf) > 0) print line; close(mf); skip = 1; next }
+  index($0, e) == 1 { skip = 0; next }
+  skip != 1 { print }
+' "$OUT" >"$TMP" || { rm -f "$TMP" "$MACHINE_FILE"; err "機械の節を差し替えられませんでした"; exit 2; }
+mv -f "$TMP" "$OUT" || { rm -f "$TMP" "$MACHINE_FILE"; err "書き戻せませんでした: ${OUT}"; exit 2; }
+rm -f "$MACHINE_FILE"
+
+# --- 表示 ---
+printf '=== oe-handoff prepare ===\n'
+if [ "$CREATED" -eq 1 ]; then
+  printf '引き継ぎ文書を作りました: %s\n' "$OUT"
+else
+  printf '引き継ぎ文書の機械の節を書き直しました: %s\n' "$OUT"
+fi
+printf '前任 %s / session_id %s / context%% %s / 生きた委譲子 %s 件\n' \
+  "$PREDECESSOR" "$SID" "$CTX" "$CHILD_COUNT"
+printf '\n'
+printf '次にやること:\n'
+printf '  1. %s の「人が書く」節を埋める（機械の節は触らない）\n' "$OUT"
+printf '     とくに「渡らないもの」と自己申告の残余は、ここでしか書けません。\n'
+if [ "$CHILD_COUNT" -gt 0 ]; then
+  printf '  2. **まだ交代できません。** 生きた委譲子 %s 件が片づくまで席は動かせません。\n' "$CHILD_COUNT"
+else
+  printf '  2. oe-handoff start で後継のペインを起こす（PR-2 で実装）\n'
+fi
+if [ "$SID" = "unknown" ]; then
+  printf '\n注意: 前任の session_id が引けていないので、このままでは retire が停止を止めます。\n'
+fi
+exit 0
