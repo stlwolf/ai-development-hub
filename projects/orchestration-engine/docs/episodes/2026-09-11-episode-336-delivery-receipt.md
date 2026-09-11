@@ -16,11 +16,16 @@ related:
   - type: design_context
     ref: "https://github.com/stlwolf/ai-development-hub/issues/239"
     reason: "統括 watchdog（oe-undelivered / oe-vitals）の出所。親側の見張りはこの上に足す"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-09-11-decision-watchdog-outside-session.md"
+    reason: "この closure が required と判定した「常駐の見張りを session の外に置き沈黙を別主体が検知する」の昇格先"
 tags: [oe-send, prompt_received, delivery-receipt, watchdog, event-bus, hooks]
 promotion:
   - subject: "常駐の見張りを session 外に置き、その沈黙を別主体に検知させる"
     verdict: required
-    ref: "本文: gate 2 — 設計 SO（弱・2 レーン・1 本ずつ・2026-09-11）"
+    ref:
+      - "本文: gate 2 — 設計 SO（弱・2 レーン・1 本ずつ・2026-09-11）"
+      - "本文: 昇格（2026-09-11・後追い・owner の指摘を受けて）"
   - subject: "unconfirmed を終状態にせず遅延受領で遷移させ、文言で断定しない"
     verdict: unknown
     ref: "本文: owner の HG 裁定と plan v3（2026-09-11）"
@@ -275,3 +280,21 @@ gate 1: `oe-refute --rubric exploration --lanes 2`（audit_id `20260910184850F5F
 - Copilot レビュー: 5 件（うち 4 件は「設計で確定した原則を周辺の成果物へ持ち出せていない」型）。
 
 **合計 22 件のうち、自力で気づいたのは 4 件である**（テスト 2・plist 手順のリハーサル 1・Copilot 対応中に気づいた plan の stale 1）。残り 18 件は外部のレビューが出した。**gate 2 / gate 4 / Copilot はそれぞれ別の層を捕まえている** — gate 2 は設計の穴、gate 4 はコードの契約と競合、Copilot は設計と周辺成果物のずれである。重ねた意味があった。
+
+## 昇格（2026-09-11・後追い・owner の指摘を受けて）
+
+closure で `required` と判定した「**常駐の見張りを session の外に置き、その沈黙を別主体に検知させる**」を decision へ昇格した。
+
+- 昇格先: `projects/orchestration-engine/docs/decisions/2026-09-11-decision-watchdog-outside-session.md`
+- 型の選択: 確定した判断なので decision（`document-format.md` §13.3）。探索の軌跡は本 episode に在るので discussion にはしない。
+- 内容: 置き場の決定・棄却した置き場 3 件・gate 2 が不成立にした当初案・#301 と同じ論点であること・共通原因故障で範囲が狭まること・**出口（誰がいつ検査を実行し誰が読むか）は閉じていない**こと・再判断の条件。
+
+### なぜ後追いになったか（手順の誤り）
+
+**昇格は closure と worktree 掃除の前に行うのが規約である**（`document-format.md` §13.6 の 1 行版・委譲 brief の固定節も同じ）。本 episode の closure では「判定までが closure の担当で、実行はゲート 6」と書いて先送りした。**§13.1 の「昇格の実行はゲート 6（merge 後の後始末）＝ worktree 掃除の前」だけを読み、固定節と §13.6 の「closure / 掃除の前」を読み落としていた。** 結果、PR #387 がマージされ worktree が掃除された後に owner の指摘で書き起こすことになった。
+
+**先送りの実害は、掃除で作業層が消えた後だと昇格元の文脈が取り出しにくくなることである。** 今回は committed の episode と plan が残っていたので復元できたが、これは運が良かっただけで、作業層にしか無い材料が混じっていれば失われていた。
+
+統括もこの closure を通したので、読み違いは私だけの側にあるわけではない。ただし**固定節は brief に明示されており、私が先に従うべき指示だった。**
+
+昇格の印: 規約の詳細節と、委譲 brief の固定節が食い違って見えたとき、どちらを先に読むかの規則が自分の中に無かった
