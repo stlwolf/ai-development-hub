@@ -3,7 +3,7 @@ id: "01M28491PJWEJN1H4TBJTTSTH4"
 title: "#347 notify.sh の advisory 衛生3件"
 date: 2026-09-11
 type: plan
-status: draft
+status: stable
 related:
   - type: derived_from
     ref: "https://github.com/stlwolf/ai-development-hub/issues/347"
@@ -86,7 +86,7 @@ if [[ -n "${NOTIFY_DEBUG:-}" ]] || { _notify_home_usable && [[ -f "${HOME}/.noti
 
 1.4 という値が意味を持つのは `notify.sh` を改変する人だけで、その人に伝えたい中身は「下限は 1.4」ではなく「`-R -r` を `-Rr` に縮めるな。縮めると下限が 1.5 に上がる」である。読者が改変者に揃う `notify.sh` 節（「advisory 安全性」の下）へ書く。
 
-「前提条件」節には値を書かず、「フックによっては `jq` の版に下限があり、各スクリプト側に書いてある」という誘導の1行だけ足す案も出した。**ゲート3で owner がこれを採らないと裁定した**（`.oe/addendum-347-gate3.md`）。採らない理由は、共通節に誘導を書くと同じディレクトリの他フックの下限まで語ることになり、#347 の範囲から出るためである。
+「前提条件」節には値を書かず、「フックによっては `jq` の版に下限があり、各スクリプト側に書いてある」という誘導の1行だけ足す案も出した。**ゲート3で owner がこれを採らないと裁定した。** 裁定の記録は作業層（`.oe/`・git 管理外）にあるので、内容をここに写す。採らない理由は、共通節に誘導を書くと同じディレクトリの他フックの下限まで語ることになり、#347 の範囲から出るためである。
 
 コード中のコメントは消さない。あれは「なぜ `-R` と `-r` を分けて書くのか」というその場の書き方の理由で、読む人も目的も違う。
 
@@ -152,78 +152,78 @@ DJ-4 の後半である。値を書かない1行なので害は小さいと見�
 
 足場は使い捨てで、作業ツリーには commit しない。
 
-- [ ] 偽の `terminal-notifier`（引数を記録ファイルへ追記するだけ）を作る
-- [ ] 偽の `tmux`（`display-message` に対して擬似端末のパスを返すだけ）を作る
-- [ ] 制御端末を持たない起動の足場（`os.setsid()`）を、記録ファイルのポーリング付きで組む
-- [ ] 修正前の `notify.sh` に足場を当て、**期待する失敗が出ること**を確かめる（`env -u HOME` で `rc=1`・制御端末なしで `/dev/tty` の診断・`HOME=/` でトレースに `//.notify-hook-debug` が現れる）
+- [x] 偽の `terminal-notifier`（引数を記録ファイルへ追記するだけ）を作る
+- [x] 偽の `tmux`（`display-message` に対して擬似端末のパスを返すだけ）を作る
+- [x] 制御端末を持たない起動の足場（`os.setsid()`）を、記録ファイルのポーリング付きで組む
+- [x] 修正前の `notify.sh` に足場を当て、**期待する失敗が出ること**を確かめる（`env -u HOME` で `rc=1`・制御端末なしで `/dev/tty` の診断・`HOME=/` でトレースに `//.notify-hook-debug` が現れる）
 
 ### GATE: 足場が反証可能であること
 
-- [ ] 修正前に失敗し、修正後に通る対照になっている（修正後にしか走らない対照は作らない）
+- [x] 修正前に失敗し、修正後に通る対照になっている（修正後にしか走らない対照は作らない）
 
 ### Step 2: `HOME` の可否を見る述語を入れ、デバッグ判定が落ちるのを止める
 
-- [ ] `canonical/hooks/scripts/notify.sh` に `_notify_home_usable` を足し、デバッグ判定を DJ-2 の形へ置き換える（`notify-hook-debug` で検索して当てる。行番号で指さない）
-- [ ] `shellcheck canonical/hooks/scripts/notify.sh` が clean
-- [ ] `HOME` 6通り（未設定 / 空文字 / `/` / `//` / 相対 / 通常）と `NOTIFY_DEBUG` の有無の組み合わせで、終了コードが 0・stdout が空・stderr が空
-- [ ] **陽性対照（DJ-6）**: 制御端末なしの足場で `env -u HOME` で起動し、偽の `terminal-notifier` の記録に title と body が現れる
-- [ ] **同じものが届いた確認**: `HOME` 設定時の記録と、`HOME` 未設定時の記録が一致する
-- [ ] **`/` を見に行かない確認**: `HOME=/`・`HOME=//`・`HOME=""` の3通りで、`bash -x` のトレースに `.notify-hook-debug` を見に行く行が現れない
-- [ ] **挙動不変**: `HOME` が通常のとき、マーカーファイルの有無で `/tmp/notify-hook.log` への記録の有無が修正前と一致する
-- [ ] コミット `fix(hooks): #347 HOME 未設定でデバッグ判定が落ちるのを止める`
+- [x] `canonical/hooks/scripts/notify.sh` に `_notify_home_usable` を足し、デバッグ判定を DJ-2 の形へ置き換える（`notify-hook-debug` で検索して当てる。行番号で指さない）
+- [x] `shellcheck canonical/hooks/scripts/notify.sh` が clean
+- [x] `HOME` 6通り（未設定 / 空文字 / `/` / `//` / 相対 / 通常）と `NOTIFY_DEBUG` の有無の組み合わせで、終了コードが 0・stdout が空・stderr が空
+- [x] **陽性対照（DJ-6）**: 制御端末なしの足場で `env -u HOME` で起動し、偽の `terminal-notifier` の記録に title と body が現れる
+- [x] **同じものが届いた確認**: `HOME` 設定時の記録と、`HOME` 未設定時の記録が一致する
+- [x] **`/` を見に行かない確認**: `HOME=/`・`HOME=//`・`HOME=""` の3通りで、`bash -x` のトレースに `.notify-hook-debug` を見に行く行が現れない
+- [x] **挙動不変**: `HOME` が通常のとき、マーカーファイルの有無で `/tmp/notify-hook.log` への記録の有無が修正前と一致する
+- [x] コミット `fix(hooks): #347 HOME 未設定でデバッグ判定が落ちるのを止める`
 
 ### Step 3: リダイレクト失敗の診断を消す（3箇所）
 
-- [ ] `notify.sh` の3箇所（tmux のペイン TTY 側・`/dev/tty` 側・デバッグログの追記）で `2>/dev/null` をリダイレクトの前へ移す
-- [ ] `shellcheck` が clean
-- [ ] 制御端末を持たない起動で stderr が空・stdout が空・`rc=0`
-- [ ] デバッグログの追記先を開けなくした状態（`/tmp/notify-hook.log` を一時的にディレクトリにする。**実行前に既存の有無を確かめ、後始末で必ず元に戻す**）で、`NOTIFY_DEBUG=1` でも stderr が空
-- [ ] 修正前に同じ足場で診断が出ることを確かめ直す（反証可能性）
-- [ ] コミット `fix(hooks): #347 リダイレクト失敗の診断が advisory の stderr を汚すのを止める`
+- [x] `notify.sh` の3箇所（tmux のペイン TTY 側・`/dev/tty` 側・デバッグログの追記）で `2>/dev/null` をリダイレクトの前へ移す
+- [x] `shellcheck` が clean
+- [x] 制御端末を持たない起動で stderr が空・stdout が空・`rc=0`
+- [x] デバッグログの追記先を開けなくした状態（`/tmp/notify-hook.log` を一時的にディレクトリにする。**実行前に既存の有無を確かめ、後始末で必ず元に戻す**）で、`NOTIFY_DEBUG=1` でも stderr が空
+- [x] 修正前に同じ足場で診断が出ることを確かめ直す（反証可能性）
+- [x] コミット `fix(hooks): #347 リダイレクト失敗の診断が advisory の stderr を汚すのを止める`
 
-### Step 3b: 追記先が通常ファイルでないなら触らない（**ゲート3で「足す」と裁定された。実行する**）
+### Step 3b: 追記先が通常ファイルでないなら触らない（**ゲート3で「足す」と裁定された。実行済み**）
 
-- [ ] 追記の直前に `[ -e "$path" ] && [ ! -f "$path" ]` のガードを足す（`block-destructive.sh` と同じ形）
-- [ ] `/tmp/notify-hook.log` を FIFO にした状態で `NOTIFY_DEBUG=1` で起動し、止まらずに `rc=0` で返ること（後始末で FIFO を消す）
-- [ ] コミット `fix(hooks): #347 デバッグログの追記先が通常ファイルでないなら触らない`
+- [x] 追記の直前に `[ -e "$path" ] && [ ! -f "$path" ]` のガードを足す（`block-destructive.sh` と同じ形）
+- [x] `/tmp/notify-hook.log` を FIFO にした状態で `NOTIFY_DEBUG=1` で起動し、止まらずに `rc=0` で返ること（後始末で FIFO を消す）
+- [x] コミット `fix(hooks): #347 デバッグログの追記先が通常ファイルでないなら触らない`
 
 ### Step 4: `jq` の下限を README に書く
 
-- [ ] `canonical/hooks/README.md` の `notify.sh` 節（「advisory 安全性」の下）に、下限 1.4 と「`-R -r` を縮めるな」を1行で足す。根拠が #343 のゲート4で jq のソースまで当てて確定したことも書く
+- [x] `canonical/hooks/README.md` の `notify.sh` 節（「advisory 安全性」の下）に、下限 1.4 と「`-R -r` を縮めるな」を1行で足す。根拠が #343 のゲート4で jq のソースまで当てて確定したことも書く
 - [x] 「前提条件」節には触らない（**ゲート3で「足さない」と裁定された。条件が成立しないので実施しない**）
-- [ ] `notify.sh` のコード中のコメントは変更しない
-- [ ] `markdown-conventions` に沿っていること（箇条書きはハイフン・パスはインラインコード）
-- [ ] コミット `docs(hooks): #347 jq の下限を notify.sh 節に書く`
+- [x] `notify.sh` のコード中のコメントは変更しない
+- [x] `markdown-conventions` に沿っていること（箇条書きはハイフン・パスはインラインコード）
+- [x] コミット `docs(hooks): #347 jq の下限を notify.sh 節に書く`
 
 ### Step 5: 回帰確認（受け入れ条件「既存の通知経路が回帰していない」）
 
 入力の形は2つ（Claude Code の「引数 + stdin JSON」と Codex の「第1引数 JSON」）、配信の分岐は4つ（tmux のペイン TTY・`/dev/tty`・`terminal-notifier`・`osascript`）である。
 
-- [ ] **Codex の呼ばれ方**: `notify.sh '{"cwd":"<repo>","last-assistant-message":"test"}'` を制御端末なしの足場へ通し、title が `Codex ✅` で始まり、`cwd` から repo とブランチが取れる
-- [ ] **Claude Code の呼ばれ方**: `notify.sh done` / `notify.sh wait` に stdin の JSON を与え、title が `Claude ✅` / `Claude ⌨️` になる
-- [ ] **tmux 経路**: 偽の `tmux` が擬似端末を返す足場で、OSC 777 のバイト列が擬似端末へ書かれる
-- [ ] **`TMUX` は在るが `TMUX_PANE` が無い分岐**: アクティブペインの TTY を取り、`loc` が空になる
-- [ ] **`-w "$pt"` が偽の分岐**: tmux の中なのにフォールバックへ落ちる
-- [ ] **非 tmux 経路**: 擬似端末を制御端末として持つ子で `TMUX` を外し、OSC 777 のバイト列が書かれる
-- [ ] **`jq` 不在**: `PATH` から `jq` を外すと、無音で `rc=0` になる
-- [ ] **全経路で stdout が空**（契約の3つ目。終了コードと stderr だけでなく stdout も名指しで見る）
-- [ ] **`wait` の 80 文字切り詰め**が日本語で壊れない（#343 の挙動が保たれている）
-- [ ] **走査の対照（DJ-7）**: `canonical/hooks/scripts/*.sh` の8本すべてを `env -u HOME` で起動し、終了コードと stderr を表に出す
-- [ ] 足場の中身と出力を episode に記録する
-- [ ] **`./scripts/sync.sh` をこの worktree から実行しない**（3ツールの symlink が worktree へ張り替わり、worktree を消すとリンクが壊れる）
+- [x] **Codex の呼ばれ方**: `notify.sh '{"cwd":"<repo>","last-assistant-message":"test"}'` を制御端末なしの足場へ通し、title が `Codex ✅` で始まり、`cwd` から repo とブランチが取れる
+- [x] **Claude Code の呼ばれ方**: `notify.sh done` / `notify.sh wait` に stdin の JSON を与え、title が `Claude ✅` / `Claude ⌨️` になる
+- [x] **tmux 経路**: 偽の `tmux` が擬似端末を返す足場で、OSC 777 のバイト列が擬似端末へ書かれる
+- [x] **`TMUX` は在るが `TMUX_PANE` が無い分岐**: アクティブペインの TTY を取り、`loc` が空になる
+- [x] **`-w "$pt"` が偽の分岐**: tmux の中なのにフォールバックへ落ちる
+- [x] **非 tmux 経路**: 擬似端末を制御端末として持つ子で `TMUX` を外し、OSC 777 のバイト列が書かれる
+- [x] **`jq` 不在**: `PATH` から `jq` を外すと、無音で `rc=0` になる
+- [x] **全経路で stdout が空**（契約の3つ目。終了コードと stderr だけでなく stdout も名指しで見る）
+- [x] **`wait` の 80 文字切り詰め**が日本語で壊れない（#343 の挙動が保たれている）
+- [x] **走査の対照（DJ-7）**: `canonical/hooks/scripts/*.sh` の8本すべてを `env -u HOME` で起動し、終了コードと stderr を表に出す
+- [x] 足場の中身と出力を episode に記録する
+- [x] **`./scripts/sync.sh` をこの worktree から実行しない**（3ツールの symlink が worktree へ張り替わり、worktree を消すとリンクが壊れる）
 
 ### GATE 4: 実装SO（弱・2レーン）+ Copilot
 
-- [ ] `so-compare` を `--with codex,claude` で実装レビューに回す
-- [ ] draft を ready にしてから Copilot レビューを依頼する（draft には Copilot が付かない）
-- [ ] 指摘への対応は1ラウンド自律で行い、返信まで済ませて止まる
+- [x] `so-compare` を `--with codex,claude` で実装レビューに回す
+- [x] draft を ready にしてから Copilot レビューを依頼する（draft には Copilot が付かない）
+- [x] 指摘への対応は1ラウンド自律で行い、返信まで済ませて止まる
 
 ### GATE 5: episode closure（マージ前）
 
-- [ ] episode の closure を書く（本文の再掲でなく本文への pointer）
-- [ ] negative knowledge 3件（`01M1272GA8CRXQKQWMF005NHCF` / `01M07QDKE73BTK0Q3K90FE4G9T` / `01M00KCCHNMFPHP5HAGX2DZ1MK`）に観測を1レコードずつ書き戻す
-- [ ] `promotion` 欄を埋める
-- [ ] コミット `docs(harness): #347 plan と episode`
+- [x] episode の closure を書く（本文の再掲でなく本文への pointer）
+- [x] negative knowledge 3件（`01M1272GA8CRXQKQWMF005NHCF` / `01M07QDKE73BTK0Q3K90FE4G9T` / `01M00KCCHNMFPHP5HAGX2DZ1MK`）に観測を1レコードずつ書き戻す
+- [x] `promotion` 欄を埋める
+- [x] コミット `docs(harness): #347 plan と episode`
 
 ## 受け入れ条件との対応
 
@@ -260,7 +260,7 @@ DJ-1 は両レーンとも反証できなかった。claude レーンは `HOME` 
 - **`tr` や `basename` が `PATH` に無いと stderr に診断が出る。** 通常の macOS では起きない。ただし README の「外部呼び出しは全て `|| true`」は実装の厳密な説明になっていない
 - `session-name.sh` と `oe-prompt-receipt.sh` にも「リダイレクトの後に `2>/dev/null`」の形がある。書き先は通常ファイルなので `/dev/tty` とは事情が違うが、同じ型ではある
 - `canonical/hooks/` にテストの置き場が無い。回帰確認のたびに臨時の足場を組み直すことになる
-- hook 側と engine 側で `HOME` の可否の基準が揃っていない。本 plan で `notify.sh` は engine 側に合わせるが、同じディレクトリの `cc-lint.sh` / `block-destructive.sh` / `block-force-push.sh` は非空止まりのままである
+- hook 側と engine 側で `HOME` の可否の基準が揃っていない。本 plan で `notify.sh` は engine 側に合わせるが、同じディレクトリの `cc-lint.sh` / `block-destructive.sh` / `block-force-push.sh` は非空止まりのままである。**行き先 = engine の述語に残る穴と同じ Issue に含める**（episode の closure の follow-up 表）
 
 ## 検証していない前提
 
