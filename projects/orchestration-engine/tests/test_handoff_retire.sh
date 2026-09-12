@@ -201,14 +201,17 @@ TMUX_PANE='%10' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDO
 set -e
 ck "2 で終わる" "2" "$rc11"
 
+# mtime は `date -r <file> +%s` で取る。`stat -f %m` は GNU では filesystem の情報を返して
+# **成功してしまう**ので、before/after が同じ誤った値になり、書き換えを検出できない
+# （lib/handoff-state.sh で同じ罠を直したのに、テストで再導入していた）。
 echo "[12] --execute は検査をやり直してから閉じる（呼び出し順で見る）"
 : > "$CALL_LOG"
-BOARD_M_BEFORE="$(stat -f %m "$BOARD" 2>/dev/null || stat -c %Y "$BOARD")"
+BOARD_M_BEFORE="$(date -r "$BOARD" +%s)"
 REG_FILE="$REG/$(printf '%s' '900_%11' | tr -c 'A-Za-z0-9' '_').json"
 jq -cn '{pane:"%11", label:"cockpit", workspace:"", parent_pane:"", role:"child"}' > "$REG_FILE"
-REG_M_BEFORE="$(stat -f %m "$REG_FILE" 2>/dev/null || stat -c %Y "$REG_FILE")"
+REG_M_BEFORE="$(date -r "$REG_FILE" +%s)"
 printf '{"type":"x"}\n' > "$EV/oe-events.jsonl"
-EV_M_BEFORE="$(stat -f %m "$EV/oe-events.jsonl" 2>/dev/null || stat -c %Y "$EV/oe-events.jsonl")"
+EV_M_BEFORE="$(date -r "$EV/oe-events.jsonl" +%s)"
 set +e
 out12="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc12=$?
 set -e
@@ -222,9 +225,9 @@ ck  "kill-pane は1回だけ"       "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr 
 ckc "閉じた相手は前任だけ"      "$(grep 'kill-pane' "$CALL_LOG")" "kill-pane -t %10"
 
 echo "[13] --execute は前任のペイン以外を変更しない"
-ck "board の mtime が動かない"       "$BOARD_M_BEFORE"  "$(stat -f %m "$BOARD" 2>/dev/null || stat -c %Y "$BOARD")"
-ck "登記の mtime が動かない"         "$REG_M_BEFORE"    "$(stat -f %m "$REG_FILE" 2>/dev/null || stat -c %Y "$REG_FILE")"
-ck "イベントログの mtime が動かない" "$EV_M_BEFORE"     "$(stat -f %m "$EV/oe-events.jsonl" 2>/dev/null || stat -c %Y "$EV/oe-events.jsonl")"
+ck "board の mtime が動かない"       "$BOARD_M_BEFORE"  "$(date -r "$BOARD" +%s)"
+ck "登記の mtime が動かない"         "$REG_M_BEFORE"    "$(date -r "$REG_FILE" +%s)"
+ck "イベントログの mtime が動かない" "$EV_M_BEFORE"     "$(date -r "$EV/oe-events.jsonl" +%s)"
 ckc "後始末はしないと言う"           "$out12" "後始末（登記の掃除・worktree の掃除・issue の close）はしていません"
 
 echo "[14] 引き継ぎ文書が無ければ呼び方の誤り"
@@ -283,9 +286,19 @@ ck  "非0 で終わる"      "1" "$rc18"
 ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 が申告に出てこない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[19] 閉じる直前に委譲子が現れたら閉じない"
-# 目印ファイルで切り替える（呼び出し回数に依らせると、実装の呼び方を変えたとき壊れる）
+echo "[19] 閉じる直前に委譲子が現れたら閉じない（最初の検査では居ない）"
+# **最初の検査では子を見せない。** 目印を「retire の途中で必ず走る別のコマンド」に作らせる。
+# 前のやり方（テストが始まる前に目印を置く）だと**最初の list-panes で既に子が見えてしまい**、
+# 早い方の検査で落ちるので、**閉じる直前の数え直しを1度も通らないまま test が通っていた**。
+# retire は 子の検査 → open PR の再検査（gh を呼ぶ）→ 閉じる直前の数え直し、の順で進むので、
+# gh の stub に目印を作らせれば「あとから現れた子」を作れる。
 LATE="$_TMP_DIR/late_child"
+cat > "$STUB/gh" <<EOF
+#!/usr/bin/env bash
+touch "$LATE"
+[ -n "\${GH_PRS:-}" ] && printf '%s\n' "\$GH_PRS"
+exit 0
+EOF
 cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
 printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
@@ -295,16 +308,25 @@ case "\${1:-}" in
 esac
 exit 0
 EOF
-chmod +x "$STUB/tmux"
-touch "$LATE"; mk_child "%13" "%10"
+chmod +x "$STUB/tmux" "$STUB/gh"
+rm -f "$LATE"; mk_child "%13" "%10"
 : > "$CALL_LOG"
 set +e
-"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1; rc19=$?
+out19="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc19=$?
 set -e
-ck  "非0 で終わる"          "1" "$rc19"
-ck  "kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "非0 で終わる"                  "1" "$rc19"
+ckc "閉じる直前に現れたと言う"      "$out19" "閉じる直前に生きた委譲子が 1 件現れました"
+ck  "kill-pane を呼ばない"          "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+# **最初の検査では子が見えていなかったこと**（＝早い方の検査で落ちていないこと）を確かめる
+nck "早い方の検査では落ちていない"  "$out19" "前任に生きた委譲子が 1 件あります"
 rm -f "$LATE" "$REG"/*.json
+cat > "$STUB/gh" <<'EOF'
+#!/usr/bin/env bash
+[ -n "${GH_PRS:-}" ] && printf '%s\n' "$GH_PRS"
+exit 0
+EOF
+chmod +x "$STUB/gh"
 
 echo "[20] 停止後の一覧が引けなければ「不在を確認した」と言わない"
 FAILAFTER="$_TMP_DIR/fail_after_kill"
