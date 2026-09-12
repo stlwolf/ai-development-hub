@@ -304,6 +304,50 @@ ck "別の置き場を指せば引ける" "sid-alt" "$(OE_TRANSCRIPT_DIR="$ALT_T
 ck "既定の置き場には無いので unknown" "unknown" "$(oe_hs_session_for_pane '%15')"
 rm -f "$HB/sid-alt.json"
 
+echo "[31] unknown の理由が文書に出る（実装と食い違う説明を書かない）"
+mk_beat "sid-stale" "%16" "900" 60 999999
+mk_transcript "sid-stale" 0
+OUT9="$WS/.oe/handoff9.md"
+"$OE_HANDOFF" prepare -w "$WS" --out "$OUT9" --predecessor "%16" >/dev/null 2>&1 || true
+ckc "拍動が古いと書く" "$(cat "$OUT9")" "拍動が古い"
+if grep -qF '別世代が複数ある' "$OUT9"; then
+  echo "  FAIL: 古い説明（別世代が複数ある）を書かない"; FAIL=$((FAIL+1))
+else
+  echo "  PASS: 古い説明（別世代が複数ある）を書かない"; PASS=$((PASS+1))
+fi
+rm -f "$HB/sid-stale.json" "$TR/sid-stale.jsonl"
+
+echo "[32] 拍動が1件も無いときの理由も書き分ける"
+OUT10="$WS/.oe/handoff10.md"
+"$OE_HANDOFF" prepare -w "$WS" --out "$OUT10" --predecessor '%98' >/dev/null 2>&1 || true
+ckc "拍動が1件も無いと書く" "$(cat "$OUT10")" "拍動が1件も無い"
+
+echo "[33] repo の値が呼び出し側の pipefail に依存しない"
+NOGIT="$_TMP_DIR/notgit"; mkdir -p "$NOGIT"
+ck "pipefail ありで unknown" "worktrees=unknown" "$( set -o pipefail; oe_hs_repo_state "$NOGIT" | grep -oE 'worktrees=[a-z0-9(-]+' )"
+ck "pipefail なしでも unknown" "worktrees=unknown" "$( set +o pipefail; oe_hs_repo_state "$NOGIT" | grep -oE 'worktrees=[a-z0-9(-]+' )"
+
+echo "[34] 壊れた登記を読んでも生の警告を stderr に出さない"
+printf 'not json\n' > "$REG/$(reg_key '%17').json"
+errout="$( oe_hs_children_of '%10' 2>&1 >/dev/null )" || true
+if printf '%s' "$errout" | grep -qiE 'ヌルバイト|null byte'; then
+  echo "  FAIL: NUL の警告を出さない"; FAIL=$((FAIL+1))
+else
+  echo "  PASS: NUL の警告を出さない"; PASS=$((PASS+1))
+fi
+rm -f "$REG/$(reg_key '%17').json"
+
+echo "[35] 差し替えた結果が空でないことを被せる前に確かめる"
+ckc "機械の節に見出しがある" "$(cat "$OUT")" "## 観測できる状態"
+ck "機械の節が空でない" "1" "$(awk '/oe-handoff:machine:begin/{f=1;next} /oe-handoff:machine:end/{f=0} f&&NF{c++} END{print (c>3)?1:0}' "$OUT")"
+
+echo "[36] 拍動の古さが取れないときに「unknown 秒前」と書かない"
+if grep -qF 'unknown 秒前' "$OUT10"; then
+  echo "  FAIL: unknown に単位を付けない"; FAIL=$((FAIL+1))
+else
+  echo "  PASS: unknown に単位を付けない"; PASS=$((PASS+1))
+fi
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

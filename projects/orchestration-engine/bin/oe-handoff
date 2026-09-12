@@ -88,6 +88,10 @@ fi
 # --- 状態を集める（read-only） ---
 SPID="$(oe_hs_server_pid)"
 SID="$(oe_hs_session_for_pane "$PREDECESSOR")"
+# 逆引きが unknown になった理由は lib が持っている。**実装を写した説明を手で書かない**
+# （書くと、実装を変えたときに文書だけ古いまま残る）。
+oe_hs_session_for_pane "$PREDECESSOR" >/dev/null
+SID_REASON="$OE_HS_SESSION_REASON"
 CTX="$(oe_hs_context_for_session "$SID")"
 BEAT_AGE="$(oe_hs_beat_age_for_pane "$PREDECESSOR")"
 # 子を数えられなかったとき（jq 不在・登記の置き場が決まらない）を 0 件に化かさない。
@@ -120,12 +124,19 @@ MACHINE="$(
   printf -- '- 前任のペイン: `%s`（tmux server pid `%s`）\n' "$PREDECESSOR" "${SPID:-unknown}"
   printf -- '- 前任の session_id: `%s`\n' "$SID"
   printf -- '- 前任の context%%: %s\n' "$CTX"
-  printf -- '- 前任の拍動の古さ: %s 秒前\n' "$BEAT_AGE"
+  if [ "$BEAT_AGE" = "unknown" ]; then
+    printf -- '- 前任の拍動の古さ: 取れなかった\n'
+  else
+    printf -- '- 前任の拍動の古さ: %s 秒前\n' "$BEAT_AGE"
+  fi
   printf '\n'
   if [ "$SID" = "unknown" ]; then
-    printf '%s\n' '**session_id が引けていない。** pane から逆引きできる sidecar がちょうど1件に'
-    printf '%s\n' '絞れなかった（0 件か、同じ pane 番号の別世代が複数ある）。**この状態では前任を'
-    printf '%s\n' '停止できない**（`claude --resume` で開き直せなくなるため・`retire` が止める）。'
+    printf '%s\n' '**session_id が引けていない。** 理由は次のとおりである。'
+    printf '\n'
+    printf -- '- %s\n' "${SID_REASON:-理由を取れなかった}"
+    printf '\n'
+    printf '%s\n' '**この状態では前任を停止できない**（`claude --resume` で開き直せなくなるため・'
+    printf '%s\n' '`retire` が止める）。'
     printf '\n'
   fi
   printf '%s\n' '### 生きている委譲子'
@@ -202,13 +213,32 @@ if ! ( umask 077; printf '%s\n' "$MACHINE" >"$MACHINE_FILE" ); then
 fi
 ( umask 077; : >"$TMP" ) || { err "一時ファイルを作れません: ${TMP}"; exit 2; }
 awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v mf="$MACHINE_FILE" '
-  $0 == b { while ((getline line < mf) > 0) print line; close(mf); skip = 1; next }
+  $0 == b {
+      while ((r = (getline line < mf)) > 0) print line
+      close(mf)
+      # getline はファイルを開けないとき -1 を返す。`> 0` だけで見ると、-1 も 0 も
+      # 「ループに入らない」になり、**機械の節が空の文書ができて awk は 0 で終わる**。
+      if (r < 0) { exit 3 }
+      skip = 1; next
+  }
   $0 == e { skip = 0; next }
   skip != 1 { print }
 ' "$OUT" >"$TMP"; awk_rc=$?
 # 書いている最中も緩めない（全文が入るので、途中の一時ファイルも読まれてはいけない）。
 chmod 600 "$TMP" 2>/dev/null || true
+if [ "$awk_rc" -eq 3 ]; then
+  err "機械の節を読み出せませんでした（staging を開けない）。文書は変更していません"
+  exit 2
+fi
 [ "$awk_rc" -eq 0 ] || { err "機械の節を差し替えられませんでした"; exit 2; }
+# 自分で名指しした故障の片側だけを塞がない。差し替えた結果に目印が1組あり、
+# 機械の節が空でないことを、被せる前に確かめる。
+if [ "$(grep -cxF -- "$MARK_BEGIN" "$TMP" | tr -d ' ')" != "1" ] \
+   || [ "$(grep -cxF -- "$MARK_END" "$TMP" | tr -d ' ')" != "1" ] \
+   || ! grep -qF -- '## 観測できる状態' "$TMP"; then
+  err "差し替えた結果が壊れています。文書は変更していません"
+  exit 2
+fi
 # mv は tmp の権限を持ち込むので、元の文書の権限に揃える（umask で 0600 が 0644 に緩まない）。
 chmod --reference="$OUT" "$TMP" 2>/dev/null \
   || chmod "$(stat -f %Lp "$OUT" 2>/dev/null || printf '644')" "$TMP" 2>/dev/null || true

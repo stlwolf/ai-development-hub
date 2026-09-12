@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # OE_HS_SESSION_REASON は source する側が読む（lib/spawn.sh と同じ形）
 # handoff-state.sh — 統括の交代で使う「機械で取れる状態」の収集（#390 PR-1）
 #
 # 引き継ぎ文書のうち観測できる事実の側をここが作る。人が書く側（会話にしか無かったもの）は
@@ -94,12 +95,15 @@ oe_hs_children_of() {
     # 壊れて読めない登記を黙って飛ばさない。**それが唯一の生きた子だったときに0件へ倒れる。**
     # JSON として壊れている場合と、必須の項目が欠けている（または文字列でない）場合の両方を
     # 「数えられない」として扱う。親が違うだけの登記は正当なので、それとは区別する。
+    # 番兵に NUL を使わない。bash がコマンド置換で NUL を捨てるときに警告を stderr へ出すので、
+    # 読み取りだけの経路が生の警告を吐くことになる（#347 で直したのと同じ型）。
+    # 「ok <parent_pane>」か「invalid」の2形で返す。pane は `%N` 形なので衝突しない。
     if ! parent_of="$(jq -r 'if (.parent_pane | type) == "string" and (.pane | type) == "string"
-                             then .parent_pane else "\u0000invalid" end' "$f" 2>/dev/null)"; then
+                             then "ok " + .parent_pane else "invalid" end' "$f" 2>/dev/null)"; then
       return 2
     fi
-    case "$parent_of" in *invalid) return 2 ;; esac
-    [ "$parent_of" = "$parent" ] || continue
+    [ "$parent_of" != "invalid" ] || return 2
+    [ "${parent_of#ok }" = "$parent" ] || continue
     pane="$(jq -r '.pane' "$f" 2>/dev/null)" || return 2
     [ -n "$pane" ] || return 2
     printf '%s\n' "$panes" | grep -qxF -- "$pane" || continue
@@ -124,8 +128,14 @@ oe_hs_children_of() {
 # 残る穴（塞げていないので明記する）: pane が短い間に再利用され、**新しいセッションがまだ一度も
 # 拍動を書いていない**あいだは、旧世代の拍動が唯一の候補として残る。それが窓の中なら旧世代の
 # session_id を返す。セッションが自分の id を名乗る経路が無いかぎり、この窓は閉じない。
+# unknown になった理由。**呼び出し側が文書へ書く説明をここから取る。**
+# 理由を返さないと、書き手が実装を写した説明を人手で書くことになり、実装を変えたときに
+# 文書だけ古いまま残る（実際に一度そうなった）。
+OE_HS_SESSION_REASON=""
+
 oe_hs_session_for_pane() {
   local pane="${1:-}" spid best_sid="" best_ts=-1 ts f tie=0
+  OE_HS_SESSION_REASON=""
   [ -n "$pane" ] || { printf 'unknown'; return 0; }
   [ -n "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
   [ -d "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
@@ -146,26 +156,37 @@ oe_hs_session_for_pane() {
       tie=1
     fi
   done
-  [ -n "$best_sid" ] || { printf 'unknown'; return 0; }
-  [ "${tie:-0}" -eq 0 ] || { printf 'unknown'; return 0; }
+  [ -n "$best_sid" ] || {
+    OE_HS_SESSION_REASON="このペインの拍動が1件も無い（いまの tmux server の分では見つからない）"
+    printf 'unknown'; return 0; }
+  [ "${tie:-0}" -eq 0 ] || {
+    OE_HS_SESSION_REASON="いちばん新しい拍動が同じ時刻で複数あり、どの世代か決められない"
+    printf 'unknown'; return 0; }
   # 拍動の鮮度。窓は実測（統括の拍動は2時間古くなることがある）より広く取る。
   local now age
   now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
   age=$(( now - best_ts ))
-  [ "$age" -le "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ] || { printf 'unknown'; return 0; }
+  [ "$age" -le "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ] || {
+    OE_HS_SESSION_REASON="拍動が古い（${age} 秒前・窓は ${OE_HS_BEAT_MAX_AGE_SEC:-21600} 秒）"
+    printf 'unknown'; return 0; }
   # この値の用途は「停止しても claude --resume で会話を開き直せる」ことの担保なので、
   # 担保の実体（transcript が在り、最近書かれていること）も直接確かめる。
-  oe_hs_transcript_usable "$best_sid" || { printf 'unknown'; return 0; }
+  oe_hs_transcript_usable "$best_sid" || {
+    OE_HS_SESSION_REASON="transcript が見つからないか古い（${OE_TRANSCRIPT_DIR:-既定の置き場} を見た）"
+    printf 'unknown'; return 0; }
   printf '%s' "$best_sid"
 }
 
 # pane の拍動の古さ（秒）。取れなければ unknown。文書に出して人が判断できるようにする。
 oe_hs_beat_age_for_pane() {
   local pane="${1:-}" spid best_ts=-1 ts f now
-  if [ -z "$pane" ] || [ -z "$OE_HEARTBEAT_DIR" ] || [ ! -d "$OE_HEARTBEAT_DIR" ]; then printf 'unknown'; return 0; fi
-  command -v jq >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  [ -n "$pane" ] || { OE_HS_SESSION_REASON="前任のペインが決まっていない"; printf 'unknown'; return 0; }
+  if [ -z "$OE_HEARTBEAT_DIR" ] || [ ! -d "$OE_HEARTBEAT_DIR" ]; then
+    OE_HS_SESSION_REASON="拍動の置き場が無い（${OE_HEARTBEAT_DIR:-未設定}）"; printf 'unknown'; return 0
+  fi
+  command -v jq >/dev/null 2>&1 || { OE_HS_SESSION_REASON="jq が無い"; printf 'unknown'; return 0; }
   spid="$(oe_hs_server_pid)"
-  [ -n "$spid" ] || { printf 'unknown'; return 0; }
+  [ -n "$spid" ] || { OE_HS_SESSION_REASON="いまの tmux server の pid が引けない"; printf 'unknown'; return 0; }
   for f in "$OE_HEARTBEAT_DIR"/*.json; do
     [ -f "$f" ] || continue
     ts="$(jq -r --arg p "$pane" --arg s "$spid" \
@@ -245,13 +266,24 @@ oe_hs_repo_state() {
   [ -n "$branch" ] || branch="unknown"
   head_sha="$(git -C "$ws" rev-parse --short HEAD 2>/dev/null)" || head_sha="unknown"
   # upstream が無い枝で「未 push 0 件」と言わない（0 は「無い」で unknown は「分からない」）。
+  # **パイプで数えない。** `git | wc -l` はパイプライン全体の成否が `wc` のものになるので、
+  # git が失敗しても 0 が入る（`pipefail` を敷いている呼び出し側では正しく動くが、この lib の
+  # 正しさを呼び出し側のシェルオプションに依存させない）。出力を受けてから rc を見る。
+  local out
   if git -C "$ws" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
-    unpushed="$(git -C "$ws" log --oneline '@{upstream}..HEAD' 2>/dev/null | wc -l | tr -d ' ')" || unpushed="unknown"
-    [ -n "$unpushed" ] || unpushed="unknown"
+    if out="$(git -C "$ws" log --oneline '@{upstream}..HEAD' 2>/dev/null)"; then
+      if [ -z "$out" ]; then unpushed=0; else unpushed="$(printf '%s\n' "$out" | grep -c '^' | tr -d ' ')"; fi
+    else
+      unpushed="unknown"
+    fi
   else
     unpushed="unknown(no-upstream)"
   fi
-  wt="$(git -C "$ws" worktree list 2>/dev/null | wc -l | tr -d ' ')" || wt="unknown"
+  if out="$(git -C "$ws" worktree list 2>/dev/null)"; then
+    if [ -z "$out" ]; then wt="unknown"; else wt="$(printf '%s\n' "$out" | grep -c '^' | tr -d ' ')"; fi
+  else
+    wt="unknown"
+  fi
   printf 'branch=%s head=%s unpushed=%s worktrees=%s\n' "$branch" "$head_sha" "$unpushed" "$wt"
 }
 
