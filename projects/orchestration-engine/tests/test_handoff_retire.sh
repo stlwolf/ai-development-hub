@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# test_handoff_retire.sh — oe-handoff retire の検証（#390）
+#
+# **実物には一切触れない。** board・登記・拍動・引き継ぎ文書はすべて一時ディレクトリの
+# fixture で、tmux は OE_HANDOFF_TMUX のノブで stub に差し替える。**本物のペインを閉じない。**
+#
+# 見るもの:
+#   (1) 停止の必須条件3つ（session_id が記録にある / 生きた委譲子0体 / 申告の全項目に処分）
+#   (2) 申告と機械の検査の食い違いを列挙し、食い違ったら閉じない
+#   (3) 引数なしは下見で、**kill-pane を1度も呼ばない**
+#   (4) --execute は検査をやり直してから閉じる（呼び出し順で見る）
+#   (5) --execute が前任のペイン以外を変更しない（board・登記・イベントログの mtime 不変）
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+OE_HANDOFF="$PROJECT_DIR/bin/oe-handoff"
+
+command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+command -v perl >/dev/null 2>&1 || { echo "SKIP: perl required"; exit 0; }
+
+_TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$_TMP_DIR"' EXIT
+
+PASS=0; FAIL=0
+ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
+ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
+nck() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
+
+HB="$_TMP_DIR/heartbeat"; REG="$_TMP_DIR/registry"; TR="$_TMP_DIR/transcripts"
+EV="$_TMP_DIR/events";    WS="$_TMP_DIR/ws";        STUB="$_TMP_DIR/stub"
+mkdir -p "$HB" "$REG" "$TR" "$EV" "$WS/.oe" "$STUB"
+export OE_HEARTBEAT_DIR="$HB" OE_DELEGATE_STATE_DIR="$REG" OE_TRANSCRIPT_DIR="$TR"
+export OE_EVENT_DIR="$EV" OE_HS_SERVER_PID="900"
+NOW_EPOCH="$(date +%s)"; export OE_HS_NOW_EPOCH="$NOW_EPOCH"
+
+CALL_LOG="$_TMP_DIR/calls.log"; : > "$CALL_LOG"
+ALIVE="$_TMP_DIR/alive.txt"; printf '%%10\n%%11\n' > "$ALIVE"
+cat > "$STUB/tmux" <<EOF
+#!/usr/bin/env bash
+printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
+case "\${1:-}" in
+  list-panes) cat "$ALIVE"; exit 0 ;;
+  kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
+esac
+exit 0
+EOF
+cat > "$STUB/gh" <<'EOF'
+#!/usr/bin/env bash
+[ -n "${GH_PRS:-}" ] && printf '%s\n' "$GH_PRS"
+exit 0
+EOF
+chmod +x "$STUB"/*
+export OE_HANDOFF_TMUX="$STUB/tmux"
+export PATH="$STUB:$PATH"
+export TMUX_PANE="%11"
+
+mk_beat() { jq -cn --arg p "$2" --argjson t "$NOW_EPOCH" '{ts:$t, context_pct:50, pane:$p, server_pid:"900"}' > "$HB/$1.json"
+  printf '{"x":1}\n' > "$TR/$1.jsonl"; perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1] or die' "$NOW_EPOCH" "$TR/$1.jsonl"; }
+mk_child() { local key; key="$(printf '%s' "900_$1" | tr -c 'A-Za-z0-9' '_')"
+  jq -cn --arg p "$1" --arg par "$2" '{pane:$p, label:"child", workspace:"", parent_pane:$par, role:"child"}' > "$REG/${key}.json"; }
+mk_board() {
+  # shellcheck disable=SC2016  # backtick は board の Markdown 記法
+  printf '# START HERE\n\n鮮度: 2026-09-12 / 現統括: pane `%%11`（統括15代目・2026-09-12 着任。前任 `%%10` は退任申告済み・停止待ち）/ succession: **完了**\n' > "$1"
+}
+# mk_handoff <path> <session_id|""> <処分> [表を空にするか]
+mk_handoff() {
+  # `${3:-...}` は**空文字も既定値に置き換える**ので、空の処分を作れない（fixture が主張どおりの
+  # 条件を作っていないことになる）。`${3-...}` は未指定のときだけ既定値を使う。
+  local sid="${2:-}" disp="${3-済んだ}" empty="${4:-0}"
+  {
+    printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+    printf '%s\n' '## 観測できる状態'
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+    # shellcheck disable=SC2016
+    printf -- '- 前任の session_id: `%s`\n' "${sid:-unknown}"
+    printf '%s\n' '<!-- oe-handoff:machine:end -->'
+    printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+    printf '%s\n' '| 項目 | 処分 | 補足 |'
+    printf '%s\n' '| --- | --- | --- |'
+    if [ "$empty" != "1" ]; then
+      printf '| PR #392 | %s | マージ済み |\n' "$disp"
+    fi
+    printf '\n%s\n' '**機械に見えない残余**:'
+    printf '%s\n' '- 返信待ち: なし'
+    printf '\n%s\n' '## owner が下した裁定'
+    printf '%s\n' '-'
+  } > "$1"
+}
+
+BOARD="$WS/.oe/board.md"; HANDOFF="$WS/.oe/handoff.md"
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+mk_beat "sid-pred" "%10"
+
+echo "[1] 下見（引数なし）: 条件がそろえば「閉じてよい」と言い、何も停止しない"
+: > "$CALL_LOG"
+set +e
+out1="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc1=$?
+set -e
+ck  "0 で終わる"            "0" "$rc1"
+ckc "閉じてよいと言う"      "$out1" "判定: 閉じてよい"
+ckc "下見だと言う"          "$out1" "下見なので何もしていません"
+ckc "次の一手を出す"        "$out1" "oe-handoff retire --execute"
+ck  "kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任はまだ生きている"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[2] session_id が引き継ぎ記録に無ければ閉じない"
+mk_handoff "$HANDOFF" "" "済んだ"
+set +e
+out2="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc2=$?
+set -e
+ck  "非0 で終わる"          "1" "$rc2"
+ckc "理由を言う"            "$out2" "session_id が引き継ぎ記録に無い"
+ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+
+echo "[3] 生きた委譲子が居れば閉じない"
+mk_child "%12" "%10"; printf '%%12\n' >> "$ALIVE"
+set +e
+out3="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc3=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc3"
+ckc "件数を言う"        "$out3" "生きた委譲子が 1 件ある"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+rm -f "$REG"/*.json; grep -vxF -- '%12' "$ALIVE" > "$ALIVE.n" && mv "$ALIVE.n" "$ALIVE"
+
+echo "[4] 委譲子を数えられないときも閉じない"
+set +e
+out4="$(OE_DELEGATE_STATE_DIR="" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc4=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc4"
+ckc "数えられないと言う" "$out4" "数えられない"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[5] 申告の項目に処分が無ければ閉じない"
+mk_handoff "$HANDOFF" "sid-pred" ""
+set +e
+out5="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc5=$?
+set -e
+ck  "非0 で終わる"    "1" "$rc5"
+ckc "理由を言う"      "$out5" "処分が付いていない"
+ck  "前任は生きたまま" "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[6] 語彙の外の処分も通さない"
+mk_handoff "$HANDOFF" "sid-pred" "たぶん済んだ"
+set +e
+"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1; rc6=$?
+set -e
+ck "非0 で終わる" "1" "$rc6"
+
+echo "[7] 「保留ゼロ」だけ（表が空）も通さない"
+mk_handoff "$HANDOFF" "sid-pred" "済んだ" 1
+set +e
+out7="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc7=$?
+set -e
+ck  "非0 で終わる" "1" "$rc7"
+ckc "理由を言う"   "$out7" "項目が1つも書かれていない"
+mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+
+echo "[8] 申告に出てこない open PR があれば食い違いとして閉じない"
+set +e
+out8="$(GH_PRS='399 draft=false 別の作業' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc8=$?
+set -e
+ck  "非0 で終わる"        "1" "$rc8"
+ckc "食い違いを挙げる"    "$out8" "open PR #399 が申告に出てこない"
+ckc "閉じないと言う"      "$out8" "食い違っています"
+ck  "前任は生きたまま"    "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[9] 引き継ぎ記録と board の註が食い違えば閉じない"
+BAD="$WS/.oe/badboard.md"
+# shellcheck disable=SC2016  # backtick は board の Markdown 記法
+printf '鮮度: 2026-09-12 / 現統括: pane `%%11`（前任 `%%77` は退任申告済み・停止待ち）\n' > "$BAD"
+set +e
+out9="$("$OE_HANDOFF" retire -w "$WS" --board "$BAD" --handoff "$HANDOFF" --execute 2>&1)"; rc9=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc9"
+ckc "食い違いを言う"    "$out9" "board の註（%77）が食い違っています"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[10] board の席が自分でなければ閉じない（先に take を通す）"
+OTHER="$WS/.oe/otherseat.md"
+# shellcheck disable=SC2016  # backtick は board の Markdown 記法
+printf '鮮度: 2026-09-12 / 現統括: pane `%%99`（前任 `%%10` は退任申告済み・停止待ち）\n' > "$OTHER"
+set +e
+out10="$("$OE_HANDOFF" retire -w "$WS" --board "$OTHER" --handoff "$HANDOFF" --execute 2>&1)"; rc10=$?
+set -e
+ck  "非0 で終わる"    "1" "$rc10"
+ckc "take を促す"     "$out10" "先に take を通す"
+ck  "前任は生きたまま" "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[11] 前任と自分が同じペインなら呼び方の誤り"
+set +e
+TMUX_PANE='%10' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" >/dev/null 2>&1; rc11=$?
+set -e
+ck "2 で終わる" "2" "$rc11"
+
+echo "[12] --execute は検査をやり直してから閉じる（呼び出し順で見る）"
+: > "$CALL_LOG"
+BOARD_M_BEFORE="$(stat -f %m "$BOARD" 2>/dev/null || stat -c %Y "$BOARD")"
+REG_FILE="$REG/$(printf '%s' '900_%11' | tr -c 'A-Za-z0-9' '_').json"
+jq -cn '{pane:"%11", label:"cockpit", workspace:"", parent_pane:"", role:"child"}' > "$REG_FILE"
+REG_M_BEFORE="$(stat -f %m "$REG_FILE" 2>/dev/null || stat -c %Y "$REG_FILE")"
+printf '{"type":"x"}\n' > "$EV/oe-events.jsonl"
+EV_M_BEFORE="$(stat -f %m "$EV/oe-events.jsonl" 2>/dev/null || stat -c %Y "$EV/oe-events.jsonl")"
+set +e
+out12="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc12=$?
+set -e
+ck  "0 で終わる"                "0" "$rc12"
+ckc "閉じたと言う"              "$out12" "閉じました"
+ckc "不在を確認したと言う"      "$out12" "不在を確認しました"
+ckc "resume の案内を出す"       "$out12" "claude --resume sid-pred"
+ck  "前任は不在になった"        "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "list-panes が kill-pane より先" "list-panes" "$(awk '/^tmux (list-panes|kill-pane)/{print $2; exit}' "$CALL_LOG")"
+ck  "kill-pane は1回だけ"       "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ckc "閉じた相手は前任だけ"      "$(grep 'kill-pane' "$CALL_LOG")" "kill-pane -t %10"
+
+echo "[13] --execute は前任のペイン以外を変更しない"
+ck "board の mtime が動かない"       "$BOARD_M_BEFORE"  "$(stat -f %m "$BOARD" 2>/dev/null || stat -c %Y "$BOARD")"
+ck "登記の mtime が動かない"         "$REG_M_BEFORE"    "$(stat -f %m "$REG_FILE" 2>/dev/null || stat -c %Y "$REG_FILE")"
+ck "イベントログの mtime が動かない" "$EV_M_BEFORE"     "$(stat -f %m "$EV/oe-events.jsonl" 2>/dev/null || stat -c %Y "$EV/oe-events.jsonl")"
+ckc "後始末はしないと言う"           "$out12" "後始末（登記の掃除・worktree の掃除・issue の close）はしていません"
+
+echo "[14] 引き継ぎ文書が無ければ呼び方の誤り"
+set +e
+"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$WS/.oe/nope.md" >/dev/null 2>&1; rc14=$?
+set -e
+ck "2 で終わる" "2" "$rc14"
+
+echo
+echo "PASS=$PASS FAIL=$FAIL"
+[ "$FAIL" -eq 0 ] || exit 1
