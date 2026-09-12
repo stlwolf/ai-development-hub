@@ -3,7 +3,7 @@ id: "01M28CQ6J6JDY91KFE08FVH669"
 title: "統括の計画的な交代を verb にする（前任が応答できる場合）"
 date: 2026-09-11
 type: plan
-status: in-development
+status: stable
 source: "https://github.com/stlwolf/ai-development-hub/issues/390"
 scope: orchestration-engine
 related:
@@ -36,6 +36,13 @@ so:
 ---
 
 # 統括の計画的な交代を verb にする（前任が応答できる場合）
+
+> **この plan は PR-1 と PR-2 の記録として閉じた（2026-09-12）。残りの作業は1本の plan へ移した。**
+>
+> - 残りの plan: `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md`
+> - 閉じた理由: `document-format.md` は committed 層の plan を「実装の最初の PR と一緒に着地させる」と定めている。**1本の plan を4つの PR にまたがらせた時点でこの形が壊れていた**（着地した文書が後続の PR で変わり続ける）。owner の裁定（2026-09-12）で残りの作業を1つの PR にまとめることになった。
+> - **移した step の行はこの下に残してある。** 各行に「→ 移設」と書いた。削除ではない。
+> - **設計判断（DJ-1 から DJ-12）・棄却した案・ゲート1 と2 の記録・owner に預けた判断とその回答は、引き続きこの plan が正本である。** 新しい plan はそれらを写していない。
 
 ## Context
 
@@ -472,6 +479,7 @@ PR は4本に分ける。**順序は「読むだけのもの」を先、「書�
 - [x] GATE: 追加前に書かれた既存の `oe-events.jsonl` が新しい schema でも valid のままであること
   - 結果: **schema 全体の検証ではない。** この repo に JSON Schema の validator が無く（board も envelope も手書きの bash+jq）、`jsonschema` も入っていないため、変更で valid でなくなりうる経路だけを機械で当てた。(1) 既存 2,764 行の `type` は4種で全部が新しい enum に入る (2) 既存行に `supervisor_succession` は0件なので新しい条件節がどれにも当たらない (3) top-level に `additionalProperties: false` が無いので任意項目を足しても既存行は落ちない。`endpoint` の定義は触っていない（diff 0行）。**当てたのはこの3点だけである。**
 - [x] Step 2-6: `oe-handoff take` を実装する。順序は「確かめるものが先、書き換えるものが後」で、(1) 前提の検査（生きた委譲子0体・board が読める・前任の session_id が引ける・`prepare` の記録がある）(2) 見張りの状態を `oe-selfcheck --json` の行として読む（終了コードでは判定しない）と `oe-vitals` の登録・最終走査の確認 (3) `oe-register root --force --label cockpit` (4) board 張替（前任を「退任申告済み・停止待ち」として併記） (5) 検算 (6) イベント emit と読み直し (7) できたこと・できなかったことの表示
+  - 結果: **(2) のうち「`oe-vitals` の登録・最終走査の確認」は、登録までしか確かめられない。** `oe-selfcheck` の `watchdog-freshness` が見ているのは `oe-confirm` の最終走査であって `oe-vitals` ではなく、`oe-vitals` には最終走査を残す記録がそもそも無い。`take` は毎回そう明示する。**step の文言は「確認」だが、確認できるのは登録の有無だけである。**
 - [x] Step 2-7: 何度実行しても同じ結果になるようにする（既に自分が root なら登記しない・既に自分を指していれば board を書かない）
 - [x] Step 2-7b: `oe-handoff start` を実装する（owner 裁定2(b)）。前任の pane を親としない素の pane で `claude` を起こし、**起動と kickoff を分けて**、ペインが入力を受け付けられるようになってから引き継ぎ文書のパスを `oe-send` で送る。`oe-delegate` は使わない（後継を子にしないため・DJ-11）
   - 結果: **「入力を受け付けられるようになってから」は満たせていない。** 確認できるのはペインが一覧に現れるところまでで、その中の TUI が初期化を終えたかは機械では分からない。画面を読んで判定する形は採らない（版で消える目印に頼る形になる）。現れるまで待ち、落ち着くまでの待ちを足し、**現れなければ送らない**（送ったつもりだけが残るのを避ける）。この限界は実装のコメントにも書いた。
@@ -486,23 +494,41 @@ PR は4本に分ける。**順序は「読むだけのもの」を先、「書�
 
 ### PR-3: 停止の判定（`retire`）
 
+**この節の step は残りの plan へ移設した。** PR-3 という単位は無くなり、残りは1本の PR にまとまる。
+
 - [ ] Step 3-1: `oe-handoff retire` を実装する（機械の検査をやり直し、前任の申告と突き合わせ、食い違いを列挙する）
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 3-2: 停止の必須条件を3つ入れる。前任の session_id が引き継ぎ記録に残っていること（`claude --resume` で開き直せる）・生きた委譲子が0体であること・前任の申告の各項目に処分が付いていること
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 3-3: 引数なしの `retire` は下見にする（検査して結果を表示するだけ・停止しない）。判定が通らないときは理由を列挙して非0 で終わる
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 3-4: `--execute` は**検査をやり直してから**停止する（時間差の穴がここで閉じる）。**打つのは後継である**（owner 裁定2(a)）。段階1 で `--execute` が触れてよいのは**前任のペインだけ**で、board・登記・イベントログ・worktree・PR には触れないことを実装と README の両方に書く
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 3-5: テストを書く（食い違いがあるとき・session_id が無いとき・生きた委譲子が居るときに、いずれも停止しないこと。`--execute` が再検査を先に走らせること。`--execute` が前任のペイン以外を変更しないこと）
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] GATE: `shellcheck` が通ること
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 3-6: PR-3 を出す
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設。**移設先では本文を書き換えた**（owner 裁定 2026-09-12 で PR が1本になったため）。変更後は「`retire` と README の2項目と board の書き換え案を載せた1本の PR を出す」。**この行が「変更前」の記録である。**
 
 ### PR-4: 文書と受入
 
+**この節の step は残りの plan へ移設した。** 受入（Step 4-5・4-6）は PR にせず、次の実際の交代で通して episode に追記する（owner 裁定）。
+
 - [ ] Step 4-1: `projects/orchestration-engine/bin/README.md` に `oe-handoff` の節を足す（既存の verb と同じ体裁で、契約・引数・制約・関連 lib を書く）
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 4-2: 残っている歪みを README に明記する。`oe-register root` は前任の root の登記を失効させないので、交代のあと `oe-tree` に cockpit の root が2本並ぶ。lean の決定が「topology の歪みは段階1 の外」としている範囲で、この単位では直さない
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 4-3: board の `## succession 手順（後任がやること）` 節を新しい verb を使う形に書き換える案を作る（**書き換えは owner の承認を得てから**。board は稼働中の実ファイルである）
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] HG: owner に board の書き換えを承認してもらう
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 4-4: PR-4 を出す
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設。**移設先では本文を書き換えた**（owner 裁定 2026-09-12 で PR が1本になったため）。変更後は「Step 3-6 と同じ1本の PR で満たす」。**この行が「変更前」の記録である。**
 - [ ] Step 4-5: 受入。次の実際の交代で `prepare` → `take` → `retire` を1回通し、結果を episode へ追記する
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 - [ ] Step 4-6: 受入のとき、**`start` が送った kickoff が後継へ届いたことを受領印で確かめる**（DJ-10 の条件4）。`oe-confirm` の照合で、その送信の相関 ID に対する `prompt_received` が後継のペインから出ていることを見る。出ていなければ受入としない。**起動側で「入力を受け付けられる状態か」を機械で確かめられない以上、届いたことは後始末の側で見るしかない**（統括の申し送り・2026-09-12）
+  - → `projects/orchestration-engine/docs/plans/2026-09-12-plan-390-retire-and-docs.md` へ移設（本文は1文字も変えずに移した）
 
 ## リスク・未確認事項
 
