@@ -107,6 +107,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -n "$GENERATION" ]; then
+  # 世代を検証せずに通すと、board には「統括abc代目」と書いたうえでイベント側だけが
+  # 値を畳んで記録を省く、という部分更新の不整合ができる。呼び方の誤りとして止める。
+  case "$GENERATION" in
+    ''|*[!0-9]*) err "--generation は正の整数です: ${GENERATION}"; exit 2 ;;
+    0)           err "--generation は 1 以上です"; exit 2 ;;
+  esac
+fi
+case "$REASON" in
+  context_exhaustion|planned|unspecified) ;;
+  *) err "--reason は context_exhaustion / planned / unspecified のいずれかです: ${REASON}"; exit 2 ;;
+esac
+
 command -v jq >/dev/null 2>&1 || { err "jq が要ります"; exit 2; }
 
 if [ -z "$WORKSPACE" ]; then
@@ -447,7 +460,9 @@ cmd_take() {
     # （自分の session_id を前任として確かめ、self → self の偽の交代イベントを書く）。
     printf '席は既に自分（%s）を指しています。何もしていません。\n' "$self"
     note_done "board の宣言は既に自分を指している（書き換えていない）"
-    if oe_event_succession_recorded "" "$self"; then
+    # **server_pid を渡す。** 渡さないと、別 server の時代に同じ番号だった pane 宛ての
+    # 古いイベントを「今回の交代の記録」と誤認して、未記録なのに記録済みと報告する。
+    if oe_event_succession_recorded "" "$self" 0 "" "$(oe_hs_server_pid)"; then
       note_done "交代イベントは記録されている"
     else
       note_undone "交代イベントが記録されていない（--predecessor <前任> と --generation を明示して実行すると、board は触らずに記録だけ足せます）"
@@ -543,6 +558,9 @@ cmd_take() {
   case "$rc" in
     0) note_done "board の宣言を自分（${self}）へ張り替えた（前任 ${pred} は退任申告済み・停止待ちとして併記）" ;;
     1) note_done "board の宣言は既に自分を指していた（書き換えていない）" ;;
+    4) err "いま別のプロセスが同じ board を書き換えています"
+       note_undone "ロックを取れなかったので張り替えていない（少し待ってからもう一度）"
+       report_and_exit 1 ;;
     3) err "board の宣言が ${pred} から動いています。検査してから書き換えるまでの間に席が動きました"
        note_undone "席が動いたので張り替えていない（もう一度 take を実行してください）"
        report_and_exit 1 ;;
@@ -571,7 +589,7 @@ cmd_take() {
     ev_file="${OE_EVENT_DIR:-}/oe-events.jsonl"
     [ -r "$ev_file" ] && ev_before="$(grep -c '' "$ev_file" 2>/dev/null | tr -d ' ')"
     oe_event_supervisor_succession "$pred" "$self" "$GENERATION" "$REASON" "$(oe_hs_server_pid)" "cockpit" "cockpit" || true
-    if oe_event_succession_recorded "$pred" "$self" "$ev_before" "$GENERATION"; then
+    if oe_event_succession_recorded "$pred" "$self" "$ev_before" "$GENERATION" "$(oe_hs_server_pid)"; then
       note_done "交代イベントを記録した（${pred} → ${self}・${GENERATION}代目・${REASON}）"
     else
       note_undone "交代イベントが記録されていない（emit は失敗を飲み込むので読み直して確かめた）"

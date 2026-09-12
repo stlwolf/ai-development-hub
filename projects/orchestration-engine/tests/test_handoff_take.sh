@@ -313,6 +313,41 @@ oe_seat_rewrite "$ESC" "%11" 2 "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
 ckc "backslash-t が残る" "$(cat "$ESC")" 'a\tb'
 ckc "backslash 2つが残る" "$(cat "$ESC")" 'c\\d'
 
+echo "[25] 席の書き換えは他のプロセスと同時に走らない（ロック）"
+LK="$_TMP_DIR/lock.md"; mk_board "$LK"
+mkdir -p "${LK}.lock"          # 別プロセスが握っている状態を作る
+set +e
+OE_SEAT_LOCK_RETRY=2 oe_seat_rewrite "$LK" "%11" 2 "2026-09-12" "%10" "%10"; rc19=$?
+set -e
+rmdir "${LK}.lock"
+ck "握られていれば 4 を返す" "4" "$rc19"
+ck "board を書き換えない"    "%10" "$(oe_seat_resolve "$LK")"
+ck "ロックを解放する"        "0" "$(find "$_TMP_DIR" -maxdepth 1 -name 'lock.md.lock' | grep -c '^' | tr -d ' ')"
+oe_seat_rewrite "$LK" "%11" 2 "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
+ck "解放後は書き換えられる" "%11" "$(oe_seat_resolve "$LK")"
+
+echo "[26] 別 server の時代の同じ pane 宛てイベントを「今回の記録」と誤認しない"
+: > "$EV/oe-events.jsonl"
+jq -cn '{ts:"2026-01-01T00:00:00+00:00", type:"supervisor_succession", from:{pane:"%9",role:"",label:""}, to:{pane:"%11",role:"",label:""}, generation:9, reason:"planned", server_pid:"111"}' >> "$EV/oe-events.jsonl"
+set +e
+( source "$PROJECT_DIR/lib/event-bus.sh"; oe_event_succession_recorded "" "%11" 0 "" "900" ) >/dev/null 2>&1; rc20=$?
+( source "$PROJECT_DIR/lib/event-bus.sh"; oe_event_succession_recorded "" "%11" 0 "" "111" ) >/dev/null 2>&1; rc21=$?
+set -e
+ck "server_pid が違えば拾わない" "1" "$rc20"
+ck "server_pid が合えば拾う"     "0" "$rc21"
+
+echo "[27] 世代と理由の値を検証してから書き換える（board の部分更新を作らない）"
+mk_board "$BOARD"; before="$(cat "$BOARD")"
+set +e
+"$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --generation abc >/dev/null 2>&1; rc22=$?
+"$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --generation 0 >/dev/null 2>&1; rc23=$?
+"$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --reason nope >/dev/null 2>&1; rc24=$?
+set -e
+ck "整数でない世代は 2"     "2" "$rc22"
+ck "0 の世代は 2"           "2" "$rc23"
+ck "未知の理由は 2"         "2" "$rc24"
+ck "board を書き換えない"    "$before" "$(cat "$BOARD")"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

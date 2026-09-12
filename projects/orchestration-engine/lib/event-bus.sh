@@ -321,9 +321,12 @@ oe_event_supervisor_succession() {
 #   入っているだけで候補になってしまう。type で選ぶ。
 #   **「過去に同じ from/to の行がある」で成功にしない。** 今回の emit が落ちても素通りする。
 #   呼び出し側が `since_line`（emit 直前の行数）を渡せば、それより後ろだけを見る。
-# oe_event_succession_recorded <from_pane|""> <to_pane> [since_line] [generation]
+#   **server_pid を渡すこと。** pane 番号は tmux server をまたぐと再利用されるので、
+#   宛先 pane だけで照合すると、別の server の時代に同じ番号だった別セッション宛ての
+#   イベントを「今回の交代の記録」と誤認する。server_pid を足した目的そのものが破れる。
+# oe_event_succession_recorded <from_pane|""> <to_pane> [since_line] [generation] [server_pid]
 oe_event_succession_recorded() {
-  local fp="${1:-}" tp="${2:-}" since="${3:-0}" gen="${4:-}" file
+  local fp="${1:-}" tp="${2:-}" since="${3:-0}" gen="${4:-}" spid="${5:-}" file
   command -v jq >/dev/null 2>&1 || return 2
   [[ -n "$OE_EVENT_DIR" ]] || return 2
   file="${OE_EVENT_DIR}/oe-events.jsonl"
@@ -336,11 +339,12 @@ oe_event_succession_recorded() {
   fi
   [[ -n "$scope" ]] || return 1
   local hit
-  hit="$(printf '%s\n' "$scope" | jq -r --arg f "$fp" --arg t "$tp" --arg g "$gen" '
+  hit="$(printf '%s\n' "$scope" | jq -r --arg f "$fp" --arg t "$tp" --arg g "$gen" --arg s "$spid" '
     select(.type == "supervisor_succession")
     | select($f == "" or (.from.pane // "") == $f)
     | select((.to.pane // "") == $t)
     | select($g == "" or ((.generation // 0) | tostring) == $g)
+    | select($s == "" or (.server_pid // "") == $s)
     | select((.server_pid // "") != "")
     | select((.reason // "") != "")
     | "hit"' 2>/dev/null | tail -1)" || return 2

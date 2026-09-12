@@ -49,7 +49,26 @@ oe_seat_resolve() {
 #
 # rc: 0 書き換えた / 1 既に <new_pane> を指していて何もしなかった / 2 書き換えられない
 #     3 board が <expect_pane> を指していない（席が動いている）
+#     4 いま別のプロセスが同じ board を書き換えている
+#
+# **確認と書き込みのあいだを他のプロセスに割り込ませない。** 確認だけでは足りない:
+# 2つの後継が同時に走ると、両方が同じ前任を見て両方が書き、あとの `mv` が先の席を消す。
+# 検算も順序次第で両方通り、交代イベントが2本残る。ロックは `mkdir` で取る（POSIX で原子的）。
 oe_seat_rewrite() {
+  local bf="${1:-}" lock rc i=0
+  [ -n "$bf" ] || return 2
+  lock="${bf}.lock"
+  while ! mkdir "$lock" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge "${OE_SEAT_LOCK_RETRY:-20}" ]; then return 4; fi
+    sleep 0.1 2>/dev/null || sleep 1
+  done
+  _oe_seat_rewrite_locked "$@"; rc=$?
+  rmdir "$lock" 2>/dev/null || true
+  return "$rc"
+}
+
+_oe_seat_rewrite_locked() {
   local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}" expect="${6:-}"
   if [ -z "$bf" ] || [ ! -r "$bf" ] || [ ! -w "$bf" ]; then return 2; fi
   case "$new" in %[0-9]*) ;; *) return 2 ;; esac
