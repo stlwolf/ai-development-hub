@@ -812,18 +812,34 @@ cmd_retire() {
     # 種別だけで区別する（1行1件で、セルに改行は入らないので曖昧にならない）。
     #   C <件数> / B <表示用の落ちた行> / D <処分が付いた項目名>
     parsed="$(printf '%s\n' "$decl" | awk '
-      /^[ \t]*\|/ {
+      # **表の領域を決めてから行を読む。** 以前は「行頭の空白 + `|`」で行を判定していたので、
+      # (a) GFM で有効な**先頭パイプ省略**の行を黙って無視し（未処分の項目が数から消える）、
+      # (b) 4空白以上で字下げされたコードブロック内の疑似行を実データとして受理した
+      # （実装SO の指摘・2026-09-13）。
+      # 表の領域は「字下げ3以下で `|` を含む行」から始まり、**空行か `|` を含まない行で終わる**。
+      # 領域ごとに行番号を数え直すので、散文に `|` が1つ混ざっても表そのものは壊れない。
+      {
         line = $0
-        gsub(/\\\|/, "\001", line)
-        n = split(line, c, "|")
-        item = c[2]; disp = c[3]
+        ind = match(line, /[^ \t]/) - 1
+        has_pipe = (index(line, "|") > 0)
+      }
+      !in_table {
+        if (has_pipe && ind >= 0 && ind <= 3) { in_table = 1; rowno = 0 } else { next }
+      }
+      in_table {
+        # **表の中でも字下げ4以上は表の行にしない。** Markdown ではそこからコードブロックなので、
+        # 人が画面で見ているものも表の行ではない（見本として書いた行が申告として数えられる）。
+        # 入口だけで見ていたので、表が始まったあとの疑似行を受理していた（実装SO の指摘）。
+        if (line ~ /^[ \t]*$/ || !has_pipe || ind >= 4) { in_table = 0; next }
+        work = line
+        gsub(/\\\|/, "\001", work)
+        sub(/^[ \t]*\|/, "", work)
+        sub(/\|[ \t]*$/, "", work)
+        n = split(work, c, "|")
+        item = c[1]; disp = (n >= 2 ? c[2] : "")
         gsub(/^[ \t]+|[ \t]+$/, "", item); gsub(/^[ \t]+|[ \t]+$/, "", disp)
         rowno++
         if (rowno == 1) next
-        # **GFM の alignment delimiter（`:---` / `:---:` / `---:`）も区切りである。**
-        # `^-{2,}$` だけを区切りとしていたので、**正当に全項目へ処分を付けた申告が恒常的に
-        # 通らなくなっていた**（区切り行が未処分のデータ行として数えられる・実装SO の指摘・
-        # 2026-09-13。fail-closed だが誤判定である）。
         if (item ~ /^:?-+:?$/) next
         if (item == "") next
         gsub(/\001/, "\\|", item); gsub(/\001/, "\\|", disp)
@@ -917,7 +933,13 @@ EOF_PRS
     while IFS= read -r wtp; do
       [ -n "$wtp" ] || continue
       base="$(basename "$wtp")"
-      printf '%s\n' "$DISPOSED" | grep -qF -- "$base" \
+      # **部分一致にしない。** `grep -F` だと、basename が別の項目の部分文字列であるだけで
+      # 一致する（例: basename `501` が `PR #501` の行に当たる）。PR 番号で同じ型を直したのに、
+      # **worktree の側に残していた**（実装SO の指摘・2026-09-13）。
+      # 前後が識別子の続きでないことまで見る（`.` `-` `_` `#` は名前の一部として扱う）。
+      local base_re
+      base_re="$(printf '%s' "$base" | sed -E 's/[][\.^$*+?(){}|\/]/\\&/g')"
+      printf '%s\n' "$DISPOSED" | grep -qE "(^|[^A-Za-z0-9._#-])${base_re}([^A-Za-z0-9._-]|\$)" \
         || note_diff "main 以外の worktree に処分が付いていない（${base}）"
     done <<EOF_WT
 $wt_now

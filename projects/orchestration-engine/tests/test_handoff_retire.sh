@@ -846,6 +846,81 @@ for form in '- 501 draft=false 古い形式' '- #501 draft=false 新しい形式
   ckc "[$form] 欠落を見つける"   "$out39" "機械の節が挙げた PR #501 に処分が付いていない"
 done
 
+echo "[40] 申告の表: 先頭パイプを省略した行も読む（未処分を黙って落とさない）"
+# GFM は先頭のパイプ省略を許す。`^[ \t]*\|` で行を判定していたので、**省略した行が数から
+# 消え、未処分の項目を見逃した**（実装SO の指摘・2026-09-13）。
+NOLEAD="$WS/.oe/handoff-nolead.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | 通常の行 |'
+  printf '%s\n' 'PR #501 |  | 先頭パイプ省略・処分が空'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$NOLEAD"
+set +e
+out40="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$NOLEAD" --execute 2>&1)"; rc40=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc40"
+ckc "省略形の行を拾う"          "$out40" "PR #501 → 処分[]"
+ckc "処分が無いと言う"          "$out40" "処分が付いていない（または語彙の外の）項目がある"
+ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[41] 申告の表: コードブロック内の疑似行を実データとして受理しない"
+# 4空白以上の字下げはコードブロックである。表の行として受理すると、**説明のために書いた
+# 見本が申告として数えられる**（誤受理）。
+CBLK="$WS/.oe/handoff-codeblock.md"
+sed 's/^PR #501 |  | 先頭パイプ省略・処分が空$/    | にせの行 | 済んだ | コードブロックの中 |/' "$NOLEAD" > "$CBLK"
+set +e
+out41="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$CBLK" 2>&1)"; rc41=$?
+set -e
+ck  "下見は 0 で終わる"         "0" "$rc41"
+ckc "件数は1件（にせの行を数えない）" "$out41" "申告の全項目に処分が付いている（1 件）"
+nck "にせの行を拾わない"        "$out41" "にせの行"
+
+echo "[42] worktree の照合が部分一致で通らない"
+# `grep -F` だったので、basename が別の項目の部分文字列であるだけで一致した
+# （例: basename `501` が `PR #501` の行に当たる・実装SO の指摘・2026-09-13）。
+# worktree を1つ足した repo を作り、申告にはその basename を含む**別の項目**だけを書く。
+WTR="$_TMP_DIR/ws-wt"; mkdir -p "$WTR/.oe"
+git -C "$WTR" init -q 2>/dev/null || true
+git -C "$WTR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
+git -C "$WTR" worktree add -q -b side "$_TMP_DIR/501" 2>/dev/null || true
+wt_base="$(git -C "$WTR" worktree list | awk 'NR>1 {print $1}' | head -1 | xargs basename 2>/dev/null)"
+ck "fixture の worktree の basename" "501" "$wt_base"
+WTH="$WTR/.oe/handoff.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #501 | 済んだ | worktree の処分ではない |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$WTH"
+set +e
+out42="$("$OE_HANDOFF" retire -w "$WTR" --board "$BOARD" --handoff "$WTH" --execute 2>&1)"; rc42=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc42"
+ckc "worktree の処分が無いと言う" "$out42" "main 以外の worktree に処分が付いていない（501）"
+ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
