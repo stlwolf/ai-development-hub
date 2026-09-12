@@ -676,6 +676,47 @@ ckc "kill の直前は pid を引く呼び出し" "$prev_call" "pane_pid"
 ck  "kill-pane は1回だけ"              "1" "$(grep -c '^tmux kill-pane' "$CALL_LOG" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 
+echo "[34] 未 push の照合も散文では通らない"
+# 5箇所目。**1つ取り残すと、そこだけ散文で通る**（自分で grep して見つけた・2026-09-13）。
+# 未 push が在る repo 状態を作り、申告は「表に適法な行1つ + 散文に『未 push』」にする。
+UP="$_TMP_DIR/ws-unpushed"; mkdir -p "$UP/.oe"
+git -C "$UP" init -q 2>/dev/null || true
+git -C "$UP" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
+git -C "$UP" branch -q -M topic 2>/dev/null || true
+# 上流を持たない枝だと「比べる相手が無い」枝へ行くので、上流のある枝を作る
+REMOTE="$_TMP_DIR/remote.git"; git init -q --bare "$REMOTE" 2>/dev/null || true
+git -C "$UP" remote add origin "$REMOTE" 2>/dev/null || true
+git -C "$UP" push -q -u origin topic 2>/dev/null || true
+git -C "$UP" -c user.email=t@t -c user.name=t commit -q --allow-empty -m unpushed 2>/dev/null || true
+UPH="$UP/.oe/handoff.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | 適法な行 |'
+  printf '\n%s\n' '- 未 push のことは散文にだけ書いた'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$UPH"
+# lib は source していないので、未 push の有無は git で直に数える（fixture が主張どおりの
+# 条件を作れていることを確かめるため。ここを飛ばすと、別の理由で落ちても test が通る）。
+up_ahead="$(git -C "$UP" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)"
+ck "fixture に未 push が1件在る" "1" "$up_ahead"
+set +e
+out34="$("$OE_HANDOFF" retire -w "$UP" --board "$BOARD" --handoff "$UPH" --execute 2>&1)"; rc34=$?
+set -e
+ck  "非0 で終わる"          "1" "$rc34"
+ckc "散文では通らない"      "$out34" "未 push が残っているのに、処分の付いた申告の行に出てこない"
+ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

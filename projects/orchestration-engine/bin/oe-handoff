@@ -880,8 +880,10 @@ EOF_WT
     *'unpushed=unknown(no-upstream)'*) note_ok "未 push は比べる相手が無い（上流を持たない枝）" ;;
     *unpushed=unknown*)                note_diff "未 push を数えられなかった（${repo_now}）" ;;
     *unpushed=0*)                      note_ok "未 push は無い" ;;
-    *)                                 printf '%s' "$decl" | grep -qE '未 ?push|unpushed' \
-                                         || note_diff "未 push が残っているのに申告に出てこない（${repo_now}）" ;;
+    # **ここも散文ではなく処分の付いた行を見る。** 5箇所目である（機械の節の PR・未 push の
+    # 申告・open PR の再検査・worktree・ここ）。1つ取り残すと、そこだけ散文で通る。
+    *)                                 printf '%s\n' "$DISPOSED" | grep -qE '未 ?push|unpushed' \
+                                         || note_diff "未 push が残っているのに、処分の付いた申告の行に出てこない（${repo_now}）" ;;
   esac
 
   _retire_report
