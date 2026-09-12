@@ -3,7 +3,7 @@ id: "01M28CQ6J6JDY91KFE08FVH669"
 title: "統括の計画的な交代を verb にする（前任が応答できる場合）"
 date: 2026-09-11
 type: plan
-status: draft
+status: in-development
 source: "https://github.com/stlwolf/ai-development-hub/issues/390"
 scope: orchestration-engine
 related:
@@ -217,6 +217,10 @@ issue が挙げた中間案は、前任が spawn の時点で board に「後継
 
 **条件3: 受入の主張を「残余の完全性は保証しない試験運用」と書く。** owner 裁定6 で、圧縮の直前にハーネスのイベントで書き出す形は入れないと決まった。したがって**引き継ぎ文書のうち「会話にしか無かった部分」は自動では埋まらない**（DJ-6 が人に任せている残余）。前任が自分の未達を認識していなければ、その分は引き継がれない。**この穴を書かずに受入だけ通す形にしない。**
 
+**条件4: `start` が送った kickoff が、実際に後継へ届いたことを確かめる。** `start` は「ペインが現れた」までしか機械で確認できず、**その中の TUI が入力を受け付けられる状態かは起動側から分からない**（Step 2-7b の結果に書いたとおり、満たせていない）。画面を読んで判定する形は採らないので、**起動側の前提条件で見るのをやめ、後始末の側（postcondition）で見る。** 具体的には、`oe-send` が payload に載せた相関 ID に対する受領印（`oe-confirm` が照合する `prompt_received`）が後継のペインから出ていることを確かめる。**出ていなければ、kickoff は届いていない。**
+
+これは「送ったつもり」を潰すための条件である。`start` は現れなければ送らない形にしてあるが、**送れたことと届いたことは別**で、前者しか確かめていない。
+
 受入で数えるもの: owner が打った指示の回数 / 前任と後継が走らせたコマンドの一覧 / 途中で止まった箇所があればその表示 / 引き継ぎ文書の人の節に何が書かれ、あとから何が漏れていたと分かったか。最後の1つは次の次の交代まで分からないことがあるので、分かった時点で episode へ追記する。
 
 ### DJ-11: 生きた委譲子が0体であることは、停止の条件ではなく**席を動かす前の条件**にする
@@ -426,40 +430,59 @@ owner の言葉は「重要なのは俺が手作業でやらないことだな�
 
 owner の Human Gate（ゲート3）は 2026-09-11 に下りた。判断 1・5・6・7 の答えも揃っている（上記）。
 
+**進捗（2026-09-12 時点）: PR-1 は master に着地・PR-2 はマージ待ち・PR-3 と PR-4 は未着手。**
+済んだ step にはチェックを入れ、step の文言と違う結果になったものは各行の下に「結果:」として残す。
+**step を削ったり要件を弱めたりはしていない**（承認の母集団は動かさない）。
+
+step の総数は承認時 40 から **41** へ増えた。増えた1つは Step 4-6 で、**統括の申し送り（2026-09-12）で足した受入条件**である（`start` の kickoff が届いたことを受領印で確かめる）。**要件を足す方向の変更で、弱める方向ではない。**
+
 PR は4本に分ける。**順序は「読むだけのもの」を先、「書き換えるもの」を後にする。** 当初は `take` を先頭に置いていたが、設計SO が「PR-1 だけがマージされた状態では、引き継ぎ文書も停止の検査も無いまま席だけ動かせてしまう」と指摘したので入れ替えた。
 
 ### PR-1: 状態を集めて引き継ぎ文書を書く（`prepare`・読むだけ）
 
-- [ ] Step 1-0: **board の形についての amendment を先に書く**（owner 裁定7 = (b)）。`2026-07-10-decision-238-board-schema.md` は frontmatter を要求するが実物は従っていない。その状態を続けると明記し、この単位が legacy の1行を読み書きの対象にする理由を残す。置き場は同じ木の `decisions/`
-- [ ] Step 1-1: 引き継ぎ文書の書式を決めて `projects/orchestration-engine/docs/` 配下にテンプレートとして置く（機械が書く節と人が書く節を見出しで分ける）。**「確立した運用」に当たる節は人の節に残す**（owner 裁定3 のとおり、移設が済むまで brief から落とさない）
-- [ ] Step 1-2: 状態の収集を `projects/orchestration-engine/lib/handoff-state.sh` に置く（open PR・worktree・master HEAD・未 push・生きた委譲子・常駐の見張りの登録と最終走査・前任の session_id と context%）
-- [ ] Step 1-3: 前任の session_id の逆引きに pane 再利用への手当てを入れる。現在の tmux server の pid（sidecar の `server_pid`）と拍動の新しさで絞り、一致が複数あるか server_pid が合わなければ値を書かず `unknown` にする（DJ-2）
-- [ ] Step 1-4: 生きた委譲子の数え方を `lib/` に置く。**錨は前任の pane** で、`bin/oe-tree` の `children_of <pane>` に当たる経路を使う。`oe_reg_list` の自己スコープは使わない（DJ-11）
-- [ ] Step 1-5: `bin/oe-handoff` を新設し `prepare` を実装する。機械の節はまるごと上書きし、人の節は既存の内容を保つ。生きた委譲子が残っていれば「まだ交代できない」と表示する。後継を起こすコマンド（前任の pane を親としない素の pane で `claude` を起動する形）を表示する
-- [ ] Step 1-6: テストを書く（機械の節だけが上書きされること・人の節が保たれること・pane 再利用の fixture で `unknown` に倒れること・子が居るときに警告すること）
-- [ ] GATE: `shellcheck projects/orchestration-engine/bin/oe-handoff projects/orchestration-engine/lib/handoff-state.sh` が通ること
-- [ ] GATE: `prepare` が何も書き換えないこと（board・登記・イベントログの mtime が変わらないことをテストで確かめる）
-- [ ] Step 1-7: PR-1 を出す。**plan doc と episode をこの PR に載せる**
+**着地済み。** PR [#392](https://github.com/stlwolf/ai-development-hub/pull/392) を owner が squash マージ（master `22f8cb2`・2026-09-12）。ゲート4 は実装SO 3周（12 件反映）+ Copilot 8件（7件反映・1件は不成立として理由つきで返信）。
+
+
+- [x] Step 1-0: **board の形についての amendment を先に書く**（owner 裁定7 = (b)）。`2026-07-10-decision-238-board-schema.md` は frontmatter を要求するが実物は従っていない。その状態を続けると明記し、この単位が legacy の1行を読み書きの対象にする理由を残す。置き場は同じ木の `decisions/`
+- [x] Step 1-1: 引き継ぎ文書の書式を決めて `projects/orchestration-engine/docs/` 配下にテンプレートとして置く（機械が書く節と人が書く節を見出しで分ける）。**「確立した運用」に当たる節は人の節に残す**（owner 裁定3 のとおり、移設が済むまで brief から落とさない）
+  - 結果: 置き場を `docs/` 配下から `templates/handoff.md.template` へずらした。engine の `docs/` は蒸留木そのもの（`plans` / `episodes` / `decisions` / `discussions` / `knowledge`）で、層でないディレクトリを足すと読む規約が名前から分からなくなるため。`launchd/*.plist.template` の先例に倣った。**step の文言と違う場所なので、ここに残す。**
+- [x] Step 1-2: 状態の収集を `projects/orchestration-engine/lib/handoff-state.sh` に置く（open PR・worktree・master HEAD・未 push・生きた委譲子・常駐の見張りの登録と最終走査・前任の session_id と context%）
+- [x] Step 1-3: 前任の session_id の逆引きに pane 再利用への手当てを入れる。現在の tmux server の pid（sidecar の `server_pid`）と拍動の新しさで絞り、一致が複数あるか server_pid が合わなければ値を書かず `unknown` にする（DJ-2）
+  - 結果: 実装SO の指摘で条件を足した。**件数では決めず**、現 server の候補のうち拍動がいちばん新しいものを採り、その拍動と transcript が両方とも鮮度の窓の中にあるときだけ値を返す。`ts` が同率なら `unknown`。件数で決める形は、sidecar が7件貯まった pane で永久に `unknown` になっていた。
+- [x] Step 1-4: 生きた委譲子の数え方を `lib/` に置く。**錨は前任の pane** で、`bin/oe-tree` の `children_of <pane>` に当たる経路を使う。`oe_reg_list` の自己スコープは使わない（DJ-11）
+- [x] Step 1-5: `bin/oe-handoff` を新設し `prepare` を実装する。機械の節はまるごと上書きし、人の節は既存の内容を保つ。生きた委譲子が残っていれば「まだ交代できない」と表示する。後継を起こすコマンド（前任の pane を親としない素の pane で `claude` を起動する形）を表示する
+- [x] Step 1-6: テストを書く（機械の節だけが上書きされること・人の節が保たれること・pane 再利用の fixture で `unknown` に倒れること・子が居るときに警告すること）
+- [x] GATE: `shellcheck projects/orchestration-engine/bin/oe-handoff projects/orchestration-engine/lib/handoff-state.sh` が通ること
+- [x] GATE: `prepare` が何も書き換えないこと（board・登記・イベントログの mtime が変わらないことをテストで確かめる）
+- [x] Step 1-7: PR-1 を出す。**plan doc と episode をこの PR に載せる**
 
 ### PR-2: 席を取る（`take`・書き換えあり）
 
-- [ ] Step 2-1: 既存の回帰ガードを先に確認する。`projects/orchestration-engine/tests/test_oe_vitals.sh` は `現統括:` の解決を既に pin しており、freeform の board で前任を併記した行から現統括を解決するケース（ケース17）まで持っている。**新しいテストを作る前にこれを走らせて基準を取る**
-- [ ] Step 2-2: 解決・張替・検算を `projects/orchestration-engine/lib/seat.sh` へ切り出す（`oe_seat_resolve` / `oe_seat_rewrite` / `oe_seat_verify`）。解決は `oe-vitals` の現行実装と1文字も挙動が変わらないようにする
-- [ ] Step 2-3: `oe-vitals` が `lib/seat.sh` を読むように差し替える
-- [ ] GATE: `bash projects/orchestration-engine/tests/test_oe_vitals.sh` が差し替え前と同じく全件通ること。加えて実物の board（`OE_BOARD_FILE`）に対する `oe-vitals` の出力が差し替え前後で一致すること（差し替え前の出力を Step 2-1 で取っておく）
-- [ ] Step 2-4: `schemas/oe-events.schema.json` の type の語彙に `supervisor_succession` を足し、payload の必須フィールド（前任の pane と役割・後継の pane と役割・世代・理由・tmux server の pid）を定義する（既存4型には触れない追記のみ）
-- [ ] Step 2-5: `lib/event-bus.sh` に `supervisor_succession` の emit を足す。**emit の戻り値を信用せず、追記したはずの1行を読み直して確かめる**（既存の emit は失敗を飲み込んで常に成功を返す）
-- [ ] GATE: 追加前に書かれた既存の `oe-events.jsonl` が新しい schema でも valid のままであること
-- [ ] Step 2-6: `oe-handoff take` を実装する。順序は「確かめるものが先、書き換えるものが後」で、(1) 前提の検査（生きた委譲子0体・board が読める・前任の session_id が引ける・`prepare` の記録がある）(2) 見張りの状態を `oe-selfcheck --json` の行として読む（終了コードでは判定しない）と `oe-vitals` の登録・最終走査の確認 (3) `oe-register root --force --label cockpit` (4) board 張替（前任を「退任申告済み・停止待ち」として併記） (5) 検算 (6) イベント emit と読み直し (7) できたこと・できなかったことの表示
-- [ ] Step 2-7: 何度実行しても同じ結果になるようにする（既に自分が root なら登記しない・既に自分を指していれば board を書かない）
-- [ ] Step 2-7b: `oe-handoff start` を実装する（owner 裁定2(b)）。前任の pane を親としない素の pane で `claude` を起こし、**起動と kickoff を分けて**、ペインが入力を受け付けられるようになってから引き継ぎ文書のパスを `oe-send` で送る。`oe-delegate` は使わない（後継を子にしないため・DJ-11）
-- [ ] Step 2-7c: `start` のテストを書く（起こしたペインが登記の子にならないこと・`PARENT_TMUX_PANE` を渡さないこと・kickoff が起動より後に出ること）
-- [ ] Step 2-8: 途中失敗のテストを書く（各段階で失敗を注入し、何が済んで何が済んでいないかが表示されること・もう一度実行すれば揃うこと）
-- [ ] Step 2-9: board 張替のテストを書く。**確かめる条件は「`現統括` の語が1回」ではなく「最後の marker より後ろで後継の `%NNN` が前任の `%NNN` より先に来ること」**（DJ-8）
-- [ ] GATE: `shellcheck` が通ること
-- [ ] GATE: `bash projects/orchestration-engine/scripts/validate-board.sh <張替後の board>` を走らせ、**張替の前後で警告の件数と内容が増えていないこと**（board は元々この validator を通らないので、通ることではなく悪化しないことを見る）
-- [ ] GATE: 実装SO（`so.impl` = weak）を1周通す
-- [ ] Step 2-10: PR-2 を出す
+**実装は完了し、マージ待ち。** PR [#393](https://github.com/stlwolf/ai-development-hub/pull/393)（ready）。ゲート4 は実装SO 2周（9件反映）+ Copilot 4件（全件反映・未返信0）+ 統括レビュー（WARNING 2件・SUGGESTION 2件を全件反映）。テストは prepare 67 / take 107 / oe-vitals 77 / event-bus 95 がすべて PASS。
+
+
+- [x] Step 2-1: 既存の回帰ガードを先に確認する。`projects/orchestration-engine/tests/test_oe_vitals.sh` は `現統括:` の解決を既に pin しており、freeform の board で前任を併記した行から現統括を解決するケース（ケース17）まで持っている。**新しいテストを作る前にこれを走らせて基準を取る**
+  - 結果: 差し替え前の基準は 77 件 PASS（rc=0）と、実 board に対する `oe-vitals` の出力1行。両方とも控えてから着手した。
+- [x] Step 2-2: 解決・張替・検算を `projects/orchestration-engine/lib/seat.sh` へ切り出す（`oe_seat_resolve` / `oe_seat_rewrite` / `oe_seat_verify`）。解決は `oe-vitals` の現行実装と1文字も挙動が変わらないようにする
+- [x] Step 2-3: `oe-vitals` が `lib/seat.sh` を読むように差し替える
+- [x] GATE: `bash projects/orchestration-engine/tests/test_oe_vitals.sh` が差し替え前と同じく全件通ること。加えて実物の board（`OE_BOARD_FILE`）に対する `oe-vitals` の出力が差し替え前後で一致すること（差し替え前の出力を Step 2-1 で取っておく）
+  - 結果: 回帰スイートは前後とも 77 件 PASS で**出力は完全に一致**。実 board に対する出力は、**経過時間の表示だけが違った**（`beat stale/19h3m` → `19h4m`）。解決した pane も判定も同じで、これは時計の進みである。**「完全に一致」とは書かない。**
+- [x] Step 2-4: `schemas/oe-events.schema.json` の type の語彙に `supervisor_succession` を足し、payload の必須フィールド（前任の pane と役割・後継の pane と役割・世代・理由・tmux server の pid）を定義する（既存4型には触れない追記のみ）
+- [x] Step 2-5: `lib/event-bus.sh` に `supervisor_succession` の emit を足す。**emit の戻り値を信用せず、追記したはずの1行を読み直して確かめる**（既存の emit は失敗を飲み込んで常に成功を返す）
+- [x] GATE: 追加前に書かれた既存の `oe-events.jsonl` が新しい schema でも valid のままであること
+  - 結果: **schema 全体の検証ではない。** この repo に JSON Schema の validator が無く（board も envelope も手書きの bash+jq）、`jsonschema` も入っていないため、変更で valid でなくなりうる経路だけを機械で当てた。(1) 既存 2,764 行の `type` は4種で全部が新しい enum に入る (2) 既存行に `supervisor_succession` は0件なので新しい条件節がどれにも当たらない (3) top-level に `additionalProperties: false` が無いので任意項目を足しても既存行は落ちない。`endpoint` の定義は触っていない（diff 0行）。**当てたのはこの3点だけである。**
+- [x] Step 2-6: `oe-handoff take` を実装する。順序は「確かめるものが先、書き換えるものが後」で、(1) 前提の検査（生きた委譲子0体・board が読める・前任の session_id が引ける・`prepare` の記録がある）(2) 見張りの状態を `oe-selfcheck --json` の行として読む（終了コードでは判定しない）と `oe-vitals` の登録・最終走査の確認 (3) `oe-register root --force --label cockpit` (4) board 張替（前任を「退任申告済み・停止待ち」として併記） (5) 検算 (6) イベント emit と読み直し (7) できたこと・できなかったことの表示
+- [x] Step 2-7: 何度実行しても同じ結果になるようにする（既に自分が root なら登記しない・既に自分を指していれば board を書かない）
+- [x] Step 2-7b: `oe-handoff start` を実装する（owner 裁定2(b)）。前任の pane を親としない素の pane で `claude` を起こし、**起動と kickoff を分けて**、ペインが入力を受け付けられるようになってから引き継ぎ文書のパスを `oe-send` で送る。`oe-delegate` は使わない（後継を子にしないため・DJ-11）
+  - 結果: **「入力を受け付けられるようになってから」は満たせていない。** 確認できるのはペインが一覧に現れるところまでで、その中の TUI が初期化を終えたかは機械では分からない。画面を読んで判定する形は採らない（版で消える目印に頼る形になる）。現れるまで待ち、落ち着くまでの待ちを足し、**現れなければ送らない**（送ったつもりだけが残るのを避ける）。この限界は実装のコメントにも書いた。
+- [x] Step 2-7c: `start` のテストを書く（起こしたペインが登記の子にならないこと・`PARENT_TMUX_PANE` を渡さないこと・kickoff が起動より後に出ること）
+- [x] Step 2-8: 途中失敗のテストを書く（各段階で失敗を注入し、何が済んで何が済んでいないかが表示されること・もう一度実行すれば揃うこと）
+- [x] Step 2-9: board 張替のテストを書く。**確かめる条件は「`現統括` の語が1回」ではなく「最後の marker より後ろで後継の `%NNN` が前任の `%NNN` より先に来ること」**（DJ-8）
+- [x] GATE: `shellcheck` が通ること
+- [x] GATE: `bash projects/orchestration-engine/scripts/validate-board.sh <張替後の board>` を走らせ、**張替の前後で警告の件数と内容が増えていないこと**（board は元々この validator を通らないので、通ることではなく悪化しないことを見る）
+- [x] GATE: 実装SO（`so.impl` = weak）を1周通す
+  - 結果: 2周回した（`so.impl` は weak で契約上は1周だが、修正でコードが変わると成果物が古い版に束縛されたままになるため）。2周とも `refuted` で、計9件をすべて反映。3周目は回していない。
+- [x] Step 2-10: PR-2 を出す
 
 ### PR-3: 停止の判定（`retire`）
 
@@ -479,6 +502,7 @@ PR は4本に分ける。**順序は「読むだけのもの」を先、「書�
 - [ ] HG: owner に board の書き換えを承認してもらう
 - [ ] Step 4-4: PR-4 を出す
 - [ ] Step 4-5: 受入。次の実際の交代で `prepare` → `take` → `retire` を1回通し、結果を episode へ追記する
+- [ ] Step 4-6: 受入のとき、**`start` が送った kickoff が後継へ届いたことを受領印で確かめる**（DJ-10 の条件4）。`oe-confirm` の照合で、その送信の相関 ID に対する `prompt_received` が後継のペインから出ていることを見る。出ていなければ受入としない。**起動側で「入力を受け付けられる状態か」を機械で確かめられない以上、届いたことは後始末の側で見るしかない**（統括の申し送り・2026-09-12）
 
 ## リスク・未確認事項
 

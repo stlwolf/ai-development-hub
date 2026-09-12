@@ -14,8 +14,8 @@
     },
     "type": {
       "type": "string",
-      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
-      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received"]
+      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。#390 で supervisor_succession（統括の交代）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
+      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received", "supervisor_succession"]
     },
     "from": {
       "$ref": "#/definitions/endpoint",
@@ -65,6 +65,20 @@
       "minimum": 1,
       "description": "report_received のみ: この受領印がカバーする message_sent（to.pane → from.pane 宛て）の累計数。emit 時に verb 層（oe-ack）がログから計算して焼き込む（frontier snapshot・自己完結）。0 件時は emit しない（no-op）ため minimum 1。同秒に割り込んだ未読 message を received に含めない cap として read 時に使う。"
     },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "supervisor_succession のみ（#390）: 後継が何代目か。board の宣言と突き合わせて、交代の鎖を親子でなく並列の継承として辿るための番号。"
+    },
+    "reason": {
+      "type": "string",
+      "description": "supervisor_succession のみ（#390）: 交代のきっかけ。context_exhaustion=context の枯渇（計画的な交代の主因）/ planned=それ以外の計画的な交代 / unspecified=申告されなかった。応答しない前任からの復帰（#355）はこの型で書かない — 前任が申告できたかどうかが別物だからである。",
+      "enum": ["context_exhaustion", "planned", "unspecified"]
+    },
+    "server_pid": {
+      "type": "string",
+      "description": "supervisor_succession のみ（#390）: 交代した時点の tmux server の pid。pane 番号は server をまたぐと再利用されるので、これが無いと別世代の同番号 pane と区別できない（#290 §7.2 が『server identity を持たせると2つの穴が同時に閉じる』と書いた位置）。"
+    },
     "covers_last_ts": {
       "type": "string",
       "format": "date-time",
@@ -107,6 +121,17 @@
       "then": {
         "required": ["covers_count", "covers_last_ts"],
         "description": "report_received は covers_count と covers_last_ts（frontier snapshot）を必須とする。"
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "supervisor_succession" } } },
+      "then": {
+        "required": ["generation", "reason", "server_pid"],
+        "properties": {
+          "from": { "properties": { "role": { "const": "" } } },
+          "to": { "properties": { "role": { "const": "" } } }
+        },
+        "description": "supervisor_succession（#390）は generation / reason / server_pid を必須とし、from.role / to.role を空に固定する。説明で「role は空」と書くだけでは、spawn の親子として書かれたレコードが valid のまま通ってしまう（契約と検証がずれる）。from=前任 / to=後継で、**role はどちらも空にする** — 交代は spawn の親子ではなく並列の継承であり（#238 / succession discussion §4-2）、role に parent/child を焼くと死んだ前任の下に後継がぶら下がる歪みを記録側から追認することになる。"
       }
     },
     {

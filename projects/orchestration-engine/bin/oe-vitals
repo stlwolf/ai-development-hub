@@ -70,6 +70,8 @@
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/seat.sh
+source "${BIN_DIR}/../lib/seat.sh"
 
 # #224/#233: 会話到達面へ出す文字列（stdout / wez notify body）を無害化する共有 helper（oe-undelivered
 # と同型）。不在時は degrade（jq の cntrl→space が効くので従来同等の安全度）。
@@ -201,15 +203,16 @@ seen_has() {
 # 設計SO(cursor)の反証: `現統括` を colon 無しで grep すると board の見出し `## in-flight（現統括 %144
 # の担当）` のような **stale pane を含む注記行**を誤 match しうる（実 board で確認）。宣言行は `現統括:`
 # （colon 付き）ゆえ colon を必須にして見出しの併記を除外する。
+# 実体は lib/seat.sh の oe_seat_resolve に移した（#390 PR-2）。**規則は変えていない。**
+# 席の張替（#390 の oe-handoff take）と復帰（#355）が同じ読み方を使えるようにするための移設で、
+# 2箇所に同じ規則が実装されていると、片方を直したときにもう片方が取り残される。
+#
+# 移設前の注記をここに残す（理由が失われないように）:
+#   実装SO(claude/codex)指摘: `現統括:` 宣言はあるが %NNN が無い board では末尾 grep が rc1 を返し、
+#   set -o pipefail 下で pipeline→関数→SUP="$(...)" と伝播して set -e が script を落とす（exit 0
+#   契約違反・graceful no-op に到達不能）。→ 空返し＝統括未解決の no-op へ流す。
 resolve_supervisor_pane() {
-  local bf="$1" line
-  [[ -n "$bf" && -r "$bf" ]] || { printf ''; return 0; }
-  line="$(grep -m1 -- '現統括:' "$bf" 2>/dev/null)" || true
-  [[ -n "$line" ]] || { printf ''; return 0; }
-  # 実装SO(claude/codex)指摘: `現統括:` 宣言はあるが %NNN が無い board では末尾 grep が rc1 を返し、
-  # set -o pipefail 下で pipeline→関数→SUP="$(...)" と伝播して set -e が script を落とす（exit 0
-  # 契約違反・graceful no-op に到達不能）。→ `|| true` で pane 未解決は空返し＝統括未解決の no-op へ流す。
-  printf '%s' "$line" | sed -E 's/.*現統括//' | grep -oE '%[0-9]+' | head -1 || true
+  oe_seat_resolve "${1:-}"
 }
 # board の succession 状態を best-effort で抽出（death FLAG の human 向け注記のみ・logic は分岐しない）。
 # 同上（設計SO 反証）: 宣言 `succession:` の colon を必須にし、見出し `## succession 手順` を除外する。

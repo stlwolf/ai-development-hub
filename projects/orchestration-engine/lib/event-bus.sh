@@ -287,3 +287,67 @@ oe_event_report_received() {
     '{covers_count: $c, covers_last_ts: $lts}' 2>/dev/null)" || return 0
   oe_event_emit "report_received" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
 }
+
+# oe_event_supervisor_succession <from_pane> <to_pane> <generation> <reason> <server_pid> [from_label] [to_label]
+#   統括の交代を 1 行記録する（#390）。**role は from/to とも空にする** — 交代は spawn の親子
+#   ではなく並列の継承なので、role に parent/child を焼くと「死んだ前任の下に後継がぶら下がる」
+#   歪みを記録の側から追認してしまう（#238 / succession discussion §4-2）。
+#   本 lib の不変条件どおり常に return 0（記録できたかの判定は oe_event_succession_recorded）。
+oe_event_supervisor_succession() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local fp="${1:-}" tp="${2:-}" gen="${3:-}" reason="${4:-}" spid="${5:-}" flabel="${6:-}" tlabel="${7:-}"
+  [[ -n "$fp" && -n "$tp" ]] || return 0
+  case "$reason" in context_exhaustion|planned|unspecified) ;; *) reason="unspecified" ;; esac
+  case "$gen" in ''|*[!0-9]*) gen=0 ;; esac
+  local extra
+  if [[ "$gen" -gt 0 ]]; then
+    extra="$(jq -cn --argjson g "$gen" --arg r "$reason" --arg s "$spid" \
+      '{generation: $g, reason: $r, server_pid: $s}' 2>/dev/null)" || return 0
+  else
+    # 世代が分からないときに 0 を書かない（schema の minimum は 1）。書けないなら書かない。
+    return 0
+  fi
+  oe_event_emit "supervisor_succession" "$fp" "" "$flabel" "$tp" "" "$tlabel" "$extra"
+}
+
+# oe_event_succession_recorded <from_pane> <to_pane>
+#   直近の交代イベントが実際にログへ載ったかを**読み直して**確かめる（#390）。
+#   emit は置き場不明・jq 不在・書込み失敗をすべて飲み込んで 0 を返すので、emit の戻り値は
+#   「記録された」の根拠にならない。読む側の関数なので非0を返してよい。
+#   rc: 0 載っている / 1 載っていない / 2 確かめられない（置き場不明・jq 不在・ログ不在）
+#   fp が空なら from は問わない（席を取ったあとの確認に使う）。
+#   **文字列の grep で探さない。** 別のイベントの文字列フィールドに "supervisor_succession" が
+#   入っているだけで候補になってしまう。type で選ぶ。
+#   **「過去に同じ from/to の行がある」で成功にしない。** 今回の emit が落ちても素通りする。
+#   呼び出し側が `since_line`（emit 直前の行数）を渡せば、それより後ろだけを見る。
+#   **server_pid を渡すこと。** pane 番号は tmux server をまたぐと再利用されるので、
+#   宛先 pane だけで照合すると、別の server の時代に同じ番号だった別セッション宛ての
+#   イベントを「今回の交代の記録」と誤認する。server_pid を足した目的そのものが破れる。
+# oe_event_succession_recorded <from_pane|""> <to_pane> [since_line] [generation] [server_pid]
+oe_event_succession_recorded() {
+  local fp="${1:-}" tp="${2:-}" since="${3:-0}" gen="${4:-}" spid="${5:-}" file
+  command -v jq >/dev/null 2>&1 || return 2
+  [[ -n "$OE_EVENT_DIR" ]] || return 2
+  file="${OE_EVENT_DIR}/oe-events.jsonl"
+  [[ -r "$file" ]] || return 2
+  local scope
+  if [[ "$since" =~ ^[0-9]+$ ]] && (( since > 0 )); then
+    scope="$(tail -n "+$((since + 1))" "$file" 2>/dev/null)" || return 2
+  else
+    scope="$(cat "$file" 2>/dev/null)" || return 2
+  fi
+  [[ -n "$scope" ]] || return 1
+  local hit
+  hit="$(printf '%s\n' "$scope" | jq -r --arg f "$fp" --arg t "$tp" --arg g "$gen" --arg s "$spid" '
+    select(.type == "supervisor_succession")
+    | select($f == "" or (.from.pane // "") == $f)
+    | select((.to.pane // "") == $t)
+    | select($g == "" or ((.generation // 0) | tostring) == $g)
+    | select($s == "" or (.server_pid // "") == $s)
+    | select((.server_pid // "") != "")
+    | select((.reason // "") != "")
+    | "hit"' 2>/dev/null | tail -1)" || return 2
+  [[ "$hit" == "hit" ]] || return 1
+  return 0
+}
