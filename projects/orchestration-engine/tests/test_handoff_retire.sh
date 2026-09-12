@@ -29,9 +29,9 @@ ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo 
 ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
 nck() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
 
-HB="$_TMP_DIR/heartbeat"; REG="$_TMP_DIR/registry"; TR="$_TMP_DIR/transcripts"; PIDMAP="$_TMP_DIR/pidmap"
+HB="$_TMP_DIR/heartbeat"; REG="$_TMP_DIR/registry"; TR="$_TMP_DIR/transcripts"; PIDMAP="$_TMP_DIR/pidmap"; PSMAP="$_TMP_DIR/psmap"
 EV="$_TMP_DIR/events";    WS="$_TMP_DIR/ws";        STUB="$_TMP_DIR/stub"
-mkdir -p "$HB" "$REG" "$TR" "$EV" "$WS/.oe" "$STUB" "$PIDMAP"
+mkdir -p "$HB" "$REG" "$TR" "$EV" "$WS/.oe" "$STUB" "$PIDMAP" "$PSMAP"
 export OE_HEARTBEAT_DIR="$HB" OE_DELEGATE_STATE_DIR="$REG" OE_TRANSCRIPT_DIR="$TR"
 export OE_EVENT_DIR="$EV" OE_HS_SERVER_PID="900"
 NOW_EPOCH="$(date +%s)"; export OE_HS_NOW_EPOCH="$NOW_EPOCH"
@@ -42,6 +42,23 @@ ALIVE="$_TMP_DIR/alive.txt"; printf '%%10\n%%11\n' > "$ALIVE"
 # **stub は要求された format を尊重する。** 実物の tmux は `-F '#{pane_id} #{pane_pid}'` で
 # 2列返すので、pane id だけを返す stub は「pid が引けない」を作ってしまい、**主張と違う条件で
 # test が通る**（この単位で何度も踏んだ型）。pid は PIDMAP に在ればそれを、無ければ `9<番号>`。
+# ps の stub。`oe_hs_pid_command` は `ps -o comm= -p <pid>` を使う。
+# **実物と同じ契約にする**（不在の pid では非0・見つかれば comm を1行）。
+# PSMAP にコマンド名を置いて切り替える（既定は claude）。
+cat > "$STUB/ps" <<EOF
+#!/usr/bin/env bash
+pid=""; prev=""
+for a in "\$@"; do
+  if [ "\$prev" = "-p" ]; then pid="\$a"; fi
+  prev="\$a"
+done
+[ -n "\$pid" ] || exit 1
+[ -f "$PSMAP/\$pid" ] || exit 1
+cat "$PSMAP/\$pid"
+EOF
+chmod +x "$STUB/ps"
+printf 'claude\n' > "$PSMAP/910"
+
 cat > "$STUB/_panes.sh" <<EOF
 emit_panes() { # \$1=全引数, \$2..=追加で生きているペイン
   local args="\$1"; shift
@@ -100,6 +117,8 @@ mk_handoff() {
     # shellcheck disable=SC2016
     # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
     printf -- '- 前任のペインの pid: `%s`\n' "${5:-910}"
+    # shellcheck disable=SC2016
+    printf -- '- 前任のペインの pid のコマンド: `%s`\n' "${6:-claude}"
     printf '%s\n' '<!-- oe-handoff:machine:end -->'
     printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
     printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -537,6 +556,8 @@ ESCP="$WS/.oe/handoff-escpipe.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -576,6 +597,8 @@ IND="$WS/.oe/handoff-indent.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -605,6 +628,8 @@ TABP="$WS/.oe/handoff-tab.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -634,6 +659,8 @@ PROSE="$WS/.oe/handoff-prose.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '### open PR'
   printf '%s\n' '- 501 draft=false 未処分にしたい PR'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
@@ -698,6 +725,8 @@ UPH="$UP/.oe/handoff.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -730,6 +759,8 @@ XK="$WS/.oe/handoff-crosskind.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '### open PR'
   printf '%s\n' '- 501 draft=false 未処分にしたい PR'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
@@ -761,6 +792,8 @@ ALGN="$WS/.oe/handoff-align.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -800,6 +833,8 @@ FAKE="$WS/.oe/handoff-nomarker.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
   printf '%s\n' '| --- | --- | --- |'
@@ -830,6 +865,8 @@ for form in '- 501 draft=false 古い形式' '- #501 draft=false 新しい形式
     printf -- '- 前任の session_id: `sid-pred`\n'
     # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
     printf -- '- 前任のペインの pid: `910`\n'
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任のペインの pid のコマンド: `claude`\n'
     printf '%s\n' '### open PR'
     printf '%s\n' "$form"
     printf '%s\n' '<!-- oe-handoff:machine:end -->'
@@ -859,6 +896,8 @@ NOLEAD="$WS/.oe/handoff-nolead.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -907,6 +946,8 @@ WTH="$WTR/.oe/handoff.md"
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
   printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -920,6 +961,100 @@ set -e
 ck  "非0 で終わる"              "1" "$rc42"
 ckc "worktree の処分が無いと言う" "$out42" "main 以外の worktree に処分が付いていない（501）"
 ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[43] ペインの最初のプロセスがシェルなら閉じない（pane_pid の性質）"
+# `#{pane_pid}` は**そのペインの最初のプロセス**である。既存のシェルの中で claude を起こした
+# 形ではシェルの pid になり、**claude が終わってシェルだけ残っていても pid は変わらない**。
+# 拍動も窓の中なら旧世代を返すので、**pid と session_id の両方が通って無関係なものを閉じる**
+# （実装SO の指摘・2026-09-13。repo 自身も delegate-task の skill にこの性質を書いている）。
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ" 0 910 bash   # 記録も bash
+printf 'bash\n' > "$PSMAP/910"
+: > "$CALL_LOG"
+set +e
+out43="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc43=$?
+set -e
+ck  "非0 で終わる"                  "1" "$rc43"
+ckc "claude ではないと言う"          "$out43" "最初のプロセスは claude ではありません（bash）"
+ckc "pid の一致では示せないと言う"   "$out43" "pid の一致は「前任がまだ座っている」ことを示しません"
+ck  "kill-pane を呼ばない"           "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"               "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf 'claude\n' > "$PSMAP/910"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+
+echo "[44] pid のコマンドが記録と違えば閉じない"
+printf 'node\n' > "$PSMAP/910"
+: > "$CALL_LOG"
+set +e
+out44="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc44=$?
+set -e
+ck  "非0 で終わる"            "1" "$rc44"
+ckc "変わったと言う"          "$out44" "で走っているコマンドが変わっています（記録 claude / いま node）"
+ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf 'claude\n' > "$PSMAP/910"
+
+echo "[45] 引き継ぎ記録に pid のコマンドが無ければ閉じない（古い形式）"
+NOCMD="$WS/.oe/handoff-nocmd.md"
+grep -v '前任のペインの pid のコマンド' "$HANDOFF" > "$NOCMD"
+ck "fixture から行が消えている" "0" "$(grep -c 'pid のコマンド' "$NOCMD" | tr -d ' ')"
+: > "$CALL_LOG"
+set +e
+out45="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$NOCMD" --execute 2>&1)"; rc45=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc45"
+ckc "古い形式だと言う"          "$out45" "pid のコマンドがありません（古い形式の引き継ぎ文書です）"
+ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+
+echo "[46] 申告の表: 区切り行が無い散文は表として扱わない"
+# `|` を含む行が2行続くだけで表として通っていたので、**散文の行が「処分が付いた表の行」として
+# 機械の照合を満たせた**（実装SO の指摘・2026-09-13。実コードで再現した）。
+PROSE2="$WS/.oe/handoff-prose2.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid のコマンド: `claude`\n'
+  printf '%s\n' '### open PR'
+  printf '%s\n' '- #501 draft=false 未処分にしたい PR'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '説明 a | b'
+  printf '%s\n' 'PR #501 | 済んだ'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$PROSE2"
+set +e
+out46="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$PROSE2" --execute 2>&1)"; rc46=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc46"
+ckc "表として数えないと言う"    "$out46" "自己申告の表に項目が1つも書かれていない"
+nck "散文を処分として扱わない"  "$out46" "申告の全項目に処分が付いている"
+ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[47] worktree の path に空白が入っても basename を切らない"
+# `git worktree list` の人間向け出力を `$1` で割っていたので、空白を含む path が途中で切れ、
+# **別の basename として照合された**（実装SO の指摘・2026-09-13）。--porcelain で読む。
+SPW="$_TMP_DIR/ws-space"; mkdir -p "$SPW/.oe"
+git -C "$SPW" init -q 2>/dev/null || true
+git -C "$SPW" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
+git -C "$SPW" worktree add -q -b side "$_TMP_DIR/foo bar" 2>/dev/null || true
+sp_base="$(git -C "$SPW" worktree list --porcelain | sed -n 's/^worktree //p' | tail -n +2 | head -1 | xargs -0 basename 2>/dev/null || true)"
+ck "fixture の basename に空白が在る" "foo bar" "$sp_base"
+cp "$HANDOFF" "$SPW/.oe/handoff.md"
+# 申告には `foo` だけを書く（切れた basename と一致してしまう形）。
+# 入れ子の heredoc を避け、行の後ろへ1行挿す形で足す。
+awk '{ print } /^\| PR #392 \| /{ print "| foo | 済んだ | 切れた basename と一致させる |" }' \
+  "$SPW/.oe/handoff.md" > "$SPW/.oe/handoff.md.new" && mv "$SPW/.oe/handoff.md.new" "$SPW/.oe/handoff.md"
+ck "申告に foo の行を足した" "1" "$(grep -c '^| foo | 済んだ' "$SPW/.oe/handoff.md" | tr -d ' ')"
+set +e
+out47="$("$OE_HANDOFF" retire -w "$SPW" --board "$BOARD" --handoff "$SPW/.oe/handoff.md" --execute 2>&1)"; rc47=$?
+set -e
+ck  "非0 で終わる"                  "1" "$rc47"
+ckc "空白込みの basename で言う"    "$out47" "main 以外の worktree に処分が付いていない（foo bar）"
+ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

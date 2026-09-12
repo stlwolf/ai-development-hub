@@ -10,7 +10,8 @@
 # 提供する関数:
 #   oe_hs_server_pid                  — いまの tmux server の pid（registry と同じ導出）
 #   oe_hs_pane_alive <pane>           — pane が tmux に現存するか
-#   oe_hs_pane_pid <pane>             — <pane> でいま走っているプロセスの pid（拍動に依らない同一性の鍵）
+#   oe_hs_pane_pid <pane>             — <pane> の最初のプロセスの pid（拍動に依らない同一性の鍵）
+#   oe_hs_pid_command <pid>           — その pid のコマンド名（pid だけでは同一性を示せないので対で使う）
 #   oe_hs_children_of <pane>          — <pane> を親とする登記のうち、pane が現存するものを1行1件
 #   oe_hs_session_for_pane <pane>     — pane から session_id を逆引き（安全側・曖昧なら unknown）
 #   oe_hs_context_for_session <sid>   — session_id の拍動から context%（取れなければ unknown）
@@ -93,6 +94,26 @@ oe_hs_pane_pid() {
   pid="$(printf '%s\n' "$line" | awk -v p="$pane" '$1 == p {print $2; found=1} END {exit !found}')" || return 1
   [ -n "$pid" ] || return 1
   printf '%s' "$pid"
+}
+
+# <pid> で走っているプロセスのコマンド名を返す。引けなければ非0 を返して**何も出さない**。
+#
+# **`oe_hs_pane_pid` だけではペインの同一性を示せないので、これと対で使う。**
+# tmux の `#{pane_pid}` は**そのペインの最初のプロセス**である。ペインのコマンドとして
+# `claude` を起こした形（`oe-handoff start` と engine の spawn はこれ）なら claude 自身だが、
+# **既存のシェルの中で手で起動した形ではシェルの pid になる。** その場合、claude が終わって
+# シェルだけが残っていても pid は変わらないので、**pid の一致が「前任がまだ座っている」ことを
+# 示さない**（#390 の実装SO の指摘・repo 自身も `delegate-task` の skill に明記している）。
+# コマンド名まで見て、シェルなら「確かめられない」と言えるようにする。
+oe_hs_pid_command() {
+  local pid="${1:-}" out
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  command -v ps >/dev/null 2>&1 || return 2
+  out="$(ps -o comm= -p "$pid" 2>/dev/null)" || return 1
+  out="$(printf '%s' "$out" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [ -n "$out" ] || return 1
+  # ログインシェルは `-bash` の形で出る。先頭の `-` を落として名前だけにする。
+  printf '%s' "${out#-}"
 }
 
 oe_hs_children_of() {

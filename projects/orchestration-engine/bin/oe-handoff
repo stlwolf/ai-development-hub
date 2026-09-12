@@ -163,6 +163,14 @@ cmd_prepare() {
   CHILDREN="$(oe_hs_children_of "$PREDECESSOR")"; CHILD_RC=$?
   # ペインの pid。引けなければ空にする（**空を「一致した」に畳まないのは retire の側の責任**）。
   PRED_PID="$(oe_hs_pane_pid "$PREDECESSOR")" || PRED_PID=""
+  # **pid だけでは同一性を示せない。** `#{pane_pid}` はペインの最初のプロセスなので、
+  # 既存のシェルの中で起動した形ではシェルの pid になり、claude が終わっても変わらない。
+  # コマンド名まで記録して、`retire` が「シェルなら確かめられない」と言えるようにする。
+  if [ -n "$PRED_PID" ]; then
+    PRED_PID_CMD="$(oe_hs_pid_command "$PRED_PID")" || PRED_PID_CMD=""
+  else
+    PRED_PID_CMD=""
+  fi
   if [ "$CHILD_RC" -ne 0 ]; then
     CHILD_COUNT="unknown"
     CHILDREN=""
@@ -193,6 +201,11 @@ cmd_prepare() {
     # **停止の直前にペインの同一性を確かめるための鍵。** 拍動に依らない（再利用直後の窓を塞ぐ）。
     if [ -n "$PRED_PID" ]; then
       printf -- '- 前任のペインの pid: `%s`\n' "$PRED_PID"
+      if [ -n "$PRED_PID_CMD" ]; then
+        printf -- '- 前任のペインの pid のコマンド: `%s`\n' "$PRED_PID_CMD"
+      else
+        printf -- '- 前任のペインの pid のコマンド: 取れなかった（`retire` は停止しない）\n'
+      fi
     else
       printf -- '- 前任のペインの pid: 取れなかった（`retire` は停止しない）\n'
     fi
@@ -818,28 +831,62 @@ cmd_retire() {
       # （実装SO の指摘・2026-09-13）。
       # 表の領域は「字下げ3以下で `|` を含む行」から始まり、**空行か `|` を含まない行で終わる**。
       # 領域ごとに行番号を数え直すので、散文に `|` が1つ混ざっても表そのものは壊れない。
-      {
-        line = $0
-        ind = match(line, /[^ \t]/) - 1
-        has_pipe = (index(line, "|") > 0)
-      }
-      !in_table {
-        if (has_pipe && ind >= 0 && ind <= 3) { in_table = 1; rowno = 0 } else { next }
-      }
-      in_table {
-        # **表の中でも字下げ4以上は表の行にしない。** Markdown ではそこからコードブロックなので、
-        # 人が画面で見ているものも表の行ではない（見本として書いた行が申告として数えられる）。
-        # 入口だけで見ていたので、表が始まったあとの疑似行を受理していた（実装SO の指摘）。
-        if (line ~ /^[ \t]*$/ || !has_pipe || ind >= 4) { in_table = 0; next }
+      function cells(line, out) {
+        # escaped pipe（`\|`）は境界に数えない。先頭と末尾のパイプは在れば外す。
         work = line
         gsub(/\\\|/, "\001", work)
         sub(/^[ \t]*\|/, "", work)
         sub(/\|[ \t]*$/, "", work)
-        n = split(work, c, "|")
+        return split(work, out, "|")
+      }
+      function is_delim_row(line,   k, m, cc, cell, ok) {
+        m = cells(line, cc)
+        if (m < 1) { return 0 }
+        ok = 1
+        for (k = 1; k <= m; k++) {
+          cell = cc[k]
+          gsub(/^[ \t]+|[ \t]+$/, "", cell)
+          if (cell !~ /^:?-+:?$/) { ok = 0 }
+        }
+        return ok
+      }
+      {
+        line = $0
+        # **タブ字下げを1文字と数えない。** Markdown ではタブ1つが4列に当たるので、
+        # タブで始まるコードブロックの疑似行を表の行として受理していた（実装SO の指摘）。
+        expanded = line
+        gsub(/\t/, "    ", expanded)
+        ind = match(expanded, /[^ ]/) - 1
+        if (ind < 0) { ind = 0 }
+        has_pipe = (index(line, "|") > 0)
+      }
+      # 表の入口: 字下げ3以下で `|` を含み、**次の行が GFM の区切り行**であること。
+      # 区切り行を見ないと、`|` を含む散文が2行あるだけで表として通る（散文の行が
+      # 「処分が付いた表の行」として機械の照合を満たしてしまう・実装SO の指摘・2026-09-13）。
+      !in_table {
+        if (!(has_pipe && ind <= 3)) { next }
+        if ((getline nextline) <= 0) { next }
+        if (!is_delim_row(nextline)) {
+          # 区切り行が無いなら表ではない。**読み捨てた行を次の入口判定に使わない**
+          # （nextline 自体が表の頭になりうるので、その判定はもう一度回す）。
+          line = nextline
+          expanded = line; gsub(/\t/, "    ", expanded)
+          ind = match(expanded, /[^ ]/) - 1; if (ind < 0) { ind = 0 }
+          has_pipe = (index(line, "|") > 0)
+          if (!(has_pipe && ind <= 3)) { next }
+          if ((getline nextline) <= 0) { next }
+          if (!is_delim_row(nextline)) { next }
+        }
+        in_table = 1
+        next
+      }
+      in_table {
+        # **表の中でも字下げ4以上は表の行にしない。** Markdown ではそこからコードブロックなので、
+        # 人が画面で見ているものも表の行ではない（見本として書いた行が申告として数えられる）。
+        if (line ~ /^[ \t]*$/ || !has_pipe || ind >= 4) { in_table = 0; next }
+        n = cells(line, c)
         item = c[1]; disp = (n >= 2 ? c[2] : "")
         gsub(/^[ \t]+|[ \t]+$/, "", item); gsub(/^[ \t]+|[ \t]+$/, "", disp)
-        rowno++
-        if (rowno == 1) next
         if (item ~ /^:?-+:?$/) next
         if (item == "") next
         gsub(/\001/, "\\|", item); gsub(/\001/, "\\|", disp)
@@ -921,12 +968,16 @@ EOF_PRS
   # のに未処分の worktree が無いことにして閉じる（実装SO の指摘・2026-09-13）。
   # `pipefail` の有無で結果が変わらないよう、パイプを使わずに rc を取る。
   local wt_now wt_raw wt_rc
-  wt_raw="$(git -C "$WORKSPACE" worktree list 2>/dev/null)"; wt_rc=$?
+  # **人間向けの出力を空白で割らない。** path に空白が入ると途中で切れ、basename が
+  # 別のものになる（`foo bar` が `foo` として照合される・実装SO の指摘・2026-09-13）。
+  # git が script 向けに定義している `--porcelain` の `worktree <path>` 行を読む。
+  wt_raw="$(git -C "$WORKSPACE" worktree list --porcelain 2>/dev/null)"; wt_rc=$?
   if [ "$wt_rc" -ne 0 ]; then
     note_diff "worktree を数えられなかった（git worktree list が失敗した）。未処分の worktree が無いとは言えない"
     wt_now=""
   else
-    wt_now="$(printf '%s\n' "$wt_raw" | awk 'NR>1 {print $1}')"
+    # 先頭の1件は main の worktree なので落とす（`worktree ` の行だけを数える）。
+    wt_now="$(printf '%s\n' "$wt_raw" | sed -n 's/^worktree //p' | tail -n +2)"
   fi
   if [ -n "$wt_now" ]; then
     local wtp base
@@ -1061,6 +1112,36 @@ _retire_report() {
     err "${RETIRE_PRED} で走っているプロセスが変わっています（記録 pid ${pid_rec} / いま ${pid_now}）。**ペインが作り直されたか再利用されています。閉じません**"
     exit 1
   fi
+
+  # **pid の一致だけでは「前任がまだ座っている」ことを示さない。**
+  # `#{pane_pid}` は**そのペインの最初のプロセス**である。ペインのコマンドとして `claude` を
+  # 起こした形（`oe-handoff start` と engine の spawn はこれ）なら claude 自身だが、
+  # **既存のシェルの中で手で起動した形ではシェルの pid**になる。その場合、前任の claude が
+  # 終わってシェルだけが残っていても pid は変わらず、拍動も窓の中なら旧世代を返すので、
+  # **両方の検査が通って無関係なものを閉じる**（実装SO の指摘・2026-09-13。repo 自身も
+  # `canonical/skills/delegate-task/SKILL.md` にこの `pane_pid` の性質を書いている）。
+  # コマンド名を突き合わせ、**claude でなければ「確かめられない」として閉じない。**
+  local cmd_rec cmd_now
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
+  cmd_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペインの pid のコマンド: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || cmd_rec=""
+  if [ -z "$cmd_rec" ]; then
+    err "引き継ぎ記録に前任のペインの pid のコマンドがありません（古い形式の引き継ぎ文書です）。**pid の一致だけではペインの同一性を示せないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
+    exit 1
+  fi
+  if ! cmd_now="$(oe_hs_pid_command "$pid_now")"; then
+    err "pid ${pid_now} のコマンド名を引けませんでした。**ペインの同一性を確かめられないので閉じません**"
+    exit 1
+  fi
+  if [ "$cmd_now" != "$cmd_rec" ]; then
+    err "${RETIRE_PRED} の pid ${pid_now} で走っているコマンドが変わっています（記録 ${cmd_rec} / いま ${cmd_now}）。**閉じません**"
+    exit 1
+  fi
+  case "$cmd_now" in
+    *claude*) : ;;
+    *)
+      err "${RETIRE_PRED} の最初のプロセスは claude ではありません（${cmd_now}）。**このペインはシェルの中で claude を起こした形なので、pid の一致は「前任がまだ座っている」ことを示しません**（前任が終わってシェルだけ残っていても pid は変わらない）。**閉じません。** 停止は人が判断してください"
+      exit 1 ;;
+  esac
 
   printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
   if "$OE_HANDOFF_TMUX" kill-pane -t "$RETIRE_PRED" 2>/dev/null; then

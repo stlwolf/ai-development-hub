@@ -220,7 +220,9 @@ oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute
 - **`start` の待ちは「入力を受け付けられる」ことの確認ではない。** ペインの存在は作った直後から成立し、その中の TUI が初期化を終えたかは起動側から分からない。画面を読んで判定する形は採らない（版で消える目印に頼る形になる）。到達は受領印（`oe-confirm` の照合）で見る
 - **`oe-vitals` の最終走査は確かめられない。** `oe-selfcheck` の `watchdog-freshness` が見ているのは `oe-confirm` であって `oe-vitals` ではなく、`oe-vitals` には最終走査を残す記録がそもそも無い。`take` は毎回そう明示する
 - **pane がすぐ再利用され、新しいセッションがまだ拍動を書いていないあいだは、旧世代の session_id を採りうる。** セッションが自分の id を名乗る経路が無いかぎり、この逆引きの穴は閉じない。`take` と `prepare` は拍動の古さを出して、人が判断できる材料を残す
-  - **ただし `retire` が閉じる側では塞いだ**（2026-09-13）。`prepare` が前任のペインの pid を機械の節に記録し、`retire` は `kill-pane` の直前に**いまの pid と突き合わせる**。pid は tmux が握っているので、**新しいセッションが拍動を書く前でも変わる**。記録に pid が無い（古い形式の）引き継ぎ文書では閉じない（`prepare` を走らせ直す）。逆引き自体の穴は残るが、**閉じる判断はこの穴に依存しない**
+  - **`retire` が閉じる側では窓を狭めた**（2026-09-13）。`prepare` が前任のペインの pid**とその pid のコマンド名**を機械の節に記録し、`retire` は `kill-pane` の直前に両方を突き合わせる。記録に無い（古い形式の）引き継ぎ文書では閉じない（`prepare` を走らせ直す）。
+  - **「塞いだ」とは書かない。** `#{pane_pid}` は tmux の定義では**そのペインの最初のプロセス**である。ペインのコマンドとして `claude` を起こした形（`oe-handoff start` と engine の spawn はこれ）なら claude 自身だが、**既存のシェルの中で手で起動した形ではシェルの pid**になり、**前任の claude が終わってシェルだけ残っていても pid は変わらない**（`canonical/skills/delegate-task/SKILL.md` に同じ性質が書いてある）。だから **pid のコマンド名が `claude` でなければ「確かめられない」として閉じない**。この形のペインでは、停止は人の判断に残る。
+  - **残る窓**: ペインのコマンドが `claude` である形でも、claude が終われば通常そのペインは閉じるので窓は狭い。**逆引き（拍動からの session_id）自体の穴は残る**が、閉じる判断は pid とコマンド名の突合を通るので、その穴だけで閉じることはない
 
 関連 lib: `seat.sh`（席の解決・張替・検算）/ `handoff-state.sh`（機械で取れる状態の収集・read-only）/ `delegate-registry.sh`（登記）/ `event-bus.sh`（交代イベント）。テンプレート: `../templates/handoff.md.template`。
 
