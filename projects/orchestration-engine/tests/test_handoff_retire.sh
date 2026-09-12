@@ -326,6 +326,50 @@ ck  "非0 で終わる"           "1" "$rc20"
 ckc "確認できていないと言う" "$out20" "不在を確認できていません"
 nck "確認したとは言わない"   "$out20" "不在を確認しました"
 
+echo "[21] PR 番号の照合が部分一致で通らない"
+printf '%%10\n%%11\n' > "$ALIVE"
+cat > "$STUB/tmux" <<EOF
+#!/usr/bin/env bash
+printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
+case "\${1:-}" in
+  list-panes) cat "$ALIVE"; exit 0 ;;
+  kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
+esac
+exit 0
+EOF
+chmod +x "$STUB/tmux"
+SUB="$WS/.oe/substr.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  printf -- '- 501 draft=false 機械が挙げた PR\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  # 申告は #3501 という**別の PR** を書いている。部分一致だと 501 に当たってしまう
+  printf '%s\n' '| 項目 | 処分 | 補足 |' '| --- | --- | --- |' '| PR #3501 | 済んだ | 別の PR |'
+  printf '\n%s\n' '## owner が下した裁定' '-'
+} > "$SUB"
+set +e
+out21="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$SUB" --execute 2>&1)"; rc21=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc21"
+ckc "欠落を見逃さない"  "$out21" "機械の節が挙げた PR #501 が申告に出てこない"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[22] 閉じる直前に transcript が使えなくなっていたら閉じない"
+mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+mv "$TR/sid-pred.jsonl" "$TR/sid-pred.jsonl.away"
+set +e
+out22="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc22=$?
+set -e
+mv "$TR/sid-pred.jsonl.away" "$TR/sid-pred.jsonl"
+ck  "非0 で終わる"      "1" "$rc22"
+ckc "理由を言う"        "$out22" "transcript が見つからないか古すぎます"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

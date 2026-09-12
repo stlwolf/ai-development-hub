@@ -733,8 +733,10 @@ cmd_retire() {
   local machine
   machine="$(awk '/oe-handoff:machine:begin/,/oe-handoff:machine:end/' "$handoff")" || machine=""
   local mnum
+  # **部分一致で照合しない。** `grep -F 501` は申告の「#3501」や「2026-09-501」にも当たるので、
+  # 別の PR を書いた申告で欠落を見逃す（fail-open）。数字の前後が数字でないことまで見る。
   for mnum in $(printf '%s' "$machine" | grep -oE '^- [0-9]+ draft=' | grep -oE '[0-9]+' || true); do
-    if printf '%s' "$decl" | grep -qF -- "$mnum"; then
+    if printf '%s' "$decl" | grep -qE "(^|[^0-9])${mnum}([^0-9]|\$)"; then
       :
     else
       note_fail "機械の節が挙げた PR #${mnum} が申告に出てこない（処分が付いていない）"
@@ -756,7 +758,7 @@ cmd_retire() {
       [ -n "$n" ] || continue
       case "$n" in unknown*) note_diff "open PR を数えられなかった（${n}）" ; continue ;; esac
       local num; num="${n%% *}"
-      if printf '%s' "$decl" | grep -qF -- "$num"; then
+      if printf '%s' "$decl" | grep -qE "(^|[^0-9])${num}([^0-9]|\$)"; then
         :
       else
         note_diff "open PR #${num} が申告に出てこない（${n#* }）"
@@ -768,6 +770,21 @@ EOF_PRS
   # 未 push と worktree も見る（open PR だけでは欠落を拾えない）
   local repo_now
   repo_now="$(oe_hs_repo_state "$WORKSPACE")"
+  # worktree も見る。前任の作業枝が残っているのに申告に出てこない形を拾う。
+  local wt_now
+  wt_now="$(git -C "$WORKSPACE" worktree list 2>/dev/null | awk 'NR>1 {print $1}')" || wt_now=""
+  if [ -n "$wt_now" ]; then
+    local wtp base
+    while IFS= read -r wtp; do
+      [ -n "$wtp" ] || continue
+      base="$(basename "$wtp")"
+      printf '%s' "$decl" | grep -qF -- "$base" \
+        || note_diff "main 以外の worktree が残っているのに申告に出てこない（${base}）"
+    done <<EOF_WT
+$wt_now
+EOF_WT
+  fi
+
   # **「上流が無い」と「数えられなかった」を分ける。** 上流が無い枝は正当な状態で、比べる相手が
   # 無いだけである。これを「分からない」と同じに扱うと、正当な状態で交代が止まる。
   case "$repo_now" in
@@ -809,6 +826,14 @@ _retire_report() {
   # --- 停止（前任のペインだけ）---
   if ! command -v "$OE_HANDOFF_TMUX" >/dev/null 2>&1; then
     err "tmux が要ります"; exit 2
+  fi
+
+  # **閉じる直前に session_id がまだ使えるかを確かめ直す。**
+  # 必須条件が見ているのは「記録に在るか」で、**いま開き直せるか**は別である。transcript が
+  # 消えていれば、閉じたあとに `claude --resume` は通らない（停止が取り消せなくなる）。
+  if ! oe_hs_transcript_usable "$RETIRE_SID"; then
+    err "前任の transcript が見つからないか古すぎます（${RETIRE_SID}）。閉じると claude --resume で開き直せません"
+    exit 1
   fi
 
   # **閉じる直前にもう一度数える。** 上の検査から下の kill までのあいだに前任が新しい委譲子を
