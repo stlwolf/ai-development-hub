@@ -211,9 +211,12 @@ cmd_prepare() {
     fi
     printf '\n'
     if [ "$CHILD_COUNT" != "0" ]; then
-      printf '%s\n' '**生きた委譲子が居ない、と言える状態ではない。席は動かせない**（`take` が止める）。'
-      printf '%s\n' '子の報告先は起動時に前任のペインへ焼き込まれていて、あとから張り替えられない。'
-      printf '%s\n' '数えられなかった場合も同じ扱いにする（「分からない」を「居ない」に畳まない）。'
+      printf '%s\n' '**この子は後継がまるごと引き受ける。交代は止まらない**（owner 裁定 2026-09-13）。'
+      printf '%s\n' 'supervision はリクエストとレスポンスで回るので、後継が指示を送れば子は送ってきた相手に返す。'
+      printf '%s\n' '**残る穴は、誰にも聞かれずに子が自分から報告を出す経路だけ**である（`PARENT_TMUX_PANE` が'
+      printf '%s\n' '前任を指したまま残る）。**後継は上の一覧の各子へ、報告の宛先が自分になったことを明示して伝えること。**'
+      printf '%s\n' '挨拶では塞がらない。`oe-report` は `PARENT_TMUX_PANE` を先に読み、`oe-delegate` は差し替えの口を'
+      printf '%s\n' '書き出さないので、**宛先が変わるのは子が新しい pane を明示して送るときだけ**である。'
       printf '\n'
     fi
     printf '%s\n' '### open PR'
@@ -320,17 +323,19 @@ cmd_prepare() {
   printf '次にやること:\n'
   printf '  1. %s の「人が書く」節を埋める（機械の節は触らない）\n' "$OUT"
   printf '     とくに「渡らないもの」と自己申告の残余は、ここでしか書けません。\n'
-  if [ "$CHILD_COUNT" = "unknown" ]; then
-    printf '  2. **まだ交代できません。** 生きた委譲子を数えられませんでした。数えられないうちは席を動かせません。\n'
-  elif [ "$CHILD_COUNT" != "0" ]; then
-    printf '  2. **まだ交代できません。** 生きた委譲子 %s 件が片づくまで席は動かせません。\n' "$CHILD_COUNT"
-  elif [ "$SID" = "unknown" ]; then
-    # 子のゲートと対称にする。ここで「次は start」と言うと、retire が止める状態なのに
-    # 「交代の準備ができた」と読める（片方だけ fail-open になる）。
+  if [ "$SID" = "unknown" ]; then
+    # **ここで「次は start」と言わない。** `retire` が止める状態なのに「交代の準備ができた」と
+    # 読める（片方だけ fail-open になる）。**生きた委譲子は交代を止めない**（owner 裁定
+    # 2026-09-13）ので、止める理由として残るのは session_id だけである。
     printf '  2. **まだ交代できません。** 前任の session_id が引けていないので、停止が取り消せません。\n'
     printf '     拍動と transcript のどちらか（または両方）が、いまの前任のものだと言える状態にありません。\n'
   else
     printf '  2. oe-handoff start で後継のペインを起こす\n'
+  fi
+  if [ "$CHILD_COUNT" != "0" ]; then
+    printf '  3. **後継へ子を引き渡す。** 生きた委譲子 %s 件は後継がまるごと引き受ける（交代は止まらない）。\n' "$CHILD_COUNT"
+    printf '     後継は各子へ「報告の宛先は後継の pane である」ことを明示して伝えること。\n'
+    printf '     伝えるまで、子が自分から出す報告は前任のペインを指したままである（PARENT_TMUX_PANE は差し替えられない）。\n'
   fi
   exit 0
 }
@@ -339,8 +344,13 @@ cmd_prepare() {
 # --- start: 後継のペインを起こして引き継ぎ文書のパスを送る ---------------------------
 #
 # **後継を登記の子にしない。** `oe-delegate` を使わず、素の tmux split で `claude` を起こす。
-# `PARENT_TMUX_PANE` も渡さない。子にすると2つ壊れる。(1) 後継自身が「生きた委譲子」に数えられて
-# `take` が永久に通らない。(2) 後継の報告先が、これから停止する前任のペインに焼き込まれる。
+# `PARENT_TMUX_PANE` も渡さない。理由は、後継の自発的な報告の宛先が、これから停止する前任の
+# ペインに焼き込まれるからである。
+#
+# **以前はもう1つ理由があったが、いまは無い。** 「後継自身が生きた委譲子に数えられて `take` が
+# 永久に通らない」という理由は、子の数で `take` を止めていた前提のものである。owner 裁定
+# （2026-09-13）で子は交代を止めなくなったので、この理由は効かない。**登記の子にしない判断
+# そのものは、上の焼き込みの理由だけで維持する。**
 #
 # **起動と kickoff を分ける。** 起こした直後のペインは入力を受け付けられないことがあり、そこへ
 # 送ると取りこぼす。ペインが現れてから送る。
@@ -480,22 +490,32 @@ cmd_take() {
     report_and_exit 0
   fi
 
-  # 生きた委譲子。**数えられないときも席を動かさない**（DJ-11・「分からない」を「居ない」に畳まない）。
+  # 生きた委譲子。**数えるが、席は止めない**（owner 裁定 2026-09-13）。
+  #
+  # 以前はここで子0体を要求していた（旧 DJ-11）。前提は「前任の pane を閉じると生きている子の
+  # 戻し先が死ぬ」だったが、**実測がこれを否定した。** 統括の交代をまたいで同じ子が後継へ報告した
+  # 実例がログに在る。supervision はリクエストとレスポンスで回るので、後継が指示を送れば子は
+  # **送ってきた相手に返す**。`PARENT_TMUX_PANE` が効くのは、誰にも聞かれずに子が自分から報告を
+  # 出す経路だけである。**狭い前提を主経路に一般化していた。**
+  #
+  # **それでも数えて出す。** 後継は「誰を引き受けたか」を知る必要がある。
+  # **数えられなかったことを0に畳まない。** 席は動かすが「確かめた」とは書かない。
   if [ "$pred" != "$self" ]; then
     children="$(oe_hs_children_of "$pred")"; child_rc=$?
     if [ "$child_rc" -ne 0 ]; then
-      err "前任の生きた委譲子を数えられませんでした"
-      note_undone "委譲子を数えられないので席を動かしていない"
-      report_and_exit 1
+      printf '生きた委譲子: 数えられませんでした（登記の置き場が決まらないか jq がありません）\n'
+      note_undone "引き受けた委譲子が分からない（数えられなかった）。席は動かすが、誰を引き受けたかは確かめられていない"
+    else
+      if [ -z "$children" ]; then child_count=0; else child_count="$(printf '%s\n' "$children" | grep -c '^' | tr -d ' ')"; fi
+      printf '生きた委譲子: %s 件\n' "$child_count"
+      if [ "$child_count" -ne 0 ]; then
+        printf '%s\n' "$children" | sed 's/^/  - /'
+        note_done "引き受けた委譲子を確かめた（${child_count} 件・交代は止めない）"
+        note_undone "上の子へ新しい報告先を伝えていない。**伝えるまで、子が自分から出す報告は前任のペインを指したままである**（PARENT_TMUX_PANE は差し替えられないので、宛先が変わるのは子が後継の pane を明示して送るときだけである）"
+      else
+        note_done "前任に生きた委譲子は居ない"
+      fi
     fi
-    if [ -z "$children" ]; then child_count=0; else child_count="$(printf '%s\n' "$children" | grep -c '^' | tr -d ' ')"; fi
-    if [ "$child_count" -ne 0 ]; then
-      err "前任に生きた委譲子が ${child_count} 件あります。片づくまで席は動かせません"
-      printf '%s\n' "$children" | sed 's/^/  - /'
-      note_undone "生きた委譲子が居るので席を動かしていない（子の報告先は前任のペインに焼き込まれている）"
-      report_and_exit 1
-    fi
-    note_done "前任に生きた委譲子が居ないことを確かめた"
   fi
 
   # 前任の session_id。停止（PR-3）の前提条件なので、ここで引けないなら先へ進めない。
@@ -627,10 +647,13 @@ cmd_take() {
 cmd_retire() {
   local board handoff self pred sid_rec
 
-  local -a fail=() diff_items=() ok_items=()
+  local -a fail=() diff_items=() ok_items=() info_items=()
   note_ok()   { ok_items+=("$1"); }
   note_fail() { fail+=("$1"); }
   note_diff() { diff_items+=("$1"); }
+  # **閉じない理由にはしないが、後継が知る必要があること。** 判定に効かせないので fail とは
+  # 別の配列に入れる（混ぜると「閉じない理由」が水増しされて読めなくなる）。
+  note_info() { info_items+=("$1"); }
 
   board="${BOARD:-${OE_BOARD_FILE:-}}"
   handoff="${HANDOFF:-${OE_HANDOFF_FILE:-${WORKSPACE}/.oe/handoff.md}}"
@@ -689,29 +712,34 @@ cmd_retire() {
   RETIRE_SID="$sid_rec"
 
   # --- 必須条件1: session_id が引き継ぎ記録に残っている ---
+  # **必須条件は2つである**（1 と 3）。以前あった「生きた委譲子が0体」は owner 裁定
+  # （2026-09-13）で要求をやめた。番号は記録との対応を保つため振り直さない。
   if [ -z "$sid_rec" ] || [ "$sid_rec" = "unknown" ]; then
     note_fail "前任の session_id が引き継ぎ記録に無い（${sid_rec:-空}）。閉じると claude --resume で開き直せない"
   else
     note_ok "前任の session_id が引き継ぎ記録にある（${sid_rec}）"
   fi
 
-  # --- 必須条件2: 生きた委譲子が0体 ---
-  # **数えられないときも閉じない**（「分からない」を「居ない」に畳まない）。
+  # --- 生きた委譲子（**閉じない理由にはしない**・owner 裁定 2026-09-13）---
+  # 以前はここが必須条件2で、子が居ると閉じなかった。子が生きたままの交代が正常系であり、
+  # 止めているほうが不具合である、という裁定で要求をやめた。**残る穴は自発的な報告の経路だけ**で、
+  # 後継が各子へ新しい報告先を明示して伝えれば塞がる。**穴が在ることは下の出力に書く。**
+  # **数えられなかったことを0に畳まない。**
   local children child_rc child_count
   children="$(oe_hs_children_of "$pred")"; child_rc=$?
   if [ "$child_rc" -ne 0 ]; then
-    note_fail "前任の生きた委譲子を数えられない。数えられないうちは閉じない"
+    note_info "前任の生きた委譲子を数えられない（閉じない理由にはしない。誰を引き受けたかは確かめられていない）"
   else
     if [ -z "$children" ]; then child_count=0; else child_count="$(printf '%s\n' "$children" | grep -c '^' | tr -d ' ')"; fi
     if [ "$child_count" -ne 0 ]; then
-      note_fail "前任に生きた委譲子が ${child_count} 件ある（報告先が前任のペインに焼き込まれている）"
+      note_info "前任に生きた委譲子が ${child_count} 件ある（後継が引き受ける。閉じない理由にはしない）"
       printf '%s\n' "$children" | sed 's/^/    - /'
     else
-      note_ok "前任に生きた委譲子は居ない"
+      note_info "前任に生きた委譲子は居ない"
     fi
   fi
 
-  # --- 必須条件3: 申告の各項目に処分が付いている ---
+  # --- 必須条件2（旧・必須条件3）: 申告の各項目に処分が付いている ---
   local decl rows bad_rows
   decl="$(awk '/^## 前任の自己申告/,/^## [^前]/' "$handoff")" || decl=""
   if [ -z "$decl" ]; then
@@ -806,6 +834,8 @@ EOF_WT
 _retire_report() {
   printf '\n%s\n' '--- 確かめられたこと ---'
   if [ "${#ok_items[@]}" -eq 0 ]; then printf '  （なし）\n'; else printf '  - %s\n' "${ok_items[@]}"; fi
+  printf '%s\n' '--- 後継が引き受けるもの（閉じない理由にはしない）---'
+  if [ "${#info_items[@]}" -eq 0 ]; then printf '  （なし）\n'; else printf '  - %s\n' "${info_items[@]}"; fi
   printf '%s\n' '--- 閉じられない理由 ---'
   if [ "${#fail[@]}" -eq 0 ]; then printf '  （なし）\n'; else printf '  - %s\n' "${fail[@]}"; fi
   printf '%s\n' '--- 申告と機械の検査の食い違い ---'
@@ -841,20 +871,38 @@ _retire_report() {
     exit 1
   fi
 
-  # **閉じる直前にもう一度数える。** 上の検査から下の kill までのあいだに前任が新しい委譲子を
-  # 起こしうる。ここを閉じるには前任の側にもロックを持たせる必要があり、それはこの単位の外なので、
-  # **窓は残る**（下の「残る窓」に書いた）。できるのは窓を最小にすることまでである。
+  # **閉じるペインが、いまも記録の session のものであることを確かめる。**
+  # transcript が使えることは「記録の session が生きている」ことしか言わない。**ペイン番号が
+  # 再利用されていれば、そのペインに座っているのは別の session である**（拍動 198 件に対して
+  # 実在する pane 番号は 171 で、再利用は既に起きている）。確かめずに閉じると、**関係のない
+  # セッションを閉じたうえで「前任は claude --resume で開き直せる」と報告する**（実装SO の指摘・
+  # 2026-09-13）。
+  # **`unknown` を一致に数えない。** 引けないなら閉じない。
+  local sid_now
+  sid_now="$(oe_hs_session_for_pane "$RETIRE_PRED")"
+  if [ -z "$sid_now" ] || [ "$sid_now" = "unknown" ]; then
+    err "閉じる直前に ${RETIRE_PRED} の session_id を引けませんでした（${OE_HS_SESSION_REASON:-理由を取れなかった}）。**そのペインが前任のものだと確かめられないので閉じません**"
+    exit 1
+  fi
+  if [ "$sid_now" != "$RETIRE_SID" ]; then
+    err "${RETIRE_PRED} に座っているのは別の session です（記録 ${RETIRE_SID} / いま ${sid_now}）。**ペイン番号が再利用されています。閉じません**"
+    exit 1
+  fi
+
+  # **閉じる直前にもう一度数える。止めるためではなく、後継が誰を引き受けたかを出すためである。**
+  # 子は交代を止めない（owner 裁定 2026-09-13）ので、下見と実行のあいだに子が増えても閉じる。
+  # ただし**増えたことは出す**。後継が声をかける相手が変わるからである。
   local last_children last_rc last_count
   last_children="$(oe_hs_children_of "$RETIRE_PRED")"; last_rc=$?
   if [ "$last_rc" -ne 0 ]; then
-    err "閉じる直前の数え直しができませんでした。閉じません"
-    exit 1
-  fi
-  if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
-  if [ "$last_count" -ne 0 ]; then
-    err "閉じる直前に生きた委譲子が ${last_count} 件現れました。閉じません"
-    printf '%s\n' "$last_children" | sed 's/^/    - /'
-    exit 1
+    printf '閉じる直前の数え直しができませんでした（誰を引き受けたかは確かめられていません）。閉じます。\n'
+  else
+    if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
+    printf '閉じる直前の生きた委譲子: %s 件\n' "$last_count"
+    if [ "$last_count" -ne 0 ]; then
+      printf '%s\n' "$last_children" | sed 's/^/    - /'
+      printf '**この子は後継が引き受ける。声をかけるまで、子が自分から出す報告は前任のペインを指したままである。**\n'
+    fi
   fi
 
   printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
@@ -882,7 +930,10 @@ _retire_report() {
   fi
   printf '不在を確認しました（list-panes の集合所属で確認）。\n'
   printf '\n後始末（登記の掃除・worktree の掃除・issue の close）はしていません。人のゲートです。\n'
-  printf '残る窓: 閉じる直前の数え直しから kill までのあいだに前任が委譲子を起こした場合は拾えません。\n'
+  printf '残る穴: 生きた委譲子が自分から出す報告は、前任のペインを指したまま残ります（PARENT_TMUX_PANE は張り替えられません）。\n'
+  printf '        **後継が各子へ「報告の宛先は後継の pane である」と明示して伝えれば塞がります。**\n'
+  printf '        挨拶では塞がりません。oe-report は PARENT_TMUX_PANE を先に読み、oe-delegate は差し替えの口を書き出さないので、\n'
+  printf '        宛先が変わるのは子が新しい pane を明示して送るときだけです。\n'
   printf '前任の会話は claude --resume %s で開き直せます。\n' "$RETIRE_SID"
   exit 0
 }

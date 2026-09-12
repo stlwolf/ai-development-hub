@@ -103,7 +103,7 @@ echo "[1] 席の張替と検算（正常系）"
 out="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --reason context_exhaustion 2>&1)" || true
 ckc "張り替えたと言う"     "$out" "board の宣言を自分（%11）へ張り替えた"
 ckc "検算したと言う"       "$out" "読み直して自分が返る"
-ckc "委譲子0件を確かめた"  "$out" "生きた委譲子が居ないことを確かめた"
+ckc "委譲子0件を確かめた"  "$out" "前任に生きた委譲子は居ない"
 ckc "session_id を確かめた" "$out" "前任の session_id を確かめた"
 ckc "自己登記した"         "$out" "root として登記した"
 ckc "登記の呼び出しに --force がある" "$(cat "$CALL_LOG")" "register root --label cockpit --force"
@@ -143,26 +143,34 @@ ckc "既に自分を指していると言う"  "$out2" "席は既に自分"
 ck  "board を書き換えない"        "$before" "$(cat "$BOARD")"
 ck  "イベントを二重に書かない"    "1" "$(grep -c 'supervisor_succession' "$EV/oe-events.jsonl" | tr -d ' ')"
 
-echo "[6] 生きた委譲子が居るときは席を動かさない"
+echo "[6] 生きた委譲子が居ても席は動く（owner 裁定 2026-09-13）"
+# **子が生きたままの交代が正常系である。** 以前はここで席を止めていた（旧 DJ-11）。
+# 止めていたほうが不具合だという裁定で、数えて出すが止めない形に変えた。
 mk_board "$BOARD"; before="$(cat "$BOARD")"
 mk_child "%12" "%10"
 set +e
 out3="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc3=$?
 set -e
-ck  "非0 で終わる"        "1" "$rc3"
-ckc "理由を言う"          "$out3" "生きた委譲子が 1 件"
-ckc "済んでいないと言う"  "$out3" "生きた委譲子が居るので席を動かしていない"
-ck  "board を書き換えない" "$before" "$(cat "$BOARD")"
+ck  "0 で終わる"            "0" "$rc3"
+ckc "件数を出す"            "$out3" "生きた委譲子: 1 件"
+ckc "子を一覧で出す"        "$out3" "%12"
+ckc "引き受けたと言う"      "$out3" "引き受けた委譲子を確かめた（1 件・交代は止めない）"
+ckc "新しい報告先を伝えていないと言う" "$out3" "新しい報告先を伝えていない"
+ckc "機構では塞がらないと言う"         "$out3" "PARENT_TMUX_PANE は差し替えられない"
+ckc "席は動いた"            "$out3" "board の宣言を自分（%11）へ張り替えた"
+ck  "board は書き換わった"  "%11" "$(oe_seat_resolve "$BOARD")"
 rm -f "$REG"/*.json
 
-echo "[7] 委譲子を数えられないときも席を動かさない"
-mk_board "$BOARD"; before="$(cat "$BOARD")"
+echo "[7] 委譲子を数えられなくても席は動く。ただし「確かめた」とは書かない"
+mk_board "$BOARD"
 set +e
 out4="$(OE_DELEGATE_STATE_DIR="" "$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc4=$?
 set -e
-ck  "非0 で終わる"         "1" "$rc4"
-ckc "数えられないと言う"   "$out4" "数えられませんでした"
-ck  "board を書き換えない"  "$before" "$(cat "$BOARD")"
+ck  "0 で終わる"             "0" "$rc4"
+ckc "数えられないと言う"     "$out4" "数えられませんでした"
+ckc "確かめられていないと言う" "$out4" "誰を引き受けたかは確かめられていない"
+nck "0 件と言わない"          "$out4" "生きた委譲子: 0 件"
+ck  "board は書き換わった"    "%11" "$(oe_seat_resolve "$BOARD")"
 
 echo "[8] session_id が引けないときは席を動かさない"
 mk_board "$BOARD"; before="$(cat "$BOARD")"

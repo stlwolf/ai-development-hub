@@ -7,7 +7,8 @@ set -euo pipefail
 # fixture で、tmux は OE_HANDOFF_TMUX のノブで stub に差し替える。**本物のペインを閉じない。**
 #
 # 見るもの:
-#   (1) 停止の必須条件3つ（session_id が記録にある / 生きた委譲子0体 / 申告の全項目に処分）
+#   (1) 停止の必須条件2つ（session_id が記録にある / 申告の全項目に処分）
+#       生きた委譲子は**閉じない理由にしない**（owner 裁定 2026-09-13）。数えて出すだけである。
 #   (2) 申告と機械の検査の食い違いを列挙し、食い違ったら閉じない
 #   (3) 引数なしは下見で、**kill-pane を1度も呼ばない**
 #   (4) --execute は検査をやり直してから閉じる（呼び出し順で見る）
@@ -121,23 +122,33 @@ ckc "理由を言う"            "$out2" "session_id が引き継ぎ記録に無
 ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 
-echo "[3] 生きた委譲子が居れば閉じない"
+echo "[3] 生きた委譲子が居ても閉じる（owner 裁定 2026-09-13）"
+# 以前はここが必須条件2で、子が居ると閉じなかった。**子が生きたままの交代が正常系**であり、
+# 止めているほうが不具合だという裁定で要求をやめた。数えて出し、穴の在り処を明示して閉じる。
 mk_child "%12" "%10"; printf '%%12\n' >> "$ALIVE"
 set +e
 out3="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc3=$?
 set -e
-ck  "非0 で終わる"      "1" "$rc3"
-ckc "件数を言う"        "$out3" "生きた委譲子が 1 件ある"
-ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"            "0" "$rc3"
+ckc "件数を言う"            "$out3" "生きた委譲子が 1 件ある"
+ckc "閉じない理由にしない"  "$out3" "閉じない理由にはしない"
+ckc "引き受けるものとして出す" "$out3" "後継が引き受けるもの"
+ckc "穴の在り処を出す"      "$out3" "残る穴: 生きた委譲子が自分から出す報告"
+ckc "塞ぎ方を出す"          "$out3" "報告の宛先は後継の pane である"
+ckc "挨拶では塞がらないと出す" "$out3" "挨拶では塞がりません"
+ck  "前任は閉じた"          "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 rm -f "$REG"/*.json; grep -vxF -- '%12' "$ALIVE" > "$ALIVE.n" && mv "$ALIVE.n" "$ALIVE"
 
-echo "[4] 委譲子を数えられないときも閉じない"
+echo "[4] 委譲子を数えられなくても閉じる。ただし「居ない」とは書かない"
 set +e
 out4="$(OE_DELEGATE_STATE_DIR="" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc4=$?
 set -e
-ck  "非0 で終わる"      "1" "$rc4"
-ckc "数えられないと言う" "$out4" "数えられない"
-ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"          "0" "$rc4"
+ckc "数えられないと言う"  "$out4" "数えられない"
+nck "居ないとは言わない"  "$out4" "前任に生きた委譲子は居ない"
+ck  "前任は閉じた"        "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo "[5] 申告の項目に処分が無ければ閉じない"
 mk_handoff "$HANDOFF" "sid-pred" ""
@@ -286,12 +297,17 @@ ck  "非0 で終わる"      "1" "$rc18"
 ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 が申告に出てこない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[19] 閉じる直前に委譲子が現れたら閉じない（最初の検査では居ない）"
+echo "[19] 閉じる直前に現れた委譲子を数え直して出す（閉じるのは止めない）"
 # **最初の検査では子を見せない。** 目印を「retire の途中で必ず走る別のコマンド」に作らせる。
 # 前のやり方（テストが始まる前に目印を置く）だと**最初の list-panes で既に子が見えてしまい**、
-# 早い方の検査で落ちるので、**閉じる直前の数え直しを1度も通らないまま test が通っていた**。
+# 閉じる直前の数え直しを1度も通らないまま test が通っていた。
 # retire は 子の検査 → open PR の再検査（gh を呼ぶ）→ 閉じる直前の数え直し、の順で進むので、
 # gh の stub に目印を作らせれば「あとから現れた子」を作れる。
+#
+# **見るものが owner 裁定（2026-09-13）で変わった。** 以前は「あとから現れたら閉じない」だったが、
+# 子は交代を止めないので**閉じる**。見るのは「数え直しが実際に走り、あとから現れた子を出すこと」
+# である（後継が声をかける相手が変わるため）。**数え直し自体を落とすと、誰を引き受けたかが
+# 出なくなる**ので、数え直しは残す。
 LATE="$_TMP_DIR/late_child"
 cat > "$STUB/gh" <<EOF
 #!/usr/bin/env bash
@@ -314,12 +330,16 @@ rm -f "$LATE"; mk_child "%13" "%10"
 set +e
 out19="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc19=$?
 set -e
-ck  "非0 で終わる"                  "1" "$rc19"
-ckc "閉じる直前に現れたと言う"      "$out19" "閉じる直前に生きた委譲子が 1 件現れました"
-ck  "kill-pane を呼ばない"          "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
-# **最初の検査では子が見えていなかったこと**（＝早い方の検査で落ちていないこと）を確かめる
-nck "早い方の検査では落ちていない"  "$out19" "前任に生きた委譲子が 1 件あります"
+ck  "0 で終わる"                    "0" "$rc19"
+ckc "閉じる直前の件数を出す"        "$out19" "閉じる直前の生きた委譲子: 1 件"
+ckc "あとから現れた子を一覧で出す"  "$out19" "%13"
+ckc "後継が引き受けると出す"        "$out19" "この子は後継が引き受ける"
+ck  "kill-pane を呼ぶ"              "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は閉じた"                  "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
+# **最初の検査では子が見えていなかったこと**を確かめる。見えていたなら、あとから現れた子を
+# 数え直しで拾ったことの証拠にならない（この test は数え直しが走ることを見るためのものである）。
+nck "早い方の検査には出ていない"    "$out19" "前任に生きた委譲子が 1 件ある"
 rm -f "$LATE" "$REG"/*.json
 cat > "$STUB/gh" <<'EOF'
 #!/usr/bin/env bash
@@ -391,6 +411,47 @@ mv "$TR/sid-pred.jsonl.away" "$TR/sid-pred.jsonl"
 ck  "非0 で終わる"      "1" "$rc22"
 ckc "理由を言う"        "$out22" "transcript が見つからないか古すぎます"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[23] 閉じるペインが別の session のものになっていたら閉じない（pane 番号の再利用）"
+# **transcript が使えることは「記録の session が生きている」ことしか言わない。**
+# ペイン番号が再利用されていれば、そのペインに座っているのは別の session である。
+# 確かめずに閉じると、関係のないセッションを閉じたうえで「前任は resume で開き直せる」と
+# 報告することになる（実装SO の指摘・2026-09-13）。
+# **同じ時刻の拍動を2つ置くと「同じ新しさ」になり unknown へ落ちる**（[24] がその枝である）。
+# ここで作りたいのは「新しい別の session がそのペインに座っている」状態なので、**厳密に新しい**
+# 拍動を置く。最初にこれを間違え、tie になって [24] と同じ枝を通っていた。
+NEWER=$((NOW_EPOCH + 60))
+jq -cn --arg p '%10' --argjson t "$NEWER" '{ts:$t, context_pct:50, pane:$p, server_pid:"900"}' > "$HB/sid-other.json"
+printf '{"type":"user"}\n' > "$TR/sid-other.jsonl"
+perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1] or die' "$NEWER" "$TR/sid-other.jsonl"
+: > "$CALL_LOG"
+set +e
+out23="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc23=$?
+set -e
+ck  "非0 で終わる"            "1" "$rc23"
+ckc "別の session だと言う"   "$out23" "に座っているのは別の session です"
+ckc "記録といまの両方を出す"  "$out23" "記録 sid-pred / いま sid-other"
+ckc "再利用だと言う"          "$out23" "ペイン番号が再利用されています"
+ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+rm -f "$HB/sid-other.json" "$TR/sid-other.jsonl"
+
+echo "[24] 閉じる直前に session_id を引けなければ閉じない（unknown を一致に数えない）"
+# 同じ pane に**同じ新しさ**の拍動が2つあると oe_hs_session_for_pane は unknown を返す。
+# **unknown を「記録と一致した」に畳まない。**
+mk_beat "sid-tie-a" "%10"; mk_beat "sid-tie-b" "%10"
+printf '{"type":"user"}\n' > "$TR/sid-tie-a.jsonl"
+printf '{"type":"user"}\n' > "$TR/sid-tie-b.jsonl"
+: > "$CALL_LOG"
+set +e
+out24="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc24=$?
+set -e
+ck  "非0 で終わる"                  "1" "$rc24"
+ckc "引けなかったと言う"            "$out24" "session_id を引けませんでした"
+ckc "確かめられないから閉じないと言う" "$out24" "前任のものだと確かめられないので閉じません"
+ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "kill-pane を呼ばない"          "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+rm -f "$HB/sid-tie-a.json" "$HB/sid-tie-b.json" "$TR/sid-tie-a.jsonl" "$TR/sid-tie-b.jsonl"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
