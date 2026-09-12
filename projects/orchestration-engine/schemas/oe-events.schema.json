@@ -127,7 +127,11 @@
       "if": { "properties": { "type": { "const": "supervisor_succession" } } },
       "then": {
         "required": ["generation", "reason", "server_pid"],
-        "description": "supervisor_succession（#390）は generation / reason / server_pid を必須とする。from=前任 / to=後継で、**role はどちらも空にする** — 交代は spawn の親子ではなく並列の継承であり（#238 / succession discussion §4-2）、role に parent/child を焼くと死んだ前任の下に後継がぶら下がる歪みを記録側から追認することになる。"
+        "properties": {
+          "from": { "properties": { "role": { "const": "" } } },
+          "to": { "properties": { "role": { "const": "" } } }
+        },
+        "description": "supervisor_succession（#390）は generation / reason / server_pid を必須とし、from.role / to.role を空に固定する。説明で「role は空」と書くだけでは、spawn の親子として書かれたレコードが valid のまま通ってしまう（契約と検証がずれる）。from=前任 / to=後継で、**role はどちらも空にする** — 交代は spawn の親子ではなく並列の継承であり（#238 / succession discussion §4-2）、role に parent/child を焼くと死んだ前任の下に後継がぶら下がる歪みを記録側から追認することになる。"
       }
     },
     {

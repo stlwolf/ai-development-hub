@@ -261,11 +261,12 @@ ck  "board を書き換えない" "$before" "$(cat "$BOARD")"
 
 echo "[20] 検査から書き換えの間に席が動いていたら上書きしない（compare-and-swap）"
 CAS="$_TMP_DIR/cas.md"; mk_board "$CAS"
+cas_before="$(cat "$CAS")"   # 呼び出し**前**に控える（自分自身と比べても何も検証していない）
 set +e
 oe_seat_rewrite "$CAS" "%11" 15 "2026-09-12" "%10" "%98"; rc15=$?
 set -e
 ck "期待と違えば 3 を返す" "3" "$rc15"
-ck "board を書き換えない"  "$(cat "$CAS")" "$(cat "$CAS")"
+ck "board を1バイトも変えない" "$cas_before" "$(cat "$CAS")"
 ck "宣言は動いていない"    "%10" "$(oe_seat_resolve "$CAS")"
 
 echo "[21] 交代イベントの読み直しが「過去の同じ行」で素通りしない"
@@ -347,6 +348,38 @@ ck "整数でない世代は 2"     "2" "$rc22"
 ck "0 の世代は 2"           "2" "$rc23"
 ck "未知の理由は 2"         "2" "$rc24"
 ck "board を書き換えない"    "$before" "$(cat "$BOARD")"
+
+echo "[28] 置き去りのロックで board を永久に塞がない"
+ST="$_TMP_DIR/stale.md"; mk_board "$ST"
+mkdir -p "${ST}.lock"; printf '%s' '999999' > "${ST}.lock/pid"   # 生きていない pid
+set +e
+OE_SEAT_LOCK_RETRY=3 oe_seat_rewrite "$ST" "%11" 2 "2026-09-12" "%10" "%10" >/dev/null 2>&1; rc25=$?
+set -e
+ck "持ち主が居なければ引き取る" "0" "$rc25"
+ck "席は動いた"                 "%11" "$(oe_seat_resolve "$ST")"
+ck "ロックを残さない"           "0" "$(find "$_TMP_DIR" -maxdepth 1 -name 'stale.md.lock' | grep -c '^' | tr -d ' ')"
+
+echo "[29] 生きている持ち主のロックは奪わない"
+LV="$_TMP_DIR/live.md"; mk_board "$LV"
+mkdir -p "${LV}.lock"; printf '%s' "$$" > "${LV}.lock/pid"       # 自分＝生きている
+set +e
+OE_SEAT_LOCK_RETRY=2 oe_seat_rewrite "$LV" "%11" 2 "2026-09-12" "%10" "%10" >/dev/null 2>&1; rc26=$?
+set -e
+rm -rf "${LV}.lock"
+ck "奪わずに 4 を返す" "4" "$rc26"
+ck "席は動いていない"   "%10" "$(oe_seat_resolve "$LV")"
+
+echo "[30] 世代が分からないときに「統括代目」と書かない"
+NG="$_TMP_DIR/nogen.md"; mk_board "$NG"
+oe_seat_rewrite "$NG" "%11" "" "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
+nck "統括代目 と書かない" "$(cat "$NG")" "統括代目"
+ckc "着任日は書く"        "$(cat "$NG")" "2026-09-12 着任"
+ck  "席は動いた"          "%11" "$(oe_seat_resolve "$NG")"
+
+echo "[31] schema は交代イベントの role を空に固定している"
+SCH="$PROJECT_DIR/schemas/oe-events.schema.json"
+ck "from.role の const が空" '""' "$(jq -c '.allOf[] | select(.if.properties.type.const == "supervisor_succession") | .then.properties.from.properties.role.const' "$SCH")"
+ck "to.role の const が空"   '""' "$(jq -c '.allOf[] | select(.if.properties.type.const == "supervisor_succession") | .then.properties.to.properties.role.const' "$SCH")"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

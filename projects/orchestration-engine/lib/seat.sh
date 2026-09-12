@@ -55,15 +55,35 @@ oe_seat_resolve() {
 # 2つの後継が同時に走ると、両方が同じ前任を見て両方が書き、あとの `mv` が先の席を消す。
 # 検算も順序次第で両方通り、交代イベントが2本残る。ロックは `mkdir` で取る（POSIX で原子的）。
 oe_seat_rewrite() {
-  local bf="${1:-}" lock rc i=0
+  local bf="${1:-}" lock rc i=0 owner
   [ -n "$bf" ] || return 2
   lock="${bf}.lock"
   while ! mkdir "$lock" 2>/dev/null; do
+    # **置き去りのロックで board を永久に塞がない。** 途中で落ちた（電源・SIGKILL・
+    # 端末ごと消えた）場合、ロックだけが残る。持ち主が生きているかを見て、居なければ引き取る。
+    owner="$(cat "${lock}/pid" 2>/dev/null)" || owner=""
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -f "${lock}/pid" 2>/dev/null
+      rmdir "$lock" 2>/dev/null
+      continue
+    fi
+    # 持ち主が分からないロックは、古くなったら引き取る（pid を書く前に落ちた場合）。
+    if [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_SEAT_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; then
+      rmdir "$lock" 2>/dev/null
+      continue
+    fi
     i=$((i + 1))
     if [ "$i" -ge "${OE_SEAT_LOCK_RETRY:-20}" ]; then return 4; fi
     sleep 0.1 2>/dev/null || sleep 1
   done
-  _oe_seat_rewrite_locked "$@"; rc=$?
+  printf '%s' "$$" > "${lock}/pid" 2>/dev/null || true
+  # 割り込みで落ちてもロックを残さない。subshell の EXIT なら、この関数を抜ける経路を全部拾える。
+  (
+    trap 'rm -f "${lock}/pid" 2>/dev/null; rmdir "$lock" 2>/dev/null' EXIT HUP INT TERM
+    _oe_seat_rewrite_locked "$@"
+  )
+  rc=$?
+  rm -f "${lock}/pid" 2>/dev/null
   rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
@@ -83,11 +103,15 @@ _oe_seat_rewrite_locked() {
   [ "$cur" != "$new" ] || return 1
   if [ -n "$expect" ] && [ "$cur" != "$expect" ]; then return 3; fi
 
-  local note="" new_tail
+  # 世代が分からないときに「統括代目」と書かない。世代不明のまま席を取る経路は許して
+  # あるので、その経路が board の散文を壊さないようにする。
+  local note="" who=""
+  [ -z "$gen" ] || who="統括${gen}代目・"
+  local new_tail
   if [ -n "$old" ]; then
-    note="（統括${gen}代目・${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち）"
-  elif [ -n "$gen" ]; then
-    note="（統括${gen}代目・${date} 着任）"
+    note="（${who}${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち）"
+  elif [ -n "$who" ]; then
+    note="（${who}${date} 着任）"
   fi
   # 最初の1件だけ差し替える。sed の置換は行内で最初の一致に当たる。
   new_tail="$(printf '%s' "$tail_part" | sed -E "s/%[0-9]+/${new}/")" || return 2
