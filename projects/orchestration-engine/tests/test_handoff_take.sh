@@ -381,6 +381,50 @@ SCH="$PROJECT_DIR/schemas/oe-events.schema.json"
 ck "from.role の const が空" '""' "$(jq -c '.allOf[] | select(.if.properties.type.const == "supervisor_succession") | .then.properties.from.properties.role.const' "$SCH")"
 ck "to.role の const が空"   '""' "$(jq -c '.allOf[] | select(.if.properties.type.const == "supervisor_succession") | .then.properties.to.properties.role.const' "$SCH")"
 
+echo "[32] 張り替えた行が、人に自己矛盾して読めない"
+RD="$_TMP_DIR/readable.md"; mk_board "$RD"
+oe_seat_rewrite "$RD" "%11" 15 "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
+rline="$(grep -m1 -- '現統括:' "$RD")"
+ckc "過去の記録だと分かる印がある" "$rline" "これより後ろは前任までの記録である"
+# 印は、残っている前任の parenthetical より**前**に来なければ意味がない
+mark_pos="$(printf '%s' "$rline" | awk '{ print index($0, "これより後ろは前任までの記録である") }')"
+old_pos="$(printf '%s' "$rline" | awk '{ print index($0, "統括**14代目**") }')"
+if [ "$mark_pos" -gt 0 ] && [ "$old_pos" -gt 0 ] && [ "$mark_pos" -lt "$old_pos" ]; then
+  echo "  PASS: 印が前任の記録より前に来る"; PASS=$((PASS+1))
+else
+  echo "  FAIL: 印が前任の記録より前に来る (mark=$mark_pos old=$old_pos)"; FAIL=$((FAIL+1))
+fi
+ckc "前任の散文は消していない" "$rline" "統括**14代目**"
+
+echo "[33] ロックの解放は1回だけ（二重解放で他人のロックを消さない）"
+RM_LOG="$_TMP_DIR/rmdir.log"; : > "$RM_LOG"
+LC="$_TMP_DIR/lockcount.md"; mk_board "$LC"
+(
+  # shellcheck disable=SC2317  # 関数で rmdir を差し替えて数える（間接的に呼ばれる）
+  rmdir() { printf 'call\n' >> "$RM_LOG"; command rmdir "$@"; }
+  oe_seat_rewrite "$LC" "%11" 15 "2026-09-12" "%10" "%10" >/dev/null 2>&1
+)
+ck "rmdir は1回" "1" "$(grep -c '^call' "$RM_LOG" | tr -d ' ')"
+ck "席は動いた"   "%11" "$(oe_seat_resolve "$LC")"
+
+echo "[34] 置き去りの引き取りが残骸を残さない"
+SV="$_TMP_DIR/stale2.md"; mk_board "$SV"
+mkdir -p "${SV}.lock"; printf '%s' '999999' > "${SV}.lock/pid"
+oe_seat_rewrite "$SV" "%11" 15 "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
+ck "席は動いた"         "%11" "$(oe_seat_resolve "$SV")"
+ck "ロックが残らない"   "0" "$(find "$_TMP_DIR" -maxdepth 1 -name 'stale2.md.lock' | grep -c '^' | tr -d ' ')"
+ck "持ち去った跡も残らない" "0" "$(find "$_TMP_DIR" -maxdepth 1 -name 'stale2.md.lock.stale.*' | grep -c '^' | tr -d ' ')"
+
+echo "[35] lib は old と expect も検証する（呼び出し側のガードを当てにしない）"
+VL="$_TMP_DIR/validate.md"; mk_board "$VL"; vl_before="$(cat "$VL")"
+set +e
+oe_seat_rewrite "$VL" "%11" 15 "2026-09-12" "not-a-pane" "%10"; rc27=$?
+oe_seat_rewrite "$VL" "%11" 15 "2026-09-12" "%10" "not-a-pane"; rc28=$?
+set -e
+ck "old が pane でなければ 2"    "2" "$rc27"
+ck "expect が pane でなければ 2" "2" "$rc28"
+ck "board を書き換えない"        "$vl_before" "$(cat "$VL")"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

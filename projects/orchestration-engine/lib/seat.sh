@@ -7,7 +7,8 @@
 #
 # 提供する関数:
 #   oe_seat_resolve <board>                     — 宣言された現統括の pane（無ければ空）
-#   oe_seat_rewrite <board> <new> <gen> <date> [<old>] — 席を <new> へ張り替える
+#   oe_seat_rewrite <board> <new> <gen> <date> [<old>] [<expect>] — 席を <new> へ張り替える
+#       <expect> を省くと compare-and-swap が外れる（安全装置が黙って無くなるので、署名に出す）
 #   oe_seat_verify  <board> <expect>            — 張替後に同じ規則で読み直して一致を見る
 #
 # **この lib は board の系譜の散文を書き換えない。** 触るのは席の pane と鮮度の日付だけで、
@@ -62,14 +63,15 @@ oe_seat_rewrite() {
     # **置き去りのロックで board を永久に塞がない。** 途中で落ちた（電源・SIGKILL・
     # 端末ごと消えた）場合、ロックだけが残る。持ち主が生きているかを見て、居なければ引き取る。
     owner="$(cat "${lock}/pid" 2>/dev/null)" || owner=""
-    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-      rm -f "${lock}/pid" 2>/dev/null
-      rmdir "$lock" 2>/dev/null
-      continue
-    fi
-    # 持ち主が分からないロックは、古くなったら引き取る（pid を書く前に落ちた場合）。
-    if [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_SEAT_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; then
-      rmdir "$lock" 2>/dev/null
+    # **引き取りは「退かす」のでなく「自分の名前で持ち去る」。**
+    # そのまま rmdir すると、同じく置き去りと判断した別のプロセスが先に mkdir で取った
+    # ロックを、こちらの rmdir が消しうる。rename なら成功するのは1つだけなので、
+    # 持ち去れた側だけが片づける。
+    if { [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; } \
+       || { [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_SEAT_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; }; then
+      if mv "$lock" "${lock}.stale.$$" 2>/dev/null; then
+        rm -rf "${lock}.stale.$$" 2>/dev/null
+      fi
       continue
     fi
     i=$((i + 1))
@@ -77,21 +79,29 @@ oe_seat_rewrite() {
     sleep 0.1 2>/dev/null || sleep 1
   done
   printf '%s' "$$" > "${lock}/pid" 2>/dev/null || true
-  # 割り込みで落ちてもロックを残さない。subshell の EXIT なら、この関数を抜ける経路を全部拾える。
+  # 割り込みで落ちてもロックを残さない。subshell の EXIT は正常終了も signal も拾うので、
+  # **解放はここ1箇所だけにする。**
+  #
+  # 外側でもう一度 rmdir してはいけない。trap が外した**あと**、待っている別のプロセスが
+  # mkdir で取りうる。そこへ外側の rmdir が届くと**他人のロックを消す**ので、2つのプロセスが
+  # 同時に board を書き換える——ロックが防ぐために在る状態そのものになる。
   (
     trap 'rm -f "${lock}/pid" 2>/dev/null; rmdir "$lock" 2>/dev/null' EXIT HUP INT TERM
     _oe_seat_rewrite_locked "$@"
   )
   rc=$?
-  rm -f "${lock}/pid" 2>/dev/null
-  rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
 
 _oe_seat_rewrite_locked() {
   local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}" expect="${6:-}"
   if [ -z "$bf" ] || [ ! -r "$bf" ] || [ ! -w "$bf" ]; then return 2; fi
+  # new だけでなく old / expect も検証する。**この lib は復帰側（#355）からの再利用を前提に
+  # 書いてある**ので、呼び出し側に同じガードがあることを当てにしない。old は註の文字列として
+  # board へ入り、sed の置換テキストにもなる。
   case "$new" in %[0-9]*) ;; *) return 2 ;; esac
+  if [ -n "$old" ];    then case "$old"    in %[0-9]*) ;; *) return 2 ;; esac; fi
+  if [ -n "$expect" ]; then case "$expect" in %[0-9]*) ;; *) return 2 ;; esac; fi
   local ln line head tail_part cur
   ln="$(grep -n -m1 -- '現統括:' "$bf" 2>/dev/null | cut -d: -f1)" || ln=""
   [ -n "$ln" ] || return 2
@@ -109,7 +119,11 @@ _oe_seat_rewrite_locked() {
   [ -z "$gen" ] || who="統括${gen}代目・"
   local new_tail
   if [ -n "$old" ]; then
-    note="（${who}${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち）"
+    # **この行より後ろが過去の記録であることを、人に分かる形で書く。**
+    # 註を新しい pane の直後に挿すので、そのすぐ後ろには前任の parenthetical がそのまま続く。
+    # 印が無いと、同じ1行が2つの世代を続けて名乗り、**後継がいちばん最初に読む行が矛盾する。**
+    # 前任の散文を書き換えずに済ませたいので、消さずに「ここから後ろは過去」と宣言する。
+    note="（${who}${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち。**これより後ろは前任までの記録である**）"
   elif [ -n "$who" ]; then
     note="（${who}${date} 着任）"
   fi
