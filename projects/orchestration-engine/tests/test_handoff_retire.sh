@@ -816,6 +816,36 @@ ckc "機械が書いた記録と言えないと言う" "$out38" "機械が書い
 ck  "kill-pane を呼ばない"        "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
+echo '[39] 機械の節が # 付きで書いていても読む（表示と要求する形を揃えた分）'
+# `prepare` は 2026-09-13 から open PR を `- #501 draft=...` と出す（人に要求する形と揃えるため）。
+# **読む側は `#` の有無どちらも受ける**（それ以前の文書も検査が走るように）。
+for form in '- 501 draft=false 古い形式' '- #501 draft=false 新しい形式'; do
+  FRM="$WS/.oe/handoff-form.md"
+  {
+    printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+    printf '%s\n' '## 観測できる状態'
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任の session_id: `sid-pred`\n'
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任のペインの pid: `910`\n'
+    printf '%s\n' '### open PR'
+    printf '%s\n' "$form"
+    printf '%s\n' '<!-- oe-handoff:machine:end -->'
+    printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+    printf '%s\n' '| 項目 | 処分 | 補足 |'
+    printf '%s\n' '| --- | --- | --- |'
+    printf '%s\n' '| PR #392 | 済んだ | 501 の処分は書いていない |'
+    printf '\n%s\n' '## owner が下した裁定'
+  } > "$FRM"
+  set +e
+  out39="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$FRM" 2>&1)"; rc39=$?
+  set -e
+  ck  "[$form] 非0 で終わる"     "1" "$rc39"
+  ckc "[$form] 欠落を見つける"   "$out39" "機械の節が挙げた PR #501 に処分が付いていない"
+done
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

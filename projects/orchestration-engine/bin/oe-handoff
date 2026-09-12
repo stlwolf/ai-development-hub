@@ -231,7 +231,14 @@ cmd_prepare() {
     fi
     printf '%s\n' '### open PR'
     printf '\n'
-    indent_or_none "$PRS" "なし"
+    # **`#` を付けて出す。** `retire` は申告に `#<番号>` の形を要求する（番号だけだと別の種類の
+    # 項目と誤って一致する）。**機械の節が `#` 無しで出すと、人は見たままを写して弾かれる。**
+    # 要求する形と見せる形を揃える（自分で気づいて直した・2026-09-13）。
+    if [ -z "$PRS" ] || [ "$PRS" = "none" ]; then
+      printf -- '- %s\n' "なし"
+    else
+      printf '%s\n' "$PRS" | sed 's/^/- #/'
+    fi
     printf '\n'
     printf '%s\n' '### worktree'
     printf '\n'
@@ -856,7 +863,9 @@ cmd_retire() {
   # `worktree topic-501` という処分済みの行が **PR #501 の処分としても一致**した
   # （種別をまたいだ誤一致・実装SO の指摘・2026-09-13。実測で再現した）。
   # PR は `#<番号>` の形で書かれていることを要求する（機械の節も `#` 付きで表示する）。
-  for mnum in $(printf '%s' "$machine" | grep -oE '^- [0-9]+ draft=' | grep -oE '[0-9]+' || true); do
+  # **`#` の有無どちらも読む。** 表示に `#` を付けたのは 2026-09-13 で、それ以前の `prepare` が
+  # 書いた文書は `#` 無しである。読む側で両方受ければ、古い文書でも検査が走る。
+  for mnum in $(printf '%s' "$machine" | grep -oE '^- #?[0-9]+ draft=' | grep -oE '[0-9]+' || true); do
     if printf '%s\n' "$DISPOSED" | grep -qE "#[ ]*${mnum}([^0-9]|\$)"; then
       :
     else
