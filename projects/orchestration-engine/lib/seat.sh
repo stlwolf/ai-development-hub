@@ -33,7 +33,7 @@ oe_seat_resolve() {
 }
 
 # 席を <new> へ張り替える。
-#   oe_seat_rewrite <board> <new_pane> <generation> <date> [<old_pane>]
+#   oe_seat_rewrite <board> <new_pane> <generation> <date> [<old_pane>] [<expect_pane>]
 #
 # 書き換えるのは2つだけである。
 #   - 宣言行の「最後の `現統括` より後ろに現れる最初の `%NNN`」を <new_pane> にする
