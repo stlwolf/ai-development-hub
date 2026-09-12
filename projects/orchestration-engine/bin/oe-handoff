@@ -513,8 +513,13 @@ cmd_take() {
   # `|| sc_json=""` と書くと、いま screen-marker が broken である以上、出力を常に捨てる。
   # 見たいのは watchdog-freshness の行であって、全体の合否ではない。
   sc_json="$("$OE_HANDOFF_SELFCHECK" --json 2>/dev/null; true)"
+  # **実物の `oe-selfcheck --json` は素の配列を返す。** 配列に `.checks` を当てると jq は
+  # `Cannot index array with string "checks"` で誤りになり、**`//` は誤りを拾わない**（拾うのは
+  # null と false だけ）。`2>/dev/null` に飲まれるので、`(.checks // .)` と書くと実物に対して
+  # この行は**必ず空になる**。予行で実測した（#390・2026-09-13）。
+  # 配列を主として扱い、object で包まれた形も受ける。
   if [ -n "$sc_json" ] && command -v jq >/dev/null 2>&1; then
-    wd_row="$(printf '%s' "$sc_json" | jq -r '(.checks // .)[]? | select(.check == "watchdog-freshness") | .verdict + " " + (.detail // "")' 2>/dev/null | head -1)" || wd_row=""
+    wd_row="$(printf '%s' "$sc_json" | jq -r 'if type == "array" then .[] else (.checks // [])[] end | select(.check == "watchdog-freshness") | .verdict + " " + (.detail // "")' 2>/dev/null | head -1)" || wd_row=""
   else
     wd_row=""
   fi

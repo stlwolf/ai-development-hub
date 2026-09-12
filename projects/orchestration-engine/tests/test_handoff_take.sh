@@ -46,9 +46,13 @@ printf 'register %s\n' "\$*" >> "$CALL_LOG"
 [ -f "$_TMP_DIR/register_fails" ] && exit 1
 exit 0
 EOF
+# **足場の形は実物と同じにする。** 実物の oe-selfcheck --json は素の配列を返す。
+# 以前ここは {"checks":[...]} という object を返していたが、そのキーは実物に1つも無く、
+# stub が発明した形だった。そのため下の [11] は通り続け、**実物に対しては一度も
+# 読めていなかった**（#390・予行で実測）。形が実物と一致することは [11b] で機械が見る。
 cat > "$STUB/selfcheck" <<'EOF'
 #!/usr/bin/env bash
-printf '{"checks":[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]}\n'
+printf '[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]\n'
 exit 1
 EOF
 cat > "$STUB/send" <<EOF
@@ -193,6 +197,52 @@ echo "[11] oe-selfcheck の終了コードで判定しない（stub は常に 1 
 mk_board "$BOARD"
 out8="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
 ckc "見張りの行を読めている" "$out8" "watchdog-freshness）: ok"
+
+echo "[11b] テストの足場が実物の oe-selfcheck --json と同じ形である"
+# **この検査は stub ではなく実物を1回走らせる。** 根は「stub が実物に無いキーを発明した」
+# ことで、jq の式を直すだけでは同じ根が別の場所で出る。**値は pin しない**（最終走査の秒数は
+# 走るたびに変わる）。見るのは形だけで、形が変わったら落ちればよい。
+# 形は「配列か object か」と「要素が持つキーの集合」で表す。
+shape_of() { # stdin: JSON → "array:k1,k2" / "object:k1,k2" / "" （JSON でなければ空）
+  jq -r 'if type == "array" then "array:" + (((.[0] // {}) | keys) | sort | join(","))
+         else "object:" + ((keys) | sort | join(",")) end' 2>/dev/null || true
+}
+# **終了コードを経路に載せない。** oe-selfcheck も stub も 1 を返すので、`pipefail` の下で
+# パイプの後ろに置くと代入そのものが非0になり、`set -e` で**テストが中断する**（実測）。
+# 出力を先に受け取ってから形にする。
+real_sc="$("$PROJECT_DIR/bin/oe-selfcheck" --json 2>/dev/null; true)"
+stub_sc="$("$STUB/selfcheck" 2>/dev/null; true)"
+real_shape="$(printf '%s' "$real_sc" | shape_of)"
+stub_shape="$(printf '%s' "$stub_sc" | shape_of)"
+if [ -z "$real_shape" ]; then
+  # **取れなかったことを「同じだった」に畳まない。** 形を確かめられていないなら落とす。
+  echo "  FAIL: 実物の oe-selfcheck --json から形を取れない（jq が無い / 出力が JSON でない）"
+  FAIL=$((FAIL+1))
+else
+  ck  "足場の形が実物と一致する"     "$real_shape" "$stub_shape"
+  ckc "実物は素の配列である"         "$real_shape" "array:"
+  ckc "要素は check を持つ"          "$real_shape" "check"
+  ckc "要素は verdict を持つ"        "$real_shape" "verdict"
+  ckc "要素は detail を持つ"         "$real_shape" "detail"
+fi
+
+echo "[11c] object で包まれた形も受ける（実物の形が変わっても読めるように）"
+mk_board "$BOARD"
+cat > "$STUB/selfcheck" <<'EOF'
+#!/usr/bin/env bash
+printf '{"checks":[{"check":"watchdog-freshness","verdict":"ok","detail":"包まれた形"}]}\n'
+exit 1
+EOF
+chmod +x "$STUB/selfcheck"
+out8b="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
+ckc "包まれた形でも読めている" "$out8b" "watchdog-freshness）: ok"
+# 素の配列の stub に戻す（以降の test が使う）
+cat > "$STUB/selfcheck" <<'EOF'
+#!/usr/bin/env bash
+printf '[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]\n'
+exit 1
+EOF
+chmod +x "$STUB/selfcheck"
 
 echo "[12] 世代が分からないときはイベントを書かない（0 を書かない）"
 mk_board "$BOARD"
