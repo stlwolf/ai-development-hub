@@ -563,6 +563,35 @@ nck "「項目が1つも無い」にしない" "$out28" "自己申告の表に�
 ckc "処分が無いと言う"        "$out28" "処分が付いていない（または語彙の外の）項目がある"
 ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
+echo "[29] 申告の表: 字下げされた行を黙って落とさない"
+# `/^\|/` で錨を打つと、字下げされた行（Markdown では有効な表の行）が数から消える。
+# **一部だけ字下げされていると、その行の未処分を見逃す**（自分で試して見つけた・2026-09-13）。
+IND="$WS/.oe/handoff-indent.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | 字下げなし |'
+  printf '%s\n' '  | PR #393 |  | 字下げあり・処分が空 |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$IND"
+set +e
+out29="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$IND" --execute 2>&1)"; rc29=$?
+set -e
+ck  "非0 で終わる"            "1" "$rc29"
+ckc "字下げされた行を拾う"    "$out29" "PR #393"
+ckc "処分が無いと言う"        "$out29" "処分が付いていない（または語彙の外の）項目がある"
+ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
