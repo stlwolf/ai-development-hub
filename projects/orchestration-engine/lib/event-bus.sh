@@ -316,18 +316,34 @@ oe_event_supervisor_succession() {
 #   emit は置き場不明・jq 不在・書込み失敗をすべて飲み込んで 0 を返すので、emit の戻り値は
 #   「記録された」の根拠にならない。読む側の関数なので非0を返してよい。
 #   rc: 0 載っている / 1 載っていない / 2 確かめられない（置き場不明・jq 不在・ログ不在）
+#   fp が空なら from は問わない（席を取ったあとの確認に使う）。
+#   **文字列の grep で探さない。** 別のイベントの文字列フィールドに "supervisor_succession" が
+#   入っているだけで候補になってしまう。type で選ぶ。
+#   **「過去に同じ from/to の行がある」で成功にしない。** 今回の emit が落ちても素通りする。
+#   呼び出し側が `since_line`（emit 直前の行数）を渡せば、それより後ろだけを見る。
+# oe_event_succession_recorded <from_pane|""> <to_pane> [since_line] [generation]
 oe_event_succession_recorded() {
-  local fp="${1:-}" tp="${2:-}" file
+  local fp="${1:-}" tp="${2:-}" since="${3:-0}" gen="${4:-}" file
   command -v jq >/dev/null 2>&1 || return 2
   [[ -n "$OE_EVENT_DIR" ]] || return 2
   file="${OE_EVENT_DIR}/oe-events.jsonl"
   [[ -r "$file" ]] || return 2
-  local last
-  last="$(grep -F '"supervisor_succession"' "$file" 2>/dev/null | tail -1)" || last=""
-  [[ -n "$last" ]] || return 1
-  local got_f got_t
-  got_f="$(printf '%s' "$last" | jq -r '.from.pane // ""' 2>/dev/null)" || return 2
-  got_t="$(printf '%s' "$last" | jq -r '.to.pane // ""' 2>/dev/null)" || return 2
-  [[ "$got_f" == "$fp" && "$got_t" == "$tp" ]] || return 1
+  local scope
+  if [[ "$since" =~ ^[0-9]+$ ]] && (( since > 0 )); then
+    scope="$(tail -n "+$((since + 1))" "$file" 2>/dev/null)" || return 2
+  else
+    scope="$(cat "$file" 2>/dev/null)" || return 2
+  fi
+  [[ -n "$scope" ]] || return 1
+  local hit
+  hit="$(printf '%s\n' "$scope" | jq -r --arg f "$fp" --arg t "$tp" --arg g "$gen" '
+    select(.type == "supervisor_succession")
+    | select($f == "" or (.from.pane // "") == $f)
+    | select((.to.pane // "") == $t)
+    | select($g == "" or ((.generation // 0) | tostring) == $g)
+    | select((.server_pid // "") != "")
+    | select((.reason // "") != "")
+    | "hit"' 2>/dev/null | tail -1)" || return 2
+  [[ "$hit" == "hit" ]] || return 1
   return 0
 }

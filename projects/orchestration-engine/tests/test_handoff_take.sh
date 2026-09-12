@@ -65,7 +65,7 @@ EOF
 chmod +x "$STUB"/*
 export OE_HANDOFF_REGISTER="$STUB/register" OE_HANDOFF_SELFCHECK="$STUB/selfcheck"
 export OE_HANDOFF_SEND="$STUB/send" OE_HANDOFF_TMUX="$STUB/tmux" OE_HANDOFF_CLAUDE="claude"
-export OE_HANDOFF_START_WAIT=1
+export OE_HANDOFF_START_WAIT=1 OE_HANDOFF_START_SETTLE=0
 export PATH="$STUB:$PATH"
 
 mk_beat() { # <sid> <pane> <ctx> [age]
@@ -129,11 +129,15 @@ ck "理由が入る"      "context_exhaustion" "$(printf '%s' "$ev" | jq -r '.re
 ck "server pid が入る" "900" "$(printf '%s' "$ev" | jq -r '.server_pid')"
 ck "role は空（親子にしない）" "" "$(printf '%s' "$ev" | jq -r '.from.role + .to.role')"
 
-echo "[5] 何度実行しても同じ結果になる"
+echo "[5] 何度実行しても同じ結果になる（2回目は成功で終わる）"
 before="$(cat "$BOARD")"
-out2="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
-ckc "既に自分を指していると言う" "$out2" "席は既に自分"
-ck  "board を書き換えない"       "$before" "$(cat "$BOARD")"
+set +e
+out2="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc2=$?
+set -e
+ck  "2回目は 0 で終わる"          "0" "$rc2"
+ckc "既に自分を指していると言う"  "$out2" "席は既に自分"
+ck  "board を書き換えない"        "$before" "$(cat "$BOARD")"
+ck  "イベントを二重に書かない"    "1" "$(grep -c 'supervisor_succession' "$EV/oe-events.jsonl" | tr -d ' ')"
 
 echo "[6] 生きた委譲子が居るときは席を動かさない"
 mk_board "$BOARD"; before="$(cat "$BOARD")"
@@ -228,6 +232,86 @@ oe_seat_rewrite "$NOPANE" "%11" 2 "2026-01-01" ""; rc12=$?
 set -e
 ck "2 を返す" "2" "$rc12"
 ck "中身が変わらない" "鮮度: 2026-01-01 / 現統括: まだ居ない" "$(cat "$NOPANE")"
+
+echo "[17] 既に root として登記されているなら登記し直さない"
+mk_board "$BOARD"
+SELF_KEY="$(printf '%s' "900_%11" | tr -c 'A-Za-z0-9' '_')"
+jq -cn '{pane:"%11", label:"cockpit", workspace:"", parent_pane:"", role:"child"}' > "$REG/${SELF_KEY}.json"
+: > "$CALL_LOG"
+out12="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
+ckc "既に登記されていると言う" "$out12" "既に root として登記されている"
+ck  "登記を呼んでいない"       "0" "$(grep -c '^register' "$CALL_LOG" | tr -d ' ')"
+rm -f "$REG/${SELF_KEY}.json"
+
+echo "[18] 見出しの printf が落ちない（format が - で始まらない）"
+mk_board "$BOARD"
+out13="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
+ckc "済んだことの見出しが出る"     "$out13" "--- 済んだこと ---"
+ckc "済んでいないことの見出しが出る" "$out13" "--- 済んでいないこと ---"
+nck "printf のエラーが出ない"      "$out13" "無効なオプション"
+
+echo "[19] board の宣言と違う前任を渡されたら席を動かさない"
+mk_board "$BOARD"; before="$(cat "$BOARD")"
+set +e
+out14="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --predecessor '%99' 2>&1)"; rc14=$?
+set -e
+ck  "非0 で終わる"        "1" "$rc14"
+ckc "食い違いを言う"      "$out14" "board の宣言（%10）と違います"
+ck  "board を書き換えない" "$before" "$(cat "$BOARD")"
+
+echo "[20] 検査から書き換えの間に席が動いていたら上書きしない（compare-and-swap）"
+CAS="$_TMP_DIR/cas.md"; mk_board "$CAS"
+set +e
+oe_seat_rewrite "$CAS" "%11" 15 "2026-09-12" "%10" "%98"; rc15=$?
+set -e
+ck "期待と違えば 3 を返す" "3" "$rc15"
+ck "board を書き換えない"  "$(cat "$CAS")" "$(cat "$CAS")"
+ck "宣言は動いていない"    "%10" "$(oe_seat_resolve "$CAS")"
+
+echo "[21] 交代イベントの読み直しが「過去の同じ行」で素通りしない"
+mk_board "$BOARD"
+: > "$EV/oe-events.jsonl"
+jq -cn '{ts:"2026-01-01T00:00:00+00:00", type:"supervisor_succession", from:{pane:"%10",role:"",label:""}, to:{pane:"%11",role:"",label:""}, generation:15, reason:"planned", server_pid:"900"}' >> "$EV/oe-events.jsonl"
+n_before="$(grep -c '' "$EV/oe-events.jsonl" | tr -d ' ')"
+set +e
+( OE_EVENT_LOG=0 "$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" > "$_TMP_DIR/out16.txt" 2>&1 )
+set -e
+ckc "書けていないと言う" "$(cat "$_TMP_DIR/out16.txt")" "交代イベントが記録されていない"
+ck  "ログは増えていない"  "$n_before" "$(grep -c '' "$EV/oe-events.jsonl" | tr -d ' ')"
+
+echo "[22] 別イベントの文字列に型名が入っていても拾わない"
+: > "$EV/oe-events.jsonl"
+jq -cn '{ts:"2026-01-01T00:00:00+00:00", type:"message_sent", from:{pane:"%10",role:"",label:""}, to:{pane:"%11",role:"",label:""}, preview:"supervisor_succession の話", delivery_signal:"none"}' >> "$EV/oe-events.jsonl"
+set +e
+( source "$PROJECT_DIR/lib/event-bus.sh"; oe_event_succession_recorded "%10" "%11" ) >/dev/null 2>&1; rc17=$?
+set -e
+ck "型で選ぶので拾わない" "1" "$rc17"
+
+echo "[23] start: ペインが現れなければ送らない"
+cat > "$STUB/tmux" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = "split-window" ]; then printf 'split %s\n' "\$*" >> "$CALL_LOG"; printf '%%88\n'; exit 0; fi
+if [ "\${1:-}" = "list-panes" ]; then printf '%%10\n'; exit 0; fi
+exit 0
+EOF
+chmod +x "$STUB/tmux"
+: > "$CALL_LOG"
+set +e
+out18="$("$OE_HANDOFF" start -w "$WS" --handoff "$HANDOFF" 2>&1)"; rc18=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc18"
+ckc "送っていないと言う" "$out18" "送っていません"
+ck  "send を呼んでいない" "0" "$(grep -c '^send' "$CALL_LOG" | tr -d ' ')"
+
+echo "[24] board の散文の backslash を壊さない"
+ESC="$_TMP_DIR/esc.md"
+# 中身は format でなく引数で渡す。format に置くと printf 自身が \t を TAB に変えてしまい、
+# 「literal な backslash が残るか」を試したつもりで別のものを試すことになる。
+# shellcheck disable=SC2016  # backtick と backslash は board の中身で、展開させない
+printf '%s\n' '鮮度: 2026-01-01 / 現統括: pane `%10`（a\tb と c\\d が入っている）' > "$ESC"
+oe_seat_rewrite "$ESC" "%11" 2 "2026-09-12" "%10" "%10" >/dev/null 2>&1 || true
+ckc "backslash-t が残る" "$(cat "$ESC")" 'a\tb'
+ckc "backslash 2つが残る" "$(cat "$ESC")" 'c\\d'
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

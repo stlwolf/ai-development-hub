@@ -350,12 +350,23 @@ cmd_start() {
   printf '後継のペインを起こしました: %s（登記していません・PARENT_TMUX_PANE も渡していません）\n' "$pane"
 
   # 起動と kickoff の分離。ペインが一覧に現れるまで待ってから送る。
-  local i=0
+  #
+  # **これは「入力を受け付けられる」ことの確認ではない。** ペインの存在は作った直後から成立し、
+  # その中の TUI が初期化を終えたかは分からない。画面を読んで判定する形は採らない（版で消える
+  # 目印に頼る形になる）。だから確認できるのは存在までで、そのうえで落ち着くまで待つ。
+  # **待っても現れなければ送らない。** 送っても取りこぼすだけで、送ったつもりだけが残る。
+  local i=0 appeared=0
   while [ "$i" -lt "${OE_HANDOFF_START_WAIT:-10}" ]; do
-    if "$OE_HANDOFF_TMUX" list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF -- "$pane"; then break; fi
+    if "$OE_HANDOFF_TMUX" list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF -- "$pane"; then appeared=1; break; fi
     i=$((i + 1))
     sleep 1
   done
+  if [ "$appeared" -ne 1 ]; then
+    printf '起こしたペイン %s が一覧に現れませんでした。送っていません。\n' "$pane"
+    printf 'ペインを確かめてから、手で貼ってください:\n  %s を読んで進めて。\n' "$handoff"
+    exit 1
+  fi
+  sleep "${OE_HANDOFF_START_SETTLE:-2}"
 
   if "$OE_HANDOFF_SEND" "$pane" "${handoff} を読んで進めて。" >/dev/null 2>&1; then
     printf '引き継ぎ文書のパスを送りました: %s\n' "$handoff"
@@ -381,9 +392,11 @@ cmd_take() {
   note_done()   { done_items+=("$1"); }
   note_undone() { undone_items+=("$1"); }
   report_and_exit() { # <rc>
-    printf '\n--- 済んだこと ---\n'
+    # format が '-' で始まると bash の printf が option と解釈して落ちる（実機で確認）。
+    # 見出しは %s で流す。
+    printf '\n%s\n' '--- 済んだこと ---'
     if [ "${#done_items[@]}" -eq 0 ]; then printf '  （なし）\n'; else printf '  - %s\n' "${done_items[@]}"; fi
-    printf '--- 済んでいないこと ---\n'
+    printf '%s\n' '--- 済んでいないこと ---'
     if [ "${#undone_items[@]}" -eq 0 ]; then printf '  （なし）\n'; else printf '  - %s\n' "${undone_items[@]}"; fi
     if [ "${1:-0}" -ne 0 ]; then
       printf '\n直したうえで oe-handoff take をもう一度走らせてください（済んだところは飛ばします）。\n'
@@ -405,7 +418,22 @@ cmd_take() {
     report_and_exit 1
   fi
 
-  [ -n "$PREDECESSOR" ] || PREDECESSOR="$(oe_seat_resolve "$board")"
+  local declared
+  declared="$(oe_seat_resolve "$board")"
+  if [ -n "$PREDECESSOR" ]; then
+    # **渡された前任が board の宣言と食い違っていたら進まない。**
+    # 食い違ったまま進むと、検査した相手（渡された pane）と書き換える相手（board の席）が
+    # ずれ、いま座っている統括を黙って上書きできてしまう。
+    # 例外は「board が既に自分を指している」場合だけで、これは席を取った後にイベントの
+    # 記録だけが落ちたときの修復にあたる（board は書き換えずイベントだけ足す）。
+    if [ "$PREDECESSOR" != "$declared" ] && [ "$declared" != "$self" ]; then
+      err "渡された前任（${PREDECESSOR}）が board の宣言（${declared:-空}）と違います"
+      note_undone "前任の食い違いがあるので席を動かしていない"
+      report_and_exit 1
+    fi
+  else
+    PREDECESSOR="$declared"
+  fi
   pred="$PREDECESSOR"
   if [ -z "$pred" ]; then
     err "board から前任のペインを読めません（現統括: の宣言が見つからない）"
@@ -413,9 +441,18 @@ cmd_take() {
     report_and_exit 1
   fi
 
-  if [ "$pred" = "$self" ]; then
-    printf '席は既に自分（%s）を指しています。\n' "$self"
+  if [ "$declared" = "$self" ] && [ "$pred" = "$self" ]; then
+    # 既に席に居て、前任も明示されていない。**ここで成功として終える。**
+    # この先の検査は「前任」に対するもので、前任が自分になると意味が変わる
+    # （自分の session_id を前任として確かめ、self → self の偽の交代イベントを書く）。
+    printf '席は既に自分（%s）を指しています。何もしていません。\n' "$self"
     note_done "board の宣言は既に自分を指している（書き換えていない）"
+    if oe_event_succession_recorded "" "$self"; then
+      note_done "交代イベントは記録されている"
+    else
+      note_undone "交代イベントが記録されていない（--predecessor <前任> と --generation を明示して実行すると、board は触らずに記録だけ足せます）"
+    fi
+    report_and_exit 0
   fi
 
   # 生きた委譲子。**数えられないときも席を動かさない**（DJ-11・「分からない」を「居ない」に畳まない）。
@@ -458,10 +495,21 @@ cmd_take() {
   fi
   if [ -n "$wd_row" ]; then
     printf '見張り（watchdog-freshness）: %s\n' "$wd_row"
+    case "$wd_row" in
+      ok*) note_done "見張り（oe-confirm）の最終走査が新しいことを確かめた" ;;
+      *)   note_undone "見張りの生存を確かめられていない（watchdog-freshness=${wd_row%% *}）。席は取るが、統括が死んでも気づかれない可能性がある" ;;
+    esac
   else
     printf '見張り（watchdog-freshness）: 読めませんでした（oe-selfcheck の出力を取れない）\n'
+    note_undone "見張りの生存を確かめられていない（oe-selfcheck の出力を取れない）"
   fi
   printf '%s\n' "常駐の見張りの登録:" ; oe_hs_watchdogs | sed 's/^/  - /'
+  # **`watchdog-freshness` が見ているのは oe-confirm の最終走査であって oe-vitals ではない。**
+  # oe-vitals には最終走査を残す記録が無いので、登録の有無までしか言えない。
+  note_undone "oe-vitals の最終走査は確かめられていない（登録の有無しか分からない・そういう記録が無い）"
+
+  # 見張りが確かめられなくても席は取る。取らないと交代そのものが止まり、context を使い切った
+  # 統括が座り続けるほうが害が大きい。**ただし「確かめた」とは書かない。**
 
   # --- (3) 世代 ---
   if [ -z "$GENERATION" ]; then
@@ -470,7 +518,17 @@ cmd_take() {
   fi
 
   # --- (4) 登記（自分を root に）---
-  if [ "$("$OE_HANDOFF_REGISTER" root --label cockpit --force >/dev/null 2>&1; echo $?)" -eq 0 ]; then
+  # 既に自分が root として登記されているなら書かない（何度実行しても同じ結果になる）。
+  local self_key already_root=0
+  self_key="$(printf '%s' "$(oe_hs_server_pid)_${self}" | tr -c 'A-Za-z0-9' '_')"
+  if [ -n "$OE_DELEGATE_STATE_DIR" ] && [ -f "${OE_DELEGATE_STATE_DIR}/${self_key}.json" ] \
+     && command -v jq >/dev/null 2>&1 \
+     && [ "$(jq -r '.parent_pane // "x"' "${OE_DELEGATE_STATE_DIR}/${self_key}.json" 2>/dev/null)" = "" ]; then
+    already_root=1
+  fi
+  if [ "$already_root" -eq 1 ]; then
+    note_done "自分は既に root として登記されている（登記し直していない）"
+  elif "$OE_HANDOFF_REGISTER" root --label cockpit --force >/dev/null 2>&1; then
     note_done "自分を root として登記した（label cockpit）"
   else
     note_undone "自己登記に失敗した"
@@ -479,18 +537,19 @@ cmd_take() {
   fi
 
   # --- (5) board の張替 ---
-  if [ "$pred" = "$self" ]; then
-    :
-  else
-    oe_seat_rewrite "$board" "$self" "${GENERATION:-}" "$(date '+%Y-%m-%d')" "$pred"; rc=$?
-    case "$rc" in
-      0) note_done "board の宣言を自分（${self}）へ張り替えた（前任 ${pred} は退任申告済み・停止待ちとして併記）" ;;
-      1) note_done "board の宣言は既に自分を指していた（書き換えていない）" ;;
-      *) err "board を張り替えられませんでした"
-         note_undone "board の張替に失敗した（登記だけ済んでいる）"
-         report_and_exit 1 ;;
-    esac
-  fi
+  # **書き換える直前にもう一度 board を確かめる**（compare-and-swap）。検査から書き換えまでの
+  # あいだに別の後継が席を取っていたら、それを黙って上書きしない。
+  oe_seat_rewrite "$board" "$self" "${GENERATION:-}" "$(date '+%Y-%m-%d')" "$pred" "$pred"; rc=$?
+  case "$rc" in
+    0) note_done "board の宣言を自分（${self}）へ張り替えた（前任 ${pred} は退任申告済み・停止待ちとして併記）" ;;
+    1) note_done "board の宣言は既に自分を指していた（書き換えていない）" ;;
+    3) err "board の宣言が ${pred} から動いています。検査してから書き換えるまでの間に席が動きました"
+       note_undone "席が動いたので張り替えていない（もう一度 take を実行してください）"
+       report_and_exit 1 ;;
+    *) err "board を張り替えられませんでした"
+       note_undone "board の張替に失敗した（登記だけ済んでいる）"
+       report_and_exit 1 ;;
+  esac
 
   # --- (6) 検算（張り替えた本人が別の規則で確かめない）---
   local got
@@ -506,8 +565,13 @@ cmd_take() {
   if [ -z "$GENERATION" ]; then
     note_undone "交代イベントを記録していない（世代が分からない。--generation で渡せます）"
   else
+    # emit の**前**の行数を覚えておき、読み直しはそれより後ろだけを見る。
+    # 「過去に同じ from/to の行がある」で成功にすると、今回の emit が落ちても素通りする。
+    local ev_file ev_before=0
+    ev_file="${OE_EVENT_DIR:-}/oe-events.jsonl"
+    [ -r "$ev_file" ] && ev_before="$(grep -c '' "$ev_file" 2>/dev/null | tr -d ' ')"
     oe_event_supervisor_succession "$pred" "$self" "$GENERATION" "$REASON" "$(oe_hs_server_pid)" "cockpit" "cockpit" || true
-    if oe_event_succession_recorded "$pred" "$self"; then
+    if oe_event_succession_recorded "$pred" "$self" "$ev_before" "$GENERATION"; then
       note_done "交代イベントを記録した（${pred} → ${self}・${GENERATION}代目・${REASON}）"
     else
       note_undone "交代イベントが記録されていない（emit は失敗を飲み込むので読み直して確かめた）"

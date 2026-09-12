@@ -41,9 +41,16 @@ oe_seat_resolve() {
 # 註を挿す。**直後に置くのが肝である。** 読み取りの規則は「最後の marker より後ろの最初の
 # `%NNN`」なので、前任の pane が後継より先に来ると席が前任へ戻る（DJ-8）。
 #
+# <expect_pane> を渡すと、**書き換える直前に board が本当にそれを指しているか**を確かめる
+# （compare-and-swap）。確かめないと、検査した相手と書き換える相手がずれる。
+#   - 検査から書き換えの間に別の後継が席を取っていた場合、それを黙って上書きする
+#   - `--predecessor` で古い pane を渡された場合、その pane の子と session を検査したうえで
+#     現在の席を上書きする
+#
 # rc: 0 書き換えた / 1 既に <new_pane> を指していて何もしなかった / 2 書き換えられない
+#     3 board が <expect_pane> を指していない（席が動いている）
 oe_seat_rewrite() {
-  local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}"
+  local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}" expect="${6:-}"
   if [ -z "$bf" ] || [ ! -r "$bf" ] || [ ! -w "$bf" ]; then return 2; fi
   case "$new" in %[0-9]*) ;; *) return 2 ;; esac
   local ln line head tail_part cur
@@ -55,6 +62,7 @@ oe_seat_rewrite() {
   cur="$(printf '%s' "$tail_part" | grep -oE '%[0-9]+' | head -1)" || cur=""
   [ -n "$cur" ] || return 2
   [ "$cur" != "$new" ] || return 1
+  if [ -n "$expect" ] && [ "$cur" != "$expect" ]; then return 3; fi
 
   local note="" new_tail
   if [ -n "$old" ]; then
@@ -75,7 +83,10 @@ oe_seat_rewrite() {
   local tmp="${bf}.seat.$$"
   # 元の権限を持ち込む（board は machine-local だが、mv で umask に緩ませない）。
   ( umask 077; : >"$tmp" ) || return 2
-  if ! awk -v n="$ln" -v repl="$new_line" 'NR==n { print repl; next } { print }' "$bf" >"$tmp"; then
+  # **awk の -v は値の中のバックスラッシュをエスケープとして再解釈する。**
+  # board の自由記述に `\t` や `\\` が入っていると、席と日付以外の散文が静かに変質する。
+  # 行数は変わらないので後続の検査も素通りする。ENVIRON 経由なら再解釈されない。
+  if ! OE_SEAT_REPL="$new_line" awk -v n="$ln" 'NR==n { print ENVIRON["OE_SEAT_REPL"]; next } { print }' "$bf" >"$tmp"; then
     rm -f "$tmp" 2>/dev/null
     return 2
   fi
