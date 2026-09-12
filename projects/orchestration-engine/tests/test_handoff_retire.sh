@@ -29,20 +29,38 @@ ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo 
 ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
 nck() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
 
-HB="$_TMP_DIR/heartbeat"; REG="$_TMP_DIR/registry"; TR="$_TMP_DIR/transcripts"
+HB="$_TMP_DIR/heartbeat"; REG="$_TMP_DIR/registry"; TR="$_TMP_DIR/transcripts"; PIDMAP="$_TMP_DIR/pidmap"
 EV="$_TMP_DIR/events";    WS="$_TMP_DIR/ws";        STUB="$_TMP_DIR/stub"
-mkdir -p "$HB" "$REG" "$TR" "$EV" "$WS/.oe" "$STUB"
+mkdir -p "$HB" "$REG" "$TR" "$EV" "$WS/.oe" "$STUB" "$PIDMAP"
 export OE_HEARTBEAT_DIR="$HB" OE_DELEGATE_STATE_DIR="$REG" OE_TRANSCRIPT_DIR="$TR"
 export OE_EVENT_DIR="$EV" OE_HS_SERVER_PID="900"
 NOW_EPOCH="$(date +%s)"; export OE_HS_NOW_EPOCH="$NOW_EPOCH"
 
 CALL_LOG="$_TMP_DIR/calls.log"; : > "$CALL_LOG"
 ALIVE="$_TMP_DIR/alive.txt"; printf '%%10\n%%11\n' > "$ALIVE"
+
+# **stub は要求された format を尊重する。** 実物の tmux は `-F '#{pane_id} #{pane_pid}'` で
+# 2列返すので、pane id だけを返す stub は「pid が引けない」を作ってしまい、**主張と違う条件で
+# test が通る**（この単位で何度も踏んだ型）。pid は PIDMAP に在ればそれを、無ければ `9<番号>`。
+cat > "$STUB/_panes.sh" <<EOF
+emit_panes() { # \$1=全引数, \$2..=追加で生きているペイン
+  local args="\$1"; shift
+  { cat "$ALIVE"; for x in "\$@"; do printf '%s\n' "\$x"; done; } | while read -r p; do
+    [ -n "\$p" ] || continue
+    if printf '%s' "\$args" | grep -q pane_pid; then
+      printf '%s %s\n' "\$p" "\$(cat "$PIDMAP/\${p#%}" 2>/dev/null || printf '9%s' "\${p#%}")"
+    else
+      printf '%s\n' "\$p"
+    fi
+  done
+}
+EOF
+
 cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
 printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
 case "\${1:-}" in
-  list-panes) cat "$ALIVE"; exit 0 ;;
+  list-panes) . "$STUB/_panes.sh"; emit_panes "\$*"; exit 0 ;;
   kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
 esac
 exit 0
@@ -74,9 +92,14 @@ mk_handoff() {
     printf '%s\n' '<!-- oe-handoff:machine:begin -->'
     printf '%s\n' '## 観測できる状態'
     # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
     printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
     # shellcheck disable=SC2016
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
     printf -- '- 前任の session_id: `%s`\n' "${sid:-unknown}"
+    # shellcheck disable=SC2016
+    # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+    printf -- '- 前任のペインの pid: `%s`\n' "${5:-910}"
     printf '%s\n' '<!-- oe-handoff:machine:end -->'
     printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
     printf '%s\n' '| 項目 | 処分 | 補足 |'
@@ -281,8 +304,10 @@ MACH="$WS/.oe/mach.md"
 {
   printf '%s\n' '<!-- oe-handoff:machine:begin -->' '## 観測できる状態'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
   # shellcheck disable=SC2016
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任の session_id: `sid-pred`\n'
   printf -- '- 501 draft=false 機械が挙げた別の PR\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
@@ -319,7 +344,7 @@ cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
 printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
 case "\${1:-}" in
-  list-panes) cat "$ALIVE"; [ -f "$LATE" ] && printf '%%13\n'; exit 0 ;;
+  list-panes) . "$STUB/_panes.sh"; if [ -f "$LATE" ]; then emit_panes "\$*" '%13'; else emit_panes "\$*"; fi; exit 0 ;;
   kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
 esac
 exit 0
@@ -354,7 +379,7 @@ cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
 printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
 case "\${1:-}" in
-  list-panes) [ -f "$FAILAFTER" ] && exit 1; cat "$ALIVE"; exit 0 ;;
+  list-panes) [ -f "$FAILAFTER" ] && exit 1; . "$STUB/_panes.sh"; emit_panes "\$*"; exit 0 ;;
   kill-pane)  touch "$FAILAFTER"; exit 0 ;;
 esac
 exit 0
@@ -374,7 +399,7 @@ cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
 printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
 case "\${1:-}" in
-  list-panes) cat "$ALIVE"; exit 0 ;;
+  list-panes) . "$STUB/_panes.sh"; emit_panes "\$*"; exit 0 ;;
   kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
 esac
 exit 0
@@ -384,8 +409,10 @@ SUB="$WS/.oe/substr.md"
 {
   printf '%s\n' '<!-- oe-handoff:machine:begin -->' '## 観測できる状態'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
   # shellcheck disable=SC2016
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任の session_id: `sid-pred`\n'
   printf -- '- 501 draft=false 機械が挙げた PR\n'
   printf '%s\n' '<!-- oe-handoff:machine:end -->'
@@ -452,6 +479,89 @@ ckc "確かめられないから閉じないと言う" "$out24" "前任のもの
 ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 ck  "kill-pane を呼ばない"          "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 rm -f "$HB/sid-tie-a.json" "$HB/sid-tie-b.json" "$TR/sid-tie-a.jsonl" "$TR/sid-tie-b.jsonl"
+
+echo "[25] 拍動がまだ旧世代を指しているあいだも、pid が変わっていれば閉じない"
+# **これが session_id の突合だけでは塞げない窓である。** `oe_hs_session_for_pane` は
+# 「ペインが再利用され、新しいセッションがまだ一度も拍動を書いていない」あいだ**旧世代の
+# session_id を返す**（lib の注記）。つまり sid の突合は通る。**pid は tmux が握っているので
+# その窓でも変わる。** [23] は新しい拍動が既に在る場合しか作っていなかった（実装SO の指摘）。
+printf '9999\n' > "$PIDMAP/10"        # %10 の pid が変わった（ペインが作り直された）
+: > "$CALL_LOG"
+set +e
+out25="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc25=$?
+set -e
+ck  "非0 で終わる"                "1" "$rc25"
+ckc "sid の突合は通っている"      "$out25" "前任の session_id が引き継ぎ記録にある（sid-pred）"
+ckc "pid が変わったと言う"        "$out25" "で走っているプロセスが変わっています"
+ckc "記録といまの両方を出す"      "$out25" "記録 pid 910 / いま 9999"
+ck  "kill-pane を呼ばない"        "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+rm -f "$PIDMAP/10"
+
+echo "[26] 引き継ぎ記録に pid が無い（古い形式）なら閉じない"
+# pid の行が無い引き継ぎ文書を作る。**「無い」を「一致した」に畳まない。**
+OLDFMT="$WS/.oe/handoff-oldfmt.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | マージ済み |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$OLDFMT"
+: > "$CALL_LOG"
+set +e
+out26="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$OLDFMT" --execute 2>&1)"; rc26=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc26"
+ckc "古い形式だと言う"          "$out26" "古い形式の引き継ぎ文書です"
+ckc "prepare を走らせ直せと言う" "$out26" "oe-handoff prepare を走らせ直して"
+ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+
+echo "[27] 申告の表: escaped pipe で処分が付いたように見せられない"
+# `| command \| 済んだ |  | … |` は Markdown 上では**処分欄が空**である。素朴に `-F'|'` で
+# 割ると3番目の欄が `済んだ` に見えて未処分の項目が通る（実装SO の指摘・実測で再現した）。
+ESCP="$WS/.oe/handoff-escpipe.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| command \| 済んだ |  | 処分が空である |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$ESCP"
+set +e
+out27="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$ESCP" --execute 2>&1)"; rc27=$?
+set -e
+ck  "非0 で終わる"          "1" "$rc27"
+ckc "処分が無いと言う"      "$out27" "処分が付いていない（または語彙の外の）項目がある"
+ckc "空の処分を出して見せる" "$out27" "処分[]"
+ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[28] 申告の表: 項目名に「項目」を含む行を見出しとして捨てない"
+HDR="$WS/.oe/handoff-hdrword.md"
+sed 's/| command \\| 済んだ |  | 処分が空である |/| この項目 |  | 処分が空である |/' "$ESCP" > "$HDR"
+set +e
+out28="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HDR" --execute 2>&1)"; rc28=$?
+set -e
+ck  "非0 で終わる"            "1" "$rc28"
+nck "「項目が1つも無い」にしない" "$out28" "自己申告の表に項目が1つも書かれていない"
+ckc "処分が無いと言う"        "$out28" "処分が付いていない（または語彙の外の）項目がある"
+ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

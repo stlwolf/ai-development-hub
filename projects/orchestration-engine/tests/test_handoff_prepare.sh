@@ -291,6 +291,30 @@ mk_transcript "sid-t1" 0; mk_transcript "sid-t2" 0
 ck "同率は曖昧扱い" "unknown" "$(oe_hs_session_for_pane '%13')"
 rm -f "$HB/sid-t1.json" "$HB/sid-t2.json" "$TR/sid-t1.jsonl" "$TR/sid-t2.jsonl"
 
+echo "[27b] 登記の置き場が**存在しない**ときは「子0件」にしない"
+# **「読めない」とは別の経路である。** 以前はこの枝だけ rc=0・0件を返しており、
+# `OE_DELEGATE_STATE_DIR=""` と `chmod 000` は 2 を返すのに、**path を取り違えただけのときは
+# 静かに0件として通っていた**（実装SO の指摘・2026-09-13）。空のディレクトリが返す正当な0件と
+# 区別できる形になっていることも、同じ節で見る。
+NOSUCH="$_TMP_DIR/no-such-registry"
+[ -e "$NOSUCH" ] && rm -rf "$NOSUCH"
+set +e
+( OE_DELEGATE_STATE_DIR="$NOSUCH" oe_hs_children_of '%10' >/dev/null 2>&1 ); rc_nodir=$?
+set -e
+ck "存在しない置き場は失敗を返す" "2" "$rc_nodir"
+EMPTYREG="$_TMP_DIR/empty-registry"; mkdir -p "$EMPTYREG"
+set +e
+( OE_DELEGATE_STATE_DIR="$EMPTYREG" oe_hs_children_of '%10' >/dev/null 2>&1 ); rc_emptydir=$?
+set -e
+ck "空の置き場は正当な0件（rc=0）" "0" "$rc_emptydir"
+ck "空の置き場の出力は空"          "0" "$(OE_DELEGATE_STATE_DIR="$EMPTYREG" oe_hs_children_of '%10' 2>/dev/null | grep -c '^' | tr -d ' ')"
+# **prepare の表示でも 0 件に化かさないことを見る**（lib の rc だけでは呼ぶ側の扱いが分からない）。
+OUT27B="$WS/.oe/handoff27b.md"
+out27b="$(OE_DELEGATE_STATE_DIR="$NOSUCH" "$OE_HANDOFF" prepare -w "$WS" --out "$OUT27B" --predecessor '%10' 2>&1)" || true
+ckc "unknown と言う"       "$out27b" "生きた委譲子 unknown 件"
+nck "0 件と言わない"       "$out27b" "生きた委譲子 0 件"
+ckc "文書にも0件と書かない" "$(cat "$OUT27B")" "0 件ではありません"
+
 echo "[28] 登記の置き場が読めないときは「子0件」にしない"
 UNREAD="$_TMP_DIR/unreadable"; mkdir -p "$UNREAD"; chmod 000 "$UNREAD"
 set +e

@@ -10,6 +10,7 @@
 # 提供する関数:
 #   oe_hs_server_pid                  — いまの tmux server の pid（registry と同じ導出）
 #   oe_hs_pane_alive <pane>           — pane が tmux に現存するか
+#   oe_hs_pane_pid <pane>             — <pane> でいま走っているプロセスの pid（拍動に依らない同一性の鍵）
 #   oe_hs_children_of <pane>          — <pane> を親とする登記のうち、pane が現存するものを1行1件
 #   oe_hs_session_for_pane <pane>     — pane から session_id を逆引き（安全側・曖昧なら unknown）
 #   oe_hs_context_for_session <sid>   — session_id の拍動から context%（取れなければ unknown）
@@ -74,6 +75,26 @@ oe_hs_pane_alive() {
 # 錨は「自ペイン」ではなく引数の pane である。oe_reg_list は parent_pane == 自ペイン で
 # 数えるので、後継のセッションから前任の子を数える用途には使えない（使うと常に0件になり、
 # 「子が居ないから閉じてよい」へ倒れる）。
+# <pane> でいま走っているプロセスの pid を返す。引けなければ非0 を返して**何も出さない**。
+#
+# **拍動に依らずにペインの同一性を見るための鍵である。** `oe_hs_session_for_pane` には
+# 「ペインが再利用され、新しいセッションがまだ拍動を書いていないあいだは旧世代の session_id を
+# 返す」という穴がある（下の注記）。pid は tmux が握っているので、その窓でも変わる。
+#
+# `display-message` は使わない。**不在のペインに対しても rc=0 と空を返す**ので、
+# 「引けなかった」と「そのペインは無い」を区別できない。一覧の集合所属で見る。
+oe_hs_pane_pid() {
+  local pane="${1:-}" line
+  [ -n "$pane" ] || return 2
+  command -v tmux >/dev/null 2>&1 || return 2
+  line="$(tmux list-panes -a -F '#{pane_id} #{pane_pid}' 2>/dev/null)" || return 2
+  [ -n "$line" ] || return 2
+  local pid
+  pid="$(printf '%s\n' "$line" | awk -v p="$pane" '$1 == p {print $2; found=1} END {exit !found}')" || return 1
+  [ -n "$pid" ] || return 1
+  printf '%s' "$pid"
+}
+
 oe_hs_children_of() {
   local parent="${1:-}" spid panes
   [ -n "$parent" ] || return 2

@@ -159,6 +159,8 @@ cmd_prepare() {
   # 子を数えられなかったとき（jq 不在・登記の置き場が決まらない）を 0 件に化かさない。
   # 0 は「居ない」、unknown は「分からない」で、後段の停止の可否が逆になる。
   CHILDREN="$(oe_hs_children_of "$PREDECESSOR")"; CHILD_RC=$?
+  # ペインの pid。引けなければ空にする（**空を「一致した」に畳まないのは retire の側の責任**）。
+  PRED_PID="$(oe_hs_pane_pid "$PREDECESSOR")" || PRED_PID=""
   if [ "$CHILD_RC" -ne 0 ]; then
     CHILD_COUNT="unknown"
     CHILDREN=""
@@ -186,6 +188,12 @@ cmd_prepare() {
     printf -- '- 前任のペイン: `%s`（tmux server pid `%s`）\n' "$PREDECESSOR" "${SPID:-unknown}"
     printf -- '- 前任の session_id: `%s`\n' "$SID"
     printf -- '- 前任の context%%: %s\n' "$CTX"
+    # **停止の直前にペインの同一性を確かめるための鍵。** 拍動に依らない（再利用直後の窓を塞ぐ）。
+    if [ -n "$PRED_PID" ]; then
+      printf -- '- 前任のペインの pid: `%s`\n' "$PRED_PID"
+    else
+      printf -- '- 前任のペインの pid: 取れなかった（`retire` は停止しない）\n'
+    fi
     if [ "$BEAT_AGE" = "unknown" ]; then
       printf -- '- 前任の拍動の古さ: 取れなかった\n'
     else
@@ -205,7 +213,7 @@ cmd_prepare() {
     printf '\n'
     printf -- '- 件数: %s\n' "$CHILD_COUNT"
     if [ "$CHILD_COUNT" = "unknown" ]; then
-      printf -- '- 数えられませんでした（登記の置き場が決まらないか jq がありません）\n'
+      printf -- '- **数えられませんでした。0 件ではありません**（登記を読み切れていない）\n'
     else
       indent_or_none "$CHILDREN" "なし"
     fi
@@ -503,7 +511,7 @@ cmd_take() {
   if [ "$pred" != "$self" ]; then
     children="$(oe_hs_children_of "$pred")"; child_rc=$?
     if [ "$child_rc" -ne 0 ]; then
-      printf '生きた委譲子: 数えられませんでした（登記の置き場が決まらないか jq がありません）\n'
+      printf '生きた委譲子: **数えられませんでした。0 件ではありません**（登記を読み切れていない）\n'
       note_undone "引き受けた委譲子が分からない（数えられなかった）。席は動かすが、誰を引き受けたかは確かめられていない"
     else
       if [ -z "$children" ]; then child_count=0; else child_count="$(printf '%s\n' "$children" | grep -c '^' | tr -d ' ')"; fi
@@ -745,12 +753,34 @@ cmd_retire() {
   if [ -z "$decl" ]; then
     note_fail "引き継ぎ文書に自己申告の節が無い"
   else
-    # 表の本体（見出しと区切りを除く）で、項目が空でない行を数える
-    rows="$(printf '%s\n' "$decl" | awk -F'|' '/^\|/ && $2 !~ /^[ -]*$/ && $2 !~ /項目/ {print}')" || rows=""
+    # 表の本体（見出しと区切りを除く）で、項目が空でない行を「項目<TAB>処分」に直す。
+    #
+    # **`awk -F'|'` で素朴に割らない。** Markdown の escaped pipe（`\|`）はセルの中身なので、
+    # 境界として数えると列がずれる。`| command \| 済んだ |  | … |` は処分欄が**空**だが、
+    # 素朴に割ると3番目の欄が `済んだ` に見えて、**未処分の項目が必須条件を通る**（実装SO の
+    # 指摘・2026-09-13。実測で再現した）。
+    #
+    # **見出しと区切りを「内容」で判定しない。** 以前は項目名に「項目」を含む行を見出しとして
+    # 捨てていたので、`| この項目 |  | … |` のような**実データ行が黙って数から消えていた**。
+    # 表の何行目かと、セルが罫線だけかで判定する。
+    rows="$(printf '%s\n' "$decl" | awk '
+      /^\|/ {
+        line = $0
+        gsub(/\\\|/, "\001", line)
+        n = split(line, c, "|")
+        item = c[2]; disp = c[3]
+        gsub(/^[ \t]+|[ \t]+$/, "", item); gsub(/^[ \t]+|[ \t]+$/, "", disp)
+        rowno++
+        if (rowno == 1) next
+        if (item ~ /^-{2,}$/) next
+        if (item == "") next
+        gsub(/\001/, "\\|", item); gsub(/\001/, "\\|", disp)
+        printf "%s\t%s\n", item, disp
+      }')" || rows=""
     if [ -z "$rows" ]; then
       note_fail "自己申告の表に項目が1つも書かれていない（「保留ゼロ」とだけ書く形は通さない）"
     else
-      bad_rows="$(printf '%s\n' "$rows" | awk -F'|' '{d=$3; gsub(/^ +| +$/,"",d); if (d !~ /^(済んだ|引き継ぐ|取り消す)$/) print}')" || bad_rows=""
+      bad_rows="$(printf '%s\n' "$rows" | awk -F'\t' '$2 !~ /^(済んだ|引き継ぐ|取り消す)$/ {printf "%s → 処分[%s]\n", $1, $2}')" || bad_rows=""
       if [ -n "$bad_rows" ]; then
         note_fail "処分が付いていない（または語彙の外の）項目がある"
         printf '%s\n' "$bad_rows" | sed 's/^/    /'
@@ -886,6 +916,28 @@ _retire_report() {
   fi
   if [ "$sid_now" != "$RETIRE_SID" ]; then
     err "${RETIRE_PRED} に座っているのは別の session です（記録 ${RETIRE_SID} / いま ${sid_now}）。**ペイン番号が再利用されています。閉じません**"
+    exit 1
+  fi
+
+  # **session_id の突合だけでは足りない。** `oe_hs_session_for_pane` には「ペインが再利用され、
+  # 新しいセッションがまだ一度も拍動を書いていないあいだは旧世代の session_id を返す」穴がある
+  # （`lib/handoff-state.sh` の注記）。その窓では上の突合が通ってしまい、**無関係な新しい
+  # セッションを閉じる**（実装SO の指摘・2026-09-13）。
+  # **pid は tmux が握っているので、拍動を書く前でも変わる。** これで窓を塞ぐ。
+  local pid_rec pid_now
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
+  pid_rec="$(grep -m1 -- '^- 前任のペインの pid: ' "$handoff" | sed -E 's/.*`([^`]*)`.*/\1/')" || pid_rec=""
+  case "$pid_rec" in
+    ''|*[!0-9]*)
+      err "引き継ぎ記録に前任のペインの pid がありません（古い形式の引き継ぎ文書です）。**ペインの同一性を確かめられないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
+      exit 1 ;;
+  esac
+  if ! pid_now="$(oe_hs_pane_pid "$RETIRE_PRED")"; then
+    err "${RETIRE_PRED} の pid を引けませんでした。**そのペインが前任のものだと確かめられないので閉じません**"
+    exit 1
+  fi
+  if [ "$pid_now" != "$pid_rec" ]; then
+    err "${RETIRE_PRED} で走っているプロセスが変わっています（記録 pid ${pid_rec} / いま ${pid_now}）。**ペインが作り直されたか再利用されています。閉じません**"
     exit 1
   fi
 
