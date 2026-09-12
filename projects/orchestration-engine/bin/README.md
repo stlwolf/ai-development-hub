@@ -2,12 +2,12 @@
 
 orchestration-engine の実行可能エントリの簡易リファレンス（AI エージェント / 人間向け）。背景は親 [`../README.md`](../README.md)、詳細は各スクリプト冒頭のコメントと `docs/` を参照。
 
-scripts は役割別に次の 22 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
+scripts は役割別に次の 26 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
-- **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309）
+- **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195） / `oe-lane-explain`（SO のレーンが返らなかった理由を読み取る・#303）
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
 - **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
 ---
@@ -173,6 +173,58 @@ oe-register link <%N> [--label <#N|name>] [-w WORKSPACE] [--force]
 - 既存 verb・lib の write path（`oe_reg_record`）は無変更。本 verb はそれを呼ぶだけ（additive）
 
 関連 lib: `delegate-registry.sh`（record/GC）。読取側 `oe-ident` / `event-bus.sh` の role 導出は「自 entry かつ parent_pane 非空」＝自己 root を `child` と誤導出しない（#259）
+
+## oe-handoff — 統括の計画的な交代（#390）
+
+統括セッションの**計画的な交代**（前任が応答できる状態での引き継ぎ）を4つの subcommand に分ける。**応答しない前任からの復帰は本 verb の担当ではない**（#355 の別 verb）。分かれ目は前任が自分の状態を申告できるかどうかの1点である。
+
+```bash
+oe-handoff prepare [-w WORKSPACE] [--out <path>] [--predecessor <%pane>]
+oe-handoff start   [-w WORKSPACE] [--handoff <path>] [--dry-run]
+oe-handoff take    [-w WORKSPACE] [--board <path>] [--handoff <path>]
+                   [--generation <N>] [--predecessor <%pane>] [--reason <r>]
+oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute]
+```
+
+**走るセッションが subcommand ごとに違う。** ここを間違えると検査の対象がずれる。
+
+| subcommand | 走るセッション | 何をするか |
+|---|---|---|
+| `prepare` | 前任 | 機械で取れる状態を引き継ぎ文書へ書く。**引き継ぎ文書以外を1バイトも書き換えない** |
+| `start` | 前任 | 後継のペインを起こし、引き継ぎ文書のパスを送る |
+| `take` | 後継 | 前提を全部確かめてから席を取りに行く |
+| `retire` | 後継 | 前任を閉じてよいかを判定する。**引数なしは下見。`--execute` だけが閉じる** |
+
+- `prepare` … open PR / worktree / 生きた委譲子 / 常駐の見張りの登録 / 枝と HEAD / 未 push / 前任の session_id と context% と拍動の古さ / **前任のペインの pid**（`retire` が閉じる直前に同一性を確かめる鍵）を集めて、引き継ぎ文書の**機械が書く節を毎回まるごと上書き**する。**人が書く節は触らない**（人が値を写す経路を残すと食い違いが生まれる）。目印は行全体が一致する形で検査し、1組だけ・順序が正しいことを**書き換える前に**確かめる
+- `start` … `oe-delegate` を**使わない**。前任の pane を親としない素の pane で `claude` を起こし、`PARENT_TMUX_PANE` も渡さない。理由は、後継の自発的な報告の宛先がこれから停止する前任のペインに焼き込まれるからである（以前はもう1つ「後継自身が生きた委譲子に数えられて `take` が永久に通らない」という理由があったが、**子が交代を止めなくなったので効かない**・owner 裁定 2026-09-13）。起動と kickoff を分け、**ペインが現れなければ送らない**
+- `take` … 順序は「確かめるものが先、書き換えるものが後」。前提（引き継ぎ文書の有無 / 前任の pane が board の宣言と一致 / 前任の session_id が引ける / 見張りの状態）を済ませてから、自己登記 → board 張替 → 検算 → 交代イベントの順に触る。**何度実行しても同じ結果になる**（既に席に居れば何もしない）。**生きた委譲子は数えて出すが、席を止めない**（後継が誰を引き受けたかを知るための表示である・owner 裁定 2026-09-13）
+- `retire` … 機械の検査をやり直して前任の申告と突き合わせ、食い違いを列挙する。閉じる直前に**そのペインがいまも前任のものか**を session_id と pid の両方で確かめる（pid は拍動に依らないので、再利用直後の窓も塞ぐ）。**閉じる相手の pane / session_id / pid は、目印の完全性を確かめた機械の節の中の値だけ**を使う（文書の散文から拾わない）。**申告の照合は「処分が付いた表の行」に対してだけ行う**（散文に番号を書いても処分にならない。PR は `#<番号>` の形で書く）。停止の必須条件は2つで、**前任の session_id が引き継ぎ記録に残っている**（`claude --resume` で開き直せる）・**申告の各項目に処分（`済んだ` / `引き継ぐ` / `取り消す`）が付いている**。`--execute` は**検査をやり直してから**閉じるので、下見と実行のあいだに入った新着を拾う。**生きた委譲子は閉じない理由にしない**（下記）
+- **`--execute` が触れるのは前任のペインだけである。** board・登記・イベントログ・worktree・PR には触れない。後始末（登記の掃除・worktree の掃除・issue の close）は人のゲートのまま残す
+- **`--execute` を打つのは後継である**（owner 裁定 2026-09-12）。owner は打たない
+- 席の読み取り規則は `lib/seat.sh` にあり、`oe-vitals` と**同じ関数**を使う（2箇所に同じ規則を実装すると片方が取り残される）。張替は席の pane と鮮度の日付だけを触り、**系譜の散文は書き換えない**。張替の前に compare-and-swap で現在値を確かめ、書き込みは `mkdir` のロックで排他する
+- 交代は `oe-events.jsonl` に `supervisor_succession` を1本残す。**from / to の role はどちらも空**である（交代は spawn の親子ではなく並列の継承なので、role に parent/child を焼くと死んだ前任の下に後継がぶら下がる歪みを記録の側から追認することになる）。emit の戻り値は信用せず、追記したはずの行を読み直して確かめる
+
+**生きた委譲子を抱えたまま交代する（owner 裁定 2026-09-13）**: **子が生きたままの交代が正常系である。** 4つの verb はどれも子の数で交代を止めない。責任の形は「**前任は子を引き渡す・後継は統括の仕事をまるごと引き受ける**」で、前任が子を抱えて看取るのではない。
+
+- **なぜ止めなくてよいか。** supervision はリクエストとレスポンスで回るので、後継が子へ指示を送れば**子は送ってきた相手に返す**。子は agent なので、環境変数ではなく「誰から来たか」を見る。統括の交代をまたいで同じ子が後継へ報告した実例がログにある（`%157` が 2026-07-10 に `%144` へ、同日 `%158` へ送っている）。
+- **残る穴は1つだけである。** `PARENT_TMUX_PANE` は張り替えられないので、**誰にも聞かれずに子が自分から出す報告**は、前任のペインを指したまま残る。
+- **塞ぐには、後継が各子へ「報告の宛先は後継の pane である」ことを明示して伝える必要がある。挨拶では塞がらない。** `bin/oe-report` は親を「環境変数が先、無ければ `/tmp/oe-parent-<自 pane>` ファイル」の順で解決し、**`oe-delegate` はそのファイルを書き出さない**。だから差し替えの口は実質的に無く、**宛先が変わるのは子が新しい pane を明示して送るときだけ**である。README が推す戻しの書き方 `oe-send "$PARENT_TMUX_PANE"` は、伝えないかぎり前任を指す。
+- **伝えるまでは塞がらない。** 「後継が指示を送れば子は送ってきた相手に返す」は**子がそう振る舞うことに依存する**（子は agent なので送信元を見て返せるが、機構がそれを保証しているわけではない）。この区別は実装SO の指摘で書き直した（2026-09-13）。
+- **この穴は交代を止める理由にしない。** 止めるほうが害が大きいという裁定である（子を抱えた統括が context を使い切っても退けなくなる）。`take` と `retire` は引き受けた子を一覧で出し、`retire` の出力は穴の在り処を毎回明示する。
+- **以前はここで止めていた**（旧 DJ-11 = 「生きた委譲子が0体であることを `take` の前提にする」）。前提は「前任の pane を閉じると生きている子の戻し先が死ぬ」だったが、**実測が前提を否定した**。狭い前提（自発報告の経路）を主経路に一般化していた。
+
+**残っている歪み（この単位では直さない）**: `oe-register root` は**前任の root の登記を失効させない**ので、交代のあと `oe-tree` に `cockpit` の root が2本並ぶ。lean の決定（`docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md`）が「topology の歪みは段階1 の外」としている範囲にあたる。**後継が機械で状態を取るときにこの歪みを踏む**ので、見えた側で読み替える。
+
+**確かめられないこと（正直に）**:
+
+- **`start` の待ちは「入力を受け付けられる」ことの確認ではない。** ペインの存在は作った直後から成立し、その中の TUI が初期化を終えたかは起動側から分からない。画面を読んで判定する形は採らない（版で消える目印に頼る形になる）。到達は受領印（`oe-confirm` の照合）で見る
+- **`oe-vitals` の最終走査は確かめられない。** `oe-selfcheck` の `watchdog-freshness` が見ているのは `oe-confirm` であって `oe-vitals` ではなく、`oe-vitals` には最終走査を残す記録がそもそも無い。`take` は毎回そう明示する
+- **pane がすぐ再利用され、新しいセッションがまだ拍動を書いていないあいだは、旧世代の session_id を採りうる。** セッションが自分の id を名乗る経路が無いかぎり、この逆引きの穴は閉じない。`take` と `prepare` は拍動の古さを出して、人が判断できる材料を残す
+  - **ただし `retire` が閉じる側では塞いだ**（2026-09-13）。`prepare` が前任のペインの pid を機械の節に記録し、`retire` は `kill-pane` の直前に**いまの pid と突き合わせる**。pid は tmux が握っているので、**新しいセッションが拍動を書く前でも変わる**。記録に pid が無い（古い形式の）引き継ぎ文書では閉じない（`prepare` を走らせ直す）。逆引き自体の穴は残るが、**閉じる判断はこの穴に依存しない**
+
+関連 lib: `seat.sh`（席の解決・張替・検算）/ `handoff-state.sh`（機械で取れる状態の収集・read-only）/ `delegate-registry.sh`（登記）/ `event-bus.sh`（交代イベント）。テンプレート: `../templates/handoff.md.template`。
+
+---
 
 ## oe-select — 宛先をインタラクティブに選んで送信
 

@@ -8,6 +8,7 @@ set -euo pipefail
 #   (2) pane から session_id を引く逆引きが、曖昧なときに unknown へ倒れる
 #       （sidecar は掃除されないので同じ pane 番号の別世代が貯まる。誤った値を書くくらいなら書かない）
 #   (3) 生きた委譲子の数え方の錨が「引数の pane」であり「自ペイン」ではない
+#       （数え方は変えない。数えた結果で交代を止めないのが owner 裁定 2026-09-13）
 #       （自ペインで数えると後継のセッションでは常に0件になり、fail-closed が反転する）
 #   (4) prepare が引き継ぎ文書以外を書き換えない（board・登記・イベントログの mtime が動かない）
 #
@@ -41,6 +42,7 @@ export PATH="$STUB_BIN:$PATH"
 PASS=0; FAIL=0
 ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
 ckc() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (missing [$3])"; FAIL=$((FAIL+1)); fi; }
+nck() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  FAIL: $1 (unexpected [$3])"; FAIL=$((FAIL+1)); else echo "  PASS: $1"; PASS=$((PASS+1)); fi; }
 
 # --- 置き場 ---
 HB="$_TMP_DIR/heartbeat"; mkdir -p "$HB"
@@ -123,7 +125,14 @@ OUT="$WS/.oe/handoff.md"
 out1="$("$OE_HANDOFF" prepare -w "$WS" --out "$OUT" --predecessor '%10' 2>&1)" || true
 ckc "作成を報告する" "$out1" "引き継ぎ文書を作りました"
 ckc "生きた委譲子の件数を出す" "$out1" "生きた委譲子 1 件"
-ckc "子が居るあいだは交代できないと言う" "$out1" "まだ交代できません"
+# **子が居ても交代は止まらない**（owner 裁定 2026-09-13）。前は「まだ交代できません」と
+# 言っていたが、子が生きたままの交代が正常系である。見るのは、子を引き渡す指示が出ることと、
+# 交代を止める文言が出ないことの両方である。
+ckc "子を後継へ引き渡すと言う" "$out1" "後継へ子を引き渡す"
+ckc "新しい報告先を伝える必要を言う" "$out1" "報告の宛先は後継の pane である"
+ckc "伝えるまで塞がらないと言う"     "$out1" "PARENT_TMUX_PANE は差し替えられない"
+nck "交代を止めない"           "$out1" "まだ交代できません"
+ckc "文書にも交代は止まらないと書く" "$(cat "$OUT")" "交代は止まらない"
 ckc "機械の節に見張りの節がある" "$(cat "$OUT")" "### 常駐の見張り"
 
 echo "[8] prepare: 人が書いた内容は保たれ、目印は重複しない"
@@ -172,7 +181,10 @@ echo "[12] 子を数えられないときは 0 件に化かさない（fail-clos
 OUT3="$WS/.oe/handoff3.md"
 out3="$(OE_DELEGATE_STATE_DIR="" "$OE_HANDOFF" prepare -w "$WS" --out "$OUT3" --predecessor '%10' 2>&1)" || true
 ckc "件数を unknown と言う" "$out3" "生きた委譲子 unknown 件"
-ckc "数えられないうちは交代させない" "$out3" "まだ交代できません"
+# 数えられないことも交代を止めない（子が止めないので、数えられないことも止めない）。
+# ただし**0 件に化かさない**ことは変わらない。
+nck "数えられなくても交代を止めない" "$out3" "まだ交代できません"
+nck "0 件に化かさない"               "$out3" "生きた委譲子 0 件"
 ckc "文書にも数えられなかったと書く" "$(cat "$OUT3")" "数えられませんでした"
 
 echo "[13] upstream の無い枝で「未 push 0 件」と言わない"
@@ -278,6 +290,30 @@ mk_beat "sid-t2" "%13" "900" 11 100
 mk_transcript "sid-t1" 0; mk_transcript "sid-t2" 0
 ck "同率は曖昧扱い" "unknown" "$(oe_hs_session_for_pane '%13')"
 rm -f "$HB/sid-t1.json" "$HB/sid-t2.json" "$TR/sid-t1.jsonl" "$TR/sid-t2.jsonl"
+
+echo "[27b] 登記の置き場が**存在しない**ときは「子0件」にしない"
+# **「読めない」とは別の経路である。** 以前はこの枝だけ rc=0・0件を返しており、
+# `OE_DELEGATE_STATE_DIR=""` と `chmod 000` は 2 を返すのに、**path を取り違えただけのときは
+# 静かに0件として通っていた**（実装SO の指摘・2026-09-13）。空のディレクトリが返す正当な0件と
+# 区別できる形になっていることも、同じ節で見る。
+NOSUCH="$_TMP_DIR/no-such-registry"
+[ -e "$NOSUCH" ] && rm -rf "$NOSUCH"
+set +e
+( OE_DELEGATE_STATE_DIR="$NOSUCH" oe_hs_children_of '%10' >/dev/null 2>&1 ); rc_nodir=$?
+set -e
+ck "存在しない置き場は失敗を返す" "2" "$rc_nodir"
+EMPTYREG="$_TMP_DIR/empty-registry"; mkdir -p "$EMPTYREG"
+set +e
+( OE_DELEGATE_STATE_DIR="$EMPTYREG" oe_hs_children_of '%10' >/dev/null 2>&1 ); rc_emptydir=$?
+set -e
+ck "空の置き場は正当な0件（rc=0）" "0" "$rc_emptydir"
+ck "空の置き場の出力は空"          "0" "$(OE_DELEGATE_STATE_DIR="$EMPTYREG" oe_hs_children_of '%10' 2>/dev/null | grep -c '^' | tr -d ' ')"
+# **prepare の表示でも 0 件に化かさないことを見る**（lib の rc だけでは呼ぶ側の扱いが分からない）。
+OUT27B="$WS/.oe/handoff27b.md"
+out27b="$(OE_DELEGATE_STATE_DIR="$NOSUCH" "$OE_HANDOFF" prepare -w "$WS" --out "$OUT27B" --predecessor '%10' 2>&1)" || true
+ckc "unknown と言う"       "$out27b" "生きた委譲子 unknown 件"
+nck "0 件と言わない"       "$out27b" "生きた委譲子 0 件"
+ckc "文書にも0件と書かない" "$(cat "$OUT27B")" "0 件ではありません"
 
 echo "[28] 登記の置き場が読めないときは「子0件」にしない"
 UNREAD="$_TMP_DIR/unreadable"; mkdir -p "$UNREAD"; chmod 000 "$UNREAD"

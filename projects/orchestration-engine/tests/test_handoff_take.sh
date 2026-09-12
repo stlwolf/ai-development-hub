@@ -46,9 +46,13 @@ printf 'register %s\n' "\$*" >> "$CALL_LOG"
 [ -f "$_TMP_DIR/register_fails" ] && exit 1
 exit 0
 EOF
+# **足場の形は実物と同じにする。** 実物の oe-selfcheck --json は素の配列を返す。
+# 以前ここは {"checks":[...]} という object を返していたが、そのキーは実物に1つも無く、
+# stub が発明した形だった。そのため下の [11] は通り続け、**実物に対しては一度も
+# 読めていなかった**（#390・予行で実測）。形が実物と一致することは [11b] で機械が見る。
 cat > "$STUB/selfcheck" <<'EOF'
 #!/usr/bin/env bash
-printf '{"checks":[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]}\n'
+printf '[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]\n'
 exit 1
 EOF
 cat > "$STUB/send" <<EOF
@@ -99,7 +103,7 @@ echo "[1] 席の張替と検算（正常系）"
 out="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --reason context_exhaustion 2>&1)" || true
 ckc "張り替えたと言う"     "$out" "board の宣言を自分（%11）へ張り替えた"
 ckc "検算したと言う"       "$out" "読み直して自分が返る"
-ckc "委譲子0件を確かめた"  "$out" "生きた委譲子が居ないことを確かめた"
+ckc "委譲子0件を確かめた"  "$out" "前任に生きた委譲子は居ない"
 ckc "session_id を確かめた" "$out" "前任の session_id を確かめた"
 ckc "自己登記した"         "$out" "root として登記した"
 ckc "登記の呼び出しに --force がある" "$(cat "$CALL_LOG")" "register root --label cockpit --force"
@@ -139,26 +143,34 @@ ckc "既に自分を指していると言う"  "$out2" "席は既に自分"
 ck  "board を書き換えない"        "$before" "$(cat "$BOARD")"
 ck  "イベントを二重に書かない"    "1" "$(grep -c 'supervisor_succession' "$EV/oe-events.jsonl" | tr -d ' ')"
 
-echo "[6] 生きた委譲子が居るときは席を動かさない"
+echo "[6] 生きた委譲子が居ても席は動く（owner 裁定 2026-09-13）"
+# **子が生きたままの交代が正常系である。** 以前はここで席を止めていた（旧 DJ-11）。
+# 止めていたほうが不具合だという裁定で、数えて出すが止めない形に変えた。
 mk_board "$BOARD"; before="$(cat "$BOARD")"
 mk_child "%12" "%10"
 set +e
 out3="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc3=$?
 set -e
-ck  "非0 で終わる"        "1" "$rc3"
-ckc "理由を言う"          "$out3" "生きた委譲子が 1 件"
-ckc "済んでいないと言う"  "$out3" "生きた委譲子が居るので席を動かしていない"
-ck  "board を書き換えない" "$before" "$(cat "$BOARD")"
+ck  "0 で終わる"            "0" "$rc3"
+ckc "件数を出す"            "$out3" "生きた委譲子: 1 件"
+ckc "子を一覧で出す"        "$out3" "%12"
+ckc "引き受けたと言う"      "$out3" "引き受けた委譲子を確かめた（1 件・交代は止めない）"
+ckc "新しい報告先を伝えていないと言う" "$out3" "新しい報告先を伝えていない"
+ckc "機構では塞がらないと言う"         "$out3" "PARENT_TMUX_PANE は差し替えられない"
+ckc "席は動いた"            "$out3" "board の宣言を自分（%11）へ張り替えた"
+ck  "board は書き換わった"  "%11" "$(oe_seat_resolve "$BOARD")"
 rm -f "$REG"/*.json
 
-echo "[7] 委譲子を数えられないときも席を動かさない"
-mk_board "$BOARD"; before="$(cat "$BOARD")"
+echo "[7] 委譲子を数えられなくても席は動く。ただし「確かめた」とは書かない"
+mk_board "$BOARD"
 set +e
 out4="$(OE_DELEGATE_STATE_DIR="" "$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc4=$?
 set -e
-ck  "非0 で終わる"         "1" "$rc4"
-ckc "数えられないと言う"   "$out4" "数えられませんでした"
-ck  "board を書き換えない"  "$before" "$(cat "$BOARD")"
+ck  "0 で終わる"             "0" "$rc4"
+ckc "数えられないと言う"     "$out4" "数えられませんでした"
+ckc "確かめられていないと言う" "$out4" "誰を引き受けたかは確かめられていない"
+nck "0 件と言わない"          "$out4" "生きた委譲子: 0 件"
+ck  "board は書き換わった"    "%11" "$(oe_seat_resolve "$BOARD")"
 
 echo "[8] session_id が引けないときは席を動かさない"
 mk_board "$BOARD"; before="$(cat "$BOARD")"
@@ -193,6 +205,52 @@ echo "[11] oe-selfcheck の終了コードで判定しない（stub は常に 1 
 mk_board "$BOARD"
 out8="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
 ckc "見張りの行を読めている" "$out8" "watchdog-freshness）: ok"
+
+echo "[11b] テストの足場が実物の oe-selfcheck --json と同じ形である"
+# **この検査は stub ではなく実物を1回走らせる。** 根は「stub が実物に無いキーを発明した」
+# ことで、jq の式を直すだけでは同じ根が別の場所で出る。**値は pin しない**（最終走査の秒数は
+# 走るたびに変わる）。見るのは形だけで、形が変わったら落ちればよい。
+# 形は「配列か object か」と「要素が持つキーの集合」で表す。
+shape_of() { # stdin: JSON → "array:k1,k2" / "object:k1,k2" / "" （JSON でなければ空）
+  jq -r 'if type == "array" then "array:" + (((.[0] // {}) | keys) | sort | join(","))
+         else "object:" + ((keys) | sort | join(",")) end' 2>/dev/null || true
+}
+# **終了コードを経路に載せない。** oe-selfcheck も stub も 1 を返すので、`pipefail` の下で
+# パイプの後ろに置くと代入そのものが非0になり、`set -e` で**テストが中断する**（実測）。
+# 出力を先に受け取ってから形にする。
+real_sc="$("$PROJECT_DIR/bin/oe-selfcheck" --json 2>/dev/null; true)"
+stub_sc="$("$STUB/selfcheck" 2>/dev/null; true)"
+real_shape="$(printf '%s' "$real_sc" | shape_of)"
+stub_shape="$(printf '%s' "$stub_sc" | shape_of)"
+if [ -z "$real_shape" ]; then
+  # **取れなかったことを「同じだった」に畳まない。** 形を確かめられていないなら落とす。
+  echo "  FAIL: 実物の oe-selfcheck --json から形を取れない（jq が無い / 出力が JSON でない）"
+  FAIL=$((FAIL+1))
+else
+  ck  "足場の形が実物と一致する"     "$real_shape" "$stub_shape"
+  ckc "実物は素の配列である"         "$real_shape" "array:"
+  ckc "要素は check を持つ"          "$real_shape" "check"
+  ckc "要素は verdict を持つ"        "$real_shape" "verdict"
+  ckc "要素は detail を持つ"         "$real_shape" "detail"
+fi
+
+echo "[11c] object で包まれた形も受ける（実物の形が変わっても読めるように）"
+mk_board "$BOARD"
+cat > "$STUB/selfcheck" <<'EOF'
+#!/usr/bin/env bash
+printf '{"checks":[{"check":"watchdog-freshness","verdict":"ok","detail":"包まれた形"}]}\n'
+exit 1
+EOF
+chmod +x "$STUB/selfcheck"
+out8b="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)" || true
+ckc "包まれた形でも読めている" "$out8b" "watchdog-freshness）: ok"
+# 素の配列の stub に戻す（以降の test が使う）
+cat > "$STUB/selfcheck" <<'EOF'
+#!/usr/bin/env bash
+printf '[{"check":"watchdog-freshness","verdict":"ok","detail":"最終走査は 100 秒前"}]\n'
+exit 1
+EOF
+chmod +x "$STUB/selfcheck"
 
 echo "[12] 世代が分からないときはイベントを書かない（0 を書かない）"
 mk_board "$BOARD"

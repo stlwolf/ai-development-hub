@@ -8,7 +8,11 @@ prediction: "言い直した実害から組んだ述語は素直に測れて陽�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-10-episode-291-parent-side-detection.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-12
+    ref: "#390"
+    state: externally_verified
+    note: "plan フェーズでは「生きた委譲子0体」の述語に母集団を書いておらず、設計SO が oe_reg_list の自己スコープでは常に0件になる（fail-closed が反転する）ことを外部から検出した。実装フェーズでさらに強い実例が出た。逆引きの述語を「件数がちょうど1件」から「拍動がいちばん新しい」へ組み直したとき、組み直した側だけを見て元の事例（同じ pane に7件貯まっている）を当て直しておらず、2つのレーンが逆向きの苦情として同じ規則を指した"
 exclusions:
   - "目標事例が1件しかなく、その1件を述語に直接埋め込んで検算できる場合（乖離が起きる余地がない）"
   - "実害の言い直しを依頼側が明示的に指示し、旧目標事例を追わないと宣言している場合（乗り換えが意図された決定である）"
