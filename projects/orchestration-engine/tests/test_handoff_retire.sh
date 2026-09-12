@@ -717,6 +717,105 @@ ck  "非0 で終わる"          "1" "$rc34"
 ckc "散文では通らない"      "$out34" "未 push が残っているのに、処分の付いた申告の行に出てこない"
 ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
+echo "[35] PR の照合が種別をまたいで誤一致しない"
+# `worktree topic-501` という処分済みの行が **PR #501 の処分としても一致**していた
+# （番号だけの境界付き一致だったため・実装SO の指摘・2026-09-13）。`#<番号>` を要求する。
+XK="$WS/.oe/handoff-crosskind.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '### open PR'
+  printf '%s\n' '- 501 draft=false 未処分にしたい PR'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| worktree topic-501 | 引き継ぐ | PR の処分ではない |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$XK"
+set +e
+out35="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$XK" --execute 2>&1)"; rc35=$?
+set -e
+ck  "非0 で終わる"                "1" "$rc35"
+ckc "PR の処分が無いと言う"       "$out35" "機械の節が挙げた PR #501 に処分が付いていない"
+# shellcheck disable=SC2016  # backtick は出力に含まれる Markdown 記法で、展開させない
+ckc "求める形を言う"              "$out35" '`#501` の形で出てこない'
+ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[36] GFM の alignment delimiter を未処分のデータ行として数えない"
+# `| :--- | :---: | ---: |` は区切り行である。以前は `^-{2,}$` だけを区切りとしていたので、
+# **正当に全項目へ処分を付けた申告が恒常的に通らなかった**（fail-closed だが誤判定）。
+ALGN="$WS/.oe/handoff-align.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| :--- | :---: | ---: |'
+  printf '%s\n' '| PR #392 | 済んだ | 適法な行 |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$ALGN"
+set +e
+out36="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$ALGN" 2>&1)"; rc36=$?
+set -e
+ck  "下見は 0 で終わる"           "0" "$rc36"
+ckc "件数は1件"                   "$out36" "申告の全項目に処分が付いている（1 件）"
+nck "区切り行を落とさない"        "$out36" ":---"
+
+echo "[37] worktree を数えられなければ、無いことにしない"
+# `git worktree list` の失敗を `wt_now=""` に畳んでいたので、**観測できていないのに未処分の
+# worktree が無いことにして閉じた**（実装SO の指摘・2026-09-13）。git でない場所を渡して作る。
+NOGIT="$_TMP_DIR/not-a-repo"; mkdir -p "$NOGIT/.oe"
+cp "$HANDOFF" "$NOGIT/.oe/handoff.md"
+set +e
+out37="$("$OE_HANDOFF" retire -w "$NOGIT" --board "$BOARD" --handoff "$NOGIT/.oe/handoff.md" --execute 2>&1)"; rc37=$?
+set -e
+ck  "非0 で終わる"                "1" "$rc37"
+ckc "数えられないと言う"          "$out37" "worktree を数えられなかった"
+ckc "無いとは言わないと明示する"  "$out37" "未処分の worktree が無いとは言えない"
+ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[38] 機械の節の目印が壊れていたら、文書の散文から値を拾わない"
+# 以前は `grep -m1 '^- 前任のペイン: '` を文書全体に当てていたので、**機械の節が無くても
+# 同じ形の行が散文にあれば値を信用した**（実装SO の指摘・2026-09-13）。
+FAKE="$WS/.oe/handoff-nomarker.md"
+{
+  printf '%s\n' '## 観測できる状態（目印が無い・人が手で書いた）'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | x |'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$FAKE"
+: > "$CALL_LOG"
+set +e
+out38="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$FAKE" --execute 2>&1)"; rc38=$?
+set -e
+ck  "2 で終わる"                  "2" "$rc38"
+ckc "目印が1組でないと言う"       "$out38" "機械の節の目印が1組になっていません"
+ckc "機械が書いた記録と言えないと言う" "$out38" "機械が書いた記録だと言えないので閉じません"
+ck  "kill-pane を呼ばない"        "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

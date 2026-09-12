@@ -101,6 +101,8 @@ DRY_RUN=0
 EXECUTE=0
 RETIRE_PRED=""
 RETIRE_SID=""
+# 機械の節の本体（段階2 が pid を読む。**文書全体から拾わない**）
+RETIRE_MACHINE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -w)            WORKSPACE="${2:-}"; shift 2 || { err "-w に値がありません"; exit 2; } ;;
@@ -677,14 +679,34 @@ cmd_retire() {
   [ -n "$board" ] || { err "board の場所が決まりません（--board か OE_BOARD_FILE で渡してください）"; exit 2; }
   [ -r "$board" ] || { err "board が読めません: ${board}"; exit 2; }
 
-  # --- 前任の pane と session_id は「引き継ぎ記録」から取る ---
+  # --- 機械の節を切り出し、目印の完全性を確かめる ---
+  # **文書全体から拾わない。** 以前は `grep -m1 '^- 前任のペイン: '` を文書全体に当てていたので、
+  # **機械の節が欠落・破損していても、同じ形の行が散文にあれば値を信用した**（実装SO の指摘・
+  # 2026-09-13）。閉じる相手の pane・session_id・pid は、**機械が書いた節の中の値だけ**を使う。
+  # 検査の規則は `prepare` と同じ（目印は行全体が一致・1組だけ・順序が正しい）。
+  local n_begin n_end l_begin l_end machine_block
+  n_begin="$(grep -cxF -- "$MARK_BEGIN" "$handoff" | tr -d ' ')"
+  n_end="$(grep -cxF -- "$MARK_END" "$handoff" | tr -d ' ')"
+  if [ "$n_begin" != "1" ] || [ "$n_end" != "1" ]; then
+    err "引き継ぎ文書の機械の節の目印が1組になっていません（begin ${n_begin} 個 / end ${n_end} 個）。**機械が書いた記録だと言えないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
+    exit 2
+  fi
+  l_begin="$(grep -nxF -- "$MARK_BEGIN" "$handoff" | head -1 | cut -d: -f1)"
+  l_end="$(grep -nxF -- "$MARK_END" "$handoff" | head -1 | cut -d: -f1)"
+  if [ -z "$l_begin" ] || [ -z "$l_end" ] || [ "$l_begin" -ge "$l_end" ]; then
+    err "引き継ぎ文書の機械の節の目印の順序が逆です（begin ${l_begin} 行目 / end ${l_end} 行目）。**機械が書いた記録だと言えないので閉じません**"
+    exit 2
+  fi
+  machine_block="$(sed -n "${l_begin},${l_end}p" "$handoff")" || machine_block=""
+
+  # --- 前任の pane と session_id は「機械の節」から取る ---
   # board の註からも取れるが、**2つが食い違っていたら進まない**（検査した相手と閉じる相手が
   # ずれるのを防ぐ。PR-2 で踏んだのと同じ型）。
-  pred="$(grep -m1 -- '^- 前任のペイン: ' "$handoff" | grep -oE '%[0-9]+' | head -1)" || pred=""
+  pred="$(printf '%s\n' "$machine_block" | grep -m1 -- '^- 前任のペイン: ' | grep -oE '%[0-9]+' | head -1)" || pred=""
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  sid_rec="$(grep -m1 -- '^- 前任の session_id: ' "$handoff" | sed -E 's/.*`([^`]*)`.*/\1/')" || sid_rec=""
+  sid_rec="$(printf '%s\n' "$machine_block" | grep -m1 -- '^- 前任の session_id: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || sid_rec=""
   if [ -z "$pred" ]; then
-    err "引き継ぎ記録から前任のペインを読めません（${handoff} の機械の節）"
+    err "機械の節から前任のペインを読めません（${handoff}）"
     exit 2
   fi
   if true; then
@@ -718,6 +740,7 @@ cmd_retire() {
   [ "$pred" != "$self" ] || { err "前任と自分が同じペイン（${self}）です"; exit 2; }
   RETIRE_PRED="$pred"
   RETIRE_SID="$sid_rec"
+  RETIRE_MACHINE="$machine_block"
 
   # --- 必須条件1: session_id が引き継ぎ記録に残っている ---
   # **必須条件は2つである**（1 と 3）。以前あった「生きた委譲子が0体」は owner 裁定
@@ -790,7 +813,11 @@ cmd_retire() {
         gsub(/^[ \t]+|[ \t]+$/, "", item); gsub(/^[ \t]+|[ \t]+$/, "", disp)
         rowno++
         if (rowno == 1) next
-        if (item ~ /^-{2,}$/) next
+        # **GFM の alignment delimiter（`:---` / `:---:` / `---:`）も区切りである。**
+        # `^-{2,}$` だけを区切りとしていたので、**正当に全項目へ処分を付けた申告が恒常的に
+        # 通らなくなっていた**（区切り行が未処分のデータ行として数えられる・実装SO の指摘・
+        # 2026-09-13。fail-closed だが誤判定である）。
+        if (item ~ /^:?-+:?$/) next
         if (item == "") next
         gsub(/\001/, "\\|", item); gsub(/\001/, "\\|", disp)
         count++
@@ -817,18 +844,23 @@ cmd_retire() {
   # --- 機械の節が挙げた項目それぞれに処分が付いているかを見る ---
   # **表に1行あって語彙が正しいだけでは足りない。** 機械が挙げた項目が申告に出てこなければ、
   # その項目には処分が付いていない。
+  # 上で切り出して目印を検査した block をそのまま使う（2度切り出すと規則が分かれる）。
   local machine
-  machine="$(awk '/oe-handoff:machine:begin/,/oe-handoff:machine:end/' "$handoff")" || machine=""
+  machine="$machine_block"
   local mnum
   # **部分一致で照合しない。** `grep -F 501` は申告の「#3501」や「2026-09-501」にも当たるので、
   # 別の PR を書いた申告で欠落を見逃す（fail-open）。数字の前後が数字でないことまで見る。
   # **照合の相手は `$DISPOSED`（処分が付いた表の行の項目名）である。** 申告の節全体を見ると、
   # 散文に番号を書いただけで通る。
+  # **番号だけの一致にしない。** 項目名の中の境界付き数字で照合していたので、
+  # `worktree topic-501` という処分済みの行が **PR #501 の処分としても一致**した
+  # （種別をまたいだ誤一致・実装SO の指摘・2026-09-13。実測で再現した）。
+  # PR は `#<番号>` の形で書かれていることを要求する（機械の節も `#` 付きで表示する）。
   for mnum in $(printf '%s' "$machine" | grep -oE '^- [0-9]+ draft=' | grep -oE '[0-9]+' || true); do
-    if printf '%s\n' "$DISPOSED" | grep -qE "(^|[^0-9])${mnum}([^0-9]|\$)"; then
+    if printf '%s\n' "$DISPOSED" | grep -qE "#[ ]*${mnum}([^0-9]|\$)"; then
       :
     else
-      note_fail "機械の節が挙げた PR #${mnum} に処分が付いていない（処分の付いた申告の行に出てこない）"
+      note_fail "機械の節が挙げた PR #${mnum} に処分が付いていない（処分の付いた申告の行に \`#${mnum}\` の形で出てこない）"
     fi
   done
   if printf '%s' "$machine" | grep -qE 'unpushed=[1-9]'; then
@@ -847,10 +879,10 @@ cmd_retire() {
       [ -n "$n" ] || continue
       case "$n" in unknown*) note_diff "open PR を数えられなかった（${n}）" ; continue ;; esac
       local num; num="${n%% *}"
-      if printf '%s\n' "$DISPOSED" | grep -qE "(^|[^0-9])${num}([^0-9]|\$)"; then
+      if printf '%s\n' "$DISPOSED" | grep -qE "#[ ]*${num}([^0-9]|\$)"; then
         :
       else
-        note_diff "open PR #${num} に処分が付いていない（${n#* }）"
+        note_diff "open PR #${num} に処分が付いていない（\`#${num}\` の形で書く・${n#* }）"
       fi
     done <<EOF_PRS
 $prs
@@ -860,8 +892,17 @@ EOF_PRS
   local repo_now
   repo_now="$(oe_hs_repo_state "$WORKSPACE")"
   # worktree も見る。前任の作業枝が残っているのに申告に出てこない形を拾う。
-  local wt_now
-  wt_now="$(git -C "$WORKSPACE" worktree list 2>/dev/null | awk 'NR>1 {print $1}')" || wt_now=""
+  # **`git worktree list` の失敗を「worktree は無い」に畳まない。** 畳むと、観測できていない
+  # のに未処分の worktree が無いことにして閉じる（実装SO の指摘・2026-09-13）。
+  # `pipefail` の有無で結果が変わらないよう、パイプを使わずに rc を取る。
+  local wt_now wt_raw wt_rc
+  wt_raw="$(git -C "$WORKSPACE" worktree list 2>/dev/null)"; wt_rc=$?
+  if [ "$wt_rc" -ne 0 ]; then
+    note_diff "worktree を数えられなかった（git worktree list が失敗した）。未処分の worktree が無いとは言えない"
+    wt_now=""
+  else
+    wt_now="$(printf '%s\n' "$wt_raw" | awk 'NR>1 {print $1}')"
+  fi
   if [ -n "$wt_now" ]; then
     local wtp base
     while IFS= read -r wtp; do
@@ -975,7 +1016,7 @@ _retire_report() {
   # **pid は tmux が握っているので、拍動を書く前でも変わる。** これで窓を塞ぐ。
   local pid_rec pid_now
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  pid_rec="$(grep -m1 -- '^- 前任のペインの pid: ' "$handoff" | sed -E 's/.*`([^`]*)`.*/\1/')" || pid_rec=""
+  pid_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペインの pid: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || pid_rec=""
   case "$pid_rec" in
     ''|*[!0-9]*)
       err "引き継ぎ記録に前任のペインの pid がありません（古い形式の引き継ぎ文書です）。**ペインの同一性を確かめられないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
