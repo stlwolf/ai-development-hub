@@ -451,3 +451,57 @@ owner の依頼で統括が PR #392 をレビューした。Copilot が見たの
 
 **同じ事実の説明が2箇所にあると、片方だけ古くなる。** 直し方は文言を揃えることではなく、**説明の出どころを1つにすること**である。
 
+## PR-2 — 席を取る（`take` と `start` と交代イベント）
+
+### 枝の切り直しと、稼働中のものに触れない境界（2026-09-12）
+
+PR-1 は squash で入ったので、前の枝のコミットは master の先祖ではない。`git reset --hard` を使わず、`git switch -c <新しい枝> origin/master` で切り直した。plan の digest は承認時のまま（`b80e548b…`）で、baseline は動いていない。
+
+**PR-2 は初めて「書き換える」段である。** 稼働中の board と実物の登記に触れないために、外部の verb を呼ぶところを全部ノブにした（`OE_HANDOFF_REGISTER` / `OE_HANDOFF_SELFCHECK` / `OE_HANDOFF_SEND` / `OE_HANDOFF_TMUX` / `OE_HANDOFF_CLAUDE`）。テストは一時ディレクトリの fixture と stub だけを見る。`oe-register root --force` を自分のセッションで実行してはいない。
+
+### Step 2-1 から 2-3 — 稼働中の見張りに手を入れる
+
+`oe-vitals` の `現統括:` 解決を `lib/seat.sh` へ切り出した。**規則は1文字も変えていない。** 移設の前に基準を取り、あとで突き合わせた。
+
+- 既存の回帰スイート `test_oe_vitals.sh` は移設の前後とも 77 件すべて PASS で、**出力は完全に一致**した。
+- 実物の board に対する `oe-vitals` の出力も比べた。**違いは経過時間の表示だけ**（`beat stale/19h3m` → `19h4m`）で、解決した pane も判定も同じだった。時計の進みであって挙動の変化ではない。
+
+移設前のコメント（`%NNN` が無い board で `set -e` が script を落とす、という実装SO の指摘の記録）は、理由が失われないように移設先と移設元の両方に残した。
+
+### Step 2-4 と 2-5 — 交代イベント
+
+`schemas/oe-events.schema.json` の type に `supervisor_succession` を足し、`generation` / `reason` / `server_pid` を必須にした。**from と to の role は空にする。** 交代は spawn の親子ではなく並列の継承なので、role に parent/child を焼くと「死んだ前任の下に後継がぶら下がる」歪みを記録の側から追認することになる（#238 / succession discussion §4-2）。`server_pid` を持たせたのは #290 §7.2 が「server identity を持たせると2つの穴が同時に閉じる」と書いた位置である。
+
+**既存のログが新しい schema でも valid のままであることは、当てられる形で確かめた。** この repo に JSON Schema の validator は無く（board も envelope も手書きの bash+jq）、`jsonschema` も入っていない。だから schema 全体の検証ではなく、**変更で valid でなくなりうる経路だけ**を機械で見た。
+
+- 既存 2,764 行の type は4種（`child_spawned` 175 / `message_sent` 1734 / `prompt_received` 775 / `report_received` 80）で、全部が新しい enum に入る。
+- 既存行に `supervisor_succession` は0件なので、新しい条件節はどの既存行にも当たらない。
+- top-level に `additionalProperties: false` が無いので、任意項目を足しても既存行は落ちない。`endpoint` の定義は触っていない（diff で0行）。
+
+**「schema 全体を検証した」とは言えない**ので、そう書かない。当てたのは上の3点である。
+
+### Step 2-6 と 2-7b — `take` と `start`
+
+`take` は前提を全部確かめてから書き換える。確かめる側は、引き継ぎ文書の有無 / 前任の pane / 生きた委譲子が0件 / 前任の session_id / 見張りの状態。書き換える側は、自己登記 / board の張替 / 検算 / イベント。どこで落ちても「済んだこと」と「済んでいないこと」を並べて出す。
+
+`start` は素の tmux split で `claude` を起こす。`oe-delegate` は使わず `PARENT_TMUX_PANE` も渡さない（DJ-11）。起動と kickoff を分け、ペインが一覧に現れてから引き継ぎ文書のパスを送る。
+
+### テストが自分のコードの欠陥を1件捕まえた
+
+`oe-selfcheck` の終了コードで判定しない、という要件のテストを書いたら落ちた。原因は自分のコードで、こう書いていた。
+
+```bash
+sc_json="$("$OE_HANDOFF_SELFCHECK" --json 2>/dev/null)" || sc_json=""
+```
+
+**出力は捕まえているのに、終了コードが非0なら捨てていた。** `oe-selfcheck` は broken が1つでもあれば 1 を返すので、いま `screen-marker` が broken である以上、この行は常に出力を捨てる。要件を「終了コードで判定しない」と書き、実装では `||` で判定していた。
+
+昇格の印: 要件を満たしたつもりの行が、`||` ひとつで要件の逆をやっていた
+
+### ゲートの結果
+
+- `shellcheck`: 7ファイルとも exit 0
+- テスト: `test_handoff_prepare` 67 件 / `test_handoff_take` 55 件 / `test_oe_vitals` 77 件 / `test_event_bus` 95 件、いずれも全件 PASS
+- `validate-board.sh`: **実 board の写し**（390KB）に対して張替の前後で走らせ、WARN は1件のまま・出力も同一。張替後の解決は後継を指す
+- 稼働中のものが無傷であることの確認: 実 board の宣言はいまも `%84`、最終更新は 2026-09-11 14:17 のまま、実物の登記は4件のまま、実物のイベントログに交代イベントは0件
+
