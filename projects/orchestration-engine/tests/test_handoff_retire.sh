@@ -90,6 +90,11 @@ mk_handoff() {
   } > "$1"
 }
 
+# workspace は実際の git repo にする。非 git のままだと repo の検査が常に「分からない」に
+# 倒れ、**テストが本番と違う前提を見ることになる**（#347 の教訓）。
+git -C "$WS" init -q 2>/dev/null || true
+git -C "$WS" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
+
 BOARD="$WS/.oe/board.md"; HANDOFF="$WS/.oe/handoff.md"
 mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 mk_beat "sid-pred" "%10"
@@ -227,6 +232,99 @@ set +e
 "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$WS/.oe/nope.md" >/dev/null 2>&1; rc14=$?
 set -e
 ck "2 で終わる" "2" "$rc14"
+
+# [12] が前任を閉じたので、ここから先のために生存状態を作り直す
+printf '%%10\n%%11\n' > "$ALIVE"
+mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+
+echo "[15] board が渡されなければ閉じない（観測できないまま判断しない）"
+set +e
+"$OE_HANDOFF" retire -w "$WS" --handoff "$HANDOFF" --execute >/dev/null 2>&1; rc15=$?
+set -e
+ck  "2 で終わる"       "2" "$rc15"
+ck  "前任は生きたまま" "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[16] 自ペインが分からなければ閉じない（後継本人かを確かめられない）"
+set +e
+( unset TMUX_PANE; "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute ) >/dev/null 2>&1; rc16=$?
+set -e
+ck  "2 で終わる"       "2" "$rc16"
+ck  "前任は生きたまま" "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[17] board の註から前任を読めなければ閉じない"
+NONOTE="$WS/.oe/nonote.md"
+# shellcheck disable=SC2016  # backtick は board の Markdown 記法
+printf '鮮度: 2026-09-12 / 現統括: pane `%%11`（註に前任が書かれていない）\n' > "$NONOTE"
+set +e
+out17="$("$OE_HANDOFF" retire -w "$WS" --board "$NONOTE" --handoff "$HANDOFF" --execute 2>&1)"; rc17=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc17"
+ckc "理由を言う"        "$out17" "board の註から前任を読めない"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[18] 機械の節が挙げた PR が申告に出てこなければ閉じない"
+MACH="$WS/.oe/mach.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  printf -- '- 501 draft=false 機械が挙げた別の PR\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |' '| --- | --- | --- |' '| PR #392 | 済んだ | マージ済み |'
+  printf '\n%s\n' '## owner が下した裁定' '-'
+} > "$MACH"
+set +e
+out18="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$MACH" --execute 2>&1)"; rc18=$?
+set -e
+ck  "非0 で終わる"      "1" "$rc18"
+ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 が申告に出てこない"
+ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[19] 閉じる直前に委譲子が現れたら閉じない"
+# 目印ファイルで切り替える（呼び出し回数に依らせると、実装の呼び方を変えたとき壊れる）
+LATE="$_TMP_DIR/late_child"
+cat > "$STUB/tmux" <<EOF
+#!/usr/bin/env bash
+printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
+case "\${1:-}" in
+  list-panes) cat "$ALIVE"; [ -f "$LATE" ] && printf '%%13\n'; exit 0 ;;
+  kill-pane)  grep -vxF -- "\${3:-}" "$ALIVE" > "$ALIVE.new" && mv "$ALIVE.new" "$ALIVE"; exit 0 ;;
+esac
+exit 0
+EOF
+chmod +x "$STUB/tmux"
+touch "$LATE"; mk_child "%13" "%10"
+: > "$CALL_LOG"
+set +e
+"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1; rc19=$?
+set -e
+ck  "非0 で終わる"          "1" "$rc19"
+ck  "kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+rm -f "$LATE" "$REG"/*.json
+
+echo "[20] 停止後の一覧が引けなければ「不在を確認した」と言わない"
+FAILAFTER="$_TMP_DIR/fail_after_kill"
+cat > "$STUB/tmux" <<EOF
+#!/usr/bin/env bash
+printf 'tmux %s\n' "\$*" >> "$CALL_LOG"
+case "\${1:-}" in
+  list-panes) [ -f "$FAILAFTER" ] && exit 1; cat "$ALIVE"; exit 0 ;;
+  kill-pane)  touch "$FAILAFTER"; exit 0 ;;
+esac
+exit 0
+EOF
+chmod +x "$STUB/tmux"
+rm -f "$FAILAFTER"; : > "$CALL_LOG"
+set +e
+out20="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc20=$?
+set -e
+ck  "非0 で終わる"           "1" "$rc20"
+ckc "確認できていないと言う" "$out20" "不在を確認できていません"
+nck "確認したとは言わない"   "$out20" "不在を確認しました"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

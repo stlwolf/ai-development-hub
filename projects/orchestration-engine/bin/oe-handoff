@@ -634,6 +634,12 @@ cmd_retire() {
   printf '=== oe-handoff retire%s ===\n' "$([ "$EXECUTE" -eq 1 ] && printf ' --execute' || printf '（下見・何も停止しません）')"
 
   [ -f "$handoff" ] || { err "引き継ぎ文書がありません: ${handoff}"; exit 2; }
+  # **閉じる判断に要る材料が観測できないなら、判断しない。**
+  # board と自ペインは「あれば見る」ではなく必須にする。無いまま進むと、後継本人かどうかも
+  # 席が動いていないかも確かめずに前任を閉じられる（閉じる操作は取り消しにくい）。
+  [ -n "$self" ] || { err "自分のペインが分かりません（tmux の中で走らせてください）"; exit 2; }
+  [ -n "$board" ] || { err "board の場所が決まりません（--board か OE_BOARD_FILE で渡してください）"; exit 2; }
+  [ -r "$board" ] || { err "board が読めません: ${board}"; exit 2; }
 
   # --- 前任の pane と session_id は「引き継ぎ記録」から取る ---
   # board の註からも取れるが、**2つが食い違っていたら進まない**（検査した相手と閉じる相手が
@@ -645,19 +651,29 @@ cmd_retire() {
     err "引き継ぎ記録から前任のペインを読めません（${handoff} の機械の節）"
     exit 2
   fi
-  if [ -n "$board" ] && [ -r "$board" ]; then
+  if true; then
     local board_pred
     # shellcheck disable=SC2016  # backtick は board の Markdown 記法で、展開させない
     board_pred="$(grep -m1 -- '現統括:' "$board" | grep -oE '前任 `%[0-9]+`' | grep -oE '%[0-9]+' | head -1)" || board_pred=""
-    if [ -n "$board_pred" ] && [ "$board_pred" != "$pred" ]; then
+    if [ -z "$board_pred" ]; then
+      # 註が読めないことを「食い違っていない」に畳まない。
+      note_fail "board の註から前任を読めない（「前任 \`%N\` は退任申告済み・停止待ち」の形が無い）。引き継ぎ記録と突き合わせられないので閉じない"
+    elif [ "$board_pred" != "$pred" ]; then
       err "引き継ぎ記録の前任（${pred}）と board の註（${board_pred}）が食い違っています"
       note_fail "前任が一意に決まらないので閉じない"
       _retire_report
+    else
+      note_ok "引き継ぎ記録の前任と board の註が一致している（${pred}）"
     fi
     # 席が自分に移っていることも見る（移っていないなら、まだ交代が済んでいない）
     local seat
     seat="$(oe_seat_resolve "$board")"
-    if [ -n "$self" ] && [ -n "$seat" ] && [ "$seat" != "$self" ]; then
+    if [ -z "$seat" ]; then
+      # **この枝はテストで踏めていない。** 上の註の検査が先に走り、註に前任の `%N` が在れば
+      # 席の解決も同じ行の `%N` を拾うので、「註は読めるが席は読めない」を fixture で作れない。
+      # 防御として残す（読めないことを「自分の席だ」に畳まないため）。
+      note_fail "board から席を読めない。自分が後継であることを確かめられないので閉じない"
+    elif [ "$seat" != "$self" ]; then
       note_fail "board の席が自分（${self}）でなく ${seat} を指している。先に take を通す"
     else
       note_ok "board の席は自分を指している"
@@ -711,7 +727,27 @@ cmd_retire() {
     fi
   fi
 
+  # --- 機械の節が挙げた項目それぞれに処分が付いているかを見る ---
+  # **表に1行あって語彙が正しいだけでは足りない。** 機械が挙げた項目が申告に出てこなければ、
+  # その項目には処分が付いていない。
+  local machine
+  machine="$(awk '/oe-handoff:machine:begin/,/oe-handoff:machine:end/' "$handoff")" || machine=""
+  local mnum
+  for mnum in $(printf '%s' "$machine" | grep -oE '^- [0-9]+ draft=' | grep -oE '[0-9]+' || true); do
+    if printf '%s' "$decl" | grep -qF -- "$mnum"; then
+      :
+    else
+      note_fail "機械の節が挙げた PR #${mnum} が申告に出てこない（処分が付いていない）"
+    fi
+  done
+  if printf '%s' "$machine" | grep -qE 'unpushed=[1-9]'; then
+    if printf '%s' "$decl" | grep -qE '未 ?push|unpushed'; then :; else
+      note_fail "機械の節が未 push を挙げているのに申告に出てこない"
+    fi
+  fi
+
   # --- 機械の検査をやり直して申告と突き合わせる ---
+  # **下見の時点の値ではなく、いまの値で突き合わせる。**
   local prs
   prs="$(oe_hs_open_prs "$WORKSPACE")"
   if [ -n "$prs" ] && [ "$prs" != "none" ]; then
@@ -729,6 +765,18 @@ cmd_retire() {
 $prs
 EOF_PRS
   fi
+  # 未 push と worktree も見る（open PR だけでは欠落を拾えない）
+  local repo_now
+  repo_now="$(oe_hs_repo_state "$WORKSPACE")"
+  # **「上流が無い」と「数えられなかった」を分ける。** 上流が無い枝は正当な状態で、比べる相手が
+  # 無いだけである。これを「分からない」と同じに扱うと、正当な状態で交代が止まる。
+  case "$repo_now" in
+    *'unpushed=unknown(no-upstream)'*) note_ok "未 push は比べる相手が無い（上流を持たない枝）" ;;
+    *unpushed=unknown*)                note_diff "未 push を数えられなかった（${repo_now}）" ;;
+    *unpushed=0*)                      note_ok "未 push は無い" ;;
+    *)                                 printf '%s' "$decl" | grep -qE '未 ?push|unpushed' \
+                                         || note_diff "未 push が残っているのに申告に出てこない（${repo_now}）" ;;
+  esac
 
   _retire_report
 }
@@ -759,23 +807,52 @@ _retire_report() {
   fi
 
   # --- 停止（前任のペインだけ）---
-  printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
   if ! command -v "$OE_HANDOFF_TMUX" >/dev/null 2>&1; then
     err "tmux が要ります"; exit 2
   fi
+
+  # **閉じる直前にもう一度数える。** 上の検査から下の kill までのあいだに前任が新しい委譲子を
+  # 起こしうる。ここを閉じるには前任の側にもロックを持たせる必要があり、それはこの単位の外なので、
+  # **窓は残る**（下の「残る窓」に書いた）。できるのは窓を最小にすることまでである。
+  local last_children last_rc last_count
+  last_children="$(oe_hs_children_of "$RETIRE_PRED")"; last_rc=$?
+  if [ "$last_rc" -ne 0 ]; then
+    err "閉じる直前の数え直しができませんでした。閉じません"
+    exit 1
+  fi
+  if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
+  if [ "$last_count" -ne 0 ]; then
+    err "閉じる直前に生きた委譲子が ${last_count} 件現れました。閉じません"
+    printf '%s\n' "$last_children" | sed 's/^/    - /'
+    exit 1
+  fi
+
+  printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
   if "$OE_HANDOFF_TMUX" kill-pane -t "$RETIRE_PRED" 2>/dev/null; then
     printf '閉じました。\n'
   else
     err "閉じられませんでした（既に不在かもしれません）"
     exit 1
   fi
-  # 停止の確認は list-panes の集合所属で見る（display-message は不在でも rc=0 と空を返す）
-  if "$OE_HANDOFF_TMUX" list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF -- "$RETIRE_PRED"; then
+  # 停止の確認は list-panes の集合所属で見る（display-message は不在でも rc=0 と空を返す）。
+  # **一覧そのものが引けなかったことを「不在」に畳まない。** 畳むと、観測できていないのに
+  # 「不在を確認した」と報告することになる。
+  local panes_after
+  if ! panes_after="$("$OE_HANDOFF_TMUX" list-panes -a -F '#{pane_id}' 2>/dev/null)"; then
+    err "停止後のペイン一覧を引けませんでした。**不在を確認できていません**（kill-pane は成功しています）"
+    exit 1
+  fi
+  if [ -z "$panes_after" ]; then
+    err "停止後のペイン一覧が空でした。**不在を確認できていません**"
+    exit 1
+  fi
+  if printf '%s\n' "$panes_after" | grep -qxF -- "$RETIRE_PRED"; then
     err "まだ生存しています: ${RETIRE_PRED}"
     exit 1
   fi
   printf '不在を確認しました（list-panes の集合所属で確認）。\n'
   printf '\n後始末（登記の掃除・worktree の掃除・issue の close）はしていません。人のゲートです。\n'
+  printf '残る窓: 閉じる直前の数え直しから kill までのあいだに前任が委譲子を起こした場合は拾えません。\n'
   printf '前任の会話は claude --resume %s で開き直せます。\n' "$RETIRE_SID"
   exit 0
 }
