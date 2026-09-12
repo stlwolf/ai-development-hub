@@ -203,7 +203,7 @@ set +e
 out8="$(GH_PRS='399 draft=false 別の作業' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc8=$?
 set -e
 ck  "非0 で終わる"        "1" "$rc8"
-ckc "食い違いを挙げる"    "$out8" "open PR #399 が申告に出てこない"
+ckc "食い違いを挙げる"    "$out8" "open PR #399 に処分が付いていない"
 ckc "閉じないと言う"      "$out8" "食い違っています"
 ck  "前任は生きたまま"    "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
@@ -319,7 +319,7 @@ set +e
 out18="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$MACH" --execute 2>&1)"; rc18=$?
 set -e
 ck  "非0 で終わる"      "1" "$rc18"
-ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 が申告に出てこない"
+ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 に処分が付いていない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo "[19] 閉じる直前に現れた委譲子を数え直して出す（閉じるのは止めない）"
@@ -425,7 +425,7 @@ set +e
 out21="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$SUB" --execute 2>&1)"; rc21=$?
 set -e
 ck  "非0 で終わる"      "1" "$rc21"
-ckc "欠落を見逃さない"  "$out21" "機械の節が挙げた PR #501 が申告に出てこない"
+ckc "欠落を見逃さない"  "$out21" "機械の節が挙げた PR #501 に処分が付いていない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo "[22] 閉じる直前に transcript が使えなくなっていたら閉じない"
@@ -591,6 +591,90 @@ ck  "非0 で終わる"            "1" "$rc29"
 ckc "字下げされた行を拾う"    "$out29" "PR #393"
 ckc "処分が無いと言う"        "$out29" "処分が付いていない（または語彙の外の）項目がある"
 ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[30] 申告の表: 項目名の literal TAB で処分が付いたように見せられない"
+# 以前は「項目<TAB>処分」に直してから `awk -F'\t'` で読み直していたので、**項目名に TAB が
+# あると列がずれ**、処分欄が空でも `済んだ` と読めた（実装SO の指摘・2026-09-13）。
+TABP="$WS/.oe/handoff-tab.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  # **本物の TAB を1つ入れる。** `printf '%b'` で作る（`\t` を文字列のまま置くと試験にならない）。
+  printf '| foo%b済んだ |  | 処分が空である |\n' '\t'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$TABP"
+ck "fixture に本物の TAB が在る" "1" "$(grep -c "$(printf '\t')" "$TABP" | tr -d ' ')"
+set +e
+out30="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$TABP" --execute 2>&1)"; rc30=$?
+set -e
+ck  "非0 で終わる"        "1" "$rc30"
+ckc "処分が無いと言う"    "$out30" "処分が付いていない（または語彙の外の）項目がある"
+ck  "前任は生きたまま"    "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[31] 機械の節の PR は、散文に番号を書いただけでは通らない"
+# 申告の節全体を部分一致で見ていたので、**表に別の適法な行を1つ置き、散文に番号を書くだけで**
+# 未処分の PR を通せた（実装SO の2レーンが独立に再現・2026-09-13）。
+PROSE="$WS/.oe/handoff-prose.md"
+{
+  printf '%s\n' '<!-- oe-handoff:machine:begin -->'
+  printf '%s\n' '## 観測できる状態'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペイン: `%%10`（tmux server pid `900`）\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任の session_id: `sid-pred`\n'
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
+  printf -- '- 前任のペインの pid: `910`\n'
+  printf '%s\n' '### open PR'
+  printf '%s\n' '- 501 draft=false 未処分にしたい PR'
+  printf '%s\n' '<!-- oe-handoff:machine:end -->'
+  printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
+  printf '%s\n' '| 項目 | 処分 | 補足 |'
+  printf '%s\n' '| --- | --- | --- |'
+  printf '%s\n' '| PR #392 | 済んだ | これは適法な行 |'
+  printf '\n%s\n' '- 返信待ち: PR #501'
+  printf '\n%s\n' '## owner が下した裁定'
+} > "$PROSE"
+set +e
+out31="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$PROSE" --execute 2>&1)"; rc31=$?
+set -e
+ck  "非0 で終わる"                "1" "$rc31"
+ckc "処分が無いと言う"            "$out31" "機械の節が挙げた PR #501 に処分が付いていない"
+ckc "表の語彙の検査は通っている"  "$out31" "申告の全項目に処分が付いている（1 件）"
+ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[32] 表の行に処分付きで書いてあれば通る（[31] の対になる確認）"
+OKP="$WS/.oe/handoff-okprose.md"
+sed 's/^| PR #392 | 済んだ | これは適法な行 |$/| PR #501 | 引き継ぐ | 表の行に処分付きで書いた |/' "$PROSE" > "$OKP"
+set +e
+out32="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$OKP" 2>&1)"; rc32=$?
+set -e
+ck  "下見は 0 で終わる"       "0" "$rc32"
+nck "PR の処分を落とさない"   "$out32" "PR #501 に処分が付いていない"
+
+echo "[33] 同一性の検査と kill のあいだに何も挟まない"
+# 以前は pid の突合が子の数え直しより前にあり、**確かめてから閉じるまでに別の処理が入っていた**。
+# そのあいだにペイン番号が再利用されると、確かめた相手と閉じる相手がずれる（実装SO の指摘）。
+# **窓を0にはできないが、あいだに何も挟まないことは機械で見られる。**
+# CALL_LOG の `kill-pane` の直前の tmux 呼び出しが、pid を要求する list-panes であることを見る。
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+: > "$CALL_LOG"
+set +e
+"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1
+set -e
+prev_call="$(awk '/^tmux kill-pane/{print prev; exit} {prev=$0}' "$CALL_LOG")"
+ckc "kill の直前は pid を引く呼び出し" "$prev_call" "pane_pid"
+ck  "kill-pane は1回だけ"              "1" "$(grep -c '^tmux kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

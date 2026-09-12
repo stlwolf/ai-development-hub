@@ -748,7 +748,11 @@ cmd_retire() {
   fi
 
   # --- 必須条件2（旧・必須条件3）: 申告の各項目に処分が付いている ---
-  local decl rows bad_rows
+  local decl parsed bad_rows
+  # **散文ではなく「処分が付いた表の行」を照合の相手にする。** 申告の節のどこかに番号が
+  # 現れるだけで通すと、`返信待ち: PR #501` と書くだけで未処分の PR を通せる（実装SO の
+  # 2レーンが独立に再現した・2026-09-13）。
+  DISPOSED=""
   decl="$(awk '/^## 前任の自己申告/,/^## [^前]/' "$handoff")" || decl=""
   if [ -z "$decl" ]; then
     note_fail "引き継ぎ文書に自己申告の節が無い"
@@ -771,7 +775,13 @@ cmd_retire() {
     # **塞げていないもの**: コードスパンの中のパイプ（`` | `a | b` | … | ``）はセルの境界として
     # 数える。この場合、処分の欄が語彙の外の文字列になるので**必須条件は落ちる**（fail-closed）。
     # 項目名の表示はずれるが、未処分が通ることはない。**Markdown の完全な解析はしない。**
-    rows="$(printf '%s\n' "$decl" | awk '
+    # **区切り文字で往復させない。** 以前は「項目<TAB>処分」に直してから `awk -F'\t'` で
+    # 読み直していたが、**項目名に literal TAB があると列がずれる**。`| foo<TAB>済んだ |  | … |`
+    # は処分欄が空でも `$2` が `済んだ` に見えて必須条件を通った（実装SO の指摘・2026-09-13）。
+    # 語彙の判定と件数と「処分の付いた項目」の抽出を**同じ awk の中で**済ませ、出力は行頭1文字の
+    # 種別だけで区別する（1行1件で、セルに改行は入らないので曖昧にならない）。
+    #   C <件数> / B <表示用の落ちた行> / D <処分が付いた項目名>
+    parsed="$(printf '%s\n' "$decl" | awk '
       /^[ \t]*\|/ {
         line = $0
         gsub(/\\\|/, "\001", line)
@@ -783,18 +793,24 @@ cmd_retire() {
         if (item ~ /^-{2,}$/) next
         if (item == "") next
         gsub(/\001/, "\\|", item); gsub(/\001/, "\\|", disp)
-        printf "%s\t%s\n", item, disp
-      }')" || rows=""
-    if [ -z "$rows" ]; then
+        count++
+        if (disp ~ /^(済んだ|引き継ぐ|取り消す)$/) { printf "D %s\n", item }
+        else { printf "B %s → 処分[%s]\n", item, disp }
+      }
+      END { printf "C %d\n", count }')" || parsed=""
+    local row_count
+    row_count="$(printf '%s\n' "$parsed" | sed -n 's/^C //p' | head -1)"
+    bad_rows="$(printf '%s\n' "$parsed" | sed -n 's/^B //p')"
+    # **処分の付いた項目だけを、あとの照合の相手にする。** 申告の散文に番号を書いただけで
+    # 通ってはいけない（下の「機械の節が挙げた項目」の照合で使う）。
+    DISPOSED="$(printf '%s\n' "$parsed" | sed -n 's/^D //p')"
+    if [ -z "${row_count:-}" ] || [ "$row_count" -eq 0 ]; then
       note_fail "自己申告の表に項目が1つも書かれていない（「保留ゼロ」とだけ書く形は通さない）"
+    elif [ -n "$bad_rows" ]; then
+      note_fail "処分が付いていない（または語彙の外の）項目がある"
+      printf '%s\n' "$bad_rows" | sed 's/^/    /'
     else
-      bad_rows="$(printf '%s\n' "$rows" | awk -F'\t' '$2 !~ /^(済んだ|引き継ぐ|取り消す)$/ {printf "%s → 処分[%s]\n", $1, $2}')" || bad_rows=""
-      if [ -n "$bad_rows" ]; then
-        note_fail "処分が付いていない（または語彙の外の）項目がある"
-        printf '%s\n' "$bad_rows" | sed 's/^/    /'
-      else
-        note_ok "申告の全項目に処分が付いている（$(printf '%s\n' "$rows" | grep -c '^' | tr -d ' ') 件）"
-      fi
+      note_ok "申告の全項目に処分が付いている（${row_count} 件）"
     fi
   fi
 
@@ -806,16 +822,18 @@ cmd_retire() {
   local mnum
   # **部分一致で照合しない。** `grep -F 501` は申告の「#3501」や「2026-09-501」にも当たるので、
   # 別の PR を書いた申告で欠落を見逃す（fail-open）。数字の前後が数字でないことまで見る。
+  # **照合の相手は `$DISPOSED`（処分が付いた表の行の項目名）である。** 申告の節全体を見ると、
+  # 散文に番号を書いただけで通る。
   for mnum in $(printf '%s' "$machine" | grep -oE '^- [0-9]+ draft=' | grep -oE '[0-9]+' || true); do
-    if printf '%s' "$decl" | grep -qE "(^|[^0-9])${mnum}([^0-9]|\$)"; then
+    if printf '%s\n' "$DISPOSED" | grep -qE "(^|[^0-9])${mnum}([^0-9]|\$)"; then
       :
     else
-      note_fail "機械の節が挙げた PR #${mnum} が申告に出てこない（処分が付いていない）"
+      note_fail "機械の節が挙げた PR #${mnum} に処分が付いていない（処分の付いた申告の行に出てこない）"
     fi
   done
   if printf '%s' "$machine" | grep -qE 'unpushed=[1-9]'; then
-    if printf '%s' "$decl" | grep -qE '未 ?push|unpushed'; then :; else
-      note_fail "機械の節が未 push を挙げているのに申告に出てこない"
+    if printf '%s\n' "$DISPOSED" | grep -qE '未 ?push|unpushed'; then :; else
+      note_fail "機械の節が未 push を挙げているのに、処分の付いた申告の行に出てこない"
     fi
   fi
 
@@ -829,10 +847,10 @@ cmd_retire() {
       [ -n "$n" ] || continue
       case "$n" in unknown*) note_diff "open PR を数えられなかった（${n}）" ; continue ;; esac
       local num; num="${n%% *}"
-      if printf '%s' "$decl" | grep -qE "(^|[^0-9])${num}([^0-9]|\$)"; then
+      if printf '%s\n' "$DISPOSED" | grep -qE "(^|[^0-9])${num}([^0-9]|\$)"; then
         :
       else
-        note_diff "open PR #${num} が申告に出てこない（${n#* }）"
+        note_diff "open PR #${num} に処分が付いていない（${n#* }）"
       fi
     done <<EOF_PRS
 $prs
@@ -849,8 +867,8 @@ EOF_PRS
     while IFS= read -r wtp; do
       [ -n "$wtp" ] || continue
       base="$(basename "$wtp")"
-      printf '%s' "$decl" | grep -qF -- "$base" \
-        || note_diff "main 以外の worktree が残っているのに申告に出てこない（${base}）"
+      printf '%s\n' "$DISPOSED" | grep -qF -- "$base" \
+        || note_diff "main 以外の worktree に処分が付いていない（${base}）"
     done <<EOF_WT
 $wt_now
 EOF_WT
@@ -909,6 +927,23 @@ _retire_report() {
     exit 1
   fi
 
+
+  # **閉じる直前にもう一度数える。止めるためではなく、後継が誰を引き受けたかを出すためである。**
+  # 子は交代を止めない（owner 裁定 2026-09-13）ので、下見と実行のあいだに子が増えても閉じる。
+  # ただし**増えたことは出す**。後継が声をかける相手が変わるからである。
+  local last_children last_rc last_count
+  last_children="$(oe_hs_children_of "$RETIRE_PRED")"; last_rc=$?
+  if [ "$last_rc" -ne 0 ]; then
+    printf '閉じる直前の数え直しができませんでした（誰を引き受けたかは確かめられていません）。閉じます。\n'
+  else
+    if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
+    printf '閉じる直前の生きた委譲子: %s 件\n' "$last_count"
+    if [ "$last_count" -ne 0 ]; then
+      printf '%s\n' "$last_children" | sed 's/^/    - /'
+      printf '**この子は後継が引き受ける。声をかけるまで、子が自分から出す報告は前任のペインを指したままである。**\n'
+    fi
+  fi
+
   # **閉じるペインが、いまも記録の session のものであることを確かめる。**
   # transcript が使えることは「記録の session が生きている」ことしか言わない。**ペイン番号が
   # 再利用されていれば、そのペインに座っているのは別の session である**（拍動 198 件に対して
@@ -927,6 +962,10 @@ _retire_report() {
     exit 1
   fi
 
+  # **同一性の検査は kill の直前に置く。** 以前はこのブロックが子の数え直しより前にあり、
+  # 検査と `kill-pane` のあいだに別の処理が入っていた。そのあいだに前任が終わってペイン番号が
+  # 再利用されると、**確かめた相手と閉じる相手がずれる**（実装SO の指摘・2026-09-13）。
+  # 窓を0にはできないが、**あいだに何も挟まない**ところまでは寄せられる。
   # **session_id の突合だけでは足りない。** `oe_hs_session_for_pane` には「ペインが再利用され、
   # 新しいセッションがまだ一度も拍動を書いていないあいだは旧世代の session_id を返す」穴がある
   # （`lib/handoff-state.sh` の注記）。その窓では上の突合が通ってしまい、**無関係な新しい
@@ -947,22 +986,6 @@ _retire_report() {
   if [ "$pid_now" != "$pid_rec" ]; then
     err "${RETIRE_PRED} で走っているプロセスが変わっています（記録 pid ${pid_rec} / いま ${pid_now}）。**ペインが作り直されたか再利用されています。閉じません**"
     exit 1
-  fi
-
-  # **閉じる直前にもう一度数える。止めるためではなく、後継が誰を引き受けたかを出すためである。**
-  # 子は交代を止めない（owner 裁定 2026-09-13）ので、下見と実行のあいだに子が増えても閉じる。
-  # ただし**増えたことは出す**。後継が声をかける相手が変わるからである。
-  local last_children last_rc last_count
-  last_children="$(oe_hs_children_of "$RETIRE_PRED")"; last_rc=$?
-  if [ "$last_rc" -ne 0 ]; then
-    printf '閉じる直前の数え直しができませんでした（誰を引き受けたかは確かめられていません）。閉じます。\n'
-  else
-    if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
-    printf '閉じる直前の生きた委譲子: %s 件\n' "$last_count"
-    if [ "$last_count" -ne 0 ]; then
-      printf '%s\n' "$last_children" | sed 's/^/    - /'
-      printf '**この子は後継が引き受ける。声をかけるまで、子が自分から出す報告は前任のペインを指したままである。**\n'
-    fi
   fi
 
   printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
