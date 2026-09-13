@@ -12,7 +12,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-09-06-episode-359-settings-harness-layer.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-13
+    ref: "#390"
+    state: followed
+    note: "前の単位の教訓（確かめた範囲より広く書く）を Step 0「一次情報の当て直し」として手順に落とし、実際に食い違い2件を検出した。それでも同じ型を2回踏んだので、手順化は検出を上げたが再発は止めていない"
 ---
 
 書いた教訓は、次の作業で発火しない。**episode に節を立てて言語化したことは、同じ型を次に踏まないことの根拠にならない。**

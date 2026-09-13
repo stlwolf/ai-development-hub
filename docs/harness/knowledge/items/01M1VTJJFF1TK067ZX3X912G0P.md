@@ -8,7 +8,11 @@ prediction: "自分の手元の1環境で「別の層が持つ」ことを確か
 source:
   ref: "docs/harness/episodes/2026-09-03-episode-307-opus5-rules-audit.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-13
+    ref: "#390"
+    state: followed
+    note: "配布物の既存規定を2つ狭めた（$PARENT_TMUX_PANE を順序の2番目へ落とす・素の verb 呼び出しを routing へ寄せる）。どちらも消さずに残し、routing 先の orchestration-toolkit が同じ sync で3ツールへ配られることを sync スクリプトで確かめてから寄せた"
 exclusions:
   - "配布先が1つしかない場合（一般化する余地がない）"
   - "消す対象が配布先ごとに分岐して書かれている場合（配布先ごとの判定が既に強制されている）"

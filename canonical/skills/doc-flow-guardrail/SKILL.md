@@ -68,8 +68,9 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。**追記は closure から指せる形で残す** — 判断の why・失敗と撤回の経緯・棄却した選択肢・tier のトリガに当たる出来事は、起きたその場で節を立てて書く。closure ではそれを再掲せず本文を指す（`episode-retrospective` の read/write 契約）。
 - **昇格の印**: 「これは昇格を考えるべきかもしれない」と思った**その場で**、本文に `昇格の印: <1行>` を**行頭の裸行**として置く（**囲むと印にならない**）。規約は `document-format.md`「ライフサイクル規範」節。印は候補であって判定ではないので、迷ったら置く。
 - **昇格規則**: 設計級 / durable な知見は closure・worktree 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（詳細 `document-format.md`「昇格義務」節〔§13〕・1行版〔§13.6〕）。
-- **報告2段構え**: file が正本・`oe-send` の1行はポインタ。**起動方法を決める前に `command -v oe-send` で確かめる** — PATH に在ればそのまま呼べるが、無ければ engine の `bin/` のパスで呼ぶ（hub では `projects/orchestration-engine/bin/oe-send "$PARENT_TMUX_PANE" '...'`）。**PATH に無いのに素の名前で呼ぶと `exit 127` になり、送れていないのに送ったつもりで止まる**ので、送信後に exit code を確かめる。pane 引数は変数展開のため double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**。
-- **返信は画面でなく `oe-send` で返す**: 親からの問い（停止してよいか・状態はどうか等）に**画面へ書くだけでは親に届かない**。答えは必ず `oe-send "$PARENT_TMUX_PANE"` で返す（実例2件・#336）。逆に**親からの指示が長時間来ないと感じたら**、`oe-confirm` で自分宛の送信の到達状態を確かめ、**受領を確認できないなら親へ照会する**（子が自分で切り分けた実例あり・#336）。**「受領印が無い＝落ちた」と断定しないこと** — 印が無い理由には「受け手が印を書けなかった」「計装を確認できない」が混じっており、実測ではそちらが多数派だった。`oe-confirm` はそれを分けて出すので、断定でなく「確認できていない」として照会する。
+- **報告の宛先**: **(1) 明示された宛先（直近の指示と brief の「報告の宛先」のうち新しいほう）→ (2) `$PARENT_TMUX_PANE`** の順で決める。`$PARENT_TMUX_PANE` は**起動時に焼き込まれた値で、あとから書き換わらない**（`oe-delegate` が環境変数として渡すだけで、差し替えの口を書き出さない）ので、**統括が交代すると停止した前任を指したまま残る**。brief も前任が書いたものなら同じく古い。**明示を受けたら、その pane が `oe-tree` に生きたノードとして出ることを確かめてから採る**（遅れて届いた古い明示を掴まないため。交代の直後なら現統括は root として出るが、入れ子の委譲では親は中間ノードなので root とは限らない）。**確かめられないときは送らず、木に出ている生きた統括へ照会する。** この規則は、同じ配布物の他のスキルが書く `oe-send "$PARENT_TMUX_PANE"` に**優先する**。 `oe-send` は生存しない `%N` を exit 1 で弾くので**死んだ宛先へ黙って送ることはない**が、**exit 0 は配送の成功を意味しない**（取り込みの確認は受領印の層・下記）。**`oe-report` は `PARENT_TMUX_PANE` を先に読むので、交代のあとは使わない。**
+- **報告2段構え**: file が正本・`oe-send` の1行はポインタ。**起動方法を決める前に `command -v oe-send` で確かめる** — PATH に在ればそのまま呼べるが、無ければ engine の `bin/` のパスで呼ぶ（hub では `projects/orchestration-engine/bin/oe-send %N '...'`）。**PATH に無いのに素の名前で呼ぶと `exit 127` になり、送れていないのに送ったつもりで止まる**ので、送信後に exit code を確かめる。pane 引数を変数で渡すなら double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**。
+- **返信は画面でなく `oe-send` で返す**: 親からの問い（停止してよいか・状態はどうか等）に**画面へ書くだけでは親に届かない**。答えは必ず `oe-send %N` で返す（`%N` は上の「報告の宛先」で決めた宛先に置き換える）（実例2件・#336）。逆に**親からの指示が長時間来ないと感じたら**、`oe-confirm` で自分宛の送信の到達状態を確かめ、**受領を確認できないなら親へ照会する**（子が自分で切り分けた実例あり・#336）。**「受領印が無い＝落ちた」と断定しないこと** — 印が無い理由には「受け手が印を書けなかった」「計装を確認できない」が混じっており、実測ではそちらが多数派だった。`oe-confirm` はそれを分けて出すので、断定でなく「確認できていない」として照会する。
 - **malform hygiene**: 子ペインの生 capture を会話へ貼らない。要約するか path（ファイル/ログの場所）で渡す。
 - **out-of-scope は実装せず surface**（`implementer-contract`。完了判断・レビューに影響するもののみ）。
 - **指示矛盾ガード**: 親の指示が brief の終端定義または plan の step 構成と矛盾する場合は、**従う前に**矛盾を指摘して確認を取る（順序は「指摘 → 確認 → 従う」・不服従ではなく確認要求）。矛盾に当たるのは (a) 終端の再定義 (b) 未達 step の飛び越し (c) step の要件の弱体化。**step ID が書かれていること自体は免責にならない**（指された位置までの義務が履行済みかで判断する。履行済みの位置への指定・差し戻しは矛盾ではない）。正本と弁別子は `implementer-contract`。
@@ -100,6 +101,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - SO モード: so.design=[weak|strong] / so.impl=[weak|strong] / reason=[なぜ] / lanes=[設計3・実装2 等]
 - 参照（タスク固有）: [読むべき issue / doc / コード]
 - 成果物の置き場: [plan / episode / 変更対象]
+- 報告の宛先: [%N（統括がそのとき自分のペインを引いて書く。前の brief から写さない）。空欄なら子は `$PARENT_TMUX_PANE` に落ちる]
 ````
 
 **固定 vs 可変の境界**: 「SO を通すか」「昇格するか」「報告の形」はタスクに依らず固定。「SO のモード / レーン」「scope」「受け入れ基準」はタスク risk 依存で可変。
@@ -117,16 +119,25 @@ brief 組立時に、過去の失敗から蒸留した negative knowledge を突
 
 ## ③ cold-start（新 repo / 新統括セッション）
 
-**統括 spawn の入口**: あなたが並列統括として起動された場合（`oe-delegate` で子登記後に `oe-register root --force` で並列 root へ自己昇格した、または spawn を経ず手動起動した）は、まずこのスキルを読んで cold-start（フロー地図・routing・固定節テンプレ・spec 解決規約）を立ち上げてから統括業務に入る。
+**統括 spawn の入口**: あなたが並列統括として起動された場合（`oe-delegate` で子登記後に `oe-register root --force` で並列 root へ自己昇格した、spawn を経ず手動起動した、**または `oe-handoff` の計画的な交代で後継として起きた**）は、まずこのスキルを読んで cold-start（フロー地図・routing・固定節テンプレ・spec 解決規約）を立ち上げてから統括業務に入る。
 
 memory が無くても、このスキル1本を読めばフロー + 参照ポインタが立ち上がる:
 
 1. フロー地図（①）と routing 表（下記）で、いま居る層と次に通すゲートを掴む。
 2. 委譲するなら固定節テンプレ（②）を brief に貼り、可変節を埋める。
 3. spec の詳細は「spec 解決規約」で `document-format.md` を開く。
-4. 手動起動した統括ペインは `oe-register root` で自己登記する（spawn を経ないため registry に出ず oe-tree / cockpit `--pick` に現れない → 登記で root として可視化・jump 可）。既存 pane を自分の下へ委譲登記するなら `oe-register link %N`。
+4. 手動起動した統括ペインは `oe-register root` で自己登記する（spawn を経ないため registry に出ず oe-tree / cockpit `--pick` に現れない → 登記で root として可視化・jump 可）。既存 pane を自分の下へ委譲登記するなら `oe-register link %N`。**`oe-*` は原則 PATH 未登録なので、起動方法を決める前に `command -v <verb>` で確かめる**（無ければ engine の `bin/` のパスで呼ぶ。規約は `orchestration-toolkit`）。
+5. **計画的な交代（`oe-handoff`）の後継として起きたなら、席を取ったあとに前任の生きた委譲子の登記を自分の下へつけかえる**（`oe-register link %N`）。**任意の後片づけではなく交代の工程の一部**で、踏まないと子は停止した前任の下に残る（#390）。
+   - **相手は `retire --execute` の出力の一覧から取る**（下見の `take` の一覧は古い）。**各行は `    - %N ラベル` の形なので、箇条書き記号を落とした先頭フィールドの `%N` だけを採る**（ラベルにも `%N` が入りうる）。**「数え直しができませんでした」と出たら0件に畳まず**、`oe-tree` で前任の下を拾う。
+   - **順序は `retire --execute` のあと**（前任が生きているうちは guard が拒否する）。**間に別の作業を挟まず、停止の直後に打つ** — `oe-register link` は相手が live かと現在の親しか見ないので、間が空くほど `%N` が別のペインに再利用されて無関係な相手を子に登記する窓が広がる。**拒否されたら `--force` を足さず、pane が再利用されていないかを確かめる。**
+   - **検算は `oe-tree`。** **前任の pane が木に現れないこと**と、**引き受けた子が自分の下に出ること**を見る。**root の本数では見ない** — 前任の登記が消えても、つけかえ残しがあるかぎり前任は `?` という名前の root として木に残る。**前任が木に残っていたら、まずつけかえ残しを疑う**（再登記では子は移らない）。**子が0体なのに前任の登記が残る場合だけ**、`oe-register root` を打ち直して登記への書き込みの契機を作る（冪等・`--label` と `-w` は省いてよい。**GC は掃けないことがあるので、消えたかは木で見る**）。
+   - **つけかえは報告の宛先を直さない。** 子へ「報告の宛先は後継の pane である」ことを**明示して伝える**工程が別に要る（挨拶では塞がらない）。`retire --execute` が停止まで通った出力もこれを明示する。
+   - **自己登記は `take` が済ませている**ので、その「済んだこと」に出ていれば手順4 は要らない。**verb の起動方法は `orchestration-toolkit`、`link` / `root` の guard と `--force` の可否は `delegate-task` へ。GC の挙動は engine の `bin/README.md` と `lib/delegate-registry.sh` にしかない**（スキル層に無い）。
 
-**統括 succession の復旧は本スキルの範囲外**（engine track・#238/#239）。誤 close / resume からの復帰手順（board `現統括:` を新 pane へ張替 → 孤児 sidecar 掃除 → 検証。死んだ親の下へ再 parenting しない＝後継は並列 peer）は discussion `projects/orchestration-engine/docs/discussions/2026-07-13-discussion-supervisor-succession-recovery-and-observability.md`（§4-2 / §4-3 / §5(0)）を参照する。自動化 verb `oe-reseat` は仮称・未実装。
+**統括 succession は2つに分かれる。** 分かれ目は前任が自分の状態を申告できるかどうかの1点である。
+
+- **計画的な交代（前任が応答できる）は本スキルが持つ。** verb は `oe-handoff`（`prepare` / `start` / `take` / `retire`）で実装済みである。**後継が踏む工程は上の cold-start の手順5**（登記のつけかえと、子への宛先の通知）。
+- **復旧（前任が応答しない）は本スキルの範囲外**（engine track・#238/#239・#355）。誤 close / resume からの復帰手順（board `現統括:` を新 pane へ張替 → 孤児 sidecar 掃除 → 検証。死んだ親の下へ再 parenting しない＝後継は並列 peer）は discussion `projects/orchestration-engine/docs/discussions/2026-07-13-discussion-supervisor-succession-recovery-and-observability.md`（§4-2 / §4-3 / §5(0)）を参照する。自動化 verb `oe-reseat` は仮称・未実装。
 
 ## routing 表（遷移・ゲート → 必ず通すスキル・DJ-11 layer b）
 
