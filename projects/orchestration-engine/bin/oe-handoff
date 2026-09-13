@@ -1103,6 +1103,10 @@ _retire_report() {
   elif [ "$sid_now" != "$RETIRE_SID" ]; then
     err "${RETIRE_PRED} に座っているのは別の session です（記録 ${RETIRE_SID} / いま ${sid_now}）。**ペイン番号が再利用されています。閉じません**"
     exit 1
+  else
+    # **一致したことも出す。** 出さないと「引けて一致した」と「引けなかった」が
+    # 画面で区別できない（緩めた結果を記録し損ねる形になる）。
+    printf '閉じる直前の session_id: %s（記録と一致）\n' "$sid_now"
   fi
 
   # **同一性の検査は kill の直前に置く。** 以前はこのブロックが子の数え直しより前にあり、
@@ -1190,7 +1194,14 @@ _retire_report() {
   printf '        **後継が各子へ「報告の宛先は後継の pane である」と明示して伝えれば塞がります。**\n'
   printf '        挨拶では塞がりません。oe-report は PARENT_TMUX_PANE を先に読み、oe-delegate は差し替えの口を書き出さないので、\n'
   printf '        宛先が変わるのは子が新しい pane を明示して送るときだけです。\n'
-  printf '前任の会話は claude --resume %s で開き直せます。\n' "$RETIRE_SID"
+  # **session_id が無いのに「開き直せます」と言わない。** 前提を緩めた結果、記録に ID が
+  # 無いまま閉じる経路ができた。そこで同じ文を出すと、**空の ID を渡す案内**になる
+  # （「確かめられなかった」を「使える値」に畳む形・自分で見つけた・2026-09-13）。
+  if [ -n "$RETIRE_SID" ] && [ "$RETIRE_SID" != "unknown" ]; then
+    printf '前任の会話は claude --resume %s で開き直せます。\n' "$RETIRE_SID"
+  else
+    printf '**前任の session_id は記録にありません。** 開き直すには claude --resume の一覧から選んでください。\n'
+  fi
   exit 0
 }
 

@@ -167,6 +167,9 @@ ck  "0 で終わる"                "0" "$rc2"
 ckc "記録に無いと出す"          "$out2" "session_id が引き継ぎ記録に無い"
 ckc "閉じない理由にしないと出す" "$out2" "閉じない理由にはしない"
 ckc "復帰の ID が残らないと出す" "$out2" "復帰の ID は手元に残りません"
+# **空の ID で「開き直せます」と言わない**（緩めたことで生じた経路・自分で見つけた）
+nck "空の resume を案内しない"  "$out2" "claude --resume  で開き直せます"
+ckc "一覧から選べと案内する"    "$out2" "claude --resume の一覧から選んでください"
 ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 mk_handoff "$HANDOFF" "sid-pred" "済んだ"
@@ -1068,6 +1071,19 @@ set -e
 ck  "非0 で終わる"                  "1" "$rc47"
 ckc "空白込みの basename で言う"    "$out47" "main 以外の worktree に処分が付いていない（foo bar）"
 ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[48] 引けて記録と一致したときは「一致」と出す（引けた／引けなかったを畳まない）"
+# 緩めたことで「引けなかった」経路が通るようになった。**一致した側も出さないと、画面で
+# 区別できない**（緩めた結果を記録し損ねる形・自分で見つけた・2026-09-13）。
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+set +e
+out48="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc48=$?
+set -e
+ck  "0 で終わる"                "0" "$rc48"
+ckc "一致と出す"                "$out48" "閉じる直前の session_id: sid-pred（記録と一致）"
+ckc "resume の案内を出す"       "$out48" "claude --resume sid-pred で開き直せます"
+ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
