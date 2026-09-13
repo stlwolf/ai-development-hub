@@ -9,9 +9,13 @@ exclusions:
   - "上流の条件が、変更後の成果物の状態を直接述べている場合（写した時点で変更を見る受入になっている）"
   - "受入の判定を上流自身が行う場合（母集団の設計責任が自分に無い）"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-14
+    ref: "#390"
+    state: followed
+    note: "PR #397: 境界の3項をそのまま写したうえで、変更そのものを見る静的受入13項と編集前の実測表を足した。ただし錨の置き場が甘く、2項（unknown を0に畳まない・閾値85）が編集前から通る形で、設計SO に指摘されて④と規約の中へ付け替えた"
 ---
 
 **上流が固定する受入の境界は「どこまで確かめるか」を決めるもので、「何を確かめるか」ではない。** 2つを同じものとして写すと、変更そのものを見ない受入ができる。

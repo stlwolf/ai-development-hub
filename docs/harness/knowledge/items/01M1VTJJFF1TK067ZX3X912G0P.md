@@ -13,6 +13,10 @@ observations:
     ref: "#390"
     state: followed
     note: "配布物の既存規定を2つ狭めた（$PARENT_TMUX_PANE を順序の2番目へ落とす・素の verb 呼び出しを routing へ寄せる）。どちらも消さずに残し、routing 先の orchestration-toolkit が同じ sync で3ツールへ配られることを sync スクリプトで確かめてから寄せた"
+  - date: 2026-09-14
+    ref: "#390"
+    state: followed
+    note: "PR #397: orchestration-toolkit への routing を2箇所で規約への参照に置き換えたが、消さずに規約の末尾へ残し、grep の件数が 8→7 になったことと移動先を報告に明示した。「別の層が持つから消してよい」で済ませていない"
 exclusions:
   - "配布先が1つしかない場合（一般化する余地がない）"
   - "消す対象が配布先ごとに分岐して書かれている場合（配布先ごとの判定が既に強制されている）"
