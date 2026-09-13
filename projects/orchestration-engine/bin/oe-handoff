@@ -1135,6 +1135,29 @@ _retire_report() {
     exit 1
   fi
 
+  # **tmux server の世代が変わっていたら閉じない。**
+  # pane 番号も OS の pid も、**server が再起動すれば作り直されて再利用される。** 世代が違えば
+  # `%N` は別のペインを指しうるし、同じ番号の pid が別のプロセスに当たることもある。
+  # `prepare` は機械の節に server pid を記録しているので、閉じる直前に突き合わせる
+  # （実装SO の指摘・2026-09-13）。**記録が無い古い形式でも閉じない。**
+  local spid_rec spid_now
+  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
+  spid_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペイン: ' | sed -E 's/.*tmux server pid `([^`]*)`.*/\1/')" || spid_rec=""
+  case "$spid_rec" in
+    ''|*[!0-9]*)
+      err "引き継ぎ記録に tmux server の pid がありません（古い形式の引き継ぎ文書です）。**世代が同じだと確かめられないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
+      exit 1 ;;
+  esac
+  spid_now="$(oe_hs_server_pid)"
+  if [ -z "$spid_now" ]; then
+    err "いまの tmux server の pid を引けませんでした。**世代が同じだと確かめられないので閉じません**"
+    exit 1
+  fi
+  if [ "$spid_now" != "$spid_rec" ]; then
+    err "tmux server の世代が変わっています（記録 ${spid_rec} / いま ${spid_now}）。**ペイン番号も pid も作り直されているので、${RETIRE_PRED} が前任だとは言えません。閉じません**"
+    exit 1
+  fi
+
   # **pid の一致だけでは「前任がまだ座っている」ことを示さない。**
   # `#{pane_pid}` は**そのペインの最初のプロセス**である。ペインのコマンドとして `claude` を
   # 起こした形（`oe-handoff start` と engine の spawn はこれ）なら claude 自身だが、

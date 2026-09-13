@@ -1085,6 +1085,34 @@ ckc "resume の案内を出す"       "$out48" "claude --resume sid-pred で開�
 ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 
+echo "[49] tmux server の世代が変わっていたら閉じない"
+# pane 番号も OS の pid も、**server が再起動すれば作り直されて再利用される。** 世代が違えば
+# `%N` は別のペインを指しうる。session_id が unknown でも pid が一致してしまう経路が在った
+# （実装SO の指摘・2026-09-13）。記録の server pid と突き合わせる。
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+: > "$CALL_LOG"
+set +e
+out49="$(OE_HS_SERVER_PID="901" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc49=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc49"
+ckc "世代が変わったと言う"      "$out49" "tmux server の世代が変わっています（記録 900 / いま 901）"
+ckc "前任だと言えないと言う"    "$out49" "前任だとは言えません"
+ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[50] 引き継ぎ記録に tmux server の pid が無ければ閉じない（古い形式）"
+NOSPID="$WS/.oe/handoff-nospid.md"
+# shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
+sed 's/^- 前任のペイン: `%10`（tmux server pid `900`）$/- 前任のペイン: `%10`/' "$HANDOFF" > "$NOSPID"
+ck "fixture から server pid が消えている" "0" "$(grep -c 'tmux server pid' "$NOSPID" | tr -d ' ')"
+: > "$CALL_LOG"
+set +e
+out50="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$NOSPID" --execute 2>&1)"; rc50=$?
+set -e
+ck  "非0 で終わる"            "1" "$rc50"
+ckc "古い形式だと言う"        "$out50" "tmux server の pid がありません（古い形式の引き継ぎ文書です）"
+ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
