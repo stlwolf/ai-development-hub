@@ -10,6 +10,10 @@
 #
 # tmux は OE_HANDOFF_TMUX のノブで stub に差し替える。**本物のペインを割らない。**
 set -uo pipefail
+# oe-handoff は jq を必須にしている（bin/oe-handoff の入口で exit 2）。依存が無い環境で
+# 「依存不足」を「テスト失敗」として報告しないよう、近隣の handoff テストと同じ形で skip する。
+command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OE_HANDOFF="$PROJECT_DIR/bin/oe-handoff"
