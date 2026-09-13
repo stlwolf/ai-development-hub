@@ -385,7 +385,7 @@ cmd_prepare() {
 # **起動と kickoff を分ける。** 起こした直後のペインは入力を受け付けられないことがあり、そこへ
 # 送ると取りこぼす。ペインが現れてから送る。
 cmd_start() {
-  local handoff pane rc
+  local handoff pane rc self_pane
   handoff="${HANDOFF:-${OE_HANDOFF_FILE:-${WORKSPACE}/.oe/handoff.md}}"
   [ -f "$handoff" ] || {
     err "引き継ぎ文書がありません: ${handoff}（先に oe-handoff prepare を走らせてください）"
@@ -395,16 +395,24 @@ cmd_start() {
     exit 1
   fi
 
+  # 後継のペインは**前任のペインを割って**作る。-t を渡さない split-window は
+  # 「フォーカスしているペイン」を割るので、前任が自分のペインを割るつもりで撃っても
+  # 別の window に出る（実地で踏んだ・2026-09-14）。oe-delegate は同じ理由で -t を渡している。
+  # 自分のペインが分からないなら割る先が決まらないので、黙って撃たずに止める（fail-closed）。
+  self_pane="${TMUX_PANE:-}"
+  [ -n "$self_pane" ] || { err "自分のペインが分かりません（tmux の中で走らせてください）"; exit 2; }
+
   if [ "$DRY_RUN" -eq 1 ]; then
     printf '=== oe-handoff start（dry-run・何も起こしません）===\n'
     printf '起こすもの  : %s（%s で・PARENT_TMUX_PANE は渡さない）\n' "$OE_HANDOFF_CLAUDE" "$WORKSPACE"
+    printf '割る先      : %s（自分のペイン）\n' "$self_pane"
     printf '送るもの    : %s を読んで進めて。\n' "$handoff"
     printf '登記        : しない（後継は委譲子ではない）\n'
     exit 0
   fi
 
   command -v "$OE_HANDOFF_TMUX" >/dev/null 2>&1 || { err "tmux が要ります"; exit 2; }
-  pane="$("$OE_HANDOFF_TMUX" split-window -d -P -F '#{pane_id}' -c "$WORKSPACE" "$OE_HANDOFF_CLAUDE" 2>/dev/null)"; rc=$?
+  pane="$("$OE_HANDOFF_TMUX" split-window -d -P -F '#{pane_id}' -t "$self_pane" -c "$WORKSPACE" "$OE_HANDOFF_CLAUDE" 2>/dev/null)"; rc=$?
   if [ "$rc" -ne 0 ] || [ -z "$pane" ]; then
     err "後継のペインを起こせませんでした"
     exit 1
