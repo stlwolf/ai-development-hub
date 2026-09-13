@@ -79,5 +79,24 @@ else
   echo "  SKIP: root では -r が権限ビットを迂回するため権限ケースを飛ばす"
 fi
 
+echo "[7] --help / -h: spawn 前に exit 0・usage 出力"
+rc=0; H="$("$BASH" "$OE" --help 2>&1)" || rc=$?
+ck    "exit 0"  "0" "$rc"
+cksub "usage"   "usage: oe" "$H"
+rc=0; H="$("$BASH" "$OE" -h 2>&1)" || rc=$?
+ck    "-h exit 0"  "0" "$rc"
+cksub "-h usage"   "usage: oe" "$H"
+
+echo "[8] unknown option: exit 2・engine を起動しない"
+rc=0; H="$("$BASH" "$OE" --bogus 2>&1)" || rc=$?
+ck    "exit 2"  "2" "$rc"
+cksub "message" "unknown option" "$H"
+
+echo "[9] --task-file 後の余分な引数: exit 2"
+good="$_TMP_DIR/good.md"; echo "task" > "$good"
+run --task-file "$good" extra-arg
+ck    "exit 2"  "2" "$RUN_RC"
+cksub "message" "unexpected argument" "$RUN_ERR"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

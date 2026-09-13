@@ -32,52 +32,89 @@ trap oe_cleanup EXIT INT TERM
 
 # oe_generate_session_id は lib/session.sh に移設（bin/oe-capture と共有）
 
+oe_usage() {
+  cat >&2 <<'EOF'
+usage: oe [-h|--help] [--task-file <path>] [<task-description>]
+
+  1 サイクルの自律オーケストレーション（envelope→spawn→capture→verify→monitor）。
+  非対話・wez + AI CLI（claude -p 等）。
+
+  <task-description>  子ペインへ送るタスク（1行または複数語。改行を含む長文は --task-file を使う）
+  --task-file <path>  タスク記述をファイルから読み込む（Markdown の改行・特殊文字を安全に渡す）
+  -h, --help          このヘルプを表示
+
+exit: 0 → 正常終了（-h / --help もここ）
+      2 → usage エラー（unknown option・余分な引数・--task-file の異常系）
+      1 → monitor / verify 等の実行時失敗（1 サイクル起動後）
+
+--task-file の異常系は暗黙にフォールバックせず、明示エラーを stderr に出して exit 2 で弾く。
+EOF
+}
+
 oe_main() {
+  # E2E タスク説明（未指定時は既定値）
+  # Step 4-4 Phase A 反映 (F-5): --task-file <path> オプションを受け付け、ファイル内容を読み込む。
+  # Markdown を shell expansion 経由で渡す破綻 (改行 / 特殊文字) を回避。
+  # 後方互換: bin/oe "<text>" 形式も引き続き動作。
+  local task_description=""
+  while [[ "${1:-}" == -* ]]; do
+    case "$1" in
+      --task-file)
+        # --task-file 異常系の仕様 (#99): 空 / 不在 / 不正パス (ディレクトリ・非通常ファイル・権限) を
+        # 明示エラー + exit 2 (usage エラー) で弾く。文言・exit code は bin/oe-capture の validation
+        # 規約に揃える。これにより「空ファイルが暗黙に既定タスクへフォールバック」「読めないファイルが
+        # set -e 下の cat 失敗で exit 1 + 生エラー」といった暗黙挙動を排除する。
+        local task_file="${2:-}"
+        if [[ -z "$task_file" ]]; then
+          echo "oe: --task-file requires a path argument" >&2
+          return 2
+        fi
+        if [[ ! -e "$task_file" ]]; then
+          echo "oe: --task-file: file not found: $task_file" >&2
+          return 2
+        fi
+        if [[ -d "$task_file" ]]; then
+          echo "oe: --task-file: path is a directory, not a file: $task_file" >&2
+          return 2
+        fi
+        if [[ ! -f "$task_file" ]]; then
+          echo "oe: --task-file: not a regular file: $task_file" >&2
+          return 2
+        fi
+        if [[ ! -r "$task_file" ]]; then
+          echo "oe: --task-file: file not readable: $task_file" >&2
+          return 2
+        fi
+        if [[ ! -s "$task_file" ]]; then
+          echo "oe: --task-file: file is empty: $task_file" >&2
+          return 2
+        fi
+        task_description="$(cat "$task_file")"
+        shift 2
+        ;;
+      -h|--help)
+        oe_usage
+        return 0
+        ;;
+      *)
+        echo "oe: unknown option: $1" >&2
+        oe_usage
+        return 2
+        ;;
+    esac
+  done
+  if [[ -n "$task_description" && $# -gt 0 ]]; then
+    echo "oe: unexpected argument: $1" >&2
+    oe_usage
+    return 2
+  fi
+  task_description="${task_description:-${*:-Run orchestration task}}"
+
   # 3) state/audit ディレクトリ準備
   mkdir -p "${OE_STATE_DIR}" "${OE_AUDIT_DIR}"
 
   # 4) セッションID確定
   OE_CURRENT_SESSION_ID="$(oe_generate_session_id)"
-
-  # E2E タスク説明（未指定時は既定値）
-  # Step 4-4 Phase A 反映 (F-5): --task-file <path> オプションを受け付け、ファイル内容を読み込む。
-  # Markdown を shell expansion 経由で渡す破綻 (改行 / 特殊文字) を回避。
-  # 後方互換: bin/oe "<text>" 形式も引き続き動作。
-  local task_description
-  if [[ "${1:-}" == "--task-file" ]]; then
-    # --task-file 異常系の仕様 (#99): 空 / 不在 / 不正パス (ディレクトリ・非通常ファイル・権限) を
-    # 明示エラー + exit 2 (usage エラー) で弾く。文言・exit code は bin/oe-capture の validation
-    # 規約に揃える。これにより「空ファイルが暗黙に既定タスクへフォールバック」「読めないファイルが
-    # set -e 下の cat 失敗で exit 1 + 生エラー」といった暗黙挙動を排除する。
-    local task_file="${2:-}"
-    if [[ -z "$task_file" ]]; then
-      echo "oe: --task-file requires a path argument" >&2
-      return 2
-    fi
-    if [[ ! -e "$task_file" ]]; then
-      echo "oe: --task-file: file not found: $task_file" >&2
-      return 2
-    fi
-    if [[ -d "$task_file" ]]; then
-      echo "oe: --task-file: path is a directory, not a file: $task_file" >&2
-      return 2
-    fi
-    if [[ ! -f "$task_file" ]]; then
-      echo "oe: --task-file: not a regular file: $task_file" >&2
-      return 2
-    fi
-    if [[ ! -r "$task_file" ]]; then
-      echo "oe: --task-file: file not readable: $task_file" >&2
-      return 2
-    fi
-    if [[ ! -s "$task_file" ]]; then
-      echo "oe: --task-file: file is empty: $task_file" >&2
-      return 2
-    fi
-    task_description="$(cat "$task_file")"
-    shift 2
-  fi
-  task_description="${task_description:-${*:-Run orchestration task}}"
   local pane_id
 
   # 5) 盤面初期化（#175: wez layout で宣言的に board を構築）→ spawn 準備 → envelope 生成 → send
