@@ -172,14 +172,18 @@ ckc "確かめられていないと言う" "$out4" "誰を引き受けたかは�
 nck "0 件と言わない"          "$out4" "生きた委譲子: 0 件"
 ck  "board は書き換わった"    "%11" "$(oe_seat_resolve "$BOARD")"
 
-echo "[8] session_id が引けないときは席を動かさない"
-mk_board "$BOARD"; before="$(cat "$BOARD")"
+echo "[8] session_id が引けなくても席は動く。ただし「確かめた」とは書かない"
+# **owner 裁定（2026-09-13・2件目）で緩めた。** 根拠だった「引けない＝停止が取り消せない」が
+# 実態と合わない（復帰の手段は別に在る）。**前提の誤りを根拠に交代のほうを止めていた。**
+mk_board "$BOARD"
 set +e
 out5="$(OE_HEARTBEAT_DIR="$_TMP_DIR/empty-hb" "$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc5=$?
 set -e
-ck  "非0 で終わる"         "1" "$rc5"
-ckc "理由を言う"           "$out5" "session_id が引けません"
-ck  "board を書き換えない"  "$before" "$(cat "$BOARD")"
+ck  "0 で終わる"             "0" "$rc5"
+ckc "引けなかったと言う"     "$out5" "前任の session_id: 引けませんでした"
+ckc "済んでいないことに出す" "$out5" "前任の session_id を引けなかった"
+nck "確かめたとは書かない"   "$out5" "前任の session_id を確かめた"
+ck  "board は書き換わった"   "%11" "$(oe_seat_resolve "$BOARD")"
 
 echo "[9] 引き継ぎ文書が無いときは席を動かさない"
 mk_board "$BOARD"; before="$(cat "$BOARD")"

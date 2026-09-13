@@ -158,11 +158,16 @@ ck "board の mtime が動かない"   "$b_before" "$(stat -f %m "$BOARD" 2>/dev
 ck "イベントログの mtime が動かない" "$e_before" "$(stat -f %m "$EVENTS" 2>/dev/null || stat -c %Y "$EVENTS")"
 ck "登記の mtime が動かない"     "$r_before" "$(stat -f %m "$REG_FILE" 2>/dev/null || stat -c %Y "$REG_FILE")"
 
-echo "[10] session_id が引けないときは、停止できないと書く"
+echo "[10] session_id が引けなくても交代は止めない。ただし引けなかったことは書く"
+# **owner 裁定（2026-09-13・2件目）で緩めた。** 以前は「停止が取り消せない」を根拠に
+# 交代そのものを止めていたが、復帰の手段は別に在る（`claude --resume` の一覧から選ぶ 等）。
+# **引けなかったことは出すが、交代の可否には効かせない。**
 OUT2="$WS/.oe/handoff2.md"
 out2="$("$OE_HANDOFF" prepare -w "$WS" --out "$OUT2" --predecessor '%99' 2>&1)" || true
-ckc "画面で注意する" "$out2" "停止が取り消せません"
-ckc "文書にも書く" "$(cat "$OUT2")" "この状態では前任を"
+ckc "画面で引けないと言う"   "$out2" "session_id は引けていません"
+ckc "交代は止まらないと言う" "$out2" "交代は止まりません"
+nck "止める言い方をしない"   "$out2" "まだ交代できません"
+ckc "文書にも書く"           "$(cat "$OUT2")" "この状態でも交代は止まらない"
 
 echo "[11] 呼び方の誤りと目印の欠落"
 set +e
@@ -252,15 +257,14 @@ set -e
 ck "読めない登記があれば失敗を返す" "2" "$rc_broken_reg"
 rm -f "$REG/$(reg_key '%12').json"
 
-echo "[22] session_id が引けないときは「次は start」と言わない（子のゲートと対称）"
+echo "[22] session_id が引けなくても「次は start」と言う（owner 裁定 2026-09-13・2件目）"
+# 以前は子のゲートと対称にして「次は start」と言わなかった。**両方とも緩めたので、
+# ここで止める理由は無い。** 引けなかったことは併記する。
 OUT6="$WS/.oe/handoff6.md"
 out6="$("$OE_HANDOFF" prepare -w "$WS" --out "$OUT6" --predecessor '%11' 2>&1)" || true
-ckc "まだ交代できないと言う" "$out6" "まだ交代できません"
-if printf '%s' "$out6" | grep -qF 'oe-handoff start で後継'; then
-  echo "  FAIL: start を勧めない"; FAIL=$((FAIL+1))
-else
-  echo "  PASS: start を勧めない"; PASS=$((PASS+1))
-fi
+ckc "start を勧める"         "$out6" "oe-handoff start で後継"
+ckc "引けないことも書く"     "$out6" "session_id は引けていません"
+nck "止める言い方をしない"   "$out6" "まだ交代できません"
 
 echo "[23] 一時ファイルを残さない"
 ck "tmp が残らない"     "0" "$(find "$WS/.oe" -name '*.tmp.*' 2>/dev/null | grep -c '^' | tr -d ' ')"

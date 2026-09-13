@@ -220,8 +220,8 @@ cmd_prepare() {
       printf '\n'
       printf -- '- %s\n' "${SID_REASON:-理由を取れなかった}"
       printf '\n'
-      printf '%s\n' '**この状態では前任を停止できない**（`claude --resume` で開き直せなくなるため・'
-      printf '%s\n' '`retire` が止める）。'
+      printf '%s\n' '**この状態でも交代は止まらない**（owner 裁定 2026-09-13）。ただし `claude --resume` の ID が'
+      printf '%s\n' '記録に残らないので、前任を閉じたあとに開き直すには一覧から選ぶことになる。'
       printf '\n'
     fi
     printf '%s\n' '### 生きている委譲子'
@@ -353,14 +353,14 @@ cmd_prepare() {
   printf '次にやること:\n'
   printf '  1. %s の「人が書く」節を埋める（機械の節は触らない）\n' "$OUT"
   printf '     とくに「渡らないもの」と自己申告の残余は、ここでしか書けません。\n'
+  printf '  2. oe-handoff start で後継のペインを起こす\n'
   if [ "$SID" = "unknown" ]; then
-    # **ここで「次は start」と言わない。** `retire` が止める状態なのに「交代の準備ができた」と
-    # 読める（片方だけ fail-open になる）。**生きた委譲子は交代を止めない**（owner 裁定
-    # 2026-09-13）ので、止める理由として残るのは session_id だけである。
-    printf '  2. **まだ交代できません。** 前任の session_id が引けていないので、停止が取り消せません。\n'
-    printf '     拍動と transcript のどちらか（または両方）が、いまの前任のものだと言える状態にありません。\n'
-  else
-    printf '  2. oe-handoff start で後継のペインを起こす\n'
+    # **session_id が引けないことは交代を止めない**（owner 裁定 2026-09-13・2件目）。
+    # 以前はここで「まだ交代できません」と言っていた。根拠は「引けない＝停止が取り消せない」
+    # だったが、復帰の手段は別に在る。**引けなかったことは出すが、交代の可否には効かせない。**
+    # shellcheck disable=SC2016  # backtick は表示する Markdown 記法で、展開させない
+    printf '     なお前任の session_id は引けていません。**交代は止まりません**が、`claude --resume` の\n'
+    printf '     ID が記録に残らないので、前任を閉じたあとに開き直すには一覧から選ぶことになります。\n'
   fi
   if [ "$CHILD_COUNT" != "0" ]; then
     printf '  3. **後継へ子を引き渡す。** 生きた委譲子 %s 件は後継がまるごと引き受ける（交代は止まらない）。\n' "$CHILD_COUNT"
@@ -548,14 +548,21 @@ cmd_take() {
     fi
   fi
 
-  # 前任の session_id。停止（PR-3）の前提条件なので、ここで引けないなら先へ進めない。
+  # 前任の session_id。**引けなくても席は止めない**（owner 裁定 2026-09-13・2件目）。
+  #
+  # 以前はここで止めていた。根拠は「引けない＝停止が取り消せない」だったが、**その前提が
+  # 実態と合わない。** 復帰の手段は別に在る（`claude --resume` の一覧から選ぶ / 直後なら ID が
+  # 分かっている / 分からなくても新しいペインから復帰できる）。owner の実運用でこの故障は
+  # 頻出していない。**前提の誤りを根拠に、起きるべき交代のほうを止めていた。**
+  #
+  # **引けなかったことは記録する。** 「引けた」と「引けなかった」を畳まない。
   sid="$(oe_hs_session_for_pane "$pred")"
-  if [ "$sid" = "unknown" ]; then
-    err "前任の session_id が引けません: ${OE_HS_SESSION_REASON:-理由不明}"
-    note_undone "session_id が引けないので席を動かしていない（停止が取り消せなくなる）"
-    report_and_exit 1
+  if [ "$sid" = "unknown" ] || [ -z "$sid" ]; then
+    printf '前任の session_id: 引けませんでした（%s）\n' "${OE_HS_SESSION_REASON:-理由不明}"
+    note_undone "前任の session_id を引けなかった（${OE_HS_SESSION_REASON:-理由不明}）。**席は動かす**が、復帰の ID は記録に残らない"
+  else
+    note_done "前任の session_id を確かめた（${sid}）"
   fi
-  note_done "前任の session_id を確かめた（${sid}）"
 
   # --- (2) 見張りの状態（終了コードでは判定しない） ---
   local sc_json wd_row
@@ -762,11 +769,14 @@ cmd_retire() {
   RETIRE_SID="$sid_rec"
   RETIRE_MACHINE="$machine_block"
 
-  # --- 必須条件1: session_id が引き継ぎ記録に残っている ---
-  # **必須条件は2つである**（1 と 3）。以前あった「生きた委譲子が0体」は owner 裁定
-  # （2026-09-13）で要求をやめた。番号は記録との対応を保つため振り直さない。
+  # --- session_id（**閉じない理由にはしない**・owner 裁定 2026-09-13・2件目）---
+  # **必須条件は1つだけになった**（申告の各項目に処分が付いていること）。
+  # 以前あった「生きた委譲子が0体」と「session_id が引き継ぎ記録に在る」は、どちらも
+  # owner 裁定で要求をやめた。**残した条件は「開き直せるか」ではなく「正しい相手を、
+  # 失うものが無い状態で閉じるか」を見ている**（性質が違う）。
+  # 番号は記録との対応を保つため振り直さない。
   if [ -z "$sid_rec" ] || [ "$sid_rec" = "unknown" ]; then
-    note_fail "前任の session_id が引き継ぎ記録に無い（${sid_rec:-空}）。閉じると claude --resume で開き直せない"
+    note_info "前任の session_id が引き継ぎ記録に無い（${sid_rec:-空}）。**閉じない理由にはしない**が、復帰の ID は手元に残らない"
   else
     note_ok "前任の session_id が引き継ぎ記録にある（${sid_rec}）"
   fi
@@ -1044,12 +1054,17 @@ _retire_report() {
     err "tmux が要ります"; exit 2
   fi
 
-  # **閉じる直前に session_id がまだ使えるかを確かめ直す。**
-  # 必須条件が見ているのは「記録に在るか」で、**いま開き直せるか**は別である。transcript が
-  # 消えていれば、閉じたあとに `claude --resume` は通らない（停止が取り消せなくなる）。
-  if ! oe_hs_transcript_usable "$RETIRE_SID"; then
-    err "前任の transcript が見つからないか古すぎます（${RETIRE_SID}）。閉じると claude --resume で開き直せません"
-    exit 1
+  # **transcript が使えるかは表示するが、閉じるのを止めない**（owner 裁定 2026-09-13・2件目）。
+  # 「開き直せない」は取り返しのつく事象で、復帰の手段は別に在る。**止めるのは「閉じる相手を
+  # 取り違える経路」と「仕事が失われる経路」だけにする。**
+  if [ -n "$RETIRE_SID" ] && [ "$RETIRE_SID" != "unknown" ]; then
+    if oe_hs_transcript_usable "$RETIRE_SID"; then
+      printf '前任の transcript: 使える（claude --resume %s で開き直せます）\n' "$RETIRE_SID"
+    else
+      printf '前任の transcript: 見つからないか古すぎます（%s）。**閉じたあと claude --resume では開き直せない可能性があります。** 閉じるのは止めません\n' "$RETIRE_SID"
+    fi
+  else
+    printf '前任の session_id: 記録にありません。**復帰の ID は手元に残りません。** 閉じるのは止めません\n'
   fi
 
 
@@ -1075,14 +1090,17 @@ _retire_report() {
   # 実在する pane 番号は 171 で、再利用は既に起きている）。確かめずに閉じると、**関係のない
   # セッションを閉じたうえで「前任は claude --resume で開き直せる」と報告する**（実装SO の指摘・
   # 2026-09-13）。
-  # **`unknown` を一致に数えない。** 引けないなら閉じない。
+  # **引けないことでは止めない。食い違いが見えたときだけ止める**（owner 裁定 2026-09-13・2件目）。
+  # 引けないのは「確かめられなかった」であって「別人だと分かった」ではない。**同一性の錨は
+  # この下の pid とコマンド名の突合が持つ**ので、引けないだけで交代を止める必要はない。
+  # **ただし引けて、しかも記録と違ったときは止める**（それは取り違えを積極的に観測している）。
   local sid_now
   sid_now="$(oe_hs_session_for_pane "$RETIRE_PRED")"
   if [ -z "$sid_now" ] || [ "$sid_now" = "unknown" ]; then
-    err "閉じる直前に ${RETIRE_PRED} の session_id を引けませんでした（${OE_HS_SESSION_REASON:-理由を取れなかった}）。**そのペインが前任のものだと確かめられないので閉じません**"
-    exit 1
-  fi
-  if [ "$sid_now" != "$RETIRE_SID" ]; then
+    printf '閉じる直前の session_id: 引けませんでした（%s）。**同一性は pid とコマンド名で見ます**\n' "${OE_HS_SESSION_REASON:-理由を取れなかった}"
+  elif [ -z "$RETIRE_SID" ] || [ "$RETIRE_SID" = "unknown" ]; then
+    printf '閉じる直前の session_id: %s（記録に無いので突き合わせられません）\n' "$sid_now"
+  elif [ "$sid_now" != "$RETIRE_SID" ]; then
     err "${RETIRE_PRED} に座っているのは別の session です（記録 ${RETIRE_SID} / いま ${sid_now}）。**ペイン番号が再利用されています。閉じません**"
     exit 1
   fi

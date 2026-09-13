@@ -154,14 +154,21 @@ ckc "次の一手を出す"        "$out1" "oe-handoff retire --execute"
 ck  "kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任はまだ生きている"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[2] session_id が引き継ぎ記録に無ければ閉じない"
+echo "[2] session_id が引き継ぎ記録に無くても閉じる（owner 裁定 2026-09-13・2件目）"
+# 以前はこれが必須条件1で、閉じるのを止めていた。根拠だった「開き直せない＝取り返しがつかない」
+# が実態と合わない（復帰の手段は別に在る）。**止めるのは「閉じる相手を取り違える経路」と
+# 「仕事が失われる経路」だけにする。** 引けなかったことは「後継が引き受けるもの」に出す。
 mk_handoff "$HANDOFF" "" "済んだ"
+: > "$CALL_LOG"
 set +e
 out2="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc2=$?
 set -e
-ck  "非0 で終わる"          "1" "$rc2"
-ckc "理由を言う"            "$out2" "session_id が引き継ぎ記録に無い"
-ck  "前任は生きたまま"      "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"                "0" "$rc2"
+ckc "記録に無いと出す"          "$out2" "session_id が引き継ぎ記録に無い"
+ckc "閉じない理由にしないと出す" "$out2" "閉じない理由にはしない"
+ckc "復帰の ID が残らないと出す" "$out2" "復帰の ID は手元に残りません"
+ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 
 echo "[3] 生きた委譲子が居ても閉じる（owner 裁定 2026-09-13）"
@@ -447,16 +454,20 @@ ck  "非0 で終わる"      "1" "$rc21"
 ckc "欠落を見逃さない"  "$out21" "機械の節が挙げた PR #501 に処分が付いていない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[22] 閉じる直前に transcript が使えなくなっていたら閉じない"
+echo "[22] 閉じる直前に transcript が使えなくても閉じる（表示はする）"
+# 以前はここで止めていた。**「開き直せない」は取り返しのつく事象**なので、出すが止めない
+# （owner 裁定 2026-09-13・2件目）。**同一性の錨は pid とコマンド名が持つ。**
 mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 mv "$TR/sid-pred.jsonl" "$TR/sid-pred.jsonl.away"
 set +e
 out22="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc22=$?
 set -e
 mv "$TR/sid-pred.jsonl.away" "$TR/sid-pred.jsonl"
-ck  "非0 で終わる"      "1" "$rc22"
-ckc "理由を言う"        "$out22" "transcript が見つからないか古すぎます"
-ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"            "0" "$rc22"
+ckc "使えないと出す"        "$out22" "transcript: 見つからないか古すぎます"
+ckc "止めないと明示する"    "$out22" "閉じるのは止めません"
+ck  "前任は閉じた"          "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo "[23] 閉じるペインが別の session のものになっていたら閉じない（pane 番号の再利用）"
 # **transcript が使えることは「記録の session が生きている」ことしか言わない。**
@@ -482,9 +493,10 @@ ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d
 ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 rm -f "$HB/sid-other.json" "$TR/sid-other.jsonl"
 
-echo "[24] 閉じる直前に session_id を引けなければ閉じない（unknown を一致に数えない）"
+echo "[24] 閉じる直前に session_id を引けなくても閉じる（同一性は pid とコマンド名で見る）"
 # 同じ pane に**同じ新しさ**の拍動が2つあると oe_hs_session_for_pane は unknown を返す。
-# **unknown を「記録と一致した」に畳まない。**
+# **「引けなかった」は「別人だと分かった」ではない**（owner 裁定 2026-09-13・2件目）。
+# 引けないことでは止めず、**食い違いが見えたときだけ**止める（[23] と [25] がその枝）。
 mk_beat "sid-tie-a" "%10"; mk_beat "sid-tie-b" "%10"
 printf '{"type":"user"}\n' > "$TR/sid-tie-a.jsonl"
 printf '{"type":"user"}\n' > "$TR/sid-tie-b.jsonl"
@@ -492,11 +504,12 @@ printf '{"type":"user"}\n' > "$TR/sid-tie-b.jsonl"
 set +e
 out24="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc24=$?
 set -e
-ck  "非0 で終わる"                  "1" "$rc24"
-ckc "引けなかったと言う"            "$out24" "session_id を引けませんでした"
-ckc "確かめられないから閉じないと言う" "$out24" "前任のものだと確かめられないので閉じません"
-ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
-ck  "kill-pane を呼ばない"          "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "0 で終わる"                  "0" "$rc24"
+ckc "引けなかったと言う"          "$out24" "閉じる直前の session_id: 引けませんでした"
+ckc "pid で見ると明示する"        "$out24" "同一性は pid とコマンド名で見ます"
+ck  "前任は閉じた"                "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "kill-pane を呼ぶ"            "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 rm -f "$HB/sid-tie-a.json" "$HB/sid-tie-b.json" "$TR/sid-tie-a.jsonl" "$TR/sid-tie-b.jsonl"
 
 echo "[25] 拍動がまだ旧世代を指しているあいだも、pid が変わっていれば閉じない"
