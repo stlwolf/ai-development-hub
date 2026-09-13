@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-14
+    ref: "#390"
+    state: followed
+    note: "引用の隣の断定を引き直す工程を入れ、「人が書く節を埋めないと retire が通らない」を表の行だけに狭め、worktree の出所も直した。それでも start の失敗の枝と retire の停止条件で範囲の広い断定を3件残し、実装SO が検出した"
 ---
 
 **引用は「読んだ」ことの証拠にはなるが、「その内容に合わせて書いた」ことの証拠にはならない。** 2つは別の工程である。

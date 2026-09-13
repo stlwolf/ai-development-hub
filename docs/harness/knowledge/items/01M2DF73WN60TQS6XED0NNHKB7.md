@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-09-14
+    ref: "#390"
+    state: followed
+    note: "brief が与えた item path 5件を組み立て直さず原文からコピーして実在を確認した（engine 木の1件を含めて5件とも実在）。前の単位で踏んだ取り違えは再発していない"
 ---
 
 **上流が与えた識別子を検証するときは、上流の原文からコピーする。** 組み立て直すと、検証しているのは上流ではなく自分の構築物になる。

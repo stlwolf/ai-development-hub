@@ -37,13 +37,16 @@ AI 駆動開発のドキュメントフロー全体を「注入可能な枠」�
 2. **その1本の実体のディレクトリを引く。目的の verb は同じディレクトリの隣に在る。**
 
    ```bash
-   anchor="$(command -v oe-tree)" || anchor=""
-   oe_bin="$(dirname "$(readlink "$anchor" || printf '%s' "$anchor")")"
-   if [ -x "$oe_bin/oe-handoff" ]; then "$oe_bin/oe-handoff" --help
-   else echo "足がかりから引けない（3 へ）"; fi
+   anchor="$(command -v oe-tree || command -v oe-hookfire)"
+   if [ -z "$anchor" ]; then echo "PATH に足がかりが無い（3 へ）"
+   else
+     oe_bin="$(dirname "$(readlink "$anchor" || printf '%s' "$anchor")")"
+     if [ -x "$oe_bin/oe-handoff" ]; then "$oe_bin/oe-handoff" --help
+     else echo "足がかりから引けない（3 へ）"; fi
+   fi
    ```
 
-   **見つかった1本をそのまま呼ばず、実体のパスで呼ぶ。** lib を `dirname "$0"` で解く verb（`oe-handoff` / `oe-register` / `oe-send` など）は、**symlink 越しに呼ぶと lib を見つけられない**。**`readlink` に `-f` を付けない**（配るリンクは絶対パス1段なので要らず、engine 自身も `-f` を使わない書き方を選んでいる）。**足がかりが symlink でなければ `readlink` は空を返すので、その足がかり自身のディレクトリを使う**（PATH が engine の `bin/` を直に指していればそれで当たる）。**目的の verb がそこに無ければ 3 へ。**
+   **見つかった1本をそのまま呼ばず、実体のパスで呼ぶ。** lib を `dirname "$0"` で解く verb（`oe-handoff` / `oe-register` / `oe-send` など）は、**symlink 越しに呼ぶと lib を見つけられない**。**`readlink` に `-f` を付けない**（配るリンクは絶対パス1段なので要らず、engine 自身も `-f` を使わない書き方を選んでいる）。**足がかりが symlink でなければ `readlink` は空を返すので、その足がかり自身のディレクトリを使う**（PATH が engine の `bin/` を直に指していればそれで当たる）。**目的の verb がそこに無ければ 3 へ。** **足がかりが1本も無いときに `dirname` へ空を渡さないこと** — `.`（いまのディレクトリ）に解決して、無関係な同名ファイルを実行しうる。
 3. **1本も無ければ engine の checkout の `bin/` を直接指す**（hub のワークスペースなら `projects/orchestration-engine/bin/`）。**足がかりが配られていない環境なので、在り処を owner に聞くほうが早い。**
 
 **PATH に無いのに素の名前で呼ぶと `exit 127` になり、送れていないのに送ったつもりで止まる。** 呼んだあとに exit code を確かめる。配布対象の正本（どの verb が配られるか）と各 verb の詳細は `orchestration-toolkit`。
@@ -176,7 +179,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 5. **`oe-handoff start` を走らせる**（文書を動かしたなら `--handoff` を付ける）。後継のペインが起き、引き継ぎ文書のパスが送られる。**後継は登記の子にしない**（報告の宛先がこれから閉じるペインに焼き込まれるため）。**ペインを起こしたあとの枝は2つ** — 一覧に現れなければ**送らずに exit 1**、現れたが送れなかったときは**手で貼る1行を出して exit 0** である。**終了コードだけで判断せず、出力を読む。**
 6. **`start` のあとは新しい作業を始めない。** 申告のあとに open PR・未 push・worktree が動くと、**後継の `retire` がその食い違いで止まる**（下見でも `--execute` でも実状態を数え直す）。動かしたなら `prepare` を打ち直して申告を直す（**人が書いた節は消えない**）。
 
-**ここから先は後継である。** 後継は `take` → `retire`（下見）→ `retire --execute` → **③ の手順5**（登記のつけかえと宛先の通知）の順に進む。**前任は自分のペインを閉じない。** verb の起動方法は「verb 解決規約」節、各 verb の詳細は engine の `bin/README.md`（上の規約で引いた `$oe_bin/README.md`）。
+**ここから先は後継である。** 後継は `take` → `retire`（下見）→ `retire --execute` → **③ の手順5**（登記のつけかえと宛先の通知）の順に進む。**`take` と `retire` には、文書に書いた board を `--board` で渡す**（`OE_BOARD_FILE` でも同じ）。**文書を既定から動かしてあるなら `--handoff` も要る。****前任は自分のペインを閉じない。** verb の起動方法は「verb 解決規約」節、各 verb の詳細は engine の `bin/README.md`（上の規約で引いた `$oe_bin/README.md`）。
 
 ## routing 表（遷移・ゲート → 必ず通すスキル・DJ-11 layer b）
 
