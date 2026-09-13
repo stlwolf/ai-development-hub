@@ -211,7 +211,7 @@ so:
 - 129行目が2文に割れており、discussion への参照と `oe-reseat` 未実装の記述が残っている。
 - 3つの設定ルートの `skills/doc-flow-guardrail` が、いずれも hub の同じファイルを指す symlink である（`readlink` で照合。sync は実行しない）。
 
-**この6項は、ゲート4（実装SO と Copilot）の反映で増えた。** 件数をここに書かないのは、同じ数を2箇所に書くと片方が古くなるためである。**項目と結果の正本は episode の「実装とゲートを通した」節である。**
+**この一覧は着手時点のもので、ゲート4（実装SO と Copilot）の反映で項目が増えた。** 件数をここに書かないのは、同じ数を2箇所に書くと片方が古くなるためである（前の単位が `required` に判定した型である）。**項目と結果の正本は episode の「実装とゲートを通した（2026-09-13）」節である。**
 
 ## ステップ
 
@@ -275,7 +275,15 @@ so:
 
 **判断4 には統括からの前提の訂正が付いた。** 導線が無いわけではなく、**board の succession 手順の後任側 step 1 に「`doc-flow-guardrail` スキルを読む（cold-start）」が在り、15代目はそれを辿って読んだ。** 無いのは引き継ぎ文書のテンプレート側である。**つまり導線は machine-local の board にしかなく、配る成果物には無い。** plan の「範囲外」の記述はこの訂正に合わせて読むこと。
 
-**baseline（承認時点で固定した母集団）は addendum に記録されている**（`shasum -a 256`・承認した plan / 委譲時の書面 / ゲート表の版の3つ）。
+**baseline（承認時点で固定した母集団）**。addendum は `.oe/` にあり gitignored なので、**digest をここへ転記する**（揮発する場所にしか無いと、マージ後に母集団を復元できない）。アルゴリズムは `shasum -a 256`（対象のバイト列そのもの・改行の正規化なし）。
+
+| 対象 | 実体 | digest (sha256) |
+| --- | --- | --- |
+| 承認した plan | `docs/harness/plans/2026-09-13-plan-390-succession-link-codify.md`（この枝・**承認時点の版**） | `00235d55c8aad883a34fd00958eb4ead825b760fb3b6a0ff4639e5e7fb08a5a0` |
+| 委譲時の書面 | `.oe/brief-390-guardrail-codify.md`（固定節・negative knowledge 5件・受入の境界を含む） | `b50a9e0f477fa2b3bcd00a455377506346966c6ecbe4de81b37bb41ce6f38cf1` |
+| ゲート表の版 | `canonical/skills/doc-flow-guardrail/SKILL.md` @ `origin/master` = `32b4e63`（**この単位が書き換える対象そのものなので、変更前の版を固定した**） | `d7f48e9713fd9239a30a69080e984deda0c3e1eb90076ee4440b9a4432b83236` |
+
+**承認後にこの plan は書き換わっている**（ゲート4 の反映）ので、plan の digest は現在値と一致しない。**一致しないことが正しい** — baseline は承認時点の母集団を指す。
 
 ### Step 5 以降（ゲート3 のあと）
 
