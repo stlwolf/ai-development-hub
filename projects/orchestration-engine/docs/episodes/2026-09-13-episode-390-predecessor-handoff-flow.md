@@ -9,10 +9,10 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/390"
     reason: "本 episode の作業対象"
   - type: relates_to
-    ref: "docs/harness/plans/2026-09-13-plan-390-predecessor-handoff-flow.md"
+    ref: "projects/orchestration-engine/docs/plans/2026-09-13-plan-390-predecessor-handoff-flow.md"
     reason: "この episode が記録する作業の計画"
   - type: relates_to
-    ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
     reason: "前の単位。後継側だけを codify した結果、前任側の入口が空いたまま残った"
 tags: [orchestration, succession, doc-flow-guardrail, skill, handoff]
 promotion:
@@ -270,6 +270,20 @@ projects/orchestration-engine:  実測 3 / plan の期待 2（文書参照のみ
 | **（suppressed）`canonical/CATALOG.md:23` が例外の追加と食い違う** | 実物を確認。**指摘が正しい** | **範囲外なので直さず follow-up へ**（インラインの3件目と同じ論点） |
 | **（suppressed）episode の「実装SO の判断を仰ぐ」が未解決のまま残っている** | 実物を確認。**指摘が正しい**（同じ episode の後段で両レーンが答えている） | **その行を対応済みの記述に書き直した**（下記） |
 
+### 4層ドキュメントを engine の木へ寄せた（2026-09-14・owner 裁定）
+
+**owner が「置き場が最初から誤っていた」と裁定した**（`.oe/addendum-390-tree-move.md`）。`doc-flow-guardrail` は**本来 engine のフローに入れたいものをいまスキルで表現している**ものなので、その記録は engine の木に属する。実際、**同じ #390 の蒸留が2つの木に割れていた**（engine 木に `supervisor-planned-succession` と `retire-and-docs` の2本が既に在った）。**この PR の枝の上で、`#396` の分（すでに master にある分）も一緒に寄せた。**
+
+**動かしたのは11本である。** plan 2本・episode 2本・knowledge item 7本（この単位の4本と、前の単位の3本）。`git mv` を使ったので差分には rename として出る。
+
+**動かさなかったものが2つある。** ひとつは `01M1VTJJFF1TK067ZX3X912G0P` で、`source.ref` が `#307` の harness episode を指しているので harness 木に残る。もうひとつは `projects/orchestration-engine/docs/knowledge/items/01M1TK0A7AX20V0XKWYNAR5WM5.md` で、**item が engine の木にあるのに `source.ref` が harness の `#359` episode を指している。** これは前の単位が「store 側の判断」として残したもので、**今回も触っていない。**
+
+**一括置換をしなかった。** 参照は11本の old path それぞれについて出現箇所を列挙し、1件ずつ直した（計 16 箇所。内訳は item の `source.ref` 7件、plan と episode の相互参照 9件）。**移動前に repo 全体で同じ検査を走らせて control を取った** — 解決しないパス参照は移動前 263件で、その全件が今回の対象と無関係な既存のもの（`YYYY-MM-DD-plan-xxx.md` のような書式例や、他リポの文書を指す古い参照）である。**移動後も同じ 263件で、増えていない。**
+
+**語りの中のパスは直していない。** `01M2DF73WN60TQS6XED0NNHKB7` の本文と、`#396` の episode の本文に `docs/harness/knowledge/items/` が出るが、**どちらも「そのとき何が起きたか」の記録**であり、現在の在り処を指す参照ではない。**`#307` の episode が指している2本は harness に残るので、そちらも正しいままである。**
+
+**置き場の規約そのものは書き換えていない。** `document-format.md` の「item は収穫元 episode と同じ蒸留木」という規則には従っており、**どの単位の記録がどちらの木に属するかを規約に codify するかは follow-up として下に surface する。**
+
 ## closure（ゲート5・マージ前）
 
 ### Step 1: tier 判定 = **heavy**
@@ -291,7 +305,7 @@ heavy トリガに4つ当たる。**実行中に撤回・方針転回が4回あ�
 
 | 対象 | 実体 | digest |
 | --- | --- | --- |
-| 承認した plan | `docs/harness/plans/2026-09-13-plan-390-predecessor-handoff-flow.md` @ commit `2fbc9f0e2119a3dbef49c5c1b28b60ded30d16c6` | blob `22fe22279e9ea1130c05f5ba655297df59dab050` |
+| 承認した plan | `projects/orchestration-engine/docs/plans/2026-09-13-plan-390-predecessor-handoff-flow.md` @ commit `2fbc9f0e2119a3dbef49c5c1b28b60ded30d16c6` | blob `22fe22279e9ea1130c05f5ba655297df59dab050` |
 | 委譲時の書面 | `.oe/brief-390-predecessor-flow.md`（**この worktree には無い。実体は hub の main checkout の `.oe/` に在る**） | sha256 `4479cdebd48d479dca36813fdfc3211d90eafd7759a187ba82c2e4e49dee32d7` |
 | ゲート表の版 | `canonical/skills/doc-flow-guardrail/SKILL.md` @ `origin/master` = `f8a9759` | blob `ced9cb26e074d4b4f3f41071b0e16c37a616b0ce` |
 
@@ -342,6 +356,7 @@ heavy トリガに4つ当たる。**実行中に撤回・方針転回が4回あ�
 | **`bin/README.md` に前の単位が撤回した断定が2件残っている** | **完了報告に明記して統括へ渡す。** **前の単位からの持ち越しで、2単位続けて未着地である** |
 | **`PARENT_TMUX_PANE` を渡さないことが、現在のテストからは証明されていない**（tmux の session environment に既存の値が残るケースを見ていない・実装SO codex） | **完了報告に明記して統括へ渡す。** 成立していれば後継が停止したペインへ報告する形が残る。engine のテストの話 |
 | **PATH に足がかりが無い環境では、規約の手順3 が「owner に聞く」で止まる**（実装SO codex） | **追わない（この単位では解消しない）。** 手順3 は安全な停止点であり、engine checkout の探索を規約に書くと hub の内部構造への依存が戻る。**受入10 が「存在の検査であって完遂の証明ではない」と書いた限界と同じもの** |
+| **どの単位の記録がどちらの蒸留木に属するかが、規約に書かれていない** | **完了報告に明記して統括へ渡す。** 今回の裁定（`doc-flow-guardrail` の記録は engine の木）は episode に残したが、**`document-format.md` へ codify するかは別の判断**である。**同じ判断が次の単位でも要る** |
 | **薄い枠との緊張** | **追わない（この単位では解消しない）。** 断定の範囲を絞り、止まる条件の正本を `$oe_bin/README.md` へ routing したぶんは薄くなった。**完全な解消は移設（別単位）と同じ判断になる** |
 | **交代のフローを1回も流していない** | **追わない。** 受入の境界が「コマンドの責務まで」と固定されている。**次の実交代が観測の機会**で、踏まれたかは引き継ぎ文書と `oe-tree` に出る |
 
@@ -407,7 +422,7 @@ heavy トリガに4つ当たる。**実行中に撤回・方針転回が4回あ�
 
 ### Step 5: negative knowledge の収穫（in-PR 相乗り）
 
-4件を `docs/harness/knowledge/items/` へ収穫し、同じブランチにコミットした（`validate-knowledge` 通過）。置き場はこの episode と同じ harness 木である。
+4件を収穫し、同じブランチにコミットした（`validate-knowledge` 通過）。**置き場はこの episode と同じ木**で、**収穫時は `docs/harness/knowledge/items/` だったが、owner 裁定（2026-09-14）で4層ドキュメントごと `projects/orchestration-engine/docs/knowledge/items/` へ移した**（下記「4層ドキュメントを engine の木へ寄せた」）。
 
 - `01M2DRCP3MD7SYQ0CKJPHR9GTA` — verb の一覧から工程を導くと、verb の口に現れないものが落ちる（判定1・判定3 を含む）。
 - `01M2DRCP3QSG4NQWHNY6DSD3NJ` — 受入は、項目を足したかではなく錨がどこに在るかで決まる（判定2）。

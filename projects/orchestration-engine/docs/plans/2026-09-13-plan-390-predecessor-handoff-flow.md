@@ -9,10 +9,10 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/390"
     reason: "issue #390 の follow-up のうち、交代の前任側を扱う単位"
   - type: relates_to
-    ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
     reason: "前の単位。後継側だけを codify した結果として、この単位の入力になっている"
   - type: relates_to
-    ref: "docs/harness/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
     reason: "この単位の作業記録"
 tags: [orchestration, succession, doc-flow-guardrail, skill, handoff]
 so:
@@ -335,6 +335,14 @@ issue #390 の「設計の骨」がそう定めている。**引き継ぎ文書�
 - **`lib/handoff-state.sh:344` が open PR を作者で絞らない。** 共同リポジトリで交代すると、前任が処分を書けない PR で後継が止まる。engine のコード。
 - **スキルの140行目と167行目が engine 側の discussion を hub 相対のパスで指している。** verb ではないので scope 2 の対象外だが、**hub の外の読み手はこの2本を開けない。**
 - **`bin/README.md` に前の単位が撤回した断定が2件残っている**（「`retire` の出力は穴の在り処を毎回明示する」「root が2本並ぶのは残っている歪み」）。前の単位から引き続き範囲外。
+
+## 成果物の置き場（**owner 裁定 2026-09-14 で訂正**）
+
+**この単位の4層ドキュメントは engine の木に置く** — plan は `projects/orchestration-engine/docs/plans/`、episode は `projects/orchestration-engine/docs/episodes/`、収穫した knowledge item は `projects/orchestration-engine/docs/knowledge/items/` である。
+
+**着手時の指定は `docs/harness/` だったが、置き場が最初から誤っていたという owner の判断である**（`.oe/addendum-390-tree-move.md`）。理由は、`doc-flow-guardrail` が**本来 engine のフローに入れたいものをいまスキルで表現している**もので、その記録は engine の木に属するからである。**同じ #390 の蒸留が2つの木に割れていた**（engine 木に `supervisor-planned-succession` と `retire-and-docs` の2本が既に在った）。
+
+**受入13項は置き場に触れていないので、項目の増減も文言の変更も無い。** 動いたのは frontmatter の相互参照と、baseline 表が指す plan のパスである。
 
 ## ゲート3 の裁定（owner・2026-09-14・通過）
 

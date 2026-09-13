@@ -9,7 +9,7 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/390"
     reason: "本 episode の作業対象"
   - type: relates_to
-    ref: "docs/harness/plans/2026-09-13-plan-390-succession-link-codify.md"
+    ref: "projects/orchestration-engine/docs/plans/2026-09-13-plan-390-succession-link-codify.md"
     reason: "この episode が記録する作業の計画"
   - type: relates_to
     ref: "projects/orchestration-engine/docs/episodes/2026-09-12-episode-390-retire-and-docs.md"
@@ -265,7 +265,7 @@ heavy トリガに4つ当たる。**実行中に撤回が6回あった**（plan 
 
 **ひとつは、判定6 の内容が手順として着地したことである。** 判定6 は「verb が実物になっても、verb のあいだを繋ぐ工程が落ちていれば交代は完走しない」だった。この単位はその工程を cold-start の手順5 として書き、入口条件も直した。**decision が持つべき「なぜそう決めたか」のうち、実行に要る部分はスキル本文に入っている。**
 
-**もうひとつは、decision に残すべき「棄却した案と覆すコスト」が、この単位の plan に durable に在ることである。** 置き場4案とその棄却理由は `docs/harness/plans/2026-09-13-plan-390-succession-link-codify.md` の「棄却した案」節にあり、plan は同じ PR で committed 層へ着地する。**decision を立てないことで失われるのは、その内容へ辿る導線の短さだけである。**
+**もうひとつは、decision に残すべき「棄却した案と覆すコスト」が、この単位の plan に durable に在ることである。** 置き場4案とその棄却理由は `projects/orchestration-engine/docs/plans/2026-09-13-plan-390-succession-link-codify.md` の「棄却した案」節にあり、plan は同じ PR で committed 層へ着地する。**decision を立てないことで失われるのは、その内容へ辿る導線の短さだけである。**
 
 **失われたものを正直に書く。** 判定6 は「verb の集合で足りるか、あいだの工程まで手順に含めるか」という**再訪される分岐**である。#395 が申告の形式を変えるときにも立つ。**decision が無いと、その単位は plan の「棄却した案」まで降りないと前回の判断を知れない。** これが案Aの代償である。
 
@@ -368,7 +368,7 @@ heavy トリガに4つ当たる。**実行中に撤回が6回あった**（plan 
 
 ### Step 5: negative knowledge の収穫（in-PR 相乗り）
 
-3件を `docs/harness/knowledge/items/` へ収穫し、同じブランチにコミットした（`validate-knowledge` 通過）。置き場はこの episode と同じ harness 木である。
+3件を収穫し、同じブランチにコミットした（`validate-knowledge` 通過）。**置き場はこの episode と同じ木**で、**収穫時は `docs/harness/knowledge/items/` だったが、owner 裁定（2026-09-14）で4層ドキュメントごと `projects/orchestration-engine/docs/knowledge/items/` へ移した**（経緯は次の単位の episode `2026-09-13-episode-390-predecessor-handoff-flow.md` の「4層ドキュメントを engine の木へ寄せた」節）。
 
 - `01M2DEC1G6GG9RTXGM6CRJEGZQ` — 引用した一次情報と食い違う自分の断定が同居する。
 - `01M2DEC1G68X8PH2QEW2H1DWZZ` — 上流が固定した受入の境界を写すと、変更を見ない受入ができる。

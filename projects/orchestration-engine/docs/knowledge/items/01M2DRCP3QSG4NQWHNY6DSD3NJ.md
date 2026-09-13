@@ -9,7 +9,7 @@ exclusions:
   - "錨が新規追加のファイルそのものである場合（存在の確認が変更の確認になっている）"
   - "受入を書いた本人以外が、編集前の状態で全項を実行して結果を記録する場合"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
 observations: []
 ---

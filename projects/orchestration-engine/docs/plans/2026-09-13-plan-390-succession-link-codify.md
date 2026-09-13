@@ -12,7 +12,7 @@ related:
     ref: "projects/orchestration-engine/docs/episodes/2026-09-12-episode-390-retire-and-docs.md"
     reason: "一次材料。closure の follow-up の表と、次の単位の受入の境界がここに在る"
   - type: relates_to
-    ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
     reason: "この単位の作業記録"
 tags: [orchestration, succession, doc-flow-guardrail, skill, handoff]
 so:
@@ -279,7 +279,7 @@ so:
 
 | 対象 | 実体 | digest (sha256) |
 | --- | --- | --- |
-| 承認した plan | `docs/harness/plans/2026-09-13-plan-390-succession-link-codify.md`（この枝・**承認時点の版**） | `00235d55c8aad883a34fd00958eb4ead825b760fb3b6a0ff4639e5e7fb08a5a0` |
+| 承認した plan | `projects/orchestration-engine/docs/plans/2026-09-13-plan-390-succession-link-codify.md`（この枝・**承認時点の版**） | `00235d55c8aad883a34fd00958eb4ead825b760fb3b6a0ff4639e5e7fb08a5a0` |
 | 委譲時の書面 | `.oe/brief-390-guardrail-codify.md`（固定節・negative knowledge 5件・受入の境界を含む） | `b50a9e0f477fa2b3bcd00a455377506346966c6ecbe4de81b37bb41ce6f38cf1` |
 | ゲート表の版 | `canonical/skills/doc-flow-guardrail/SKILL.md` @ `origin/master` = `32b4e63`（**この単位が書き換える対象そのものなので、変更前の版を固定した**） | `d7f48e9713fd9239a30a69080e984deda0c3e1eb90076ee4440b9a4432b83236` |
 

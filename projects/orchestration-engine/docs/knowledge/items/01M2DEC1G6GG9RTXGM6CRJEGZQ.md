@@ -9,7 +9,7 @@ exclusions:
   - "断定の内容が、引用した一次情報の射程の外にあることを明記している場合（どちらも読んでいれば矛盾しない）"
   - "引用が全文で、断定がその要約にすぎない場合（内容が同一なので食い違いようがない）"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
 landing: nl
 observations:
   - date: 2026-09-14

@@ -9,7 +9,7 @@ exclusions:
   - "owner が明示的にその位置での人のゲートを求めている場合"
   - "取り消せない外部影響（公開・課金・他人への送信・本番データの破壊）がある操作"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
 observations: []
 ---

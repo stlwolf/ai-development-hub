@@ -9,7 +9,7 @@ exclusions:
   - "コード例が単一のコマンドで、分岐も副作用も持たない場合"
   - "例をそのままコピーして実行する検算を、書いた形のまま1回通している場合"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
 observations: []
 ---

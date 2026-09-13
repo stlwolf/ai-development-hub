@@ -9,7 +9,7 @@ exclusions:
   - "上流の条件が、変更後の成果物の状態を直接述べている場合（写した時点で変更を見る受入になっている）"
   - "受入の判定を上流自身が行う場合（母集団の設計責任が自分に無い）"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-succession-link-codify.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-succession-link-codify.md"
 landing: nl
 observations:
   - date: 2026-09-14

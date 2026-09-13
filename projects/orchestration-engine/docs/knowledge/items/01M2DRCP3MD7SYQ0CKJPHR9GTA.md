@@ -9,7 +9,7 @@ exclusions:
   - "その verb 群が自己完結している場合（外部の状態を参照せず、引数だけで決まる）"
   - "工程を実際に1回通すことが受入に入っている場合（通らないことで欠落が露見する）"
 source:
-  ref: "docs/harness/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
+  ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
 observations: []
 ---
