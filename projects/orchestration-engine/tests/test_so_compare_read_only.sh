@@ -59,11 +59,25 @@ ckc "-s read-only を渡す" "$(cat "$ARGS/codex.args" 2>/dev/null || true)" "-s
 echo "[3] claude は plan モードで起動する"
 ckc "--permission-mode plan を渡す" "$(cat "$ARGS/claude.args" 2>/dev/null || true)" "--permission-mode plan"
 
-echo "[4] cursor は ask + sandbox で起動し、-f を渡さない"
+echo "[4] cursor は ask + sandbox で起動する"
+# **`-f` は残す。** `-f` には権限を広げる以外の役目がある（Cursor 統合ターミナルでの
+# TTY 分離と Workspace Trust のスキップ・`projects/arena-compare/README.md` の「既知の制約」）。
+# 外すと未信頼の workspace で承認待ちになる。守りは `--sandbox enabled` の側で掛ける。
+# **`-f` を渡したままでも sandbox が書き込みを止めることを実測した**（2026-09-14）。
 cursor_args="$(cat "$ARGS/agent.args" 2>/dev/null || true)"
 ckc "--mode ask を渡す"        "$cursor_args" "--mode ask"
 ckc "--sandbox enabled を渡す" "$cursor_args" "--sandbox enabled"
-nck "-f を渡さない"            "$cursor_args" " -f "
+ckc "-f を残す（trust の経路）" "$cursor_args" "-f"
+
+echo "[5] -s は read-only 以外を受け取らない"
+# 既定値を宣言するだけでは契約にならない。呼び出し側から緩められる口を塞ぐ（Copilot 指摘）。
+OUTS="$(PATH="$STUB:$PATH" bash "$SO" -s workspace-write --codex-only -o "$_TMP/o-s1" 'x' 2>&1)"; RCS=$?
+ck  "workspace-write は exit 4 で弾く" "4" "$RCS"
+ckc "理由を型で言う" "$OUTS" "invalid:sandbox-not-read-only"
+PATH="$STUB:$PATH" bash "$SO" -s danger-full-access --codex-only -o "$_TMP/o-s2" 'x' >/dev/null 2>&1; RCS2=$?
+ck  "danger-full-access も弾く" "4" "$RCS2"
+PATH="$STUB:$PATH" bash "$SO" -s read-only --codex-only -o "$_TMP/o-s3" 'x' >/dev/null 2>&1; RCS3=$?
+ck  "read-only は通る（陰性対照）" "0" "$RCS3"
 
 echo
 echo "=== RESULT: pass=$PASS fail=$FAIL ==="

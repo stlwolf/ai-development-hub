@@ -327,6 +327,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s)
             require_arg "$1" "${2:-}"
+            # **read-only 以外は受け取らない。** レーンは読んで答えるだけ、というのがこの
+            # スクリプトの契約である（プロンプト末尾の制約・cursor の sandbox・claude の
+            # plan モードと同じ層）。`-s` だけが呼び出し側から緩められると、契約が既定値の
+            # 宣言にしかならない（Copilot 指摘・2026-09-14）。
+            if [[ "$2" != "read-only" ]]; then
+                reject "invalid:sandbox-not-read-only" "-s" "レーンは読むだけである。-s は read-only のみ受け取る（指定: $2）"
+            fi
             SANDBOX_MODE="$2"
             shift 2
             ;;
@@ -847,7 +854,7 @@ commit_meta() {
 # **同じ日に2回変えたら英字を足す。** 版は日付だけだと同日の2回目が前と同じ値になり、
 # 観測を版で層別できなくなる（#303 がまさにこれを必要としている）。a は付けず、2回目を
 # b、3回目を c とする。
-SO_COMPARE_VERSION="2026-09-14a"
+SO_COMPARE_VERSION="2026-09-14b"
 
 # --- CLI の版の取得（#298） ---
 #
@@ -1280,11 +1287,19 @@ run_cursor() {
     write_meta_start cursor "$attempt" "$tool_timeout"
     start=$(date +%s)
 
-    # **`-f` は渡さない。** `-f` は `--yolo` の別名で「明示的に拒否されない限りコマンドを許可する」
-    # である（`agent --help`）。`--mode ask` は読み取り専用と説明されているのに、同時に許可を広げて
-    # いた。実際にこのレーンがリポジトリを直してコミットした（2026-09-14）。`--sandbox enabled` で
-    # 明示的に閉じる。**対話待ちで止まるなら、その挙動を測ってから戻す**（この単位で実測した）。
-    local cursor_args=(-p --mode ask --sandbox enabled --output-format text)
+    # **`-f` は残し、`--sandbox enabled` で閉じる。**
+    #
+    # `-f` は `--yolo` の別名で「明示的に拒否されない限りコマンドを許可する」である
+    # （`agent --help`）。このレーンがリポジトリを直してコミットした一件（2026-09-14）を受けて
+    # 一度は外したが、**`-f` には権限を広げる以外の役目がある** — Cursor 統合ターミナルからの
+    # 実行で TTY 分離と Workspace Trust のスキップに要る（`projects/arena-compare/README.md`
+    # の「既知の制約」・実装は `arena-compare.sh`）。外すと未信頼の workspace で承認待ちになり
+    # timeout する。
+    #
+    # **実測した（2026-09-14）。`-f` を渡したままでも `--sandbox enabled` が書き込みを止める。**
+    # 書き込みを明示的に頼んでもファイルは作られず、レーンはコマンドを提案しただけだった。
+    # したがって trust の経路を残したまま、守りは sandbox の側で掛ける。
+    local cursor_args=(-p -f --mode ask --sandbox enabled --output-format text)
     if [[ -n "$CURSOR_MODEL" ]]; then
         cursor_args+=(--model "$CURSOR_MODEL")
     fi
