@@ -550,6 +550,10 @@ cmd_take() {
         printf '%s\n' "$children" | sed 's/^/  - /'
         note_done "引き受けた委譲子を確かめた（${child_count} 件・交代は止めない）"
         note_undone "上の子へ新しい報告先を伝えていない。**伝えるまで、子が自分から出す報告は前任のペインを指したままである**（PARENT_TMUX_PANE は差し替えられないので、宛先が変わるのは子が後継の pane を明示して送るときだけである）"
+        # **登記のつけかえは別の工程である。** 宛先を伝えても登記は動かないし、登記を
+        # つけかえても宛先は変わらない。両方要る。ここで出さないと、一覧を見た側が
+        # 「見せられた＝処理された」と読む（実地で統括が飛ばした・2026-09-13）。
+        note_undone "上の子の登記を自分の下へつけかえていない（\`oe-register link %N\`）。**打つのは \`retire --execute\` のあと**である（前任が生きているうちは guard が拒む）。踏まないと子は停止した前任の下に残る"
       else
         note_done "前任に生きた委譲子は居ない"
       fi
@@ -1080,11 +1084,15 @@ _retire_report() {
   # 子は交代を止めない（owner 裁定 2026-09-13）ので、下見と実行のあいだに子が増えても閉じる。
   # ただし**増えたことは出す**。後継が声をかける相手が変わるからである。
   local last_children last_rc last_count
+  RETIRE_CHILD_COUNT="unknown"
   last_children="$(oe_hs_children_of "$RETIRE_PRED")"; last_rc=$?
   if [ "$last_rc" -ne 0 ]; then
     printf '閉じる直前の数え直しができませんでした（誰を引き受けたかは確かめられていません）。閉じます。\n'
   else
     if [ -z "$last_children" ]; then last_count=0; else last_count="$(printf '%s\n' "$last_children" | grep -c '^' | tr -d ' ')"; fi
+    # **閉じたあとの案内で使うので script 層へ控える。** 数え直しができなかった場合は
+    # `unknown` のままにして、0 に畳まない（畳むと「つけかえ不要」と読める案内になる）。
+    RETIRE_CHILD_COUNT="$last_count"
     printf '閉じる直前の生きた委譲子: %s 件\n' "$last_count"
     if [ "$last_count" -ne 0 ]; then
       printf '%s\n' "$last_children" | sed 's/^/    - /'
@@ -1225,6 +1233,21 @@ _retire_report() {
   printf '        **後継が各子へ「報告の宛先は後継の pane である」と明示して伝えれば塞がります。**\n'
   printf '        挨拶では塞がりません。oe-report は PARENT_TMUX_PANE を先に読み、oe-delegate は差し替えの口を書き出さないので、\n'
   printf '        宛先が変わるのは子が新しい pane を明示して送るときだけです。\n'
+  # **ここが登記のつけかえの打ち時である。** 前任が生きているうちは guard が拒むので、
+  # 停止の直後にしか打てない。間が空くほど %N が別のペインへ再利用される窓が広がる。
+  # 宛先の通知とは別の工程で、片方をやっても他方は動かない。
+  # **0 と確かめられたときだけ出さない。** `unknown`（数え直しができなかった）では出す。
+  # 出さない側に畳むと、確かめられていないことが「つけかえ不要」に化ける。
+  if [ "$RETIRE_CHILD_COUNT" != "0" ]; then
+    printf '\n**いま打つこと: 引き受けた子の登記を自分の下へつけかえる。**\n'
+    if [ "$RETIRE_CHILD_COUNT" = "unknown" ]; then
+      printf '  **誰を引き受けたかは数え直せていません。** oe-tree で前任の下を拾ってから打ってください。\n'
+    fi
+    printf '  oe-register link %%N   （引き受けた子の pane ごとに1回）\n'
+    printf '  間に別の作業を挟まないでください。pane が再利用されると無関係な相手を子に登記します。\n'
+    printf '  拒否されたら --force を足さず、pane が再利用されていないかを確かめてください。\n'
+    printf '  検算は oe-tree。前任が木に現れないことと、子が自分の下に出ることを見ます（root の本数では見ません）。\n'
+  fi
   # **session_id が無いのに「開き直せます」と言わない。** 前提を緩めた結果、記録に ID が
   # 無いまま閉じる経路ができた。そこで同じ文を出すと、**空の ID を渡す案内**になる
   # （「確かめられなかった」を「使える値」に畳む形・自分で見つけた・2026-09-13）。
