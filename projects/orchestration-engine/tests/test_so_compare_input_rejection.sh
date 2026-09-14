@@ -283,12 +283,19 @@ echo "[25] gate 4 4周目の指摘: プロンプトが -n でも空にならな�
 OUT="$(PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o66" -- -n 2>&1)"; RC=$?
 if [[ "$RC" == "0" ]]; then
   SAVED="$(cat "$_TMP/o66/prompt.txt" 2>/dev/null)"
-  ck "プロンプト -n が空ファイルにならない" "-n" "$SAVED"
+  # **完全一致では見ない。** so-compare はプロンプトの末尾に「読むだけ」の制約を足すので
+  # （2026-09-14）、本文は `-n` より長くなる。ここで見たいのは「`-n` が printf に食われて
+  # 空ファイルになっていないこと」なので、**本文が空でないことと `-n` を含むこと**で見る。
+  ck  "プロンプト -n が空ファイルにならない" "no" "$([[ -z "$SAVED" ]] && echo yes || echo no)"
+  ckc "プロンプト -n が本文に残る" "$SAVED" "-n"
 else
   # -- を区切りとして扱わない parser なので、この形は拒否される。空ファイルを作らないことだけ見る。
   OUT="$(printf -- '-n\n' | PATH="$STUB:$PATH" "$SO" --codex-only -o "$_TMP/o67" - 2>&1)"; RC=$?
   ck  "stdin から -n を渡しても通る" "0" "$RC"
-  ck  "空ファイルにならない" "-n" "$(cat "$_TMP/o67/prompt.txt" 2>/dev/null)"
+  SAVED67="$(cat "$_TMP/o67/prompt.txt" 2>/dev/null)"
+  # 上の [25] と同じ理由で完全一致では見ない（末尾に「読むだけ」の制約が付く・2026-09-14）。
+  ck  "空ファイルにならない" "no" "$([[ -z "$SAVED67" ]] && echo yes || echo no)"
+  ckc "-n が本文に残る" "$SAVED67" "-n"
 fi
 
 echo "[26] 実運用の呼び方が全部通る（陽性対照の組・統括指示）"

@@ -22,8 +22,8 @@ TARGET="$SCRIPT_DIR/../../../scripts/so-compare.sh"
 [[ -f "$TARGET" ]] || { echo "FAIL: so-compare.sh not found: $TARGET"; exit 1; }
 
 # so-compare.sh の中身が変わったらここを更新する（上のコメントを読むこと）
-EXPECTED_SHA="a6fa1a69729fb7c7e8abdfe947f5a32bb6fa2b048322464cca0c433104599dd0"
-EXPECTED_VERSION="2026-09-07b"
+EXPECTED_SHA="27a4ef945028e6e402888f691a09d48f010caf2d12cb2622da42337dcccec0bf"
+EXPECTED_VERSION="2026-09-14b"
 
 PASS=0; FAIL=0
 ck() { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
