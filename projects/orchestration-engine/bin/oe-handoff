@@ -23,6 +23,11 @@
 set -uo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# **閉じたあとの案内で使う。** 数え直しの結果を入れる。set -u の下なので、
+# 代入の手前で参照されても落ちないよう script 層で初期化する。**落ちるとすれば
+# 前任を閉じた直後**という、いちばん悪い位置になる（Copilot 指摘・2026-09-14）。
+RETIRE_CHILD_COUNT="unknown"
 # shellcheck source=../lib/handoff-state.sh
 source "${BIN_DIR}/../lib/handoff-state.sh"
 # shellcheck source=../lib/seat.sh
@@ -1238,12 +1243,18 @@ _retire_report() {
   # 宛先の通知とは別の工程で、片方をやっても他方は動かない。
   # **0 と確かめられたときだけ出さない。** `unknown`（数え直しができなかった）では出す。
   # 出さない側に畳むと、確かめられていないことが「つけかえ不要」に化ける。
-  if [ "$RETIRE_CHILD_COUNT" != "0" ]; then
+  if [ "${RETIRE_CHILD_COUNT:-unknown}" != "0" ]; then
     printf '\n**いま打つこと: 引き受けた子の登記を自分の下へつけかえる。**\n'
-    if [ "$RETIRE_CHILD_COUNT" = "unknown" ]; then
+    if [ "${RETIRE_CHILD_COUNT:-unknown}" = "unknown" ]; then
       printf '  **誰を引き受けたかは数え直せていません。** oe-tree で前任の下を拾ってから打ってください。\n'
     fi
-    printf '  oe-register link %%N   （引き受けた子の pane ごとに1回）\n'
+    # **素の名前で案内しない。** `oe-register` は配布対象に入っていないので PATH に無い
+    # （実測）。読んだ人がそのまま打てる形で出す。規約は `orchestration-toolkit`。
+    if command -v oe-register >/dev/null 2>&1; then
+      printf '  oe-register link %%N   （引き受けた子の pane ごとに1回）\n'
+    else
+      printf '  %s link %%N   （引き受けた子の pane ごとに1回）\n' "${BIN_DIR}/oe-register"
+    fi
     printf '  間に別の作業を挟まないでください。pane が再利用されると無関係な相手を子に登記します。\n'
     printf '  拒否されたら --force を足さず、pane が再利用されていないかを確かめてください。\n'
     printf '  検算は oe-tree。前任が木に現れないことと、子が自分の下に出ることを見ます（root の本数では見ません）。\n'
