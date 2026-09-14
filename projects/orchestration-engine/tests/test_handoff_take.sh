@@ -104,6 +104,8 @@ out="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --reaso
 ckc "張り替えたと言う"     "$out" "board の宣言を自分（%11）へ張り替えた"
 ckc "検算したと言う"       "$out" "読み直して自分が返る"
 ckc "委譲子0件を確かめた"  "$out" "前任に生きた委譲子は居ない"
+# 子が居ないのにつけかえを案内すると、打つ相手が無い指示になる。
+nck "つけかえの案内を出さない" "$out" "登記を自分の下へつけかえていない"
 ckc "session_id を確かめた" "$out" "前任の session_id を確かめた"
 ckc "自己登記した"         "$out" "root として登記した"
 ckc "登記の呼び出しに --force がある" "$(cat "$CALL_LOG")" "register root --label cockpit --force"
@@ -157,6 +159,11 @@ ckc "子を一覧で出す"        "$out3" "%12"
 ckc "引き受けたと言う"      "$out3" "引き受けた委譲子を確かめた（1 件・交代は止めない）"
 ckc "新しい報告先を伝えていないと言う" "$out3" "新しい報告先を伝えていない"
 ckc "機構では塞がらないと言う"         "$out3" "PARENT_TMUX_PANE は差し替えられない"
+# **登記のつけかえは宛先の通知とは別の工程である。** 片方をやっても他方は動かない。
+# 一覧を出すだけだと「見せられた＝処理された」と読まれる（実地で統括が飛ばした）。
+ckc "登記のつけかえが未了だと言う"     "$out3" "登記を自分の下へつけかえていない"
+ckc "打つ verb を言う"                 "$out3" "oe-register link"
+ckc "打ち時が retire のあとだと言う"   "$out3" "retire --execute\` のあと"
 ckc "席は動いた"            "$out3" "board の宣言を自分（%11）へ張り替えた"
 ck  "board は書き換わった"  "%11" "$(oe_seat_resolve "$BOARD")"
 rm -f "$REG"/*.json
