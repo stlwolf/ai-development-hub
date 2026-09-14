@@ -679,6 +679,19 @@ if [[ -n "$PREV_DIR" ]]; then
     fi
 fi
 
+# --- レーンは読むだけである、と明示する（プロンプトの最後に置く） ---
+#
+# **依頼の側に「書くな」が無かった。** レーンへ渡す文面は「上記パス配下のファイルを参照して
+# 回答してください」と読みに行かせる一方で、書かないことをどこにも言っていなかった。実際に
+# cursor レーンが engine の verb を直してリポジトリへ直接コミットした（2026-09-14・共著者が
+# Cursor のコミットが master に入った）。
+#
+# **引数の側だけでは塞がらない。** codex は `-s read-only` で守られているが、cursor は `-f`
+# （`--yolo` の別名）で許可が広がる。ツールごとに守りがばらつくので、全レーンへ同じ文面で渡す。
+# **プロンプトの最後に置く**のは、直前に足した材料（ワークスペース・添付・前回の回答）より後ろの
+# ほうが効くからである。
+PROMPT="${PROMPT}"$'\n\n--- この依頼の制約（読むだけ） ---\n・あなたは読んで答えるだけである。**ファイルを作成・変更・削除しない。**\n・**コミットしない。** git の状態を変えるコマンド（commit / add / push / checkout / stash / rebase / reset 等）を実行しない。\n・状態を変えるコマンド（パッケージの導入、設定の書き換え、サービスの起動・停止）を実行しない。\n・不具合や改善点を見つけたら、**直さずに回答の中で指摘する**。それがこの依頼の目的である。\n・読む操作（ファイルの閲覧、検索、`--help` の確認、テストの実行のうち副作用の無いもの）は構わない。'
+
 # --- 出力ディレクトリ ---
 if [[ -z "$OUT_DIR" ]]; then
     OUT_DIR="tmp/so-$(date +%Y%m%d-%H%M%S)"
@@ -834,7 +847,7 @@ commit_meta() {
 # **同じ日に2回変えたら英字を足す。** 版は日付だけだと同日の2回目が前と同じ値になり、
 # 観測を版で層別できなくなる（#303 がまさにこれを必要としている）。a は付けず、2回目を
 # b、3回目を c とする。
-SO_COMPARE_VERSION="2026-09-07b"
+SO_COMPARE_VERSION="2026-09-14a"
 
 # --- CLI の版の取得（#298） ---
 #
@@ -1165,7 +1178,10 @@ run_claude() {
     write_meta_start claude "$attempt" "$tool_timeout"
     start=$(date +%s)
 
-    local claude_args=("-p")
+    # **`--permission-mode plan` を渡す。** このレーンは読んで答えるだけなので、編集できる
+    # モードで起こす理由が無い。codex は `-s read-only`、cursor は `--sandbox enabled` で
+    # 閉じているのに、claude だけ何も宣言していなかった（2026-09-14 の見直し）。
+    local claude_args=("-p" "--permission-mode" "plan")
     if [[ -n "$CLAUDE_MODEL" ]]; then
         claude_args+=("--model" "$CLAUDE_MODEL")
     fi
@@ -1264,7 +1280,11 @@ run_cursor() {
     write_meta_start cursor "$attempt" "$tool_timeout"
     start=$(date +%s)
 
-    local cursor_args=(-p -f --mode ask --output-format text)
+    # **`-f` は渡さない。** `-f` は `--yolo` の別名で「明示的に拒否されない限りコマンドを許可する」
+    # である（`agent --help`）。`--mode ask` は読み取り専用と説明されているのに、同時に許可を広げて
+    # いた。実際にこのレーンがリポジトリを直してコミットした（2026-09-14）。`--sandbox enabled` で
+    # 明示的に閉じる。**対話待ちで止まるなら、その挙動を測ってから戻す**（この単位で実測した）。
+    local cursor_args=(-p --mode ask --sandbox enabled --output-format text)
     if [[ -n "$CURSOR_MODEL" ]]; then
         cursor_args+=(--model "$CURSOR_MODEL")
     fi
