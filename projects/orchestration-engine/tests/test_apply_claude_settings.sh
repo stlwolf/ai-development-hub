@@ -331,83 +331,23 @@ ck  "symlink のまま残る" "true" "$([[ -L "$ST" ]] && echo true || echo fals
 ck  "リンク先を書き換えていない" "real" "$(jq -r '.theme' "$CASE/real.json")"
 ckc "symlink だと言う" "$OUT" "symlink なので触りません"
 
-echo "[22] 現行実装との等価性（fixture 比較・終了コードも含める）"
-# 枝の名前に頼らない。履歴を遡って、旧実装をまだ含んでいる最後の版を探す。
-old_sync="$_TMP_DIR/old-sync-claude.sh"
-old_rev=""
-while IFS= read -r c; do
-  if git -C "$REPO_ROOT" show "$c:scripts/sync/sync-claude.sh" 2>/dev/null | grep -q 'sync_claude_hooks'; then
-    old_rev="$c"; break
-  fi
-done < <(git -C "$REPO_ROOT" rev-list HEAD -- scripts/sync/sync-claude.sh 2>/dev/null)
-if [[ -z "$old_rev" ]]; then
-  # 見つからないときは緑にしない。等価性は受け入れ条件そのものなので、
-  # 確かめられなかったことを失敗として出す。
-  echo "  FAIL: 旧実装を含む版を履歴から見つけられない（等価性を確認できない）"
-  FAIL=$((FAIL+1))
-else
-  git -C "$REPO_ROOT" show "$old_rev:scripts/sync/sync-claude.sh" > "$old_sync"
-  # 旧実装は canonical を自分の位置から解決するので、リポジトリ内に置く必要がある。
-  # 固定名だと同名の未追跡ファイルを壊すし、並行実行で互いに潰し合う。プロセス
-  # 番号を含めた名前にし、途中で落ちても片付くよう trap に積む。
-  old_in_repo="$REPO_ROOT/scripts/sync/.old-sync-claude-for-test.$$.sh"
-  if [[ -e "$old_in_repo" ]]; then
-    echo "  FAIL: 一時ファイルの置き場が既に埋まっている: $old_in_repo"
-    FAIL=$((FAIL+1))
-    old_in_repo=""
-  else
-    trap 'rm -rf "$_TMP_DIR"; [[ -n "${old_in_repo:-}" ]] && rm -f "$old_in_repo"' EXIT
-    cp "$old_sync" "$old_in_repo"; chmod +x "$old_in_repo"
-  fi
-  run_fixture() {  # run_fixture <script> <name> <init> <outdir>
-    local script="$1" name="$2" init="$3" outdir="$4"
-    local home="$outdir/$name/home"; mkdir -p "$home/.claude"
-    local st="$home/.claude/settings.json"
-    case "$init" in
-      NONE) ;;
-      SYMLINK) printf '%s' '{"hooks":{}}' > "$home/.claude/real.json"; ln -s "$home/.claude/real.json" "$st" ;;
-      DIR) mkdir -p "$st" ;;
-      *) printf '%s' "$init" > "$st" ;;
-    esac
-    # shebang に任せて起動する。bash "$script" と書くと、旧実装が /bin/bash で
-    # 新実装が env bash という版の違いが隠れ、版差に由来するずれを見逃す。
-    env HOME="$home" "$script" >/dev/null 2>&1
-    local rc=$?
-    # 終了コードも比べる。片方が適用前に落ちて入力が残っただけでも
-    # 内容だけ見ると一致に見えるため（実装SO 指摘）。
-    printf 'rc_class=%s\n' "$( [[ "$rc" -eq 0 ]] && echo ok || echo nonzero )"
-    if [[ -f "$st" && ! -L "$st" ]]; then jq -S . "$st" 2>/dev/null || cat "$st"
-    elif [[ -L "$st" ]]; then echo "SYMLINK"
-    elif [[ -d "$st" ]]; then echo "DIR"
-    else echo "MISSING"; fi
-  }
-  declare -a FIX_NAMES=(missing hooks_only own_statusline wrapped broken_json symlink personal_keys dir)
-  # shellcheck disable=SC2016  # fixture の中身は literal のまま渡す
-  declare -a FIX_INITS=(
-    'NONE'
-    '{"hooks":{"Stop":[{"matcher":"","hooks":[]}]}}'
-    '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}'
-    '{"statusLine":{"type":"command","command":"OE_HEARTBEAT_WRAP_CMD=/x/mybar.sh $HOME/.claude/statusline/statusline-oe-heartbeat.sh","refreshInterval":10}}'
-    '{ not json'
-    'SYMLINK'
-    '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true}'
-    'DIR'
-  )
-  echo "  （比較元: $(git -C "$REPO_ROOT" rev-parse --short "$old_rev")）"
-  for i in "${!FIX_NAMES[@]}"; do
-    [[ -z "${old_in_repo:-}" ]] && break
-    n="${FIX_NAMES[$i]}"; init="${FIX_INITS[$i]}"
-    o="$(run_fixture "$old_in_repo" "$n" "$init" "$_TMP_DIR/eq_old")"
-    w="$(run_fixture "$REPO_ROOT/scripts/sync/sync-claude.sh" "$n" "$init" "$_TMP_DIR/eq_new")"
-    # 壊れた JSON のときだけ終了コードが変わるのは意図した変更なので、内容だけ比べる。
-    if [[ "$n" == "broken_json" ]]; then
-      o="$(printf '%s' "$o" | grep -v '^rc_class=')"
-      w="$(printf '%s' "$w" | grep -v '^rc_class=')"
-    fi
-    ck "fixture $n の結果が一致" "$o" "$w"
-  done
-  [[ -n "${old_in_repo:-}" ]] && rm -f "$old_in_repo"
-fi
+# [22] 現行実装との等価性（fixture 比較）は撤去した（2026-09-16・#338）。
+#   何を確かめていたか: #359 の移行が挙動を変えていないこと。git の履歴から旧実装
+#   （sync_claude_hooks を含む最後の版・当時は 6d52712）を取り出し、8つの fixture で
+#   新実装と結果が一致することを主張していた。移行は着地済みで、目的は果たしている。
+#   なぜ外したか: 旧実装は hooks と statusLine の2つしか知らないので、宣言に3つ目の
+#   項目を足すと原理的に結果が一致しない（不一致になるのは書き込みが起きる5件）。
+#   残すと宣言の仕組みに項目を1つも増やせない。disableAgentView を宣言へ入れる作業で
+#   行き止まりになったため、owner 裁定で外した。
+#   失った検出能力: full sync の入口からの配線、shebang での shell 選択、sync 全体の
+#   終了コード、そして個別の主張が列挙していないキー変更。旧実装という独立した判定
+#   基準も失っている。個別の検査（missing / symlink / dir / 壊れた JSON / 個人キーの
+#   保持 / statusLine の包み）は残っているので、8件の意味がすべて消えたわけではない。
+#   置き換え案: apply の結果に check を当てて判定し、宣言外のキーが apply の前後で
+#   変わらないことも見る形（apply と check は判定ロジックを共有していないので互いの
+#   基準になれる）。凍結した2項目の宣言で旧実装を走らせる案は、sync-claude.sh が宣言の
+#   場所を apply に渡さないので、apply を直接呼ぶか使い捨ての木を作る必要がある。
+#   どちらも本 PR の範囲外で、別途起票する。
 
 echo "[23] 中身が同じ symlink へ直前に差し替えられても置き換えない（実装SO 指摘の回帰）"
 fresh c23
