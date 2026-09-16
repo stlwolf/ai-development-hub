@@ -43,6 +43,16 @@ cp "$REPO_ROOT/scripts/sync/apply-claude-settings.sh" "$SCRATCH/scripts/sync/" 2
 cp "$CANON/hooks/claude.hooks.json" "$SCRATCH/canonical/hooks/"
 cp "$CANON/claude/statusline/claude.statusline.json" "$SCRATCH/canonical/claude/statusline/"
 cp "$CANON/claude/settings.harness.json" "$SCRATCH/canonical/claude/" 2>/dev/null
+# 宣言が参照する正本は、宣言自身から引いて複写する。手で並べると、宣言に項目を
+# 足したときにここだけ取り残され、「正本ファイルが見つかりません」で apply が
+# rc=2 を返し、sync 全体が落ちる（#338 で実際に踏んだ）。
+if command -v jq >/dev/null 2>&1; then
+    while IFS= read -r rel; do
+        [[ -z "$rel" ]] && continue
+        mkdir -p "$SCRATCH/$(dirname "$rel")"
+        cp "$REPO_ROOT/$rel" "$SCRATCH/$rel" 2>/dev/null
+    done < <(jq -r '.items[].source.file // empty' "$CANON/claude/settings.harness.json" 2>/dev/null)
+fi
 SCRATCH_SYNC="$SCRATCH/scripts/sync/sync-claude.sh"
 
 fresh() { HOMEDIR="$_TMP_DIR/$1"; mkdir -p "$HOMEDIR/.claude"; rm -f "$SCRATCH/canonical/output-styles"/*.md; }

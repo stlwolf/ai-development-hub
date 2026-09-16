@@ -80,7 +80,7 @@ run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
 ck  "バックアップは無い" "0" "$(backups)"
-ck  "宣言の2項目だけ" "hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の3項目だけ" "disableAgentView hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[5] symlink には触らず、止めない"
 fresh c5
@@ -275,7 +275,7 @@ ST="$CASE/nested/deeper/settings.json"
 run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
-ck  "宣言の2項目が入る" "hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の3項目が入る" "disableAgentView hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[19] ポインタの妥当性（実装SO 指摘の回帰）"
 fresh c19
@@ -347,7 +347,7 @@ ckc "symlink だと言う" "$OUT" "symlink なので触りません"
 #   変わらないことも見る形（apply と check は判定ロジックを共有していないので互いの
 #   基準になれる）。凍結した2項目の宣言で旧実装を走らせる案は、sync-claude.sh が宣言の
 #   場所を apply に渡さないので、apply を直接呼ぶか使い捨ての木を作る必要がある。
-#   どちらも本 PR の範囲外で、別途起票する。
+#   置き換えの案と失った能力の一覧は #401 に起票した。
 
 echo "[23] 中身が同じ symlink へ直前に差し替えられても置き換えない（実装SO 指摘の回帰）"
 fresh c23
@@ -696,6 +696,18 @@ for bad in '"abc"' '5' '{"a":1}'; do
   ck  "items=$bad を拒む" "2" "$RC"
   ckc "配列でないと言う" "$OUT" "items が配列ではありません"
 done
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[50] agent view を切る値そのものを固定する（#338・owner 裁定）"
+# 値の一致だけでなく true であることを見る。build_green と同じく正本から読む形だと、
+# 正本を false に書き換えても緑のままになる（実測）。ここで true を止めておくと、
+# 方針を変えるときにテストも一緒に直す必要が出る。それが狙いである。
+ck  "正本の値は true" "true" "$(jq -r '.disableAgentView' "$REPO_ROOT/canonical/claude/settings.values.json")"
+fresh c50
+printf '%s' '{"disableAgentView":false,"theme":"dark"}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "適用後は true に直る" "true" "$(jq -r '.disableAgentView' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
 
 echo ""
