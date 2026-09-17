@@ -19,6 +19,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CHECK="$REPO_ROOT/scripts/sync/check-claude-settings.sh"
 HOOKS_SRC="$REPO_ROOT/canonical/hooks/claude.hooks.json"
 SL_SRC="$REPO_ROOT/canonical/claude/statusline/claude.statusline.json"
+VALUES_SRC="$REPO_ROOT/canonical/claude/settings.values.json"
 
 [[ -x "$CHECK" ]] || { echo "FAIL: check script not found: $CHECK"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
@@ -47,7 +48,8 @@ build_green() {
   jq -n \
     --argjson hooks "$(jq -c '.hooks' "$HOOKS_SRC")" \
     --argjson sl "$(jq -c '.statusLine' "$SL_SRC")" \
-    '{hooks: $hooks, statusLine: $sl}' > "$ST"
+    --argjson dav "$(jq -c '.disableAgentView' "$VALUES_SRC")" \
+    '{hooks: $hooks, statusLine: $sl, disableAgentView: $dav}' > "$ST"
 }
 
 # ============================================================================
@@ -58,6 +60,7 @@ ck  "exit 0" "0" "$RC"
 ckc "宣言どおりと出る" "$OUT" "宣言どおり"
 ckc "hooks が一致" "$OUT" "一致 /hooks"
 ckc "statusLine が一致" "$OUT" "一致 /statusLine"
+ckc "disableAgentView が一致" "$OUT" "一致 /disableAgentView"
 
 echo "[2] statusLine が包まれた形 → 緑（値の一致では判定しない）"
 fresh c2; build_green
@@ -311,6 +314,23 @@ ncc "解決失敗にしない" "$OUT" "正本にそのパスがありません"
 printf '%s' '{"nullable":1}' > "$ST"
 OUT="$("$CHECK" --settings "$ST" --project-root "$PROJ" --declaration "$CASE/decl.json" 2>&1)"; RC=$?
 ck  "違えば差分" "1" "$RC"
+
+echo "[23] disableAgentView だけ崩す → その項目だけが差分に出る（#338）"
+fresh c23; build_green
+jq '.disableAgentView = false' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "disableAgentView が差分" "$OUT" "差分 /disableAgentView"
+ncc "hooks は巻き込まれない" "$OUT" "差分 /hooks"
+ncc "statusLine は巻き込まれない" "$OUT" "差分 /statusLine"
+
+echo "[24] disableAgentView のキーが無い → 未適用（値が違う場合と区別する・#338）"
+fresh c24; build_green
+jq 'del(.disableAgentView)' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "未適用として出る" "$OUT" "未適用 /disableAgentView"
+ncc "値の差分とは言わない" "$OUT" "差分 /disableAgentView"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

@@ -22,6 +22,16 @@
         "pointer": "/statusLine"
       },
       "note": "拍動 producer は既存の statusLine を包んで表示を保つので、値の一致では検査できない。ハンドラが一致の述語を持つ（plan DJ-4）。"
+    },
+    {
+      "pointer": "/disableAgentView",
+      "op": "replace",
+      "scope_behavior": "override",
+      "source": {
+        "file": "canonical/claude/settings.values.json",
+        "pointer": "/disableAgentView"
+      },
+      "note": "agent view を切る。切れるのは `claude agents` / `--bg` / `/background` と、`attach` `stop` `rm` `logs` `respawn` `daemon` の各サブコマンドと、背面の on-demand daemon（公式の呼び方は on-demand supervisor）である。`/fork` は background session を作らず旧来のforked subagent に戻り、`/subtask` は使えなくなる。宣言で持つ理由は #338 — background と foreground を往復すると session が fork され、新しい session_id になって tmux の pane 束縛を失う。fork 前の sidecar は古い pane を主張したまま凍って残るので、board の現統括 pane と突合する oe-vitals と oe-handoff が死んだ方を読む。**ON に戻すときは、この項目を外すだけでは戻らない** — apply は宣言した項目にしか触らないので、配った `true` がそのまま残る。値を `false` にして一度 apply するか、`op` を `absent` にして一度配ってから項目を外す。左矢印の近道だけを切る `leftArrowOpensAgents` もあるが、`/background` と終了時の画面も往復の入口なので、機能ごと切ることを選んだ（owner 裁定 2026-09-16）。"
     }
   ],
   "unchecked_scopes": [
