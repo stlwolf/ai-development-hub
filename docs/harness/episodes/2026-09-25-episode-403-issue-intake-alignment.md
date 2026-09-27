@@ -178,3 +178,28 @@ plan には Step 8 の D2b として足した。足すときに1つ問題に気�
 ### GATE: スキル本体の自己点検
 
 Step 1 と Step 2 の受入がすべて通ったので、Step 3 へ進む。
+
+### Step 3〜6c: 配布物の文言を直した
+
+どの step も、plan に書いた受入のコマンドを変更の前と後で走らせ、変更前は plan に書いた値、変更後は反転した値になることを確かめた。置き換えは、元の文字列がちょうど1回だけ現れることを確かめながら行った。
+
+| Step | 対象 | 受入の結果 | コミット |
+|---|---|---|---|
+| 3 | `question-driven-design` | A3-1 1→0、A3-2・A3-3・A3-4 0→1、A3-5 は前後とも 1/1 | `04b7e0e` |
+| 4 | `document-format.md` | A4-1・A4-2 0→1、A4-3〜A4-5 は古い文 1→0 と新しい文 0→1、A4-6 の diff は空 | `78716c6` |
+| 5 | `doc-flow-guardrail` | A5-1〜A5-3 0→1、A5-4 は古い文 1→0 と新しい文 0→1、A5-5 の diff（固定節）は空 | `3901311` |
+| 6 | `CATALOG.md` | A6-1・A6-2 0→1、A6-3 は 29・29・29 | `536ae05` |
+| 6b | `episode-retrospective` | A6b-1 0→1。条件付きの項目が4つになり、見出しの件数も 4 に直した。件数を書いた箇所はほかに無かった | `2a9acf8` |
+| 6c | hub の `CLAUDE.md`・`AGENTS.md` | A6c-1 0→1、A6c-2 1。A6c-3 は D2 で見る | `9728036` |
+
+`question-driven-design` の編集で、Edit の道具が「読む前に書くな」で3回とも止まった。受入のコマンドは先に走っていたので、その出力（A3-1 が 1、A3-2〜A3-4 が 0）は変更前の値として使えた。
+
+### Step 7: sync の起動テスト
+
+本物の `HOME` のまま worktree から sync を走らせると、`~/.claude` などのリンクが worktree へ張り替わり、worktree を消した時点で壊れる。そこで `mktemp -d` のディレクトリを `HOME` にして、worktree の `sync-claude.sh`・`sync-codex.sh`・`sync-cursor.sh` を走らせた。
+
+- A7-1: 3つとも exit 0。
+- A7-2: 一時 `HOME` の `.claude`・`.codex`・`.cursor` の `skills/issue-intake` がどれも symlink で、worktree のスキルを指し、`SKILL.md` が読めた。
+- A7-3: 同じ一時 `HOME` に対する `sync.sh --check claude codex cursor` は「All targets up to date.」で exit 0。
+- A7-4: `test_sync_claude_statusline.sh` は 17 PASS / 0 FAIL、`test_sync_output_styles.sh` は 18 PASS / 0 FAIL。
+- 本物の `~/.claude/skills` に `issue-intake` は無く、既存のスキルのリンク先は master の作業ツリーのままだった。
