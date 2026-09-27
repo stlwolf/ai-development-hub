@@ -95,6 +95,10 @@ ai-development-hub/
 - 成功したアイデアは `projects/` に昇格
 - `discussion-logs/` にマルチAIブレスト記録を保存可
 
+## 文脈の置き場（蒸留の文書）
+
+issue に着手するときの背景・過去の判断・失敗の記録は、蒸留の文書（discussion / plan / episode / decision）に残っている。蒸留の木は `docs/{name}/` と `projects/{name}/docs/` の下にあり、issue が触る場所に対応する木を読む。木の置き方と文書型の規約は `canonical/orchestration-spec/document-format.md`（「ファイル命名規約」節）にある。
+
 ## 行動規範（canonical/rules/より）
 
 1. **Evidence First**: 根拠は一次情報（公式ドキュメント、RFC、ソースコード、ログ）を優先。推測は明示
