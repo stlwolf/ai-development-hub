@@ -118,7 +118,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 ## タスク（可変・埋める）
 
 - issue: #[N]
-- 認識合わせ: [確定版コメントの URL（`issue-intake`）／ 省略（owner の指示）]
+- 認識合わせ: [確定版コメントの URL（`issue-intake`）／ 省略（owner の指示）／ 対象外（issue の無い作業）]
 - scope: [このタスクで作る / 変えるもの・境界]
 - 受け入れ基準: [検証可能な条件]
 - branch: [prefix]/#[N]_[slug]（`branch-naming`）
