@@ -608,7 +608,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 **判定順（軸が直交し複数行に該当するとき・境界の解消）**:
 
-0. **issue を起点にする作業か** — そうなら、入口層を選ぶ前に、設計判断の有無にかかわらず (0) の認識合わせを通す（入口は `issue-intake`・§11）。通したあと、1〜5 は従来どおり判定する。確定版のコメントがあれば、それを読むことで (0) を通したことになる（委譲された子も同じ）。issue の無い作業はこの項に当たらず、1 から判定する。
+0. **issue を起点にする作業か** — そうなら、入口層を選ぶ前に、設計判断の有無にかかわらず (0) の認識合わせを通す（入口は `issue-intake`・§11）。通したあと、1〜5 は従来どおり判定する。確定版のコメントがあれば、それを読むことで (0) を通したことになる（委譲された子も同じ）。owner が要らないと言ったときは省く（`issue-intake` の「いつ使わないか」）。issue の無い作業はこの項に当たらず、1 から判定する。
 1. **設計判断が絡むか** — 絡むなら discussion から（省略できるのは対話でスコープを確定でき QDD 不要と判断できるときのみ）。
 2. **実装を伴うか** — 伴うなら **plan 必須**。**「軽微修正」は plan 必須則の唯一の例外**（可逆・小・自明で設計判断を含まないもの。判断に迷うなら軽微ではない＝plan を書く）。bugfix / 緊急 hotfix も設計判断が無ければ軽微側、有れば plan 側。
 3. **迷ったら重い側（plan・discussion）に倒す** — 過小な層選択（層なしで済ませて設計級を作業層に滞留させる）が実害（§13）だから。
@@ -619,7 +619,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 ## 11. ゲート配置
 
-フロー上のゲート — 着手前のゲート (0)（issue 起点は必須・それ以外は必要時）+ 確定〜後始末の (1)–(6)。各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。既存の (1)–(6) は番号を維持し、先頭に (0) を追加する（consumer の再 stale 化回避）。
+フロー上のゲート — 着手前のゲート (0)（認識合わせは issue 起点で必須・`question-driven-design` は必要時）+ 確定〜後始末の (1)–(6)。各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。既存の (1)–(6) は番号を維持し、先頭に (0) を追加する（consumer の再 stale 化回避）。
 
 ```text
 [着手前] --(0)--> [設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
@@ -630,7 +630,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 | # | 位置 | ゲート | routing スキル / ルール |
 |---|------|--------|------------------------|
-| 0 | 着手前（issue 起点は必須・それ以外は必要時） | issue 起点: `issue-intake` で認識合わせの3つの出力を owner とすり合わせ、確定版を issue コメントに残す（親は作業に入る前と子へ渡す前に通す）。設計判断が多い / 前提未確定 / 着手可能性が不明なとき: `question-driven-design` で人間と scope・考慮漏れ・設計着手可能性をすり合わせ、(1) の前に挿入する | `issue-intake`（合図で `question-driven-design`）/ `question-driven-design` + `implementation-gate-rule` |
+| 0 | 着手前（認識合わせは issue 起点で必須・`question-driven-design` は必要時） | issue 起点: `issue-intake` で認識合わせの3つの出力を owner とすり合わせ、確定版を issue コメントに残す（親は作業に入る前と子へ渡す前に通す）。設計判断が多い / 前提未確定 / 着手可能性が不明なとき: `question-driven-design` で人間と scope・考慮漏れ・設計着手可能性をすり合わせ、(1) の前に挿入する | `issue-intake`（合図で `question-driven-design`）/ `question-driven-design` + `implementation-gate-rule` |
 | 1 | 設計判断の確定前 | ゼロベース代替探索を最低1回 | `predecision-exploration` |
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
