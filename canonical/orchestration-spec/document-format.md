@@ -608,6 +608,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 **判定順（軸が直交し複数行に該当するとき・境界の解消）**:
 
+0. **issue を起点にする作業か** — そうなら、入口層を選ぶ前に、設計判断の有無にかかわらず (0) の認識合わせを通す（入口は `issue-intake`・§11）。通したあと、1〜5 は従来どおり判定する。確定版のコメントがあれば、それを読むことで (0) を通したことになる（委譲された子も同じ）。issue の無い作業はこの項に当たらず、1 から判定する。
 1. **設計判断が絡むか** — 絡むなら discussion から（省略できるのは対話でスコープを確定でき QDD 不要と判断できるときのみ）。
 2. **実装を伴うか** — 伴うなら **plan 必須**。**「軽微修正」は plan 必須則の唯一の例外**（可逆・小・自明で設計判断を含まないもの。判断に迷うなら軽微ではない＝plan を書く）。bugfix / 緊急 hotfix も設計判断が無ければ軽微側、有れば plan 側。
 3. **迷ったら重い側（plan・discussion）に倒す** — 過小な層選択（層なしで済ませて設計級を作業層に滞留させる）が実害（§13）だから。
@@ -618,18 +619,18 @@ YYYY-MM-DD-{type}-{topic}.md
 
 ## 11. ゲート配置
 
-フロー上のゲート — 設計着手前の soft gate (0)（必要時）+ 確定〜後始末の (1)–(6)。各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。既存の (1)–(6) は番号を維持し、先頭に (0) を追加する（consumer の再 stale 化回避）。
+フロー上のゲート — 着手前のゲート (0)（issue 起点は必須・それ以外は必要時）+ 確定〜後始末の (1)–(6)。各ゲートで**必ず通すスキル**（routing）。中身の品質基準は各スキルに委ねる（DJ-11 二層構造 — 本 spec が持つのは大原則1行 + routing のみ）。既存の (1)–(6) は番号を維持し、先頭に (0) を追加する（consumer の再 stale 化回避）。
 
 ```text
-[設計着手前] --(0)--> [設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
+[着手前] --(0)--> [設計判断] --(1)--> [plan 確定] --(3)--> [実装] --(4)--> [PR] --(5)--> [merge] --(6)--> [後始末]
 ```
 
-- (0) は設計着手前の soft gate（毎回ではなく必要時のみ挿入）
+- (0) は着手前のゲート。issue を起点にする作業では必ず通し（入口は `issue-intake`）、設計判断が多いときの `question-driven-design` は必要時のみ挿入する
 - (2) は plan 確定前（設計SO）
 
 | # | 位置 | ゲート | routing スキル / ルール |
 |---|------|--------|------------------------|
-| 0 | 設計着手前（必要時・soft） | `question-driven-design` で人間と scope・考慮漏れ・設計着手可能性をすり合わせる。設計判断が多い / 前提未確定 / 着手可能性が不明なとき (1) の前に挿入 | `question-driven-design` + `implementation-gate-rule` |
+| 0 | 着手前（issue 起点は必須・それ以外は必要時） | issue 起点: `issue-intake` で認識合わせの3つの出力を owner とすり合わせ、確定版を issue コメントに残す（親は作業に入る前と子へ渡す前に通す）。設計判断が多い / 前提未確定 / 着手可能性が不明なとき: `question-driven-design` で人間と scope・考慮漏れ・設計着手可能性をすり合わせ、(1) の前に挿入する | `issue-intake`（合図で `question-driven-design`）/ `question-driven-design` + `implementation-gate-rule` |
 | 1 | 設計判断の確定前 | ゼロベース代替探索を最低1回 | `predecision-exploration` |
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
@@ -637,7 +638,7 @@ YYYY-MM-DD-{type}-{topic}.md
 | 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed` 明示）→ owner マージ（HG） | `episode-retrospective` |
 | 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定（§13） | `branch-finish` + §13 |
 
-(0) は毎回ではなく**必要時の soft gate**（(3)/(5)/(6) の owner HG のような必須ゲートとは別）。§10 遷移規則の「設計判断が多い → discussion（QDD 併用）」がこの (0) に対応する（DJ-6）— 入口層 discussion での QDD と gate (0) は同じ「人間とのすり合わせ」を指す。
+(0) は2つの部分からなる。issue 起点の認識合わせ（必須・入口は `issue-intake`）と、設計判断が多いときの人間とのすり合わせ（必要時の soft gate・`question-driven-design`）である。(3)/(5)/(6) の owner HG は、これとは別の必須ゲートである。§10 遷移規則の判定順0 が前者に、「設計判断が多い → discussion（QDD 併用）」が後者に対応する（DJ-6）— 入口層 discussion での QDD と gate (0) の後者は、同じ「人間とのすり合わせ」を指す。issue に着手するときに認識合わせを通すという規範そのものはスキル `issue-intake` が持ち、どのリポジトリでも効く。この表が見るのは、このフローを採用する作業の中での位置である。
 
 **plan の着地先**: committed 層の plan は、それだけで PR を立てず、作業の枝に載せて**実装の最初の PR と一緒に着地させる**（ゲート3 で承認された計画を実装の PR に入れ、その PR をゲート5 でマージする）。plan だけの PR を単独で着地させてよいのは、owner が明示的にそう裁定したときだけ。ゲート3 の前に plan を draft PR へ載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない・実装そのものはゲート3 の後）。同じ枝で作った episode・knowledge もその枝の PR に載せる（knowledge を別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない）。これは §13.3 の「作業層 plan の扱い」（`.oe/` の plan を昇格するかどうか）とは別で、こちらは committed 層の plan doc をどの PR で commit するかを決める。
 
