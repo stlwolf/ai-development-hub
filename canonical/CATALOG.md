@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (28)
+## Skills (29)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -24,6 +24,7 @@
 | episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル〔構造化 FB セクション向け〕・tier 判定・本文と closure の read/write 契約＝pointer 許容で二重執筆を止める） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
+| issue-intake | issue 着手時の認識合わせ（やること・書いていないが要ること・見た観点の3つを出し、owner の応答1回で確定版を issue コメントに残す。深掘りの合図で question-driven-design へ受け渡す） | `skills/issue-intake/SKILL.md` | skill: question-driven-design, skill: so-compare |
 | kickoff-to-plan | Kickoff Documentを実行可能なプランに忠実変換する | `skills/kickoff-to-plan/SKILL.md` | skill: adversarial-review |
 | markdown-conventions | Markdown記法の規約を適用する | `skills/markdown-conventions/SKILL.md` | — |
 | orchestration-toolkit | oe-* オーケストレーションツール群（engine/委譲/SOゲート/選択・観測）と駆動層規律の統合概観。repo 走査でなく一貫理解する loadable パッケージ。詳細は bin/README へ routing | `skills/orchestration-toolkit/SKILL.md` | skill: delegate-task, skill: so-compare, skill: predecision-exploration, skill: episode-retrospective, skill: code-path-exhaustion |
@@ -47,7 +48,7 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 
 | チェーン | フロー | 備考 |
 |---------|--------|------|
-| Issue → Branch → Worktree → Finish | `issue-conventions` → `branch-naming` → `worktrunk-worktrees` → `branch-finish` | タスク開始〜完了の全フロー |
+| Issue → Branch → Worktree → Finish | `issue-conventions` → `issue-intake` → `branch-naming` → `worktrunk-worktrees` → `branch-finish` | タスク開始〜完了の全フロー |
 
 ## Commands (7)
 

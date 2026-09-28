@@ -10,6 +10,7 @@ Behavioral principles are loaded from `~/.codex/AGENTS.md` (global layer); this 
 - Tool-agnostic canonical resources: `canonical/` (`rules/`, `skills/`, `agents/`, `commands/`)
 - Canonical resource catalog: `canonical/CATALOG.md` (全リソース一覧 + 依存関係)
 - Codex guardrails: `canonical/codex/AGENTS.md`
+- Context records for issue work (discussion / plan / episode / decision): see the section 「文脈の置き場（蒸留の文書）」 in `CLAUDE.md`
 
 ## Project Structure
 
