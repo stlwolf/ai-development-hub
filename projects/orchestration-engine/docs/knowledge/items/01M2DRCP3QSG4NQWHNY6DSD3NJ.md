@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-06
+    ref: "#403"
+    state: followed
+    note: "各項を変更前のファイルで走らせて値を記録した。件数の整合の項が変更前でも通るのを読み違え、設計SO が指摘した"
 ---
 
 **受入が変更を見ているかは、項目を足したかではなく、判定の錨がどこに在るかで決まる。**

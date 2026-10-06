@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-06
+    ref: "#403"
+    state: externally_verified
+    note: "owner の操作を受ける bot で確定を証明する案を棄却した。設計SO と実物の1周で owner の往復が1回に収まった"
 ---
 
 **安全側に段階を足す判断は、人の手数を増やす方向なら owner の優先順位と逆を向く。**

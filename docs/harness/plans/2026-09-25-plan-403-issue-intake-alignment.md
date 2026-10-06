@@ -3,7 +3,7 @@ id: "01M3C0CKF9ZAD6P616SF78BTYE"
 title: "#403 issue 起点の認識合わせスキル"
 date: 2026-09-25
 type: plan
-status: in-development       # ゲート3 承認（2026-09-28）。baseline は統括が承認の記録に残した
+status: stable               # ゲート3 承認（2026-09-28）・baseline 張り直し（2026-10-06・e8bd2d8）・closure 済み
 related:
   - type: derived_from
     ref: "https://github.com/stlwolf/ai-development-hub/issues/403"
