@@ -29,6 +29,10 @@ observations:
     ref: "#307"
     state: injected_not_used
     note: "段階1 では先例の手順に足りない前提（hooks・skills・agent 型）を母集団表へ足した。しかし段階2 で「本体が持つから消せる」を移植するとき、その前提が Codex と Cursor に在るかを確かめずに消し、同じ失敗を繰り返した"
+  - date: 2026-10-06
+    ref: "#403"
+    state: externally_verified
+    note: "先例の前提を識別の形ごとに表にした。dogfood の実測で委譲する側と受け取る側に前提が移っていない不発火が出て、description を直した"
 
 ---
 

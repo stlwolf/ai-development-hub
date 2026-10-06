@@ -70,6 +70,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 
 | 段 / 操作 | 必ず通す / 使うスキル |
 |-----------|----------------------|
+| issue 着手（issue 起点の作業の入口） | `issue-intake`（gate 0・issue 起点は必須。深掘りの合図が出たら `question-driven-design` へ） |
 | discussion（設計着手前・探索） | `question-driven-design`（gate 0）/ `predecision-exploration`（gate 1）/ `research-intake`・`oss-research-session`（調査入口） |
 | kickoff（オプション層） | `plan-to-kickoff` / `spec-card`（フォーマット） |
 | plan（実装系で必須） | `kickoff-to-plan` / `spec-card` / 設計SO（gate 2） |
@@ -117,6 +118,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 ## タスク（可変・埋める）
 
 - issue: #[N]
+- 認識合わせ: [確定版コメントの URL（`issue-intake`）／ 省略（owner の指示）／ 対象外（issue の無い作業）]
 - scope: [このタスクで作る / 変えるもの・境界]
 - 受け入れ基準: [検証可能な条件]
 - branch: [prefix]/#[N]_[slug]（`branch-naming`）
@@ -183,11 +185,11 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 
 ## routing 表（遷移・ゲート → 必ず通すスキル・DJ-11 layer b）
 
-正本は `document-format.md`「ゲート配置」節〔§11〕。本表はその索引（1:1）。gate (0) は必要時のみ挿入する soft gate、(3)/(5)/(6) の owner HG は必須ゲート。
+正本は `document-format.md`「ゲート配置」節〔§11〕。本表はその索引（1:1）。gate (0) のうち認識合わせは issue 起点の作業で必須（`issue-intake`）、`question-driven-design` は必要時のみ挿入する soft gate。(3)/(5)/(6) の owner HG は必須ゲート。
 
 | # | 位置 | ゲート | routing スキル / ルール |
 |---|------|--------|------------------------|
-| 0 | 設計着手前（必要時・soft） | scope・考慮漏れ・着手可能性を人間とすり合わせ | `question-driven-design` + `implementation-gate-rule` |
+| 0 | 着手前（認識合わせは issue 起点で必須・`question-driven-design` は必要時） | issue 起点: 認識合わせの3つの出力を owner とすり合わせ、確定版を issue コメントに残す（親は作業に入る前と子へ渡す前に通す）。設計判断が多いとき: scope・考慮漏れ・着手可能性を人間とすり合わせ | `issue-intake`（合図で `question-driven-design`）/ `question-driven-design` + `implementation-gate-rule` |
 | 1 | 設計判断の確定前 | ゼロベース代替探索を最低1回 | `predecision-exploration` |
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |

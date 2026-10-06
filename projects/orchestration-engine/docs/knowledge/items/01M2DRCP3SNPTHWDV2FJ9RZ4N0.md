@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-09-13-episode-390-predecessor-handoff-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-06
+    ref: "#403"
+    state: followed
+    note: "コマンド例を載せた形のまま走らせて検索の形を直した。起動の場所を揃えず、Codex が git の管理外で起動しない件を一度見落とした"
 ---
 
 **検算の実行形と、配布物に載せる記載形をずらさない。** ずれると、検算は通るのに読者は踏む。
