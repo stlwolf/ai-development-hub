@@ -183,3 +183,34 @@ plan に書いた「直した後」の文面が、plan の受入を本当に通�
 
 - `check.sh` の新しい側の文字列を、直した文面に合わせた（4-new・9-new1）。拾い上げの独立の行と、掃除の行（9-new3）、状態による定義（3-new3）の検査を足し、31項目にした。
 - 変更後は31項目と全体の検査 `G` がすべて PASS。`2a659a8` では31項目すべて FAIL（足した3項目も変更前に落ちることを確かめた）。番兵は0件。
+- commit `7b60eb9`。
+
+## I2-3: PR を作り、Copilot に依頼した
+
+- PR #413（https://github.com/stlwolf/ai-development-hub/pull/413）。タイトルは `docs(spec): 枝の作業から出た昇格を同じ PR でマージ前に入れる形へそろえる`、本文は `Refs #411`。作成の前に `origin/master` が動いていないこと（`HEAD..origin/master` が0件）を確かめた。draft にはしていない。
+- `gh pr edit 413 --add-reviewer @copilot` は exit 0 で、`requested_reviewers` は空のまま、PR の timeline には `review_requested`（Copilot）が載った。空のままなのは過去の実測と同じで、依頼の失敗ではない。
+
+## I2-4: Copilot の1ラウンド — 4件のうち1件を採った
+
+Copilot のレビューは依頼から約4分で届いた（2026-10-07 06:07 UTC・COMMENTED）。未返信の Copilot スレッドは4件だった。指摘が根拠にしたファイルは一次で確かめた。
+
+### 採った: knowledge の収穫の例外を、新しい「owner の裁定だけ」が打ち消していた
+
+- 「枝の作業から出た昇格」は定義上「設計級 / durable なもの」で、§13.1 の対象は durable の中に negative knowledge を含む。そこへ「別 PR に分けてよいのは owner の明示の裁定だけ」と書いたので、`episode-retrospective` の収穫フローが knowledge に認めている3つの例外（heavy・scope 外・owner の defer）と衝突していた。1行版も「同じ PR で」と言い切っていた。
+- **これは採用した negative knowledge（`01M486Z2ND07GQWV1GHS1SVB0J`）がまさに予測した形である。** 新しく足した規則（分けてよい条件）が、足した節の外にある既存の規則（knowledge の収穫フロー）を打ち消していた。plan の DJ-7 は knowledge の3条件を「decision には写さない」と決めたが、名前の定義が knowledge を含むことまでは突き合わせていなかった。実装SO（Codex）もこれを見つけていない。
+- 直した形: 仕様の判定タイミング (1) に「negative knowledge の収穫は除く。そちらを別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持つ」を足した。1行版の knowledge の文に「別 PR に分けてよい条件は収穫フローに従う」を足した。decision の「決定」節にも同じ除外を足した。固定節と「plan の着地先」段落は、名前の後ろに「（decision・discussion への追記）」と書いて knowledge を含めていないので直していない。
+- 検査を2項目足して33項目にした（3-new4・4-new2）。変更後はすべて PASS、`2a659a8` では33項目すべて FAIL、番兵は0件。
+
+### 採らなかった: `wt merge` の経路では、マージ後・掃除前に拾う時点が無い
+
+- 指摘の事実は正しい。`branch-finish` の Option 1 は `wt merge`（squash・rebase・FF・worktree 削除を1コールで行う）で、#289 の discussion（`projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md`）も「merge と worktree 削除の間にラッチを置くこと自体ができない」と記録している。
+- 採らなかった理由: 「マージ後・掃除の前」という時点は変更前の (2) からあり、この PR が持ち込んだものではない。この PR によって枝の作業から出た昇格はマージ前に入るので、マージ後の時間帯への依存はむしろ減る。作業層に残った昇格をどの経路で拾うかは、実行主体の置き場（#305）の問いである。統括への報告で範囲外として上げる。
+
+### 採らなかった: plan の `so.design: omitted` が値域の外
+
+- 指摘は正しい（「SO モード」節の値域は weak / strong）。plan は統括が baseline として digest を記録した版なので、書き換えると完了前の照合で食い違う。値域に owner が省いた場合の値が無いことは、P3 の報告で範囲外として統括へ上げてある。
+
+### 採らなかった: 固定節と1行版が行き先を discussion / decision に限っている
+
+- 実装SO（Codex）の指摘3の採らなかった部分と同じ点を、Copilot が独立に指摘した。2つのレビューが別々に当てたことになる。
+- 採らなかった理由: 変更前の固定節と1行版も同じ書き方で、行き先の書き方を直すのは昇格の時点を直すこの単位の範囲（と確定版の範囲）を外れる。直すなら、固定節・1行版と §13.3 の昇格先の選び方を一緒にそろえる別の変更になる。2レーンが独立に当てたことを添えて、統括へ範囲外として上げる。
