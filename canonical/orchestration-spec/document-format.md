@@ -17,6 +17,9 @@ related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/249"
     reason: "v2 改訂タスク（作業層公認・委譲文書の型名分離・昇格義務の規約化・draft→stable）"
+  - type: derived_from
+    ref: "projects/orchestration-engine/docs/decisions/2026-10-07-decision-411-branch-promotion-in-same-pr.md"
+    reason: "「昇格義務」節の判定タイミングを出どころで2種類に分けた裁定（#411・DJ-8 の (6) の昇格を作業層に残ったものに絞る）"
   - type: design_context
     ref: "projects/orchestration-research/synthesis/architecture-sketch.md"
     reason: "§5 MVP 構成（エンベロープ・パーサー・ゲート）、§6 蒸留パイプライン"

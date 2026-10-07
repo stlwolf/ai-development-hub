@@ -105,3 +105,9 @@ cockpit 統括セッション上で owner と question-driven-design により�
 - G4（昇格率）の適正水準 — 全昇格は非目標。episode-retrospective の昇格判定を通す運用が先（#217/#185 側）。
 - 強制の hard 化（hook）— v0 スキルの運用実績で「効いた節」を特定してから（#24 hook epic と接続）。
 - second-opinion-verification の旧規約（DOCUMENT_CONVENTION v0・report 型）の統一 — v2 改訂の scope 判断に委ねる（優先度低）。
+
+## 9. 追補（2026-10-07・#411）
+
+- DJ-8 の (6) にある「昇格判定」は、どの PR にも紐づかずに作業層に残ったものの拾い上げ（worktree 掃除の前）に絞った。枝の作業から出た昇格は、ゲート5 の closure を最後の確認にして、同じ PR でマージ前に着地させる。
+- 裁定と根拠は decision `projects/orchestration-engine/docs/decisions/2026-10-07-decision-411-branch-promotion-in-same-pr.md` にある。
+- DJ-8 の本文は、2026-07-12 の合意の記録として書き換えない。
