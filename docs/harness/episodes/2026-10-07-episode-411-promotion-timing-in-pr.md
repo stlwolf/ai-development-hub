@@ -3,7 +3,7 @@ id: "01M4AEC4F5E4MXEVSY4SXFGTJE"
 title: "#411 枝の作業から出た decision の昇格を、同じ PR でマージ前に行う形へそろえる"
 date: 2026-10-07
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/411"
@@ -11,8 +11,32 @@ related:
   - type: derived_from
     ref: "docs/harness/plans/2026-10-07-plan-411-promotion-timing-in-pr.md"
     reason: "この episode が記録する作業の計画"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-10-07-decision-411-branch-promotion-in-same-pr.md"
+    reason: "この単位の裁定の記録。同じ PR に入れた"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/413"
+    reason: "この単位の PR"
 tags: [doc-flow, promotion, decision, gate-5, gate-6, document-format, doc-flow-guardrail]
-# promotion: [...]   # closure で埋める（document-format.md「昇格の判定」節）
+promotion:
+  - subject: "枝の作業から出た昇格は同じ PR に入れてマージ前に着地させ、DJ-8 の (6) の昇格は作業層に残ったものに絞る"
+    verdict: required
+    ref: "本文: Step 4: 裁定の内容（plan を書く前に固定したこと）"
+  - subject: "ゲート6 の拾い上げは、作業層に残ったものの置き場であると同時に、枝の作業から出た昇格の取りこぼしを掃除の前に拾う最後の網である"
+    verdict: required
+    ref: "本文: Step 2: canonical 全体の洗い出し（10か所で足りるか）"
+  - subject: "plan 承認（ゲート3）を、計画外が無ければ統括の確認で代え、計画外があるときだけ owner に上げる運用"
+    verdict: unknown
+    ref: "本文: Step 7: ゲート3 の扱いが変わり、計画外を数え直した（2026-10-07）"
+  - subject: "枝の作業から出た昇格を別 PR に分けてよい条件から、negative knowledge の収穫を除く"
+    verdict: not-required
+    ref: "本文: 採った: knowledge の収穫の例外を、新しい「owner の裁定だけ」が打ち消していた"
+  - subject: "作業層に残った昇格の拾い上げの締め切りを、検査の表で『マージより後・worktree 掃除の前』の独立の行にする"
+    verdict: not-required
+    ref: "本文: 指摘1: unmet-gate-check の due が「マージより後」だけで、「worktree 掃除の前」が落ちていた（採った）"
+  - subject: "裁定の記録を decision・棚卸し discussion への追補・仕様の related の3つにする"
+    verdict: not-required
+    ref: "本文: I1-1: 裁定の記録を書いた"
 ---
 
 # #411 枝の作業から出た decision の昇格を、同じ PR でマージ前に行う形へそろえる
@@ -23,7 +47,7 @@ tags: [doc-flow, promotion, decision, gate-5, gate-6, document-format, doc-flow-
 
 仕様（`document-format.md`）とスキルの文面が「昇格の実行はマージ後（ゲート6）」と読めるため、枝の作業から出た decision だけをマージ後に別 PR で入れる形が繰り返し生まれていた。owner は 2026-10-07 に「枝の作業から出た decision は、その枝の PR に入れてマージ前に着地させるのが正式な形で、分けると意味がない」と裁定した。この単位は、その裁定に合わせて canonical の文面を2種類の昇格（枝の作業から出たもの／作業層に残ったもの）で書き分ける。
 
-## 置き場の選択（plan と episode を `docs/harness/` に置いた理由）
+## 置き場の選択（plan と episode を docs/harness/ に置いた理由）
 
 - hub の `CLAUDE.md`「文脈の置き場（蒸留の文書）」節は、issue が触る場所に対応する木を読めと書く。この単位が触るのは canonical の配布物（`canonical/orchestration-spec/` と `canonical/skills/`）である。
 - canonical の配布物を直した最近の単位は `docs/harness/` に plan と episode を置いている（#307・#347・#348・#359・#403）。#403 は同じ `document-format.md` と `doc-flow-guardrail` を触っている。brief もここを候補に挙げている。
@@ -163,7 +187,7 @@ plan に書いた「直した後」の文面が、plan の受入を本当に通�
 - 実行: `SO_TIMEOUT=480 so-compare -w <worktree> -f tmp/411-promotion-timing/so-impl-prompt.md -o tmp/411-promotion-timing/so-impl --codex-only`（背景で実行）。exit 0・初回で返却（リトライなし）・80秒・3283 bytes。`model_resolved=gpt-6-sol`（出所は `config` で観測値ではない）・`codex-cli 0.159.2`。出力は `tmp/411-promotion-timing/so-impl/`（gitignored・要点は下に転記した）。
 - 観点の結論: 取り残し（差分の外に、枝の作業から出た昇格をマージ後へ送る規範が残っていないか）と範囲の逸脱（closure に実行を持たせる・作業層に残った昇格の実行主体を決める）は「問題なし」。指摘は3件で、どれも「直さないと規範が誤読される」と評価された。
 
-### 指摘1: `unmet-gate-check` の due が「マージより後」だけで、「worktree 掃除の前」が落ちていた（採った）
+### 指摘1: unmet-gate-check の due が「マージより後」だけで、「worktree 掃除の前」が落ちていた（採った）
 
 - 作業層に残った昇格の締め切りは、仕様では「worktree 掃除の前」である。ところが due の表は「merge 後のゲート（issue の close 判断・作業層に残った昇格の拾い上げ・掃除）」を1行にまとめ、due を「マージより後」とだけ書いていた。表だけを読むと、掃除のあとでも拾い上げを未達と判定できない。#289 の事例2 は、掃除が拾い上げより先に起きた事故そのものである。
 - **plan の項目9 の突き合わせ表で、私はこの組を「一致する」と書いていた。** 採用した negative knowledge（`01KYJ76D7CS7EBY3WDYY1NS9Y2`）に従って規範と検査を別々に書いたのに、規範側の「掃除の前」を検査側の「マージより後」と同じものとして読み、食い違いを見落とした。突き合わせの表を作っただけでは足りず、表の各セルを語のレベルで比べる必要があった。
@@ -201,12 +225,12 @@ Copilot のレビューは依頼から約4分で届いた（2026-10-07 06:07 UTC
 - 直した形: 仕様の判定タイミング (1) に「negative knowledge の収穫は除く。そちらを別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持つ」を足した。1行版の knowledge の文に「別 PR に分けてよい条件は収穫フローに従う」を足した。decision の「決定」節にも同じ除外を足した。固定節と「plan の着地先」段落は、名前の後ろに「（decision・discussion への追記）」と書いて knowledge を含めていないので直していない。
 - 検査を2項目足して33項目にした（3-new4・4-new2）。変更後はすべて PASS、`2a659a8` では33項目すべて FAIL、番兵は0件。
 
-### 採らなかった: `wt merge` の経路では、マージ後・掃除前に拾う時点が無い
+### 採らなかった: wt merge の経路では、マージ後・掃除前に拾う時点が無い
 
 - 指摘の事実は正しい。`branch-finish` の Option 1 は `wt merge`（squash・rebase・FF・worktree 削除を1コールで行う）で、#289 の discussion（`projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md`）も「merge と worktree 削除の間にラッチを置くこと自体ができない」と記録している。
 - 採らなかった理由: 「マージ後・掃除の前」という時点は変更前の (2) からあり、この PR が持ち込んだものではない。この PR によって枝の作業から出た昇格はマージ前に入るので、マージ後の時間帯への依存はむしろ減る。作業層に残った昇格をどの経路で拾うかは、実行主体の置き場（#305）の問いである。統括への報告で範囲外として上げる。
 
-### 採らなかった: plan の `so.design: omitted` が値域の外
+### 採らなかった: plan の so.design: omitted が値域の外
 
 - 指摘は正しい（「SO モード」節の値域は weak / strong）。plan は統括が baseline として digest を記録した版なので、書き換えると完了前の照合で食い違う。値域に owner が省いた場合の値が無いことは、P3 の報告で範囲外として統括へ上げてある。
 
@@ -214,3 +238,125 @@ Copilot のレビューは依頼から約4分で届いた（2026-10-07 06:07 UTC
 
 - 実装SO（Codex）の指摘3の採らなかった部分と同じ点を、Copilot が独立に指摘した。2つのレビューが別々に当てたことになる。
 - 採らなかった理由: 変更前の固定節と1行版も同じ書き方で、行き先の書き方を直すのは昇格の時点を直すこの単位の範囲（と確定版の範囲）を外れる。直すなら、固定節・1行版と §13.3 の昇格先の選び方を一緒にそろえる別の変更になる。2レーンが独立に当てたことを添えて、統括へ範囲外として上げる。
+
+### 返信
+
+- 4件すべてに PR 上で返信した（採った1件は変更の要約とコミット `bdd0f68`、採らなかった3件は「今回は対応しません」と理由）。返信後に未返信の Copilot スレッドが0件であることを確かめた。再依頼はしていない（統括の明示の指示が無いため）。
+- PR 本文の検証欄を、33項目の検査と Copilot の結果に合わせて更新した。
+
+## Closure（2026-10-07・マージ前）
+
+**この節は closure として書いた振り返りである。** 上の本文は作業の進行に合わせて追記したもので、ここでは本文を再掲せず見出しで指す。
+
+### tier
+
+**heavy。** heavy トリガに複数当たる。品質ゲート目的で外部レビューを明示起動した（実装SO・Codex）。実行中に撤回があった（`本文: Step 8: 「実装へ」が届き、plan は承認された版に戻した（2026-10-07）` で plan に足しかけた節を戻した。実装SO と Copilot の指摘で定義と規則を直した）。選択肢を比較して棄却した設計判断がある（plan の DJ-1〜DJ-7）。昇格候補がある。
+
+### closure gate checklist
+
+- **Context / なぜ**: `本文: Context（なぜこの作業が始まったか）`。
+- **次の消費者**:
+  - 統括。完了の確かめと、マージ後に扱う6項目（plan の「マージ後に統括へ渡すこと」節と下の follow-up）。
+  - #305 と #288 を次に扱う単位。#288 の 2026-08-07 の判断の前提が崩れたこと（plan の「確定版の5項目への答え」(3)）と、`wt merge` の経路の件（`本文: 採らなかった: wt merge の経路では、マージ後・掃除前に拾う時点が無い`）。
+  - 新しい固定節を貼られた委譲の子と、それを貼る統括。
+- **follow-up routing**: 下の表。
+- **昇格の判定**: 下の表（frontmatter の `promotion` と同じ subject）。
+- **status 確定**: `stable`。達成度は**達成**（受入の5項目とも満たした。下の「受入の結果」）。plan の status も `stable` にした（`status:` 行は baseline の digest の対象外）。
+- **evidence anchor**: 本文が参照する揮発パスは `tmp/411-promotion-timing/` の下だけである。要点は本文へ転記した（実装SO の結果は I2-2、試し当ては Step 5、受入の結果は GATE I1・I2-2・I2-4）。受入の検査のスクリプトの初版は plan にあり、あとから足した5項目は下に写した。
+- **SO 証跡リンク**: 実装SO の出力は `tmp/411-promotion-timing/so-impl/`（gitignored）で、要点は `本文: I2-2: 実装SO（弱・Codex 1レーン）— 3件の指摘のうち2件半を採った` にある。Step 4 の外部チェックは下にある。
+- **観測の書き戻し**: brief の slot の6件すべてに1レコードずつ書き戻した（下の「注入された knowledge への観測」）。
+- **認識合わせの抜け**: 確定版に無かった要件が2つ後から見つかった。そろえる箇所の全数が10か所では足りなかったこと（`本文: Step 2: canonical 全体の洗い出し（10か所で足りるか）`）と、新しい分け方の規則が knowledge の収穫の例外と衝突したこと（`本文: 採った: knowledge の収穫の例外を、新しい「owner の裁定だけ」が打ち消していた`）である。どちらも、brief に注入された既存の knowledge item（`01M486Z2ND07GQWV1GHS1SVB0J`）が予測している形で、`issue-intake` の固定の問いに足す種類ではない（行き先は既存の item への観測として記録した）。
+
+### 受入の結果
+
+| 受入（plan） | 結果 | 根拠 |
+|---|---|---|
+| 10か所と3か所が2種類の名前で同じ向き・変更前に落ちて変更後に通る | 満たした | 検査33項目が変更後すべて PASS・`2a659a8` ですべて FAIL（`本文: 採った: knowledge の収穫の例外を、新しい「owner の裁定だけ」が打ち消していた` の最後の項目） |
+| 枝の作業から出た昇格を「マージ後」と読める文が canonical に残っていない | 満たした | 全体の検査 `G` が変更後0行・変更前8行。実装SO も取り残しは「問題なし」 |
+| 確定版の5項目に答えがある | 満たした | (1)(2) は仕様 §13.1 (1)・固定節・`episode-retrospective`・`unmet-gate-check` の文面、(3)(5) は plan、(4) は decision・追補・`related` |
+| 裁定の記録がこの枝の PR に入っている | 満たした | decision と棚卸し discussion の追補が PR #413 の差分にある |
+| sync の起動テストが通る | 満たした | `本文: I2-1: sync の起動テスト` |
+
+あとから足した受入の検査（plan に無い5項目・`tmp/411-promotion-timing/check.sh`）:
+
+```bash
+check 9-new1 "$UG" 1 '| **merge 後のゲートのうち、作業層に残った昇格の拾い上げ** | **依頼側 / 人間の承認者** | **マージより後・worktree 掃除の前** |'
+check 9-new3 "$UG" 1 '| **merge 後のゲート**（issue の close 判断・掃除） |'
+check 3-new3 "$DF" 1 'どの PR にも昇格先として入らないまま作業層'
+check 3-new4 "$DF" 1 '（negative knowledge の収穫は除く。そちらを別 PR に分けてよい条件は'
+check 4-new2 "$DF" 1 '（第3経路・§13.3。別 PR に分けてよい条件は `episode-retrospective` の収穫フローに従う）'
+```
+
+あわせて、4-new の文字列を「（設計級 / durable なもの）」に直し、9-new1 を上の形に置き換えた。
+
+### follow-up routing
+
+| 残課題 | 行き先 |
+|---|---|
+| 進行中の委譲（hub と別リポジトリ）への新しい昇格規則の周知 | 統括（マージ後）。plan の「マージ後に統括へ渡すこと」1 |
+| 承認時に固定節とゲート表の digest を記録した委譲の、完了前の照合の baseline | 統括（マージ後）。同 2 |
+| master からの `./scripts/sync.sh` | owner か統括（ゲート6）。同 3 |
+| 枝の作業から出た昇格の実行主体が決まったことの申し送り | #305（統括がコメント）。同 4 |
+| 2026-08-07 の判断の理由1が崩れたことと見直しの推奨 | #288（統括がコメント）。同 5 |
+| #411 の close の判断 | 統括。同 6 |
+| `wt merge` の経路では、作業層に残った昇格を掃除の前に拾う時点が無い（Copilot が指摘・変更前からある） | #305（拾う経路と実行主体の置き場の問いとして統括が申し送る） |
+| 固定節と1行版が行き先を discussion / decision に限り、§13.3 の昇格先の選び方より狭い（実装SO と Copilot が独立に指摘・変更前からある） | 統括の判断（別の issue にするか追わないかを決める）。この単位は範囲外として報告した |
+| 「SO モード」節の `so.design` に、owner が設計SO を省いたときの値が無い | 統括の判断（同上） |
+| canonical の配布物を直す単位の plan と episode が、`docs/harness/` と `docs/orchestration-engine/` の2つの木に分かれている（`本文: 置き場の選択（plan と episode を docs/harness/ に置いた理由）`） | 追わない。この単位が作った状態ではなく（#288 と #403 の時点で分かれている）、木の選び方の規則を変えるのは昇格の時点を直すこの単位の範囲の外である。困りごとが出たら木の規則を扱う単位で拾う |
+| plan 承認（ゲート3）を計画外が無ければ統括の確認で代える運用の記録が、作業層の裁定の文書にしか無い | 統括（下の昇格の判定で `unknown`。owner がこの運用を他の単位にも当てるつもりかで決まる） |
+| plan の「直す箇所と直し方」の文面と、実装の差（作業層に残った昇格の定義・拾い上げの行・knowledge の除外・1行版の括弧書き）。あわせて、plan の項目9 の突き合わせ表が締め切りの組を「一致する」と誤って書いていること | 追わない。plan は統括が baseline として digest を記録した版なので書き換えない。差と誤りの訂正は、この episode の I2-2（指摘1・2・3）と I2-4 が正本である |
+
+### 昇格の判定
+
+| subject | 判定 | 理由・参照した材料 |
+|---|---|---|
+| 枝の作業から出た昇格は同じ PR に入れてマージ前に着地させ、DJ-8 の (6) の昇格は作業層に残ったものに絞る | `required` | Q1 ○（「マージ後に別 PR」と「同じ PR でマージ前」の2つの読みが3回ぶつかった）/ Q2 ○ 議論（PR を何の単位と見るかの価値判断）/ Q3 ○（前提＝作業は PR の単位で着地する）/ Q4 ○（枝で decision が生まれるたびに立つ）。**この PR の decision として実行済み**（直した規則を自分に当てた） |
+| ゲート6 の拾い上げは、作業層に残ったものの置き場であると同時に、枝の作業から出た昇格の取りこぼしを掃除の前に拾う最後の網である | `required` | Q1 ○（取りこぼしを含めない定義と含める定義が、実装SO の指摘で実際にぶつかった）/ Q2 ○（DJ-2 の動機をどこまで (2) に残すかの判断）/ Q3 ○（前提＝掃除の前に拾う時点がある。`wt merge` の経路では偽になる）/ Q4 ○。**decision の「決定」と「根拠」に入れて実行済み** |
+| plan 承認（ゲート3）を、計画外が無ければ統括の確認で代え、計画外があるときだけ owner に上げる運用 | `unknown` | 裁定の文書は統括の作業層にだけある。owner の言葉は「特に計画外のことが起きなければそのまま」で、この単位の問いへの答えである。**何が分かれば決まるか: owner がこの運用を他の単位にも当てるつもりか。** 当てるなら、ゲート3 の性質を変える判断なので decision（と仕様のゲート表）に要る。記録の持ち主は統括なので、報告で統括に渡す |
+| 枝の作業から出た昇格を別 PR に分けてよい条件から、negative knowledge の収穫を除く | `not-required` | 1段目で外れる。既存の収穫フローの規則を残すだけで、仕様と decision の本文（正本）を読めば正しく使える。覆すのに要るのは議論ではなく確認（収穫フローを読めば決まる） |
+| 作業層に残った昇格の拾い上げの締め切りを、検査の表で「マージより後・worktree 掃除の前」の独立の行にする | `not-required` | 1段目で外れる。仕様の判定タイミング (2) と `unmet-gate-check` の表（正本）を読めば決まり、ADR へ写しても人間の価値が増えない |
+| 裁定の記録を decision・棚卸し discussion への追補・仕様の related の3つにする | `not-required` | 置き場の選び方で、成果物そのものが示している。Q2 は確認で決まる。理由は plan の DJ-1 に残っている |
+
+### 構造化 FB（出力型 × 消費チャネル）
+
+- **事実・失敗**:
+  - plan の項目9 の突き合わせ表で、作業層に残った昇格の締め切りの組を「一致する」と書いていた（`本文: 指摘1: unmet-gate-check の due が「マージより後」だけで、「worktree 掃除の前」が落ちていた（採った）`）。
+  - 作業層に残った昇格の定義が、自分で含めた取りこぼしと矛盾していた（`本文: 指摘2: 作業層に残った昇格の定義が、自分で含めた取りこぼしと矛盾していた（採った）`）。
+  - 新しい分け方の規則が、knowledge の収穫の例外を打ち消していた。実装SO は見つけず Copilot が見つけた（`本文: 採った: knowledge の収穫の例外を、新しい「owner の裁定だけ」が打ち消していた`）。
+  - 最初の P3 の報告で、DJ-7 が #411 本文の「knowledge と同じ扱い」から外れることを目立たせていなかった（`本文: Step 7: ゲート3 の扱いが変わり、計画外を数え直した（2026-10-07）`）。
+  - 計画外の節を plan に足しかけ、baseline と食い違うので戻した（`本文: Step 8: 「実装へ」が届き、plan は承認された版に戻した（2026-10-07）`）。
+  - 外部レビューの指摘のうち採らなかったもの。実装SO の指摘3の行き先の部分（`本文: 指摘3: 1行版の括弧書きと行き先（一部を採った）`）と、Copilot の3件（`本文: 採らなかった: wt merge の経路では、マージ後・掃除前に拾う時点が無い`・`本文: 採らなかった: plan の so.design: omitted が値域の外`・`本文: 採らなかった: 固定節と1行版が行き先を discussion / decision に限っている`）。行き先は follow-up routing の表にある。
+- **決定と根拠**: decision `projects/orchestration-engine/docs/decisions/2026-10-07-decision-411-branch-promotion-in-same-pr.md`（棄却した3案を含む）と、plan の DJ-1〜DJ-7。採らなかった指摘とその理由は `本文: I2-4: Copilot の1ラウンド — 4件のうち1件を採った`。
+- **わかったこと**:
+  - 実装の前に、plan の提案の文面を変更前の写しに当てて plan 自身の受入に通すと、受入の文字列と提案の文面の食い違いを実装より前に潰せる。この単位では食い違いは0件だった（`本文: Step 5: plan の文面を、plan 自身の受入に当てた（2026-10-07 14:53）`）。ただしこの試し当ては「書いた文面が書いた検査に通る」ことしか確かめず、文面の中の矛盾（定義と取りこぼし・分け方と knowledge）は外部レビューが見つけた。
+  - 自分で見つけられなかった3件は、どれも「新しく書いた文」と「すでにある別の文」の衝突で、どれも外部のレビューが見つけた。
+- **原則（Pattern / Anti-pattern）**: 新しい item は収穫しない（下の Step 5）。既存の2件（`01M486Z2ND07GQWV1GHS1SVB0J`・`01KYJ76D7CS7EBY3WDYY1NS9Y2`）の予測がそのまま自分に当たったので、観測として書き戻した。
+- **行動変更**: この PR が行動変更そのもの（委譲の固定節・仕様・スキルの文面）である。これ以外の hook / skill の変更は無い。
+- **蒸留シグナル**: decision（この PR に入れた）／knowledge store: なし（既存の item と同旨）／skill / rule: 行き先の書き方の件を統括へ（follow-up）。
+- **残課題**: 上の follow-up routing の表。
+
+### Step 4: 外部チェック（closure の品質）
+
+- 実行: `SO_TIMEOUT=480 so-compare -w <worktree> -f tmp/411-promotion-timing/so-closure-prompt.md -o tmp/411-promotion-timing/so-closure --codex-only`（背景で実行）。exit 0・初回で返却・76秒・2540 bytes。出力は `tmp/411-promotion-timing/so-closure/`（gitignored・要点は下に転記した）。
+- 確認対象は4点に絞った（失敗の選択的な省略・follow-up の行き先の網羅・揮発するパスへの依存・他の文書への反映漏れ）。コードや設計の SO（実装SO）はこの4点を代替しないので、辞退せずに回した。
+- 結果: 揮発するパスへの依存は「問題なし」。残り3点で直す箇所が挙がり、3件とも直した。(1) 事実・失敗に、採らなかった指摘（実装SO の指摘3の一部と Copilot の3件）への pointer が無かった。(2) 文書が2つの木に分かれている件に follow-up の行き先が無かった。(3) plan の突き合わせ表の誤りを baseline のため直さないことが、follow-up の表に書かれていなかった。
+
+### Step 5: negative knowledge の収穫
+
+**収穫しない。** 候補は2つあったが、どちらも既存の item に同旨が着地している（未着地の確認で落ちる）。
+
+- 「新しい規則の対象を名前の定義で決めると、定義の中身（durable ⊃ knowledge）が既存の規則と衝突する」は、`01M486Z2ND07GQWV1GHS1SVB0J`（足した規則の効き目を打ち消す側を同じ変更で探す）の一事例である。
+- 「規範と検査の突き合わせ表を作っても、セルを語のレベルで比べないと食い違いを見落とす」は、`01KYJ76D7CS7EBY3WDYY1NS9Y2`（規範の範囲と検査の範囲を別々に書く）の一事例である。観測の note に残した。
+
+### 注入された knowledge への観測（Step 6）
+
+注入された item（brief の slot・6件）: `01M486Z2ND07GQWV1GHS1SVB0J` / `01KYJ76D7CS7EBY3WDYY1NS9Y2` / `01KZVHE0KQ5VCX0SXH0F4SM14D` / `01M2DRCP3QSG4NQWHNY6DSD3NJ` / `01M2DEC1G68X8PH2QEW2H1DWZZ` / `01KYMRE1NC7XX6N66RQ0MGGHF1`
+
+| item | state | 根拠 |
+|---|---|---|
+| `01M486Z2ND07GQWV1GHS1SVB0J` | `externally_verified` | 教訓に従って canonical 全体を探し、10か所の外の3か所と「PR → merge」の行を見つけた（plan の 1b・7b・8b）。それでも予測どおり、足した文が節の外の規則（knowledge の収穫の例外）と節の中の定義（取りこぼし）を打ち消し、Copilot と実装SO が見つけた |
+| `01KYJ76D7CS7EBY3WDYY1NS9Y2` | `externally_verified` | 規範と検査を別々に書いて突き合わせる表を plan に置いたが、「掃除の前」と「マージより後」を同じものとして読み、予測どおり検査が狙った欠陥を捕まえられない形で「一致する」と書いた。実装SO が見つけた |
+| `01KZVHE0KQ5VCX0SXH0F4SM14D` | `followed` | knowledge の in-PR の前提（保存の人間ゲート・実行者・分ける条件）を decision について確かめ、実行者が無いことを DJ-2 で書き、分ける条件は写さないと DJ-7 で決めた |
+| `01M2DRCP3QSG4NQWHNY6DSD3NJ` | `followed` | 受入の grep を書いた時点で `2a659a8` に当て、全項目が落ちることを確かめた。あとから足した項目も毎回変更前に当てた（29→31→33項目） |
+| `01M2DEC1G68X8PH2QEW2H1DWZZ` | `followed` | #411 本文の受入の候補3つを写すだけでなく、箇所ごとに変更前に落ちて変更後に通る検査を足した（固定文字列の検査を箇所ごとに旧と新の両側で持つ） |
+| `01KYMRE1NC7XX6N66RQ0MGGHF1` | `followed` | 上流の断定を一次情報に当てた結果を表にして強さを書き分け、当たらなかった「別リポジトリで2回」は未確認として写した。「全数10か所」が足りないことも当てて見つけた |

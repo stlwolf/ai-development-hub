@@ -10,7 +10,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-09-25-episode-403-issue-intake-alignment.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-07
+    ref: "#411"
+    state: externally_verified
+    note: "教訓に従い canonical 全体を探して、issue が挙げた10か所の外に同じ変更が要る3か所と検査の表の1行を見つけた。それでも予測どおり、足した文が節の外の規則（knowledge の収穫に認めた別 PR の例外を、新しい「分けてよいのは owner の裁定だけ」が打ち消した）と節の中の定義（取りこぼしを含めると書いた直後の「どの PR にも紐づかず」）を打ち消し、自己点検では見つからず Copilot と実装SO が見つけた"
 ---
 
 **規則に状態・運用・省く条件を足したら、その効き目を打ち消す側を同じ変更で探す。足した節の外にある、分岐が起きる全箇所・状態を読む側・止める規則・受け渡し先の出口である。**

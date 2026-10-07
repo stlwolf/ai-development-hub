@@ -3,7 +3,7 @@ id: "01M4AEC4E0C62DXVSQHF7ZJ18P"
 title: "#411 枝の作業から出た decision の昇格を、同じ PR でマージ前に行う形へそろえる"
 date: 2026-10-07
 type: plan
-status: draft
+status: stable               # 実装完了（2026-10-07・PR #413）。ゲート3 は owner の裁定で統括の確認に代えた
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/411"
