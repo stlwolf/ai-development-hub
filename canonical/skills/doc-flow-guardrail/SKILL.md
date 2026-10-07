@@ -86,11 +86,11 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 ````markdown
 ## 規律（固定・必ず守る）
 
-- **plan-first**: 実装を進めるのは owner HG（ゲート3）の後。それまでは計画だけ作って STOP し、plan doc のパスを親へ報告する。HG の前に plan を **draft PR** に載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない）。**plan は作業の枝に載せ、実装の最初の PR と一緒に着地させる** — plan だけの PR を単独で default ブランチへ着地させてよいのは、owner が明示的にそう裁定したときだけ。同じ枝で作った episode・knowledge もその枝の PR に載せる（別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない）。
+- **plan-first**: 実装を進めるのは owner HG（ゲート3）の後。それまでは計画だけ作って STOP し、plan doc のパスを親へ報告する。HG の前に plan を **draft PR** に載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない）。**plan は作業の枝に載せ、実装の最初の PR と一緒に着地させる** — plan だけの PR を単独で default ブランチへ着地させてよいのは、owner が明示的にそう裁定したときだけ。同じ枝で作った episode・knowledge と、枝の作業から出た昇格（decision・discussion への追記）もその枝の PR に載せる（knowledge を別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない。枝の作業から出た昇格を別 PR に分けてよいのは、owner が明示的に裁定したときだけ）。
 - **worktree は子が自作**（`branch-naming` に従う）・統括は hands-off（事前作成しない）。
 - **episode 義務**: 着手時に枠を作成・作業中は随時追記・closure はマージ前（後追い再構成は冒頭に `reconstructed` を明示）。**追記は closure から指せる形で残す** — 判断の why・失敗と撤回の経緯・棄却した選択肢・tier のトリガに当たる出来事は、起きたその場で節を立てて書く。closure ではそれを再掲せず本文を指す（`episode-retrospective` の read/write 契約）。
 - **昇格の印**: 「これは昇格を考えるべきかもしれない」と思った**その場で**、本文に `昇格の印: <1行>` を**行頭の裸行**として置く（**囲むと印にならない**）。規約は `document-format.md`「ライフサイクル規範」節。印は候補であって判定ではないので、迷ったら置く。
-- **昇格規則**: 設計級 / durable な知見は closure・worktree 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（詳細 `document-format.md`「昇格義務」節〔§13〕・1行版〔§13.6〕）。
+- **昇格規則**: 枝の作業から出た昇格（設計級 / durable な知見）は、**遅くともマージ前に** discussion / decision へ昇格して**この枝の PR に入れる**。入るのはこの枝の変更についてのもので、**この枝と関係ない仕組みについての判断は入れない**（決めるのはその仕組みを扱う作業の担当である。気づいたことは episode の follow-up の行き先や issue に残し、作業層だけに置かない）。**実行するのは枝の担当（委譲なら子）**で、closure の昇格の判定は最後の確認である（`required` と判定したものを「実行はゲート6」として残さない）。作業層に残った昇格は、ゲート6 で worktree 掃除の前に拾う。committed→working の参照は昇格先へ張り替える（詳細 `document-format.md`「昇格義務」節〔§13〕・1行版〔§13.6〕）。
 - **報告の宛先**: **(1) 明示された宛先（直近の指示と brief の「報告の宛先」のうち新しいほう）→ (2) `$PARENT_TMUX_PANE`** の順で決める。`$PARENT_TMUX_PANE` は**起動時に焼き込まれた値で、あとから書き換わらない**（`oe-delegate` が環境変数として渡すだけで、差し替えの口を書き出さない）ので、**統括が交代すると停止した前任を指したまま残る**。brief も前任が書いたものなら同じく古い。**明示を受けたら、その pane が `oe-tree` に生きたノードとして出ることを確かめてから採る**（遅れて届いた古い明示を掴まないため。交代の直後なら現統括は root として出るが、入れ子の委譲では親は中間ノードなので root とは限らない）。**確かめられないときは送らず、木に出ている生きた統括へ照会する。** この規則は、同じ配布物の他のスキルが書く `oe-send "$PARENT_TMUX_PANE"` に**優先する**。 `oe-send` は生存しない `%N` を exit 1 で弾くので**死んだ宛先へ黙って送ることはない**が、**exit 0 は配送の成功を意味しない**（取り込みの確認は受領印の層・下記）。**`oe-report` は `PARENT_TMUX_PANE` を先に読むので、交代のあとは使わない。**
 - **報告2段構え**: file が正本・`oe-send` の1行はポインタ。**起動方法は「verb 解決規約」節で決める**（素の名前で呼べるとはかぎらない）。**PATH に無いのに素の名前で呼ぶと `exit 127` になり、送れていないのに送ったつもりで止まる**ので、送信後に exit code を確かめる。pane 引数を変数で渡すなら double-quote・**メッセージ引数は single-quote**で literal 化し**改行バイトを含めない**。
 - **返信は画面でなく `oe-send` で返す**: 親からの問い（停止してよいか・状態はどうか等）に**画面へ書くだけでは親に届かない**。答えは必ず `oe-send %N` で返す（`%N` は上の「報告の宛先」で決めた宛先に置き換える）（実例2件・#336）。逆に**親からの指示が長時間来ないと感じたら**、`oe-confirm` で自分宛の送信の到達状態を確かめ、**受領を確認できないなら親へ照会する**（子が自分で切り分けた実例あり・#336）。**「受領印が無い＝落ちた」と断定しないこと** — 印が無い理由には「受け手が印を書けなかった」「計装を確認できない」が混じっており、実測ではそちらが多数派だった。`oe-confirm` はそれを分けて出すので、断定でなく「確認できていない」として照会する。
@@ -194,8 +194,8 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
 | 4 | 実装 → PR | 実装SO（`so.impl`）+ テスト実行 + Copilot | `so-compare` / `peer-ai-review` + `copilot-review-response` |
-| 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed`）→ owner マージ | `episode-retrospective` |
-| 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定 | `branch-finish` + `document-format.md`〔§13〕 |
+| 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed`。枝の作業から出た昇格が同じ PR に入っているかの最後の確認を含む・§13.1 の (1)）→ owner マージ | `episode-retrospective` + `document-format.md`〔§13〕 |
+| 6 | merge 後 | issue close 判断（keep-open 明示）+ 作業層に残った昇格の拾い上げ（worktree 掃除の前・§13.1 の (2)）+ worktree 掃除（親） | `branch-finish` + `document-format.md`〔§13〕 |
 | S | elevated 子 spawn 時（委譲操作軸・別軸） | owner 承認ハンドシェイク: 分類器 block を見越して整形済み承認パッケージ + ダイジェストを spawn 前に先出しし、承認↔実行を binding | `delegate-task`（手順）+ `orchestration-toolkit`（規範） |
 | C | 委譲を完了扱いにする前（委譲操作軸・別軸） | 未達のゲートと step を経緯抜きで照合（plan・委譲時の書面・ゲート表・観測可能な状態のみ／会話履歴・完了報告・ACK の散文は渡さない・境界は書面から導出し申告で受けない）。判定は5値・`unknown` を `fulfilled` に、`not-yet-due` を `not-applicable` に畳まない。baseline 不一致時は `invalid-baseline` のみで判定に入らない | `unmet-gate-check` |
 

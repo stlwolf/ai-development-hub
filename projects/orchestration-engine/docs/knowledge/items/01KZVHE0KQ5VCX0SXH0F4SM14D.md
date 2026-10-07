@@ -34,6 +34,10 @@ observations:
     state: externally_verified
     note: "先例の前提を識別の形ごとに表にした。dogfood の実測で委譲する側と受け取る側に前提が移っていない不発火が出て、description を直した"
 
+  - date: 2026-10-07
+    ref: "#411"
+    state: followed
+    note: "knowledge の in-PR 相乗りを decision へ写す単位で、先例が成り立つ前提（保存の人間ゲートを owner のマージで通す・実行者が収穫 Step にいる・別 PR に分ける3条件）を decision について1つずつ確かめた。実行者が無いことは plan の DJ-2 で「その枝の担当」と書き、3条件は owner の裁定に合わせて写さないと DJ-7 で決めた"
 ---
 
 **先例の規律を移植するときは、その規律が成り立っている前提も移植先に在るかを確かめる。** 規律は文面として写せるが、前提は写らない。

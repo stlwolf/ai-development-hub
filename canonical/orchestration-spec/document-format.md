@@ -17,6 +17,9 @@ related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/249"
     reason: "v2 改訂タスク（作業層公認・委譲文書の型名分離・昇格義務の規約化・draft→stable）"
+  - type: derived_from
+    ref: "projects/orchestration-engine/docs/decisions/2026-10-07-decision-411-branch-promotion-in-same-pr.md"
+    reason: "「昇格義務」節の判定タイミングを出どころで2種類に分けた裁定（#411・DJ-8 の (6) の昇格を作業層に残ったものに絞る）"
   - type: design_context
     ref: "projects/orchestration-research/synthesis/architecture-sketch.md"
     reason: "§5 MVP 構成（エンベロープ・パーサー・ゲート）、§6 蒸留パイプライン"
@@ -635,12 +638,12 @@ YYYY-MM-DD-{type}-{topic}.md
 | 2 | plan 確定前 | 設計SO（`so.design`） | `so-compare` / `oe-refute` / `oe-review`（弱）・`peer-ai-review`（強） |
 | 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |
 | 4 | 実装 → PR | 実装SO（`so.impl`）+ テスト実行 + Copilot | `so-compare`/`peer-ai-review` + `copilot-review-response` |
-| 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed` 明示）→ owner マージ（HG） | `episode-retrospective` |
-| 6 | merge 後 | issue close 判断（keep-open 明示）+ worktree 掃除（親）+ 昇格判定（§13） | `branch-finish` + §13 |
+| 5 | PR → merge | episode closure（マージ前・後追いは `reconstructed` 明示。枝の作業から出た昇格が同じ PR に入っているかの最後の確認を含む・§13.1 の (1)）→ owner マージ（HG） | `episode-retrospective` + §13 |
+| 6 | merge 後 | issue close 判断（keep-open 明示）+ 作業層に残った昇格の拾い上げ（worktree 掃除の前・§13.1 の (2)）+ worktree 掃除（親） | `branch-finish` + §13 |
 
 (0) は2つの部分からなる。issue 起点の認識合わせ（必須・入口は `issue-intake`）と、設計判断が多いときの人間とのすり合わせ（必要時の soft gate・`question-driven-design`）である。(3)/(5)/(6) の owner HG は、これとは別の必須ゲートである。§10 遷移規則の判定順0 が前者に、「設計判断が多い → discussion（QDD 併用）」が後者に対応する（DJ-6）— 入口層 discussion での QDD と gate (0) の後者は、同じ「人間とのすり合わせ」を指す。issue に着手するときに認識合わせを通すという規範そのものはスキル `issue-intake` が持ち、どのリポジトリでも効く。この表が見るのは、このフローを採用する作業の中での位置である。
 
-**plan の着地先**: committed 層の plan は、それだけで PR を立てず、作業の枝に載せて**実装の最初の PR と一緒に着地させる**（ゲート3 で承認された計画を実装の PR に入れ、その PR をゲート5 でマージする）。plan だけの PR を単独で着地させてよいのは、owner が明示的にそう裁定したときだけ。ゲート3 の前に plan を draft PR へ載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない・実装そのものはゲート3 の後）。同じ枝で作った episode・knowledge もその枝の PR に載せる（knowledge を別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない）。これは §13.3 の「作業層 plan の扱い」（`.oe/` の plan を昇格するかどうか）とは別で、こちらは committed 層の plan doc をどの PR で commit するかを決める。
+**plan の着地先**: committed 層の plan は、それだけで PR を立てず、作業の枝に載せて**実装の最初の PR と一緒に着地させる**（ゲート3 で承認された計画を実装の PR に入れ、その PR をゲート5 でマージする）。plan だけの PR を単独で着地させてよいのは、owner が明示的にそう裁定したときだけ。ゲート3 の前に plan を draft PR へ載せて owner に pre-review してもらうのは可（draft のまま置き、マージしない・実装そのものはゲート3 の後）。同じ枝で作った episode・knowledge と、枝の作業から出た昇格（decision・discussion への追記・§13.1 の (1)）もその枝の PR に載せる。knowledge を別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持ち、そちらは owner の裁定を別途要さない。枝の作業から出た昇格を別 PR に分けてよいのは、plan と同じく owner が明示的にそう裁定したときだけである。これは §13.3 の「作業層 plan の扱い」（`.oe/` の plan を昇格するかどうか）とは別で、こちらは committed 層の plan doc をどの PR で commit するかを決める。
 
 ガードレール枠（#248）の固定節はこの配置図を参照する。
 
@@ -689,9 +692,9 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
   - 設計級 — 探索の軌跡・代替案の全体像・却下ロジック・設計根拠・divergence の reconcile。
   - durable な証拠・知見 — 監査結果・再現条件・計測値・確定した技術的事実・失敗記録 / negative knowledge（#62）。設計判断でなくても後の消費者に価値が残るもの（`episode-retrospective` が独立の保存対象として扱う種類）。
 - **非対象（内容）**: pane 番号・絶対パス・使い捨ての委譲指示・運用連絡など、その場限りの運用情報。`brief` 本体や `report` / `board` / `handoff` は**通常これに当たる**が、設計級 / durable が混入していればその部分は対象（型で免除されない）。
-- **判定タイミング**:
-  - (1) **episode closure 時**（§11 ゲート5・マージ前）＝ 昇格**候補の洗い出し**（episode の「蒸留シグナル / 昇格候補」節）。
-  - (2) **昇格の実行**は §11 ゲート6（merge 後の後始末）＝ **worktree 掃除の前**に行う（掃除で git の外に消えるのを防ぐ）。
+- **判定タイミング**: 昇格は出どころで2種類に分け、それぞれに締め切りと拾う位置を置く。
+  - (1) **枝の作業から出た昇格**: その枝の作業（plan・episode・closure と、枝の作業で使った作業層の文書や `tmp/` の証跡）から出た設計級 / durable なもの。**入るのは、その枝の変更についてのもの（判断と、それを支える証拠・知見）である。** その枝の変更と関係ない仕組みについての判断は (1) に入れない。その枝には、それを決定にするだけの材料が無いからである。決めるのはその仕組みを扱う作業の担当で、その作業の中で決め、その作業の PR に入る（分けるのではなく、決める担当が変わる結果として別になる）。その枝では、気づいたことを行き先つき（episode の follow-up の行き先・issue など）で残すまでにし、作業層だけに置いたままにしない。**遅くともマージ前に、同じ PR に入れる**（枝の作業の中で生まれた判断は、その PR の一部として着地させる。分けると PR が判断の根拠を欠いたまま着地する）。一次の錨は判断が生まれたその場に置く印（§12）で、その場で昇格先の文書を書いてよい。episode closure（§11 ゲート5）の昇格の判定は**最後の確認**にあたる。closure の担当は判定までで（`episode-retrospective`）、**実行するのはその枝の担当**（委譲なら子）である。別 PR に分けてよいのは、owner が明示的にそう裁定したときだけである（negative knowledge の収穫は除く。そちらを別 PR に分けてよい条件は `episode-retrospective` の収穫フローが持つ）。
+  - (2) **作業層に残った昇格**: どの PR にも昇格先として入らないまま作業層（`.oe/`・`tmp/`）に残ったもの。枝を持たない作業で生まれたものと、(1) の取りこぼし（出どころは枝の作業だが、その PR に入らなかったもの）と、枝の作業で気づいたその枝と関係ない仕組みについての判断のうち行き先を付けずに作業層に置かれたものがここに入る。§11 ゲート6（merge 後の後始末）で **worktree 掃除の前**に拾う（掃除で git の外に消えるのを防ぐ）。(1) の取りこぼしや、行き先の付いていない気づきをここで拾ったときは、それ自体が逸脱である。前者の昇格は別 PR になり、後者はその仕組みを扱う作業へ行き先を付けて渡す。実行主体の置き場は未決である。
   - (3) **catch-all（規範）**: 上記2点はマージ・closure・掃除に錨付くため、それらを通らない滞留経路が残る（closure せず放棄・pane/セッション終了・PR/merge 未達の調査・メイン worktree の `.oe/` が掃除されない・複数 worktree への分散）。これを塞ぐため、**handoff / pane 終了時**と**定期棚卸し**を昇格判定の catch-all とする（散在時は「その設計級を生んだセッションの担当」が昇格責任を負う）。**機械強制は #185 に残す**（規範と機構の分離・§12）。
 - **層の射程**: 作業層（`.oe/`）だけでなく、`tmp/` の確定前設計級証跡（§2.4）と raw log 層（§2.3）に設計級が生じた場合も対象（raw log は curated へ蒸留する材料＝rally-log 46k が実例）。
 
@@ -738,7 +741,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 
 ガードレール固定節が参照できる1行版:
 
-> 設計級コンテンツは closure / 掃除の前に discussion / decision へ昇格し、committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。収穫基準を満たす negative knowledge は型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§3.4）へ収穫する（第3経路・§13.3）。
+> 枝の作業から出た昇格（設計級 / durable なもの）は、遅くともマージ前に同じ PR で discussion / decision へ入れる（実行はその枝の担当で、closure の判定は最後の確認）。その枝の変更と関係ない仕組みについての判断は、決める担当が別なので、行き先を付けて残すまでにする。作業層に残った昇格は worktree 掃除の前に拾う。committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。収穫基準を満たす negative knowledge は型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§3.4）へ収穫する（第3経路・§13.3。別 PR に分けてよい条件は `episode-retrospective` の収穫フローに従う）。
 
 詳細基準は本 §13 が正本。
 
