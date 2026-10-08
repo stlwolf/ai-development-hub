@@ -21,7 +21,7 @@ tags: [claude-settings, idle-compaction, settings-harness, sync]
 
 ## Context（なぜこの作業が始まったか）
 
-Claude Code 2.1.291 以降に入った「アイドル時の圧縮」で、約54分放ったセッションの会話が要約に置き換わる。owner の裁定（2026-10-08）は「止める」。文脈の切れ目は引き継ぎと委譲で自分たちが決めている、という理由である。軽微修正扱いで plan は書かず、設計SO は省く（owner の了承 2026-10-08）。実装SO（弱・Codex 1レーン）と Copilot 1ラウンドとテストは通す。
+Claude Code の「アイドル時の圧縮」で、約54分放ったセッションの会話が要約に置き換わる。止める設定キー `idleCompaction` は、手元で確かめた範囲では 2.1.291 から入っている（Step 1）。機能そのものはそれより前から動いていた（Step 4 の指摘2）。owner の裁定（2026-10-08）は「止める」。文脈の切れ目は引き継ぎと委譲で自分たちが決めている、という理由である。軽微修正扱いで plan は書かず、設計SO は省く（owner の了承 2026-10-08）。実装SO（弱・Codex 1レーン）と Copilot 1ラウンドとテストは通す。
 
 ## Step 0: 着手（2026-10-08 22:00 頃）
 
@@ -94,3 +94,19 @@ check の確かめ方:
 
 - 手元の `~/.claude/settings.json` の写しに、枝の宣言で apply してから check を当てた。apply は4項目を適用して rc=0、check は rc=0 で「宣言どおり」になり、`idleCompaction` の綴りの警告だけが出た。宣言外のキーは apply の前後で変わっていない（`jq -S 'del(.idleCompaction)'` の比較で一致）。実物の `~/.claude/settings.json` は shasum が前後で一致し、書き換えていない。
 - worktree から `./scripts/sync.sh --check claude` も走らせた（読むだけ）。rc=1 で、settings の節は既存3項目が一致し、`/idleCompaction` だけが「未適用」だった。sync はマージ後に統括が走らせるので、この時点では未適用が正しい。ほかに symlink のずれが 54 件出たが、これは worktree から走らせると比べる先が worktree のパスになるためで、この変更とは関係がない。brief の受入「`./scripts/sync.sh --check claude` が足した項目を含めて通る」は、マージと sync の前には文面どおりには満たせない。写しへの apply と check で代わりに確かめ、マージ後の sync のあとに統括が文面どおり確かめる形にした。
+
+## Step 4: 実装SO（弱・Codex 1レーン）— 2件の指摘を2件とも採った（2026-10-08 22:18）
+
+`so-compare --codex-only`（`SO_TIMEOUT=480`）を差分に当てた。Codex は `model_resolved=gpt-6-sol`（出所は config で、観測値ではない）、97秒・リトライなしで返った。出力は master の `tmp/415-idle-compaction-off/so-impl-r1/`（gitignored）にある。5つの観点のうち、宣言の項目と値・known-keys の判断・テストの3つは「問題なし」だった。
+
+### 指摘1: note の「失うもの」が、常に起きる結果のように書かれていた（採った）
+
+本体はサーバー側の機能フラグの mode が `off` ならアイドル時の圧縮をそもそも行わないので、そのときは設定を `false` にしても失うものは無い。Step 1 で自分でも判定関数の最初の分岐として読んでいたのに、note の「失うもの」に条件を付け忘れていた。「失うものが出るのは、機能がサーバー側で有効なときだけ」と条件を付けた。
+
+### 指摘2: 「2.1.291 以降に入った」は、設定キーの有無からしか言えない（採った）
+
+確かめたのは「設定キーの文字列が 2.1.291 にあり、2.1.280 に無い」までで、機能の導入版ではない。Codex が挙げた https://github.com/anthropics/claude-code/issues/98747 を開いて確かめた。題は「2.1.286 idle compaction silently discards working context ...; no opt-out」で、2.1.286 から動いていて止める手段が無い、という報告である（2026-10-01 起票、2026-10-06 に completed で閉じられた）。保守者の 2026-10-02 のコメントに「setting is coming. Currently it's doing this only for larger contexts (200k+)」とある。機能が先に入り、止める設定キーが後から入った、と読める。note と known-keys のコメントは「手元で確かめた本体 2.1.291〜2.1.294 の設定スキーマにあり、2.1.280 には無い」に直した。この episode の Context も直した。2.1.281〜2.1.290 の本体は手元に無く、確かめていない。
+
+同じ issue のコメント（2026-10-02・10-03）に、2.1.287 ではアイドル時の圧縮の記録と PreCompact hook に `trigger: "manual"` が付く、という第三者の報告がある。#415 本文は「通常の自動圧縮と同じ `trigger: auto` が付く」としていて、食い違う。版で変わった可能性もあり、この単位では確かめていない。note にも確かめ方にも trigger の値は使っていないので、この変更には影響しない。報告で範囲外として伝える。
+
+追記: PR #402 の本文に「`disableAgentView` は走っているペインにも効いている」という owner の確認がある。設定ファイルの読み直しが実行中のセッションに及ぶ実例の1つだが、別のキーなので、`idleCompaction` の「未確認」は変えない。
