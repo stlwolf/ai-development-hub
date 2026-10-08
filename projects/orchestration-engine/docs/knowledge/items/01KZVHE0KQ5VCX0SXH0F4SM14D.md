@@ -38,6 +38,10 @@ observations:
     ref: "#411"
     state: followed
     note: "knowledge の in-PR 相乗りを decision へ写す単位で、先例が成り立つ前提（保存の人間ゲートを owner のマージで通す・実行者が収穫 Step にいる・別 PR に分ける3条件）を decision について1つずつ確かめた。実行者が無いことは plan の DJ-2 で「その枝の担当」と書き、3条件は owner の裁定に合わせて写さないと DJ-7 で決めた"
+  - date: 2026-10-08
+    ref: "#415"
+    state: followed
+    note: "disableAgentView の形（replace・override・values.json）が成り立つ前提を、本体の設定の読み出しが上位スコープの値を勝たせることで確かめた。違う点（公式の一覧に無い・true は既定に戻すだけで有効化を強制しない）は note に書いた"
 ---
 
 **先例の規律を移植するときは、その規律が成り立っている前提も移植先に在るかを確かめる。** 規律は文面として写せるが、前提は写らない。
