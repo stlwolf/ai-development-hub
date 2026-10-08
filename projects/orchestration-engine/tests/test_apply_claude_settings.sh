@@ -80,7 +80,7 @@ run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
 ck  "バックアップは無い" "0" "$(backups)"
-ck  "宣言の3項目だけ" "disableAgentView hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の4項目だけ" "disableAgentView hooks idleCompaction statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[5] symlink には触らず、止めない"
 fresh c5
@@ -275,7 +275,7 @@ ST="$CASE/nested/deeper/settings.json"
 run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
-ck  "宣言の3項目が入る" "disableAgentView hooks statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の4項目が入る" "disableAgentView hooks idleCompaction statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[19] ポインタの妥当性（実装SO 指摘の回帰）"
 fresh c19
@@ -709,6 +709,22 @@ run
 ck  "exit 0" "0" "$RC"
 ck  "適用後は true に直る" "true" "$(jq -r '.disableAgentView' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+
+echo "[51] アイドル時の圧縮を止める値そのものを固定する（#415・owner 裁定）"
+# [50] と同じ理由で、正本から読まず false を直に見る。値が false なので、
+# キーが無い（null）こととも区別する。
+ck  "正本の値は false" "false" "$(jq -r '.idleCompaction' "$REPO_ROOT/canonical/claude/settings.values.json")"
+fresh c51a
+printf '%s' '{"idleCompaction":true,"theme":"dark"}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "適用後は false に直る" "false" "$(jq -r '.idleCompaction' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+fresh c51b
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+ck  "キーが無ければ作る" "true" "$(jq -r 'has("idleCompaction")' "$ST")"
+ck  "作った値は false（null ではない）" "false" "$(jq -r '.idleCompaction' "$ST")"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
