@@ -49,7 +49,8 @@ build_green() {
     --argjson hooks "$(jq -c '.hooks' "$HOOKS_SRC")" \
     --argjson sl "$(jq -c '.statusLine' "$SL_SRC")" \
     --argjson dav "$(jq -c '.disableAgentView' "$VALUES_SRC")" \
-    '{hooks: $hooks, statusLine: $sl, disableAgentView: $dav}' > "$ST"
+    --argjson idc "$(jq -c '.idleCompaction' "$VALUES_SRC")" \
+    '{hooks: $hooks, statusLine: $sl, disableAgentView: $dav, idleCompaction: $idc}' > "$ST"
 }
 
 # ============================================================================
@@ -61,6 +62,7 @@ ckc "宣言どおりと出る" "$OUT" "宣言どおり"
 ckc "hooks が一致" "$OUT" "一致 /hooks"
 ckc "statusLine が一致" "$OUT" "一致 /statusLine"
 ckc "disableAgentView が一致" "$OUT" "一致 /disableAgentView"
+ckc "idleCompaction が一致" "$OUT" "一致 /idleCompaction"
 
 echo "[2] statusLine が包まれた形 → 緑（値の一致では判定しない）"
 fresh c2; build_green
@@ -331,6 +333,33 @@ run
 ck  "exit 1" "1" "$RC"
 ckc "未適用として出る" "$OUT" "未適用 /disableAgentView"
 ncc "値の差分とは言わない" "$OUT" "差分 /disableAgentView"
+
+echo "[25] idleCompaction だけ崩す → その項目だけが差分に出る（#415）"
+fresh c25; build_green
+jq '.idleCompaction = true' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "idleCompaction が差分" "$OUT" "差分 /idleCompaction"
+ncc "disableAgentView は巻き込まれない" "$OUT" "差分 /disableAgentView"
+ncc "hooks は巻き込まれない" "$OUT" "差分 /hooks"
+
+echo "[26] idleCompaction のキーが無い → 未適用（値が false なので、無いことと取り違えない・#415）"
+fresh c26; build_green
+jq 'del(.idleCompaction)' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "未適用として出る" "$OUT" "未適用 /idleCompaction"
+ncc "値の差分とは言わない" "$OUT" "差分 /idleCompaction"
+
+echo "[27] 公式の一覧に無いキーは警告だけで、緑を妨げない（#415）"
+# idleCompaction は公式の settings reference に無いので、一覧に載せていない。
+# 公式に載って一覧を取り直したらここが落ちる。そのときは宣言の note の
+# 「公式に載っていない」も一緒に直す。
+fresh c27; build_green
+run
+ck  "exit 0" "0" "$RC"
+ckc "公式の一覧に無いと警告する" "$OUT" "idleCompaction は公式の一覧にありません"
+ncc "公式の一覧にあるとは言わない" "$OUT" "idleCompaction は公式の一覧にあります"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

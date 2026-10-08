@@ -32,6 +32,16 @@
         "pointer": "/disableAgentView"
       },
       "note": "agent view を切る。切れるのは `claude agents` / `--bg` / `/background` と、`attach` `stop` `rm` `logs` `respawn` `daemon` の各サブコマンドと、背面の on-demand daemon（公式の呼び方は on-demand supervisor）である。`/fork` は background session を作らず旧来のforked subagent に戻り、`/subtask` は使えなくなる。宣言で持つ理由は #338 — background と foreground を往復すると session が fork され、新しい session_id になって tmux の pane 束縛を失う。fork 前の sidecar は古い pane を主張したまま凍って残るので、board の現統括 pane と突合する oe-vitals と oe-handoff が死んだ方を読む。**ON に戻すときは、この項目を外すだけでは戻らない** — apply は宣言した項目にしか触らないので、配った `true` がそのまま残る。値を `false` にして一度 apply するか、`op` を `absent` にして一度配ってから項目を外す。左矢印の近道だけを切る `leftArrowOpensAgents` もあるが、`/background` と終了時の画面も往復の入口なので、機能ごと切ることを選んだ（owner 裁定 2026-09-16）。"
+    },
+    {
+      "pointer": "/idleCompaction",
+      "op": "replace",
+      "scope_behavior": "override",
+      "source": {
+        "file": "canonical/claude/settings.values.json",
+        "pointer": "/idleCompaction"
+      },
+      "note": "アイドル時の圧縮を止める。これは、やり取りが既定で約54分（プロンプトキャッシュの有効期間1時間の 0.9 倍）途絶え、コンテキストが 200,000 トークン以上あるセッションの会話を、こちらの意図と関係なく要約に置き換える機能である。止める理由は owner の裁定（2026-10-08・#415）である。文脈の切れ目は引き継ぎと委譲で自分たちが決めていて、勝手に圧縮されると困る。止めても、通常の自動圧縮（コンテキストが満ちたとき）と手動の `/compact` は残る。失うのは、1時間以上放ったセッションに戻ったときの軽さである。戻った最初の応答で会話全体をキャッシュなしで読み直すので、応答が重くなり、使用量も増える。このキーは公式の settings reference にも CHANGELOG にも載っていない（2026-10-08 時点）。本体 2.1.291 以降の設定スキーマにあり、機能の有効・無効はサーバー側の機能フラグで切り替わる。そのため check の綴り確認は「公式の一覧にありません」と警告するが、それは意図どおりである。公式の写しである settings-known-keys.txt には足していない。実行中のセッションに効くかは未確認である。公式は設定ファイルの変更を監視して多くの項目を再起動なしで反映すると書き、本体もこの値を起動時ではなく発火を判定する時点で読むが、実測はしていない。確実に止めたいセッションは起動し直す。**ON に戻すときは、この項目を外すだけでは戻らない。** apply は宣言した項目にしか触らないので、配った `false` がそのまま残る。値を `true` にして一度 apply するか（`true` は既定の挙動に戻すだけで、機能を強制的に有効にはしない）、`op` を `absent` にして一度配ってから項目を外す。止めることと配らないことの中間案として、環境変数 `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` で発火する最小トークン数を変える手もある（100,000 以上の任意の値にできる・既定は 200,000）。"
     }
   ],
   "unchecked_scopes": [

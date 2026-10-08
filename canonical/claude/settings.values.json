@@ -1,4 +1,5 @@
 {
   "description": "hub が正本を持つ単純な値の置き場。settings.harness.json の宣言が pointer で引く（宣言は値の出どころにファイルを要求するため）。ここに書いた値だけが配られる。",
-  "disableAgentView": true
+  "disableAgentView": true,
+  "idleCompaction": false
 }
