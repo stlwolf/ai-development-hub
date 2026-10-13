@@ -522,8 +522,9 @@ if [ -n "${STUB_JQ_FAIL:-}" ]; then
   done
 fi
 STUB
+  # 実 jq のパスは %q で引用する（空白を含む配置でも1語のまま渡す・#424 の実装SO 指摘）。
   # shellcheck disable=SC2016
-  printf 'exec %s "$@"\n' "$_REAL_JQ"
+  printf 'exec %q "$@"\n' "$_REAL_JQ"
 } > "$_STUB_DIR/jq"
 chmod +x "$_STUB_DIR/jq"
 R34="$_TMP_DIR/r34"; mkdir -p "$R34"; git_init "$R34"
