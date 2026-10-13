@@ -153,24 +153,52 @@ run "$F"
 ck  "exit 0（閏年 2024-02-29 は valid）" "0" "$RUN_RC"
 
 echo "[8c] jq の評価失敗は環境エラー（exit 2）で落ちる — データ不備（exit 1）に丸めない（Copilot 指摘・#274）"
-# cal_ok を含む jq プログラムだけ失敗する stub を PATH 先頭に置き、他の jq 呼び出しは実 jq に委譲させる。
-# これで「環境側で jq の評価が失敗した」状況だけを再現できる（jq 本体を壊す必要がない）。
+# 狙った jq プログラムだけ失敗する stub を PATH 先頭に置き、他の jq 呼び出しは実 jq に委譲させる。
+# これで「環境側で jq の評価が失敗した」状況だけを再現できる（jq 本体を壊す必要がない）。失敗させる
+# プログラムは STUB_JQ_FAIL（case のパターン）で渡し、失敗させた引数を STUB_JQ_LOG へ1行で記録する
+# （狙った呼び出しで落ちたことを確かめるため・#283 で [8d] と共用にした）。
 _REAL_JQ="$(command -v jq)"
 _STUB_DIR="$_TMP_DIR/stubbin"; mkdir -p "$_STUB_DIR"
 {
-  printf '#!/usr/bin/env bash\n'
-  # stub の中身は literal で出す（$@ を呼び出し側で展開させない）。
+  # stub の中身は literal で出す（$@ や STUB_JQ_FAIL を呼び出し側で展開させない）。
+  cat <<'STUB'
+#!/usr/bin/env bash
+if [ -n "${STUB_JQ_FAIL:-}" ]; then
+  for a in "$@"; do
+    # shellcheck disable=SC2254
+    case "$a" in $STUB_JQ_FAIL) printf '%s\n' "$a" >> "${STUB_JQ_LOG:-/dev/null}"; exit 5 ;; esac
+  done
+fi
+STUB
   # shellcheck disable=SC2016
-  printf 'for a in "$@"; do case "$a" in *cal_ok*) exit 5 ;; esac; done\n'
   printf 'exec %s "$@"\n' "$_REAL_JQ"
 } > "$_STUB_DIR/jq"
 chmod +x "$_STUB_DIR/jq"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
 _STUB_RC=0
-_STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
+_STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_JQ_FAIL='*cal_ok*' OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
 ck  "exit 2（環境エラー）"     "2" "$_STUB_RC"
 ckc "ERROR メッセージ"        "$_STUB_OUT" "failed to evaluate the calendar-validity filter with jq"
 ncc "WARN に丸めていない"      "$_STUB_OUT" "date is not a valid calendar date"
+
+echo "[8d] 型を読む jq の評価失敗も環境エラー（exit 2）— root / source / observations / exclusions の4か所（#283）"
+# 4か所それぞれの jq プログラムだけを [8c] の stub で失敗させ、exit 2・その箇所の ERROR・その箇所の WARN が
+# 出ないことを見る。stub の記録で、狙ったプログラムで落ちたこと（他の呼び出しで落ちたのではないこと）も見る。
+_TYPE_PROGS=("type" ".source | type" ".observations | type" ".exclusions | type")
+_TYPE_NAMES=("frontmatter root" "source" "observations" "exclusions")
+_TYPE_WARNS=("frontmatter root is not a map" "source must be a map" "observations must be an array" "exclusions, if present, must be an array")
+i=0
+while [[ "$i" -lt 4 ]]; do
+  F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+  _STUB_LOG="$_TMP_DIR/stubjq-$i.log"; : > "$_STUB_LOG"
+  _STUB_RC=0
+  _STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_JQ_FAIL="${_TYPE_PROGS[$i]}" STUB_JQ_LOG="$_STUB_LOG" OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
+  ck  "${_TYPE_NAMES[$i]}: exit 2（環境エラー）"         "2" "$_STUB_RC"
+  ckc "${_TYPE_NAMES[$i]}: ERROR メッセージ"            "$_STUB_OUT" "failed to evaluate the ${_TYPE_NAMES[$i]} type with jq"
+  ncc "${_TYPE_NAMES[$i]}: WARN に丸めていない"          "$_STUB_OUT" "${_TYPE_WARNS[$i]}"
+  ck  "${_TYPE_NAMES[$i]}: 狙ったプログラムで stub が落とした" "${_TYPE_PROGS[$i]}" "$(cat "$_STUB_LOG")"
+  i=$((i + 1))
+done
 
 echo "[9] trigger 空 → exit 1"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"

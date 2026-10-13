@@ -26,6 +26,10 @@ observations:
     ref: "#242"
     state: followed
     note: "名指しの label を直したあと、同じ型（イベントログの文字列を無害化せずに会話到達面へ出す）を横に探し、oe-activity の ts と DELIVERY 列、手本 oe-undelivered が数値 label で落ちることを見つけて、直さずに報告した"
+  - date: 2026-10-13
+    ref: "#283"
+    state: followed
+    note: "名指しの4か所を直したあと、同じ型の jq 呼び出しを洗い出して stub で通し、brief に無かった2か所（必須キーの has と == null、exclusions の要素の型）を見つけて直さずに報告した"
 ---
 
 指摘は1件ずつ来るが、型は横に広がる。**外部レビューが名指しした1箇所を直した緑は、その型が消えた証拠ではない。**

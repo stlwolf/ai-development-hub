@@ -17,6 +17,10 @@ observations:
     ref: "#303"
     state: injected_not_used
     note: "注意書きは書いたのに肝心の値で踏んだ。plan に「exit code は書いて決まるものではない・経路ごとに走らせて確かめる」と明記し受け入れ基準にも入れたうえで、拒否用の終了コードを 3 と書いた。設計SO の3レーンが揃って、その 3 は so_verdict_exit が refuted に割り当てている値（lib/so-verdict.sh:119-125）で、oe-refute は so-compare の rc を 2 のときしか見ない（bin/oe-refute:243-249）ため、入力拒否が設計の反証に化けると指摘した。ソースを開いて確認し、値の提案を撤回した。走らせる前に値を書いた時点でこの item を外している"
+  - date: 2026-10-13
+    ref: "#283"
+    state: followed
+    note: "範囲外の各経路を stub で実際に通し、exit 0（検査の飛ばし）・exit 5（代入）・exit 1（WARN への丸め）を確かめた。ただし == null の行だけは通さずに隣の行と同じ結果と書いて取り違え、実装SO の指摘で通して直した"
 exclusions:
   - "関数を source していない自己完結したスクリプト（伝播の経路が無い）"
   - "実際に叩いて exit code を観測した場合（grep を根拠にしていない）"
