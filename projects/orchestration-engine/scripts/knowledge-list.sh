@@ -14,7 +14,7 @@ set -euo pipefail
 # Exit codes:
 #   0 = 列挙成功（skipped があっても既定は 0）
 #   1 = --strict かつ skipped > 0（malformed / 非 ULID を検出。段3 の完全性信号）
-#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / usage / repo root 不明）
+#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / frontmatter root の型を読む jq の評価失敗 / usage / repo root 不明）
 #
 # 位置づけ:
 #   negative knowledge ループ 段3（突合）の read-only 列挙 verb。統括が brief を組む時に候補を
@@ -245,8 +245,18 @@ process_item() {
     SKIPPED=$((SKIPPED + 1))
     return
   fi
-  if ! json="$(printf '%s\n' "$fm" | yq -p=yaml -o=json '.' 2>/dev/null)" \
-     || [[ "$(jq -r 'type' <<<"$json" 2>/dev/null || true)" != "object" ]]; then
+  # yq の失敗と root の型の不一致は item の不備なので MALFORMED（root_type は空か object 以外のまま）。
+  # root の型を読む jq の評価失敗は環境エラーなので exit 2 で止める（validate-knowledge.sh と同じ扱い・
+  # #424）。`|| true` で空へ丸めると、正常な item が MALFORMED として skip される。この形にそろえたのは
+  # この1か所だけで、出力と集計を組むほかの jq の呼び出しはまだそろっていない（#424 の episode）。
+  local root_type=""
+  if json="$(printf '%s\n' "$fm" | yq -p=yaml -o=json '.' 2>/dev/null)"; then
+    if ! root_type="$(jq -r 'type' <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the frontmatter root type with jq at $item_ref (environment error, not a malformed item)" >&2
+      exit 2
+    fi
+  fi
+  if [[ "$root_type" != "object" ]]; then
     MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "malformed YAML frontmatter" \
       '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}')")
     SKIPPED=$((SKIPPED + 1))

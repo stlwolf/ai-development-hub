@@ -14,8 +14,8 @@ set -euo pipefail
 #   1 = invalid（1件以上の schema 違反。frontmatter/本文が knowledge item スキーマに反する。
 #       malformed YAML もここ＝item の不備であり環境障害ではない）
 #   2 = 環境エラー（file/dir not found / jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
-#       日付の暦チェック・observations の要素スキーマ・型を読む4か所（root / source / observations /
-#       exclusions）で ERROR を出して止まる（item の不備に丸めない・#274 / #283）
+#       item を読むすべての jq の呼び出しで ERROR を出して止まる（item の不備や OK に丸めない・
+#       #274 / #283 / #424）
 #
 # 位置づけ:
 #   #272 の negative knowledge ループ 段2（保存）の機械検証。設計正本は
@@ -174,12 +174,15 @@ validate_item() {
     warn "$file" "malformed YAML frontmatter (yq parse failed)"
     return
   fi
-  # 型を読む jq（ここと source / observations / exclusions の4か所）の評価失敗は、item の不備ではなく
-  # 環境エラーなので exit 2 で落とす（#283・日付チェックと同じ扱い）。`|| true` で空へ丸めると「型が違う」
-  # と読まれ、呼び出し側が item を直そうとする。$json は yq が成功させた出力だけで、データ由来で jq が
-  # 失敗する経路は見つかっていない（JSON にできない YAML は yq 自体が失敗し、上で malformed YAML になる）。
-  # 残る候補は jq の入れ子の深さの上限（約1万段）だけで、yq がその深さを現実的な時間で出力するかは
-  # 確かめていない（#283 の episode）。
+  # item を読む jq の評価失敗は、item の不備ではなく環境エラーなので exit 2 で落とす（#283 / #424・
+  # 日付チェックと同じ扱い）。この関数の jq の呼び出しはすべてこの形にそろえる。`|| true` で空へ丸めたり
+  # [[ "$(jq ...)" ... ]] で終了コードを捨てたりすると、失敗が「型が違う」「キーが無い」の WARN や、検査を
+  # 飛ばした OK に化け、呼び出し側が item を直そうとする。代入で受けて素通しすると、set -e で何も出さずに
+  # exit 5 で終わる。$json は yq が成功させた出力だけで、データ由来で jq が失敗する経路は見つかっていない
+  # （JSON にできない YAML は yq 自体が失敗し、上で malformed YAML になる）。残る候補は jq の入れ子の深さの
+  # 上限（約1万段）だけで、yq がその深さを現実的な時間で出力するかは確かめていない（#283 の episode）。
+  # その場合も落ちるのはここ（最初の jq）で、以降の呼び出しは同じ $json の map の root と、型を確かめた
+  # あとの値だけを読む。
   local root_type
   if ! root_type="$(jq -r 'type' <<<"$json" 2>/dev/null)"; then
     echo "ERROR: failed to evaluate the frontmatter root type with jq (environment error, not an item defect)" >&2
@@ -191,25 +194,41 @@ validate_item() {
   fi
 
   # --- 必須キーの存在（null は欠落扱い）---
-  local key
+  local key has_key is_null
   for key in id type status date trigger prediction source landing observations; do
-    if [[ "$(jq "has(\"$key\")" <<<"$json")" != "true" ]]; then
+    if ! has_key="$(jq "has(\"$key\")" <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate whether the required key '$key' exists with jq (environment error, not an item defect)" >&2
+      exit 2
+    fi
+    if [[ "$has_key" != "true" ]]; then
       warn "$file" "missing required key: $key"
-    elif [[ "$(jq -r ".\"$key\" == null" <<<"$json")" == "true" ]]; then
+      continue
+    fi
+    if ! is_null="$(jq -r ".\"$key\" == null" <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate whether the required key '$key' is null with jq (environment error, not an item defect)" >&2
+      exit 2
+    fi
+    if [[ "$is_null" == "true" ]]; then
       warn "$file" "required key is null: $key"
     fi
   done
 
   # --- type ---
   local tv
-  tv="$(jq -r '.type // empty' <<<"$json")"
+  if ! tv="$(jq -r '.type // empty' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the value of 'type' with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   if [[ "$tv" != "knowledge" ]]; then
     warn "$file" "type must be 'knowledge' (got: ${tv:-<none>})"
   fi
 
   # --- status enum ---
   local sv
-  sv="$(jq -r '.status // empty' <<<"$json")"
+  if ! sv="$(jq -r '.status // empty' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the value of 'status' with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   case "$sv" in
     active|disabled|superseded|retired) ;;
     *) warn "$file" "status not in enum (active|disabled|superseded|retired): ${sv:-<none>}" ;;
@@ -217,7 +236,10 @@ validate_item() {
 
   # --- id (ULID) + ファイル名一致（DJ-E: basename == <id>.md）---
   local id
-  id="$(jq -r '.id // empty' <<<"$json")"
+  if ! id="$(jq -r '.id // empty' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the value of 'id' with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   if [[ ! "$id" =~ $ULID_RE ]]; then
     warn "$file" "id is not a valid ULID (26-char Crockford Base32): ${id:-<none>}"
   fi
@@ -227,7 +249,10 @@ validate_item() {
 
   # --- date (YYYY-MM-DD + カレンダー妥当性・不変=収穫日) ---
   local dv
-  dv="$(jq -r '.date // empty' <<<"$json")"
+  if ! dv="$(jq -r '.date // empty' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the value of 'date' with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   if [[ ! "$dv" =~ $DATE_RE ]]; then
     warn "$file" "date must be YYYY-MM-DD: ${dv:-<none>}"
   else
@@ -249,7 +274,10 @@ validate_item() {
   # --- trigger / prediction: 非空 string ---
   for key in trigger prediction; do
     local v
-    v="$(jq -r "if (.\"$key\"|type)==\"string\" then .\"$key\" else \"\" end" <<<"$json")"
+    if ! v="$(jq -r "if (.\"$key\"|type)==\"string\" then .\"$key\" else \"\" end" <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the value of '$key' with jq (environment error, not an item defect)" >&2
+      exit 2
+    fi
     if [[ "$v" != *[![:space:]]* ]]; then
       warn "$file" "$key must be a non-empty string"
     fi
@@ -265,7 +293,10 @@ validate_item() {
     warn "$file" "source must be a map with a 'ref' key"
   else
     local ref
-    ref="$(jq -r 'if (.source.ref|type)=="string" then .source.ref else "" end' <<<"$json")"
+    if ! ref="$(jq -r 'if (.source.ref|type)=="string" then .source.ref else "" end' <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the value of 'source.ref' with jq (environment error, not an item defect)" >&2
+      exit 2
+    fi
     if [[ "$ref" != *[![:space:]]* ]]; then
       warn "$file" "source.ref must be a non-empty string"
     elif [[ "$ref" == *"://"* ]]; then
@@ -285,7 +316,10 @@ validate_item() {
 
   # --- landing enum ---
   local lv
-  lv="$(jq -r '.landing // empty' <<<"$json")"
+  if ! lv="$(jq -r '.landing // empty' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the value of 'landing' with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   case "$lv" in
     nl|guard-candidate) ;;
     *) warn "$file" "landing not in enum (nl|guard-candidate): ${lv:-<none>}" ;;
@@ -353,7 +387,12 @@ validate_item() {
   fi
 
   # --- exclusions（任意）: 存在時は list ---
-  if [[ "$(jq 'has("exclusions")' <<<"$json")" == "true" ]]; then
+  local has_excl
+  if ! has_excl="$(jq 'has("exclusions")' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate whether the optional key 'exclusions' exists with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
+  if [[ "$has_excl" == "true" ]]; then
     local et
     if ! et="$(jq -r '.exclusions | type' <<<"$json" 2>/dev/null)"; then
       echo "ERROR: failed to evaluate the exclusions type with jq (environment error, not an item defect)" >&2
@@ -361,8 +400,15 @@ validate_item() {
     fi
     if [[ "$et" != "array" ]]; then
       warn "$file" "exclusions, if present, must be an array (list of strings)"
-    elif [[ "$(jq -r '[.exclusions[] | type] | all(. == "string")' <<<"$json")" != "true" ]]; then
-      warn "$file" "exclusions elements must all be strings"
+    else
+      local excl_all_str
+      if ! excl_all_str="$(jq -r '[.exclusions[] | type] | all(. == "string")' <<<"$json" 2>/dev/null)"; then
+        echo "ERROR: failed to evaluate the element types of 'exclusions' with jq (environment error, not an item defect)" >&2
+        exit 2
+      fi
+      if [[ "$excl_all_str" != "true" ]]; then
+        warn "$file" "exclusions elements must all be strings"
+      fi
     fi
   fi
 

@@ -69,7 +69,7 @@ validate-knowledge projects/orchestration-engine/docs/knowledge/items/<ULID>.md
 validate-knowledge projects/orchestration-engine/docs/knowledge/items
 ```
 
-exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・jq の評価失敗・usage）。jq の評価失敗は item の不備ではないので、日付の暦チェック・observations の要素スキーマ・型を読む4か所（root / source / observations / exclusions）では、exit 1 に丸めず ERROR を出して止まる（ほかの jq の呼び出しはまだこの形にそろっていない）。
+exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・jq の評価失敗・usage）。jq の評価失敗は item の不備ではないので、item を読むすべての jq の呼び出しで、exit 1（WARN）や exit 0（検査を飛ばした OK）に丸めず ERROR を出して止まる。
 
 ## 列挙（段3 突合）
 
@@ -104,7 +104,9 @@ knowledge-list docs/knowledge/items
   |------|------------------|----------------------|
   | 0 | 列挙成功（skipped があっても既定は 0） | valid |
   | 1 | `--strict` かつ skipped > 0（完全性信号） | schema 違反 |
-  | 2 | 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / usage） | 環境エラー |
+  | 2 | 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / frontmatter root の型を読む jq の評価失敗 / usage） | 環境エラー |
+
+  `knowledge-list` で jq の評価失敗を exit 2 にそろえたのは、frontmatter root の型を読む箇所だけである（正常な item を MALFORMED に丸めないため）。出力と集計を組むほかの jq の呼び出しは、まだこの形にそろっていない。
 
 - **列挙 → 採否 → 注入** の手順は `doc-flow-guardrail` の「negative knowledge 注入」節（brief 固定節の slot）を参照する。
 
