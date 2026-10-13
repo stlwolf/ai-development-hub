@@ -42,6 +42,10 @@ observations:
     ref: "#415"
     state: followed
     note: "disableAgentView の形（replace・override・values.json）が成り立つ前提を、本体の設定の読み出しが上位スコープの値を勝たせることで確かめた。違う点（公式の一覧に無い・true は既定に戻すだけで有効化を強制しない）は note に書いた"
+  - date: 2026-10-13
+    ref: "#242"
+    state: followed
+    note: "手本 oe-undelivered の無条件 gsub を写す前に、移植先の join が数値 label を通している前提を確かめ、写すと退行すると分かったので文字列だけに畳む形にした。手本自身が数値 label で落ちることも再現し、違いを episode に書いた"
 ---
 
 **先例の規律を移植するときは、その規律が成り立っている前提も移植先に在るかを確かめる。** 規律は文面として写せるが、前提は写らない。
