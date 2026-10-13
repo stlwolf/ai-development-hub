@@ -711,10 +711,18 @@ run "$F"
 ck  "exit 0（stdin 経由・argv 落ちしない）" "0" "$RUN_RC"
 
 echo "[51] 空白だけの値は空・空白以外を含めば空でない（#419 で書き換えた空白判定4か所の意味）"
-# 空白は半角空白・タブ・全角空白（U+3000）を混ぜる。不正な UTF-8 のバイト（\xff）だけの値は「空でない」
-# が正しい。空白判定を正規表現 =~ [^[:space:]] へ書き換えると UTF-8 ロケールでここが「空」に倒れる（#419）。
+# 不正な UTF-8 のバイト（\xff）だけの値は、どのロケールでも「空でない」が正しい。空白判定を正規表現
+# =~ [^[:space:]] へ書き換えると、UTF-8 ロケールではここが「空」に倒れる（#419）。trigger/prediction と
+# source.ref は yq を通った値（正しい UTF-8）しか来ないので、正規表現と判定が分かれる入力を作れない。
+# 全角空白（U+3000）を空白に数えるかはロケールで決まる（UTF-8 なら数え、C なら数えない）。旧い置換
+# ${x//[[:space:]]/} の判定を基準に確かめ、数えるロケールでだけ fixture に混ぜる（数えないロケールで混ぜると、
+# 意味を保った実装まで落ちる）。
+WSX=$'\xe3\x80\x80'
+if [[ -n "${WSX//[[:space:]]/}" ]]; then
+  WSX=""; echo "  NOTE: このロケールは全角空白を空白に数えないので、全角空白を混ぜずに確かめる"
+fi
 F="$_TMP_DIR/$ULID.md"
-printf -- '---\n \t\xe3\x80\x80\n\n---\n\n本文\n' > "$F"
+printf -- '---\n \t%s\n\n---\n\n本文\n' "$WSX" > "$F"
 run "$F"
 ck  "frontmatter が空白だけ → exit 1"  "1" "$RUN_RC"
 ckc "WARN empty block（空白だけ）"      "$RUN_OUT" "empty frontmatter block"
@@ -724,27 +732,27 @@ ckc "frontmatter が不正なバイトだけ → YAML の検査まで進む" "$R
 ncc "frontmatter が不正なバイトだけ → 空扱いしない"       "$RUN_OUT" "empty frontmatter block"
 
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
-awk -v l='trigger: " \t　"' '/^trigger:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
+awk -v l="trigger: \" \\t$WSX\"" '/^trigger:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "trigger が空白だけ → exit 1"  "1" "$RUN_RC"
 ckc "WARN trigger（空白だけ）"      "$RUN_OUT" "trigger must be a non-empty string"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
-awk -v l='prediction: "　 x \t"' '/^prediction:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
+awk -v l="prediction: \"$WSX x \\t\"" '/^prediction:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "prediction が空白に囲まれた1文字 → exit 0"  "0" "$RUN_RC"
 
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
-awk -v l='  ref: "\t 　"' '/^  ref:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
+awk -v l="  ref: \"\\t $WSX\"" '/^  ref:/{print l; next} {print}' "$F" > "$F.t" && mv "$F.t" "$F"
 run "$F"
 ck  "source.ref が空白だけ → exit 1"  "1" "$RUN_RC"
 ckc "WARN ref empty（空白だけ）"       "$RUN_OUT" "source.ref must be a non-empty string"
 
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
 awk 'f==2{next} {print} /^---$/{c++; if(c==2) f=2}' "$F" > "$F.t"
-{ cat "$F.t"; printf '\n\t\xe3\x80\x80\n'; } > "$F"
+{ cat "$F.t"; printf '\n\t%s\n' "$WSX"; } > "$F"
 run "$F"
-ck  "本文がタブと全角空白だけ → exit 1"  "1" "$RUN_RC"
-ckc "WARN body（全角空白）"              "$RUN_OUT" "body prose is empty"
+ck  "本文が空白だけ → exit 1"   "1" "$RUN_RC"
+ckc "WARN body（空白だけ）"     "$RUN_OUT" "body prose is empty"
 { cat "$F.t"; printf '\n\xff\n'; } > "$F"
 rm -f "$F.t"
 run "$F"
