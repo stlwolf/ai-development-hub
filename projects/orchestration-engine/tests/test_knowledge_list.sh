@@ -483,6 +483,24 @@ validator_flagged="$(printf '%s' "$validator_flagged" | tr ' ' '\n' | grep -v '^
 ck  "両コマンドの判定集合が一致" "$validator_flagged" "$lister_flagged"
 ck  "flagged は 5 件"            "5" "$(printf '%s' "$lister_flagged" | wc -w | tr -d ' ')"
 
+echo "[33] 空・空白だけの frontmatter は MALFORMED・不正なバイトだけなら空扱いしない（#419 で書き換えた空白判定）"
+# 空白は半角空白・タブ・全角空白（U+3000）を混ぜる。不正な UTF-8 のバイトだけの frontmatter を「空」に
+# しないことで、空白判定を正規表現 =~ [^[:space:]] へ書き換える退行を止める（UTF-8 ロケールで「空」に倒れる）。
+R33="$_TMP_DIR/r33"; mkdir -p "$R33/docs/knowledge/items"
+F33="$R33/docs/knowledge/items/$ULID1.md"
+printf -- '---\n---\n\n本文\n' > "$F33"
+run "$R33" --json "$R33/docs/knowledge/items"
+ck  "空 frontmatter → skipped 1"         "1" "$(jq -r '.skipped' <<<"$OUT")"
+ckc "空 frontmatter → empty reason"      "$OUT" "missing or empty frontmatter"
+printf -- '---\n \t\xe3\x80\x80\n\n---\n\n本文\n' > "$F33"
+run "$R33" --json "$R33/docs/knowledge/items"
+ck  "空白だけ → skipped 1"               "1" "$(jq -r '.skipped' <<<"$OUT")"
+ckc "空白だけ → empty reason"            "$OUT" "missing or empty frontmatter"
+printf -- '---\n\xff\n---\n\n本文\n' > "$F33"
+run "$R33" --json "$R33/docs/knowledge/items"
+ckc "不正なバイトだけ → YAML の検査まで進む"  "$OUT" "malformed YAML frontmatter"
+ncc "不正なバイトだけ → empty reason にしない" "$OUT" "missing or empty frontmatter"
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

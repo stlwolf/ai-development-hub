@@ -155,7 +155,11 @@ validate_item() {
 
   local fm
   fm="$(awk 'NR==1 && $0=="---"{f=1; next} f==1 && $0=="---"{exit} f==1{print}' "$file")"
-  if [[ -z "${fm//[[:space:]]/}" ]]; then
+  # 「空白だけか」は glob（空白以外を1文字でも含むか）で見る。置換 ${x//[[:space:]]/} は長い値で
+  # 長さの2乗以上に遅く、bash 3.2 では数十KB で終わらない（#419）。正規表現 =~ [^[:space:]] は
+  # UTF-8 ロケールで不正なバイトを1つ含むと全体が一致しなくなり判定が変わるので使わない。
+  # 本スクリプトの空白判定（trigger/prediction・source.ref・本文）はすべてこの形にそろえる。
+  if [[ "$fm" != *[![:space:]]* ]]; then
     warn "$file" "empty frontmatter block (--- のみは valid にしない)"
     return
   fi
@@ -231,7 +235,7 @@ validate_item() {
   for key in trigger prediction; do
     local v
     v="$(jq -r "if (.\"$key\"|type)==\"string\" then .\"$key\" else \"\" end" <<<"$json")"
-    if [[ -z "${v//[[:space:]]/}" ]]; then
+    if [[ "$v" != *[![:space:]]* ]]; then
       warn "$file" "$key must be a non-empty string"
     fi
   done
@@ -244,7 +248,7 @@ validate_item() {
   else
     local ref
     ref="$(jq -r 'if (.source.ref|type)=="string" then .source.ref else "" end' <<<"$json")"
-    if [[ -z "${ref//[[:space:]]/}" ]]; then
+    if [[ "$ref" != *[![:space:]]* ]]; then
       warn "$file" "source.ref must be a non-empty string"
     elif [[ "$ref" == *"://"* ]]; then
       : # URL は存在検査対象外（§13.4/§15 と同型）
@@ -341,7 +345,7 @@ validate_item() {
   # --- 本文 prose: 空白トリム後に可視文字 >=1 ---
   local body
   body="$(awk 'NR==1 && $0=="---"{f=1; next} f==1 && $0=="---"{f=2; next} f==2{print}' "$file")"
-  if [[ -z "${body//[[:space:]]/}" ]]; then
+  if [[ "$body" != *[![:space:]]* ]]; then
     warn "$file" "body prose is empty (the lesson must be written after the frontmatter)"
   fi
 }

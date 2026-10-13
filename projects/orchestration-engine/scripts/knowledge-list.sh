@@ -237,7 +237,9 @@ process_item() {
     SKIPPED=$((SKIPPED + 1))
     return
   fi
-  if [[ -z "${fm//[[:space:]]/}" ]]; then
+  # 「空白だけか」は glob で見る（validate-knowledge.sh と同じ形・理由も同スクリプトの frontmatter
+  # 判定のコメント）。置換 ${x//[[:space:]]/} は bash 3.2 で長い frontmatter に終わらない（#419）。
+  if [[ "$fm" != *[![:space:]]* ]]; then
     MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "missing or empty frontmatter" \
       '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}')")
     SKIPPED=$((SKIPPED + 1))
