@@ -3,12 +3,32 @@ id: "01M4SSP018X3037Q7MC99A384V"
 title: "#242 oe-activity の label を会話到達面で無害化する"
 date: 2026-10-13
 type: episode
-status: in-development
+status: stable
 related:
   - type: derived_from
     ref: "https://github.com/stlwolf/ai-development-hub/issues/242"
     reason: "本 episode の作業対象"
+  - type: relates_to
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/421"
+    reason: "この episode が記録する作業の PR"
 tags: [orchestration, oe-activity, oe-ack, sanitize, malform-hygiene]
+promotion:
+  - subject: "制御文字の畳みを jq の値へ足すときは、型が文字列でない値で投影全体が落ちないかを見る"
+    verdict: required
+    ref: "本文: 手本の形をそのまま写すと、数値の label で表示全体が落ちる（2026-10-13）"
+  - subject: "oe-ack は label を出す経路が無いので変えない"
+    verdict: not-required
+    ref: "本文: brief と issue の断定を当て直した（2026-10-13）"
+  - subject: "無害化の核の規則を label にもそのまま当てる"
+    verdict: not-required
+    ref: "本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）"
+  - subject: "jq 側の畳みを最後の join の直前に置く"
+    verdict: not-required
+    ref: "本文: 直し方（2026-10-13）"
+knowledge_observations:
+  - "01M2DRCP3QSG4NQWHNY6DSD3NJ"
+  - "01KZ3MHMEQN5XEJGV9809QPH2A"
+  - "01KZVHE0KQ5VCX0SXH0F4SM14D"
 ---
 
 # #242 oe-activity の label を会話到達面で無害化する
@@ -97,3 +117,74 @@ negative knowledge `01KZ3MHMEQN5XEJGV9809QPH2A` に従い、名指しされた l
   - **採否: 上限の継承は直した。** テストの冒頭で `OE_SANITIZE_MAX_CP` を `unset` し、既定へ戻す。直す前は `OE_SANITIZE_MAX_CP=3` で既存の [3] から落ちて止まり、直したあとは通る。jq の版は直していない。`gsub("[[:cntrl:]]"; " ")` と `type` は既存のコードがすでに使っている機能で、この単位で新しい依存は足していない。
 
 直したあと、テストを bash 3.2 / 5 × `ja_JP.UTF-8` / `C` × 上限の継承あり（3）・なしの8通りで回し、すべて 101 件・失敗 0 だった。
+
+### PR を作り、Copilot のレビューを1ラウンド受けた（2026-10-13）
+
+PR #421 を作り、Copilot に1回依頼した。結果は「Approval recommended・0 open findings」で、行コメントは 0 件だった。未返信のスレッドは 0 件である。
+
+## closure（2026-10-13）
+
+tier は heavy である。意図して起動した外部レビュー（実装SO）があり、選択肢を比べて棄却した設計判断（手本の無条件 `gsub` を写さない）があり、テストが変更前で FAIL を数えずに止まるという失敗と、その直しがあったため。
+
+### 次の消費者
+
+- `oe-activity` / `oe-undelivered` / `oe-ack` の表示を触る将来の作業（とくに、範囲外として報告したペイン ID・ts・DELIVERY 列の無害化や、`oe-undelivered` の数値 label での失敗を直す作業）。
+- jq の投影に文字列の関数を後付けする作業。収穫した negative knowledge `01M4STTT9HQBG97EQ6W6M2AVKD` が注入の候補になる。
+
+### 事実・失敗
+
+- 手本の形をそのまま写すと、数値の label で投影全体が落ちると分かり、写す前に止めた。`本文: 手本の形をそのまま写すと、数値の label で表示全体が落ちる（2026-10-13）`
+- 変更前の master では label の US で俯瞰と inbox が見出しだけで exit 1 になっていた。足したテストは最初これを FAIL として数えずに途中で止まり、終了コードを受け止める形に直した。`本文: 変更前の master では、label の US で表示全体が消えていた（2026-10-13）`
+- 正常な label でも、`court` の1語と 4000 文字超では見え方が変わる（前者は自分で、後者は実装SO が見つけた）。`本文: 正常な label の見え方を確かめた（2026-10-13）`・`本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）`
+- テストが無害化の上限 `OE_SANITIZE_MAX_CP` を継承して、小さい値で既存の検査から落ちていた（実装SO の指摘）。`本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）`
+- 守りを外した写しを作るコマンドに `rm -rf "$d"` を入れ、安全確認で止められた。まだ存在しない新しいディレクトリへ作る形に変え、削除は使わなかった。`本文なし: 検証の足場の作り方の出来事で、判断には影響しないため本文に節を立てなかった`
+
+### 決定と根拠
+
+- jq 側の畳みは文字列のときだけに当てる。手本の無条件 `gsub` は棄却した。`本文: 手本の形をそのまま写すと、数値の label で表示全体が落ちる（2026-10-13）`
+- jq 側の畳みは、出どころごとではなく最後の join の直前の2か所に置く。`本文: 直し方（2026-10-13）`
+- `oe-ack` は変えない（label を出す経路が無い）。`本文: brief と issue の断定を当て直した（2026-10-13）`
+- 無害化の核の規則（`court`・4000 文字の上限）を label にもそのまま当てる。`本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）`
+
+### わかったこと
+
+- 変更前の `oe-activity` は、label の US で列がずれると、`set -u` の下の算術比較で何も出さずに落ちていた。これは既存の negative knowledge `01M19CPRGERDEV1CFWXQ40XVPT`（値の中の区切り文字がレコード境界を壊す）と同じ型の再発である。この item は brief に注入されていなかったので、観測は書き戻していない。`本文: 変更前の master では、label の US で表示全体が消えていた（2026-10-13）`
+
+### 蒸留シグナル
+
+- negative knowledge を1件収穫した（`01M4STTT9HQBG97EQ6W6M2AVKD`・jq の文字列の関数は文字列以外で投影全体を落とす）。decision / skill / rule への昇格候補はない。
+
+### 昇格の判定
+
+本文の印は1件で、印の無い判断を3件足した。
+
+1. **制御文字の畳みを jq の値へ足すときは、型が文字列でない値で投影全体が落ちないかを見る** — `required`（negative knowledge）。非自明（`join` は通すのに `gsub` は通さない差は、コードを読んでも気づきにくい）・再発しうる（手本の `oe-undelivered` が実際にこの形で落ちる）・行動を変える（型で守る）の3つを満たし、既存の item に同旨は無かった。Step 5 で `01M4STTT9HQBG97EQ6W6M2AVKD` として収穫し、この PR に入れた。参照した材料は `本文: 手本の形をそのまま写すと、数値の label で表示全体が落ちる（2026-10-13）`。
+2. **`oe-ack` は label を出す経路が無いので変えない**（印なし） — `not-required`。監査の結果で、解釈が分かれた判断ではない。実物を読めば決まる確認である（Q2 に当たらない）。結果は PR 本文に書いた。参照した材料は `本文: brief と issue の断定を当て直した（2026-10-13）`。
+3. **無害化の核の規則を label にもそのまま当てる**（印なし） — `not-required`。会話到達面へ出す文字列は同じ無害化の核を通すという方針は、#224 で `lib/sanitize.sh` を共有のチョークポイントとして作ったときに決まっており、ファイルの冒頭に書かれている。この単位はそれに従っただけで、新しい判断ではない。参照した材料は `本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）` と `lib/sanitize.sh` の冒頭。
+4. **jq 側の畳みを最後の join の直前に置く**（印なし） — `not-required`。実装の局所的な選択で、理由はスクリプトのコメントに併設した。参照した材料は `本文: 直し方（2026-10-13）`。
+
+### 注入された negative knowledge への観測
+
+brief がこの単位に割り当てた item は3件で、3件とも観測を書き戻した（`ref: "#242"`）。
+
+- `01M2DRCP3QSG4NQWHNY6DSD3NJ` — `followed`（[23] を変更前で落として錨にし、変更前でも通る [24] を錨から外した）
+- `01KZ3MHMEQN5XEJGV9809QPH2A` — `followed`（同じ型を横に探し、範囲外を直さずに報告した）
+- `01KZVHE0KQ5VCX0SXH0F4SM14D` — `followed`（手本の前提が移植先に無いことを写す前に確かめ、違いを書いた）
+
+`01M2DRCP3QSG4NQWHNY6DSD3NJ` には U1 の PR #420 も同じ位置に1件足している。2本目がマージされるときに衝突するので、両方の記録を残して解消する（追記だけの台帳なので、どちらも落とさない）。
+
+### follow-up
+
+- `oe-activity` のペイン ID・ts・DELIVERY 列、`oe-undelivered` のペイン ID・ts の無害化 → **統括への報告に書く**（brief がペイン ID を範囲外としていた。ts と DELIVERY 列はこの単位で見つけた同じ型）。issue にするかは統括が決める。
+- `oe-undelivered` の label の畳みが数値の label で落ちる → **統括への報告に書く**（手本の弱さ。#242 の範囲外）。
+- 正常な label の見え方が変わる2件（`court`・4000 文字超）→ **追わない**。無害化の核の規則で、PR 本文に書いた。
+- jq の版を 1.8.0 でしか確かめていない → **追わない**。使った機能（`gsub` と `[[:cntrl:]]`・`type`）は既存のコードがすでに使っている。
+- U1 と U2 の knowledge item への追記の衝突 → **統括への報告に書く**（マージする側が両方の記録を残して解消する）。
+
+### 証跡の置き場
+
+実装SO の依頼文と出力は `tmp/242/`（作業層・gitignore）にあり消える。要点（仮定ごとの判定・指摘2件・採否・再検証の数字）は `本文: 実装SO（ゲート4・弱・Codex 1レーン）で、正常な label が変わる場合とテストの環境依存が出た（2026-10-13）` に写した。
+
+### status
+
+`stable`・達成。
