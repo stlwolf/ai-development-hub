@@ -12,6 +12,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OE_ACTIVITY="$PROJECT_DIR/bin/oe-activity"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+# 無害化の文字数上限は呼び出し元の環境から継承される。小さい値を継承すると preview / label の全文を
+# 期待する検査が正しい実装でも落ちるので、既定（lib/sanitize.sh の 4000）へ戻す（#242 実装SO の指摘）。
+unset OE_SANITIZE_MAX_CP
 
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
