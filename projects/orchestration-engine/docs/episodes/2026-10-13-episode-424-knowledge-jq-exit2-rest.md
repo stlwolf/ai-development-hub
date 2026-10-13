@@ -59,3 +59,37 @@ negative knowledge `01KZ3MHMEQN5XEJGV9809QPH2A`（名指しされた箇所を直
   - 出力を組む jq（`--json` と人向け）は試していない。`set -e` と `pipefail` で exit 5 になると読んでいるが、通してはいない。
 
   これらは**範囲外として報告する**。brief と issue は `knowledge-list.sh` を 249 行に限っており、残りは item の型を読む箇所ではなく、出力と集計を組む箇所である。直すなら、列挙側の exit の決まり（冒頭のコメントと README の表）に「jq の評価失敗」をどう書くかも一緒に決める必要があり、この単位の小さな直しを越える。
+
+### 握り潰しを外す前に、正当な空や false がどこから来るかを確かめた（2026-10-13）
+
+negative knowledge `01KYA7C9NN4VDM7H2NYXZB2PSX`（失敗と正当な値を分けよ。正当に空や false になる経路が無いかを確かめてから exit 2 に寄せよ）に従った。
+
+- **正当な空や false は、どれも jq の終了コード 0 で来る。** `// empty` はキーが無いときや値が null・false のときに何も出さないが、終了コードは 0 である。`has(...)` と `== null` は true か false を返す。直し方は「jq の終了コードが 0 でないときだけ exit 2」なので、正当な空や false はこれまでどおり WARN の判定に流れる。
+- **データから jq が失敗する経路は、最初の root の型の jq で切れている。** 以降の11か所は、root の型を読めた同じ `$json` を読む。プログラムはどれも map の root に対して失敗しない形で、型を確かめてから読む2か所（`source.ref` は `source` が map のときだけ、要素の型は `exclusions` が配列のときだけ）も分岐の内側にある。#283 が確かめきれなかった jq の深さの上限の経路は、起きるとしても root の型の jq で起き、今回の11か所には届かない。
+- これを実物で確かめたのは、既存のテストである。キーの欠落・null・scalar の `source`・scalar の `exclusions`・数値の要素などの item を通す既存の検査が、変更後も全部 exit 1 のまま通った（データの不備が exit 2 に化けていない）。
+
+### 直し方とテスト（2026-10-13）
+
+- `validate-knowledge.sh` の11か所を、#283 の4か所と同じ `if ! x="$(jq ... 2>/dev/null)"; then echo "ERROR: ..." >&2; exit 2; fi` の形にした。`[[ "$(jq ...)" ... ]]` の中で終了コードを捨てていた箇所（必須キーの `has` と `== null`、`has("exclusions")`、要素の型）は、いったん変数に受けてから比べる形にした。必須キーの `elif` は、`has` が false なら WARN を出して次のキーへ進む `continue` に変えた（`== null` を読むのは `has` が true のときだけ、という元の順序は変えていない）。
+- ERROR の文言は、どこで落ちたかが分かるように箇所ごとに分けた（`whether the required key '<key>' exists`・`whether the required key '<key>' is null`・`the value of '<key>'`・`whether the optional key 'exclusions' exists`・`the element types of 'exclusions'`）。
+- これで `validate_item` の jq の評価17か所が、すべて同じ形になった。`grep` で、jq を呼ぶ行がすべて `if ! x="$(jq` の形であることを確かめた。理由のコメントは root の型の直前に1つだけ置き、「4か所」と限っていた書き方を「この関数の jq の呼び出しはすべて」に直した。スクリプト冒頭と `docs/knowledge/README.md` の exit 2 の説明からも、「ほかの jq の呼び出しはまだそろっていない」という但し書きを外した。
+- `knowledge-list.sh` の 249 行は、yq の成功と root の型の jq を分けた。yq が失敗したときと型が object でないときは、従来どおり MALFORMED（理由は「malformed YAML frontmatter」のまま）。root の型の jq が失敗したときは、item の path を入れた ERROR を出して exit 2 にした。スクリプト冒頭の exit 2 と README の表に「frontmatter root の型を読む jq の評価失敗」を足し、README には、ほかの jq の呼び出しはまだそろっていないことを書いた。冒頭の exit の説明は `--help` が 3〜18 行を表示するので、1行のまま書き足して行数を変えていない。
+- テストは、`test_validate_knowledge.sh` に [8e] を足した。[8d] と同じ stub で12か所を1つずつ失敗させ、exit 2・その箇所の ERROR・丸めたときに出る文字列（WARN か「OK:」）が出ないこと・stub が狙ったプログラムで落としたことを見る。要素の型のプログラムは角括弧を含むので、#283 の episode の注意どおり `*all(. == "string")*` をパターンに渡し、記録はプログラムの全文と照合した。`has("exclusions")` は、exclusions に数値を持つ item で通し、stub なしなら要素の型の WARN・exit 1 になることも対照として見た。
+- `test_knowledge_list.sh` に [34] を足した。同じ stub を置き、既定・`--strict`・`--json` の3通りで、exit 2・ERROR・MALFORMED が出ないこと・stub の当たりを見る。対照として、yq が失敗する item と root が配列の item が、従来どおり MALFORMED で skip されることを見る。
+
+### 足した検査が変更前で落ちることを確かめた（2026-10-13）
+
+negative knowledge `01M2DRCP3QSG4NQWHNY6DSD3NJ`（判定の錨が変更そのものに在るかを見よ）と `01M00KCCHNMFPHP5HAGX2DZ1MK`（期待した色が期待した理由で出たかを見よ）に従った。
+
+| 対象 | `test_validate_knowledge.sh` | `test_knowledge_list.sh` |
+|---|---|---|
+| 変更後・bash 3.2.57（`/bin/bash`） | 260 件・失敗 0 | 146 件・失敗 0 |
+| 変更後・bash 5.2.37 | 260 件・失敗 0 | 146 件・失敗 0 |
+| 変更前のスクリプト（`3288b1b`）に新しいテストを重ねたもの・bash 5 | 失敗 28 | 失敗 9 |
+
+- 変更前で落ちた 28 件は、12か所それぞれの exit 2 と ERROR の2件ずつ（24 件）と、丸めの文字列が出た4件（`has("source")` の missing・`== null` と `has("exclusions")` の OK・要素の型の WARN）である。何も出さずに exit 5 で終わっていた8か所は、もともと WARN を出さないので「丸めていない」の検査は変更前でも通る。この8か所の錨は exit 2 と ERROR の2件である。
+- 変更前で落ちた 9 件は、3通りそれぞれの exit 2・ERROR・MALFORMED が出ないことの3件ずつである。
+- **stub の当たりの検査（validate 側 12 件・list 側 3 件）と対照（validate 側 2 件・list 側 4 件）は、変更前でも通った。** 変更前も stub は狙った呼び出しを失敗させており、その失敗が丸められていた。これらは錨に数えない。
+- 実物の knowledge store 3つ（`docs/harness`・`docs/orchestration-engine`・`projects/orchestration-engine/docs` の `knowledge/items`）は、変更後の `validate-knowledge` でどれも OK だった。`knowledge-list --strict` は 70 件・skipped 0・exit 0 で、brief の列挙と同じだった。
+- `shellcheck` は変更した4ファイル（スクリプト2本・テスト2本）で警告 0。
+- テストを1回のコマンドで両方の bash に回そうとしたところ、Claude Code の安全確認（テストの後始末の `rm -rf` を中身まで確かめられないという理由）で止められた。1本ずつ回し直して通した。
