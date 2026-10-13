@@ -21,6 +21,10 @@ observations:
     ref: "#283"
     state: followed
     note: "範囲外の各経路を stub で実際に通し、exit 0（検査の飛ばし）・exit 5（代入）・exit 1（WARN への丸め）を確かめた。ただし == null の行だけは通さずに隣の行と同じ結果と書いて取り違え、実装SO の指摘で通して直した"
+  - date: 2026-10-13
+    ref: "#424"
+    state: followed
+    note: "issue の表を写さず、変更前のスクリプトを stub で1か所ずつ通して exit 1・exit 0・exit 5 を確かめてから表を書いた。#283 で == null を通さずに書いて取り違えた行も、今回は id: null の item で通した"
 exclusions:
   - "関数を source していない自己完結したスクリプト（伝播の経路が無い）"
   - "実際に叩いて exit code を観測した場合（grep を根拠にしていない）"

@@ -506,6 +506,66 @@ run "$R33" --json "$R33/docs/knowledge/items"
 ckc "不正なバイトだけ → YAML の検査まで進む"  "$OUT" "malformed YAML frontmatter"
 ncc "不正なバイトだけ → empty reason にしない" "$OUT" "missing or empty frontmatter"
 
+echo "[34] root の型を読む jq の評価失敗は exit 2（環境エラー）— 正常な item を MALFORMED に丸めない（#424）"
+# test_validate_knowledge.sh の [8c] / [8d] と同じ stub。STUB_JQ_FAIL（case のパターン）に合う引数を持つ
+# jq の呼び出しだけを exit 5 で失敗させ、その引数を STUB_JQ_LOG に記録する。他の呼び出しは実 jq に渡す。
+_REAL_JQ="$(command -v jq)"
+_STUB_DIR="$_TMP_DIR/stubbin"; mkdir -p "$_STUB_DIR"
+{
+  # stub の中身は literal で出す（$@ や STUB_JQ_FAIL を呼び出し側で展開させない）。
+  cat <<'STUB'
+#!/usr/bin/env bash
+if [ -n "${STUB_JQ_FAIL:-}" ]; then
+  for a in "$@"; do
+    # shellcheck disable=SC2254
+    case "$a" in $STUB_JQ_FAIL) printf '%s\n' "$a" >> "${STUB_JQ_LOG:-/dev/null}"; exit 5 ;; esac
+  done
+fi
+STUB
+  # 実 jq のパスは %q で引用する（空白を含む配置でも1語のまま渡す・#424 の実装SO 指摘）。
+  # shellcheck disable=SC2016
+  printf 'exec %q "$@"\n' "$_REAL_JQ"
+} > "$_STUB_DIR/jq"
+chmod +x "$_STUB_DIR/jq"
+R34="$_TMP_DIR/r34"; mkdir -p "$R34"; git_init "$R34"
+write_item "$R34/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid one."
+git_commit "$R34"
+# run_stub <log> <root> [args...] — run と同じ捕捉で、PATH の先頭に stub を置き root の型の jq だけを失敗させる。
+run_stub() {
+  local log="$1" root="$2"; shift 2
+  : > "$log"
+  RC=0
+  OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_JQ_FAIL='type' STUB_JQ_LOG="$log" OE_KNOWLEDGE_REPO_ROOT="$root" "$BASH" "$LISTER" "$@" 2>"$ERRFILE")" || RC=$?
+  ERR="$(cat "$ERRFILE")"
+}
+for _mode in default strict json; do
+  _LOG34="$_TMP_DIR/stubjq-34-$_mode.log"
+  case "$_mode" in
+    default) run_stub "$_LOG34" "$R34" ;;
+    strict)  run_stub "$_LOG34" "$R34" --strict ;;
+    json)    run_stub "$_LOG34" "$R34" --json ;;
+  esac
+  ck  "$_mode: exit 2（環境エラー）"                "2" "$RC"
+  ckc "$_mode: ERROR メッセージ"                   "$ERR" "ERROR: failed to evaluate the frontmatter root type with jq at docs/knowledge/items/$ULID1.md"
+  ncc "$_mode: MALFORMED に丸めていない"            "$OUT" "MALFORMED"
+  ck  "$_mode: 狙ったプログラムで stub が落とした"   "type" "$(cat "$_LOG34")"
+done
+# 対照: yq の失敗と root の型の不一致は、従来どおり MALFORMED として skip する（exit 2 にしない）。
+cat > "$R34/docs/knowledge/items/$ULID2.md" <<EOF
+---
+id: "$ULID2"
+type: [unclosed
+---
+本文
+EOF
+printf -- '---\n- just\n- a list\n---\n\n本文\n' > "$R34/docs/knowledge/items/$ULID3.md"
+git_commit "$R34"
+run "$R34" --json
+ck  "対照: exit 0（非 strict）"                 "0" "$RC"
+ck  "対照: 正常な item は列挙される"             "1" "$(jq -r '.listed' <<<"$OUT")"
+ck  "対照: yq の失敗と root が list の2件は skip" "2" "$(jq -r '.skipped' <<<"$OUT")"
+ck  "対照: どちらも malformed YAML の理由"       "2" "$(jq -r '[.malformed[] | select(.reason == "malformed YAML frontmatter")] | length' <<<"$OUT")"
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

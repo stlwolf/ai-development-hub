@@ -170,8 +170,9 @@ if [ -n "${STUB_JQ_FAIL:-}" ]; then
   done
 fi
 STUB
+  # 実 jq のパスは %q で引用する（空白を含む配置でも1語のまま渡す・#424 の実装SO 指摘）。
   # shellcheck disable=SC2016
-  printf 'exec %s "$@"\n' "$_REAL_JQ"
+  printf 'exec %q "$@"\n' "$_REAL_JQ"
 } > "$_STUB_DIR/jq"
 chmod +x "$_STUB_DIR/jq"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
@@ -199,6 +200,50 @@ while [[ "$i" -lt 4 ]]; do
   ck  "${_TYPE_NAMES[$i]}: 狙ったプログラムで stub が落とした" "${_TYPE_PROGS[$i]}" "$(cat "$_STUB_LOG")"
   i=$((i + 1))
 done
+
+echo "[8e] 残る jq の評価失敗も環境エラー（exit 2）— 必須キー・値の代入・exclusions の12か所（#424）"
+# [8d] と同じ stub で1か所ずつ失敗させる。変更前は、WARN・exit 1 に化ける（必須キーの has / 要素の型）、
+# 検査を飛ばして OK・exit 0 になる（== null / has("exclusions")）、何も出さずに exit 5 で終わる（代入）の
+# どれかだった。_E_PATS は stub に渡す case のパターンで、glob の文字（[ ]）を含むプログラムは * で囲んだ
+# 一部だけを渡し、_E_PROGS（記録に残るべきプログラムの全文）と照合する。_E_ABSENT は丸めたときに出る文字列、
+# _E_FIX は使う item（valid = 正常な item / excl42 = exclusions に数値を持つ item。has("exclusions") を
+# 丸めると、この不正な item が OK になる）。
+_E_PROGS=('has("source")' '."id" == null' '.type // empty' '.status // empty' '.id // empty' '.date // empty'
+  'if (."trigger"|type)=="string" then ."trigger" else "" end'
+  'if (."prediction"|type)=="string" then ."prediction" else "" end'
+  'if (.source.ref|type)=="string" then .source.ref else "" end'
+  '.landing // empty' 'has("exclusions")' '[.exclusions[] | type] | all(. == "string")')
+_E_PATS=("${_E_PROGS[@]}")
+_E_PATS[11]='*all(. == "string")*'
+_E_ERRS=("whether the required key 'source' exists" "whether the required key 'id' is null"
+  "the value of 'type'" "the value of 'status'" "the value of 'id'" "the value of 'date'"
+  "the value of 'trigger'" "the value of 'prediction'" "the value of 'source.ref'" "the value of 'landing'"
+  "whether the optional key 'exclusions' exists" "the element types of 'exclusions'")
+_E_ABSENT=("missing required key: source" "OK:" "type must be 'knowledge'" "status not in enum" "id is not a valid ULID"
+  "date must be YYYY-MM-DD" "trigger must be a non-empty string" "prediction must be a non-empty string"
+  "source.ref must be a non-empty string" "landing not in enum" "OK:" "exclusions elements must all be strings")
+_E_FIX=(valid valid valid valid valid valid valid valid valid valid excl42 valid)
+i=0
+while [[ "$i" -lt "${#_E_PROGS[@]}" ]]; do
+  F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+  if [[ "${_E_FIX[$i]}" == "excl42" ]]; then
+    awk '/^exclusions:/{print "exclusions:"; print "  - 42"; skip=1; next} skip && /^  - /{next} {skip=0; print}' "$F" > "$F.t" && mv "$F.t" "$F"
+  fi
+  _STUB_LOG="$_TMP_DIR/stubjq-e$i.log"; : > "$_STUB_LOG"
+  _STUB_RC=0
+  _STUB_OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_JQ_FAIL="${_E_PATS[$i]}" STUB_JQ_LOG="$_STUB_LOG" OE_KNOWLEDGE_REPO_ROOT="$ROOT" "$BASH" "$VALIDATOR" "$F" 2>&1)" || _STUB_RC=$?
+  ck  "${_E_PROGS[$i]}: exit 2（環境エラー）"               "2" "$_STUB_RC"
+  ckc "${_E_PROGS[$i]}: ERROR メッセージ"                  "$_STUB_OUT" "ERROR: failed to evaluate ${_E_ERRS[$i]} with jq"
+  ncc "${_E_PROGS[$i]}: WARN や OK に丸めていない"          "$_STUB_OUT" "${_E_ABSENT[$i]}"
+  ck  "${_E_PROGS[$i]}: 狙ったプログラムで stub が落とした"  "${_E_PROGS[$i]}" "$(cat "$_STUB_LOG")"
+  i=$((i + 1))
+done
+# excl42 の item は、stub なしでは従来どおり要素の型の WARN・exit 1 になる（上の OK が丸めの証拠であることの対照）。
+F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"
+awk '/^exclusions:/{print "exclusions:"; print "  - 42"; skip=1; next} skip && /^  - /{next} {skip=0; print}' "$F" > "$F.t" && mv "$F.t" "$F"
+run "$F"
+ck  "excl42 の対照: exit 1"               "1" "$RUN_RC"
+ckc "excl42 の対照: 要素の型の WARN"       "$RUN_OUT" "exclusions elements must all be strings"
 
 echo "[9] trigger 空 → exit 1"
 F="$_TMP_DIR/$ULID.md"; write_valid_item "$F"

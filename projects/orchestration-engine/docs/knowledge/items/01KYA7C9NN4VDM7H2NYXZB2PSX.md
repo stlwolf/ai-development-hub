@@ -29,6 +29,10 @@ observations:
     ref: "#283"
     state: followed
     note: "握り潰しを外す前に、yq に JSON にしにくい YAML を19通り与え、データ由来で jq が失敗する経路が無いかを確かめた。jq の深さの上限という残る経路は実装SO が挙げ、確かめきれずにコメントと episode に明記した"
+  - date: 2026-10-13
+    ref: "#424"
+    state: followed
+    note: "握り潰しを外す前に、正当な空や false（キー欠落・null・false の // empty、has の false）がすべて jq の終了コード 0 で来ることと、データ由来の失敗経路が最初の root の型の jq で切れていることを確かめ、終了コードが 0 でないときだけ exit 2 にした。データの不備を通す既存の検査が変更後も exit 1 のままであることで裏を取った"
 exclusions:
   - "失敗と空出力が意味的に等価で、区別する必要がないケース"
 ---
