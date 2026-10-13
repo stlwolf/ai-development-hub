@@ -176,8 +176,10 @@ validate_item() {
   fi
   # 型を読む jq（ここと source / observations / exclusions の4か所）の評価失敗は、item の不備ではなく
   # 環境エラーなので exit 2 で落とす（#283・日付チェックと同じ扱い）。`|| true` で空へ丸めると「型が違う」
-  # と読まれ、呼び出し側が item を直そうとする。$json は yq が成功させた出力だけなので、データ由来で
-  # jq が失敗する経路は無い（JSON にできない YAML は yq 自体が失敗し、上で malformed YAML になる）。
+  # と読まれ、呼び出し側が item を直そうとする。$json は yq が成功させた出力だけで、データ由来で jq が
+  # 失敗する経路は見つかっていない（JSON にできない YAML は yq 自体が失敗し、上で malformed YAML になる）。
+  # 残る候補は jq の入れ子の深さの上限（約1万段）だけで、yq がその深さを現実的な時間で出力するかは
+  # 確かめていない（#283 の episode）。
   local root_type
   if ! root_type="$(jq -r 'type' <<<"$json" 2>/dev/null)"; then
     echo "ERROR: failed to evaluate the frontmatter root type with jq (environment error, not an item defect)" >&2
