@@ -93,3 +93,12 @@ negative knowledge `01M2DRCP3QSG4NQWHNY6DSD3NJ`（判定の錨が変更そのも
 - 実物の knowledge store 3つ（`docs/harness`・`docs/orchestration-engine`・`projects/orchestration-engine/docs` の `knowledge/items`）は、変更後の `validate-knowledge` でどれも OK だった。`knowledge-list --strict` は 70 件・skipped 0・exit 0 で、brief の列挙と同じだった。
 - `shellcheck` は変更した4ファイル（スクリプト2本・テスト2本）で警告 0。
 - テストを1回のコマンドで両方の bash に回そうとしたところ、Claude Code の安全確認（テストの後始末の `rm -rf` を中身まで確かめられないという理由）で止められた。1本ずつ回し直して通した。
+
+### 実装SO（ゲート4・弱・Codex 1レーン）は6つの仮定を「成り立つ」とし、低い指摘1件を出した（2026-10-13）
+
+依頼文は `tmp/424/so-impl-prompt.md`（作業層・gitignore）で、6つの仮定（データ由来の失敗が無い・item の不備への振る舞いが変わらない・knowledge-list は jq の失敗時以外変わらない・テストの照準と bash 3.2・ドキュメントの説明・範囲外の判断）の反証を求めた。Codex は初回で返った（`attempt=1`・307 秒・`timeout_status=success`・`model_resolved=gpt-6.1-sol`（`config` 由来で観測値ではない）・`codex-cli 0.159.2`）。
+
+- **6つとも「成り立つ」だった。** 仮定1について、Codex は自分で 145 件の JSON の境界値を jq に通し、どれも終了コード 0 だったと書いている。件数の数え方について、変更は「11の呼び出し箇所・12のプログラム」（`trigger` と `prediction` が同じループを使う）で、episode とテストの数が食い違って見えても矛盾ではない、と補足した。
+- **低い指摘: stub が実 jq のパスを引用していない。** `printf 'exec %s "$@"\n' "$_REAL_JQ"` は、jq の置き場に空白があると転送先が複数の語に分かれ、狙っていない呼び出しまで失敗させる。この環境（`/opt/homebrew/bin/jq`）では起きない。validate 側は #283 が書いた既存の行で、list 側はこの単位でそれを写した行である。
+  - **採否: 採った。** 両方の行を `%q` に変えた。validate 側は既存の行だが、同じ stub の2つの写しが食い違うほうが後で困るので、そろえて直した。`/bin/bash`（3.2）の `printf %q` が空白を含むパスを1語に引用することを確かめ、両方のテストを bash 3.2 と 5 で回し直して、260 件と 146 件・失敗 0 のままだった。
+- **既存の中程度の問題として、`knowledge-list.sh` のフラグを読む `read <<<"$(jq ...)"` が jq の終了コードを捨てていることを挙げた。** この単位で範囲外として報告すると決めたもの（「表の外の同じ型を洗い出した」の節）と同じで、今回の変更の正しさは崩さない、という判定だった。採否: 範囲外のまま報告する（変えない）。
