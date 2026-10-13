@@ -741,7 +741,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 
 ガードレール固定節が参照できる1行版:
 
-> 枝の作業から出た昇格（設計級 / durable なもの）は、遅くともマージ前に同じ PR で discussion / decision へ入れる（実行はその枝の担当で、closure の判定は最後の確認）。その枝の変更と関係ない仕組みについての判断は、決める担当が別なので、行き先を付けて残すまでにする。作業層に残った昇格は worktree 掃除の前に拾う。committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。収穫基準を満たす negative knowledge は型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§3.4）へ収穫する（第3経路・§13.3。別 PR に分けてよい条件は `episode-retrospective` の収穫フローに従う）。
+> 枝の作業から出た昇格（設計級 / durable なもの）は、遅くともマージ前に同じ PR で昇格先へ入れる（実行はその枝の担当で、closure の判定は最後の確認）。昇格先は内容の種類で選ぶ（§13.3）。探索・却下・軌跡が主なら discussion、確定した判断なら decision、実行記録なら episode、durable な証拠・知見は文脈により episode か decision、収穫基準を満たす negative knowledge は型付き knowledge store（蒸留木ルート直下 `knowledge/items/`・§3.4）へ収穫する（別 PR に分けてよい条件は `episode-retrospective` の収穫フローに従う）。その枝の変更と関係ない仕組みについての判断は、決める担当が別なので、行き先を付けて残すまでにする。作業層に残った昇格は worktree 掃除の前に拾う。committed→working の参照は昇格先へ張り替える（grep で substance の実在を確認）。
 
 詳細基準は本 §13 が正本。
 

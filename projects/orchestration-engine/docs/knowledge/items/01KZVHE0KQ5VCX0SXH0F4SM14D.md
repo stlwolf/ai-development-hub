@@ -43,6 +43,10 @@ observations:
     state: followed
     note: "disableAgentView の形（replace・override・values.json）が成り立つ前提を、本体の設定の読み出しが上位スコープの値を勝たせることで確かめた。違う点（公式の一覧に無い・true は既定に戻すだけで有効化を強制しない）は note に書いた"
   - date: 2026-10-13
+    ref: "#242"
+    state: followed
+    note: "手本 oe-undelivered の無条件 gsub を写す前に、移植先の join が数値 label を通している前提を確かめ、写すと退行すると分かったので文字列だけに畳む形にした。手本自身が数値 label で落ちることも再現し、違いを episode に書いた"
+  - date: 2026-10-13
     ref: "#283"
     state: followed
     note: "手本の [8c] の stub は部分一致（*cal_ok*）で照合していた。移植先の type は多くの呼び出しに含まれ、部分一致では狙い以外も落とすので、パターンを渡す形と記録に広げて完全一致で当てた。stub が bash 3.2 でも動くことも直接確かめた"

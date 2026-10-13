@@ -12,6 +12,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OE_ACTIVITY="$PROJECT_DIR/bin/oe-activity"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
+# 無害化の文字数上限は呼び出し元の環境から継承される。小さい値を継承すると preview / label の全文を
+# 期待する検査が正しい実装でも落ちるので、既定（lib/sanitize.sh の 4000）へ戻す（#242 実装SO の指摘）。
+unset OE_SANITIZE_MAX_CP
 
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
@@ -271,6 +274,61 @@ if printf '%s' "$RT" | grep -qF '<invoke'; then echo "  FAIL: raw <invoke 残存
 _BOXC="$(printf '\342\224\200')"
 if printf '%s' "$RT" | LC_ALL=C grep -qF "$_BOXC"; then echo "  FAIL: box-drawing 残存"; FAIL=$((FAIL+1)); else echo "  PASS: box-drawing 除去"; PASS=$((PASS+1)); fi
 ckc "read: 周辺テキスト BOX 残存" "$RT" "BOX"
+
+echo "[23] #242: label も会話到達面で無害化（俯瞰・inbox・timeline の3表示・spawn/message/受領印の3出どころ）"
+mkdir -p "$_TMP_DIR/labelctrl"
+# 子 label = CSI + tool-call タグ列、親 label = US（列区切り）+ OSC + BEL。JSON の \uXXXX 形で書く。
+# US は jq 側の cntrl 畳みが無いと bash の read で列がずれる（TRIPS 列で見る）。<invoke は bash 側の
+# oe_sanitize_conversation でしか無害化されないので、label が bash ループで通っていることを確かめる。
+{
+  printf '%s\n' '{"ts":"2026-06-22T19:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"boss\u001fB\u001b]0;T\u0007"},"to":{"pane":"%66","role":"child","label":"kid\u001b[31mK<invoke X"}}'
+  printf '%s\n' '{"ts":"2026-06-22T19:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":"kid\u001b[31mK<invoke X"},"to":{"pane":"%59","role":"parent","label":"boss\u001fB\u001b]0;T\u0007"},"preview":"LBL-REPORT","delivery_signal":"none"}'
+  printf '%s\n' '{"ts":"2026-06-22T19:02:00+00:00","type":"report_received","from":{"pane":"%59","role":"parent","label":"boss\u001fB\u001b]0;T\u0007"},"to":{"pane":"%66","role":"child","label":"kid\u001b[31mK<invoke X"},"covers_count":1,"covers_last_ts":"2026-06-22T19:01:00+00:00"}'
+} > "$_TMP_DIR/labelctrl/oe-events.jsonl"
+# 変更前は label の US で列がずれ、MISS 列に文字列が入って set -u の比較で何も出さずに exit 1 になって
+# いた（見出しだけが残る）。各表示の終了コードを受け止め、落ちても FAIL として数える。
+_ctl_esc="$(printf '\033')"; _ctl_bel="$(printf '\007')"; _ctl_us="$(printf '\037')"
+for _view in overview inbox timeline; do
+  case "$_view" in
+    overview) _args=() ;;
+    inbox)    _args=(--inbox) ;;
+    timeline) _args=(--timeline) ;;
+  esac
+  rc=0; LC_OUT="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/labelctrl" bash "$OE_ACTIVITY" ${_args[@]+"${_args[@]}"} 2>&1)" || rc=$?
+  ck "$_view: exit 0" "0" "$rc"
+  case "$_view" in
+    overview) LC_OV="$LC_OUT" ;;
+    inbox)    LC_IN="$LC_OUT" ;;
+    timeline) LC_TL="$LC_OUT" ;;
+  esac
+  for _pair in "ESC:$_ctl_esc" "BEL:$_ctl_bel" "US:$_ctl_us"; do
+    if printf '%s' "$LC_OUT" | LC_ALL=C grep -qF "${_pair#*:}"; then
+      echo "  FAIL: $_view: label の ${_pair%%:*} が生で出ている"; FAIL=$((FAIL+1))
+    else
+      echo "  PASS: $_view: label の ${_pair%%:*} を出さない"; PASS=$((PASS+1))
+    fi
+  done
+  ckc "$_view: label の tag を無害化（< invoke）" "$LC_OUT" "< invoke"
+  if printf '%s' "$LC_OUT" | grep -qF '<invoke'; then echo "  FAIL: $_view: label の raw <invoke 残存"; FAIL=$((FAIL+1)); else echo "  PASS: $_view: label の raw <invoke 除去"; PASS=$((PASS+1)); fi
+  ckc "$_view: 子 label の周辺テキスト kid 残存" "$LC_OUT" "kid"
+  ckc "$_view: preview が残る" "$LC_OUT" "LBL-REPORT"
+done
+ck "overview: label の US で列がずれない（TRIPS=1）" "1" "$(row_of "$LC_OV" "LBL-REPORT" | awk '{print $2}')"
+ck "inbox: label の US で列がずれない（PENDING=0）" "0" "$(row_of "$LC_IN" "LBL-REPORT" | awk '{print $3}')"
+ckc "timeline: 受領印の行が出る（ack 行の label も通る）" "$LC_TL" "受領印 covers=1"
+
+echo "[24] #242: 文字列でない label（壊れた記録の数値）でも表示を続ける（jq の畳みは文字列だけに当てる）"
+mkdir -p "$_TMP_DIR/labelnum"
+{
+  printf '%s\n' '{"ts":"2026-06-22T20:00:00+00:00","type":"child_spawned","from":{"pane":"%59","role":"parent","label":"p"},"to":{"pane":"%66","role":"child","label":42}}'
+  printf '%s\n' '{"ts":"2026-06-22T20:01:00+00:00","type":"message_sent","from":{"pane":"%66","role":"child","label":42},"to":{"pane":"%59","role":"parent","label":"p"},"preview":"NUMLABEL-REPORT","delivery_signal":"none"}'
+} > "$_TMP_DIR/labelnum/oe-events.jsonl"
+rc=0; NL_OV="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/labelnum" bash "$OE_ACTIVITY" 2>&1)" || rc=$?
+ck  "overview 数値 label: exit 0" "0" "$rc"
+ckc "overview 数値 label: 42 (%66) と出る" "$NL_OV" "42 (%66)"
+rc=0; NL_TL="$(env PATH="$STUB_BIN:$PATH" TMUX_PANE="%59" OE_EVENT_DIR="$_TMP_DIR/labelnum" bash "$OE_ACTIVITY" --timeline 2>&1)" || rc=$?
+ck  "timeline 数値 label: exit 0" "0" "$rc"
+ckc "timeline 数値 label: 42 (%66) と出る" "$NL_TL" "42 (%66)"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

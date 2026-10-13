@@ -8,7 +8,11 @@ prediction: "共通の性質として書かれるのは、対象群の中で最�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-08-09-episode-309-readme-enumeration.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-13
+    ref: "#414"
+    state: followed
+    note: "短い版を §13.3 と行ごとに突き合わせる表を作り、固定節で「型付き」を落としていたのを見つけて足した。書いていない行は、反対のことを言っていないかと正本を指しているかで判定した"
 exclusions:
   - "まとめる対象が1つしかない場合（広がる先が無い）"
   - "共通の性質を書かず、対象名の列挙だけに留める場合"
