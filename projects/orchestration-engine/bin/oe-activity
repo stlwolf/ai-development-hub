@@ -147,6 +147,11 @@ project() {
       ( [ $acks[] | select(.receiver==$rcv and .origin==$org) | . as $a
           | ([ $cands[] | select(.ts <= $a.frontier) ] | length) as $k1
           | (if $a.covers < $k1 then $a.covers else $k1 end) ] | max // 0 );
+    # #242: label も会話到達面へ出るので、US 区切りの join の前に制御文字を畳む（prev の cntrl→space と
+    # 同じ protocol 防御）。full な無害化は下流の bash ループの oe_sanitize_conversation。文字列のときだけ
+    # 畳む: gsub は文字列以外で失敗して投影全体を落とすが、join は数値・真偽値を通すので、壊れた記録の
+    # 数値 label でも従来どおり表示を続ける。
+    def fold_cntrl: if type == "string" then gsub("[[:cntrl:]]"; " ") else . end;
     ( [ .[] | select(.type=="child_spawned") ] ) as $spawns
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = $s.from.pane) )            as $parent_of
     | ( reduce $spawns[] as $s ({}; .[$s.to.pane] = ($s.to.label // "")) )     as $clabel
@@ -193,7 +198,7 @@ project() {
                   c:$r.c, p:$r.p, clab_m:$r.clab, plab_m:$r.plab,
                   prev: ("受領印 covers=" + ($a.covers|tostring) + " ≤ " + $a.frontier) } ] )
         | sort_by(.ts, .idx)
-        | .[] | [ (.turn|tostring), .ts, (.dir // "→"), (.deliv // "none"), .c, .p, (.clab_m // ""), (.plab_m // ""), (.prev // "") ] | join("\u001f")
+        | .[] | [ (.turn|tostring), .ts, (.dir // "→"), (.deliv // "none"), .c, .p, ((.clab_m // "") | fold_cntrl), ((.plab_m // "") | fold_cntrl), (.prev // "") ] | join("\u001f")
       else
         # 関係キー = (俯瞰のみ) spawn 子 ∪ message 子
         ( ( (if $mode=="inbox" then [] else [ $spawns[].to.pane ] end) + [ $fmsgs[].c ] ) | unique ) as $children
@@ -217,7 +222,7 @@ project() {
                 lts:   (if ($g|length)>0 then $g[-1].ts else "" end),
                 lidx:  (if ($g|length)>0 then $g[-1].idx else -1 end) } ]
         | sort_by(.lts, .lidx) | reverse
-        | .[] | [ .c, .p, .clab, .plab, (.trips|tostring), .deliv, (.miss|tostring), .pend, .prev ] | join("\u001f")
+        | .[] | [ .c, .p, (.clab | fold_cntrl), (.plab | fold_cntrl), (.trips|tostring), .deliv, (.miss|tostring), .pend, .prev ] | join("\u001f")
       end
   '
 }
@@ -246,6 +251,9 @@ if [[ "$MODE" == "timeline" ]]; then
   while IFS=$'\037' read -r turn ts dir deliv c p clab plab prev; do
     [[ -n "$ts" ]] || continue
     prev="$(oe_sanitize_conversation "$prev")"   # #224: read 側の会話到達面無害化
+    # #242: label も同じ行で会話到達面へ出るので preview と同様に無害化する（oe-undelivered と同型）
+    clab="$(oe_sanitize_conversation "$clab")"
+    plab="$(oe_sanitize_conversation "$plab")"
     relation="$(disp "$p" "$plab") → $(disp "$c" "$clab")"
     printf '%-4s  %-26s  %-7s  %-16s  %-30s  %s\n' "$turn" "$ts" "$dir" "$deliv" "$relation" "$prev"
   done <<< "$rows"
@@ -263,6 +271,9 @@ fi
 while IFS=$'\037' read -r c p clab plab trips deliv miss pend prev; do
   [[ -n "$c" || -n "$p" ]] || continue
   prev="$(oe_sanitize_conversation "$prev")"   # #224: read 側の会話到達面無害化
+  # #242: label も同じ行で会話到達面へ出るので preview と同様に無害化する（oe-undelivered と同型）
+  clab="$(oe_sanitize_conversation "$clab")"
+  plab="$(oe_sanitize_conversation "$plab")"
   live="$(liveness_of "$c")"     # 送信元 ＝ 子(worker)の生存
   deliv_disp="$deliv"
   [[ "${miss:-0}" -gt 0 ]] 2>/dev/null && deliv_disp="${deliv} (×${miss})"
