@@ -30,6 +30,10 @@ observations:
     ref: "#283"
     state: followed
     note: "名指しの4か所を直したあと、同じ型の jq 呼び出しを洗い出して stub で通し、brief に無かった2か所（必須キーの has と == null、exclusions の要素の型）を見つけて直さずに報告した"
+  - date: 2026-10-13
+    ref: "#424"
+    state: followed
+    note: "2本のスクリプトの jq の呼び出しを全部当たり、issue の表に無い同じ型の2か所（trigger / prediction と source.ref の代入）を見つけてこの単位で直した。knowledge-list の残りの呼び出しは stub で3つを通し、1つは試していないと明記して範囲外として報告した"
 ---
 
 指摘は1件ずつ来るが、型は横に広がる。**外部レビューが名指しした1箇所を直した緑は、その型が消えた証拠ではない。**
