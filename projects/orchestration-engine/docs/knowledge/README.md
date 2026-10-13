@@ -69,7 +69,7 @@ validate-knowledge projects/orchestration-engine/docs/knowledge/items/<ULID>.md
 validate-knowledge projects/orchestration-engine/docs/knowledge/items
 ```
 
-exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・usage）。
+exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・jq の評価失敗・usage）。jq の評価失敗は item の不備ではないので、exit 1 に丸めず ERROR を出して止まる。
 
 ## 列挙（段3 突合）
 

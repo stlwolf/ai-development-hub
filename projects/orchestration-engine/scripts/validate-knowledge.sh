@@ -13,7 +13,9 @@ set -euo pipefail
 #   0 = valid（全 item が全 check を満たす）
 #   1 = invalid（1件以上の schema 違反。frontmatter/本文が knowledge item スキーマに反する。
 #       malformed YAML もここ＝item の不備であり環境障害ではない）
-#   2 = 環境エラー（file/dir not found / jq・yq 未導入 / usage）
+#   2 = 環境エラー（file/dir not found / jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
+#       日付の暦チェック・observations の要素スキーマ・型を読む4か所（root / source / observations /
+#       exclusions）で ERROR を出して止まる（item の不備に丸めない・#274 / #283）
 #
 # 位置づけ:
 #   #272 の negative knowledge ループ 段2（保存）の機械検証。設計正本は
@@ -172,7 +174,16 @@ validate_item() {
     warn "$file" "malformed YAML frontmatter (yq parse failed)"
     return
   fi
-  if [[ "$(jq -r 'type' <<<"$json" 2>/dev/null || true)" != "object" ]]; then
+  # 型を読む jq（ここと source / observations / exclusions の4か所）の評価失敗は、item の不備ではなく
+  # 環境エラーなので exit 2 で落とす（#283・日付チェックと同じ扱い）。`|| true` で空へ丸めると「型が違う」
+  # と読まれ、呼び出し側が item を直そうとする。$json は yq が成功させた出力だけなので、データ由来で
+  # jq が失敗する経路は無い（JSON にできない YAML は yq 自体が失敗し、上で malformed YAML になる）。
+  local root_type
+  if ! root_type="$(jq -r 'type' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the frontmatter root type with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
+  if [[ "$root_type" != "object" ]]; then
     warn "$file" "frontmatter root is not a map"
     return
   fi
@@ -244,7 +255,10 @@ validate_item() {
 
   # --- source: map + ref（非空 string・揮発/絶対パス拒否・local path は存在確認）---
   local st
-  st="$(jq -r '.source | type' <<<"$json" 2>/dev/null || true)"
+  if ! st="$(jq -r '.source | type' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the source type with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   if [[ "$st" != "object" ]]; then
     warn "$file" "source must be a map with a 'ref' key"
   else
@@ -281,7 +295,10 @@ validate_item() {
   # subshell で走り TOTAL_WARN の加算が失われて exit code 契約が壊れる（gate 2 SO で bash 3.2/5.x 実測）。
   # 診断へ値を埋めるときは tojson で囲み、改行を含む値でも「1違反 = 1行」を壊さない。index は 0 始まり。
   local ot
-  ot="$(jq -r '.observations | type' <<<"$json" 2>/dev/null || true)"
+  if ! ot="$(jq -r '.observations | type' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to evaluate the observations type with jq (environment error, not an item defect)" >&2
+    exit 2
+  fi
   if [[ "$ot" != "array" ]]; then
     warn "$file" "observations must be an array"
   else
@@ -336,7 +353,10 @@ validate_item() {
   # --- exclusions（任意）: 存在時は list ---
   if [[ "$(jq 'has("exclusions")' <<<"$json")" == "true" ]]; then
     local et
-    et="$(jq -r '.exclusions | type' <<<"$json" 2>/dev/null || true)"
+    if ! et="$(jq -r '.exclusions | type' <<<"$json" 2>/dev/null)"; then
+      echo "ERROR: failed to evaluate the exclusions type with jq (environment error, not an item defect)" >&2
+      exit 2
+    fi
     if [[ "$et" != "array" ]]; then
       warn "$file" "exclusions, if present, must be an array (list of strings)"
     elif [[ "$(jq -r '[.exclusions[] | type] | all(. == "string")' <<<"$json")" != "true" ]]; then
