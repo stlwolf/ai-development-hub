@@ -424,6 +424,13 @@ t F deny fp force-push 'git push -fu origin x'
 t F deny bd rm-destructive "(( x = 1 << 2 ))${NL}rm -rf /"
 t F deny bd rm-destructive "echo \$[ 1 << 2 ]${NL}rm -rf /"
 t F deny fp force-push "(( x = 1 << 2 ))${NL}git push --force"
+# 極端に長い1行（判断10）: 既知の名前を含み 64 KB を超える行は読み取らずに too-long で止める。
+# 既知の名前を含まない行は長くても走査しないので通る
+pad="$(head -c 70000 /dev/zero | tr '\0' 'x')"
+t F deny bd too-long "rm -rf node_modules # $pad"
+t F deny fp too-long "git push origin x # $pad"
+t E allow bd - "echo $pad"
+t E allow bd - "git status # $(head -c 60000 /dev/zero | tr '\0' 'x')"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 i=0

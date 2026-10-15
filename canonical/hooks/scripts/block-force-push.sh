@@ -167,11 +167,12 @@ trap on_unexpected_exit EXIT
 #     deny を呼ぶ。shell の -c の文字列・eval の中身・引用なしの heredoc の本文は列に
 #     積み戻す（本文は「データの中の $( ) と ` ` だけ実行される」モードで走査する）。
 #
-# token は1つの配列（CMD_POOL）に直接積み、segment は配列の範囲（開始:個数）の列で表す。
-# 区切りのバイトで連結しないので、どんなバイトを含む語も割れない。置換（$( )・` `）から
-# 戻るときは、置換の中の segment の範囲を外側の segment の範囲の列に足し、外側はその
-# 後ろの範囲で続ける（配列を写さないので語の数に比例する時間で済む）。これで置換の中の
-# 語も外側の引数として判定に入る（DJ-12。rm -rf $(echo /) を止める）。
+# segment は token を区切りのバイト（CMD_US）でつないだ文字列で、区切りのバイトは
+# コマンド全文に現れない制御文字を候補から選ぶ（どんなバイトを含む語も割れない）。
+# bash 3.2 の配列は1要素ずつ積むと要素数に比例して遅くなるので、語の列は文字列で持ち、
+# 判定の直前に IFS の単語分割で一度に配列にする。置換（$( )・` `）から戻るときは、
+# 置換の中の segment の文字列を外側の segment に足し、置換の中の語も外側の引数として
+# 判定に入れる（DJ-12。rm -rf $(echo /) を止める）。
 #
 # 走査器は文字列を1回だけ通す（各周回で必ず位置が進む）。扱うのは、引用符（'…'・"…"・
 # $'…'）、$( ) と ` `（文脈を積んで同じ走査で segment にする）、$(( )) と (( )) と $[ ]
@@ -184,6 +185,11 @@ trap on_unexpected_exit EXIT
 # 空になりうる配列は ${arr[@]+"${arr[@]}"} の形で展開する（3.2 の set -u 対策）。
 
 CMD_MAX_DEPTH=8         # shell -c / eval の入れ子の深さの上限（列の長さには上限を置かない）
+# 極端に長い1行は読み取らずに止める（判断10）。読み取りは語の数に比例するが、短い語を
+# 大量に並べた1行は 64 KB で bash 3.2 でも数秒かかり、ホストの時間切れ（判定を捨てて通す）
+# から遠ざけるために上限を置く。既知の名前を含まない行は走査しないので、この上限に
+# かからない。値の根拠は plan の DJ-8。
+CMD_MAX_LEN=65536
 
 # 早い経路の正規表現。既知の名前の文字の間に、引用符・\・改行・$ が挟まっていても当てる
 # （r\m・"r"m・r$'m'・r\<改行>m をすり抜けさせない）。sh は bash/zsh/dash/ksh も含む。
@@ -194,6 +200,10 @@ CMD_FAST_RE="r${_CMD_Q}m|c${_CMD_Q}h${_CMD_Q}m${_CMD_Q}o${_CMD_Q}d|c${_CMD_Q}h${
 # token に足すと長い token で2乗の時間がかかるためで、窓を区切るのは残りの文字列を毎回
 # 写す費用を抑えるため。状態ごとの「解釈の要らない文字」は次のとおり。
 _C_WIN=256
+# bash の ${s:i:…} は毎回 s 全体の長さを数える（長い行では1文字読むたびに全体を舐める）。
+# そこで s の一部を _C_BUF バイトの buf に写し、読むのは buf だけにする。写し直しは
+# _C_BUF - _C_WIN バイトごとなので、全体の費用は語の数に比例する。
+_C_BUF=1024
 _C_RE_SQ=$'^[^\']*'                          # 単一引用符の中: ' 以外
 _C_RE_AN=$'^[^\\\']*'                        # $'…' の中: \ と ' 以外
 _C_RE_DQ=$'^[^\\"`$]*'                       # 二重引用符の中: \ " ` $ 以外
@@ -202,9 +212,14 @@ _C_RE_AR=$'^[^()$`]*'                        # $(( )) / (( )) の中: ( ) $ ` �
 _C_RE_AQ=$'^[^][$`]*'                        # $[ ] の中: [ ] $ ` 以外
 _C_RE_VB=$'^[^}{$`"\'\\\\]*'                 # ${ } の中（引用の外）: } { $ ` " ' \ 以外
 _C_RE_PL=$'^[^ \t\n\\\'"$`#&|;(){}!<>]*'     # 引用符の外: 区切り・引用・転送などの記号以外
+_C_SET_MT=$'\n\\\'"$`#&|;(){}!<>'             # 引用符の外で「語と空白だけの並び」を止める記号（空白とタブは含めない）
+
+# 区切りのバイトの候補（制御文字）。コマンド全文に現れないものを cmd_analyze が選ぶ。
+_CMD_US_CANDIDATES=$'\037\036\035\034\001\002\003\004\005\006\016\017\020\021\022\023\024\025\026\027\030\031\032'
+CMD_US=''
 
 CMD_QUEUE=(); CMD_QDEPTH=(); CMD_QMODE=()
-CMD_POOL=(); CMD_SEG_RANGES=(); CMD_TOKS=()
+CMD_SEGS=(); CMD_SEGN=(); CMD_TOKS=()
 CMD_JUDGED=''           # segment の中で判定を済ませた名前（同じ名前は後ろの引数の部分集合なので1回で足りる）
 
 # 既知の名前が1つも無い行は走査しない（早い経路）。文字列置換を使わず正規表現1回で見る
@@ -217,62 +232,52 @@ cmd_fast_skip() {
 }
 
 # ---- 走査器の状態（cmd_scan の中だけで使う。関数の外から読まない） ----
-# _C_SEGRANGES = いまの segment の確定した範囲の列（"開始:個数 …"）。_C_SEGSTART/_C_SEGN = 開いている範囲。
-_C_TOK=''; _C_TOKQ=0; _C_SEGRANGES=''; _C_SEGSTART=0; _C_SEGN=0; _C_Q=''; _C_DROP=0; _C_DEPTH=0; _C_CURDEPTH=0; _C_RD=0; _C_WB=1
-_C_ST_SEGRANGES=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
+# _C_SEG = いまの segment（token を CMD_US でつないだ文字列）。_C_SEGN = その token の数。
+_C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_Q=''; _C_DROP=0; _C_DEPTH=0; _C_CURDEPTH=0; _C_RD=0; _C_WB=1
+_C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
 _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
 
-# 開いている範囲を閉じて範囲の列に足す。
-_cmd_range_close() {
-  if (( _C_SEGN > 0 )); then
-    if [[ -n "$_C_SEGRANGES" ]]; then _C_SEGRANGES+=" $_C_SEGSTART:$_C_SEGN"; else _C_SEGRANGES="$_C_SEGSTART:$_C_SEGN"; fi
-  fi
-  _C_SEGSTART=${#CMD_POOL[@]}; _C_SEGN=0
-}
-
-# 今の token を segment に加える（配列の末尾に積む）。転送の相手（_C_DROP=1）なら捨てる。
+# 今の token を segment に加える。転送の相手（_C_DROP=1）なら捨てる。
 _cmd_tok_end() {
   if [[ "$_C_DROP" == 1 ]]; then
     if [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then
       _C_DROP=0
     fi
   elif [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then
-    CMD_POOL+=("$_C_TOK")
+    if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US$_C_TOK"; else _C_SEG="$_C_TOK"; fi
     _C_SEGN=$((_C_SEGN + 1))
   fi
   _C_TOK=''; _C_TOKQ=0
   _C_WB=1
 }
 
-# 今の segment を閉じて範囲の列を登録する。
+# 今の segment を閉じて登録する。
 _cmd_seg_end() {
   _cmd_tok_end
-  _cmd_range_close
-  if [[ -n "$_C_SEGRANGES" ]]; then
-    CMD_SEG_RANGES+=("$_C_SEGRANGES")
+  if (( _C_SEGN > 0 )); then
+    CMD_SEGS+=("$_C_SEG"); CMD_SEGN+=("$_C_SEGN")
   fi
-  _C_SEGRANGES=''; _C_DROP=0
+  _C_SEG=''; _C_SEGN=0; _C_DROP=0
 }
 
 # 置換や算術式や ${ } に入る。外側の状態を積む。
 #   p = $( )  b = ` `  r = $(( )) / (( ))  q = $[ ]  v = ${ }
 # p/b/r/q は新しい segment を始める。v は外側の語の続き（語に文字を足し続ける）。
 _cmd_push() { # $1 = 種類
-  if [[ "$1" != v ]]; then _cmd_range_close; fi
-  _C_ST_SEGRANGES+=("$_C_SEGRANGES"); _C_ST_TOK+=("$_C_TOK"); _C_ST_TOKQ+=("$_C_TOKQ")
-  _C_ST_Q+=("$_C_Q"); _C_ST_KIND+=("$1"); _C_ST_DROP+=("$_C_DROP"); _C_ST_RD+=("$_C_RD"); _C_ST_NSEG+=("${#CMD_SEG_RANGES[@]}")
+  _C_ST_SEG+=("$_C_SEG"); _C_ST_SEGN+=("$_C_SEGN"); _C_ST_TOK+=("$_C_TOK"); _C_ST_TOKQ+=("$_C_TOKQ")
+  _C_ST_Q+=("$_C_Q"); _C_ST_KIND+=("$1"); _C_ST_DROP+=("$_C_DROP"); _C_ST_RD+=("$_C_RD"); _C_ST_NSEG+=("${#CMD_SEGS[@]}")
   if [[ "$1" != v ]]; then
-    _C_SEGRANGES=''; _C_TOK=''; _C_TOKQ=0; _C_DROP=0
+    _C_SEG=''; _C_SEGN=0; _C_TOK=''; _C_TOKQ=0; _C_DROP=0
   fi
   _C_Q=''; _C_RD=0; _C_WB=1
   _C_DEPTH=$((_C_DEPTH + 1))
 }
 
 # 置換の閉じ。中身の最後の segment を閉じ、外側の状態に戻る。
-# p/b/r/q: 中の segment の範囲を外側の範囲の列に足し（DJ-12・中の語も外側の引数になる）、
-#   外側はその後ろの新しい範囲で続ける。置換を含んだ語は字面に $( ) や ` ` を残し引用扱いに
-#   する（絶対パスに見せない・既知の名前に当てない）。
-# v: 語は続きなので範囲は触らない。
+# p/b/r/q: 中の segment の語を外側の segment に足し（DJ-12・中の語も外側の引数になる）、
+#   外側はその後ろで続ける。置換を含んだ語は字面に $( ) や ` ` を残し引用扱いにする
+#   （絶対パスに見せない・既知の名前に当てない）。
+# v: 語は続きなので segment は触らない。
 _cmd_pop() {
   local k=$((_C_DEPTH - 1)) kind n0 m
   kind="${_C_ST_KIND[k]}"
@@ -281,24 +286,33 @@ _cmd_pop() {
   else
     _cmd_seg_end
     n0="${_C_ST_NSEG[k]}"
-    _C_SEGRANGES="${_C_ST_SEGRANGES[k]}"
+    _C_SEG="${_C_ST_SEG[k]}"; _C_SEGN="${_C_ST_SEGN[k]}"
     m=$n0
-    while (( m < ${#CMD_SEG_RANGES[@]} )); do
-      if [[ -n "$_C_SEGRANGES" ]]; then _C_SEGRANGES+=" ${CMD_SEG_RANGES[m]}"; else _C_SEGRANGES="${CMD_SEG_RANGES[m]}"; fi
+    while (( m < ${#CMD_SEGS[@]} )); do
+      if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US${CMD_SEGS[m]}"; else _C_SEG="${CMD_SEGS[m]}"; fi
+      _C_SEGN=$((_C_SEGN + CMD_SEGN[m]))
       m=$((m + 1))
     done
-    _C_SEGSTART=${#CMD_POOL[@]}; _C_SEGN=0
     _C_TOK="${_C_ST_TOK[k]}"; _C_TOKQ=1
     case "$kind" in p) _C_TOK+=')' ;; b) _C_TOK+='`' ;; r) _C_TOK+='))' ;; q) _C_TOK+=']' ;; esac
     _C_Q="${_C_ST_Q[k]}"; _C_DROP="${_C_ST_DROP[k]}"; _C_RD="${_C_ST_RD[k]}"
   fi
-  unset '_C_ST_SEGRANGES[k]' '_C_ST_TOK[k]' '_C_ST_TOKQ[k]' '_C_ST_Q[k]' '_C_ST_KIND[k]' '_C_ST_DROP[k]' '_C_ST_RD[k]' '_C_ST_NSEG[k]'
+  unset '_C_ST_SEG[k]' '_C_ST_SEGN[k]' '_C_ST_TOK[k]' '_C_ST_TOKQ[k]' '_C_ST_Q[k]' '_C_ST_KIND[k]' '_C_ST_DROP[k]' '_C_ST_RD[k]' '_C_ST_NSEG[k]'
   _C_DEPTH=$((_C_DEPTH - 1))
   _C_WB=0
 }
 
 # 以下の _cmd_* は cmd_scan から呼ばれ、cmd_scan のローカル変数 s（文字列）・n（長さ）・
-# i（位置）・line を動的スコープで読み書きする（bash の関数のローカル変数は呼び出し先から見える）。
+# i（位置）・base・buf・line を動的スコープで読み書きする（bash の関数のローカル変数は
+# 呼び出し先から見える）。
+
+# buf が位置 i から $1 バイト先まで（または s の末尾まで）を含むようにする。
+_cmd_fill() { # $1 = 必要なバイト数
+  if (( i + $1 > base + ${#buf} && base + ${#buf} < n )); then
+    base=$i; buf="${s:base:_C_BUF + $1}"
+  fi
+  return 0
+}
 
 # 今の token が数字だけなら fd 番号（2>&1 の 2）なので捨てる。それ以外は普通に終える。
 _cmd_tok_fd_end() {
@@ -312,9 +326,9 @@ _cmd_tok_fd_end() {
 # 転送の演算子を読み飛ばし、相手の token を捨てる印を立てる（i は演算子の先頭）。
 # << は heredoc、<<< は here-string。相手が ( なら process substitution で、入れ子の文脈として走査する。
 _cmd_redirect() {
-  local op="${s:i:1}"
-  if [[ "$op" == '<' && "${s:i+1:1}" == '<' ]]; then
-    if [[ "${s:i+2:1}" == '<' ]]; then
+  local op="${buf:i-base:1}"
+  if [[ "$op" == '<' && "${buf:i-base+1:1}" == '<' ]]; then
+    if [[ "${buf:i-base+2:1}" == '<' ]]; then
       _cmd_tok_fd_end
       i=$((i + 3))
       _C_DROP=1
@@ -327,18 +341,18 @@ _cmd_redirect() {
   case "$op" in
     '&')
       i=$((i + 2))
-      if [[ "${s:i:1}" == '>' ]]; then i=$((i + 1)); fi
+      if [[ "${buf:i-base:1}" == '>' ]]; then i=$((i + 1)); fi
       ;;
     '>')
       i=$((i + 1))
-      case "${s:i:1}" in '>'|'|'|'&') i=$((i + 1)) ;; esac
+      case "${buf:i-base:1}" in '>'|'|'|'&') i=$((i + 1)) ;; esac
       ;;
     '<')
       i=$((i + 1))
-      case "${s:i:1}" in '>'|'&') i=$((i + 1)) ;; esac
+      case "${buf:i-base:1}" in '>'|'&') i=$((i + 1)) ;; esac
       ;;
   esac
-  if [[ "${s:i:1}" == '(' ]]; then
+  if [[ "${buf:i-base:1}" == '(' ]]; then
     _C_TOK+="$op("; _cmd_push p; i=$((i + 1))
     return 0
   fi
@@ -352,23 +366,24 @@ _cmd_heredoc_start() {
   local strip=0 word='' wq=0 ch nx
   _cmd_tok_fd_end
   i=$((i + 2))
-  if [[ "${s:i:1}" == '-' ]]; then strip=1; i=$((i + 1)); fi
-  while [[ "${s:i:1}" == ' ' || "${s:i:1}" == $'\t' ]]; do i=$((i + 1)); done
+  if [[ "${buf:i-base:1}" == '-' ]]; then strip=1; i=$((i + 1)); fi
+  while _cmd_fill 3 && [[ "${buf:i-base:1}" == ' ' || "${buf:i-base:1}" == $'\t' ]]; do i=$((i + 1)); done
   while (( i < n )); do
-    ch="${s:i:1}"
+    _cmd_fill 3
+    ch="${buf:i-base:1}"
     case "$ch" in
       ' '|$'\t'|$'\n'|';'|'|'|'&'|'<'|'>'|'('|')') break ;;
       "'")
         wq=1; i=$((i + 1))
-        while (( i < n )) && [[ "${s:i:1}" != "'" ]]; do word+="${s:i:1}"; i=$((i + 1)); done
+        while (( i < n )) && _cmd_fill 3 && [[ "${buf:i-base:1}" != "'" ]]; do word+="${buf:i-base:1}"; i=$((i + 1)); done
         i=$((i + 1))
         ;;
       '"')
         wq=1; i=$((i + 1))
-        while (( i < n )) && [[ "${s:i:1}" != '"' ]]; do
-          ch="${s:i:1}"
+        while (( i < n )) && _cmd_fill 3 && [[ "${buf:i-base:1}" != '"' ]]; do
+          ch="${buf:i-base:1}"
           if [[ "$ch" == "\\" ]]; then
-            nx="${s:i+1:1}"
+            nx="${buf:i-base+1:1}"
             case "$nx" in '$'|'`'|'"'|"\\") ch="$nx"; i=$((i + 1)) ;; esac
           fi
           word+="$ch"; i=$((i + 1))
@@ -376,12 +391,12 @@ _cmd_heredoc_start() {
         i=$((i + 1))
         ;;
       '$')
-        if [[ "${s:i+1:1}" == "'" ]]; then
+        if [[ "${buf:i-base+1:1}" == "'" ]]; then
           wq=1; i=$((i + 2))
-          while (( i < n )) && [[ "${s:i:1}" != "'" ]]; do
-            ch="${s:i:1}"
+          while (( i < n )) && _cmd_fill 3 && [[ "${buf:i-base:1}" != "'" ]]; do
+            ch="${buf:i-base:1}"
             if [[ "$ch" == "\\" ]]; then
-              nx="${s:i+1:1}"
+              nx="${buf:i-base+1:1}"
               case "$nx" in "'") ch="'"; i=$((i + 1)) ;; "\\") ch="\\"; i=$((i + 1)) ;; esac
             fi
             word+="$ch"; i=$((i + 1))
@@ -392,7 +407,7 @@ _cmd_heredoc_start() {
         fi
         ;;
       "\\")
-        if [[ "${s:i+1:1}" == $'\n' ]]; then i=$((i + 2)); else wq=1; word+="${s:i+1:1}"; i=$((i + 2)); fi
+        if [[ "${buf:i-base+1:1}" == $'\n' ]]; then i=$((i + 2)); else wq=1; word+="${buf:i-base+1:1}"; i=$((i + 2)); fi
         ;;
       *) word+="$ch"; i=$((i + 1)) ;;
     esac
@@ -401,18 +416,19 @@ _cmd_heredoc_start() {
 }
 
 # i から次の改行の手前までを line に入れ、i を改行の次へ進める（改行が無ければ末尾まで）。
-# 残り全文を写さず、窓を倍にしながら探す（短い行が何千もある heredoc で2乗にしないため）。
+# buf の中で探し、足りなければ窓を倍にして写し直す（残り全文は写さない）。
 _cmd_next_line() {
-  local w=$_C_WIN chunk
+  local need=$_C_WIN rest
   while :; do
-    chunk="${s:i:w}"
-    if [[ "$chunk" == *$'\n'* ]]; then
-      line="${chunk%%$'\n'*}"; i=$((i + ${#line} + 1)); return 0
+    _cmd_fill "$need"
+    rest="${buf:i-base}"
+    if [[ "$rest" == *$'\n'* ]]; then
+      line="${rest%%$'\n'*}"; i=$((i + ${#line} + 1)); return 0
     fi
-    if (( ${#chunk} < w )); then
-      line="$chunk"; i=$((i + ${#chunk})); return 0
+    if (( base + ${#buf} >= n )); then
+      line="$rest"; i=$n; return 0
     fi
-    w=$((w * 2))
+    need=$((need * 2))
   done
 }
 
@@ -461,28 +477,55 @@ _cmd_heredoc_bodies() {
 # shellcheck disable=SC2016  # '$(' '${' などは語の字面に残す文字列で、展開させない
 cmd_scan() {
   local LC_ALL=C
-  local s="$1" n i=0 c nx k st line
+  local s="$1" n i=0 base=0 buf c nx k st line chunk run joined oldifs flags
+  local -a words
   _C_CURDEPTH="$2"
   n=${#s}
-  _C_TOK=''; _C_TOKQ=0; _C_SEGRANGES=''; _C_SEGSTART=${#CMD_POOL[@]}; _C_SEGN=0; _C_Q="${3:-}"; _C_DROP=0; _C_DEPTH=0; _C_RD=0; _C_WB=1
-  _C_ST_SEGRANGES=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
+  buf="${s:0:_C_BUF}"
+  _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_Q="${3:-}"; _C_DROP=0; _C_DEPTH=0; _C_RD=0; _C_WB=1
+  _C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
   _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
   while (( i < n )); do
+    # _cmd_fill $((_C_WIN + 3)) と同じ（1周ごとの関数呼び出しを省く）
+    if (( i + _C_WIN + 3 > base + ${#buf} && base + ${#buf} < n )); then base=$i; buf="${s:base:_C_BUF + _C_WIN + 3}"; fi
     # いまの状態。引用の中はその引用、引用の外で算術式や ${ } の中ならその種類、それ以外は引用の外。
     st="$_C_Q"
     if [[ -z "$st" ]] && (( _C_DEPTH > 0 )); then
       case "${_C_ST_KIND[_C_DEPTH-1]}" in r) st=r ;; q) st=q ;; v) st=v ;; esac
     fi
+    # 引用符の外で、語の途中でも転送の相手待ちでもなければ、「語と空白だけの並び」を窓ごとに
+    # まとめて IFS の単語分割で語にする（C で動く）。短い語を大量に並べた行でも費用は窓の数に比例する。
+    if [[ -z "$st" && -z "$_C_TOK" && "$_C_TOKQ" == 0 && "$_C_DROP" == 0 ]]; then
+      chunk="${buf:i-base:_C_WIN}"
+      run="${chunk%%["$_C_SET_MT"]*}"
+      # 並びが空白で終わっていなければ、最後の語は途中で切れている（窓の端か、\ $ ' " などの
+      # 語の続きの記号で止まった）ので、最後の空白まで戻し、その語は普通の経路に任せる
+      case "$run" in *[$' \t']) ;; *) run="${run%"${run##*[ $'\t']}"}" ;; esac
+      if (( ${#run} > 0 )); then
+        oldifs="$IFS"; flags="$-"
+        IFS=$' \t'; set -f
+        # shellcheck disable=SC2206  # 空白で意図して単語分割する
+        words=($run)
+        case "$flags" in *f*) ;; *) set +f ;; esac
+        IFS="$CMD_US"; joined="${words[*]+"${words[*]}"}"; IFS="$oldifs"
+        if (( ${#words[@]} > 0 )); then
+          if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US$joined"; else _C_SEG="$joined"; fi
+          _C_SEGN=$((_C_SEGN + ${#words[@]}))
+        fi
+        _C_WB=1
+        i=$((i + ${#run})); continue
+      fi
+    fi
     # 解釈の要らない文字の並びは窓ごとにまとめて進む（上の _C_RE_*）。
     case "$st" in
-      "'") [[ "${s:i:_C_WIN}" =~ $_C_RE_SQ ]] ;;
-      a)   [[ "${s:i:_C_WIN}" =~ $_C_RE_AN ]] ;;
-      '"') [[ "${s:i:_C_WIN}" =~ $_C_RE_DQ ]] ;;
-      h)   [[ "${s:i:_C_WIN}" =~ $_C_RE_HD ]] ;;
-      r)   [[ "${s:i:_C_WIN}" =~ $_C_RE_AR ]] ;;
-      q)   [[ "${s:i:_C_WIN}" =~ $_C_RE_AQ ]] ;;
-      v)   [[ "${s:i:_C_WIN}" =~ $_C_RE_VB ]] ;;
-      *)   [[ "${s:i:_C_WIN}" =~ $_C_RE_PL ]] ;;
+      "'") [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_SQ ]] ;;
+      a)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_AN ]] ;;
+      '"') [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_DQ ]] ;;
+      h)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_HD ]] ;;
+      r)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_AR ]] ;;
+      q)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_AQ ]] ;;
+      v)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_VB ]] ;;
+      *)   [[ "${buf:i-base:_C_WIN}" =~ $_C_RE_PL ]] ;;
     esac
     k=${#BASH_REMATCH[0]}
     if (( k > 0 )); then
@@ -490,7 +533,7 @@ cmd_scan() {
       _C_WB=0
       i=$((i + k)); continue
     fi
-    c="${s:i:1}"
+    c="${buf:i-base:1}"
     case "$st" in
       "'")
         _C_TOK+="$c"; i=$((i + 1))
@@ -502,7 +545,7 @@ cmd_scan() {
         continue ;;
       a)
         if [[ "$c" == "\\" ]]; then
-          nx="${s:i+1:1}"
+          nx="${buf:i-base+1:1}"
           case "$nx" in
             "'") _C_TOK+="'" ;;
             "\\") _C_TOK+="\\" ;;
@@ -516,7 +559,7 @@ cmd_scan() {
       '"'|h)
         case "$c" in
           "\\")
-            nx="${s:i+1:1}"
+            nx="${buf:i-base+1:1}"
             case "$nx" in
               '$'|'`'|"\\") _C_TOK+="$nx"; i=$((i + 2)) ;;
               '"') if [[ "$st" == h ]]; then _C_TOK+='\"'; i=$((i + 2)); else _C_TOK+='"'; i=$((i + 2)); fi ;;
@@ -535,9 +578,9 @@ cmd_scan() {
             i=$((i + 1)); continue ;;
           '`') _C_TOK+='`'; _cmd_push b; i=$((i + 1)); continue ;;
           '$')
-            nx="${s:i+1:1}"
+            nx="${buf:i-base+1:1}"
             if [[ "$nx" == '(' ]]; then
-              if [[ "${s:i+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
+              if [[ "${buf:i-base+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
               continue
             fi
             if [[ "$nx" == '{' ]]; then _C_TOK+='${'; _cmd_push v; _C_TOKQ=1; i=$((i + 2)); continue; fi
@@ -554,13 +597,13 @@ cmd_scan() {
               _C_RD=$((_C_RD - 1)); i=$((i + 1))
             else
               _cmd_pop
-              if [[ "$c" == ')' && "${s:i+1:1}" == ')' ]]; then i=$((i + 2)); else i=$((i + 1)); fi
+              if [[ "$c" == ')' && "${buf:i-base+1:1}" == ')' ]]; then i=$((i + 2)); else i=$((i + 1)); fi
             fi
             ;;
           '$')
-            nx="${s:i+1:1}"
+            nx="${buf:i-base+1:1}"
             if [[ "$nx" == '(' ]]; then
-              if [[ "${s:i+2:1}" == '(' ]]; then _cmd_push r; i=$((i + 3)); else _cmd_push p; i=$((i + 2)); fi
+              if [[ "${buf:i-base+2:1}" == '(' ]]; then _cmd_push r; i=$((i + 3)); else _cmd_push p; i=$((i + 2)); fi
             elif [[ "$nx" == '[' ]]; then
               _cmd_push q; i=$((i + 2))
             else
@@ -579,30 +622,39 @@ cmd_scan() {
             if (( _C_RD > 0 )); then _C_RD=$((_C_RD - 1)); else _cmd_pop; fi
             ;;
           '$')
-            nx="${s:i+1:1}"
+            nx="${buf:i-base+1:1}"
             if [[ "$nx" == '{' ]]; then _C_TOK+='${'; _C_RD=$((_C_RD + 1)); i=$((i + 2))
             elif [[ "$nx" == '(' ]]; then
-              if [[ "${s:i+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
+              if [[ "${buf:i-base+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
             elif [[ "$nx" == '[' ]]; then _C_TOK+='$['; _cmd_push q; i=$((i + 2))
             else _C_TOK+='$'; i=$((i + 1)); fi
             ;;
           '`') _C_TOK+='`'; _cmd_push b; i=$((i + 1)) ;;
           '"') _C_TOK+='"'; _C_Q='"'; i=$((i + 1)) ;;
           "'") _C_TOK+="'"; _C_Q="'"; i=$((i + 1)) ;;
-          "\\") _C_TOK+="\\${s:i+1:1}"; i=$((i + 2)) ;;
+          "\\") _C_TOK+="\\${buf:i-base+1:1}"; i=$((i + 2)) ;;
           *) _C_TOK+="$c"; i=$((i + 1)) ;;
         esac
         continue ;;
     esac
     # ここから引用符の外
     case "$c" in
-      ' '|$'\t') _cmd_tok_end; i=$((i + 1)) ;;
+      ' '|$'\t')
+        # _cmd_tok_end と同じ（いちばん多く通る枝なので関数呼び出しを省く）
+        if [[ "$_C_DROP" == 1 ]]; then
+          if [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then _C_DROP=0; fi
+        elif [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then
+          if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US$_C_TOK"; else _C_SEG="$_C_TOK"; fi
+          _C_SEGN=$((_C_SEGN + 1))
+        fi
+        _C_TOK=''; _C_TOKQ=0; _C_WB=1; i=$((i + 1))
+        ;;
       $'\n')
         _cmd_seg_end; i=$((i + 1))
         if (( ${#_C_HD_WORD[@]} > 0 )); then _cmd_heredoc_bodies; fi
         ;;
       "\\")
-        nx="${s:i+1:1}"
+        nx="${buf:i-base+1:1}"
         if [[ "$nx" == $'\n' ]]; then
           i=$((i + 2))
         elif [[ -z "$nx" ]]; then
@@ -614,11 +666,11 @@ cmd_scan() {
       "'") _C_Q="'"; _C_TOKQ=1; _C_WB=0; i=$((i + 1)) ;;
       '"') _C_Q='"'; _C_TOKQ=1; _C_WB=0; i=$((i + 1)) ;;
       '$')
-        nx="${s:i+1:1}"
+        nx="${buf:i-base+1:1}"
         case "$nx" in
           "'") _C_Q=a; _C_TOKQ=1; _C_WB=0; i=$((i + 2)) ;;
           '(')
-            if [[ "${s:i+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
+            if [[ "${buf:i-base+2:1}" == '(' ]]; then _C_TOK+='$(('; _cmd_push r; i=$((i + 3)); else _C_TOK+='$('; _cmd_push p; i=$((i + 2)); fi
             ;;
           '{') _C_TOK+='${'; _cmd_push v; _C_TOKQ=1; i=$((i + 2)) ;;
           '[') _C_TOK+='$['; _cmd_push q; i=$((i + 2)) ;;
@@ -633,13 +685,13 @@ cmd_scan() {
         if (( _C_WB == 1 )); then
           _cmd_next_line; i=$((i - 1))
           if (( i < 0 )); then i=0; fi
-          if [[ "${s:i:1}" != $'\n' ]]; then i=$n; fi
+          if [[ "${buf:i-base:1}" != $'\n' ]]; then i=$n; fi
         else
           _C_TOK+='#'; i=$((i + 1))
         fi
         ;;
       '&')
-        nx="${s:i+1:1}"
+        nx="${buf:i-base+1:1}"
         case "$nx" in
           '&') _cmd_seg_end; i=$((i + 2)) ;;
           '>') _cmd_redirect ;;
@@ -648,12 +700,12 @@ cmd_scan() {
         ;;
       '|')
         _cmd_seg_end
-        nx="${s:i+1:1}"
+        nx="${buf:i-base+1:1}"
         if [[ "$nx" == '|' || "$nx" == '&' ]]; then i=$((i + 2)); else i=$((i + 1)); fi
         ;;
       ';') _cmd_seg_end; i=$((i + 1)) ;;
       '(')
-        if (( _C_WB == 1 )) && [[ "${s:i+1:1}" == '(' ]]; then
+        if (( _C_WB == 1 )) && [[ "${buf:i-base+1:1}" == '(' ]]; then
           # 行の先頭の (( … )) は算術式のコマンド
           _cmd_seg_end; _cmd_push r; i=$((i + 2))
         else
@@ -682,7 +734,7 @@ cmd_scan() {
   # 閉じていない置換は、中身を segment として残し、外側へ戻ってから閉じる（外側を捨てない）。
   while (( _C_DEPTH > 0 )); do _cmd_pop; done
   # h モードの外側（heredoc の本文そのもの）はデータなので segment にしない。
-  if [[ "$_C_Q" == h ]]; then _C_TOK=''; _C_TOKQ=0; _C_SEGRANGES=''; _C_SEGN=0; _C_SEGSTART=${#CMD_POOL[@]}; fi
+  if [[ "$_C_Q" == h ]]; then _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; fi
   _cmd_seg_end
 }
 
@@ -690,21 +742,29 @@ cmd_scan() {
 # -- はオプションの終わり。-o X・+o X・-O X・+O X・--rcfile X・--init-file X は次も飛ばす。
 # -c が無ければスクリプトファイルなので扱わない（DJ-9）。
 _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
-  local j=$(($1 + 1)) n=${#CMD_TOKS[@]} seen=0 t
-  while (( j < n )); do
-    t="${CMD_TOKS[j]}"
+  local seen=0 skip=0 t found='' hit=0
+  for t in "${CMD_TOKS[@]:$1+1}"; do
+    if (( skip == 1 )); then skip=0; continue; fi
     case "$t" in
-      --) j=$((j + 1)); break ;;
-      -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
-      -c) seen=1; j=$((j + 1)) ;;
-      --*) j=$((j + 1)) ;;
-      -*c*) seen=1; j=$((j + 1)) ;;
-      -*|+*) j=$((j + 1)) ;;
-      *) break ;;
+      --) hit=1; break ;;
+      -o|+o|-O|+O|--rcfile|--init-file) skip=1 ;;
+      -c) seen=1 ;;
+      --*) ;;
+      -*c*) seen=1 ;;
+      -*|+*) ;;
+      *) found="$t"; hit=2; break ;;
     esac
   done
-  if (( seen == 1 && j < n )); then
-    CMD_QUEUE+=("${CMD_TOKS[j]}"); CMD_QDEPTH+=("$(($2 + 1))"); CMD_QMODE+=('')
+  if (( hit == 1 )); then
+    # -- の次の語が文字列
+    local after=0
+    for t in "${CMD_TOKS[@]:$1+1}"; do
+      if (( after == 1 )); then found="$t"; hit=2; break; fi
+      if [[ "$t" == -- ]]; then after=1; fi
+    done
+  fi
+  if (( seen == 1 && hit == 2 )); then
+    CMD_QUEUE+=("$found"); CMD_QDEPTH+=("$(($2 + 1))"); CMD_QMODE+=('')
     return 0
   fi
   return 1
@@ -712,10 +772,9 @@ _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
 
 # eval の後ろの token を空白で連結して列に積む。
 _cmd_eval() { # $1 = eval の位置, $2 = 深さ
-  local j=$(($1 + 1)) n=${#CMD_TOKS[@]} joined=''
-  while (( j < n )); do
-    if [[ -n "$joined" ]]; then joined+=" ${CMD_TOKS[j]}"; else joined="${CMD_TOKS[j]}"; fi
-    j=$((j + 1))
+  local joined='' t
+  for t in "${CMD_TOKS[@]:$1+1}"; do
+    if [[ -n "$joined" ]]; then joined+=" $t"; else joined="$t"; fi
   done
   if [[ -n "$joined" ]]; then
     CMD_QUEUE+=("$joined"); CMD_QDEPTH+=("$(($2 + 1))"); CMD_QMODE+=('')
@@ -726,18 +785,22 @@ _cmd_eval() { # $1 = eval の位置, $2 = 深さ
 # 関数に渡す（DJ-3）。名前は先頭の \ を解いた後の値の basename で比べる。shell は、-c の
 # 文字列を取れた最初の1つだけを列に積む（env -u bash sh -c '…' の bash のように文字列の
 # 無いものは飛ばす）。eval は segment の最初の1つだけ。
-cmd_segment() { # $1 = 範囲の列（"開始:個数 …"）, $2 = 深さ, $3 = 判定の関数名
-  local d="$2" judge="$3" i=0 n name shell_done=0 r s c j
-  # 範囲は配列の中で昇順なので、添字を増やしながら読む（bash 3.2 の配列は順に読むと速い）
-  CMD_TOKS=()
-  for r in $1; do
-    s="${r%%:*}"; c="${r#*:}"; j=$s
-    while (( j < s + c )); do CMD_TOKS+=("${CMD_POOL[j]}"); j=$((j + 1)); done
-  done
+# token の列は IFS の単語分割で一度に配列にする（C で動く）。末尾の空 token が落ちない
+# ように番兵 x を足して後で外す。glob 展開は止める。
+cmd_segment() { # $1 = segment（CMD_US でつないだ文字列）, $2 = 深さ, $3 = 判定の関数名
+  local d="$2" judge="$3" i=0 name shell_done=0 last tok
+  local IFS="$CMD_US" flags="$-"
+  set -f
+  # shellcheck disable=SC2206  # IFS=CMD_US で意図して単語分割する
+  CMD_TOKS=(${1}${CMD_US}x)
+  case "$flags" in *f*) ;; *) set +f ;; esac
+  IFS=$' \t\n'
+  last=$((${#CMD_TOKS[@]} - 1))
+  unset "CMD_TOKS[$last]"
   CMD_JUDGED=''
-  n=${#CMD_TOKS[@]}
-  while (( i < n )); do
-    name="${CMD_TOKS[i]}"
+  # 添字で読まず順に歩く（bash 3.2 の配列は添字で読むと要素数に比例して遅い）
+  for tok in "${CMD_TOKS[@]}"; do
+    name="$tok"
     if [[ "$name" == */* ]]; then name="${name##*/}"; fi
     case "$name" in
       bash|sh|zsh|dash|ksh)
@@ -765,22 +828,35 @@ cmd_once() { # $1 = 判定の鍵。初めてなら 0、済みなら 1
   return 0
 }
 
+# コマンド全文に現れない区切りのバイトを候補から選ぶ。全部現れる行は解析できないので deny。
+cmd_pick_separator() {
+  local i=0 c
+  while (( i < ${#_CMD_US_CANDIDATES} )); do
+    c="${_CMD_US_CANDIDATES:i:1}"
+    if [[ "$1" != *"$c"* ]]; then CMD_US="$c"; return 0; fi
+    i=$((i + 1))
+  done
+  deny "Command contains every control byte the hook uses as a separator; blocked conservatively: $cmd" "unanalyzable"
+}
+
 # 入口。列の深さが上限を超えたら「解析できない」として deny する（保守的）。
 cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
-  local judge="$2" qi=0 text d m
+  local judge="$2" qi=0 text d seg
+  if (( ${#1} > CMD_MAX_LEN )); then
+    deny "Command too long for the safety hook to analyze (${#1} > ${CMD_MAX_LEN} bytes); split it into smaller commands. Blocked conservatively." "too-long"
+  fi
+  cmd_pick_separator "$1"
   CMD_QUEUE=("$1"); CMD_QDEPTH=(0); CMD_QMODE=('')
   while (( qi < ${#CMD_QUEUE[@]} )); do
     text="${CMD_QUEUE[qi]}"; d="${CMD_QDEPTH[qi]}"
     if (( d > CMD_MAX_DEPTH )); then
       deny "Command nesting too deep to analyze (bash -c / eval); blocked conservatively: $cmd" "nesting-limit"
     fi
-    CMD_POOL=(); CMD_SEG_RANGES=()
+    CMD_SEGS=(); CMD_SEGN=()
     cmd_scan "$text" "$d" "${CMD_QMODE[qi]}"
     qi=$((qi + 1))
-    m=0
-    while (( m < ${#CMD_SEG_RANGES[@]} )); do
-      cmd_segment "${CMD_SEG_RANGES[m]}" "$d" "$judge"
-      m=$((m + 1))
+    for seg in ${CMD_SEGS[@]+"${CMD_SEGS[@]}"}; do
+      cmd_segment "$seg" "$d" "$judge"
     done
   done
   return 0
@@ -790,28 +866,35 @@ cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
 # ---- block-force-push の判定（segment の token 配列 CMD_TOKS と既知の名前の位置を受ける） ----
 
 # git 自身のオプションを飛ばして subcommand を取り、push なら --force / -f（plain）を見る。
-# lease 系（--force-with-lease / --force-if-includes）だけなら通す（#429 で segment 単位に変えた）。
+# 短オプションの束の中の f（-fu）も plain。lease 系（--force-with-lease / --force-if-includes）
+# だけなら通す（#429 で segment 単位に変えた）。token は添字で読まず順に歩く。
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 fp_judge() { # $1 = 既知の名前の token の位置, $2 = 正規化した名前
-  local i=$(($1 + 1)) n=${#CMD_TOKS[@]} t sub='' plain=0
+  local t sub='' plain=0 skip=0 phase=opts
   if [[ "$2" != git ]]; then return 0; fi
-  while (( i < n )); do
-    t="${CMD_TOKS[i]}"
-    case "$t" in
-      -C|-c|--git-dir|--work-tree|--namespace|--config-env|--attr-source|--shallow-file|--super-prefix) i=$((i + 2)); continue ;;
-      -*) i=$((i + 1)); continue ;;
-      *) sub="$t"; i=$((i + 1)); break ;;
+  for t in "${CMD_TOKS[@]:$1+1}"; do
+    if (( skip == 1 )); then skip=0; continue; fi
+    case "$phase" in
+      opts)
+        case "$t" in
+          -C|-c|--git-dir|--work-tree|--namespace|--config-env|--attr-source|--shallow-file|--super-prefix) skip=1 ;;
+          -*) ;;
+          *)
+            sub="$t"
+            if [[ "$sub" != push ]]; then return 0; fi
+            cmd_once git-push || return 0
+            phase=push
+            ;;
+        esac
+        ;;
+      push)
+        case "$t" in
+          --force-with-lease|--force-with-lease=*|--force-if-includes) ;;
+          --force|-f) plain=1 ;;
+          -[!-]*) if [[ "$t" == *f* ]]; then plain=1; fi ;;
+        esac
+        ;;
     esac
-  done
-  if [[ "$sub" != push ]]; then return 0; fi
-  cmd_once git-push || return 0
-  while (( i < n )); do
-    case "${CMD_TOKS[i]}" in
-      --force-with-lease|--force-with-lease=*|--force-if-includes) ;;
-      --force|-f) plain=1 ;;
-      -[!-]*) if [[ "${CMD_TOKS[i]}" == *f* ]]; then plain=1; fi ;;     # 短オプションの束の中の f（-fu・-uf）
-    esac
-    i=$((i + 1))
   done
   if (( plain == 1 )); then
     deny "Force push blocked: $cmd. Use --force-with-lease instead." "force-push"
