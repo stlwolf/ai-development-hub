@@ -144,6 +144,85 @@ t A allow fp - 'git push --force-if-includes origin x'
 t A allow fp - 'echo hello'
 t A allow fp - 'rm -rf /'
 
+echo "[B] 迂回の捕捉（変更前の master では落ちる・受入の錨）"
+# issue 本文の3つの形
+t B deny bd rm-destructive 'cd /tmp && rm -rf /'
+t B deny bd rm-destructive 'true; rm -rf ~'
+t B deny bd rm-destructive 'bash -c "rm -rf /"'
+# 族1: 区切り
+t B deny bd rm-destructive "sh -c 'rm -rf /'"
+t B deny bd rm-destructive 'bash -lc "rm -rf /"'
+t B deny bd rm-destructive "bash -c -- 'rm -rf /'"
+t B deny bd rm-destructive "bash -o errexit -c 'rm -rf /'"
+t B deny bd rm-destructive "zsh -c 'rm -rf /'"
+t B deny bd rm-destructive 'cd x || rm -rf /'
+t B deny bd rm-destructive 'ls | rm -rf /'
+t B deny bd rm-destructive '(rm -rf /)'
+t B deny bd rm-destructive '{ rm -rf /; }'
+t B deny bd rm-destructive '$(rm -rf /)'
+t B deny bd rm-destructive 'echo $(rm -rf /)'
+t B deny bd rm-destructive 'echo "$(rm -rf /)"'
+t B deny bd rm-destructive 'echo `rm -rf /`'
+t B deny bd rm-destructive 'eval "rm -rf /"'
+t B deny bd rm-destructive 'eval rm -rf /'
+t B deny bd rm-destructive "true${NL}rm -rf /"
+t B deny bd rm-destructive 'rm -rf node_modules && rm -rf /'   # 変更前でも deny（先頭が rm で / が対象に混ざる）。錨に数えない
+t B deny bd git-reset-hard 'rm -rf node_modules && git reset --hard'
+t B deny bd rm-destructive "cat <<EOF${NL}\$(rm -rf /)${NL}EOF"
+t B deny bd rm-destructive "cat <<EOF${NL}\`rm -rf /\`${NL}EOF"
+t B deny bd rm-destructive 'if true; then rm -rf /; fi'
+t B deny bd rm-destructive 'case x in x) rm -rf /;; esac'
+# 族2: 前置き
+t B deny bd rm-destructive ' rm -rf /'
+t B deny bd rm-destructive '\rm -rf /'
+t B deny bd rm-destructive '/bin/rm -rf /'
+t B deny bd rm-destructive 'env rm -rf /'
+t B deny bd rm-destructive 'env -u git rm -rf /'
+t B deny bd rm-destructive 'command rm -rf /'
+t B deny bd rm-destructive 'exec rm -rf /'
+t B deny bd rm-destructive 'nohup rm -rf /'
+t B deny bd rm-destructive 'time rm -rf /'
+t B deny bd rm-destructive 'timeout 10 rm -rf /'
+t B deny bd rm-destructive 'FOO=1 rm -rf /'
+t B deny bd rm-destructive '>/dev/null rm -rf /'
+t B deny bd rm-destructive '! rm -rf /'
+t B deny bd rm-destructive 'sudo -u root rm -rf /'
+# 族3: 対象の書き方
+t B deny bd rm-destructive 'rm -rf "/"'
+t B deny bd rm-destructive "rm -rf '/'"
+t B deny bd rm-destructive 'rm -rf "~"'
+t B deny bd rm-destructive 'rm -rf "$HOME"'
+t B deny bd rm-destructive 'rm -rf ${HOME}'
+t B deny bd rm-destructive 'rm -rf "${HOME}"/x'
+t B deny bd rm-destructive 'rm -rf ./'
+t B deny bd rm-destructive 'rm -rf ~user'
+t B deny bd rm-destructive 'rm -rf "/my dir"'
+t B deny bd rm-destructive "\$'rm' -rf /"
+t B deny bd rm-destructive 'r\m -rf /'
+t B deny bd rm-destructive "r\\${NL}m -rf /"
+t B deny bd rm-destructive "rm -r\\${NL}f /"
+# ほかの検査（同じ型の抜け）
+t B deny bd chmod-recursive-root 'cd x && chmod -R 777 /'
+t B deny bd chown-recursive-root 'cd x && chown -R u /'
+t B deny bd mkfs 'cd x && mkfs.ext4 /dev/sda'
+t B deny bd dd-device 'cd x && dd if=/dev/zero of=/dev/sda'
+t B deny bd git-reset-hard 'cd x && git reset --hard'
+t B deny bd git-reset-hard 'git -C x reset --hard'
+t B deny bd git-reset-hard 'git stash; git reset --hard'
+t B deny bd git-clean-fdx 'cd x && git clean -fdx'
+t B deny bd git-clean-fdx 'git -C x clean -fdx'
+# 意図した deny（DJ-3 の境界の固定）
+t B deny bd rm-destructive 'echo rm -rf /'
+t B deny bd rm-destructive 'git rm -rf .'
+# 入れ子の上限（9段で nesting-limit）
+t B deny bd nesting-limit 'eval eval eval eval eval eval eval eval eval echo x'
+# force-push
+t B deny fp force-push 'cd x && git push --force'
+t B deny fp force-push 'true; git push -f'
+t B deny fp force-push 'bash -c "git push --force"'
+t B deny fp force-push 'sudo git push --force'
+t B deny fp force-push 'eval "git push --force"'
+
 echo "[C] 安全な形の守り（今 allow・変更後も allow）"
 t C allow bd - "echo 'rm -rf /'"
 t C allow bd - 'echo "rm -rf /"'
@@ -183,6 +262,16 @@ t C allow fp - 'git push origin main'
 t C allow fp - 'git commit -m "git push --force" && git push origin x'
 t C allow fp - 'echo "git push --force"'
 t C allow fp - 'git log --oneline | grep push'
+
+echo "[D] 意図した判定の変更（今の過検知を allow に直す・変更前では落ちる）"
+t D allow bd - 'git clean -fd xdir'
+t D allow bd - 'git clean -fdxn'
+t D allow bd - 'git clean -fdx --dry-run'
+t D allow bd - 'rm -rf node_modules # /'
+t D allow bd - 'rm -rf node_modules >> /tmp/log 2>&1'
+t D allow bd - 'rm -rf node_modules &> /tmp/log'
+t D allow bd - 'mkfs.ext4'
+t D allow fp - 'git push --force-with-lease # --force'
 
 echo "[E] 終わること（閉じない構文・深い入れ子でも 0 か 2 に到達する）"
 t E allow bd - 'echo "unclosed'
