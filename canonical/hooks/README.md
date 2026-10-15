@@ -66,13 +66,13 @@
 
 ### ブロック対象
 
-判定の単位は、コマンド文字列の先頭ではなく**行に含まれる各単純コマンド**である（#429）。`&&`・`||`・`;`・`|`・改行・サブシェル・`$( )`・バッククォート・`<( )` で区切った各部分、`bash -c` / `sh -c` の文字列と `eval` の中身、前置き（`sudo`・`env`・`timeout`・`nohup`・`FOO=1`・`>/dev/null` など）の後ろ、引用符を外した対象（`rm -rf "/"`・`rm -rf ${HOME}`・`rm -rf ./`）のどれでも、同じ検査が当たる。引用符で囲んで1つの token にした文字列（`echo "rm -rf /"`・`git commit -m "..."`）と、引用ありの heredoc の本文はデータとして扱い止めない。名前だけを引用した形（`'rm' -rf /`・`r$'m' -rf /`）は止める。引用なしの heredoc の本文と `$(( ))` の中は、`$( )` とバッククォートだけ見る。走査器の文法と扱わない形の根拠は `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` の DJ-2〜DJ-9 にある。
+判定の単位は、コマンド文字列の先頭ではなく**行に含まれる各単純コマンド**である（#429）。`&&`・`||`・`;`・`|`・改行・サブシェル・`$( )`・バッククォート・`<( )` で区切った各部分、`bash -c` / `sh -c` の文字列と `eval` の中身、前置き（`sudo`・`env`・`timeout`・`nohup`・`FOO=1`・`>/dev/null` など）の後ろ、引用符を外した対象（`rm -rf "/"`・`rm -rf ${HOME}`・`rm -rf ./`）のどれでも、同じ検査が当たる。引用符で囲んで1つの token にした文字列（`echo "rm -rf /"`・`git commit -m "..."`）と、引用ありの heredoc の本文はデータとして扱い止めない。名前だけを引用した形（`'rm' -rf /`・`r$'m' -rf /`）は止める。引用なしの heredoc の本文と `$(( ))`・`(( ))`・`$[ ]` の中と `${ }` の中は、`$( )` とバッククォートだけ見る。`$( )` やバッククォートで作った引数は、中の語も外側の引数として一緒に調べる（`rm -rf $(echo /)`・`git reset $(echo --hard)` は止める。`rm -rf "$(mktemp -d)/build"` は通る）。走査器の文法と扱わない形の根拠は `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` の DJ-2〜DJ-9 にある。
 
 - `rm -rf /`, `rm -rf ~`, `rm -rf ~user`, `rm -rf $HOME`, `rm -rf ${HOME}`, `rm -rf /*`, `rm -rf .`, `rm -rf ..`（絶対パス全般を含む）
 - `rm` のオプション順序変形（`-rf`, `-fr`, `-r -f`）に対応。対象は引用符を外し、末尾の `/` と先頭の `./` を落としてから見る
 - `chmod -R 777 /`, `chown -R ... /`
 - `DROP TABLE`, `DROP DATABASE`, `TRUNCATE TABLE`（大文字小文字不問。これだけは行全文の部分一致で、heredoc のデータも止める）
-- `mkfs*`（`/dev/` で始まる引数があるとき、または行の先頭に在って引数があるとき。`command -v mkfs.ext4` や `git grep mkfs.ext4 <file>` のような所在の確認や検索は止めない）
+- `mkfs*`（`/dev/` で始まる引数か、変数や置換の引数（`$` で始まる）があるとき、または行の先頭に在って引数があるとき。`command -v mkfs.ext4` や `git grep mkfs.ext4 <file>` のような所在の確認や検索は止めない）
 - `dd` + `of=/dev/`
 - `git reset --hard`, `git clean -fdx`（`git -C x reset --hard` のように git 自身のオプションが挟まっても止める。`git clean` は option の文字で見るので、パスに `x` があるだけでは止めず、`-n` / `--dry-run` なら止めない）
 
@@ -89,16 +89,18 @@
 フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の §1 を自分で守る。
 
 - 実行環境の情報が要る（字面に無い）: 変数や glob で決まる対象（`rm -rf $DIR`）、標準入力から対象を受ける `xargs rm -rf`、標準入力・heredoc・ファイルから command を受ける shell（`echo … | bash`・`bash <<EOF`・`bash script.sh`・`source x`）、alias や関数
-- 字面にはあるが静的解析を実装していない: brace expansion（`rm -rf {.,..}`）、二重引用符の中の `$( )` に `case` の `)` がある形、`${ … }` の内部、符号化や大文字や計算される名前（`$'\x72m'`・macOS の `RM`・`$(echo rm) -rf /`・`sh -c "$(printf …)"`）
+- 字面にはあるが静的解析を実装していない: brace expansion（`rm -rf {.,..}`）、二重引用符の中の `$( )` に `case` の `)` がある形、`${ … }` を展開した値を名前や引数として使う形（`${v:-rm} -rf /`。中の `$( )` と引用符は追う）、符号化や大文字や計算される名前（`$'\x72m'`・macOS の `RM`・`$(echo rm) -rf /`・`sh -c "$(printf …)"`）
 - 別の操作族: `find -delete` / `find -exec rm`（ルール §2 の確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
 
 引用符で囲まれていないデータに既知のコマンド名と危険な引数が並ぶ形（`echo rm -rf /`・`ssh host rm -rf /`）は止める側に倒している。全体を引用符で囲めば通る。
 
-### 入れ子の上限と所要時間
+### 入れ子・長さの上限と所要時間
 
 `bash -c` / `eval` の入れ子は深さ 8 までで、超えると `nesting-limit` で deny する（解析できないものは止める）。幅（1行に並ぶ `bash -c` の数）には上限を置かない。
 
-所要時間は、既知の名前（`rm`・`git` など）を含まない行は変更前と同じ（約 17 ms）、含む行は 16 KB でも 40 ms 以内である（計測は `docs/harness/episodes/2026-10-15-episode-429-destructive-hook-compound.md`）。既知の限界として、1行に数千の token を並べた形は token の数に比例して増える（`rm` を 1360 個並べた 4 KB の1行で約 160 ms）。
+既知の名前（`rm`・`git` など）を含む行が **64 KB（65,536 バイト）を超えると、読み取らずに `too-long` で deny する**（メッセージは「分けて実行して」）。既知の名前を含まない行は走査しないので、長くてもこの上限にかからない。語の区切りに使う制御文字（0x1F など 23 個の候補）を全部含む行は `unanalyzable` で deny する。
+
+所要時間は語の数に比例する。既知の名前を含まない行は変更前と同じ（約 17 ms）、含む行は 16 KB でも 40 ms 以内、短い語を大量に並べた1行でも 8 KB で 0.1 秒・64 KB（上限）で bash 3.2 でも約 1 秒である（計測は `docs/harness/episodes/2026-10-15-episode-429-destructive-hook-compound.md`）。
 
 ## block-force-push.sh
 
