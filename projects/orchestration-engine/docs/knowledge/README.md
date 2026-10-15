@@ -106,7 +106,7 @@ knowledge-list docs/knowledge/items
   | 1 | `--strict` かつ skipped > 0（完全性信号） | schema 違反 |
   | 2 | 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / jq の評価失敗 / usage） | 環境エラー |
 
-  `knowledge-list` は、jq の評価が失敗したら、どの呼び出しでも ERROR を出して exit 2 で止まる。frontmatter root の型を読む箇所（正常な item を MALFORMED に丸めない）、MALFORMED の行と item の JSON を組む箇所、footer の件数のフラグを読む箇所（件数を黙って落とさない）、出力を組む箇所のすべてである。`--json` は失敗したときに stdout へ何も出さない。人向けの出力は item ごとに書き出すので、途中で失敗すると、それまでの行が出たあとで止まり、末尾の `listed:` の行は出ない。
+  `knowledge-list` は、jq の評価が失敗したら、どの呼び出しでも ERROR を出して exit 2 で止まる。frontmatter root の型を読む箇所（正常な item を MALFORMED に丸めない）、MALFORMED の行と item の JSON を組む箇所、footer の件数のフラグを読む箇所（件数を黙って落とさない）、出力を組む箇所のすべてである。`--json` は、jq が値を組めずに失敗したときは stdout へ何も出さない。人向けの出力は item ごとに書き出すので、途中で失敗すると、それまでの行が出たあとで止まり、末尾の `listed:` の行は出ない。どちらのモードでも、書き出しの途中で jq が失敗したとき（読み手が途中でパイプを閉じたときなど）は、途中まで出たあとで止まる。
 
 - **列挙 → 採否 → 注入** の手順は `doc-flow-guardrail` の「negative knowledge 注入」節（brief 固定節の slot）を参照する。
 
