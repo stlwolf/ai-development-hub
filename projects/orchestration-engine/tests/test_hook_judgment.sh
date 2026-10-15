@@ -424,6 +424,19 @@ t F deny fp force-push 'git push -fu origin x'
 t F deny bd rm-destructive "(( x = 1 << 2 ))${NL}rm -rf /"
 t F deny bd rm-destructive "echo \$[ 1 << 2 ]${NL}rm -rf /"
 t F deny fp force-push "(( x = 1 << 2 ))${NL}git push --force"
+# R4 の実装SO の指摘から（置換の中の語は外側の語の並びの末尾に足す・置換の入れ子で語が倍々に増えない・
+# 二重引用符の中の ${ } の ' は文字）。最初の2行は再承認前の先端でも deny だった（錨に数えない）
+t F deny bd git-reset-hard 'git -C "$(git rev-parse --show-toplevel)" reset --hard'
+t F deny fp force-push 'git -C "$(git rev-parse --show-toplevel)" push --force'
+t F deny bd git-reset-hard "echo \"\${x:-'\$(git reset --hard)'}\""
+t F deny bd git-reset-hard 'echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo git status)))))))))))); git reset --hard'
+nest=''; i=0
+while (( i < 40 )); do nest="$nest\$(echo "; i=$((i + 1)); done
+nest="${nest}git status"; i=0
+while (( i < 40 )); do nest="$nest)"; i=$((i + 1)); done
+t F deny bd nesting-limit "$nest"
+# 判断8（案A）の帰結として意図して deny にする形（owner に見せる）
+t F deny bd rm-destructive 'rm -rf "$(mktemp -d /tmp/build.XXXXXX)"'
 # 極端に長い1行（判断10）: 既知の名前を含み 64 KB を超える行は読み取らずに too-long で止める。
 # 既知の名前を含まない行は長くても走査しないので通る
 pad="$(head -c 70000 /dev/zero | tr '\0' 'x')"

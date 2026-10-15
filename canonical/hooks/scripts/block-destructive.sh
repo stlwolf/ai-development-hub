@@ -187,6 +187,7 @@ trap on_unexpected_exit EXIT
 # 空になりうる配列は ${arr[@]+"${arr[@]}"} の形で展開する（3.2 の set -u 対策）。
 
 CMD_MAX_DEPTH=8         # shell -c / eval の入れ子の深さの上限（列の長さには上限を置かない）
+CMD_MAX_NEST=32         # $( ) などの文脈の入れ子の深さの上限（超えたら nesting-limit で止める）
 # 極端に長い1行は読み取らずに止める（判断10）。読み取りは語の数に比例するが、短い語を
 # 大量に並べた1行は 64 KB で bash 3.2 でも数秒かかり、ホストの時間切れ（判定を捨てて通す）
 # から遠ざけるために上限を置く。既知の名前を含まない行は走査しないので、この上限に
@@ -221,7 +222,7 @@ _CMD_US_CANDIDATES=$'\037\036\035\034\001\002\003\004\005\006\016\017\020\021\02
 CMD_US=''
 
 CMD_QUEUE=(); CMD_QDEPTH=(); CMD_QMODE=()
-CMD_SEGS=(); CMD_SEGN=(); CMD_TOKS=()
+CMD_SEGS=(); CMD_SEGN=(); CMD_SEGLVL=(); CMD_TOKS=()
 CMD_JUDGED=''           # segment の中で判定を済ませた名前（同じ名前は後ろの引数の部分集合なので1回で足りる）
 
 # 既知の名前が1つも無い行は走査しない（早い経路）。文字列置換を使わず正規表現1回で見る
@@ -235,8 +236,9 @@ cmd_fast_skip() {
 
 # ---- 走査器の状態（cmd_scan の中だけで使う。関数の外から読まない） ----
 # _C_SEG = いまの segment（token を CMD_US でつないだ文字列）。_C_SEGN = その token の数。
-_C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_Q=''; _C_DROP=0; _C_DEPTH=0; _C_CURDEPTH=0; _C_RD=0; _C_WB=1
-_C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
+# _C_DEFER = この segment の置換の中の語（segment を閉じるときに末尾に足す。DJ-12）。
+_C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; _C_Q=''; _C_DROP=0; _C_DEPTH=0; _C_CURDEPTH=0; _C_RD=0; _C_WB=1
+_C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_DEFER=(); _C_ST_DEFERN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
 _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
 
 # 今の token を segment に加える。転送の相手（_C_DROP=1）なら捨てる。
@@ -253,32 +255,42 @@ _cmd_tok_end() {
   _C_WB=1
 }
 
-# 今の segment を閉じて登録する。
+# 今の segment を閉じて登録する。置換の中の語（_C_DEFER）は segment の末尾に足す（外側の
+# 語の並びと位置を崩さない。git の -C の値や subcommand の位置が置換の中の語で消費されないため）。
 _cmd_seg_end() {
   _cmd_tok_end
-  if (( _C_SEGN > 0 )); then
-    CMD_SEGS+=("$_C_SEG"); CMD_SEGN+=("$_C_SEGN")
+  if (( _C_DEFERN > 0 )); then
+    if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US$_C_DEFER"; else _C_SEG="$_C_DEFER"; fi
+    _C_SEGN=$((_C_SEGN + _C_DEFERN))
   fi
-  _C_SEG=''; _C_SEGN=0; _C_DROP=0
+  if (( _C_SEGN > 0 )); then
+    CMD_SEGS+=("$_C_SEG"); CMD_SEGN+=("$_C_SEGN"); CMD_SEGLVL+=("$_C_DEPTH")
+  fi
+  _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; _C_DROP=0
 }
 
 # 置換や算術式や ${ } に入る。外側の状態を積む。
 #   p = $( )  b = ` `  r = $(( )) / (( ))  q = $[ ]  v = ${ }
 # p/b/r/q は新しい segment を始める。v は外側の語の続き（語に文字を足し続ける）。
+# 入れ子が CMD_MAX_NEST を超えたら解析できないとして止める（深い入れ子は語の数を深さ倍にする）。
 _cmd_push() { # $1 = 種類
-  _C_ST_SEG+=("$_C_SEG"); _C_ST_SEGN+=("$_C_SEGN"); _C_ST_TOK+=("$_C_TOK"); _C_ST_TOKQ+=("$_C_TOKQ")
+  if (( _C_DEPTH >= CMD_MAX_NEST )); then
+    deny "Command nesting too deep to analyze (substitutions nested over ${CMD_MAX_NEST} levels); blocked conservatively: $cmd" "nesting-limit"
+  fi
+  _C_ST_SEG+=("$_C_SEG"); _C_ST_SEGN+=("$_C_SEGN"); _C_ST_DEFER+=("$_C_DEFER"); _C_ST_DEFERN+=("$_C_DEFERN")
+  _C_ST_TOK+=("$_C_TOK"); _C_ST_TOKQ+=("$_C_TOKQ")
   _C_ST_Q+=("$_C_Q"); _C_ST_KIND+=("$1"); _C_ST_DROP+=("$_C_DROP"); _C_ST_RD+=("$_C_RD"); _C_ST_NSEG+=("${#CMD_SEGS[@]}")
   if [[ "$1" != v ]]; then
-    _C_SEG=''; _C_SEGN=0; _C_TOK=''; _C_TOKQ=0; _C_DROP=0
+    _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; _C_TOK=''; _C_TOKQ=0; _C_DROP=0
   fi
   _C_Q=''; _C_RD=0; _C_WB=1
   _C_DEPTH=$((_C_DEPTH + 1))
 }
 
 # 置換の閉じ。中身の最後の segment を閉じ、外側の状態に戻る。
-# p/b/r/q: 中の segment の語を外側の segment に足し（DJ-12・中の語も外側の引数になる）、
-#   外側はその後ろで続ける。置換を含んだ語は字面に $( ) や ` ` を残し引用扱いにする
-#   （絶対パスに見せない・既知の名前に当てない）。
+# p/b/r/q: 中の segment（この深さで登録したものだけ。さらに深い置換の語はそこに含まれている）
+#   の語を外側の segment の「置換の中の語」に足す（DJ-12・中の語も外側の引数になる）。
+#   置換を含んだ語は字面に $( ) や ` ` を残し引用扱いにする（絶対パスに見せない・既知の名前に当てない）。
 # v: 語は続きなので segment は触らない。
 _cmd_pop() {
   local k=$((_C_DEPTH - 1)) kind n0 m
@@ -288,18 +300,20 @@ _cmd_pop() {
   else
     _cmd_seg_end
     n0="${_C_ST_NSEG[k]}"
-    _C_SEG="${_C_ST_SEG[k]}"; _C_SEGN="${_C_ST_SEGN[k]}"
+    _C_SEG="${_C_ST_SEG[k]}"; _C_SEGN="${_C_ST_SEGN[k]}"; _C_DEFER="${_C_ST_DEFER[k]}"; _C_DEFERN="${_C_ST_DEFERN[k]}"
     m=$n0
     while (( m < ${#CMD_SEGS[@]} )); do
-      if (( _C_SEGN > 0 )); then _C_SEG+="$CMD_US${CMD_SEGS[m]}"; else _C_SEG="${CMD_SEGS[m]}"; fi
-      _C_SEGN=$((_C_SEGN + CMD_SEGN[m]))
+      if (( CMD_SEGLVL[m] == _C_DEPTH )); then
+        if (( _C_DEFERN > 0 )); then _C_DEFER+="$CMD_US${CMD_SEGS[m]}"; else _C_DEFER="${CMD_SEGS[m]}"; fi
+        _C_DEFERN=$((_C_DEFERN + CMD_SEGN[m]))
+      fi
       m=$((m + 1))
     done
     _C_TOK="${_C_ST_TOK[k]}"; _C_TOKQ=1
     case "$kind" in p) _C_TOK+=')' ;; b) _C_TOK+='`' ;; r) _C_TOK+='))' ;; q) _C_TOK+=']' ;; esac
     _C_Q="${_C_ST_Q[k]}"; _C_DROP="${_C_ST_DROP[k]}"; _C_RD="${_C_ST_RD[k]}"
   fi
-  unset '_C_ST_SEG[k]' '_C_ST_SEGN[k]' '_C_ST_TOK[k]' '_C_ST_TOKQ[k]' '_C_ST_Q[k]' '_C_ST_KIND[k]' '_C_ST_DROP[k]' '_C_ST_RD[k]' '_C_ST_NSEG[k]'
+  unset '_C_ST_SEG[k]' '_C_ST_SEGN[k]' '_C_ST_DEFER[k]' '_C_ST_DEFERN[k]' '_C_ST_TOK[k]' '_C_ST_TOKQ[k]' '_C_ST_Q[k]' '_C_ST_KIND[k]' '_C_ST_DROP[k]' '_C_ST_RD[k]' '_C_ST_NSEG[k]'
   _C_DEPTH=$((_C_DEPTH - 1))
   _C_WB=0
 }
@@ -484,8 +498,8 @@ cmd_scan() {
   _C_CURDEPTH="$2"
   n=${#s}
   buf="${s:0:_C_BUF}"
-  _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_Q="${3:-}"; _C_DROP=0; _C_DEPTH=0; _C_RD=0; _C_WB=1
-  _C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
+  _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; _C_Q="${3:-}"; _C_DROP=0; _C_DEPTH=0; _C_RD=0; _C_WB=1
+  _C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_DEFER=(); _C_ST_DEFERN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
   _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
   while (( i < n )); do
     # _cmd_fill $((_C_WIN + 3)) と同じ（1周ごとの関数呼び出しを省く）
@@ -633,7 +647,11 @@ cmd_scan() {
             ;;
           '`') _C_TOK+='`'; _cmd_push b; i=$((i + 1)) ;;
           '"') _C_TOK+='"'; _C_Q='"'; i=$((i + 1)) ;;
-          "'") _C_TOK+="'"; _C_Q="'"; i=$((i + 1)) ;;
+          "'")
+            # 外側が二重引用符の中なら、${ } の中の ' は文字（置換を無効にしない）
+            _C_TOK+="'"; i=$((i + 1))
+            if [[ "${_C_ST_Q[_C_DEPTH-1]}" != '"' ]]; then _C_Q="'"; fi
+            ;;
           "\\") _C_TOK+="\\${buf:i-base+1:1}"; i=$((i + 2)) ;;
           *) _C_TOK+="$c"; i=$((i + 1)) ;;
         esac
@@ -736,7 +754,7 @@ cmd_scan() {
   # 閉じていない置換は、中身を segment として残し、外側へ戻ってから閉じる（外側を捨てない）。
   while (( _C_DEPTH > 0 )); do _cmd_pop; done
   # h モードの外側（heredoc の本文そのもの）はデータなので segment にしない。
-  if [[ "$_C_Q" == h ]]; then _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; fi
+  if [[ "$_C_Q" == h ]]; then _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; fi
   _cmd_seg_end
 }
 
@@ -854,7 +872,7 @@ cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
     if (( d > CMD_MAX_DEPTH )); then
       deny "Command nesting too deep to analyze (bash -c / eval); blocked conservatively: $cmd" "nesting-limit"
     fi
-    CMD_SEGS=(); CMD_SEGN=()
+    CMD_SEGS=(); CMD_SEGN=(); CMD_SEGLVL=()
     cmd_scan "$text" "$d" "${CMD_QMODE[qi]}"
     qi=$((qi + 1))
     for seg in ${CMD_SEGS[@]+"${CMD_SEGS[@]}"}; do
