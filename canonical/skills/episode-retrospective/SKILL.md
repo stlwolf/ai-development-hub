@@ -208,7 +208,7 @@ closure は本文と同じ内容を2度書かない。**本文にある事実は
 
 | 出力型 | 消費チャネル | 書く内容 |
 |--------|-------------|---------|
-| 事実・失敗 | 再発防止（再発しうる型は「原則」行へ引き上げ、Step 5 で knowledge store へ収穫する） | 何が起き、何が失敗したか。実行ログに残る失敗を選択的に省略しない |
+| 事実・失敗 | 再発防止（再発しうる型は「原則」行へ引き上げ、収穫基準を満たすものを Step 5 で knowledge store へ収穫する） | 何が起き、何が失敗したか。実行ログに残る失敗を選択的に省略しない |
 | 決定と根拠 | 判断の再利用・Decision 昇格 | 選択肢・採否・**棄却した案と棄却理由**。コードや diff から復元できない「なぜ」 |
 | わかったこと（W） | ナレッジ・次タスク参照 | 検証で判明した事実・技術的知見 |
 | 原則（Pattern / Anti-pattern 対) | negative knowledge 注入（型付き knowledge store・Step 5） | 転用可能な対構造。NG/OK ペア形式可。**収穫基準（非自明・再発しうる・行動を変える）を満たすものは Step 5 で型付き knowledge store へ収穫**する |
@@ -327,6 +327,6 @@ Step 5 が**生産側**（この作業から出た教訓を store へ収穫す�
 - **`doc-flow-guardrail` の委譲固定節**: 作業中の書き方（durable anchor を残す・tier トリガの出来事をその場で記録する）の置き場。本スキルの read/write 契約の**生産者側**に当たる
 - **`branch-finish`**: ブランチ完了判定フローの一部として closure 確認に使える（同期ゲート化は別 Issue）
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
-- **出力型の消費チャネル先**: 「原則」行の negative knowledge 注入は、#62 で設計し、型付き knowledge store として入った（着地先と観測は次の2項目）。「事実・失敗」行に原因別の失敗分類の行き先は無く、再発防止は「原則」行を経て同じ knowledge store に届く（原因別の分類を作っていない経緯は #60 を閉じたときの判断）
+- **出力型の消費チャネル先**: 「原則」行の negative knowledge 注入は、#62 で設計し、型付き knowledge store として入った（着地先と観測は次の2項目）。「事実・失敗」行に原因別の失敗分類の行き先は無く、再発防止は「原則」行を経て、収穫基準を満たすものが同じ knowledge store に届く（原因別の分類を作っていない経緯は #60 を閉じたときの判断）
 - **Issue #272 / 型付き knowledge store（収穫元 episode が属する木の `knowledge/items/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布）。突合・注入（#273・**列挙は各蒸留木の store を横断して見る**＝複数木なら複数 store）は本スキルのスコープ外
 - **Issue #274 / 観測の書き戻し（段5）**: Step 6 が消費側の輪。要素スキーマ・state の優先順位・status 遷移規則は `document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。注入 slot の側は `doc-flow-guardrail`、集計と制御候補の提示は列挙コマンド `knowledge-list`
