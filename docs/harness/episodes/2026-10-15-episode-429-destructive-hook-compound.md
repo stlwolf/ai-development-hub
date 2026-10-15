@@ -359,6 +359,7 @@ closure（2026-10-15・PR #434 の Copilot のラウンドの後・マージ前�
   - R: 走査器だけの計測（7 KB で 190 ms）から「比例する」と読んでいたが、差分検査の `bigtime` で2乗だった。原因は `${s:i:…}` と bash 3.2 の配列と bash のループの床の3つで、基本操作を測り分けるまで見えなかった。速い経路の最初の版は語の途中の `\` を落として `r\m -rf /` が通り、群B が捕まえた（`本文: R3: 読み取りを語の数に比例する時間にした（2026-10-15・commit 29571c2）`）。
   - R: 再承認後の実装SO の指摘4件（高3・中1）。置換の中の語を位置に挟むと外側の構文がずれる、置換の入れ子で語が倍々に増える、二重引用符の中の `${ }` の `'`、判断8 の帰結の誤検知。3件を採り、1件は意図した deny として固定した（`本文: R4: 実装SO（弱・Codex 1レーン・2026-10-15）`）。
   - R: 40 段の入れ子の陽性対照が、既知の名前を含まないため早い経路で通っていた。中身を `git status` にして上限に当たる形に直した（同上）。
+  - R: 差分検査の異常 4 行は、変更前の `block-force-push.sh` が bash 3.2 で先頭が改行のコマンドに `args[@]: unbound variable` で落ち、rc=0 で通していたもの（fail-open）。変更前のフックの欠陥で、新しいフックでは起きない（`本文: R5: 差分検査を自分でも回した（2026-10-15・R3 の後・R4 の前に1回目）`）。
 - 決定と根拠:
   - 判定の単位を行の先頭から各単純コマンドへ、先頭の決め方を既知の名前に一致するすべての token へ（棄却: 前置きの固定表。設計SO はこちらを勧めたが owner は推奨を採った）。`本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）` と plan の DJ-3。
   - 純 bash の条件付き採用（棄却: awk の埋め込み。計測で条件を満たした。多数の token の形だけは上限を超える見込みで owner に見せる）。`本文: GATE I1: 所要時間（2026-10-15・5回の平均・ms）`。
@@ -396,5 +397,5 @@ closure（2026-10-15・PR #434 の Copilot のラウンドの後・マージ前�
 - 認識合わせの抜け: なし（群D の追加は実装で見つけた今の過検知で、確定版に無かった要件ではない）。
 - evidence anchor: `tmp/429-destructive-hook/` は gitignored で消える。判定の表の結果・所要時間・SO の採否・Copilot の指摘は本文と plan に数値と形で転記した。SO の返答の本文は `tmp/` にしか無く、採否の表（plan）と要点（本文）を残した。
 - 観測の書き戻し: brief の slot の4件（`01M2DRCP3QSG4NQWHNY6DSD3NJ`・`01M00KCCHNMFPHP5HAGX2DZ1MK`・`01KZ3MHMEQN5XEJGV9809QPH2A`・`01KYMRE1NC7XX6N66RQ0MGGHF1`）に1レコードずつ書き戻した（commit `4acf081`・4件とも followed・`validate-knowledge` OK）。
-- SO 証跡（Step 4・heavy tier の外部チェック）: `so-compare --codex-only`（`gpt-6.1-sol`・37秒）で closure の4観点を focused に検証した。出力は `tmp/429-destructive-hook/so-closure/codex-stdout.txt`（揮発）。結果は「失敗の選択的省略あり（外部レビュー3本の指摘の全体が事実・失敗の項目に無い）」「routing に DJ-9 (a) の限界が無い」「evidence anchor と back-propagation は問題なし」で、前の2つを上に足した（事実・失敗に3項目、残課題に1項目）。
+- SO 証跡（Step 4・heavy tier の外部チェック）: `so-compare --codex-only`（`gpt-6.1-sol`・37秒）で closure の4観点を focused に検証した。出力は `tmp/429-destructive-hook/so-closure/codex-stdout.txt`（揮発）。結果は「失敗の選択的省略あり（外部レビュー3本の指摘の全体が事実・失敗の項目に無い）」「routing に DJ-9 (a) の限界が無い」「evidence anchor と back-propagation は問題なし」で、前の2つを上に足した（事実・失敗に3項目、残課題に1項目）。R: 再承認の R0〜R5 のあとに同じ検証をもう一度回した（45秒・`tmp/429-destructive-hook/so-closure-r2/codex-stdout.txt`）。結果は「変更前の force-push フックの fail-open 4 行が事実・失敗に無い」の1点で、足した。ほかの3観点は問題なし。
 - 形式メモ: チャネル骨格で拾えたのは「事実・失敗」の10件と「原則」の2件。外部チェックが拾ったのは、外部レビューの指摘を家族ごとにまとめて書いたせいで個々の指摘が項目に見えなかったこと。皮（KPT/YWT）は使っていない。摩擦は、pointer の見出しが長いこと。
