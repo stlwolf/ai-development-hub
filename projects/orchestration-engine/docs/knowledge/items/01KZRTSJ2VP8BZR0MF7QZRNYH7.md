@@ -25,6 +25,10 @@ observations:
     ref: "#424"
     state: followed
     note: "issue の表を写さず、変更前のスクリプトを stub で1か所ずつ通して exit 1・exit 0・exit 5 を確かめてから表を書いた。#283 で == null を通さずに書いて取り違えた行も、今回は id: null の item で通した"
+  - date: 2026-10-16
+    ref: "#427"
+    state: followed
+    note: "issue の表を写さず、jq の12か所を grep で拾って11か所を stub で1つずつ通し、表で確かめていないとされた5か所も exit 5 だと確かめた。範囲外の awk だけは読みで止まると書き（読みだけと明記した）、実装SO に半分誤りと指摘された。x=$(関数) の代入では関数の中で set -e が効かず、関数の中の失敗が空の値として流れる。grep に映らない経路の4つ目の形である"
 exclusions:
   - "関数を source していない自己完結したスクリプト（伝播の経路が無い）"
   - "実際に叩いて exit code を観測した場合（grep を根拠にしていない）"
