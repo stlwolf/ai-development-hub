@@ -91,6 +91,12 @@ chmod・chown・mkfs・dd・git reset・git clean の6検査は先頭固定で�
 - `rm -rf node_modules # /`: 注釈の `/` を対象に数えている。注釈を捨てる。
 - `git push --force-with-lease # --force`: 注釈の `--force` を見ている。同上。
 
+I1-1 で群C を変更前のフックに当てたとき、同じ種類の過検知がさらに見つかり、群D に移した（ゲート3 の判断4 と同じ種類なので、この単位で allow に直す。I3 の報告で owner に見せる）。
+
+- `rm -rf node_modules >> /tmp/log 2>&1`・`rm -rf node_modules &> /tmp/log`: 空白を挟んだ転送の相手（絶対パス）を rm の対象に数えている。転送の相手は token から除く（DJ-2）。
+- `git clean -fdx --dry-run`: `-n` と同じく dry-run。
+- `mkfs.ext4`（引数なし）: DJ-3 の mkfs の規則（引数があるときだけ deny）の帰結。
+
 ## 設計判断
 
 ### DJ-1 判定の単位を「行の先頭」から「行に含まれる各単純コマンド」に変える
@@ -245,14 +251,14 @@ token 化が引用符を外し転送を除くので、`"/"`・`'~'`・`"$HOME"` 
 
 ## 受入
 
-- [ ] #429 本文の3つの形が deny になり、`deny.jsonl` の `rule` が `rm-destructive` である（群B）。
-- [ ] 群B を変更前の master `069b65b` のスクリプトに当てると落ちる（件数を I1-2 で記録し、ここに書く）。群A・群C・群E は変更前でも通る（錨に数えない）。
-- [ ] 群A・群C・群E が変更後も通り、群D は判断4 で採った行が通る。
-- [ ] `test_hook_judgment.sh` と `test_hook_firing.sh` が `bash` と `/bin/bash`（3.2）の両方で緑（フックの起動も同じ実行系）。
-- [ ] `shellcheck` が2本（判断2 で1本なら1本）とテスト2本で警告なし。
-- [ ] 所要時間が DJ-8 の行列で上限（8 KB 相当で 250 ms・短い1行で 30 ms）に収まる。超えたら awk へ切り替えてから再計測。
+- [x] #429 本文の3つの形が deny になり、`deny.jsonl` の `rule` が `rm-destructive` である（群B）。
+- [x] 群B を変更前の master `069b65b` のスクリプトに当てると落ちる。記録（I1-2・bash 5 と /bin/bash 3.2 で同じ）: 群B 69行のうち 68行が落ちる。落ちない1行（`rm -rf node_modules && rm -rf /`）は変更前でも deny なので錨に数えず、行は残した。群D は 8行すべて落ちる。群A 57行・群C 38行・群E 7行は変更前でも通る（錨に数えない）。
+- [x] 変更後は 179行すべて通る（群A 57・群B 69・群C 38・群D 8・群E 7）。
+- [x] `test_hook_judgment.sh`（179件）と `test_hook_firing.sh`（bash 5 で 54件・3.2 で 50件と [3] の skip）が両方の bash で緑。フックの起動も同じ実行系。
+- [x] `shellcheck` がフック2本とテスト2本で警告なし。
+- [x] 所要時間（GATE I1・episode の表）: 短い1行は変更前 +1〜3 ms（bash 3.2 で 16 ms・bash 5 で 20 ms）。既知の名前を含む 4 KB の1行は 24 ms（3.2）/ 20 ms（5）、16 KB で 82 ms / 28 ms。heredoc 4 KB は 27 ms / 22 ms、16 KB は 139 ms / 51 ms。上限（8 KB 相当で 250 ms・短い1行で 30 ms）に収まるので awk には切り替えない。最初の版は 1文字ずつ token に足していて 16 KB の1行で 0.8〜1.0 秒かかり、窓（256 バイト）ごとに進む形に直して上の値になった。
 - [ ] README と careful-operations-rule の文面が DJ-9 のとおりで、`SAFE_DIRS_RE` と README の一覧の一致（PR #366 の検査）が崩れていない。
-- [ ] sync は不要であることを、配備先の symlink の向きで再確認する。
+- [x] sync は不要であることを、配備先の symlink の向き（3ツールとも master の作業ツリーの `canonical/hooks/scripts/` を指す）で再確認した。
 
 ## リスク
 

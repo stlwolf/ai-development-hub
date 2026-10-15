@@ -124,3 +124,31 @@ plan を `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` �
 - plan と episode を枝にコミットして push し、draft PR #434 を作った。`.oe/report-429-plan.md` を書いて `oe-send '%207'` で送った（exit 0）。統括から受領の返事が届き、待機した。
 - ゲート3: owner が plan を承認し、6つの判断はすべて推奨どおりだった（統括の記録 `.oe/decision-429-gate3.md`・作業層。承認した plan の digest は `8b22b61` の全文で `39a542f0…`）。判断6 の follow-up は統括が #435 に起こした。
 - plan の本文で変えたのは、status を `in-development` に、DJ-9 (c) の `+refspec` の行き先を #435 に、「owner に預ける判断」節の冒頭に答えの1行を足し、P3 と GATE 3 の項目を済みにしたことだけである。DJ の中身は変えていない。
+
+### I1: テストを先に作り、フック2本を直した（2026-10-15）
+
+- I1-0: `origin/master` は `069b65b` のままで、枝はそれを含む。rebase は不要だった。
+- I1-1（群A・C・E・commit `ad8e122`）: 表を変更前のフックに当てたら、群C の2行（`rm -rf node_modules >> /tmp/log 2>&1`・`rm -rf node_modules &> /tmp/log`）が今 deny だった。空白を挟んだ転送の相手（絶対パス）を rm の対象に数える過検知で、設計SO の指摘8 の形そのものである。plan の「今 allow」の見立てが外れていたので群D に移した。同じく `git clean -fdx --dry-run` と引数なしの `mkfs.ext4` も群D に置いた（判断4 と同じ種類。plan に追記）。`test_hook_firing.sh` はフックの起動を `"${HOOK_BASH:-$BASH}"` に揃え、[3] は `inherit_errexit` の無い bash で skip するようにした。
+- I1-2（群B・D・commit `ad5ab70`）: 変更前のフックに当てて、群B 69行のうち 68行、群D 8行すべてが落ちることを両方の bash で確かめた。落ちない1行は `rm -rf node_modules && rm -rf /` で、先頭が rm で `/` が対象に混ざるため今も deny になる。錨に数えない注記を付けて行は残した（設計SO の指摘14）。
+- I1-3・I1-4（commit `5b44f10`・`faf6001`）: 走査器と token 化と既知の名前の検出を `shared-cmd` 区間に書き、2本に byte 一致で置いた。組み立ては、変更前のファイルの共通区間（`# --- shared end ---`）までをそのまま取り、`tmp/429-destructive-hook/shared-cmd.sh` と各フックの判定部を結合する形にして、手で写す誤りを避けた。`test_hook_firing.sh` の [1] に `shared-cmd` 区間の一致の検査を足した。
+  - 最初の版で落ちたのは `rm -rf ${HOME}` の1行だけだった。`${ … }` を写す関数が、先頭の `$` を足した直後に「深さ 0 なら終わり」で抜けていた。`$` を足してから `{` に入る形に直した。
+  - shellcheck は、判定の関数が名前で間接に呼ばれるため SC2317（到達不能）を出す。関数ごとに `disable` を付けた（既存の trap の関数と同じ扱い）。`'\'` は SC1003 を出すので `"\\"` に書き換えた。
+- 範囲外の形も当てた（`tmp/429-destructive-hook/table3-extra.tsv`・52行）。plan の DJ-9 どおりに、`"$(case x in x) rm -rf /;; esac)"`・`sh -c "$(printf 'rm -rf /')"`・`cat <<EOF | bash`・`bash script.sh`・変数の対象は allow のまま、`$( (rm -rf /) )`・`echo $((1<<2)); cat <<EOF … rm -rf /`・`printf '%s\n' $'can\'t'; rm -rf / # '`・`chmod 777 -R /`・`git --git-dir=.git reset --hard` は deny になった。`git commit -m "$(echo rm -rf /)"` は deny になる（DJ-3 の「引用符なしのデータ」が置換の中に在る形。許容）。
+
+#### GATE I1: 所要時間（2026-10-15・5回の平均・ms）
+
+`tmp/429-destructive-hook/timing.sh`。フックには判定だけをさせる。「既知あり」は `git commit -m "<長い本文>"`、「既知なし」は `echo "<長い本文>"`、heredoc は `cat > f <<'EOF'` で既知の名前を含む文書を書く行。
+
+| 入力 | 変更前 3.2 / 5 | 最初の版 3.2 / 5 | 窓ごとに進む版 3.2 / 5 |
+|---|---|---|---|
+| 短い1行（`cd x && git status`） | 15 / 18 | 16 / 20 | 16 / 20 |
+| 既知あり 1 KB | 15 / 17 | 27 / 30 | 17 / 19 |
+| 既知あり 4 KB | 16 / 17 | 93 / 92 | 24 / 20 |
+| 既知あり 16 KB | 23 / 20 | 837 / 1038 | 82 / 28 |
+| 既知なし 16 KB | 22 / 19 | 67 / 21 | 67 / 23 |
+| heredoc 4 KB | 17 / 18 | 27 / 23 | 27 / 22 |
+| heredoc 16 KB | 24 / 20 | 139 / 54 | 139 / 51 |
+
+最初の版は1文字ずつ token に足していて、長い token で2乗の時間がかかった（設計SO の指摘12 が「完成版で測れ」と言ったとおり、走査器だけの計測では見えなかった）。解釈の要らない文字の並びを 256 バイトの窓でまとめて進む形に直し（commit は `fix(hooks): #429 走査器が長い token を窓ごとに進むようにする`）、上限（8 KB 相当で 250 ms・短い1行で 30 ms）に収まった。awk には切り替えない（判断3 の条件を満たす）。`block-force-push` は同じ区間なので同じ値になる。
+
+昇格の印: 走査器だけの計測は完成版の所要を裏付けない。token に1文字ずつ足す形は長い token で2乗になり、16 KB で約1秒かかった
