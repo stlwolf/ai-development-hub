@@ -232,7 +232,8 @@ t B deny bd rm-destructive "cat <<\$'EOF'${NL}text${NL}EOF${NL}rm -rf /"
 t B deny bd rm-destructive "cat <<\"E\\OF\"${NL}text${NL}E\\OF${NL}rm -rf /"
 t B deny bd git-reset-hard 'echo $(( $(git reset --hard) + 1 ))'
 t B deny bd rm-destructive 'echo "$(( $(rm -rf /) ))"'
-# Copilot のレビュー（PR #434）の指摘から
+# Copilot のレビュー（PR #434）の指摘から。次の4行（<( ) と git clean -e）は変更前でも deny で、
+# 新しい走査器が一度落としていた形（非回帰の守り）。錨に数えない
 t B deny bd rm-destructive 'rm -rf <(true) /'
 t B deny fp force-push 'git push <(true) --force'
 t B deny bd rm-destructive "cat <<E\\${NL}OF${NL}text${NL}EOF${NL}rm -rf /"
