@@ -34,6 +34,10 @@ observations:
     ref: "#424"
     state: followed
     note: "2本のスクリプトの jq の呼び出しを全部当たり、issue の表に無い同じ型の2か所（trigger / prediction と source.ref の代入）を見つけてこの単位で直した。knowledge-list の残りの呼び出しは stub で3つを通し、1つは試していないと明記して範囲外として報告した"
+  - date: 2026-10-15
+    ref: "#429"
+    state: followed
+    note: "issue が名指しした rm の3つの形を直す前に、同じフックの6検査（chmod・chown・mkfs・dd・git reset・git clean）と block-force-push.sh を同じ方法（フックに判定だけをさせる）で当て、先頭だけを見る同じ型が全部にあることと、区切り・前置き・対象の書き方の3つの族を見つけて plan に書いた。force-push もこの単位で直すかは owner に預け、直すことになった"
 ---
 
 指摘は1件ずつ来るが、型は横に広がる。**外部レビューが名指しした1箇所を直した緑は、その型が消えた証拠ではない。**
