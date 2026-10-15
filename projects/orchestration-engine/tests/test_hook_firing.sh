@@ -79,6 +79,15 @@ for f in block-destructive block-force-push cc-lint; do
 done
 uniq_n="$(printf "%b" "$sums" | sort -u | grep -c .)"
 ck "shared 区間が3本で一致" "1" "$uniq_n"
+# #429: 行に含まれる各コマンドを取り出す区間（shared-cmd）は、止める側の2本で byte 一致させる。
+sums=""
+for f in block-destructive block-force-push; do
+  s="$(sed -n '/shared-cmd begin/,/shared-cmd end/p' "$HOOKS_DIR/$f.sh" | shasum | awk '{print $1}')"
+  sums="${sums}${s}\n"
+done
+uniq_n="$(printf "%b" "$sums" | sort -u | grep -c .)"
+ck "shared-cmd 区間が2本で一致" "1" "$uniq_n"
+ck "shared-cmd 区間が空でない" "1" "$(sed -n '/shared-cmd begin/,/shared-cmd end/p' "$HOOKS_DIR/block-destructive.sh" | grep -c 'cmd_analyze()' || true)"
 
 echo "[2] 判定の非回帰（allow / deny が変わっていない）"
 ck "block-destructive allow" "0" "$(fire "$BD" 'echo hello')"
