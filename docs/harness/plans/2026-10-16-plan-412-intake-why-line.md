@@ -3,7 +3,7 @@ id: "01M50HA7595DJKMBSEKV33PZ47"
 title: "#412 issue-intake の出力に「なぜやるか」の1文を足す"
 date: 2026-10-16
 type: plan
-status: in-development      # ゲート3 承認（2026-10-16・b0aa51a の版）・実装中
+status: stable              # 実装完了（2026-10-16・PR #444）。ゲート3 の承認は b0aa51a の版
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/412"
