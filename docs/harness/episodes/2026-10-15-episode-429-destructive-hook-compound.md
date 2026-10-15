@@ -3,7 +3,7 @@ id: "01M4XY7FXPK6BQPQEBR7WP1GYY"
 title: "#429 破壊的コマンドのフックが、前に別のコマンドが付いた rm を止めない"
 date: 2026-10-15
 type: episode
-status: draft
+status: stable               # closure 2026-10-15（マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/429"
@@ -21,6 +21,28 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/pull/311"
     reason: "止める側のフックの共通区間（発火記録・trap）を入れた PR。共通区間の byte 一致の規律はここから"
 tags: [hooks, block-destructive, block-force-push, careful-operations, harness]
+promotion:
+  - subject: "先頭だけを見る判定は同じフックの6検査と force-push にもあり、区切り・前置き・対象の書き方の3つの族に分かれる"
+    verdict: not-required
+    ref: "本文: 上流の断定の裏取り（フックに判定だけをさせて再現した・2026-10-15）"
+  - subject: "引用なしの heredoc の本文はデータではなく、$( ) とバッククォートだけが実行される"
+    verdict: not-required
+    ref: "本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）"
+  - subject: "外部レビューが『現行はこう動く』と断定した行は、採る前に変更前のスクリプトに当てる"
+    verdict: not-required
+    ref: "本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）"
+  - subject: "走査器だけの計測は完成版の所要を裏付けない"
+    verdict: not-required
+    ref: "本文: GATE I1: 所要時間（2026-10-15・5回の平均・ms）"
+  - subject: "字面の検査に構文を足すときは、小さな解析器を横に置かず本体の走査器にモードを足す"
+    verdict: required
+    ref: "本文: I2-1: 実装SO（ゲート4・弱・Codex 1レーン・2026-10-15）"
+  - subject: "作り直しは変更前の判定が偶然止めていた形を落とす。変更前で deny だった行は錨とは別に全部残す"
+    verdict: not-required
+    ref: "本文: I2-2: PR を ready にし、Copilot の1ラウンド（2026-10-15）"
+  - subject: "segment の中で既知の名前に一致するすべての token を判定する（前置きの固定表ではなく）"
+    verdict: not-required
+    ref: "本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）"
 knowledge_observations:
   - "01M2DRCP3QSG4NQWHNY6DSD3NJ"
   - "01M00KCCHNMFPHP5HAGX2DZ1MK"
@@ -190,3 +212,45 @@ plan を `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` �
 昇格の印: 新しい走査器は、変更前の単純な判定が偶然止めていた形（`rm -rf <(true) /`・`git clean -fdx -e'*.json'`）を一度落とした。作り直しの非回帰は「変更前で deny だった行」を錨とは別に全部残すことで守る
 
 plan の行列（3つの形 × 3つの大きさ）はすべて上限（8 KB 相当で 250 ms・短い1行で 30 ms）に収まる。SO の3つの形のうち、`rm` を並べた行だけは token の数に比例して増え（約 0.12 ms / token。走査器の token の終わり・token 化の後の名前の照合・rm の判定の3つの loop がそれぞれ token 数に比例する）、8 KB 相当では上限を超える見込みである。実用のコマンドにこの形は無く hang でもないので、この単位では awk に切り替えず、既知の限界として README と報告に書く。
+
+## フィードバック
+
+closure（2026-10-15・PR #434 の Copilot のラウンドの後・マージ前）。tier は heavy（設計SO と実装SO を意図して起動し、撤回が2回あり、設計判断を比較して棄却している）。本文にある内容は pointer で指し、再掲しない。
+
+- 事実・失敗:
+  - 自分の probe が実物のフックに止められた（`本文: 自分のコマンドが実物のフックに止められた（2026-10-15）`）。
+  - plan の「今 allow」の見立てが2行外れていた（空白を挟んだ転送）。テストで露呈した（`本文: I1: テストを先に作り、フック2本を直した（2026-10-15）`）。
+  - 最初の実装で `${HOME}` を写す関数が先頭の `$` で抜けていた。テストの1行で見つけた（同上）。
+  - 1文字ずつ token に足す走査が 16 KB で約1秒かかり、窓ごとに進む形に直した（`本文: GATE I1: 所要時間（2026-10-15・5回の平均・ms）`）。
+  - 設計SO で足した簡易パーサーと読み飛ばしが、実装SO で4つの穴になった（`本文: I2-1: 実装SO（ゲート4・弱・Codex 1レーン・2026-10-15）`）。
+  - 新しい走査器が変更前の判定が偶然止めていた4つの形を一度落とし、Copilot が見つけた（`本文: I2-2: PR を ready にし、Copilot の1ラウンド（2026-10-15）`）。
+  - 列の長さの上限を plan に無い安全装置として足し、README にだけ書いていた。実装SO が plan との食い違いとして指摘し、外した（`本文: I2-1: 実装SO（ゲート4・弱・Codex 1レーン・2026-10-15）`）。
+- 決定と根拠:
+  - 判定の単位を行の先頭から各単純コマンドへ、先頭の決め方を既知の名前に一致するすべての token へ（棄却: 前置きの固定表。設計SO はこちらを勧めたが owner は推奨を採った）。`本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）` と plan の DJ-3。
+  - 純 bash の条件付き採用（棄却: awk の埋め込み。計測で条件を満たした。多数の token の形だけは上限を超える見込みで owner に見せる）。`本文: GATE I1: 所要時間（2026-10-15・5回の平均・ms）`。
+  - SQL の検査は全文の部分一致のまま（棄却: segment 単位。README の陽性対照と heredoc 経由の psql の扱いを変えないため）。plan の DJ-6。
+  - heredoc の本文は本体の走査器のモードで扱う（棄却: 行単位の簡易パーサー。実装SO で穴が出た）。`本文: I2-1: 実装SO（ゲート4・弱・Codex 1レーン・2026-10-15）`。
+- わかったこと:
+  - 先頭だけを見る判定の抜けは、名指しされた rm だけでなく6検査と force-push にあり、3つの族に分かれる（`本文: 上流の断定の裏取り（フックに判定だけをさせて再現した・2026-10-15）`）。
+  - 引用なしの heredoc の本文では `$( )` が実行され、`\`+改行の連結は行末の `\` が奇数個のときだけ起きる（`本文: 設計SO（ゲート2・弱・Codex 1レーン・2026-10-15）`・`本文: I2-2: PR を ready にし、Copilot の1ラウンド（2026-10-15）`）。
+  - bash 3.2 の `${var//…}` は一致の多い行で極端に遅く、`local LC_ALL=C` は 3.2 でも効く（`本文: 区切り器の実装方式の計測（2026-10-15）`・`本文: I2-1: 実装SO（ゲート4・弱・Codex 1レーン・2026-10-15）`）。
+- 原則:
+  - 字面の検査に構文を足すときは本体の走査器にモードを足す。小さな解析器を横に置くと次の穴になる（収穫: `docs/harness/knowledge/items/01M4YV4JC48G5HHCK08QBRB99J.md`）。
+  - 変更前で deny だった行は、錨に数えなくても全部残す（作り直しの非回帰）。`本文: I2-2: PR を ready にし、Copilot の1ラウンド（2026-10-15）`。
+- 行動変更: なし（手順の変更は上の原則と knowledge item に着地。hook や skill の変更は無い）。
+- 蒸留シグナル:
+  - knowledge store: 1件収穫済み（上の原則の1つ目）。
+  - decision: なし。設計判断は plan（committed・ゲート3 の承認の記録つき）が持ち、覆すには実物（テストの表）を見れば決まる確認の側なので decision には上げない。
+  - skill / rule: careful-operations-rule はこの PR で直した（DJ-9）。ほかは無し。
+- 残課題（行き先つき）:
+  - `+` 付き refspec の force push → #435（統括が起票済み）。
+  - SQL の検査が heredoc のデータを止める既知の過検知 → 追わない（README に既知として記載。陽性対照の形を変える動機が出たら issue にする）。
+  - 1行に数千の token を並べた形の所要時間が token 数に比例する → README に既知の限界として記載。awk に切り替えるかは I3 の報告で owner に見せる（判断3 の条件）。
+  - `sudo mkfs.ext4 disk.img`（前置きの後ろのイメージファイル）が allow に変わる → 追わない（plan の DJ-3 に明記。dd の基準に揃えた）。
+  - DJ-9 (b) の静的解析を実装しない形（二重引用符の中の `$( )` の `case`・`${ }` の内部・brace expansion・計算される名前） → 追わない（README「対象外」とルール §1 に列挙。扱う動機が出たら issue にする）。
+  - `test_hook_firing.sh` の `oe-hookfire` の起動は裸の `bash` のまま → 追わない（フックではなく engine の検査で、この単位の範囲外）。
+- 次の消費者: これらのフックを次に直す担当（README が plan の DJ-2〜DJ-9 を指す）、#435 の担当（force-push の走査器の構造）、マージ時の owner（判断3 の条件の再判定）。
+- 認識合わせの抜け: なし（群D の追加は実装で見つけた今の過検知で、確定版に無かった要件ではない）。
+- evidence anchor: `tmp/429-destructive-hook/` は gitignored で消える。判定の表の結果・所要時間・SO の採否・Copilot の指摘は本文と plan に数値と形で転記した。SO の返答の本文は `tmp/` にしか無く、採否の表（plan）と要点（本文）を残した。
+- 観測の書き戻し: brief の slot の4件（`01M2DRCP3QSG4NQWHNY6DSD3NJ`・`01M00KCCHNMFPHP5HAGX2DZ1MK`・`01KZ3MHMEQN5XEJGV9809QPH2A`・`01KYMRE1NC7XX6N66RQ0MGGHF1`）に1レコードずつ書き戻した（commit `4acf081`・4件とも followed・`validate-knowledge` OK）。
+- 形式メモ: チャネル骨格で拾えたのは「事実・失敗」の7件と「原則」の2件。拾えなかったものは無い。皮（KPT/YWT）は使っていない。摩擦は、pointer の見出しが長いこと。

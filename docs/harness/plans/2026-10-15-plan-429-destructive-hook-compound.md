@@ -3,7 +3,7 @@ id: "01M4XY7FXPRTX5JGAWFGZJJ0MM"
 title: "#429 破壊的コマンドのフックを、行に含まれる各コマンドで判定する形に直す"
 date: 2026-10-15
 type: plan
-status: in-development      # ゲート3 承認済み（2026-10-15・6つの判断はすべて推奨どおり）。実装中
+status: stable               # 実装完了（2026-10-15・PR #434）。ゲート3 承認済み・設計SO と実装SO と Copilot を反映
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/429"
@@ -363,9 +363,11 @@ PR #434 に Copilot が8件を付けた（高6・中2）。8件とも具体的�
 
 - [x] 6つの判断の答えを受け取った。すべて推奨どおりなので DJ の本文は変えない。判断6 の行き先を #435 に書き換えた（DJ-9 (c)）。
 
+**I1-0〜I3 はすべて完了した（2026-10-15）。** 各項目の結果は「受入」節と episode の「I1」「GATE I1」「I2-1」「I2-2」節にある。下の項目は承認時の記述のまま残す。
+
 ### I1-0: baseline の確認
 
-- [ ] `git -C <worktree> fetch origin master` と `git merge-base --is-ancestor origin/master HEAD` で、枝が最新の master を含むことを確かめる。ずれていれば rebase する。
+- [x] `git -C <worktree> fetch origin master` と `git merge-base --is-ancestor origin/master HEAD` で、枝が最新の master を含むことを確かめる。ずれていれば rebase する。
 
 ### I1-1: 今の判定を固定するテストを先に作る（群A・群C・群E）
 
