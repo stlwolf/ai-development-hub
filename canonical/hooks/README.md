@@ -66,15 +66,15 @@
 
 ### ブロック対象
 
-`sudo` prefix は自動 strip してからマッチ。
+判定の単位は、コマンド文字列の先頭ではなく**行に含まれる各単純コマンド**である（#429）。`&&`・`||`・`;`・`|`・改行・サブシェル・`$( )`・バッククォートで区切った各部分、`bash -c` / `sh -c` の文字列と `eval` の中身、前置き（`sudo`・`env`・`timeout`・`nohup`・`FOO=1`・`>/dev/null` など）の後ろ、引用符を外した対象（`rm -rf "/"`・`rm -rf ${HOME}`・`rm -rf ./`）のどれでも、同じ検査が当たる。引用符の中と、引用ありの heredoc の本文はデータとして扱い止めない（引用なしの heredoc の本文は `$( )` とバッククォートだけ見る）。走査器の文法と扱わない形の根拠は `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` の DJ-2〜DJ-9 にある。
 
-- `rm -rf /`, `rm -rf ~`, `rm -rf $HOME`, `rm -rf /*`, `rm -rf .`, `rm -rf ..`
-- `rm` のオプション順序変形（`-rf`, `-fr`, `-r -f`）に対応
+- `rm -rf /`, `rm -rf ~`, `rm -rf ~user`, `rm -rf $HOME`, `rm -rf ${HOME}`, `rm -rf /*`, `rm -rf .`, `rm -rf ..`（絶対パス全般を含む）
+- `rm` のオプション順序変形（`-rf`, `-fr`, `-r -f`）に対応。対象は引用符を外し、末尾の `/` と先頭の `./` を落としてから見る
 - `chmod -R 777 /`, `chown -R ... /`
-- `DROP TABLE`, `DROP DATABASE`, `TRUNCATE TABLE`（大文字小文字不問）
-- `mkfs*`
+- `DROP TABLE`, `DROP DATABASE`, `TRUNCATE TABLE`（大文字小文字不問。これだけは行全文の部分一致で、heredoc のデータも止める）
+- `mkfs*`（引数があるとき。`command -v mkfs.ext4` のような所在の確認は止めない）
 - `dd` + `of=/dev/`
-- `git reset --hard`, `git clean -fdx`
+- `git reset --hard`, `git clean -fdx`（`git -C x reset --hard` のように git 自身のオプションが挟まっても止める。`git clean` は option の文字で見るので、パスに `x` があるだけでは止めず、`-n` / `--dry-run` なら止めない）
 
 ### 安全例外
 
@@ -82,19 +82,29 @@
 
 `node_modules`, `dist`, `.next`, `build`, `coverage`, `__pycache__`, `.cache`, `tmp`, `.turbo`, `.parcel-cache`
 
-これら以外の通常の相対パス（例: `rm -rf mydir`）も、上記「ブロック対象」に該当しなければそのまま許可される。絶対パス（`/tmp`, `/build` 等）はこの早期 allow リストの対象には含めない。
+これら以外の通常の相対パス（例: `rm -rf mydir`）も、上記「ブロック対象」に該当しなければそのまま許可される。絶対パス（`/tmp`, `/build` 等）はこの早期 allow リストの対象には含めない。安全ディレクトリだけの `rm -rf` でも行の後ろは見続ける（`rm -rf node_modules && git reset --hard` は止まる）。
 
-### 対象外（将来の拡充候補）
+### 対象外（フックが見ない形）
 
-- パイプ・サブシェル経由の破壊コマンド
-- fork bomb
-- 変数展開による偶発的破壊（`rm -rf $EMPTY_VAR`）
+フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の §1 を自分で守る。
+
+- 実行環境の情報が要る（字面に無い）: 変数や glob で決まる対象（`rm -rf $DIR`）、標準入力から対象を受ける `xargs rm -rf`、標準入力・heredoc・ファイルから command を受ける shell（`echo … | bash`・`bash <<EOF`・`bash script.sh`・`source x`）、alias や関数
+- 字面にはあるが静的解析を実装していない: brace expansion（`rm -rf {.,..}`）、二重引用符の中の `$( )` に `case` の `)` がある形、`${ … }` の内部、`$( (…) )` の形、符号化や大文字や計算される名前（`$'\x72m'`・macOS の `RM`・`$(echo rm) -rf /`・`sh -c "$(printf …)"`）
+- 別の操作族: `find -delete` / `find -exec rm`（ルール §2 の確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
+
+引用符で囲まれていないデータに既知のコマンド名と危険な引数が並ぶ形（`echo rm -rf /`・`ssh host rm -rf /`）は止める側に倒している。全体を引用符で囲めば通る。
+
+### 入れ子の上限
+
+`bash -c` / `eval` の入れ子は深さ 8・列の長さ 64 までで、超えると `nesting-limit` で deny する（解析できないものは止める）。
 
 ## block-force-push.sh
 
 ### ブロック対象
 
 - `git push --force`, `git push -f`（リモート・ブランチ問わず）
+- 判定の単位は `block-destructive.sh` と同じく行に含まれる各単純コマンド（`cd x && git push --force`・`sudo git push --force`・`bash -c "git push --force"` も止める）。走査器は2本で同じ区間（`shared-cmd`）を byte 一致で持つ
+- `+` を付けた refspec（`git push origin +HEAD:main`）は見ない（#435）
 
 ### 許可
 

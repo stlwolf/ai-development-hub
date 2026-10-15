@@ -18,9 +18,11 @@ Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the pri
 
 ## 1. Blocked (hook-enforced)
 
-Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories of §3; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied.
+Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories of §3; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied. The hook inspects every simple command written on the line, including parts joined by `&&`, `||`, `;`, `|`, newlines, subshells, `$( )`, and the string passed to `bash -c` / `sh -c` / `eval`, whatever prefix (`sudo`, `env`, `timeout`, ...) precedes it.
 
 **The exact patterns live with the hook scripts** — `block-destructive.sh` and `block-force-push.sh`, described for maintainers in `canonical/hooks/README.md`. That README is not distributed with these rules, so do not send an agent to read it: the families above are what an agent acts on, and the scripts are authoritative for the exact matching.
+
+The hook judges only what is written literally on the line. A destructive target that reaches the command through stdin (`xargs`), a variable or glob, an alias, `find -delete`, a script file, or a shell fed from stdin or a heredoc is not visible to the hook. These remain §1 bans that the agent refuses itself.
 
 ## 2. Requires Confirmation (not hook-decidable — rule-enforced)
 
@@ -57,6 +59,13 @@ Context-dependent — hooks cannot decide these. Stop before executing. Present 
 | `git branch -D` | Force-deletes unmerged branch | Merge status, remaining work |
 | `git checkout -- .` / `git restore .` | Discards all uncommitted changes | Whether to `git stash` first |
 
+### Filesystem (not hooked — the target is not on the line)
+
+| Pattern | Risk | Confirm |
+|---------|------|---------|
+| `xargs rm -rf` / `find ... -delete` / `find ... -exec rm -rf` | Deletes whatever the pipeline or search resolves to | The resolved target set. If it falls under §1, refuse |
+| `rm -rf "$VAR"` / `rm -rf $DIR/*` | The target depends on runtime expansion | The resolved target. If it falls under §1, refuse; otherwise confirm it |
+
 ## 3. Exceptions (blocked patterns that are safe)
 
 ### Safe directories for rm -rf
@@ -71,6 +80,6 @@ Build artifacts and caches are allowed as `rm -rf` targets: `node_modules`, `dis
 | `git reset --hard` | `git stash` → `git stash drop` if needed |
 | `git clean -fdx` | `git clean -fd` (no `-x`: preserves .gitignore targets) |
 
-### sudo handling
+### Prefix handling
 
-Hooks strip `sudo` before pattern matching. `sudo rm -rf /` is still blocked.
+A prefix does not exempt a command. Hooks judge the command that follows `sudo`, `env`, `timeout`, `nohup`, `time`, `nice`, a variable assignment, or a redirection, so `sudo rm -rf /`, `env -u X rm -rf /`, and `timeout 10 rm -rf /` are still blocked.
