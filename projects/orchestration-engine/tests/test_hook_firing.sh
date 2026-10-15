@@ -17,6 +17,11 @@ OE_HOOKFIRE="$(cd "$SCRIPT_DIR/.." && pwd)/bin/oe-hookfire"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
+# フックを起動する実行系。既定はこのテストを動かしている bash（$BASH）。
+# 裸の `bash` で起動すると PATH の bash（5 系）になり、外側を /bin/bash（3.2）で
+# 回しても対象は 3.2 で試されない（#429 の設計SO の指摘）。
+HB="${HOOK_BASH:-$BASH}"
+
 _TMP_DIR="$(mktemp -d)"
 cleanup() {
   # FIFO を作るので rm の前に通常ファイル化しておく必要はないが、念のため -f で消す
@@ -49,13 +54,13 @@ mk_deploy() {
 fire() { # fire <deployed-script> <command> [PATH] [dir]
   local script="$1" cmd="$2" path="${3:-$PATH}" dir="${4:-$_TMP_DIR/state}"
   jq -cn --arg c "$cmd" '{tool_input:{command:$c}}' \
-    | env PATH="$path" HOOK_FIRING_DIR="$dir" CLAUDE_PROJECT_DIR=/tmp bash "$script" >/dev/null 2>&1 \
+    | env PATH="$path" HOOK_FIRING_DIR="$dir" CLAUDE_PROJECT_DIR=/tmp "$HB" "$script" >/dev/null 2>&1 \
     && printf '0' || printf '%s' "$?"
 }
 fire_out() { # 標準出力だけを返す
   local script="$1" cmd="$2" path="${3:-$PATH}" dir="${4:-$_TMP_DIR/state}"
   jq -cn --arg c "$cmd" '{tool_input:{command:$c}}' \
-    | env PATH="$path" HOOK_FIRING_DIR="$dir" CLAUDE_PROJECT_DIR=/tmp bash "$script" 2>/dev/null || true
+    | env PATH="$path" HOOK_FIRING_DIR="$dir" CLAUDE_PROJECT_DIR=/tmp "$HB" "$script" 2>/dev/null || true
 }
 
 DEPLOY="$_TMP_DIR/home"
@@ -87,12 +92,16 @@ ck "cc-lint non-commit &&"   "0" "$(fire "$CL" 'cd /tmp && ls')"
 ck "cc-lint invalid CC"      "2" "$(fire "$CL" 'git commit -m "bad msg"')"
 
 echo "[3] #310: inherit_errexit が有効でも 0/2 以外を返さない"
+if "$HB" -c 'shopt -s inherit_errexit' 2>/dev/null; then
 for cmd in 'cd /tmp && ls' 'echo a && echo b' 'make build && make test' 'cd x && git -C . commit -m "bad"'; do
   rc="$(jq -cn --arg c "$cmd" '{tool_input:{command:$c}}' \
         | env HOOK_FIRING_DIR="$_TMP_DIR/state" CLAUDE_PROJECT_DIR=/tmp \
-          bash -c "shopt -s inherit_errexit; $(cat "$HOOKS_DIR/cc-lint.sh")" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
+          "$HB" -c "shopt -s inherit_errexit; $(cat "$HOOKS_DIR/cc-lint.sh")" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
   case "$rc" in 0|2) ck "inherit_errexit on: [$cmd]" "$rc" "$rc" ;; *) ck "inherit_errexit on: [$cmd]" "0 or 2" "$rc" ;; esac
 done
+else
+  echo "  SKIP: この bash に inherit_errexit が無い（4.4 未満）"
+fi
 
 echo "[4] allow と deny の両方が記録される"
 ck "allow tally" "1" "$([ -s "$_TMP_DIR/state/tally/claude/block-destructive.allow" ] && echo 1 || echo 0)"
@@ -120,7 +129,7 @@ FIFO_DIR="$_TMP_DIR/fifo"; mkdir -p "$FIFO_DIR/tally/claude"
 mkfifo "$FIFO_DIR/tally/claude/block-destructive.deny"
 rc="$(timeout 10 bash -c "
   jq -cn '{tool_input:{command:\"git reset --hard\"}}' \
-    | env HOOK_FIRING_DIR='$FIFO_DIR' CLAUDE_PROJECT_DIR=/tmp bash '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
+    | env HOOK_FIRING_DIR='$FIFO_DIR' CLAUDE_PROJECT_DIR=/tmp '$HB' '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
 ck "FIFO でも deny は rc=2" "2" "$rc"
 rm -f "$FIFO_DIR/tally/claude/block-destructive.deny"
 
@@ -136,7 +145,7 @@ ck "jq 不在のメッセージが具体的" "1" \
 
 echo "[9] HOME も HOOK_FIRING_DIR も無いなら記録を諦める（/.claude へ書きに行かない）"
 rc="$(jq -cn '{tool_input:{command:"echo hello"}}' \
-      | env -u HOME -u HOOK_FIRING_DIR CLAUDE_PROJECT_DIR=/tmp bash "$BD" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
+      | env -u HOME -u HOOK_FIRING_DIR CLAUDE_PROJECT_DIR=/tmp "$HB" "$BD" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
 ck "HOME 無しでも allow は通る" "0" "$rc"
 ck "/.claude を作っていない" "0" "$([ -d /.claude ] && echo 1 || echo 0)"
 
@@ -166,7 +175,7 @@ echo "[13] deny.jsonl が FIFO でも deny は exit 2 に到達する（要求A�
 FD="$_TMP_DIR/fifo-deny"; mkdir -p "$FD"; mkfifo "$FD/deny.jsonl"
 rc="$(timeout 10 bash -c "
   jq -cn '{tool_input:{command:\"git reset --hard\"}}' \
-    | env HOOK_FIRING_DIR='$FD' CLAUDE_PROJECT_DIR=/tmp bash '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
+    | env HOOK_FIRING_DIR='$FD' CLAUDE_PROJECT_DIR=/tmp '$HB' '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
 ck "deny.jsonl FIFO でも rc=2" "2" "$rc"
 rm -f "$FD/deny.jsonl"
 
@@ -174,13 +183,13 @@ echo "[14] diag.jsonl が FIFO + tally 書けない でも allow は通る（要
 GD="$_TMP_DIR/fifo-diag"; mkdir -p "$GD/tally"; chmod 0500 "$GD/tally"; mkfifo "$GD/diag.jsonl"
 rc="$(timeout 10 bash -c "
   jq -cn '{tool_input:{command:\"echo hello\"}}' \
-    | env HOOK_FIRING_DIR='$GD' CLAUDE_PROJECT_DIR=/tmp bash '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
+    | env HOOK_FIRING_DIR='$GD' CLAUDE_PROJECT_DIR=/tmp '$HB' '$BD' >/dev/null 2>&1; echo \$?" || echo TIMEOUT)"
 ck "diag.jsonl FIFO でも allow は rc=0" "0" "$rc"
 chmod 0700 "$GD/tally"; rm -f "$GD/diag.jsonl"
 
 echo "[15] malformed payload は deny へ収束し、記録も残る"
 MP="$_TMP_DIR/malformed"
-rc="$(printf 'not json\n' | env HOOK_FIRING_DIR="$MP" CLAUDE_PROJECT_DIR=/tmp bash "$BD" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
+rc="$(printf 'not json\n' | env HOOK_FIRING_DIR="$MP" CLAUDE_PROJECT_DIR=/tmp "$HB" "$BD" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
 ck "malformed payload で rc=2" "2" "$rc"
 ck "malformed でも記録が残る" "1" "$([ -s "$MP/tally/claude/block-destructive.deny" ] && echo 1 || echo 0)"
 
