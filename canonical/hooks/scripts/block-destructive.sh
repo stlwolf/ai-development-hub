@@ -319,6 +319,8 @@ _cmd_redirect() {
       ;;
   esac
   if [[ "${s:i:1}" == '(' ]]; then
+    # process substitution <( ) / >( )。中身は入れ子の文脈として走査し、外側の引数の並びは保つ
+    _cmd_push p; i=$((i + 1))
     return 0
   fi
   _C_DROP=1
@@ -370,7 +372,10 @@ _cmd_heredoc_start() {
           word+='$'; i=$((i + 1))
         fi
         ;;
-      "\\") wq=1; word+="${s:i+1:1}"; i=$((i + 2)) ;;
+      "\\")
+        # \ と改行は連結（引用ではない）。それ以外の \X は X の文字で引用あり
+        if [[ "${s:i+1:1}" == $'\n' ]]; then i=$((i + 2)); else wq=1; word+="${s:i+1:1}"; i=$((i + 2)); fi
+        ;;
       *) word+="$ch"; i=$((i + 1)) ;;
     esac
   done
@@ -393,6 +398,14 @@ _cmd_next_line() {
   done
 }
 
+# 行末の \ の数が奇数なら 0（次の行と連結する）、偶数なら 1。
+_cmd_odd_trailing_backslash() {
+  local t="$1" cnt=0
+  while [[ "$t" == *"\\" ]]; do t="${t%"\\"}"; cnt=$((cnt + 1)); done
+  if (( cnt % 2 == 1 )); then return 0; fi
+  return 1
+}
+
 # 改行の直後に、待ち行列の heredoc の本文を順に読む（i は本文の先頭）。
 # 区切り語の行（<<- なら先頭のタブを除いて比べる）まで。無ければ残り全部が本文。
 # 引用ありの本文はデータで何もしない。引用なしの本文は \ と改行を連結してから区切り語と
@@ -405,7 +418,8 @@ _cmd_heredoc_bodies() {
     while (( i < n )); do
       _cmd_next_line
       if (( wq == 0 )); then
-        while [[ "$line" == *"\\" ]] && (( i < n )); do
+        # 行末の \ が奇数個のときだけ次の行と連結する（偶数個は \ そのものが残り、行は終わる）
+        while (( i < n )) && _cmd_odd_trailing_backslash "$line"; do
           cmp="${line%"\\"}"; _cmd_next_line; line="$cmp$line"
         done
       fi
@@ -578,9 +592,18 @@ cmd_scan() {
         if [[ "$nx" == '|' || "$nx" == '&' ]]; then i=$((i + 2)); else i=$((i + 1)); fi
         ;;
       ';') _cmd_seg_end; i=$((i + 1)) ;;
-      '(') _cmd_seg_end; i=$((i + 1)) ;;
+      '(')
+        # サブシェルの開き。置換の中では ( ) の入れ子を数え、対応する ) で置換を閉じない
+        _cmd_seg_end; _C_RD=$((_C_RD + 1)); i=$((i + 1))
+        ;;
       ')')
-        if (( _C_DEPTH > 0 )) && [[ "${_C_ST_KIND[_C_DEPTH-1]}" == p ]]; then _cmd_pop; else _cmd_seg_end; fi
+        if (( _C_RD > 0 )); then
+          _C_RD=$((_C_RD - 1)); _cmd_seg_end
+        elif (( _C_DEPTH > 0 )) && [[ "${_C_ST_KIND[_C_DEPTH-1]}" == p ]]; then
+          _cmd_pop
+        else
+          _cmd_seg_end
+        fi
         i=$((i + 1))
         ;;
       '{'|'}') _cmd_tok_end; i=$((i + 1)) ;;
@@ -599,7 +622,7 @@ cmd_scan() {
 }
 
 # shell の token の後ろをオプションとして歩き、-c があればその文字列を列に積む（積んだら 0）。
-# -- はオプションの終わり。-o X・+o X・--rcfile X・--init-file X は次も飛ばす。
+# -- はオプションの終わり。-o X・+o X・-O X・+O X・--rcfile X・--init-file X は次も飛ばす。
 # -c が無ければスクリプトファイルなので扱わない（DJ-9）。
 _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
   local j=$(($1 + 1)) n=${#CMD_TOKS[@]} seen=0 t
@@ -607,7 +630,7 @@ _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
     t="${CMD_TOKS[j]}"
     case "$t" in
       --) j=$((j + 1)); break ;;
-      -o|+o|--rcfile|--init-file) j=$((j + 2)) ;;
+      -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
       -c) seen=1; j=$((j + 1)) ;;
       --*) j=$((j + 1)) ;;
       -*c*) seen=1; j=$((j + 1)) ;;
@@ -710,6 +733,8 @@ cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
 bd_check_rm() { # $1 = rm の位置
   local i=$(($1 + 1)) n=${#CMD_TOKS[@]} has_r=0 has_f=0 saw_dd=0 arg t nt=0
   local -a targets=()
+  # 同じ segment で判定済みなら見ない（印は下で、-- を見なかったときだけ付ける）
+  case " $CMD_JUDGED " in *" rm "*) return 0 ;; esac
   while (( i < n )); do
     arg="${CMD_TOKS[i]}"; i=$((i + 1))
     if (( saw_dd == 0 )); then
@@ -726,10 +751,14 @@ bd_check_rm() { # $1 = rm の位置
     fi
     targets+=("$arg"); nt=$((nt + 1))
   done
+  # -- を見た rm は、その後ろに現れる別の rm の引数の読み方（フラグの有無）が変わるので、
+  # 同じ名前の判定を1回に抑える鍵には入れない（env -u rm -- rm -rf / の2つ目を見るため）
+  if (( saw_dd == 0 )); then CMD_JUDGED+=" rm"; fi
   if (( has_r == 0 || has_f == 0 || nt == 0 )); then return 0; fi
   for t in "${targets[@]}"; do
     while [[ "$t" == */ && "$t" != / ]]; do t="${t%/}"; done
-    while [[ "$t" == ./?* ]]; do t="${t#./}"; done
+    # 先頭の ./ を落とし、続く余分な / も落とす（.//node_modules は相対パスのまま）
+    while [[ "$t" == ./?* ]]; do t="${t#./}"; t="${t#"${t%%[!/]*}"}"; done
     if [[ "$t" =~ $SAFE_DIRS_RE ]]; then continue; fi
     # shellcheck disable=SC2088,SC2016  # matching literal ~ and $HOME in command strings
     case "$t" in
@@ -842,6 +871,8 @@ bd_check_git() {
           --) break ;;
           --force) f=1 ;;
           --dry-run) dry=1 ;;
+          -e|--exclude) i=$((i + 1)) ;;        # 除外パターンは次の token。フラグの文字として読まない
+          -e?*|--exclude=*) ;;                  # 付けて書いた除外パターン
           --*) ;;
           -?*)
             if [[ "$t" == *f* ]]; then f=1; fi
@@ -862,7 +893,7 @@ bd_check_git() {
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 bd_judge() { # $1 = 既知の名前の token の位置, $2 = 正規化した名前
   case "$2" in
-    rm)    cmd_once rm && bd_check_rm "$1" ;;
+    rm)    bd_check_rm "$1" ;;
     chmod) cmd_once chmod && bd_check_chmod "$1" ;;
     chown) cmd_once chown && bd_check_chown "$1" ;;
     mkfs*) cmd_once "$2" && bd_check_mkfs "$1" ;;

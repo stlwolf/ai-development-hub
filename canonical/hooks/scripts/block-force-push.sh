@@ -317,6 +317,8 @@ _cmd_redirect() {
       ;;
   esac
   if [[ "${s:i:1}" == '(' ]]; then
+    # process substitution <( ) / >( )。中身は入れ子の文脈として走査し、外側の引数の並びは保つ
+    _cmd_push p; i=$((i + 1))
     return 0
   fi
   _C_DROP=1
@@ -368,7 +370,10 @@ _cmd_heredoc_start() {
           word+='$'; i=$((i + 1))
         fi
         ;;
-      "\\") wq=1; word+="${s:i+1:1}"; i=$((i + 2)) ;;
+      "\\")
+        # \ と改行は連結（引用ではない）。それ以外の \X は X の文字で引用あり
+        if [[ "${s:i+1:1}" == $'\n' ]]; then i=$((i + 2)); else wq=1; word+="${s:i+1:1}"; i=$((i + 2)); fi
+        ;;
       *) word+="$ch"; i=$((i + 1)) ;;
     esac
   done
@@ -391,6 +396,14 @@ _cmd_next_line() {
   done
 }
 
+# 行末の \ の数が奇数なら 0（次の行と連結する）、偶数なら 1。
+_cmd_odd_trailing_backslash() {
+  local t="$1" cnt=0
+  while [[ "$t" == *"\\" ]]; do t="${t%"\\"}"; cnt=$((cnt + 1)); done
+  if (( cnt % 2 == 1 )); then return 0; fi
+  return 1
+}
+
 # 改行の直後に、待ち行列の heredoc の本文を順に読む（i は本文の先頭）。
 # 区切り語の行（<<- なら先頭のタブを除いて比べる）まで。無ければ残り全部が本文。
 # 引用ありの本文はデータで何もしない。引用なしの本文は \ と改行を連結してから区切り語と
@@ -403,7 +416,8 @@ _cmd_heredoc_bodies() {
     while (( i < n )); do
       _cmd_next_line
       if (( wq == 0 )); then
-        while [[ "$line" == *"\\" ]] && (( i < n )); do
+        # 行末の \ が奇数個のときだけ次の行と連結する（偶数個は \ そのものが残り、行は終わる）
+        while (( i < n )) && _cmd_odd_trailing_backslash "$line"; do
           cmp="${line%"\\"}"; _cmd_next_line; line="$cmp$line"
         done
       fi
@@ -576,9 +590,18 @@ cmd_scan() {
         if [[ "$nx" == '|' || "$nx" == '&' ]]; then i=$((i + 2)); else i=$((i + 1)); fi
         ;;
       ';') _cmd_seg_end; i=$((i + 1)) ;;
-      '(') _cmd_seg_end; i=$((i + 1)) ;;
+      '(')
+        # サブシェルの開き。置換の中では ( ) の入れ子を数え、対応する ) で置換を閉じない
+        _cmd_seg_end; _C_RD=$((_C_RD + 1)); i=$((i + 1))
+        ;;
       ')')
-        if (( _C_DEPTH > 0 )) && [[ "${_C_ST_KIND[_C_DEPTH-1]}" == p ]]; then _cmd_pop; else _cmd_seg_end; fi
+        if (( _C_RD > 0 )); then
+          _C_RD=$((_C_RD - 1)); _cmd_seg_end
+        elif (( _C_DEPTH > 0 )) && [[ "${_C_ST_KIND[_C_DEPTH-1]}" == p ]]; then
+          _cmd_pop
+        else
+          _cmd_seg_end
+        fi
         i=$((i + 1))
         ;;
       '{'|'}') _cmd_tok_end; i=$((i + 1)) ;;
@@ -597,7 +620,7 @@ cmd_scan() {
 }
 
 # shell の token の後ろをオプションとして歩き、-c があればその文字列を列に積む（積んだら 0）。
-# -- はオプションの終わり。-o X・+o X・--rcfile X・--init-file X は次も飛ばす。
+# -- はオプションの終わり。-o X・+o X・-O X・+O X・--rcfile X・--init-file X は次も飛ばす。
 # -c が無ければスクリプトファイルなので扱わない（DJ-9）。
 _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
   local j=$(($1 + 1)) n=${#CMD_TOKS[@]} seen=0 t
@@ -605,7 +628,7 @@ _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
     t="${CMD_TOKS[j]}"
     case "$t" in
       --) j=$((j + 1)); break ;;
-      -o|+o|--rcfile|--init-file) j=$((j + 2)) ;;
+      -o|+o|-O|+O|--rcfile|--init-file) j=$((j + 2)) ;;
       -c) seen=1; j=$((j + 1)) ;;
       --*) j=$((j + 1)) ;;
       -*c*) seen=1; j=$((j + 1)) ;;

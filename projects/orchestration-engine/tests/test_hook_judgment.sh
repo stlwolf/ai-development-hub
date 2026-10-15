@@ -232,6 +232,20 @@ t B deny bd rm-destructive "cat <<\$'EOF'${NL}text${NL}EOF${NL}rm -rf /"
 t B deny bd rm-destructive "cat <<\"E\\OF\"${NL}text${NL}E\\OF${NL}rm -rf /"
 t B deny bd git-reset-hard 'echo $(( $(git reset --hard) + 1 ))'
 t B deny bd rm-destructive 'echo "$(( $(rm -rf /) ))"'
+# Copilot のレビュー（PR #434）の指摘から
+t B deny bd rm-destructive 'rm -rf <(true) /'
+t B deny fp force-push 'git push <(true) --force'
+t B deny bd rm-destructive "cat <<E\\${NL}OF${NL}text${NL}EOF${NL}rm -rf /"
+t B deny fp force-push "cat <<E\\${NL}OF${NL}text${NL}EOF${NL}git push --force"
+t B deny bd rm-destructive "cat <<EOF${NL}\\\\${NL}EOF${NL}rm -rf /"
+t B deny fp force-push "cat <<EOF${NL}\\\\${NL}EOF${NL}git push --force"
+t B deny bd rm-destructive 'echo "$( (true); rm -rf /)"'
+t B deny fp force-push 'echo "$( (true); git push --force)"'
+t B deny bd rm-destructive "bash -O extglob -c 'rm -rf /'"
+t B deny fp force-push "bash -O extglob -c 'git push --force'"
+t B deny bd git-clean-fdx "git clean -fdx -e'*.json'"
+t B deny bd git-clean-fdx "git clean -fdx -e '-n'"
+t B deny bd rm-destructive 'env -u rm -- rm -rf /'
 
 echo "[C] 安全な形の守り（今 allow・変更後も allow）"
 t C allow bd - "echo 'rm -rf /'"
@@ -278,6 +292,9 @@ t C allow bd - "cat <<EOF${NL}a\\${NL}EOF${NL}rm -rf /${NL}EOF"
 t C allow bd - "git grep -n 'mkfs.ext4' -- canonical/hooks/README.md"
 t C allow bd - "git commit -m \"fix: line1${NL}rm -rf / is only text\""
 t C allow bd - 'echo $(( 1 << 2 )) && git status'
+# Copilot のレビュー（PR #434）の指摘から
+t C allow bd - 'rm -rf .//node_modules'
+t C allow bd - 'diff <(sort a) <(sort b)'
 
 echo "[D] 意図した判定の変更（今の過検知を allow に直す・変更前では落ちる）"
 t D allow bd - 'git clean -fd xdir'
@@ -287,6 +304,7 @@ t D allow bd - 'rm -rf node_modules # /'
 t D allow bd - 'rm -rf node_modules >> /tmp/log 2>&1'
 t D allow bd - 'rm -rf node_modules &> /tmp/log'
 t D allow bd - 'mkfs.ext4'
+t D allow bd - 'git clean -fdxn -e x'
 t D allow fp - 'git push --force-with-lease # --force'
 
 echo "[E] 終わること（閉じない構文・深い入れ子でも 0 か 2 に到達する）"
