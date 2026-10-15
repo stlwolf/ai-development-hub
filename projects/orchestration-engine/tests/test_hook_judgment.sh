@@ -14,6 +14,9 @@ set -euo pipefail
 #   C 安全な形    — 今 allow で、変更後も allow のまま。誤検知の見張り
 #   D 意図した変更 — 今の過検知を allow に直す。変更前では落ちる
 #   E 終わること  — 閉じない構文や深い入れ子でも timeout の下で 0 か 2 に到達する
+#   F 回帰の捕捉  — 差分検査（新旧のフックに同じ入力を判定させて比べたもの）で見つかった
+#                  「変更前は止めていたのに変更後は通す」形と、再承認で範囲に入れた抜け。
+#                  錨は「再承認の前の PR の先端（362e5be）では落ち、直したあとは通る」
 #
 # 実行系: フックを起動する bash は HOOK_BASH（既定はこのテストを動かしている bash）。
 #   bash tests/test_hook_judgment.sh        # PATH の bash（5 系）
@@ -41,8 +44,8 @@ echo "hooks: $HOOKS_DIR"
 echo "bash:  $HB ($("$HB" -c 'echo "$BASH_VERSION"'))"
 
 PASS=0; FAIL=0
-GN=(A B C D E); GP=(0 0 0 0 0); GF=(0 0 0 0 0)
-gidx() { case "$1" in A) echo 0 ;; B) echo 1 ;; C) echo 2 ;; D) echo 3 ;; E) echo 4 ;; *) echo "bad group: $1" >&2; exit 1 ;; esac; }
+GN=(A B C D E F); GP=(0 0 0 0 0 0); GF=(0 0 0 0 0 0)
+gidx() { case "$1" in A) echo 0 ;; B) echo 1 ;; C) echo 2 ;; D) echo 3 ;; E) echo 4 ;; F) echo 5 ;; *) echo "bad group: $1" >&2; exit 1 ;; esac; }
 
 deny_lines() { [[ -f "$STATE/deny.jsonl" ]] && wc -l < "$STATE/deny.jsonl" | tr -d ' ' || echo 0; }
 
@@ -296,6 +299,17 @@ t C allow bd - 'echo $(( 1 << 2 )) && git status'
 # Copilot のレビュー（PR #434）の指摘から
 t C allow bd - 'rm -rf .//node_modules'
 t C allow bd - 'diff <(sort a) <(sort b)'
+# 再承認（判断8）で通すべき形: 置換を含む語が絶対パスに見えない・中の語が危険でない
+t C allow bd - 'rm -rf "$(mktemp -d)"'
+t C allow bd - 'rm -rf "$(mktemp -d)/build"'
+t C allow bd - 'rm -rf "$(pwd)/dist"'
+t C allow bd - 'cd "$(git rev-parse --show-toplevel)" && rm -rf node_modules'
+t C allow bd - 'git commit -m "fix: $(date)"'
+t C allow bd - 'echo "${x:-"}"}"'
+t C allow bd - 'rm -rf ${x:-node_modules}'
+t C allow bd - '(( x = 1 << 2 )) && git status'
+t C allow bd - 'echo $[ 1 + 2 ]'
+t C allow fp - 'git push -u origin x'
 
 echo "[D] 意図した判定の変更（今の過検知を allow に直す・変更前では落ちる）"
 t D allow bd - 'git clean -fd xdir'
@@ -337,9 +351,83 @@ short_lines="cat <<'EOF'"; i=0
 while (( i < 4090 )); do short_lines="$short_lines${NL}git"; i=$((i + 1)); done
 t E allow bd - "$short_lines${NL}EOF"
 
+echo "[F] 回帰の捕捉（差分検査で見つかった形と、再承認で範囲に入れた抜け。錨は再承認前の PR 先端で落ちること）"
+US=$'\037'
+# $( ) やバッククォートで作った引数（判断8: 中の語も外側の引数として調べる）
+t F deny bd rm-destructive 'rm -rf $(echo /)'
+t F deny bd rm-destructive 'rm -rf "$(echo /)"'
+t F deny bd rm-destructive 'rm -rf `echo /`'
+t F deny bd rm-destructive 'rm -rf $(ls -d /tmp/*)'
+t F deny bd rm-destructive 'rm -rf $(echo ~/)'
+t F deny bd rm-destructive 'rm -rf node_modules $(echo /)'
+t F deny bd rm-destructive 'rm -rf $(dirname /x)'
+t F deny bd rm-destructive 'sudo rm -rf $(echo /)'
+t F deny bd rm-destructive 'rm -rf -- $(echo /)'
+t F deny bd git-reset-hard 'git reset $(echo --hard)'
+t F deny bd git-reset-hard 'git reset "$(echo --hard)"'
+t F deny bd git-reset-hard 'git reset `echo --hard`'
+t F deny bd git-reset-hard 'git reset HEAD~1 $(echo --hard)'
+t F deny bd git-clean-fdx 'git clean $(echo -fdx)'
+t F deny bd git-clean-fdx 'git clean `echo -fdx`'
+t F deny bd git-clean-fdx 'git clean "$(echo -fdx)"'
+t F deny bd dd-device 'dd if=/dev/zero $(echo of=/dev/sda)'
+t F deny bd dd-device 'dd $(echo if=/dev/zero of=/dev/sda)'
+t F deny bd dd-device 'dd if=/dev/zero `echo of=/dev/sda`'
+# ${ … } の中の引用符で走査がずれる
+t F deny bd rm-destructive 'rm -rf ${x:-"}"} /'
+t F deny bd rm-destructive "rm -rf \${x:-'}'} /"
+t F deny bd rm-destructive 'rm -rf ${x:-"{"} /'
+t F deny bd rm-destructive 'rm -rf "${x:-{}" /'
+t F deny bd git-reset-hard 'git reset ${x:-"}"} --hard'
+t F deny bd git-clean-fdx 'git clean ${x:-"}"} -fdx'
+t F deny fp force-push 'git push ${x:-"}"} --force'
+t F deny fp force-push 'git push origin ${x:-"{"} -f'
+t F deny bd chown-recursive-root 'chown -R ${x:-"}"} /'
+t F deny bd rm-destructive 'rm -rf x ${y:-"}"}; rm -rf /'
+t F deny bd rm-destructive 'rm -rf ${x:-$(echo /)}'
+t F deny bd dd-device 'dd if=/dev/zero ${x:-"}"} of=/dev/sda'
+# { } ! の直後の # を注釈と誤る
+t F deny bd rm-destructive 'rm -rf {#,x} /'
+t F deny bd rm-destructive 'rm -rf x}#y /'
+t F deny bd rm-destructive 'rm -rf !#x /'
+t F deny bd rm-destructive 'rm -rf a{#b /'
+t F deny fp force-push 'git push {#,x} --force'
+t F deny fp force-push 'git push origin x}#y -f'
+t F deny bd git-reset-hard 'git reset {#,x} --hard'
+t F deny bd git-clean-fdx 'git clean {#,x} -fdx'
+t F deny bd dd-device 'dd if=/dev/zero {#,x} of=/dev/sda'
+t F deny bd chown-recursive-root 'chown -R {#,x} /'
+# 値を別の語に取る git の大域オプション
+t F deny fp force-push 'git --config-env core.pager=HOME push --force'
+t F deny fp force-push 'git --attr-source HEAD push --force'
+t F deny fp force-push 'git --config-env core.pager=HOME push -f origin main'
+t F deny fp force-push 'git --attr-source HEAD push origin main --force'
+t F deny fp force-push 'git --shallow-file x push --force'
+t F deny fp force-push 'git --shallow-file x push -f origin main'
+# git clean の -e の束・--exclude の省略形・--no-dry-run
+t F deny bd git-clean-fdx 'git clean -fdxe -n'
+t F deny bd git-clean-fdx 'git clean -fdxe-n'
+t F deny bd git-clean-fdx 'git clean -fdxenode_modules'
+t F deny bd git-clean-fdx 'git clean -xdfe -n'
+t F deny bd git-clean-fdx 'git clean -fdx --exc -n'
+t F deny bd git-clean-fdx 'git clean -fdx --e -n'
+t F deny bd git-clean-fdx 'git clean -fdx -n --no-dry-run'
+t F deny bd git-clean-fdx 'git clean -fdxn --no-dry-run'
+# 区切りのバイト 0x1F を含む語
+t F deny bd git-clean-fdx "git clean -fdx x${US}-n"
+t F deny bd git-clean-fdx "git clean x${US}-e -fdx"
+# mkfs の対象が変数や置換（判断9）
+t F deny bd mkfs 'sudo mkfs.ext4 "$DEV"'
+t F deny bd mkfs 'sudo mkfs.ext4 $(echo /dev/sda)'
+# 範囲内の抜け（変更前も見落としていた形）
+t F deny fp force-push 'git push -fu origin x'
+t F deny bd rm-destructive "(( x = 1 << 2 ))${NL}rm -rf /"
+t F deny bd rm-destructive "echo \$[ 1 << 2 ]${NL}rm -rf /"
+t F deny fp force-push "(( x = 1 << 2 ))${NL}git push --force"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 i=0
-while (( i < 5 )); do
+while (( i < 6 )); do
   echo "  group ${GN[i]}: pass=${GP[i]} fail=${GF[i]}"
   i=$((i + 1))
 done
