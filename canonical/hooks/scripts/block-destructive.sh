@@ -182,6 +182,15 @@ CMD_US=$'\037'          # segment の中で token を区切るバイト（コマ
 CMD_MAX_DEPTH=8         # shell -c / eval の入れ子の深さの上限
 CMD_MAX_QUEUE=64        # 列の長さの上限（shell -c / eval が異常に多い行を打ち切る）
 
+# 走査器は、解釈の要らない文字の並びを窓（_C_WIN バイト）ごとにまとめて進む。1文字ずつ
+# token に足すと長い token で2乗の時間がかかる（16KB の1行で約1秒）ためで、窓を区切るのは
+# 残りの文字列を毎回写す費用を抑えるため。状態ごとの「解釈の要らない文字」は次のとおり。
+_C_WIN=256
+_C_RE_SQ=$'^[^\']*'                          # 単一引用符の中: ' 以外
+_C_RE_AN=$'^[^\\\']*'                        # $'…' の中: \ と ' 以外
+_C_RE_DQ=$'^[^\\"`$]*'                       # 二重引用符の中: \ " ` $ 以外
+_C_RE_PL=$'^[^ \t\n\\\'"$`#&|;(){}!<>]*'     # 引用符の外: 区切り・引用・転送などの記号以外
+
 CMD_QUEUE=(); CMD_QDEPTH=()
 CMD_SEGS=(); CMD_TOKS=()
 
@@ -421,6 +430,17 @@ cmd_scan() {
   _C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=()
   _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
   while (( i < n )); do
+    # 解釈の要らない文字の並びは窓ごとにまとめて token に足す（上の _C_RE_*）。
+    case "$_C_Q" in
+      "'") [[ "${s:i:_C_WIN}" =~ $_C_RE_SQ ]] ;;
+      a)   [[ "${s:i:_C_WIN}" =~ $_C_RE_AN ]] ;;
+      '"') [[ "${s:i:_C_WIN}" =~ $_C_RE_DQ ]] ;;
+      *)   [[ "${s:i:_C_WIN}" =~ $_C_RE_PL ]] ;;
+    esac
+    k=${#BASH_REMATCH[0]}
+    if (( k > 0 )); then
+      _C_TOK+="${BASH_REMATCH[0]}"; i=$((i + k)); continue
+    fi
     c="${s:i:1}"
     case "$_C_Q" in
       "'")
