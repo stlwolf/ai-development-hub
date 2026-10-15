@@ -3,7 +3,7 @@ id: "01M4XY7FXPRTX5JGAWFGZJJ0MM"
 title: "#429 破壊的コマンドのフックを、行に含まれる各コマンドで判定する形に直す"
 date: 2026-10-15
 type: plan
-status: draft               # ゲート3（owner の承認）待ち。設計SO（ゲート2）は反映済み
+status: in-development      # ゲート3 承認済み（2026-10-15・6つの判断はすべて推奨どおり）。実装中
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/429"
@@ -194,7 +194,7 @@ token 化が引用符を外し転送を除くので、`"/"`・`'~'`・`"$HOME"` 
 |---|---|---|
 | 別の tool による削除 | `find / -delete`・`find / -exec rm -rf {} +` | ルール §2 の確認の対象 |
 | 別のインタプリタ | `python3 -c "os.system('rm -rf /')"` | ルール §1 を自分で守る |
-| refspec による force push | `git push origin +HEAD:main` | follow-up の issue（force-push の別形。この単位では扱わない） |
+| refspec による force push | `git push origin +HEAD:main` | #435（force-push の別形。この単位では扱わない。ゲート3 で統括が起票） |
 
 `careful-operations-rule.md` の直し方（PR #366 で §1 を「要約であって列挙ではない」形にした判断を引き継ぎ、§1 は要約のままにする）:
 
@@ -265,6 +265,8 @@ token 化が引用符を外し転送を除くので、`"/"`・`'~'`・`"$HOME"` 
 
 ## owner に預ける判断（ゲート3）
 
+**ゲート3 の答え（2026-10-15）: 6つとも推奨どおりで、plan 全体を承認。** owner の裁定は統括が `.oe/decision-429-gate3.md`（作業層）に記録し、判断6 の follow-up は統括が #435 に起こした。以下の各項は承認時の記述のまま残す。
+
 1. **DJ-3**: 既知のコマンド名に一致するすべての token を先頭として検査する形（推奨）か、前置きの固定の表で剥がす形（DJ-3'）か。前者は `echo rm -rf /` が deny になる代わりに前置きの族を閉じる。設計SO は後者を勧めた（理由は DJ-3 の末尾）。
 2. **DJ-7**: `block-force-push.sh` もこの単位で直す（推奨）か、別の issue にするか。brief の SO の理由は「1本のスクリプト」を想定していた。
 3. **DJ-8**: 純 bash の条件付き採用（推奨。完成版の計測が上限を超えたら awk）か、最初から awk か。
@@ -308,15 +310,15 @@ token 化が引用符を外し転送を除くので、`"/"`・`'~'`・`"$HOME"` 
 - [x] `so-compare -f tmp/429-destructive-hook/so-design-prompt.md -w <worktree> -o <worktree>/tmp/429-destructive-hook/so-design --codex-only`。
 - [x] 指摘の採否を「設計SO（ゲート2）」節と episode に書き、plan を直した。
 
-### P3: 報告して止まる
+### P3: 報告して止まる（完了）
 
-- [ ] plan と episode をこの枝にコミットして push し、draft PR を作る（マージしない）。
-- [ ] `.oe/report-429-plan.md` を書き、`projects/orchestration-engine/bin/oe-send '%207' '<report のパス>'` で送り、exit code を確かめる。
-- [ ] **STOP**。ゲート3 の owner の承認を待つ。
+- [x] plan と episode をこの枝にコミットして push し、draft PR #434 を作った（マージしない）。
+- [x] `.oe/report-429-plan.md` を書き、`oe-send '%207'` で送った（exit 0）。
+- [x] **STOP**。ゲート3 の owner の承認を待った。
 
-### GATE 3: owner の plan 承認
+### GATE 3: owner の plan 承認（完了・2026-10-15）
 
-- [ ] 上の6つの判断の答えを受け取り、plan の該当 DJ を確定させる（変わったら「ゲート3 のあとの変更」節を設ける）。
+- [x] 6つの判断の答えを受け取った。すべて推奨どおりなので DJ の本文は変えない。判断6 の行き先を #435 に書き換えた（DJ-9 (c)）。
 
 ### I1-0: baseline の確認
 
@@ -370,5 +372,5 @@ token 化が引用符を外し転送を除くので、`"/"`・`'~'`・`"$HOME"` 
 
 ### I3: episode を閉じ、報告して止まる
 
-- [ ] `episode-retrospective` で closure（昇格の判定・follow-up の行き先。`+refspec` の follow-up と SQL の過検知の行き先を含む）。
+- [ ] `episode-retrospective` で closure（昇格の判定・follow-up の行き先。`+refspec` は #435、SQL の過検知の行き先を含む）。
 - [ ] `.oe/report-429.md` を `implementer-contract` の形で書き、`oe-send '%207'` で送って **STOP**。マージ・worktree の掃除・issue の close はしない。
