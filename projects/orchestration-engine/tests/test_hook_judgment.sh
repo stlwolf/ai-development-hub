@@ -222,6 +222,16 @@ t B deny fp force-push 'true; git push -f'
 t B deny fp force-push 'bash -c "git push --force"'
 t B deny fp force-push 'sudo git push --force'
 t B deny fp force-push 'eval "git push --force"'
+# 実装SO（ゲート4）の指摘から
+t B deny bd rm-destructive "r\$'m' -rf /"
+t B deny bd rm-destructive "env -u bash sh -c 'rm -rf /'"
+t B deny fp force-push "env -u bash sh -c 'git push --force'"
+t B deny bd rm-destructive "cat <<EOF${NL}\$(rm \\${NL}-rf /)${NL}EOF"
+t B deny bd rm-destructive "cat <<EOF${NL}\$(printf ')'; rm -rf /)${NL}EOF"
+t B deny bd rm-destructive "cat <<\$'EOF'${NL}text${NL}EOF${NL}rm -rf /"
+t B deny bd rm-destructive "cat <<\"E\\OF\"${NL}text${NL}E\\OF${NL}rm -rf /"
+t B deny bd git-reset-hard 'echo $(( $(git reset --hard) + 1 ))'
+t B deny bd rm-destructive 'echo "$(( $(rm -rf /) ))"'
 
 echo "[C] 安全な形の守り（今 allow・変更後も allow）"
 t C allow bd - "echo 'rm -rf /'"
@@ -262,6 +272,12 @@ t C allow fp - 'git push origin main'
 t C allow fp - 'git commit -m "git push --force" && git push origin x'
 t C allow fp - 'echo "git push --force"'
 t C allow fp - 'git log --oneline | grep push'
+# 実装SO（ゲート4）の指摘から
+t C allow bd - "cat <<EOF${NL}\\\$(rm -rf /)${NL}EOF"
+t C allow bd - "cat <<EOF${NL}a\\${NL}EOF${NL}rm -rf /${NL}EOF"
+t C allow bd - "git grep -n 'mkfs.ext4' -- canonical/hooks/README.md"
+t C allow bd - "git commit -m \"fix: line1${NL}rm -rf / is only text\""
+t C allow bd - 'echo $(( 1 << 2 )) && git status'
 
 echo "[D] 意図した判定の変更（今の過検知を allow に直す・変更前では落ちる）"
 t D allow bd - 'git clean -fd xdir'
@@ -287,6 +303,20 @@ many='rm -rf node_modules'; i=0
 while (( i < 257 )); do many="$many \$(true)"; i=$((i + 1)); done
 t E allow bd - "$many"
 t E allow bd - 'eval eval eval eval eval eval eval eval echo x'
+# 浅く幅の広い入力（件数の上限は置かない）と、多数の短い token・引用符の密な行・短い行の多い heredoc
+wide=''; i=0
+while (( i < 64 )); do wide="$wide bash -c 'echo ok';"; i=$((i + 1)); done
+t E allow bd - "$wide"
+t E allow fp - "$wide"
+many_rm='printf "%s\n"'; i=0
+while (( i < 1360 )); do many_rm="$many_rm rm"; i=$((i + 1)); done
+t E allow bd - "$many_rm"
+dense='echo'; i=0
+while (( i < 2048 )); do dense="$dense ''"; i=$((i + 1)); done
+t E allow bd - "$dense"
+short_lines="cat <<'EOF'"; i=0
+while (( i < 4090 )); do short_lines="$short_lines${NL}git"; i=$((i + 1)); done
+t E allow bd - "$short_lines${NL}EOF"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 i=0
