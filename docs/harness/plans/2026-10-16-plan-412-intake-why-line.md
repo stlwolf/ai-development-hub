@@ -372,9 +372,9 @@ git -C '<worktree>' commit -m 'docs(harness): #412 の plan と episode の枠�
 git -C '<worktree>' push -u origin 'docs/#412_intake_why_line'
 ```
 
-- PR はまだ作らない。`.oe/report-412.md` に報告を書き、`%207` へ `oe-send` で plan のパスを1行送り、exit code を確かめて止まる。
+- PR はまだ作らない。`.oe/report-412.md` に報告を書き、統括へ `oe-send` で plan のパスを1行送り、exit code を確かめて止まる。
 
-### GATE 3: owner の plan 承認（統括から `%207` の送信で届いたものだけを数える）
+### GATE 3: owner の plan 承認（統括のペインからの送信で届いたものだけを数える）
 
 ### I1-0: baseline の確認と、検査の想定の確認
 
@@ -419,7 +419,7 @@ SO_TIMEOUT=480 so-compare -w '<worktree>' -f tmp/412-intake-why-line/so-impl-pro
 ### I3: episode の closure（マージ前）と報告
 
 - `episode-retrospective` で tier を判定し、closure を書く。注入された knowledge item 3件に観測を書き戻し、`validate-knowledge` を通す。
-- `.oe/report-412.md` に `implementer-contract` の形で報告を書き、`%207` へ `oe-send` で1行送り、exit code を確かめて止まる。
+- `.oe/report-412.md` に `implementer-contract` の形で報告を書き、統括へ `oe-send` で1行送り、exit code を確かめて止まる。
 
 ## マージ後に統括へ渡すこと
 
@@ -486,3 +486,11 @@ chk D14 1 "$(count '- **この issue でやること**: やること本体を1�
 ```
 
 - **通し直す範囲**: この1行について I1-1（直してコミット）・GATE I1（受入・差分の範囲・部分ごとに戻した写しの検査）・I2（実装SO）・I3（episode の closure の更新と報告）を通し直す。**Copilot の再依頼はしない。** I2 の Copilot の1ラウンドは PR #444 に対して済んでおり、再依頼は owner の明示があるときだけである（`copilot-review-response` の Step 7・統括の指示）。この PR に未返信のスレッドが増えていないことだけを確かめる。
+
+### ステップ節と episode のペイン番号を、役割の言葉に置き換えた（再承認 3・2026-10-16）
+
+- 統括が委譲を完了扱いにする前の照合で、未達が1つ出た（ephemeral-ID hygiene）。commit 済みのこの plan のステップ節の3か所（P3・GATE 3 の見出し・I3）と、episode の P1 の節の1行に、tmux のペイン番号が入っていた。plan の3か所は brief の手順の文を写したもので、episode の1行は自分が書いた。
+- owner がこの置き換えを承認した（再承認 3）。plan の3か所は「統括」、episode の1行は「統括」と「委譲子」に置き換えた。意味は変わらない。
+- **ステップ節が変わったので、ステップ節の digest は承認時の値から変わる。** 新しい baseline は統括が記録する。
+- 変わるのは plan と episode の文言だけで、スキルは変えていない。受入の17項目を回し直してすべて PASS だった。統括の指示のとおり、実装SO と Copilot は当て直していない（ゲート4 が見る実装の差分に変わりが無いため）。
+- この PR が変えたファイルとコミットメッセージの中に、ほかのペイン番号は無いことを確かめた（`git grep -E '%[0-9]+'`。PR 本文で `%` のあとに数字が続く箇所は、枝の名前の `#` を URL に書いたもので、ペイン番号ではない）。
