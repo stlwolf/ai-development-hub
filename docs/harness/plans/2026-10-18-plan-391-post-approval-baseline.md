@@ -727,3 +727,294 @@ SO が指摘した3通りの写し（節全体をコードフェンスで囲む�
 - この単位自身がゲート3 を今の規範（digest）で通り、実装のあとに新しい規範を配る。この PR の中では、自分の plan の変化を新しい規則の級で申告し、統括は今の形で受け付ける（二重の運用になるのはこの1回）。
 - 固定節の項目が1つ増え、brief が長くなる。読む側の負担は増えるが、今回の実例11件のうち8件が owner の裁定なしで通せる種類で、往復が減る効果のほうが大きいと見る。
 - Codex のレーンが使えない（利用上限・道具が使えない故障・#448）可能性がある。切り替え先は Cursor（`--cursor-only`）で、切り替えたら理由を episode に書く。
+
+## 実装SO（ゲート4・弱・Codex 1レーン）
+
+2026-10-18 に `so-compare --codex-only -w <worktree>` で、commit `52b49f8` の差分（`git diff b62d618 -- canonical/`）に当てた。レーンは `gpt-6.1-sol`（`model_resolved_source=config`）・`codex-cli 0.163.0`・78 秒・初回で返答（`timeout_status=success`）。依頼文は `tmp/391-post-approval-baseline/so-impl-prompt.md`、出力は `tmp/391-post-approval-baseline/so-impl-codex/`（作業層・消える）。指摘は8件（要修正5・任意2・問題なし1）。採ったのは7件（うち一部採用1件）、採らなかったのは0件。どれもスキルの文面の補正で、級の意味・受け付ける主体・照合役の射程は変えない。
+
+| # | 重要度 | 指摘の要点 | 採否 | 反映先 |
+|---|---|---|---|---|
+| 1 | 要修正 | 「まず変更に当たるかを見て、残りを補正」は済み印や status の更新まで補正に分類し、「記録は申告も受け付けも要らない」と衝突する | 採った | 「記録だけの更新を先に除き、残りはまず変更に当たるかを見て、当たらないものを補正とする」に揃えた。直す箇所 5・7・8 |
+| 2 | 要修正 | 「有効な版は最後の entry が指すもの」では、plan と書面を別々に張り直したときの版が一意に決まらない。書面はどの digest と比べるかが未記載 | 採った | 「有効な版は対象ごとに、その対象を更新した最後の entry の変更後の版。無ければ承認時の版」にした。entry に「対象」を足した。直す箇所 2・4・6 |
+| 3 | 要修正 | 本文は「再承認の参照が引けない」entry を無効にするが、起動テンプレは参照を「持つ」ことしか求めず、存在しない参照を書いた entry が通る | 採った | テンプレに「参照先を取得できること」を有効条件として足し、参照先の中身の妥当性は見ないと区切った。直す箇所 4（本文の 2 にも同じ語を揃えた） |
+| 4 | 要修正 | テンプレの「無効な entry が指す版しか無ければ」は、以前の有効な版へ戻って照合してよいと読める。本文と終了条件が揃っていない | 採った | 「ある対象の最後の entry が無効なら、その対象は invalid-baseline とし、以前の版へ戻って照合しない」を本文とテンプレに書いた。直す箇所 2・4 |
+| 5 | 要修正 | テンプレートの節に、8項目の中身も正本の場所も無い。「提案する級」と、記録は「申告は要らず、報告に最新の commit を書く」も落ちている | 採った | 8項目の正本の節を名指しし、申告に「提案する級」を足し、記録の扱いを足した。直す箇所 8 |
+| 6 | 任意 | 変更の定義にある「新しい設計判断」を8項目が直接見ていない。未決だった方式を新たに選んでも、既存の義務・結果・範囲が同じなら通り、「細部の訂正」に寄せる余地がある | 採った | 項目8 に「設計判断」を足し、項目6 の括弧を「新しい判断を伴わない細部の訂正は補正」にした。補正の定義にも「設計判断も足さない」を足した。直す箇所 5・7・8 |
+| 7 | 任意 | 固定節の項目は括弧の中に定義・例・許可・統括の処理が入り、一読で追いにくい。注記と起動手順1 も長い列挙に埋もれている | 一部採った | 固定節の項目を独立した文の並びに直し、注記を「初回の記録」「張り直し」「照合」の3つの小項目に分け、起動手順1 を対象別と entry の形式の小項目に分けた。項目の数と置き場は変えていない。直す箇所 4・5・6 |
+| 8 | 問題なし | 検査の補強の限定と構成の整理の規則は整合し、blob の比較・digest の再計算・commit からのゲート表の取得は機械的に行える。照合役に妥当性を判断させない境界は明示されている | — | 維持 |
+
+## ゲート3 のあとの変更（2026-10-18・実装SO の指摘）
+
+ゲート3 の承認（2026-10-18・この plan の `5eefce8` の版）のあとで、この plan の中身が変わったものをここにまとめる。上の節は承認時の記述のまま残し、ここに書いたものが優先する。経緯は episode の「I2-1: 実装SO（ゲート4・弱・Codex 1レーン）を差分に当てた」節にある。
+
+この変更の級は、新しい規則では**補正**である（owner が承認した3つの級・受け付ける主体・照合役の射程・8項目の置き場は変えず、文面を揃えて読みやすくした。項目8 に「設計判断」の語を足したのは、owner が承認した「変更」の定義にすでにある語を一覧にも書いたもので、確かめる対象を増やしていない）。この委譲にはいまの規則が当たるので、申告は I3 の報告で行い、統括がいまの形で受け付ける。8項目の自己確認: (1) ステップ節の見出しは10個のまま消えていない。(2) 各 step の要件は変えていない。(3) ゲートの項目は変えていない。(4) 終端 step は I3 のまま。(5) 受入は E1〜E4 の全文一致のままで、期待の文面がこの節の読み替えに置き換わる（項目は減らず、緩めていない）。(6) 設計判断の結論は変えていない。(7) 範囲は変えていない。(8) 新しい結果・対応範囲・作業義務・設計判断を足していない。
+
+### 読み替えの形
+
+下の「### k. …」は、「直す箇所と直し方」の同じ番号の箇所の「変更後」を、ここに書いた文面に置き換えて読む。「変更前」は元のまま。検査のスクリプトは、この節にある番号の箇所については、ここの「変更後」を使う（下の「検査のスクリプト（読み替え後）」）。番号が無い箇所（1・3・9）は元のままである。
+
+### 2. unmet-gate-check — baseline の節（読み替え）
+
+対象: `canonical/skills/unmet-gate-check/SKILL.md`
+
+変更後:
+
+```text
+承認時に記録するもの:
+
+- 承認した **plan** — **承認時の commit** で固定する（plan の内容は git が commit ごとに持つので、digest を別に計算しない）。
+- **委譲時の書面**（brief、または貼られた固定節） — 作業層にあって commit できないので、**全体の digest** をアルゴリズムと一緒に記録する。
+- 使用した**ゲート表の版** — その版が入っている commit で固定する。照合ではその commit から取り出した内容を使う（いまの作業ツリーの表を読まない）。
+- **張り直し**: 承認のあとに plan か委譲時の書面が変わり、依頼側がそれを受け付けたら、承認の記録に entry を1つ足す。**entry が持つもの**は、対象（plan か書面か）・変更前と変更後の版（plan の commit か書面の digest）・級・出どころ・確かめた項目それぞれの結果・受け付けた主体で、級が「変更」なら人間の承認者の再承認の参照も持つ。級と受け付ける主体と確かめる項目は `implementer-contract` の「承認のあとに plan が変わるときの扱い」が決める。**有効な版は対象ごとに決める。** その対象を更新した最後の entry の変更後の版が有効な版で、該当する entry が無ければ承認時の版である。
+
+照合の手順:
+
+1. 承認の記録から、plan と委譲時の書面それぞれの有効な版を読む。plan はいまの内容がその版と一致するかを比べる（git の blob の一致で足りる）。委譲時の書面は digest を再計算し、その版の digest と比べる。ゲート表は記録された commit の対象パスから内容を取り出して使い、取り出せなければ `invalid-baseline` である。
+2. **1つでも一致しなければ、ゲート判定に入る前に `invalid-baseline` を返して止める。** 未達が無いという結論を出してはいけない（母集団が信頼できないので、結論の意味が定義されない）。一致しない理由（申告の無い変更か、受け付けたのに entry を足していないか）を分けるのは依頼側の仕事で、本スキルは分けない。
+3. **承認の記録に存在しない版を baseline として受け取らない。** entry は上の「entry が持つもの」をすべて持ち、級が「変更」なら再承認の参照先を取得できるときだけ有効である。ある対象の最後の entry が無効なら、その対象は `invalid-baseline` であり、以前の版へ戻って照合しない（照合の直前に版だけを指す entry を足して通す形は、これで形式として弾く）。本スキルは級や確かめた結果や参照先の中身の妥当性を判断しないので、誤った級で受け付けた変更や虚偽の結果は捕まえない。記録が見つからなければ `invalid-baseline` である。
+
+記録先は**承認そのものが残る場所**に固定する（承認の記録と baseline が離れると、後から対応が取れない）。記録する義務は承認ゲートの側が持つ。
+
+### 承認のあとに plan が変わるとき（本スキルが見る範囲）
+
+承認のあとの plan の変化は、効果で3つの級に分かれる（記録・補正・変更。定義と受け付ける主体は `implementer-contract` の「承認のあとに plan が変わるときの扱い」）。**本スキルは級を判定しない。** 見るのは、いまの plan が承認の記録の有効な版と一致するかと、entry が形式を満たすかだけである。したがって、規範が当たる範囲（3つの級すべて）と本スキルが検査する範囲（有効な版との一致と entry の形式）は一致しない。級の判定と受け付けは照合の前に依頼側が済ませ、受け付けた版を entry に残す。entry の無い変化は `invalid-baseline` として現れる。誤った級で受け付けた変化は現れない（依頼側の受け付けと、人間の承認者が完了の報告で entry の一覧を見ることが受け皿である）。
+```
+
+### 4. unmet-gate-check — 起動テンプレの手順1（読み替え）
+
+対象: `canonical/skills/unmet-gate-check/SKILL.md`
+
+変更後:
+
+```text
+1. baseline を照合する。
+   - plan: 承認の記録から有効な版（plan を更新した最後の張り直しの entry の変更後の commit。無ければ承認時の commit）を読み、いまの内容がその版と一致するかを比べる。
+   - 委譲時の書面: 有効な版（書面を更新した最後の entry の変更後の digest。無ければ承認時の digest）を読み、digest を再計算して比べる。
+   - ゲート表: 記録された commit の対象パスから取り出した内容を使う。取り出せなければ invalid-baseline。
+   - entry の形式: 張り直しの entry は、対象・変更前後の版・級・出どころ・確かめた項目それぞれの結果・受け付けた主体をすべて持ち、級が変更なら再承認の参照を持ってその参照先を取得できるときだけ有効とする。参照先の中身の妥当性は見ない。ある対象の最後の entry が無効なら、その対象は invalid-baseline とし、以前の版へ戻って照合しない。
+   1つでも一致しなければ、または記録が見つからなければ、invalid-baseline だけを返して終了する。
+```
+
+### 5. doc-flow-guardrail — 委譲固定節テンプレの項目（読み替え）
+
+対象: `canonical/skills/doc-flow-guardrail/SKILL.md`
+
+変更後:
+
+```text
+正本と弁別子は `implementer-contract`。
+- **承認のあとに plan が変わるとき**: ゲート3 のあとに plan を直すことは禁じない。変わり方は効果で3つの級に分ける。**記録**は、済み印・結果・status の更新で、承認した内容そのものは変わらない。子が自分で動かしてよく、申告も受け付けも要らない。**補正**は、承認の母集団と owner が決めたことを変えず、新しい結果・対応範囲・作業義務・設計判断も足さない直しである。母集団とは step 集合・要件・ゲート・終端を指す。裁定や指摘を書き込む・承認済みの結果を確かめる検査を強める・衛生の置き換え・文言や構成の整理がこれに当たる。子は申告して進めてよく、統括が次の報告で差分を確かめて受け付ける。**変更**は、step を削る・要件を弱める・ゲートを飛ばす・終端を書き換える・新しい作業義務や設計判断や対応範囲を足す直しである。**実行する前に**統括へ照会し、owner の再承認を経る。級の決め方は、記録だけの更新を先に除き、残りについてまず変更に当たるかを見て、当たらないものを補正とする。級は出どころ（裁定・SO・Copilot・照合）でなく効果で決める。1つの直しに級が混じるなら分けて見て重い側で扱い、迷ったら重い側に置く。補正と変更は末尾の「ゲート3 のあとの変更」節に置くことを推奨する。申告の形と確かめる項目は `implementer-contract`。
+```
+
+### 6. doc-flow-guardrail — 「gate 3 の baseline 記録」の注記（読み替え）
+
+対象: `canonical/skills/doc-flow-guardrail/SKILL.md`
+
+変更後:
+
+```text
+- **gate 3 の baseline 記録（委譲時のみ・委譲操作軸・§11 との 1:1 索引の対象外）**: 委譲アークで owner HG を通すとき、統括は **baseline を承認の記録と同じ場所に残す**。対象は3つ（**承認した plan / 委譲時の書面〔brief・固定節〕/ ゲート表の版**）。plan だけを守っても、固定節の義務やゲート表の版が入れ替われば同じ穴が開く。承認後に step が削られると、完了前の照合が**縮小された母集団を忠実に照合して「未達なし」を返す**ため、母集団の同一性を承認時に固定する。#289・#391。
+  - **初回の記録**: **plan は承認時の commit で固定する**（内容は git が持つので digest を別に計算しない）。委譲時の書面は全体の digest をアルゴリズムと一緒に記録する。ゲート表はその版が入っている commit で固定し、照合はその commit から取り出した内容で行う。
+  - **張り直し**: 承認のあとに plan か委譲時の書面が変わったら、統括は差分を見て級（記録・補正・変更。固定節の「承認のあとに plan が変わるとき」）を判定し、受け付けた版を entry として同じ場所に足す。entry には対象・変更前後の版・級・出どころ・確かめた項目それぞれの結果（`implementer-contract` の一覧）・受け付けた主体を書き、級が変更なら owner の再承認の参照も書く（欠けた entry は照合で無効になる）。**有効な版は対象ごとに、その対象を更新した最後の entry の変更後の版**で、無ければ承認時の版である。**owner の再承認を求めるのは「変更」の級だけ**で、記録と補正は統括の受け付けで足り、owner には完了の報告で entry の一覧を見せる（統括の級の判定の誤りは、ここで owner が捕まえる）。
+  - **照合**: 完了前の照合は有効な版と比べる。照合手順と不一致時の扱い（`invalid-baseline` で判定に入らない）は `unmet-gate-check` が持つ。**gate 3 そのものの性質（plan → 実装の owner HG）は変わらない**（§11 は不変。再承認の条件を「変更」の級に限るのは、承認の対象を変えないものに再承認を求めないだけである）。
+```
+
+### 7. implementer-contract — 「承認のあとに plan が変わるときの扱い」節（読み替え）
+
+対象: `canonical/skills/implementer-contract/SKILL.md`
+
+変更後:
+
+```text
+### 承認のあとに plan が変わるときの扱い（#391）
+
+承認（ゲート3）のあとに plan を直すことは禁じない。進捗の記録を止めると、plan が凍結物になって実態を映さなくなる。一方で、承認の母集団（step 集合・要件・ゲート・終端）を黙って変えると、完了前の照合が縮んだ母集団を忠実に照合して空回りする。そこで変わり方を**効果**で3つの級に分け、級ごとに受け付ける主体を決める。級は出どころ（人間の承認者の裁定・SO・Copilot・完了前の照合・自分の気づき）では決めない。**記録だけの更新は申告せず進めてよい。それ以外は、まず「変更」に当たるかを見て、当たらないものを「補正」とする。** 1つの直しに級が混じるなら分けて見て、重い側で扱う。迷ったら重い側に置く。補正は承認された実装の範囲の中の直しで、実装を始める承認（ゲート3）をやり直すものではない。
+
+| 級 | 何が当たるか | 誰が受け付けるか |
+|---|---|---|
+| **記録** | 済み印・実施の結果・実測値・`status`・SO やレビューの結果の節。承認した内容そのものは変わらない | 実行側だけで進めてよい。申告も受け付けも要らない。報告に最新の commit を書く。依頼側は照合の前に差分を確かめ、記録だけならその版を張り直しの entry に足す |
+| **補正** | 承認した内容の文面は変わるが、母集団と人間の承認者が決めたことを変えず、新しい結果・対応範囲・作業義務・設計判断も足さない直し。裁定や指摘を plan に書き込む・承認済みの結果を確かめる検査を強める（確かめる対象を増やすのは変更）・設計判断の細部の訂正・衛生の置き換え（ペイン番号など）・文言や構成の整理（step の分割や設計判断の番号の整理は、元の義務がどこへ移ったかを対応づける） | 実行側が下の形で申告し、進めてよい。依頼側は次の報告で差分を項目で確かめて受け付け、張り直しの entry を足す。変更と判定したら実行側に止めさせ、人間の承認者に戻す。人間の承認者の再承認は要らない（完了の報告で一覧を見せる） |
+| **変更** | step を削る・要件や受入を弱める・ゲートを飛ばす・終端を書き換える・新しい作業義務や設計判断や対応範囲を足す（承認した文面の外の変更で振る舞いが変わるものを含む） | **実行する前に**依頼側へ照会し、人間の承認者の再承認を経る。plan の更新・再承認・張り直しの entry までを1単位にする |
+
+依頼側が意図して変えた（上の指示矛盾ガードで確認が取れた）場合も、同じ級の判定に乗せる。entry の無い変化は、完了前の照合で `invalid-baseline` として現れる（`unmet-gate-check`）。誤った級で受け付けた変化は照合では現れないので、依頼側の受け付けと、人間の承認者が完了の報告で entry の一覧を見ることが受け皿である。
+
+**申告の形（補正・変更）**: 変えた箇所と理由（出どころ）、変更前の版と変更後の版（commit）、提案する級、次の8項目を自分で確かめた結果を書く。依頼側は同じ8項目を差分で確かめる。補正と変更は承認済みの節を書き換えず、末尾の「ゲート3 のあとの変更」節に置くと、依頼側が承認した節の不変を見出しの範囲で確かめられる（推奨）。
+
+1. step 集合: ステップ節の見出しが1つも消えていない（増えたものは列挙する。分割や改名は、元の義務がどこへ移ったかを対応づける）。
+2. 各 step の要件: 文が消えていない・閾値が緩んでいない・必須が任意になっていない・「後で」に送られていない（済み印と「完了」の注記は無視する）。
+3. ゲートの項目（SO・テスト・レビュー・closure）: 消えていない・弱まっていない。
+4. 終端 step: 委譲時の書面と同じ。
+5. 受入: 項目が減っていない・閾値が緩んでいない・固定文字列が短くなっていない。
+6. 設計判断の結論: 人間の承認者が選んだ案が変わっていない（新しい判断を伴わない細部の訂正は補正）。
+7. 範囲: 範囲内の項目が範囲外へ移っていない。
+8. 追加: 新しい結果・対応範囲・作業義務・設計判断を要求する追加が無い（あれば変更）。
+```
+
+### 8. implementer-contract — プロンプトテンプレートの節（読み替え）
+
+対象: `canonical/skills/implementer-contract/SKILL.md`
+
+変更後:
+
+```text
+履行済みかどうかで判断する）。履行済みの位置への指定・差し戻しは矛盾ではない。
+
+## 承認のあとに plan が変わるとき
+
+進捗の記録（済み印・結果・status）は止めない。申告は要らず、報告に最新の commit を書く。
+承認の母集団と人間の承認者が決めたことを変えず、新しい結果・対応範囲・作業義務・設計判断も
+足さない直し（補正）は、変えた箇所・理由・前後の commit・提案する級・確かめた8項目の結果を
+申告して進めてよい（依頼側が次の報告で受け付ける）。8項目の正本は implementer-contract スキルの
+「承認のあとに plan が変わるときの扱い」の節にある。step を削る・要件を弱める・ゲートを飛ばす・
+終端を書き換える・新しい義務や判断や範囲を足す（変更）は、実行する前に照会し、再承認を経る。
+記録だけの更新を先に除き、残りはまず変更に当たるかを見て、迷ったら重い側に置く。
+```
+
+### 検査のスクリプト（読み替え後）
+
+「受入」節の `check391.py` を次に差し替える。違いは、この「ゲート3 のあとの変更」節にある番号の箇所について「変更後」をここの文面で上書きすることだけで、判定（E1〜E4 の全文一致・行単位の診断・順序・番兵）は変えていない。plan から取り出すときは、最後の python のブロックを使う。
+
+```python
+#!/usr/bin/env python3
+"""#391 の受入の検査（読み替え後）。
+  check391.py check <root> [<base>]   : <root> 配下の4ファイルを検査する。<base>（変更前の写しの root）を渡すと、
+                                        base に plan の置き換えを当てた期待の全文との一致（E1〜E4）も見る
+  check391.py apply <src> <dst>       : <src> の4ファイルに plan の置き換えを当てて <dst> に書く（陽性対照）
+  check391.py revert <k> <src> <dst>  : <src>（全置き換え後）から直す箇所 k だけを変更前に戻して <dst> に書く
+環境変数 PLAN に plan のパスを渡す。「ゲート3 のあとの変更」節に同じ番号の箇所があれば、その「変更後」で上書きする。"""
+import os, re, sys, pathlib
+
+PLAN = pathlib.Path(os.environ["PLAN"])
+SENTINELS = [
+    ("S1", "canonical/skills/unmet-gate-check/SKILL.md", "baseline 不一致時は `invalid-baseline` のみで判定に入らない", "contains"),
+    ("S2", "canonical/skills/unmet-gate-check/SKILL.md", "## 判定は5値で返す（畳まない）", "line1"),
+    ("S3", "canonical/skills/doc-flow-guardrail/SKILL.md", "| 3 | plan → 実装 | owner HG（人間ゲート） | `implementation-gate-rule` |", "line1"),
+    ("S4", "canonical/skills/implementer-contract/SKILL.md", "矛盾に当たるのは次の3つである。", "line1"),
+]
+
+def _entries(sec, nblocks):
+    out = {}
+    for m in re.finditer(r"^### (\d+)\. .*?$", sec, re.M):
+        k = int(m.group(1))
+        body = sec[m.end():]
+        # 箇所の中のコードブロックに見出し行が入るので、次の「### 数字. 」か「### 変えないもの」か「### 読み替え」か「### 検査の」まで
+        nxt = re.search(r"^### (\d+\. |変えないもの|読み替え|検査の)", body, re.M)
+        body = body[: nxt.start()] if nxt else body
+        f = re.search(r"対象: `([^`]+)`", body).group(1)
+        blocks = re.findall(r"```text\n(.*?)\n```", body, re.S)
+        if len(blocks) != nblocks:
+            sys.exit(f"edit {k}: expected {nblocks} text blocks, got {len(blocks)}")
+        out[k] = (f, blocks)
+    return out
+
+def parse_edits():
+    """plan の「直す箇所と直し方」から [(k, file, before, after)] を返す。読み替えがあれば after を上書きする。"""
+    text = PLAN.read_text(encoding="utf-8")
+    sec = text.split("## 直す箇所と直し方", 1)[1].split("\n## 受入\n", 1)[0]
+    base = _entries(sec, 2)
+    over = {}
+    if "\n## ゲート3 のあとの変更" in text:
+        osec = text.split("\n## ゲート3 のあとの変更", 1)[1]
+        over = _entries(osec, 1)
+    edits = []
+    for k in sorted(base):
+        f, (before, after) = base[k]
+        if k in over:
+            of, (oafter,) = over[k]
+            if of != f:
+                sys.exit(f"override {k}: file mismatch {of} != {f}")
+            after = oafter
+        edits.append((k, f, before, after))
+    return edits
+
+def lines(block):
+    return [l for l in block.split("\n") if l.strip()]
+
+def expected_texts(base):
+    base = pathlib.Path(base); files = {}
+    for k, f, before, after in parse_edits():
+        if f not in files:
+            files[f] = (base / f).read_text(encoding="utf-8")
+        n = files[f].count(before)
+        if n != 1:
+            sys.exit(f"edit {k} in {f}: expected 1 match in base, got {n}")
+        files[f] = files[f].replace(before, after)
+    return files
+
+def check(root, base=None):
+    root = pathlib.Path(root); fails = 0; total = 0
+    def rep(name, ok, note=""):
+        nonlocal fails, total
+        total += 1; fails += (not ok)
+        print(f"{'PASS' if ok else 'FAIL'} {name} {note}")
+    cache = {}
+    def get(f):
+        if f not in cache:
+            cache[f] = (root / f).read_text(encoding="utf-8").split("\n")
+        return cache[f]
+    if base:
+        for i, (f, exp) in enumerate(sorted(expected_texts(base).items()), 1):
+            act = "\n".join(get(f)); ok = act == exp
+            note = ""
+            if not ok:
+                a, e = act.split("\n"), exp.split("\n")
+                j = next((j for j in range(min(len(a), len(e))) if a[j] != e[j]), min(len(a), len(e)))
+                note = f"first difference at line {j+1} of {f}"
+            rep(f"E{i}", ok, note)
+    for k, f, before, after in parse_edits():
+        fl = get(f); b, a = lines(before), lines(after)
+        for i, l in enumerate(a):
+            if l in b: continue
+            rep(f"D{k}.{i+1}", fl.count(l) == 1, f"count={fl.count(l)} {l[:40]}")
+        for i, l in enumerate(b):
+            if l in a: continue
+            rep(f"D{k}.old{i+1}", fl.count(l) == 0, f"count={fl.count(l)} {l[:40]}")
+    g = get("canonical/skills/doc-flow-guardrail/SKILL.md")
+    idx = lambda L, pred: next((i for i, l in enumerate(L) if pred(l)), -1)
+    i_guard = idx(g, lambda l: l.startswith("- **指示矛盾ガード**"))
+    i_new = idx(g, lambda l: l.startswith("- **承認のあとに plan が変わるとき**"))
+    i_merge = idx(g, lambda l: l.startswith("- **マージ・worktree 掃除・issue close はしない**"))
+    rep("O1", 0 <= i_guard < i_new < i_merge, f"{i_guard},{i_new},{i_merge}")
+    c = get("canonical/skills/implementer-contract/SKILL.md")
+    i_sec = idx(c, lambda l: l == "### 承認のあとに plan が変わるときの扱い（#391）")
+    i_tpl = idx(c, lambda l: l == "## プロンプトテンプレート")
+    rep("O2", 0 <= i_sec < i_tpl, f"{i_sec},{i_tpl}")
+    tail = c[i_tpl:] if i_tpl >= 0 else []
+    i_tg = idx(tail, lambda l: l == "## 指示が step 構成と矛盾したときのガード")
+    i_tn = idx(tail, lambda l: l == "## 承認のあとに plan が変わるとき")
+    i_tr = idx(tail, lambda l: l == "## 実装の規律")
+    rep("O3", 0 <= i_tg < i_tn < i_tr, f"{i_tg},{i_tn},{i_tr}")
+    for name, f, s, mode in SENTINELS:
+        fl = get(f)
+        ok = any(s in l for l in fl) if mode == "contains" else fl.count(s) == 1
+        rep(name, ok)
+    print(f"summary: {total - fails} PASS / {fails} FAIL of {total}")
+    return fails == 0
+
+def apply(src, dst, revert_k=None):
+    src, dst = pathlib.Path(src), pathlib.Path(dst)
+    files = {}
+    for k, f, before, after in parse_edits():
+        if f not in files:
+            files[f] = (src / f).read_text(encoding="utf-8")
+        if revert_k is not None and revert_k != k:
+            continue
+        old, new = (after, before) if revert_k == k else (before, after)
+        n = files[f].count(old)
+        if n != 1:
+            sys.exit(f"edit {k} in {f}: expected 1 match, got {n}")
+        files[f] = files[f].replace(old, new)
+    for f, t in files.items():
+        p = dst / f; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(t, encoding="utf-8")
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "check":
+        sys.exit(0 if check(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None) else 1)
+    elif cmd == "apply":
+        apply(sys.argv[2], sys.argv[3])
+    elif cmd == "revert":
+        apply(sys.argv[3], sys.argv[4], revert_k=int(sys.argv[2]))
+    else:
+        sys.exit("usage: see docstring")
+```
