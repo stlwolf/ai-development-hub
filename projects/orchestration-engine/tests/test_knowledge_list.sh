@@ -633,7 +633,8 @@ check_site human-rows    "$R35M" "failed to render the MALFORMED rows with jq" \
 
 echo "[36] frontmatter・本文・excerpt を切り出す awk の失敗も exit 2（環境エラー）— MALFORMED に丸めず、空の excerpt で進まず、何も出さずに終わらない（#442）"
 # [34] の jq の stub を awk に写したもの。STUB_AWK_FAIL に合う引数を持つ awk の呼び出しだけを exit 5 で失敗させ、
-# その引数を STUB_AWK_LOG に、そのときの LC_ALL を STUB_AWK_ENVLOG に記録する。他の呼び出しは実 awk に渡す。
+# その引数を STUB_AWK_LOG に、そのときの LC_ALL を STUB_AWK_ENVLOG に、stdin を STUB_AWK_INLOG に記録する
+# （stdin のあとに区切りの行 `--` を置く）。他の呼び出しは実 awk に渡す。
 _REAL_AWK="$(command -v awk)"
 {
   cat <<'STUB'
@@ -644,6 +645,8 @@ if [ -n "${STUB_AWK_FAIL:-}" ]; then
     case "$a" in $STUB_AWK_FAIL)
       printf '%s\n' "$a" >> "${STUB_AWK_LOG:-/dev/null}"
       printf '%s\n' "${LC_ALL-<unset>}" >> "${STUB_AWK_ENVLOG:-/dev/null}"
+      cat >> "${STUB_AWK_INLOG:-/dev/null}"
+      printf '%s\n' '--' >> "${STUB_AWK_INLOG:-/dev/null}"
       exit 5 ;;
     esac
   done
@@ -660,12 +663,14 @@ git_commit "$R36"
 #   記録の照合は check_site と同じ（"=<全文>" か、"~<そのプログラムにしか無い行>" が <落とした回数> 行あるか）。
 #   どの箇所も、変更前は frontmatter が MALFORMED として skip され exit 0、本文は何も出さずに exit 5、excerpt は
 #   空のまま exit 0 で終わっていた（#442 の episode）。
+#   LC_ALL は POSIX にして起動する（C と同じ意味で、名前だけが違う）。テストを回す環境が LC_ALL=C でも、再実行が
+#   自分で LC_ALL=C を付けたことを記録の名前で見分けるため（実装SO 指摘）。
 check_awk_site() {
   local name="$1" want_err="$2" want_log="$3" pat="$4" times="$5"
-  local log="$_TMP_DIR/stubawk-36-$name.log" envlog="$_TMP_DIR/stubawk-36-$name.env"
-  : > "$log"; : > "$envlog"
+  local log="$_TMP_DIR/stubawk-36-$name.log" envlog="$_TMP_DIR/stubawk-36-$name.env" inlog="$_TMP_DIR/stubawk-36-$name.in"
+  : > "$log"; : > "$envlog"; : > "$inlog"
   RC=0
-  OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_AWK_FAIL="$pat" STUB_AWK_LOG="$log" STUB_AWK_ENVLOG="$envlog" OE_KNOWLEDGE_REPO_ROOT="$R36" "$BASH" "$LISTER" 2>"$ERRFILE")" || RC=$?
+  OUT="$(env LC_ALL=POSIX PATH="$_STUB_DIR:$PATH" STUB_AWK_FAIL="$pat" STUB_AWK_LOG="$log" STUB_AWK_ENVLOG="$envlog" STUB_AWK_INLOG="$inlog" OE_KNOWLEDGE_REPO_ROOT="$R36" "$BASH" "$LISTER" 2>"$ERRFILE")" || RC=$?
   ERR="$(cat "$ERRFILE")"
   ck  "$name: exit 2（環境エラー）"  "2" "$RC"
   ckc "$name: ERROR メッセージ"     "$ERR" "ERROR: $want_err at docs/knowledge/items/$ULID1.md"
@@ -683,10 +688,12 @@ ncc "frontmatter: MALFORMED に丸めていない" "$OUT" "MALFORMED"
 check_awk_site body "failed to extract the body with awk" \
   '=NR==1&&$0=="---"{f=1;next} f==1&&$0=="---"{f=2;next} f==2{print}' '*f==2{print}*' 1
 # excerpt は、失敗したときだけ同じ入力を LC_ALL=C でもう1回走らせ、そちらでも失敗したときだけ exit 2 にする。
-# stub はどちらも落とすので記録は2回で、2回目の LC_ALL が C であることで、分ける経路を通ったことを見る。
+# stub はどちらも落とすので記録は2回で、1回目は起動したときの POSIX、2回目は C であることと、2回とも同じ本文を
+# stdin で受けたことで、分ける経路を同じ入力で通ったことを見る（実装SO 指摘）。
 check_awk_site excerpt "failed to extract the excerpt with awk" \
   '~result=l; found=1 }' '*result=l; found=1*' 2
-ck  "excerpt: 2回目は LC_ALL=C で走らせた" "C" "$(tail -n 1 "$_TMP_DIR/stubawk-36-excerpt.env")"
+ck  "excerpt: 1回目は起動時のロケール・2回目は LC_ALL=C で走らせた" "POSIX C" "$(tr '\n' ' ' <"$_TMP_DIR/stubawk-36-excerpt.env" | sed 's/ $//')"
+ck  "excerpt: 2回とも同じ本文を stdin で受けた" "$(printf '\nvalid one.\n--\n\nvalid one.\n--')" "$(cat "$_TMP_DIR/stubawk-36-excerpt.in")"
 # 対照: 本文の先頭の内容行に文字として読めないバイトがある item は、UTF-8 ロケールでは excerpt の awk がデータで
 # 失敗する。LC_ALL=C でもう1回走らせると成功するので、データの不備として従来どおり excerpt を空にして列挙を続け、
 # exit 2 にしない。この awk がそのロケールで不正なバイトに失敗しないなら、この経路は無いので見ない。
@@ -694,9 +701,12 @@ R36D="$_TMP_DIR/r36d"; mkdir -p "$R36D"; git_init "$R36D"
 write_item "$R36D/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid one."
 write_item "$R36D/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "$(printf 'bad \377 first line')"
 git_commit "$R36D"
+# ロケールは、正常な行では成功し、不正なバイトの行でだけ失敗するものを選ぶ（ロケールが無いなどの別の理由で
+# 失敗するものを選ばないため・実装SO 指摘）。
 _LOC36=""
 for _l in C.UTF-8 en_US.UTF-8 ja_JP.UTF-8; do
-  if ! printf 'bad \377 first line\n' | LC_ALL="$_l" awk '{ sub(/^[[:space:]]+/, "") }' >/dev/null 2>&1; then
+  if printf 'good first line\n' | LC_ALL="$_l" awk '{ sub(/^[[:space:]]+/, "") }' >/dev/null 2>&1 \
+    && ! printf 'bad \377 first line\n' | LC_ALL="$_l" awk '{ sub(/^[[:space:]]+/, "") }' >/dev/null 2>&1; then
     _LOC36="$_l"; break
   fi
 done
