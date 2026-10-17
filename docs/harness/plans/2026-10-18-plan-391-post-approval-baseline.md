@@ -3,7 +3,7 @@ id: "01M55C7VE7CBSQ95MS4QTE2QFR"
 title: "#391 承認のあとに plan が変わったときの扱いを規範に書く"
 date: 2026-10-18
 type: plan
-status: draft
+status: stable              # 実装完了（2026-10-18・PR #451）。ゲート3 の承認は 5eefce8 の版。承認のあとの変化は末尾の「ゲート3 のあとの変更」節
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/391"
@@ -665,45 +665,45 @@ SO が指摘した3通りの写し（節全体をコードフェンスで囲む�
 - [x] 設計SO を当て、10件の指摘を採否して plan を直した（上の「設計SO」節）。
 - [x] 直した plan で、陰性対照・陽性対照・部分戻し9通りと、SO の示した3通りの写しを回し直した（E の項目を含む。SO の写し a と c は行単位の項目を全部通り、E3 だけが落ちた）。結果は episode の「P2 の締め」節。
 
-### P3: plan と episode をコミットして push し、報告して止まる
+### P3: plan と episode をコミットして push し、報告して止まる（完了）
 
-- [ ] plan と episode をコミットし、枝を push する（PR はまだ作らない。承認時の commit を baseline に使うため、push 済みの commit が要る）。
-- [ ] `.oe/report-391.md` に報告を書き（`implementer-contract` の形・推奨の案と owner に決めてもらうことを冒頭に）、報告の宛先が `oe-tree` に root `cockpit` として生きていることを確かめ、engine の `bin/oe-send` で1行を送り、exit code を確かめて **STOP**。
+- [x] plan と episode をコミットし、枝を push する（PR はまだ作らない。承認時の commit を baseline に使うため、push 済みの commit が要る）。
+- [x] `.oe/report-391.md` に報告を書き（`implementer-contract` の形・推奨の案と owner に決めてもらうことを冒頭に）、報告の宛先が `oe-tree` に root `cockpit` として生きていることを確かめ、engine の `bin/oe-send` で1行を送り、exit code を確かめて **STOP**。
 
-### GATE 3: owner の plan 承認（統括からの送信で届いたものだけを数える）
+### GATE 3: owner の plan 承認（統括からの送信で届いたものだけを数える）（完了・2026-10-18）
 
-- [ ] owner が案を決める（推奨は B+digest と3つの級）。別の案になれば plan を直し、再承認を受ける。
-- [ ] 承認の記録の baseline を自分で確かめる。この承認はまだ今の規範で行われるので、統括が記録した形（digest か commit か）に従って一致を確かめる。
+- [x] owner が案を決める（推奨は B+digest と3つの級）。別の案になれば plan を直し、再承認を受ける。
+- [x] 承認の記録の baseline を自分で確かめる。この承認はまだ今の規範で行われるので、統括が記録した形（digest か commit か）に従って一致を確かめる。
 
-### I1-0: baseline の確認と、origin/master の確認
+### I1-0: baseline の確認と、origin/master の確認（完了）
 
-- [ ] `git fetch` のあと、`b62d618..origin/master` で直す4ファイルと `document-format.md` に触れた commit が無いことを確かめる。あれば rebase し、受入の「変更前の版」をその commit に読み替えて対照を回し直す（plan の `b62d618` の記述は補正として申告する）。
+- [x] `git fetch` のあと、`b62d618..origin/master` で直す4ファイルと `document-format.md` に触れた commit が無いことを確かめる。あれば rebase し、受入の「変更前の版」をその commit に読み替えて対照を回し直す（plan の `b62d618` の記述は補正として申告する）。
 
-### I1-1: 4ファイルの9か所を直す（1コミット）
+### I1-1: 4ファイルの9か所を直す（1コミット）（完了・52b49f8。実装SO と Copilot の補正は 46617da・151a0b6）
 
-- [ ] 「直す箇所と直し方」の 1〜9 を worktree の実ファイルに当てる（`check391.py apply <変更前の写し> <worktree>` と同じ置き換え）。
-- [ ] `markdown-conventions` に照らす（箇条書きは `-`・インデント2スペース・コードブロックに言語指定）。
+- [x] 「直す箇所と直し方」の 1〜9 を worktree の実ファイルに当てる（`check391.py apply <変更前の写し> <worktree>` と同じ置き換え）。
+- [x] `markdown-conventions` に照らす（箇条書きは `-`・インデント2スペース・コードブロックに言語指定）。
 
-### GATE I1: 受入の検査と差分の範囲
+### GATE I1: 受入の検査と差分の範囲（完了・補正のたびに回し直した）
 
-- [ ] `check391.py check <worktree> <変更前の写し>` で E1〜E4 を含む全項目 PASS。部分ごとに戻した9通りの写しで E が FAIL。`git diff --numstat b62d618 -- canonical/orchestration-spec/document-format.md` が空（S5）。
-- [ ] `git diff --stat` の変更ファイルが4つ（スキル）+ plan + episode だけであることを確かめる。
-- [ ] 打ち消す側の掃き出し: `grep -rn '1単位\|再承認\|baseline\|digest\|承認' canonical/ --include='*.md'` の各ヒットが、直した箇所か、新しい規則と整合する箇所（DJ-7 に挙げたもの）であることを1件ずつ確かめ、結果を episode に書く。
+- [x] `check391.py check <worktree> <変更前の写し>` で E1〜E4 を含む全項目 PASS。部分ごとに戻した9通りの写しで E が FAIL。`git diff --numstat b62d618 -- canonical/orchestration-spec/document-format.md` が空（S5）。
+- [x] `git diff --stat` の変更ファイルが4つ（スキル）+ plan + episode だけであることを確かめる。
+- [x] 打ち消す側の掃き出し: `grep -rn '1単位\|再承認\|baseline\|digest\|承認' canonical/ --include='*.md'` の各ヒットが、直した箇所か、新しい規則と整合する箇所（DJ-7 に挙げたもの）であることを1件ずつ確かめ、結果を episode に書く。
 
-### I2-1: 実装SO（弱・Codex 1レーン）を差分に当てる
+### I2-1: 実装SO（弱・Codex 1レーン）を差分に当てる（完了）
 
-- [ ] `tmp/391-post-approval-baseline/so-impl-prompt.md` の問いで `git diff b62d618` を見せる。問いは、(1) 変更後の文面が plan の「変更後」と一致するか、(2) 4ファイルの間で級の名前・受け付ける主体・一覧の項目数（8）が食い違っていないか、(3) 固定節の項目が brief に貼られたとき、子が「記録」を進めてよいと読めるか（#390 の凍結が戻らないか）、(4) 受入の写しで E を通せる形があるか。採否を plan の「実装SO」節と episode に書く。Codex が使えなければ Cursor に切り替え、理由を episode に書く。
+- [x] `tmp/391-post-approval-baseline/so-impl-prompt.md` の問いで `git diff b62d618` を見せる。問いは、(1) 変更後の文面が plan の「変更後」と一致するか、(2) 4ファイルの間で級の名前・受け付ける主体・一覧の項目数（8）が食い違っていないか、(3) 固定節の項目が brief に貼られたとき、子が「記録」を進めてよいと読めるか（#390 の凍結が戻らないか）、(4) 受入の写しで E を通せる形があるか。採否を plan の「実装SO」節と episode に書く。Codex が使えなければ Cursor に切り替え、理由を episode に書く。
 
-### I2-2: PR を作り、Copilot に1ラウンド依頼する
+### I2-2: PR を作り、Copilot に1ラウンド依頼する（完了・PR #451・未返信0）
 
-- [ ] `pr-conventions` に従って PR を作る（本文は `Refs #391`・plan と episode のパス・直す箇所の要約・受入の結果）。draft のままでは Copilot が付かないので ready で作る。
-- [ ] `gh pr edit --add-reviewer @copilot` で依頼し、`copilot-review-response` で未返信を0件にする（1ラウンド。再依頼は owner の明示があるときだけ）。
+- [x] `pr-conventions` に従って PR を作る（本文は `Refs #391`・plan と episode のパス・直す箇所の要約・受入の結果）。draft のままでは Copilot が付かないので ready で作る。
+- [x] `gh pr edit --add-reviewer @copilot` で依頼し、`copilot-review-response` で未返信を0件にする（1ラウンド。再依頼は owner の明示があるときだけ）。
 
-### I3: episode の closure（マージ前）と報告
+### I3: episode の closure（マージ前）と報告（closure 完了・報告の送信は commit の直後）
 
-- [ ] `episode-retrospective` で closure を書く（tier の判定・昇格の判定を1件ずつ・注入された knowledge 4件への観測の書き戻し・follow-up の行き先）。
-- [ ] 承認のあとに plan が変わったものは「ゲート3 のあとの変更」節にまとめ、報告に級と最新の commit を書く（この単位自身にも、新しい規則の形で申告する。受け付けは今の規範のまま統括が行う）。
-- [ ] `.oe/report-391.md` を更新し、宛先が生きていることを確かめて `oe-send` で1行を送り、exit code を確かめて **STOP**。マージ・worktree の掃除・issue の close はしない。
+- [x] `episode-retrospective` で closure を書く（tier の判定・昇格の判定を1件ずつ・注入された knowledge 4件への観測の書き戻し・follow-up の行き先）。
+- [x] 承認のあとに plan が変わったものは「ゲート3 のあとの変更」節にまとめ、報告に級と最新の commit を書く（この単位自身にも、新しい規則の形で申告する。受け付けは今の規範のまま統括が行う）。
+- [ ] `.oe/report-391.md` を更新し、宛先が生きていることを確かめて `oe-send` で1行を送り、exit code を確かめて **STOP**。マージ・worktree の掃除・issue の close はしない。（この commit の直後に送る）
 
 ## マージ後に統括へ渡すこと
 
