@@ -206,6 +206,28 @@ negative knowledge `01KZ3MHMEQN5XEJGV9809QPH2A`（名指しされた箇所を直
 - 残りの13か所と、判定を保留した1か所は、サブエージェントの報告の表をそのまま範囲外として報告に並べる。中身は、`oe-ack` の受領の走査（jq の失敗が「ack するものが無い」になる）、`oe_reg_resolve`（壊れた JSON で別のペインに解決する）、`oe_hs_watchdogs`（awk の失敗が「none registered」になる）、`liveness_of` の5つのスクリプト（grep の本当のエラーが `gone` になる）、`oe_generate_session_id`（date の失敗で ID が空になり、実行間で衝突する）などである。表示だけに効くものもある。手元で照合したのは上の2件だけである。
 - **`validate-knowledge.sh` の awk（手元でコードを照合した）**: 159 行と 417 行の awk は `validate_item` の中で、`validate_item` は `$(...)` でも `if` でもない場所で呼ばれるので、`set -e` が効く。サブエージェントが awk の stub で通した結果は、空の値で進むことはなく、159 行の awk が 2 で落ちると ERROR を出さずに exit 2、1 で落ちると schema 違反と同じ exit 1 で何も出さずに止まる、だった。同じ関数の 151 行は `if ! { ... }` の条件の中で sed を呼んでいて、sed が失敗すると「frontmatter block not found」の WARN と exit 1（schema 違反）に誤分類される（サブエージェントが sed の stub で確かめた）。
 - **この単位では直さない**（brief の scope）。場所と結果を報告に並べ、issue にするかは統括に渡す。
+- （closure の外部チェックの指摘で、全件を本文に写した・2026-10-17）サブエージェントの報告の全件は次の表のとおりである。行番号は `0e8b298` の時点で、パスは `projects/orchestration-engine/` からの相対である。「確かめ方」は、手元で再現したもの（手元）、サブエージェントが stub などで通したと報告したもの（SA 実行）、サブエージェントが読んだだけのもの（SA 読み）の3つに分けた。SA の2つは、この episode では照合していない（`unverified-summary`）。
+
+| # | 呼び出し → 関数 | 失敗するコマンド | 失敗したときの結果 | 確かめ方 |
+|---|---|---|---|---|
+| 1 | `bin/oe-refute:264`・`bin/oe-review:228` → `so_verdict_extract_verdict`（`lib/so-verdict.sh:23`） | `sed -E`（:28） | 判定の語が空になり `survived` を返す。`refuted` のレーンが「持ちこたえた」に倒れ、`oe-refute` が exit 3 でなく 0 になる | 手元（`oe-review` の end-to-end は SA も未実行） |
+| 2 | `bin/oe-delegate` の `build_child_command`・`build_approval_command` → `shell_quote`（:193） | `sed`（:195） | 引数が `''` に置き換わり、終了コード 0 | 手元（`shell_quote` 単体） |
+| 3 | `lib/capture.sh:98`・`:51` → `_oe_normalize_capture_output`（:28） | `sed -E`（:29） | 不正なバイトの行より後の `@@OE_EXIT` が失われ、監視は時間切れまで待ち、`oe-capture` は「no marker」で exit 1 | SA 実行（`if` の文脈の lib の足場） |
+| 4 | `bin/oe-ack:150` → `_ack_scan`（:126） | jq（:128–129）。プロセス置換が終了コードを捨てる | 「nothing to ack」で exit 0、受領印を出さない | SA 実行 |
+| 5 | `bin/oe-send:82`・`bin/oe-ack:185`・`bin/oe-jump:192` → `oe_reg_resolve`（`lib/delegate-registry.sh:85`） | jq（:118・:126・:127） | 壊れた JSON で別のペインに解決する。環境エラー用の rc 2 でなく「not found」の rc 1 を返す場合もある | SA 実行 |
+| 5b | `bin/oe-select:72`・`bin/oe-status:174` → `oe_reg_list`（:204）→ `_oe_reg_label`（:174） | jq（:184・:189・:190） | 壊れた行を tmux の題で表示する（表示だけ） | SA 実行 |
+| 6 | `bin/oe-handoff:187` → `oe_hs_watchdogs`（`lib/handoff-state.sh:287`） | awk（:298・`\|\| out=""`） | 引き継ぎの文書に「none registered」と書く | SA 実行 |
+| 7 | `bin/oe-vitals:339` → `resolve_succession`（:219） | `sed -E`（:225） | 通知に `board succession=?` と出る（表示だけ） | SA 実行 |
+| 8 | `bin/oe-vitals:292` ほか `oe-confirm`・`oe-activity`・`oe-undelivered`・`oe-tree` → `liveness_of` | `grep -qxF`（`oe-tree` は awk） | grep の本当のエラー（2）を「見つからない」と読み、生きているペインを `gone` にする | `oe-vitals` は SA 実行、ほかは SA 読み |
+| 9 | `bin/oe:117`・`oe-capture:92`・`oe-refute:232`・`oe-review:202`・`lib/verify.sh:655` → `oe_generate_session_id`（`lib/session.sh:7`） | `date`（:16）・`head \| tr`（:17） | ID が欠けるか空になり、実行間で出力先が衝突する | `oe-refute` は SA 実行、ほかは SA 読み |
+| 10 | `bin/oe-handoff:198–273` → `indent_or_none`（:193） | `sed`（:194） | 引き継ぎの文書の一覧の行が黙って消える | SA 読み |
+| 11 | `bin/oe-tree` の各所 → `winpane_of`・`session_of`・`coord_of`・`order_panes`・`entry_field_of`・`beat_of` | awk | 座標・セッション・拍動の表示が欠ける（表示だけ） | SA 読み |
+| 12 | `bin/oe-status:270` → `_oe_status_engine_section`（:113） | `sort`（:108） | ENGINE の行が黙って欠ける | SA 読み |
+| 13 | `lib/verify.sh:260` → `_oe_verify_annotate_files`（:154） | `grep -qxF`（:160） | 「基点にもともとあった」の注記が付かない | SA 読み |
+| 14 | `lib/spawn.sh:241`・`lib/verify.sh:367` → `_oe_spawn_build_cli_command`（:189） | `cd … && pwd`（:199） | `--add-dir` が空の値になる（実際はパスが必ずある） | SA 読み |
+| 保留 | `bin/oe-handoff:159`・`:576`・`:1119` → `oe_hs_session_for_pane`（`lib/handoff-state.sh:182`）・`oe_hs_beat_age_for_pane`（:227） | jq（`\|\| continue`） | 最新の拍動のファイルが壊れていると、一つ前の世代の session_id を返し、引き継ぎの文書に書く。読み飛ばしは意図的だが壊れたファイルについては書かれておらず、同じファイルの `oe_hs_children_of` は読み飛ばさない | SA 実行（同じ型と言い切れないので保留） |
+
+- サブエージェントは、反対の型（空の値で進まずに、何も言わずに止まるもの）も3件報告した。`bin/oe-report:77` は親の画面に入力行が無いと何も送らずに exit 1 で止まる。`bin/oe-status` は state の最後のファイル名が ULID でないと何も出さずに exit 1 で止まる。`oe-delegate --print-approval` は `--label` に不正なバイトがあると exit 1 で止まる。どれも SA 実行で、この episode では照合していない。
 - 照合の1回目では、サブエージェントの再現の足場（`so-verdict` のレーン出力）を回しても反転が出なかった。足場のファイルが、サブエージェントの再実行スクリプトの後半（sed の stub で落とす版）で、不正なバイトを含まない内容に上書きされていたためである。不正なバイトを含むレーン出力を自分で作り直して回し、上の結果を得た。足場を回して期待どおりの色が出ないときは、入力が想定どおりかを先に見る。
 
 昇格の印: 「macOS の sed・tr・awk の正規表現は、UTF-8 ロケールで不正なバイトにより失敗する」は、この単位の excerpt の件と、`so_verdict_extract_verdict` の反転の共通の根で、engine の多くの箇所の引き金である。
@@ -279,9 +301,16 @@ brief がこの単位に割り当てた item は5件で（`01KYA7C9NN4VDM7H2NYXZ
 - bash 3.2 でテストが途中で止まっても終了コードが 0 になる、engine のテストの仕組み → **同じ報告で判断を渡す**（教訓は knowledge item として収穫済み）。`本文: テストを回す中で、bash 3.2 の終了コードが 0 のまま止まる形を踏んだ（2026-10-17）`
 - so-compare の Codex のレーンが実行基盤の障害でコマンドを使えず、meta は成功のまま中身の無い回答が返ること（本文の昇格の印のうち、この枝と関係ない仕組みについての1件）と、差分を依頼文に埋め込んでレーンを保った判断 → **同じ報告で判断を渡す**（SO の仕組みを扱う作業の担当が決める）。`本文: 実装SO の2回目もコマンドを使えなかったが、読まずに出せる指摘を2つ返した（2026-10-17）`
 
+- 他の文書への反映（back-propagation）: issue #442 の本文の「2か所」は、起票したときの観測範囲の記録で、誤りではない。3つ目の箇所と excerpt の分け方は、`Refs #442` を持つ PR #445 の本文に書いてあり、issue の timeline から辿れる。issue へのコメントは owner と統括のゲートなので、この単位ではしない。#427 の episode が範囲外の awk を「`excerpt_of` と本文の切り出しの2つ」と書いたのも当時の観測範囲で、その記述（`excerpt_of` は空で exit 0、本文は awk の終了コードで止まる）は今回も正しかった。過去の episode は書き換えず、この episode の `related` から指す。README は今回の範囲に合わせて直した。`本文なし: closure の外部チェックの指摘で、反映しない理由を closure に書いたため`
+
 ### 証跡の置き場
 
-実装SO の依頼文と3回分の出力、洗い出しのサブエージェントの足場と再実行のスクリプト、変更前後のバイト比較と変異体の試しのスクリプトは、`tmp/442/`（作業層・gitignore）にあり消える。要点（判定・指摘・採否・所要時間とモデル・比較の件数と結果・再現の入力）は、本文の各節に写した。
+実装SO の依頼文と3回分の出力、洗い出しのサブエージェントの足場と再実行のスクリプト、変更前後のバイト比較と変異体の試しのスクリプトは、`tmp/442/`（作業層・gitignore）にあり消える。要点（判定・指摘・採否・所要時間とモデル・比較の件数と結果・再現の入力・洗い出しの全件の表）は、本文の各節に写した。
+
+closure の外部チェック（Step 4・Codex 1レーン・60 秒・初回で返った）は、同じく `tmp/442/` に置いた。Codex は今回もコマンドを使えず、episode の全文を依頼文に埋め込んで判断させた。4点のうち、選択的省略と routing の2点は問題なし、2点が問題あり（どちらも中）だった。`本文なし: closure を書いたあとに受けた確認で、本文の節が扱う作業より後に起きたため`
+
+- evidence anchor: 洗い出しの残りの箇所が「など」の例示だけで、全件の場所と結果が消える作業層にしか無かった。採って、洗い出しの節に全件の表を写した。
+- back-propagation: issue #442 と #427 の episode について、反映するか追わない理由が書かれていなかった。採って、上の follow-up に、反映しない理由と、訂正の情報の置き場（PR #445 の本文）を書いた。
 
 ### status
 
