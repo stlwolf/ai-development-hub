@@ -29,6 +29,10 @@ observations:
     ref: "#427"
     state: followed
     note: "issue の表を写さず、jq の12か所を grep で拾って11か所を stub で1つずつ通し、表で確かめていないとされた5か所も exit 5 だと確かめた。範囲外の awk だけは読みで止まると書き（読みだけと明記した）、実装SO に半分誤りと指摘された。x=$(関数) の代入では関数の中で set -e が効かず、関数の中の失敗が空の値として流れる。grep に映らない経路の4つ目の形である"
+  - date: 2026-10-17
+    ref: "#442"
+    state: followed
+    note: "issue の表（2か所）を写さず、awk を呼ぶ3か所を stub で1つずつ通して、issue に無い3つ目（frontmatter の awk の失敗が MALFORMED に丸められて exit 0）を見つけた。awk を PATH から抜いた経路も変更前後で通し、変更前は exit 0・変更後は exit 2 であることを確かめてから、依存の検査に awk を足さない判断の根拠にした"
 exclusions:
   - "関数を source していない自己完結したスクリプト（伝播の経路が無い）"
   - "実際に叩いて exit code を観測した場合（grep を根拠にしていない）"
