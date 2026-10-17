@@ -144,3 +144,26 @@ knowledge_observations:
 - plan と episode を `bd808c3` としてコミットし、枝 `docs/#391_post_approval_baseline` を push した。PR はまだ作っていない。plan はこの commit の版で、統括が baseline を記録する（この承認はまだ今の規範で行われる）。
 - 報告を `.oe/report-391.md`（作業層）に書いた。送る直前に `oe-tree` で宛先の統括が root `cockpit` として生きていることを確かめ、engine の `bin/oe-send` で1行のポインタを送った。exit code は報告の節に書く（0 は配送の成功を意味しない）。
 - ここで止まり、ゲート3（owner の plan 承認）を待つ。承認は統括のペインからの送信で届いたものだけを数える。
+
+### GATE 3: owner の承認を受けた（2026-10-18）
+
+- 統括から、owner が plan の8件（推奨の案・3つの級・再承認は変更だけ・記録の形と照合の置き換え・8項目・ゲート3 の性質・直す場所と確かめ方・全体）をすべて承認したと届いた。補足は無い。承認の経路は owner の会話での言葉で、承認のページの db は読んでいない（owner がそう指示した）と記録にある。記録と baseline は作業層の `.oe/decision-391-gate3.md` にある。
+- 送り主の確認: `oe-confirm --all` の記録で、この承認は統括のペインから自分のペインへの送信として `received` になっていた。brief の「承認は統括のペインからの送信で届いたものだけを数える」に当たる。
+- baseline の再計算: 承認の記録が挙げた5つ（plan 全文・plan のステップ節・brief・ゲート表2本）を、記録に書かれた算法で自分で計算し直し、5つとも一致した。plan は `5eefce8` の版で、`bd808c3` から blob は変わっていない（P3 の2つ目の commit は episode だけを変えた）。
+- 統括の指示: この委譲には、いまの規則（承認のあとの plan の変化は再承認と baseline の取り直し）がそのまま当たる（plan の DJ-11 と「リスク」のとおり）。この単位で plan を変えるときは、新しい規則の級で申告し、統括がいまの形で受け付ける。
+
+### I1-0: baseline の確認と、origin/master の確認（2026-10-18）
+
+- `git fetch` のあと、`origin/master` は `b62d618` のままで、`b62d618..origin/master` は空だった。直す4ファイルと `document-format.md` に触れた commit は無い。plan どおり進める。
+
+### I1-1: 4ファイル9か所を直し、GATE I1 を通した（2026-10-18）
+
+- 置き換えは `check391.py apply <master の写し> <worktree>` で当てた。plan の「直す箇所と直し方」のブロックをそのまま使うので、手で写し間違える余地が無い。当てたあとの4ファイルは、P2 の陽性対照の写しとバイト単位で同じだった。
+- GATE I1 の結果:
+  - `check391.py check <worktree> <master の写し>`: 期待の全文との一致 E1〜E4 を含む 69 項目がすべて PASS。
+  - `git diff --numstat b62d618 -- canonical/orchestration-spec/document-format.md` は空（S5）。
+  - `git diff --stat b62d618` の変更ファイルは、4スキル・plan・episode の6つだけ。
+  - 部分戻し9通りと SO の写し3通りは、P2 の締めで同じ内容の写しに当てて落ちることを確かめてある（worktree の4ファイルはその写しと同じ）。
+- 打ち消す側の掃き出し（`grep -rn '1単位\|再承認\|baseline\|digest' canonical/ --include='*.md'`）: 古い「plan の更新と再承認までを1単位にする」は0件。残るヒットは次のどれかで、新しい規則と衝突するものは無い。(1) 直した4ファイルの新しい文面。(2) `CATALOG.md` と `doc-flow-guardrail` の行 C の「baseline 不一致時は invalid-baseline」（今も正しい）。(3) `delegate-task` と `orchestration-toolkit` の spawn の承認ダイジェスト（#262・別の仕組み）。(4) `document-format.md` §13.4 の「昇格の1単位」（別の話題）。設計SO が挙げた3か所のうち、`unmet-gate-check` の clean の理由は直し、`implementation-gate-rule` と `copilot-review-response` は plan の DJ-7 のとおり変えていない。
+- markdown の体裁: 4ファイルともコードフェンスは釣り合い、言語指定の無いフェンスと `-` 以外の箇条書きと tab は無い。
+- plan の済み印はここでは動かしていない。この委譲にはいまの規則（plan の変化は再承認と baseline の取り直し）が当たると統括から届いているので、進捗の記録（I1-0〜I3 の済み印と status）は I3 でまとめて入れ、新しい規則の級（記録）で申告し、統括がいまの形で受け付ける。
