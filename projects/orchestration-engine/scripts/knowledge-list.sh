@@ -14,7 +14,7 @@ set -euo pipefail
 # Exit codes:
 #   0 = 列挙成功（skipped があっても既定は 0）
 #   1 = --strict かつ skipped > 0（malformed / 非 ULID を検出。段3 の完全性信号）
-#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / frontmatter root の型を読む jq の評価失敗 / usage / repo root 不明）
+#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / jq の評価失敗 / usage / repo root 不明）
 #
 # 位置づけ:
 #   negative knowledge ループ 段3（突合）の read-only 列挙 verb。統括が brief を組む時に候補を
@@ -209,14 +209,23 @@ excerpt_of() {
 # process_item <item_ref> <content> — 1 件を解析し ITEMS/MALFORMED に積む。
 process_item() {
   local item_ref="$1" content="$2"
-  local bn id_from_name
+  local bn id_from_name row
   bn="${item_ref##*/}"
   id_from_name="${bn%.md}"
 
+  # jq の評価失敗は item の不備ではなく環境エラーなので、このスクリプトの jq の呼び出しはすべて
+  # ERROR を出して exit 2 で止める（#424・#427）。`$(...)` の終了コードを捨てると、何も出さずに
+  # exit 5 で終わるか、失敗が空の値として後段へ流れて出力の一部が黙って消える。jq は正当な空や
+  # false を終了コード 0 で返すので、終了コードが 0 でないときだけを失敗として扱う。
+
   # 非 ULID 名は items/ の型付き store 規約に反する → flagged（黙って落とさない）
   if [[ ! "$id_from_name" =~ $ULID_RE ]]; then
-    MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg reason "non-ULID filename in knowledge/items/" \
-      '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:null}')")
+    if ! row="$(jq -n --arg ref "$item_ref" --arg reason "non-ULID filename in knowledge/items/" \
+        '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:null}' 2>/dev/null)"; then
+      echo "ERROR: failed to build the MALFORMED row with jq at $item_ref (environment error)" >&2
+      exit 2
+    fi
+    MALFORMED_JSON+=("$row")
     SKIPPED=$((SKIPPED + 1))
     return
   fi
@@ -232,23 +241,30 @@ process_item() {
       !closed { fm = fm $0 "\n" }
       END { if (bad || !closed) exit 1; printf "%s", fm }
     ' <<<"$content")"; then
-    MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "frontmatter delimiter block not found (opening/closing '---')" \
-      '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}')")
+    if ! row="$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "frontmatter delimiter block not found (opening/closing '---')" \
+        '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}' 2>/dev/null)"; then
+      echo "ERROR: failed to build the MALFORMED row with jq at $item_ref (environment error)" >&2
+      exit 2
+    fi
+    MALFORMED_JSON+=("$row")
     SKIPPED=$((SKIPPED + 1))
     return
   fi
   # 「空白だけか」は glob で見る（validate-knowledge.sh と同じ形・理由も同スクリプトの frontmatter
   # 判定のコメント）。置換 ${x//[[:space:]]/} は bash 3.2 で長い frontmatter に実用的な時間で終わらない（#419）。
   if [[ "$fm" != *[![:space:]]* ]]; then
-    MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "missing or empty frontmatter" \
-      '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}')")
+    if ! row="$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "missing or empty frontmatter" \
+        '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}' 2>/dev/null)"; then
+      echo "ERROR: failed to build the MALFORMED row with jq at $item_ref (environment error)" >&2
+      exit 2
+    fi
+    MALFORMED_JSON+=("$row")
     SKIPPED=$((SKIPPED + 1))
     return
   fi
   # yq の失敗と root の型の不一致は item の不備なので MALFORMED（root_type は空か object 以外のまま）。
   # root の型を読む jq の評価失敗は環境エラーなので exit 2 で止める（validate-knowledge.sh と同じ扱い・
-  # #424）。`|| true` で空へ丸めると、正常な item が MALFORMED として skip される。この形にそろえたのは
-  # この1か所だけで、出力と集計を組むほかの jq の呼び出しはまだそろっていない（#424 の episode）。
+  # #424）。`|| true` で空へ丸めると、正常な item が MALFORMED として skip される。
   local root_type=""
   if json="$(printf '%s\n' "$fm" | yq -p=yaml -o=json '.' 2>/dev/null)"; then
     if ! root_type="$(jq -r 'type' <<<"$json" 2>/dev/null)"; then
@@ -257,8 +273,12 @@ process_item() {
     fi
   fi
   if [[ "$root_type" != "object" ]]; then
-    MALFORMED_JSON+=("$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "malformed YAML frontmatter" \
-      '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}')")
+    if ! row="$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "malformed YAML frontmatter" \
+        '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}' 2>/dev/null)"; then
+      echo "ERROR: failed to build the MALFORMED row with jq at $item_ref (environment error)" >&2
+      exit 2
+    fi
+    MALFORMED_JSON+=("$row")
     SKIPPED=$((SKIPPED + 1))
     return
   fi
@@ -273,7 +293,7 @@ process_item() {
   # observations の集計（#274）: 集計・候補判定に使うのは obs_valid を満たすレコードだけで、満たさない
   # ものは invalid に数える（壊れたレコードから制御候補を立てない）。既存キーは不変で追加は additive。
   local item_json
-  item_json="$(jq \
+  if ! item_json="$(jq \
     --arg ref "$item_ref" \
     --arg id_name "$id_from_name" \
     --arg excerpt "$excerpt" \
@@ -301,11 +321,20 @@ process_item() {
       observations_malformed: $malformed,
       control_candidate: $cand,
       control_candidate_reasons: (if $cand then $adverse else [] end)
-    }' <<<"$json")"
+    }' <<<"$json" 2>/dev/null)"; then
+    echo "ERROR: failed to build the item JSON with jq at $item_ref (environment error)" >&2
+    exit 2
+  fi
   ITEMS_JSON+=("$item_json")
-  # footer 用の件数は item JSON から読む（同じ判定を bash 側で書き直さない）。
-  local cand_flag mal_flag
-  IFS=' ' read -r cand_flag mal_flag <<<"$(jq -r '"\(.control_candidate) \(.observations_malformed)"' <<<"$item_json")"
+  # footer 用の件数は item JSON から読む（同じ判定を bash 側で書き直さない）。jq の出力をいったん変数に
+  # 受けてから分ける。`read <<<"$(jq ...)"` は jq の終了コードを捨てるので、失敗するとフラグが空のまま
+  # 進み、footer から control-candidates / integrity-issues が黙って消える（#427）。
+  local flags cand_flag mal_flag
+  if ! flags="$(jq -r '"\(.control_candidate) \(.observations_malformed)"' <<<"$item_json" 2>/dev/null)"; then
+    echo "ERROR: failed to read the control-candidate and integrity flags with jq at $item_ref (environment error)" >&2
+    exit 2
+  fi
+  IFS=' ' read -r cand_flag mal_flag <<<"$flags"
   if [[ "$cand_flag" == "true" ]]; then CONTROL_CANDIDATES=$((CONTROL_CANDIDATES + 1)); fi
   if [[ "$mal_flag" == "true" ]]; then INTEGRITY_ISSUES=$((INTEGRITY_ISSUES + 1)); fi
   LISTED=$((LISTED + 1))
@@ -380,13 +409,30 @@ case "$MODE" in
 esac
 
 # --- 出力 ---
+# jq の失敗は、ここでも ERROR を出して exit 2 で止める（process_item の冒頭のコメント・#427）。
+# --json は最後の jq が値を組み終えてから書き出すので、値を組めずに失敗したときの stdout は空である。
+# 人向けの出力は item ごとに書き出すので、途中の item で jq が失敗すると、それまでの行が stdout に
+# 出たあとで止まる。そのときは末尾の listed 行が出ない。どちらのモードでも、書き出しの途中で jq が
+# 失敗したとき（読み手が途中でパイプを閉じたときなど）は、途中まで出たあとで止まる。
 if [[ "$JSON" -eq 1 ]]; then
-  items_arr="[]"; [[ "${#ITEMS_JSON[@]}" -gt 0 ]] && items_arr="$(printf '%s\n' "${ITEMS_JSON[@]}" | jq -s '.')"
-  mal_arr="[]"; [[ "${#MALFORMED_JSON[@]}" -gt 0 ]] && mal_arr="$(printf '%s\n' "${MALFORMED_JSON[@]}" | jq -s '.')"
+  items_arr="[]"
+  if [[ "${#ITEMS_JSON[@]}" -gt 0 ]]; then
+    if ! items_arr="$(printf '%s\n' "${ITEMS_JSON[@]}" | jq -s '.' 2>/dev/null)"; then
+      echo "ERROR: failed to collect the items into a JSON array with jq (environment error)" >&2
+      exit 2
+    fi
+  fi
+  mal_arr="[]"
+  if [[ "${#MALFORMED_JSON[@]}" -gt 0 ]]; then
+    if ! mal_arr="$(printf '%s\n' "${MALFORMED_JSON[@]}" | jq -s '.' 2>/dev/null)"; then
+      echo "ERROR: failed to collect the MALFORMED rows into a JSON array with jq (environment error)" >&2
+      exit 2
+    fi
+  fi
   # items / malformed 配列は stdin（printf は builtin ＝ ARG_MAX 非対象）で jq へ渡す。argv（--argjson）
   # で渡すと巨大 item を含む配列で `Argument list too long`（exit 126）になり exit 契約を破るため（実装SO 指摘）。
   # jq -s が 2 値を配列 . に slurp する（.[0]=items, .[1]=malformed）。小さいメタは --arg で渡す。
-  printf '%s\n%s\n' "$items_arr" "$mal_arr" | jq -s \
+  if ! printf '%s\n%s\n' "$items_arr" "$mal_arr" | jq -s \
     --arg source "$SOURCE_LABEL" \
     --arg head "$HEAD_SHA" \
     --argjson listed "$LISTED" \
@@ -394,11 +440,14 @@ if [[ "$JSON" -eq 1 ]]; then
     '{schema_version:1, source:$source, head:(if $head=="" then null else $head end), listed:$listed, skipped:$skipped,
       control_candidates: ([.[0][] | select(.control_candidate == true)] | length),
       integrity_issues: ([.[0][] | select(.observations_malformed == true)] | length),
-      items:.[0], malformed:.[1]}'
+      items:.[0], malformed:.[1]}' 2>/dev/null; then
+    echo "ERROR: failed to build the --json output with jq (environment error)" >&2
+    exit 2
+  fi
 else
   if [[ "${#ITEMS_JSON[@]}" -gt 0 ]]; then
     for obj in "${ITEMS_JSON[@]}"; do
-      printf '%s\n' "$obj" | jq -r '
+      if ! printf '%s\n' "$obj" | jq -r '
         "- " + (.id|tostring),
         "    item:       " + (.item_ref|tostring),
         "    status:     " + ((.status // "-")|tostring) + "   landing: " + ((.landing // "-")|tostring) + "   date: " + ((.date // "-")|tostring),
@@ -420,12 +469,18 @@ else
         (if ((.exclusions // [])|length) > 0 then "    exclusions: " + ((.exclusions|map(tostring))|join("; ")) else empty end),
         "    excerpt:    " + ((.excerpt // "-")|tostring),
         "    source:     " + ((.source_ref // "-")|tostring),
-        ""'
+        ""' 2>/dev/null; then
+        echo "ERROR: failed to render the item list with jq (environment error)" >&2
+        exit 2
+      fi
     done
   fi
   if [[ "${#MALFORMED_JSON[@]}" -gt 0 ]]; then
     for obj in "${MALFORMED_JSON[@]}"; do
-      printf '%s\n' "$obj" | jq -r '"! MALFORMED " + (.id // "?") + "  (" + .reason + ")  item: " + .item_ref'
+      if ! printf '%s\n' "$obj" | jq -r '"! MALFORMED " + (.id // "?") + "  (" + .reason + ")  item: " + .item_ref' 2>/dev/null; then
+        echo "ERROR: failed to render the MALFORMED rows with jq (environment error)" >&2
+        exit 2
+      fi
     done
     echo ""
   fi

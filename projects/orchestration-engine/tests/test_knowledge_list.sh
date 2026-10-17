@@ -566,6 +566,71 @@ ck  "対照: 正常な item は列挙される"             "1" "$(jq -r '.liste
 ck  "対照: yq の失敗と root が list の2件は skip" "2" "$(jq -r '.skipped' <<<"$OUT")"
 ck  "対照: どちらも malformed YAML の理由"       "2" "$(jq -r '[.malformed[] | select(.reason == "malformed YAML frontmatter")] | length' <<<"$OUT")"
 
+echo "[35] 行と出力と集計を組む jq の評価失敗も exit 2（環境エラー）— 何も出さずに終わらず、出力の一部を黙って落とさない（#427）"
+# [34] の stub をそのまま使い、STUB_JQ_FAIL に箇所ごとのパターンを渡して、その箇所の jq だけを失敗させる。
+# store を「正常な item だけ」と「壊れた item だけ」に分けるのは、items と MALFORMED の行を配列にまとめる
+# 2つの `jq -s '.'` の引数が同じで、片方しか呼ばれない store でしか当て分けられないため。
+R35V="$_TMP_DIR/r35v"; mkdir -p "$R35V"; git_init "$R35V"
+write_item "$R35V/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid one." "$(obs_yaml harmful)"
+git_commit "$R35V"
+R35M="$_TMP_DIR/r35m"; mkdir -p "$R35M/docs/knowledge/items"; git_init "$R35M"
+printf -- '---\nid: x\n---\n本文\n' > "$R35M/docs/knowledge/items/not-a-ulid.md"
+printf -- '---\nid: x\n閉じの区切りが無い\n' > "$R35M/docs/knowledge/items/$ULID1.md"
+printf -- '---\n---\n本文\n' > "$R35M/docs/knowledge/items/$ULID2.md"
+printf -- '---\n- just\n- a list\n---\n本文\n' > "$R35M/docs/knowledge/items/$ULID3.md"
+git_commit "$R35M"
+# 対照: stub を外すと、どちらの store も従来どおり列挙され、V の footer に control-candidates が出る。
+run "$R35V"
+ck  "対照 V: exit 0"                     "0" "$RC"
+ckc "対照 V: footer に control-candidates" "$OUT" "control-candidates: 1"
+run "$R35M" --json
+ck  "対照 M: exit 0"                     "0" "$RC"
+ck  "対照 M: 4件とも skip"                "4" "$(jq -r '.skipped' <<<"$OUT")"
+# check_site <名前> <root> <ERROR の文言> <記録の照合> <STUB_JQ_FAIL> [args...]
+#   記録の照合: "=<全文>" は記録の全文と照合する。"~<固定文字列>" は、その文字列を含む行が記録にちょうど
+#   1行あることを見る（複数行のプログラムは記録も複数行になるので、そのプログラムにしか無い行で1回の
+#   呼び出しを見る）。どの箇所も、変更前は何も出さずに exit 5 で終わるか、footer の件数を黙って落として
+#   exit 0 で終わっていた（#427 の episode）。
+check_site() {
+  local name="$1" root="$2" want_err="$3" want_log="$4" pat="$5"; shift 5
+  local log="$_TMP_DIR/stubjq-35-$name.log"
+  : > "$log"
+  RC=0
+  OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_JQ_FAIL="$pat" STUB_JQ_LOG="$log" OE_KNOWLEDGE_REPO_ROOT="$root" "$BASH" "$LISTER" "$@" 2>"$ERRFILE")" || RC=$?
+  ERR="$(cat "$ERRFILE")"
+  ck  "$name: exit 2（環境エラー）"  "2" "$RC"
+  ckc "$name: ERROR メッセージ"     "$ERR" "ERROR: $want_err"
+  ck  "$name: stdout は空"           "" "$OUT"
+  case "$want_log" in
+    =*) ck "$name: 狙ったプログラムで stub が落とした" "${want_log#=}" "$(cat "$log")" ;;
+    \~*) ck "$name: 狙ったプログラムで stub が1回落とした" "1" "$(grep -cF -- "${want_log#\~}" "$log" || true)" ;;
+  esac
+}
+_ROW_ERR="failed to build the MALFORMED row with jq at docs/knowledge/items"
+check_site row-non-ulid  "$R35M" "$_ROW_ERR/not-a-ulid.md" \
+  "=non-ULID filename in knowledge/items/" 'non-ULID filename in knowledge/items/'
+check_site row-delimiter "$R35M" "$_ROW_ERR/$ULID1.md" \
+  "=frontmatter delimiter block not found (opening/closing '---')" 'frontmatter delimiter block not found*'
+check_site row-empty     "$R35M" "$_ROW_ERR/$ULID2.md" \
+  "=missing or empty frontmatter" 'missing or empty frontmatter'
+check_site row-yaml      "$R35M" "$_ROW_ERR/$ULID3.md" \
+  "=malformed YAML frontmatter" 'malformed YAML frontmatter'
+# shellcheck disable=SC2016  # $counts は jq のプログラムの文字列で、shell に展開させない
+check_site item-json     "$R35V" "failed to build the item JSON with jq at docs/knowledge/items/$ULID1.md" \
+  '~observations_by_state: $counts' '*observations_by_state: $counts*'
+check_site flags         "$R35V" "failed to read the control-candidate and integrity flags with jq at docs/knowledge/items/$ULID1.md" \
+  '="\(.control_candidate) \(.observations_malformed)"' '*.control_candidate) *'
+check_site json-items    "$R35V" "failed to collect the items into a JSON array with jq" \
+  "=." '.' --json
+check_site json-rows     "$R35M" "failed to collect the MALFORMED rows into a JSON array with jq" \
+  "=." '.' --json
+check_site json-output   "$R35V" "failed to build the --json output with jq" \
+  '~schema_version:1' '*schema_version:1*' --json
+check_site human-items   "$R35V" "failed to render the item list with jq" \
+  '~"    excerpt:    "' '*"    excerpt:    "*'
+check_site human-rows    "$R35M" "failed to render the MALFORMED rows with jq" \
+  '="! MALFORMED " + (.id // "?") + "  (" + .reason + ")  item: " + .item_ref' '*! MALFORMED *'
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

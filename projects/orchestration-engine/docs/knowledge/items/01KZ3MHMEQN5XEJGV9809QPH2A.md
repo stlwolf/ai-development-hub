@@ -38,6 +38,10 @@ observations:
     ref: "#429"
     state: followed
     note: "issue が名指しした rm の3つの形を直す前に、同じフックの6検査（chmod・chown・mkfs・dd・git reset・git clean）と block-force-push.sh を同じ方法（フックに判定だけをさせる）で当て、先頭だけを見る同じ型が全部にあることと、区切り・前置き・対象の書き方の3つの族を見つけて plan に書いた。force-push もこの単位で直すかは owner に預け、直すことになった"
+  - date: 2026-10-16
+    ref: "#427"
+    state: followed
+    note: "issue の表に頼らず jq の呼び出し12か所を全部当たり、表で確かめていないとされた5か所もこの単位で直した。jq 以外の握り潰し（git rev-parse・yq・awk）も当たり、awk の2か所は範囲外として PR 本文と報告に書いた"
 ---
 
 指摘は1件ずつ来るが、型は横に広がる。**外部レビューが名指しした1箇所を直した緑は、その型が消えた証拠ではない。**
