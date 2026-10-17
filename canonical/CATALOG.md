@@ -12,6 +12,7 @@
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
 | adversarial-review | Plan/Specの品質チェック（Plan Review）と、実装完了後の仕様照合（Compliance Review）を行う | `skills/adversarial-review/SKILL.md` | — |
+| alter-ego-review | owner の観点で PR や設計変更を構造から見るレビュー。判断抜きの構造の要約を先頭に置き、PR 自身の文書・関連 issue が予告する将来の変更と各判断を突き合わせて違和感を出す。出力は質問/指摘の二種、根拠ラベル（一般/推測）付き。一般基準レビューが「組織固有の判断は依頼側が持つ」と空けた場所を埋める（#404） | `skills/alter-ego-review/SKILL.md` | — |
 | arena-compare | arena-compare.shで複数モデルに同一プロンプトを並列投入し、回答を比較する | `skills/arena-compare/SKILL.md` | cli: arena-compare |
 | branch-finish | ブランチ完了判定フロー（検証→4択→実行→クリーンアップ） | `skills/branch-finish/SKILL.md` | skill: worktrunk-worktrees, skill: pr-conventions, skill: conventional-commits |
 | branch-naming | ブランチ命名規則を適用する | `skills/branch-naming/SKILL.md` | — |
@@ -62,10 +63,11 @@ Skills テーブルの `depends` は技術的参照（このスキルが使用�
 | pr-review-checklist | レビュー対象のdiffをチェック項目に照らして検証し、問題があれば修正を提案する | `commands/review/pr-review-checklist.md` | — |
 | copilot-review-response | 未返信の Copilot レビューコメントのみ対象に、対応可否・修正・対応した／しないの返信まで行う | `commands/review/copilot-review-response.md` | — |
 
-## Agents (3)
+## Agents (4)
 
 | 名前 | 説明 | パス |
 |------|------|------|
+| alter-ego-reviewer | owner の観点で PR や設計変更を構造から見る分身レビュアー。差分・同梱文書・関連 issue を自分の文脈で全部読み、`alter-ego-review` skill の手順と出力形式で報告だけを返す | `agents/alter-ego-reviewer.md` |
 | oss-researcher | OSS・ライブラリの深層調査エージェント。GitHubリポジトリのソースコード直接解析、設計パターン抽出、実装詳細の調査を行う | `agents/oss-researcher.md` |
 | playwright-agent | Playwright MCPでブラウザ操作を実行し、結果を要約して報告するエージェント | `agents/playwright-agent.md` |
 | vendor-inspector | Dependency and vendor code deep-reading agent. Investigates local vendor/, node_modules/, and external repository code | `agents/vendor-inspector.md` |
