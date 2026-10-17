@@ -14,7 +14,7 @@ set -euo pipefail
 # Exit codes:
 #   0 = 列挙成功（skipped があっても既定は 0）
 #   1 = --strict かつ skipped > 0（malformed / 非 ULID を検出。段3 の完全性信号）
-#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / jq の評価失敗 / usage / repo root 不明）
+#   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / jq の評価失敗 / awk の失敗 / usage / repo root 不明）
 #
 # 位置づけ:
 #   negative knowledge ループ 段3（突合）の read-only 列挙 verb。統括が brief を組む時に候補を
@@ -183,10 +183,11 @@ INTEGRITY_ISSUES=0    # observations 台帳が壊れている item 数（非配�
 # バイト境界で切り、切詰め時のみ末尾の 1 文字が jq で U+FFFD に置換されうる（crash や exit 契約違反は
 # 起きない・excerpt は preview で正本は item 本体）。配備ロケールは UTF-8。
 excerpt_of() {
-  local body="$1" line max=200
+  local body="$1" line max=200 prog
   # 入力を最後まで読み切り（早期 exit しない）先頭の「内容行」を END で返す。早期 exit すると
   # 巨大 body で producer が SIGPIPE を受け pipefail を誤発火させるため（実装SO 指摘）。
-  line="$(awk '
+  # shellcheck disable=SC2016  # awk プログラムなので単一引用が正しい（shell 展開させない）
+  prog='
     found { next }
     { l=$0
       sub(/^[[:space:]]+/,"",l)
@@ -199,7 +200,18 @@ excerpt_of() {
       if (l=="") next
       result=l; found=1 }
     END { print result }
-  ' <<<"$body")"
+  '
+  # awk の失敗は、データでも環境でも終了コードが同じ（macOS の awk ではどちらも 2）なので、終了コード
+  # では分けられない。UTF-8 ロケールでは、先頭の内容行に文字として読めないバイトがあると正規表現の sub
+  # が失敗する（データ）。そこで失敗したときだけ同じ入力を LC_ALL=C でもう1回走らせ、C でも失敗したら
+  # 環境エラーとして 1 を返す（呼び出し側が ERROR と exit 2 にする・#442）。C で成功したらデータの不備
+  # なので、従来どおり失敗した awk の出力（空）のまま進める。この関数は `$(...)` の中で呼ぶので set -e
+  # が効かず、ここで 1 を返さないと、awk の失敗が空の excerpt として後段へ流れる。
+  if ! line="$(awk "$prog" <<<"$body")"; then
+    if ! LC_ALL=C awk "$prog" <<<"$body" >/dev/null 2>&1; then
+      return 1
+    fi
+  fi
   if [[ "${#line}" -gt "$max" ]]; then
     line="${line:0:max} …"
   fi
@@ -217,6 +229,9 @@ process_item() {
   # ERROR を出して exit 2 で止める（#424・#427）。`$(...)` の終了コードを捨てると、何も出さずに
   # exit 5 で終わるか、失敗が空の値として後段へ流れて出力の一部が黙って消える。jq は正当な空や
   # false を終了コード 0 で返すので、終了コードが 0 でないときだけを失敗として扱う。
+  # awk の失敗も環境エラーとして ERROR と exit 2 で止める（#442）。ただし awk は、終了コードがプログラム
+  # 自身の信号である箇所（frontmatter）と、データで失敗しうる箇所（excerpt）があるので、分け方はそれぞれの
+  # 箇所のコメントに書く。
 
   # 非 ULID 名は items/ の型付き store 規約に反する → flagged（黙って落とさない）
   if [[ ! "$id_from_name" =~ $ULID_RE ]]; then
@@ -234,13 +249,21 @@ process_item() {
   # 読み切る（早期 exit しない）ため、巨大 body でも producer が SIGPIPE で pipefail を誤発火させない
   # （実装SO 指摘）。閉じ '---' 欠落を「EOF まで全部 frontmatter」と誤解釈して valid 扱いする偽成功も
   # ここで防ぐ（validator と整合）。
-  local fm json
-  if ! fm="$(awk '
+  # 区切りが無いことはプログラム自身が exit 1 で知らせるので、1 だけを item の不備（MALFORMED）とし、
+  # それ以外の 0 でない値は awk 自身の失敗（環境エラー）として exit 2 で止める（#442）。macOS の awk は
+  # 自分の失敗で 2 を返す。awk の実装が自分の失敗で 1 を返す場合は、従来どおり MALFORMED に落ちる。
+  local fm json fm_rc=0
+  fm="$(awk '
       NR==1 { if ($0!="---") bad=1; next }
       !closed && $0=="---" { closed=1; next }
       !closed { fm = fm $0 "\n" }
       END { if (bad || !closed) exit 1; printf "%s", fm }
-    ' <<<"$content")"; then
+    ' <<<"$content")" || fm_rc=$?
+  if [[ "$fm_rc" -ne 0 && "$fm_rc" -ne 1 ]]; then
+    echo "ERROR: failed to extract the frontmatter with awk at $item_ref (environment error, not a malformed item)" >&2
+    exit 2
+  fi
+  if [[ "$fm_rc" -eq 1 ]]; then
     if ! row="$(jq -n --arg ref "$item_ref" --arg id "$id_from_name" --arg reason "frontmatter delimiter block not found (opening/closing '---')" \
         '{item_ref:$ref, status:"MALFORMED", reason:$reason, id:$id}' 2>/dev/null)"; then
       echo "ERROR: failed to build the MALFORMED row with jq at $item_ref (environment error)" >&2
@@ -283,9 +306,17 @@ process_item() {
     return
   fi
 
+  # 本文の切り出しは文字列の比較と出力だけで、データでは失敗しないので、0 でなければ環境エラーとする。
+  # 終了コードを見ないと、何も出さずに awk の終了コードで止まる（#442）。
   local body excerpt
-  body="$(printf '%s\n' "$content" | awk 'NR==1&&$0=="---"{f=1;next} f==1&&$0=="---"{f=2;next} f==2{print}')"
-  excerpt="$(excerpt_of "$body")"
+  if ! body="$(printf '%s\n' "$content" | awk 'NR==1&&$0=="---"{f=1;next} f==1&&$0=="---"{f=2;next} f==2{print}')"; then
+    echo "ERROR: failed to extract the body with awk at $item_ref (environment error)" >&2
+    exit 2
+  fi
+  if ! excerpt="$(excerpt_of "$body")"; then
+    echo "ERROR: failed to extract the excerpt with awk at $item_ref (environment error)" >&2
+    exit 2
+  fi
 
   # フィールド抽出（欠落は null・list はそのまま）。id は frontmatter 優先・無ければ filename。
   # frontmatter JSON は stdin（here-string）で渡す。argv（--argjson）で渡すと巨大 frontmatter

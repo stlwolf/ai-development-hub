@@ -631,6 +631,88 @@ check_site human-items   "$R35V" "failed to render the item list with jq" \
 check_site human-rows    "$R35M" "failed to render the MALFORMED rows with jq" \
   '="! MALFORMED " + (.id // "?") + "  (" + .reason + ")  item: " + .item_ref' '*! MALFORMED *'
 
+echo "[36] frontmatter・本文・excerpt を切り出す awk の失敗も exit 2（環境エラー）— MALFORMED に丸めず、空の excerpt で進まず、何も出さずに終わらない（#442）"
+# [34] の jq の stub を awk に写したもの。STUB_AWK_FAIL に合う引数を持つ awk の呼び出しだけを exit 5 で失敗させ、
+# その引数を STUB_AWK_LOG に、そのときの LC_ALL を STUB_AWK_ENVLOG に記録する。他の呼び出しは実 awk に渡す。
+_REAL_AWK="$(command -v awk)"
+{
+  cat <<'STUB'
+#!/usr/bin/env bash
+if [ -n "${STUB_AWK_FAIL:-}" ]; then
+  for a in "$@"; do
+    # shellcheck disable=SC2254
+    case "$a" in $STUB_AWK_FAIL)
+      printf '%s\n' "$a" >> "${STUB_AWK_LOG:-/dev/null}"
+      printf '%s\n' "${LC_ALL-<unset>}" >> "${STUB_AWK_ENVLOG:-/dev/null}"
+      exit 5 ;;
+    esac
+  done
+fi
+STUB
+  # shellcheck disable=SC2016
+  printf 'exec %q "$@"\n' "$_REAL_AWK"
+} > "$_STUB_DIR/awk"
+chmod +x "$_STUB_DIR/awk"
+R36="$_TMP_DIR/r36"; mkdir -p "$R36"; git_init "$R36"
+write_item "$R36/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid one."
+git_commit "$R36"
+# check_awk_site <名前> <ERROR の文言> <記録の照合> <STUB_AWK_FAIL> <落とした回数>
+#   記録の照合は check_site と同じ（"=<全文>" か、"~<そのプログラムにしか無い行>" が <落とした回数> 行あるか）。
+#   どの箇所も、変更前は frontmatter が MALFORMED として skip され exit 0、本文は何も出さずに exit 5、excerpt は
+#   空のまま exit 0 で終わっていた（#442 の episode）。
+check_awk_site() {
+  local name="$1" want_err="$2" want_log="$3" pat="$4" times="$5"
+  local log="$_TMP_DIR/stubawk-36-$name.log" envlog="$_TMP_DIR/stubawk-36-$name.env"
+  : > "$log"; : > "$envlog"
+  RC=0
+  OUT="$(env PATH="$_STUB_DIR:$PATH" STUB_AWK_FAIL="$pat" STUB_AWK_LOG="$log" STUB_AWK_ENVLOG="$envlog" OE_KNOWLEDGE_REPO_ROOT="$R36" "$BASH" "$LISTER" 2>"$ERRFILE")" || RC=$?
+  ERR="$(cat "$ERRFILE")"
+  ck  "$name: exit 2（環境エラー）"  "2" "$RC"
+  ckc "$name: ERROR メッセージ"     "$ERR" "ERROR: $want_err at docs/knowledge/items/$ULID1.md"
+  ck  "$name: stdout は空"           "" "$OUT"
+  case "$want_log" in
+    =*) ck "$name: 狙ったプログラムで stub が落とした" "${want_log#=}" "$(cat "$log")" ;;
+    \~*) ck "$name: 狙ったプログラムで stub が${times}回落とした" "$times" "$(grep -cF -- "${want_log#\~}" "$log" || true)" ;;
+  esac
+}
+# shellcheck disable=SC2016  # $0 は awk のプログラムの文字列で、shell に展開させない
+check_awk_site frontmatter "failed to extract the frontmatter with awk" \
+  '~!closed && $0=="---" { closed=1; next }' '*!closed && $0=="---"*' 1
+ncc "frontmatter: MALFORMED に丸めていない" "$OUT" "MALFORMED"
+# shellcheck disable=SC2016  # 同上
+check_awk_site body "failed to extract the body with awk" \
+  '=NR==1&&$0=="---"{f=1;next} f==1&&$0=="---"{f=2;next} f==2{print}' '*f==2{print}*' 1
+# excerpt は、失敗したときだけ同じ入力を LC_ALL=C でもう1回走らせ、そちらでも失敗したときだけ exit 2 にする。
+# stub はどちらも落とすので記録は2回で、2回目の LC_ALL が C であることで、分ける経路を通ったことを見る。
+check_awk_site excerpt "failed to extract the excerpt with awk" \
+  '~result=l; found=1 }' '*result=l; found=1*' 2
+ck  "excerpt: 2回目は LC_ALL=C で走らせた" "C" "$(tail -n 1 "$_TMP_DIR/stubawk-36-excerpt.env")"
+# 対照: 本文の先頭の内容行に文字として読めないバイトがある item は、UTF-8 ロケールでは excerpt の awk がデータで
+# 失敗する。LC_ALL=C でもう1回走らせると成功するので、データの不備として従来どおり excerpt を空にして列挙を続け、
+# exit 2 にしない。この awk がそのロケールで不正なバイトに失敗しないなら、この経路は無いので見ない。
+R36D="$_TMP_DIR/r36d"; mkdir -p "$R36D"; git_init "$R36D"
+write_item "$R36D/docs/knowledge/items/$ULID1.md" "$ULID1" active nl "valid one."
+write_item "$R36D/docs/knowledge/items/$ULID2.md" "$ULID2" active nl "$(printf 'bad \377 first line')"
+git_commit "$R36D"
+_LOC36=""
+for _l in C.UTF-8 en_US.UTF-8 ja_JP.UTF-8; do
+  if ! printf 'bad \377 first line\n' | LC_ALL="$_l" awk '{ sub(/^[[:space:]]+/, "") }' >/dev/null 2>&1; then
+    _LOC36="$_l"; break
+  fi
+done
+if [[ -z "$_LOC36" ]]; then
+  echo "  SKIP: この awk は UTF-8 ロケールでも不正なバイトで失敗しないので、データで失敗する経路の対照は見ない"
+else
+  RC=0
+  OUT="$(env LC_ALL="$_LOC36" OE_KNOWLEDGE_REPO_ROOT="$R36D" "$BASH" "$LISTER" --json 2>"$ERRFILE")" || RC=$?
+  ERR="$(cat "$ERRFILE")"
+  ck  "対照（${_LOC36}）: exit 0"                    "0" "$RC"
+  ncc "対照: ERROR を出さない"                      "$ERR" "ERROR:"
+  ck  "対照: 2件とも列挙される"                      "2" "$(jq -r '.listed' <<<"$OUT")"
+  ck  "対照: 不正なバイトの item の excerpt は空"    "" "$(jq -r --arg id "$ULID2" '.items[] | select(.id == $id) | .excerpt' <<<"$OUT")"
+  ck  "対照: ほかの item の excerpt は従来どおり"     "valid one." "$(jq -r --arg id "$ULID1" '.items[] | select(.id == $id) | .excerpt' <<<"$OUT")"
+fi
+
 # --- サマリ ---
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
