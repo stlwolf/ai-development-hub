@@ -366,3 +366,8 @@ closure（2026-10-18・PR #451 の Copilot のラウンドの後・マージ前�
 ### status
 
 - `draft` → `stable`。達成度は**達成**（4ファイルの受入 E1〜E4 を含む81項目 PASS・PR #451 作成・Copilot 未返信0・decision と knowledge item をこの PR に入れた）。plan の status も `stable` にした。
+
+### closure の外部チェック（Step 4・heavy tier・2026-10-18）
+
+- `so-compare --codex-only`（`gpt-6.1-sol`・39秒・初回で返答）で、closure の4観点（事実・失敗の選択的省略／follow-up の行き先／揮発パスだけに頼る事実／他文書への back-propagation）を focused に検証した。依頼文は `tmp/391-post-approval-baseline/so-closure-prompt.md`、出力は `tmp/391-post-approval-baseline/so-closure-codex/`（作業層・消える）。
+- 結果は4観点とも「問題なし」。設計SO・実装SO・Copilot の指摘と撤回、書き損じ3件は「事実・失敗」節の pointer から辿れる。follow-up の表の7行には行き先がある。`tmp/`・`.oe/` を読まなければ分からない事実は無い。変えなかった2スキルには対象が違う理由、確定版の数え方のずれには追わない理由がある。直すものは無かった。
