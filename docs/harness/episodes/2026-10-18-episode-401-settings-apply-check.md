@@ -3,7 +3,7 @@ id: "01M575BADF09N8GPWRP195C2PD"
 title: "#401 宣言駆動 settings の検査を、撤去した等価性 fixture の代わりに立て直す"
 date: 2026-10-18
 type: episode
-status: draft
+status: in-development
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/401"
@@ -102,3 +102,27 @@ tags: [test, settings, sync, harness]
 **事実の誤り1件。** wrapped を「type が無い」と書いていたが、撤去前の fixture には `"type":"command"` がある。読んだ fixture を要約するときに、思い込みで1つ足していた。
 
 選択肢拡張では、OS の書き込み制限の下で sync を走らせる案（案S）と、statusLine を使う側から確かめる案（案C）が出た。案S は A11 で1回だけ使う。テストの中に常に置かないのは、`sandbox-exec` が macOS だけのものだからである。案C は `test_sync_claude_statusline.sh` の [7] が同じ観測をしているので足さない。
+
+### P3: 報告して止まった（2026-10-18）
+
+- plan と episode を `dbb5b4b` で commit し、枝を push した。PR はまだ作っていない。
+- 報告の宛先は brief の欄の統括で、`oe-tree` で root の `cockpit` として生きていることを送る直前に確かめた（自分の親として出ている）。`.oe/report-401.md` に報告を書き、`oe-send` で1行のポインタを送った。exit は 0 である。exit 0 は取り込みの確認ではない。
+- 承認で決めてほしいこととして Q1〜Q3 を上げた（plan の「GATE 3」節）。ゲート3 の承認が統括から届くまで、テストの変更には入らない。
+
+### GATE 3: owner の承認を受けた（2026-10-18）
+
+- 統括から、owner が plan（`dbb5b4b` の版）を承認したと届いた。Q1〜Q3 と設計判断はすべて推奨どおりである。Q1 の `build_green` は #454 に起票され、この PR では直さない。承認の記録と baseline は統括の作業層（`.oe/decision-401-gate3.md`）にある。
+- 送り手は brief の「報告の宛先」の統括で、この session への送信として届いた。
+
+### I1-0: baseline の確認（2026-10-18）
+
+- `origin/master` は `ed45de5` のままで、`scripts/sync`・`canonical/claude`・`canonical/hooks/claude.hooks.json`・対象のテストに変更は無かった。
+- `dbb5b4b` の plan の blob（`6b633c3…`）と brief の sha256（`87d4b67…`）は、承認の記録の値と一致した。
+
+### I1-1: [22] と [4]・[17] を書いた（2026-10-18）
+
+- plan の DJ-1〜DJ-10 のとおりに、撤去した [22] の跡の注記を新しい [22] に置き換え、[4] と [17] の期待を宣言から導く形にした。冒頭の「検証する軸」と触る範囲の説明も直した。
+- 結果: bash 5 で `=== PASS=269 FAIL=0 ===`（40秒・変更前は PASS=221 で14秒）、`/bin/bash`（3.2）で `=== PASS=269 FAIL=0 ===`（36秒・変更前は13秒）。どちらも最後の集計の行で読んだ。3.2 の実行では、M5 が「テストを走らせた bash と sync の interpreter の主版番号が同じなので区別できない」と NOTE を出した。設計どおりである。時間は plan の見積もり（30〜40秒）に収まり、60秒の照会の線には届かない。
+- shellcheck は警告0件のまま。
+
+**既知の罠をまた踏んだ。** 1回目の実行が「`eq_sync_want�`: 未割り当ての変数です」で止まった。M5 の文言に `$eq_sync_want）` と、変数の直後に全角の括弧を書いていた。bash が全角の先頭のバイトを変数名に食って、存在しない変数を展開した。この罠は自分の memory にすでにある（heredoc で `$var` の直後に全角を置くと化ける）が、heredoc ではなくテストの中の文字列だったので、当てはまると思わずに書いた。4か所を `${…}` で囲んで直し、`$` に続く英数字の直後に ASCII 以外の文字が来る箇所が無いことを grep で確かめた。止まったのは `set -u` のおかげで、黙って空の文字列になる形ではなかった。
