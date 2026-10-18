@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-DEFAULT_ELECTRON_VERSION="39.4.0"
+DEFAULT_ELECTRON_VERSION="42.10.0"
 
 electron_version="${ELECTRON_VERSION:-${1:-$DEFAULT_ELECTRON_VERSION}}"
 
@@ -31,9 +31,9 @@ if ! npx @electron/rebuild -v "$electron_version" -m .; then
   echo "Troubleshooting:"
   echo "  - Ensure Xcode Command Line Tools are installed: xcode-select --install"
   echo "  - Try specifying Electron version explicitly:"
-  echo "    ELECTRON_VERSION=39.4.0 bash scripts/install.sh"
+  echo "    ELECTRON_VERSION=42.10.0 bash scripts/install.sh"
   echo "  - Or pass as argument:"
-  echo "    bash scripts/install.sh 39.4.0"
+  echo "    bash scripts/install.sh 42.10.0"
   exit 1
 fi
 
