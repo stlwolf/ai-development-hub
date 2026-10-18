@@ -1,6 +1,6 @@
 # ドキュメント規約
 
-本プロジェクト（WezTerm AI Mode / `wez` CLI ツールキット）のドキュメント管理規約。[`second-opinion-verification/docs/DOCUMENT_CONVENTION.md`](../second-opinion-verification/docs/DOCUMENT_CONVENTION.md) (v0) および [`cursor-thread-tools/CONVENTIONS.md`](../cursor-thread-tools/CONVENTIONS.md) と同型のフローを採用し、**リポジトリ内2例目**として AI 駆動開発プロセスの再現性を検証する。
+本プロジェクト（WezTerm AI Mode / `wez` CLI ツールキット）のドキュメント管理規約。[`second-opinion-verification/docs/DOCUMENT_CONVENTION.md`](../second-opinion-verification/docs/DOCUMENT_CONVENTION.md) (v0) および [`_archived/cursor-thread-tools/CONVENTIONS.md`](../_archived/cursor-thread-tools/CONVENTIONS.md) と同型のフローを採用し、**リポジトリ内2例目**として AI 駆動開発プロセスの再現性を検証する。
 
 一次根拠の PoC は凍結のまま [`projects/poc/wezterm-ai-mode/`](../poc/wezterm-ai-mode/) に残す。Epic トラッキング: [Issue #20](https://github.com/stlwolf/ai-development-hub/issues/20)。
 
@@ -168,7 +168,7 @@ ADR は短くてよい（10行でも可）。エピソードに埋もれるよ�
 | ファイル | 配置先 | 関連 |
 |---------|--------|------|
 | [DOCUMENT_CONVENTION.md](../second-opinion-verification/docs/DOCUMENT_CONVENTION.md) | second-opinion-verification | 本規約の派生元 |
-| [CONVENTIONS.md](../cursor-thread-tools/CONVENTIONS.md) | cursor-thread-tools | 同一フローの先行検証例 |
+| [CONVENTIONS.md](../_archived/cursor-thread-tools/CONVENTIONS.md) | cursor-thread-tools（アーカイブ） | 同一フローの先行検証例 |
 | [context-persistence-4layer-model.md](../../ideas/20260220/context-persistence-4layer-model.md) | ideas/ | 4層モデル（層3パイプライン） |
 | [peer-ai-review.md](../../canonical/commands/verification/peer-ai-review.md) | canonical/commands | 設計判断のピアレビュー用コマンド |
 | [PoC README](../poc/wezterm-ai-mode/README.md) | poc/wezterm-ai-mode | 技術検証の一次根拠（凍結） |

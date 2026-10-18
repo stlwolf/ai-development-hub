@@ -59,7 +59,7 @@ promotion:
 - baseline は master `99d0ecd`。`origin/master` と一致することを確かめてから worktree を作った。
 - brief と #403 本文が断定していることのうち、plan の前提になるものを一次情報で確かめた。結果は plan の「設計の前提」節に強さつきで写した。要点は次の3つである。
   - `question-driven-design` の「いつ使わないか」節の該当行は、いまも31行目にある。本文も issue の引用どおりである。
-  - hub の `CLAUDE.md`・`AGENTS.md`・`README.md` のどれにも、蒸留の文書（`docs/harness/` や `projects/*/docs/` の discussion / plan / episode / decision）への案内は無い。蒸留の木は4つある（`docs/harness/`・`projects/orchestration-engine/docs/`・`projects/wezterm-ai-mode/docs/`・`projects/cursor-thread-tools/docs/`）。
+  - hub の `CLAUDE.md`・`AGENTS.md`・`README.md` のどれにも、蒸留の文書（`docs/harness/` や `projects/*/docs/` の discussion / plan / episode / decision）への案内は無い。蒸留の木は4つある（`docs/harness/`・`projects/orchestration-engine/docs/`・`projects/wezterm-ai-mode/docs/`・`projects/_archived/cursor-thread-tools/docs/`）。
   - hub には `.github/ISSUE_TEMPLATE/` が無い。`issue-conventions` は、テンプレートが無ければ「目的・作業内容を本文に記述する」としている。取り込みの最初の確認は、テンプレートが無い場合を正面から扱う必要がある。
 - **issue 本文の「`issue-conventions` は観測できる動作が引き金なので確実に読み込まれる」は、過去の実測では裏付けが足りない。** `docs/issues/67/step9-verification-results.md` によれば、Claude Code では Phase 1 で `issue-conventions` も `question-driven-design` も読み込まれず（NO_LOAD）、description を直したあとで読み込まれた。同じ実測は、`conventional-commits` について「一般知識で正しく実行できるタスクでのスキルロード強制は構造的課題」と書いている。「issue に着手する」は、モデルがスキル無しでもこなせると思いやすい種類の作業である。
 

@@ -41,16 +41,6 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
 
-### cursor-thread-tools
-
-Cursorスレッド会話のMarkdownエクスポートとライフサイクル管理を行うVS Code拡張。
-
-- `state.vscdb`（SQLite）からの会話データ読み取り
-- スレッド完了報告の定型化（git diff + GitHub Issue投稿）
-- 4層モデルの「層3: 生ログ抽出パイプライン」の実装
-
-詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
-
 ### wezterm-ai-mode
 
 WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。Phase 1 完了。
@@ -110,6 +100,14 @@ WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツー
 ## アーカイブ (`_archived/`)
 
 役割を終えた・代替手段が確立されたプロジェクトの保管場所。
+
+### cursor-thread-tools
+
+Cursor Composer / Agent スレッドの Markdown エクスポート（拡張 + CLI）。
+
+**正本・Release は [stlwolf/cursor-thread-tools](https://github.com/stlwolf/cursor-thread-tools) に移行済み。** hub 側は履歴アーカイブのみ。
+
+詳細は [_archived/cursor-thread-tools/README.md](_archived/cursor-thread-tools/README.md) を参照。
 
 ### cursor-devtools-inspector
 
