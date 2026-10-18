@@ -3,7 +3,7 @@ id: "01M55N1CVF6G95QMRQQ23N3T9H"
 title: "#450 issue-intake の別モデルの問い合わせで、Codex が返らないときは Cursor で1回やり直す"
 date: 2026-10-18
 type: plan
-status: draft
+status: stable              # 実装完了（2026-10-18・PR #453）。ゲート3 の承認は 5059ca4 の版、C4 の直しの再承認は fec7366 の版（rebase 後は cc2cd48）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/450"
