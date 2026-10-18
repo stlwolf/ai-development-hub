@@ -9,16 +9,16 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/391"
     reason: "本 decision が記録する owner の裁定（2026-10-18・ゲート3）と、4つのスキルの文面をそろえた単位"
   - type: derived_from
-    ref: "docs/harness/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
+    ref: "projects/orchestration-engine/docs/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
     reason: "構造を最初に踏んだ #347 の記録と、扱い方の4案（A〜D）。本 decision はそのうち B と digest の組み合わせを採り、3つの級を足した"
   - type: derived_from
     ref: "projects/orchestration-engine/docs/discussions/2026-07-29-discussion-289-completion-gate-firing-position.md"
     reason: "baseline を導入した #289 の設計判断。枠には記録の義務だけを置き、照合の手順はスキル側に置いた責務分割を本 decision も保つ"
   - type: reference
-    ref: "docs/harness/plans/2026-10-18-plan-391-post-approval-baseline.md"
+    ref: "projects/orchestration-engine/docs/plans/2026-10-18-plan-391-post-approval-baseline.md"
     reason: "設計判断 DJ-1〜DJ-11・実例12件の分類の表・棄却した案の理由・4ファイル9か所の前後の文面と受入。本 decision は durable な判断に絞り、細部はこちらを指す"
   - type: reference
-    ref: "docs/harness/episodes/2026-10-18-episode-391-post-approval-baseline.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-10-18-episode-391-post-approval-baseline.md"
     reason: "設計SO・実装SO・Copilot の指摘と採否、撤回の経緯"
   - type: modification_target
     ref: "canonical/skills/unmet-gate-check/SKILL.md"

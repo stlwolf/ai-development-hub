@@ -12,10 +12,10 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/391#issuecomment-6236886052"
     reason: "着手時の認識合わせの確定版（統括が投稿）。この単位はこれを前提にする"
   - type: derived_from
-    ref: "docs/harness/plans/2026-10-18-plan-391-post-approval-baseline.md"
+    ref: "projects/orchestration-engine/docs/plans/2026-10-18-plan-391-post-approval-baseline.md"
     reason: "この episode が記録する作業の計画"
   - type: design_context
-    ref: "docs/harness/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
+    ref: "projects/orchestration-engine/docs/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
     reason: "構造を最初に踏んだ #347 の記録と、扱い方の4案（A〜D）の出所"
   - type: design_context
     ref: "docs/harness/plans/2026-10-16-plan-412-intake-why-line.md"
@@ -106,7 +106,7 @@ knowledge_observations:
 
 ### P2: plan を書き、受入の対照を変更前・変更後・部分戻しで確かめた（2026-10-18）
 
-- plan を `docs/harness/plans/2026-10-18-plan-391-post-approval-baseline.md` に書いた。推奨は案B の組み合わせ（plan は承認時の commit で固定し、内容の一致は変化の検知にだけ使う）に、A の申告の規律と #390 の「禁止／必要」の分け方を3つの級（記録・補正・変更）として組み込む形である。owner に再承認を求めるのは「変更」の級だけにし、記録と補正は統括の受け付けで足りるとした。確定版の7項目には DJ-2〜DJ-8 で1つずつ答えを置いた。
+- plan を `projects/orchestration-engine/docs/plans/2026-10-18-plan-391-post-approval-baseline.md` に書いた。推奨は案B の組み合わせ（plan は承認時の commit で固定し、内容の一致は変化の検知にだけ使う）に、A の申告の規律と #390 の「禁止／必要」の分け方を3つの級（記録・補正・変更）として組み込む形である。owner に再承認を求めるのは「変更」の級だけにし、記録と補正は統括の受け付けで足りるとした。確定版の7項目には DJ-2〜DJ-8 で1つずつ答えを置いた。
 - 分類の根拠として、作業層の承認の記録から承認のあとの変更12件（#347 2件・#390 2件・#411 1件・#412 3件・#429 4件）を効果で分けた表を plan に置いた。owner が決めたことや母集団を変えたのは3件で、どれも owner が決めている。残り9件のうち owner に聞いた2件（#412 の D4 の延長とペイン番号）は、聞かなくても同じ結果になる種類だった。
 - brief の negative knowledge 4件をどこで当てたか:
   - `01M486Z2ND07GQWV1GHS1SVB0J`（足した運用を打ち消す側を同じ変更で探せ）: 「1単位にする」の文が3か所にあり、どれか1つが残ると「変更の級だけ再承認」を打ち消す。3か所すべてを直す箇所に入れた（DJ-7）。節の外では、固定節の plan-first・指示矛盾ガードの (c)・`unmet-gate-check` の「渡さないもの」・`document-format.md` の「方向転換の記録」・`delegate-task` の「終点を書かない」を読み、衝突しないと判断した。この探索の漏れは設計SO に確かめさせる（問い3）。
@@ -247,7 +247,7 @@ knowledge_observations:
 
 ### knowledge の収穫と、注入された item への観測の書き戻し（2026-10-18・closure の Step 5・6 を先に実施）
 
-- 収穫した item は1件、`docs/harness/knowledge/items/01M55M68F2Q128X7AZ1JN2X7WC.md`（この episode と同じ木）。教訓は「分類を規範に書いたら、定義文のほかに判定の順序と足す方向を見る項目を書く」。根拠は設計SO の指摘1（強める補正と範囲拡張の重なり）と実装SO の指摘1（順序が記録まで補正に分類した）で、同じ形を2回踏み、2回とも外部のレーンが見つけた。収穫基準: 非自明（定義文を読み直しても出ない）・再発しうる（級や tier を新設する規則のたび）・行動を変える（順序と追加の項目を書いてから閉じる）。既存の item `01M486Z2ND07GQWV1GHS1SVB0J`（節の外の打ち消す側）とは穴の場所が違う（足した分類そのものの中）。`validate-knowledge` は OK。
+- 収穫した item は1件、`projects/orchestration-engine/docs/knowledge/items/01M55M68F2Q128X7AZ1JN2X7WC.md`（この episode と同じ木）。教訓は「分類を規範に書いたら、定義文のほかに判定の順序と足す方向を見る項目を書く」。根拠は設計SO の指摘1（強める補正と範囲拡張の重なり）と実装SO の指摘1（順序が記録まで補正に分類した）で、同じ形を2回踏み、2回とも外部のレーンが見つけた。収穫基準: 非自明（定義文を読み直しても出ない）・再発しうる（級や tier を新設する規則のたび）・行動を変える（順序と追加の項目を書いてから閉じる）。既存の item `01M486Z2ND07GQWV1GHS1SVB0J`（節の外の打ち消す側）とは穴の場所が違う（足した分類そのものの中）。`validate-knowledge` は OK。
 - 収穫しなかった候補: 「文書の受入は期待の全文との一致で判定する」（昇格の印の1つ目）。既存の item `01M50MBKVB6T9QCKEGB8ZG1SET`（部分戻しの写し）の延長で、同じ item への観測レコードに「部分戻しは必要だったが足りなかった」として書き戻した。別の item にすると同じ教訓が2つに割れる。
 - 注入された4件への観測（`ref: "#391"`・4件とも `validate-knowledge` OK）:
   - `01M486Z2ND07GQWV1GHS1SVB0J`: `externally_verified`。自分で3か所を直す箇所に入れたうえで、設計SO が grep で3か所を見つけた（予測どおり、節の外の打ち消す側に自分では気づかなかった）。
@@ -371,3 +371,14 @@ closure（2026-10-18・PR #451 の Copilot のラウンドの後・マージ前�
 
 - `so-compare --codex-only`（`gpt-6.1-sol`・39秒・初回で返答）で、closure の4観点（事実・失敗の選択的省略／follow-up の行き先／揮発パスだけに頼る事実／他文書への back-propagation）を focused に検証した。依頼文は `tmp/391-post-approval-baseline/so-closure-prompt.md`、出力は `tmp/391-post-approval-baseline/so-closure-codex/`（作業層・消える）。
 - 結果は4観点とも「問題なし」。設計SO・実装SO・Copilot の指摘と撤回、書き損じ3件は「事実・失敗」節の pointer から辿れる。follow-up の表の7行には行き先がある。`tmp/`・`.oe/` を読まなければ分からない事実は無い。変えなかった2スキルには対象が違う理由、確定版の数え方のずれには追わない理由がある。直すものは無かった。
+
+## 追補 R1〜R3: 蒸留の文書を engine の木にそろえる（2026-10-18）
+
+### R1: 4文書を engine の木へ移し、参照を書き換えた（2026-10-18）
+
+- I3 の報告のあと、新しい統括（19代目）から追補 brief（`.oe/brief-391-r1.md`・作業層）が届いた。owner は、承認のあとの plan の変化（`5eefce8` → `75cd550`）をまとめて再承認し、Copilot の指摘4（書面を変える前に全文の写しを残す1文）を「変更」の級として再承認して入れたままにし、蒸留の文書の置き場を中身で決める基準（エンジンのコンポーネント前提なら engine の木・独立したスキルやスクリプトなら harness の木・**1つの PR が入れる蒸留の文書は1つの木に置く**・#452）を示した。#391 は委譲のゲートというエンジンの部品の話なので、PR #451 が入れる文書を engine の木（`projects/orchestration-engine/docs/`）にそろえる。記録は `.oe/decision-391-gate3.md` の「owner の再承認」節。
+- 指示矛盾ガードに当てた。終端は I3 から R3 に移るが、I3 は履行済みで、追補は owner の再承認の記録を伴う書面での更新である。未達 step の飛び越しでも要件の弱体化でもないので、確認を挟まずに従った。新しい規則では新しい作業義務を足す「変更」の級で、owner の再承認がある。
+- 移したもの（`git mv`・ファイル名は変えない）: discussion `2026-09-11-discussion-347-approval-baseline-drift.md`、plan `2026-10-18-plan-391-post-approval-baseline.md`、この episode、knowledge item `01M55M68F2Q128X7AZ1JN2X7WC.md`。いずれも `docs/harness/` の同じ種類のディレクトリから `projects/orchestration-engine/docs/` の同じ種類のディレクトリへ。
+- 移さなかったもの: decision（すでに engine の木）。既存の knowledge item 4件への観測の追記（item の持ち主の木に書くもの。`01M486…` と `01M50M…` は harness の木、`01KYJ7…` と `01M2DE…` は engine の木にそのまま）。#347 の plan と episode（notify.sh の直しで harness の木に残す）。
+- 参照の書き換え（`tmp/` を除くリポジトリ全体・13行）: discussion を指す5行（#347 の episode の `related` と本文の2行、この episode の `related`、plan の `related`、decision の `related`）、plan を指す3行（この episode の `related` と P2 の記録、decision の `related`）、episode を指す4行（新しい item の `source.ref`、plan の `related` と P1 の step、decision の `related`）、新しい item を指す1行（この episode の knowledge の節）。discussion の `related` の `derived_from`（#347 の episode を指す）は、木をまたぐ参照としてそのまま残した。書き換えのあと、古いパスを指す行は0件。
+- 文書の中身は、パスのほかは変えていない。plan の blob はパスの書き換えで変わるので、統括が移した後の版で baseline を張り直す（値は R3 の報告に書く）。

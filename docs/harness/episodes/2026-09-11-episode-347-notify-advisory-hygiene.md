@@ -12,7 +12,7 @@ related:
     ref: "docs/harness/plans/2026-09-11-plan-347-notify-advisory-hygiene.md"
     reason: "この episode が記録する作業の計画"
   - type: relates_to
-    ref: "docs/harness/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
+    ref: "projects/orchestration-engine/docs/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
     reason: "昇格 required と判定した1件の昇格先"
 tags: [hooks, notify, advisory, home-unset, shell]
 promotion:
@@ -398,7 +398,7 @@ tier は **heavy**。下の「事実・失敗」のとおり撤回と外部指�
 4. **走査は当たっていたのに走査結果の読み取りで取りこぼした** — `not-required`。`01M07QDKE73BTK0Q3K90FE4G9T` の観測へ「走査の健全性と読み取りの健全性は別の段である」として着地させた。着地先が決まっているので判定の材料は足りている。
 5. **検証の足場が本番と違う環境を作ってしまう** — `not-required`。`01M00KCCHNMFPHP5HAGX2DZ1MK` の行動変更 (2)「足場は測りたい対象と同じ場所・同じ解決規則の下に置く」がそのまま当たる。新設は重複になる。
 6. **借りてきたガードは判定が同じでも置き場の条件まで同じとは限らない** — `not-required`。3 と同じ item の一段深い形として観測に書いた。
-7. **裁定に従うこと自体が承認時の baseline を動かす場合がある** — `required`。棄却した扱い方が実在し（黙って進む・矛盾として止まる）、覆すには委譲契約のガードの設計を議論し直す必要がある。既存の指示矛盾ガードが並べる3つ（終端の再定義・未達 step の飛び越し・要件の弱体化）のどれでもない。**昇格の第一段として `docs/harness/discussions/2026-09-11-discussion-347-approval-baseline-drift.md` を書き、この枝の PR に載せた。** 規範そのもの（委譲の固定節・`implementer-contract` の弁別子）の改訂は別単位なので、#391 を起票して surface した（close はしない）。
+7. **裁定に従うこと自体が承認時の baseline を動かす場合がある** — `required`。棄却した扱い方が実在し（黙って進む・矛盾として止まる）、覆すには委譲契約のガードの設計を議論し直す必要がある。既存の指示矛盾ガードが並べる3つ（終端の再定義・未達 step の飛び越し・要件の弱体化）のどれでもない。**昇格の第一段として `projects/orchestration-engine/docs/discussions/2026-09-11-discussion-347-approval-baseline-drift.md` を書き、この枝の PR に載せた。** 規範そのもの（委譲の固定節・`implementer-contract` の弁別子）の改訂は別単位なので、#391 を起票して surface した（close はしない）。
 
 ### negative knowledge の収穫
 

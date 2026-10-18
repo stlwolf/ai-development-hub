@@ -12,10 +12,10 @@ related:
     ref: "https://github.com/stlwolf/ai-development-hub/issues/391#issuecomment-6236886052"
     reason: "着手時の認識合わせの確定版（統括が投稿）。「望む結果」と、plan で答えを持たせる7項目の出所"
   - type: reference
-    ref: "docs/harness/episodes/2026-10-18-episode-391-post-approval-baseline.md"
+    ref: "projects/orchestration-engine/docs/episodes/2026-10-18-episode-391-post-approval-baseline.md"
     reason: "この plan の実行記録。上流の断定の裏取りと設計SO の経緯はこちら"
   - type: design_context
-    ref: "docs/harness/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
+    ref: "projects/orchestration-engine/docs/discussions/2026-09-11-discussion-347-approval-baseline-drift.md"
     reason: "構造を最初に踏んだ #347 の記録。扱い方の4案（A〜D）と「B が本筋」の見立て"
   - type: design_context
     ref: "docs/harness/plans/2026-10-16-plan-412-intake-why-line.md"
@@ -653,7 +653,7 @@ SO が指摘した3通りの写し（節全体をコードフェンスで囲む�
 ### P1: worktree・episode の枠・参照の読み（完了）
 
 - [x] `wt switch --create 'docs/#391_post_approval_baseline'` で worktree を作り、`origin/master` と brief の baseline（`b62d618`）の一致を確かめた。
-- [x] episode の枠を `docs/harness/episodes/2026-10-18-episode-391-post-approval-baseline.md` に置き、P1 の記録を書いた。
+- [x] episode の枠を `projects/orchestration-engine/docs/episodes/2026-10-18-episode-391-post-approval-baseline.md` に置き、P1 の記録を書いた。
 - [x] 認識合わせの確定版を `issue-intake` の 1-2 で照合した（`confirmed`・見出し4・URL 一致）。
 - [x] 参照を読み、上流の断定を裏取りした（上の表）。
 
