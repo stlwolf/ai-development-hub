@@ -41,13 +41,11 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 詳細は [claude-safe/README.md](claude-safe/README.md) を参照。
 
-### cursor-thread-tools
+### cursor-thread-tools（アーカイブ）
 
-Cursorスレッド会話のMarkdownエクスポートとライフサイクル管理を行うVS Code拡張。
+Cursor Composer / Agent スレッドの Markdown エクスポート（拡張 + CLI）。
 
-- `state.vscdb`（SQLite）からの会話データ読み取り
-- スレッド完了報告の定型化（git diff + GitHub Issue投稿）
-- 4層モデルの「層3: 生ログ抽出パイプライン」の実装
+**現行の正本・Release は [stlwolf/cursor-thread-tools](https://github.com/stlwolf/cursor-thread-tools) に移行済み。** このディレクトリは履歴アーカイブ。
 
 詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
 
