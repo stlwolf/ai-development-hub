@@ -29,6 +29,7 @@ tags: [harness, settings, permissions, judgment-materials]
 - 正本とは、hub が持ち、`sync.sh` が各ツールへ配る設定の元である。いま Claude Code の設定で正本があるのは、宣言 `canonical/claude/settings.harness.json` に書いた4項目（`hooks`・`statusLine`・`disableAgentView`・`idleCompaction`）だけで、許可規則は入っていない。
 - 根拠の強さは各行に付けた。`[verified]` は出典を開いて確かめた主張、`[measured]` は手元で試して確かめた主張（条件は 3.3 節）、`[unverified-summary]` は出典はあるが言い切れるかを確かめていない主張、`[speculation]` は出典の無い推測である。
 - 公開の文書なので、別のリポジトリの名前と中身は書かない。数だけを書く。
+- 2026-10-19 に、owner の判断で Codex もこの判定に含めた。3.4 節・3.5 節と、論点ごとの「Codex」の段落は、そのときに足した。owner の8件の判定はすべて推奨どおりで、decision に記録する。
 
 ## 1. 推奨の一覧（先に読む表）
 
@@ -36,9 +37,9 @@ tags: [harness, settings, permissions, judgment-materials]
 |---|---|---|
 | 1. 層の切り分け | allow は正本に置かない | いまの共通の形の allow は、ほとんどが書き込みや任意の実行ができるコマンドである。読み取りだけに選び直すことはできるが、得るものが小さい |
 | 2. 書き込みの衝突 | allow を置かないなら、Claude Code の承認の保存先（手元の層）とは取り合わない。狭める側（ask・deny）を配るなら、配った項目と自分で足した項目を見分けて消す手段を、配る前に決める | Claude Code が承認を書くのは手元の層で、hub が書くユーザー層とは別のファイルである。ユーザー層全体を同時に書き換えたときの取り合いは、配るかどうかと関係なく残る。もう1つの穴は「足すだけで消せない」こと |
-| 3. 検査だけ先に入れる案 | 入れる。Claude Code の規則について、全体を許す形・`*` の位置・前方一致の広さの3種を、警告として出す | 本体は広さの方を見ていない。hub の手元の層にはいまも広い規則が残っている |
-| 4. 別リポジトリへの届き方 | 届かせるなら、ユーザー層に置くもの（hook か、狭める側の規則）を経路にする。本命は PreToolUse hook で、別の issue で採否を決める | ユーザー層のものは、設定が読み込まれ hook が切られていないすべてのリポジトリで効く。Claude Code では hook の `"ask"` が allow 規則より先に効くことを試して確かめた。Codex と Cursor は確かめていない |
-| 5. 本体の検査で足りるか | Claude Code について足りない | 本体の警告は `*` の位置しか見ず、`Bash(git:*)` には出ない。`Bash(git:*)` は `git -c …` を確認なしで通すことを試して確かめた |
+| 3. 検査だけ先に入れる案 | 入れる。Claude Code の規則について、全体を許す形・`*` の位置・前方一致の広さの3種を、警告として出す。Codex の `~/.codex/rules/*.rules` の短い前方一致の allow も、警告として出す | 本体は広さの方を見ていない。hub の手元の層にはいまも広い規則が残っている。Codex のユーザー層にも、強制 push などを通す2語の規則がある |
+| 4. 別リポジトリへの届き方 | 届かせるなら、ユーザー層に置くもの（hook か、狭める側の規則）を経路にする。本命は PreToolUse hook で、別の issue で採否を決める | ユーザー層のものは、設定が読み込まれ hook が切られていないすべてのリポジトリで効く。Claude Code では hook の `"ask"` が allow 規則より先に効くことを試して確かめた。Codex では hook の deny が allow の規則に当たった `git push --force` を止めることを試して確かめたが、`"ask"` は対応しておらず、返すと止まらずに動く。Cursor は確かめていない |
+| 5. 本体の検査で足りるか | Claude Code について足りない。Codex については、本体だけで足りるとする根拠が無いので、予防として hub の検査を足す | Claude Code の警告は `*` の位置しか見ず、`Bash(git:*)` には出ない（試して確かめた）。Codex は allow の規則を確認なしに sandbox の外で動かし、広い規則を警告する仕組みは文書から確認できなかった（無いことは確かめていない） |
 
 推奨をまとめると、「allow は配らない。hub は検査（論点3）を先に入れ、実行時に止める経路（論点4）は別の issue で採否を決める」になる。
 
@@ -115,6 +116,44 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 試したのは `-c user.name` のような無害な設定で、任意のプログラムを動かす `-c` は試していない。T1 が示すのは「`-c` を前に置いた git のコマンドに `Bash(git:*)` が当たる」ことで、`-c` で何が動くかは公式の文書の文による。T2 は dontAsk での観測で、auto モードでの振る舞いは C18 の文による。
 
+### 3.4 Codex の実際の状態（2026-10-19 に足した）
+
+owner は Codex について次のように観察している。「壊す操作は無いが、想定していなかった操作をしたことにあとで気づく場面が増えている。」これは owner の観察で、数えたものではない。
+
+手元は codex-cli 0.163.0 である。公式の文書の写しは master の作業層 `tmp/385-permissions-canonical-scope/src/`（`codex-hooks.md`・`codex-rules.md`）にある。
+
+| # | 仕様・状態 | 状態 | 出典 |
+|---|---|---|---|
+| X5 | Codex の `prefix_rule` の `allow` は「sandbox の外で、確認なしに動かす」意味である。複数の規則に当たれば、いちばん厳しいもの（`forbidden` > `prompt` > `allow`）が勝つ | [verified] | https://developers.openai.com/codex/rules 「Understand rule fields」 |
+| X6 | TUI で allow の一覧に足すこと（その後も確認を省く、永続の承認）を選ぶと、Codex はユーザー層の `~/.codex/rules/default.rules` に書く。1回限りの承認がどこに残るかは、この節には書かれていない。Smart approvals（既定で有効）は、確認の場で `prefix_rule` を提案することがある。Codex は起動時に、有効な設定の層ごとの `rules/` を読む | [verified] | 同「Create a rules file」 |
+| X7 | `bash -lc` の中身が、普通の語と安全な演算子（`&&`・`||`・`;`・`|`）だけの並びなら、Codex は分けてから1つずつ規則に当てる。変数や置き換えや `*` を含むなら分けず、全体を1つとして当てる | [verified] | 同「Shell wrappers and compound commands」 |
+| X8 | managed でない hook は、owner が見て信頼するまで動かない。信頼は hook の定義の hash に対して記録され、新しい hook や変えた hook は信頼し直すまで飛ばされる。起動時に `/hooks` を開くよう警告が出る。managed の hook は信頼が要らず、`--dangerously-bypass-hook-trust` はその1回だけ信頼の確かめを飛ばす | [verified] | https://developers.openai.com/codex/hooks 「Review and trust hooks」 |
+| X9 | hash は hook の項目（handler）ごとに、その定義（イベント・matcher・コマンドの文字列など）から計算され、スクリプトの中身は入らない。したがって、ある項目を足したり書き換えたりしても、外れるのはその項目の信頼だけで、ほかの項目の信頼は残る | [unverified-summary] | `openai/codex` の main の `codex-rs/hooks/src/engine/discovery.rs` の `hook_hash`。手元の 0.163.0 のソースは確かめていない |
+| X10 | PreToolUse は、`permissionDecision: "deny"` か exit 2 で止められる。`permissionDecision: "ask"` は「まだ対応していない」とされ、hook の失敗として扱われ、コマンドはそのまま続く | [verified] | hooks 「PreToolUse」 |
+| X11 | 公式は hook を「役に立つ守りだが、完全な強制の境界ではない」と書く。専用の道具の経路の一部は hook を通らない。とくに、すでに動いている実行のセッションへ `write_stdin` で入力を送るときは、PreToolUse は動き直さない。たとえば対話のシェルを開いたあとに送ったコマンドは、起動時のコマンドを読む hook には見えない | [verified] | hooks 「Tool coverage」 |
+| X12 | hook は既定で有効で、`[features] hooks = false` で切れる | [verified] | hooks 「Turn hooks off」 |
+
+手元の状態は次のとおりである（2026-10-19 に確かめ直した）。
+
+- **承認と sandbox**: 10月17〜18日のセッションの記録（`~/.codex/sessions/` の `turn_context`）では、デスクトップのアプリのセッション4件のうち2件が承認 `on-request`・sandbox `workspace-write`（ネットワーク無し・書ける場所は作業ディレクトリ1つと一時ディレクトリ）、2件が `never`・`read-only` だった。`codex exec` から呼んだ62件（so-compare を含む）は、すべて `never`・`read-only` だった [verified]。信頼済みのプロジェクトの既定値を書いた公式の箇所には届いていないので、これは記録から観測した値である。
+- **allow の規則**: `~/.codex/rules/default.rules` に `prefix_rule` が32件あり、すべて allow で、hub は管理していない [verified]。先頭の語は `gh` 15・`git` 9・`bash` 3・ほか5である。2語以下の規則は7件で、そのうち git の4件（`["git","push"]`・`["git","rebase"]`・`["git","fetch"]`・`["git","commit"]`）が広い。bash の3件は台本の全文まで一致させる狭い規則である。リポジトリに固有のパスやコマンドを含む規則もある（中身は書かない）[verified]。
+- **規則の判定**（`codex execpolicy check`・実行はしない）: `git push --force origin master`・`git push --force-with-lease`・`git commit --no-verify -m x`・`git rebase -i HEAD~3`・`git fetch --upload-pack=x origin` はどれも allow に当たる。`git -c core.sshCommand=x push`・`gh pr merge 1`・`rm -rf /tmp/x` はどの規則にも当たらない [verified]。X5 から、allow に当たったものは sandbox の外で確認なしに動く。
+- **hook**: `~/.codex/config.toml` は `[features] hooks = true` で、`~/.codex/hooks.json` は hub の `canonical/hooks/codex.hooks.json` への symlink である。PreToolUse の Bash に `block-destructive.sh`・`block-force-push.sh`・`cc-lint.sh` の3本がある。`config.toml` の `[hooks.state]` には、この3本の信頼の hash と、いまの `hooks.json` には無い `permission_request` の項目の hash が残っている [verified]。
+
+### 3.5 Codex で試したこと（2026-10-19 に足した）
+
+配っている `block-force-push.sh` が、allow の規則に当たった `git push --force` を止めるかを試した。scratchpad に使い捨てのリポジトリを作り、その中に bare リポジトリを置いて push 先にした。本物のリポジトリと GitHub には触れていない。commit A を push したあと、手元を A2 に amend して食い違わせた。各回の前に push 先の main を A に戻したので、どの回の push も、早送りにならない書き換え（強制の push でなければ拒まれる更新）である。`codex exec -C <使い捨て> -s workspace-write --ephemeral --json` を、ユーザー層の設定（`config.toml`・`hooks.json`・`rules/`）を読む形で回した。hook の記録は環境変数 `HOOK_FIRING_DIR` で試験の場所に向けた。判定は push 先の ref が動いたかと、hook の記録と、Codex の stderr の記録で行い、モデルの返答では判定していない。記録は master の作業層 `tmp/385-permissions-canonical-scope/codex-test/` にある。
+
+| 試験 | 打たせたコマンド | hook | push 先の ref | hook の記録 | Codex の stderr |
+|---|---|---|---|---|---|
+| R1 | `git push --force origin main` | 有効 | 動かなかった | `block-force-push` が deny を1件記録 | 「Command blocked by PreToolUse hook: Force push blocked」 |
+| R2 | `git push --force-with-lease origin main` | 有効 | 動いた | `block-force-push` が allow を1件記録 | なし |
+| R3 | `git push --force origin main` | `--disable hooks` で切った | 動いた | 記録なし | なし |
+
+R1 と R3 の差は hook の有無だけで、R2 は同じ場所への push が通ることを示す対照である。したがって、allow の規則に当たるコマンドを、hook の deny が止めた [measured]。R1 のモデルの最後の返答は「Automatic approval review blocked …」で、止めた仕組みを取り違えていた。
+
+この試験が示さないことは5つある。1つ目は、対話のセッション（`on-request`）での振る舞いで、試したのは `codex exec` だけである。承認の設定は指定しておらず、記録に残る `codex exec` の62件はすべて `never` だった。2つ目は、push が通るのに allow の規則が要ったかと、sandbox の外で動いたかである。push 先は作業ディレクトリの中にあり、`workspace-write` の sandbox の中でも書ける。3つ目は、`git push origin +main` のような別の書き方の強制 push を hook が止めるか。4つ目は、`git fetch --upload-pack` や `git rebase -i` のような、allow に当たるほかの形を hub の hook が止めるか。5つ目は、`write_stdin` で後から送った入力（X11）を hub の hook が見られるかである。
+
 ## 4. いまの状態（2026-10-18 の実測）
 
 - hub の `.claude/settings.local.json`: allow 125 件（Bash 108・Read 10・WebFetch 6・WebSearch 1）。deny と ask は無い。`*` が末尾でない Bash 規則は0件である [verified]。
@@ -156,6 +195,8 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 理由: いまの共通の形の allow をそのまま正本に移す形（1A）は成り立たない。24 件のうち読み取りだけのものは3件で、`ls` は本体が最初から通す（4節）。読み取りだけに選び直す形（1A'）は成り立ちうるが、得るものはまだ測っていない。owner は auto モードで動かしており、本体が読み取りと見なす操作はそもそも確認も判定器も通らずに動く（C15）ので、その分は選び直しても何も減らない。手元の層が5週間書き足されていないこと（4節）は、ファイルが更新されていないことを示すだけで、確認の回数や待ち時間は分からない。一方、選び直しの基準を誤ったときの害は全リポジトリに及ぶ。したがって既定では配らず、同じ確認が何度も出ていると具体的に分かった候補が出たときに、その候補だけを見直す。issue が例に挙げた「`gh` の読み取りの類」も、`gh pr *` は `gh pr merge` を含むので、サブコマンドの単位まで絞って選ぶ必要がある。`gh api` は「GET だけ」を前方一致で書けない（C13）。1C は狭める側の別の判断なので、論点4・5 の選択肢として扱う。
 
+**Codex**: 結論は変わらない。Codex で永続の承認（allow の一覧に足すこと）を選ぶと、Codex 自身がユーザー層の `default.rules` に書く（X6）。そのため Claude Code と違い、足した規則は、そのユーザー層を読むすべてのリポジトリの後続のセッションに効く。しかも allow は sandbox の外で確認なしに動く（X5）。hub がこのファイルを正本として持つと、Codex が永続の承認のたびに書くファイルを取り合うことになり（論点2）、業務のリポジトリに固有の規則も hub の正本に入ってしまう。Codex についても allow は正本に置かず、広い規則は検査で知らせる（論点3）。
+
 ### 論点2 書き込みの衝突
 
 問い: Claude Code 自身が許可規則を書き足す。配列の `allow` に `union-array` が使えるか。追記と正本の適用が競合したとき、どちらを残すか。
@@ -184,6 +225,8 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 **狭める側（1C）を配るなら、配る前に、配った項目と owner が足した項目を見分けて消す手段を決める。** 候補は、自動で個別に消す 2B と、知らせて手で消す 2B' である。外し損ねの害は、ask なら「確認が余分に出る」、deny なら「正当な操作が止まり続ける」で、allow の外し損ねより軽いが無害ではない。allow を配るなら（1A か 1A' を選ぶなら）、2B が無いまま配ってはいけない。外した allow が手元に残り続け、危ない規則を正本から消しても消えないからである。
 
+**Codex**: Codex が規則を書くのはユーザー層の `default.rules` で（X6）、hub が配るとしたら同じユーザー層になる。同じファイルを配ると直接取り合う。ただし Codex は層ごとの `rules/` を読み、当たった規則のうちいちばん厳しいものを採る（X5・X6）ので、狭める側を配ることになったときは、`default.rules` とは別のファイルを同じ `rules/` に置けば取り合わない。`codex execpolicy check` に `default.rules` と、`["git", "rebase", "-i"]` を `prompt` にした別のファイルの2つを渡すと、`git rebase -i HEAD~3` は両方に当たり、厳しい方の `prompt` になった。一方、`git rebase HEAD~3 -i` は別のファイルの規則に当たらず allow のままだった [measured]（記録は `tmp/385-permissions-canonical-scope/codex-test/execpolicy-two-files.txt`）。語を先頭から当てるので、オプションを後ろに書いた形は取りこぼす（X1）。試したのは判定の道具に2つのファイルを渡した形で、Codex が起動時に `rules/` の別のファイルを読むことは文書の記述による（X6）。
+
 ### 論点3 検査だけ先に入れる案
 
 問い: 正本を持たずに、`sync.sh --check` に「危ない形の規則が無いか」の検査だけを足す形はどうか。
@@ -209,6 +252,8 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 実装の単位への申し送り: 広さの検査で「危ないプログラムの一覧」を持つときは、一覧に文字を足して直す形にならないかを確かめる（knowledge item `01KZXFJCT0QWR8WVMM8BZN7T1S`。この単位は検査を書かないので採否はしていない）。3.3 節の試験は、本体を上げたときに C12・C19 が変わっていないかを見る回帰の試験として残せる（ゲート1 の代替3 から。7節）。`--check` の終了コードを見る既存のテスト（`projects/orchestration-engine/tests/test_check_claude_settings.sh` など）は、警告にとどめる形なら期待を変えずに済む見込みだが、確かめていない [speculation]。
 
+**Codex**: 検査の対象に Codex の `~/.codex/rules/*.rules` を足す（owner の判定）。Codex の規則には `*` が無いので「位置」の形は無い。「全体」と「広さ」に当たるのは、短い前方一致の allow である。たとえば1語の `["git"]` や、いまある2語の `["git","push"]`（`--force` を含む）・`["git","fetch"]`（`--upload-pack` を含む）・`["git","rebase"]`・`["git","commit"]`（`--no-verify` を含む）である。規則の文字列を自分で読む代わりに、危ない形のコマンドの一覧を `codex execpolicy check` に当てて、allow になったものを警告する形もある。この形は、単純なコマンドの前方一致を Codex 自身の実装で判定できる。ただしこの道具は渡された引数の並びをそのまま当てるだけで、実行のときの `bash -lc` の分け方（X7）までは再現しない。手元でも、`git rebase -i HEAD~3` は規則に当たったが、`bash -lc 'git rebase -i HEAD~3'` はどの規則にも当たらなかった [measured]。`bash -lc` を含む実行時の判定と合うかは、別に確かめる必要がある。どちらの形にするかは実装の issue（#460）で決める。
+
 ### 論点4 別リポジトリへの届き方
 
 問い: hub が配るのはユーザー層（`~/.claude/`）で、各リポジトリの `.claude/settings.local.json` には届かない。届かせるなら別の経路が要る。
@@ -226,6 +271,8 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 推奨: **届かせるなら 4B を本命にし、4A の ask を軽い代わりとして並べ、別の issue で採否を決める。** 4D は 3B として安く足せる。
 
 理由: Claude Code については、4A の ask と 4B は、どちらもユーザー層に置くので上の条件を満たすすべてのリポジトリに届き、どのファイルの allow より先に効く（C3・C19）。たとえば別のリポジトリの手元の層に `Bash(git:*)` が残っていても、hook か規則がその形を見分けられれば、`git -c core.fsmonitor=… diff` を実行する前に確認を出させられる。Codex と Cursor について同じことが言えるかは確かめていないので、別の issue ではツールごとに成り立つかを先に確かめる。差は見分ける精度と手間にある。4A は規則の文字列の前方一致なので、`git -C . -c x diff` のような並べ替えを取りこぼす（C17）。4B は hook の中でコマンドを読めるので細かく見られるが、そのぶん誤って止める例と取りこぼす例を測る手間が要る。hub はすでに同じ経路で `block-destructive.sh` を3ツールへ配っているので、4B に新しい配布の仕組みは要らない。ただし `block-destructive.sh` は破壊的な操作を止める hook で、任意の実行の形を足すのは別の論理的な変更になる。この issue では方向だけを決め、実装は分ける。
+
+**Codex**: hook の経路は Codex でも働く。allow の規則に当たり、sandbox の外で確認なしに動くはずの `git push --force` を、hub の `block-force-push.sh` の deny が止めた（3.5 節の R1・R3）。ただし Claude Code と違うところが2つある。1つ目は、Codex の hook は `"ask"` に対応しておらず、返すと hook の失敗として扱われてコマンドはそのまま続く（X10）。いまの PreToolUse で 4B を Codex に当てるなら、承認の画面へ回す形は使えず、deny か exit 2 で止める形になる。deny で止めると、正当な使い方を owner がその場で通す道が無いので、誤って止める例の重さが Claude Code より大きい。2つ目は、いまのユーザー層への配り方と通常の信頼の確かめのもとでは、hub が新しく足した hook と定義を変えた hook は、owner が `/hooks` で信頼し直すまで動かない（X8）。信頼し直しが要るのは足したり変えたりした項目ごとで、ほかの項目の信頼は残ると読める（X9・手元の版では未確認）。信頼の記録の置き場は設定の環境ごとなので、何回の操作が要るかはその数による。起動時に警告は出るが、信頼し直すまでのあいだ、その項目の守りは抜ける。3つ目は、すでに動いている実行のセッションへ `write_stdin` で送った入力には PreToolUse が動き直さない（X11）。hub の hook がこの経路を見られるかは確かめていない。
 
 ### 論点5 本体の検査で足りるか
 
@@ -245,9 +292,11 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 | 5E | Bash の sandbox を正本の宣言に入れ、規則が残っていても境界の外に出られないようにする（`sandbox.enabled` などはユーザー層のキー。C22） | 見つけはしないが、残った規則の害を減らす別の種類の案である。届く場所は全リポジトリのシェルのコマンド。hook・MCP・ファイルの道具は境界の外（C22） | 既定の auto-allow のままなら悪い。境界の中のコマンドが確認なしで通り、allow 規則に当たるコマンドは境界の外でのやり直しも確認なしで通る（C23） | 悪い。ネットワークの許可が最初は空なので、`gh`・`curl`・`codex` などが設定するまで動かない。Codex と Cursor には別の sandbox がある |
 | 5E' | 5E に `autoAllowBashIfSandboxed: false` と `allowUnsandboxedCommands: false` を足し、確認の流れを保ったまま境界を掛ける | 5E と同じ | 良い。確認の流れは変わらず、境界の外でのやり直しも止まる。ただし `autoAllowBashIfSandboxed` はリポジトリのファイルから変えられる（C23） | 悪い。5E の互換の手間に加え、境界で失敗したコマンドを境界の外でやり直す道が無くなるので、境界の設定が足りないと作業が止まる |
 
-推奨: **Claude Code について足りない。いまは 5B を入れ、5C は別の issue で決める。** 5E と 5E' はこの issue では採らず、試す場所を作れたら別に検討する候補として残す。5E' は広がる危険を抑えられるが、owner の作業の道具が境界の設定を終えるまで動かない手間が重いからである。
+推奨: **Claude Code について足りない。Codex については、本体だけで足りるとする根拠が無いので、予防として hub の検査を足す。いまは 5B を入れ、5C は別の issue で決める。** 5E と 5E' はこの issue では採らず、試す場所を作れたら別に検討する候補として残す。5E' は広がる危険を抑えられるが、owner の作業の道具が境界の設定を終えるまで動かない手間が重いからである。
 
 理由: 本体の警告は、hub の4件を見つけるのには働いた。しかし同じ hub の手元の層に、警告の出ない広い規則が少なくとも5件残っている（4節）。`Bash(git:*)` が `git -c …` を確認なしで通し、警告も出ないことは試して確かめた（C12）。「本体が検査しているから、危ない規則は無い」とは言えない。Codex と Cursor については、同じ検査があることを文書から確認できなかったので、Claude Code で確かめた重複をほかの2ツールに広げられない（knowledge item `01M1VTJJFF1TK067ZX3X912G0P`）。別のリポジトリでは、警告の出る形が1件いまも残っている。直されていない理由（そのリポジトリでセッションを始めていない、警告を見落とした、など）は確かめていない [speculation]。
+
+**Codex**: 本体だけで足りるとする根拠は確認できなかった。Codex の allow は sandbox の外で確認なしに動き（X5）、永続の承認を選ぶと規則は Codex 自身がユーザー層に書き足す（X6）ので、足した規則はそのユーザー層を読むすべてのリポジトリの後続のセッションに効く。いまある2語の git の規則は、`git push --force`・`git fetch --upload-pack=…`・`git rebase -i`・`git commit --no-verify` に当たり、allow の判定になる（3.4 節の判定）。ただし、判定が allow であることと、実行が無条件に通ることは別で、hub の hook が止める形もある（3.5 節）。広い規則を警告する仕組みは、文書から確認できなかった（X2）。無いことや、実際に警告されないことを確かめたわけではない。規則を書くときの `match` / `not_match` は、書いた人が足した例を読み込みのときに確かめるもので（X1 の README）、規則が広すぎることを知らせる仕組みではない。owner の観察（想定していなかった操作にあとで気づく場面が増えている）は、この性質と合っている。ただし観察の一つ一つがどの規則によるかは調べていない [speculation]。hub の `block-force-push.sh` は Codex でも `git push --force` を止めた（3.5 節）が、ほかの形を hub の hook が止めるかは確かめていない。
 
 ## 7. ゼロベースの代替探索（ゲート1）
 
@@ -309,6 +358,24 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 指摘が無かった点は3つで、1A と 1A' を分けたこと、警告にとどめる判断、論点5 の結論を Claude Code の範囲で言っていることである。警告の判断には、検査の終了コードと適用が止まるかを分けて書くよう補足があり、論点3 にそう書いた（`--check` は読むだけで、赤にしても適用は止まらない。`scripts/sync.sh` の check の分岐で確かめた）。
 
+### 8.1 Codex の節への設計SO（2026-10-19 に足した）
+
+3.4 節・3.5 節と論点ごとの Codex の段落を足した差分に、もう1回 `so-compare --codex-only` を当てた。返したのは Codex（`gpt-6.1-sol`・設定から解決・codex-cli 0.163.0）で、163 秒・初回で返った。依頼文と出力は master の作業層 `tmp/385-permissions-canonical-scope/so-c12-prompt.md` と `so-c12/` にある。
+
+結論は「直してから進む」で、指摘は7件（重さ 高1・中6）だった。根拠を一次情報か手元の判定に当て、7件とも採った。
+
+| # | 重さ | 指摘 | 採否と直し |
+|---|---|---|---|
+| 1 | 高 | `codex execpolicy check` は渡された引数の並びをそのまま当てるだけで、実行のときの `bash -lc` の分け方は再現しない。「X7 を hub に写さずに済む」は誤り | 採った。手元でも `bash -lc 'git rebase -i HEAD~3'` はどの規則にも当たらなかった。論点3 の Codex の段落を「単純なコマンドの前方一致を本体の実装で判定できる」に限り、`bash -lc` を含む判定との一致は別に確かめると書いた |
+| 2 | 中 | Codex の「本体の検査では足りない」は根拠が一段強い。仕組みを文書から確認できなかったことは、無いことの確認ではない。allow の判定と、実行が無条件に通ることも別 | 採った。Codex は「本体だけで足りるとする根拠が無いので、予防として検査を足す」にした |
+| 3 | 中 | R1 で止めたのが hook であることは支えられるが、allow の規則が要ったことや sandbox の外で動いたことは示さない。各回の初期状態も書かれていない | 採った。結論を「allow の規則に当たるコマンドを hook の deny が止めた」に限り、示さないことに2点を足し、初期状態（毎回 A に戻した早送りにならない書き換え）を書いた |
+| 4 | 中 | 信頼の hash は項目ごとに計算されるので、`hooks.json` を変えたから全部の信頼が外れるとは言えない。managed の hook と、その1回だけ確かめを飛ばす手段もある。「機種ごとに1回」も断定できない | 採った。X8・X9 と論点4 を「足したり変えたりした項目ごとに信頼し直す」に直し、回数は設定の環境の数によるとした |
+| 5 | 中 | X6 の出典が保証するのは「TUI で allow の一覧に足したとき」の書き先で、1回限りの承認まで永続になるように読める | 採った。「永続の承認を選ぶと」に直した |
+| 6 | 中 | すでに動いている実行のセッションへ `write_stdin` で送った入力には PreToolUse が動き直さない、という公式の例外が抜けている | 採った。X11 に足し、3.5 節の示さないことと論点4 と11節に書いた |
+| 7 | 中 | 論点3 で Codex を検査の対象にしたのに、1節の表と9節の問いが Claude Code だけのままで、何を承認したのかが一意に読めない | 採った。1節の論点3・5 の行に Codex を足し、9節の末尾に Codex の分の範囲（#460・#461）と問2 の記録の形を書いた |
+
+指摘が無かった点は、X5・X6・X10 の表そのもの、論点2 の別のファイルの案、論点4 の「deny で止める形になる」（いまの PreToolUse で、その呼び出しを止める方式に限るなら）、公開の文書としての衛生の4つである。
+
 ## 9. owner に判定してもらうこと
 
 推奨のとおりでよいか、別の案にするかを、次の問いごとに決めてほしい。問いは、要るかどうか・どの範囲か・どの方式か・いまやるか、に分けてある。
@@ -323,6 +390,8 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 
 判定のあと、統括が実装の issue を起こし、その番号を decision に書く。
 
+owner の判定は 2026-10-18〜19 に出た。この節の7問はすべて推奨どおりで、10節の `defaultMode` は消すと決まり、統括が消した。7問は Claude Code を念頭に立てたもので、Codex は 2026-10-19 に owner の判断で足した。Codex の分は、検査（論点3）の対象に `~/.codex/rules/*.rules` を足すこと（#460）と、実行の直前に止める hook を3つのツールで決めること（#461）として決まった。問2 は、Codex については「本体だけで足りるとする根拠が無いので、予防として検査を足す」の形で記録する。判定と理由は decision に記録する。
+
 ## 10. この単位の範囲の外で見つかったこと
 
 - hub の `.claude/settings.local.json` の top-level に `defaultMode: "auto"` がある。公式のキーは `permissions.defaultMode` で、しかも `auto` は手元の層からは効かない（https://code.claude.com/docs/en/settings-reference 「permissions.defaultMode」）[verified]。この値は効いていない可能性が高い。直すかどうかは owner が決める。
@@ -333,7 +402,11 @@ hub の設定は Claude Code だけでなく Codex と Cursor にも配られる
 - `Bash(git:*)`・`Bash(curl:*)`・`Bash(gh api:*)` が auto モードで外されるかは、文書に無く、試していない（C16）。
 - Claude Code 自身が承認を書いたときに ConfigChange が動くか（4C）。
 - `/permissions` の画面で足した規則がどのファイルに書かれるか（論点2）。
-- Codex と Cursor の hook が、確認を求められるか、既存の規則より先に効くか、対話でない実行でどうなるか（論点4）。
+- Cursor の hook が、確認を求められるか、既存の規則より先に効くか、対話でない実行でどうなるか（論点4）。Codex は、deny が allow の規則より先に効くことを `codex exec` で確かめ（3.5 節）、`"ask"` は対応していないことを文書で確かめた（X10）。対話のセッション（`on-request`）での振る舞いは試していない。
+- Codex で、`git push origin +main` のような別の書き方の強制 push や、`git fetch --upload-pack`・`git rebase -i` のような allow に当たるほかの形を、hub の hook が止めるか（3.5 節）。
+- Codex の hook の信頼の hash にスクリプトの中身が入らないことを、手元の 0.163.0 で確かめること（X9）。
+- Codex で `bash -lc` を含む実行時の判定が、`codex execpolicy check` に素のコマンドを当てた結果と合うか（論点3）。
+- Codex で `write_stdin` で後から送った入力を hub の hook が見られるか（X11）。
 - mod がほかの経路で入っていないか、`skill-creator` が `tool.check` を扱うか（C25）。
 - 許可規則を配ったときに、apply の置き換えの回数や時間が増えるか（論点2）。
 - issue 本文の「削除前の allow は 129 件・Bash 112 件」。バックアップが残っていない。

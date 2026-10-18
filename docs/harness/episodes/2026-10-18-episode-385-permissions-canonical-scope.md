@@ -125,3 +125,45 @@ knowledge item `01KYMRE1NC7XX6N66RQ0MGGHF1` の教訓に従い、issue 本文と
 
 - 判定の欄（9節）を、要るかどうか・範囲・方式・いまやるか・当面受け入れる危険の7問に分けた。2B に、知らせて手で消す 2B' を並べた。
 - 2回目の設計SO は回さない。弱 SO は1周で終えてよく、8件はすべて文書の中で直せる指摘で、新しい種類の案は出ていない（ゲート1 で出た3つに位置を与えたあと）。
+
+### D3: commit・push して統括へ報告し、止まった（2026-10-18）
+
+- discussion と episode を `1c8cd3f` として commit し、`docs/#385_permissions_canonical_scope` を push した。PR はまだ作っていない。
+- 統括が `oe-tree` に root `cockpit` として生きて出ていることを確かめてから、`projects/orchestration-engine/bin/oe-send` で discussion のパスを1行送った。exit 0 だった。
+- ここで止まる。owner の判定が統括から届くまで decision に進まない。
+
+### 追補 brief を受けた（2026-10-19）
+
+- 統括から追補 `.oe/brief-385-r1.md`（作業層）が届いた。owner の判定は8件すべて推奨どおりで、owner の判断で Codex もこの判定に含めることになった。D3 のあとに C1（Codex の状態を discussion に足す）と C2（Codex で `block-force-push.sh` が許可規則に当たった `git push --force` を止めるかを試す）を挟み、元の D4〜D6 に戻る。終端は元のとおり D6 である。実装の issue は #460（`sync --check` の警告・Claude Code と Codex）と #461（実行の直前の hook・3ツール）。
+- 指示矛盾ガードに照らした。終端は変わらず、未達の step を飛ばす指示でも、要件を弱める指示でもない。step を足す指示なので、そのまま従った。
+- Q8 の `defaultMode` の削除は統括が実施済みで、master の作業層のバックアップと比べて差分がこの1キーだけであることを確かめた（allow は 125 件のまま）。
+
+### C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）
+
+- 統括が確かめた事実を、すべて自分で取り直した。セッションの記録の `turn_context`（10月17〜18日の 66 件）、`default.rules` の形（32件・すべて allow・広いのは2語の git の4件）、`codex execpolicy check` の判定（統括の8件と同じ結果）、`hooks.json` の symlink と `[features] hooks = true`。
+- 統括が届かなかったという公式の文書は、`https://developers.openai.com/codex/hooks.md` と `/rules.md` で取れた。判定に効く記述が3つあった。allow は「sandbox の外で確認なしに動かす」意味であること。TUI の承認は allow をユーザー層の `default.rules` に書くこと。PreToolUse の `"ask"` は対応しておらず、返すと hook の失敗として扱われてコマンドはそのまま続くこと。
+- **3つ目は #461 の前提を変える。** Claude Code では `"ask"` が allow より先に効くことを T2 で確かめたが、Codex で同じ作りの hook を配ると、確認に回したつもりの形が素通りする。Codex で止められるのは deny（exit 2）だけである。
+- `codex exec --help` の `--dangerously-bypass-hook-trust` から、Codex の hook には信頼の仕組みがあると分かった。公式の文書と `openai/codex` の main のソースで、信頼は hook の定義の hash に記録され、定義を変えると信頼し直すまで飛ばされることを確かめた。hash にスクリプトの中身は入らない（ソースの読み・手元の版は未確認）。`config.toml` には、いまの `hooks.json` に無い `permission_request` の信頼の項目も残っていた。
+- 論点1〜5 に「Codex」の段落を足し、論点5 の結論を「Claude Code についても Codex についても足りない」にした。論点2 には、狭める側を配るなら `default.rules` と別のファイルを同じ `rules/` に置けば取り合わないことを足し、`codex execpolicy check` に2つのファイルを渡して、厳しい方が勝つことと、オプションを後ろに書いた形は取りこぼすことを確かめた。
+- 確かめる途中で、自分の Claude Code の `block-force-push.sh` が、`codex execpolicy check -- bash -lc '<force push の文字列>'` を止めた。判定だけのコマンドだが、hook は `bash -lc` の中身を読んで強制 push と判断した。hook の拒否には従い、文字列を別の形にして通すことはしなかった。その判定（`bash -lc` の中身を Codex が分けて規則に当てるか）は取っていない。同じ仕組みの確かめは、強制 push の文字列を含まない `git rebase -i` の規則で行った。
+
+昇格の印: Codex の PreToolUse hook は `"ask"` を返すと止まらずに動く（失敗として扱われ続行する）。Claude Code と同じ作りの hook を Codex に配ると、確認に回したつもりの形が素通りする
+
+昇格の印: 規則の一致を自前で真似ずに、本体の判定の道具（`codex execpolicy check`）に危ない形の一覧を当てると、本体の一致のしかたの変化に追従できる
+
+### C2: Codex で block-force-push.sh が allow に当たった git push --force を止めるかを試した（2026-10-19）
+
+- scratchpad に使い捨てのリポジトリを作り、その中に bare リポジトリを置いて origin にした。A を push したあとローカルを A2 に amend し、各回の前に push 先の main を A に戻した。本物のリポジトリと GitHub には触れていない。
+- `codex exec -C <使い捨て> -s workspace-write --ephemeral --json` を、ユーザー層の設定を読む形で3回回した。hook の記録先は `HOOK_FIRING_DIR` で試験の場所に向けた。この環境変数が hook まで届くことは、記録が試験の場所に出て owner の記録が増えなかったことで確かめた。
+- 結果: R1（hook 有効・`git push --force`）は push 先が動かず、`block-force-push` の deny が1件記録され、Codex の stderr に「Command blocked by PreToolUse hook」が出た。R2（hook 有効・`--force-with-lease`）は push 先が動き、allow が1件記録された。R3（`--disable hooks`・`git push --force`）は push 先が動き、記録は無かった。R1 と R3 の差は hook の有無だけなので、R1 で止めたのは hook の deny である。記録は master の作業層 `tmp/385-permissions-canonical-scope/codex-test/` にある。
+- **R1 のモデルの返答は、止めた仕組みを取り違えていた。** 「Automatic approval review blocked …」と書いたが、stderr の記録は PreToolUse hook が止めたとしている。brief がモデルの言葉で判定しないよう指示していたのが効いた。
+- 試したのは `codex exec` だけで、承認の設定は指定していない（記録に残る `codex exec` の62件はすべて `never` だった）。対話のセッション（`on-request`）では試していない。`+main` のような別の書き方の強制 push と、allow に当たるほかの形を hub の hook が止めるかも試していない。どれも #461 で決めることとして discussion の11節に残した。
+
+### C1・C2 の差分に設計SO（弱・Codex 1レーン）を当てた（2026-10-19）
+
+- 依頼文は master の作業層 `tmp/385-permissions-canonical-scope/so-c12-prompt.md`、出力は `so-c12/`。Codex（`gpt-6.1-sol`・codex-cli 0.163.0）が 163 秒・初回で返った。Cursor には切り替えていない。
+- 結論は「直してから進む」で、指摘は7件（高1・中6）。7件とも採った。表は discussion の 8.1 節にある。
+- **高の1件は、自分の書いた利点がそのまま誤りだった。** `codex execpolicy check` に危ない形の一覧を当てる案を「Codex 自身の一致のしかたをそのまま使うので、`bash -lc` の分け方を hub に写さずに済む」と書いたが、この道具は渡された引数の並びを当てるだけで、`bash -lc` を分けない。手元で `bash -lc 'git rebase -i HEAD~3'` を当てると、どの規則にも当たらなかった。直前に「強制 push の文字列を含む `bash -lc` の判定」を hook に止められて取らなかったので、`bash -lc` を通す道具の振る舞いを確かめないまま、文書の X7（実行のときの分け方）を道具にも当てはめていた。knowledge item `01M2DEC1G6GG9RTXGM6CRJEGZQ` の予測（引用した文書が答えている性質を、当て直さずに別のものの性質として書く）の実例である。
+- 中の4件目（信頼は項目ごと）は、自分でソースを読んで `hook_hash` が handler ごとだと見ていたのに、論点4 では「`hooks.json` を変えると信頼が外れる」とまとめて書いていた。読んだ細かさを、まとめの文で落としていた。
+- 中の6件目（`write_stdin` の例外）は、自分で取った公式の文書の「Tool coverage」に書かれていたが、X11 の要約で落としていた。
+- 7件を直したので、2回目の設計SO は回さない。新しい種類の案は出ていない。
