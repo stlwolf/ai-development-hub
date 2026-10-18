@@ -1,77 +1,66 @@
 # cursor-thread-tools
 
-Export Cursor Composer / Agent thread conversations to Markdown — as a **Cursor extension** or a **CLI**.
+Cursorのスレッド（Composer）会話データを抽出・Markdownエクスポートする VS Code 拡張 + CLI ツール。
 
-Cursor's built-in "Export Transcript" requires a GUI save dialog and is not available from the Command Palette. This tool reads Cursor's local SQLite store (`state.vscdb`) in **read-only** mode and reconstructs transcripts without using Cursor's private APIs.
+## ステータス
 
-**Status:** maintenance / archive-friendly. Built and verified against **Cursor 3.25.x (Electron 42)**. Not published to the VS Code / Cursor Marketplace; install from a `.vsix` release or build from source.
+**Phase 5: 完了** — 出力先変更コマンド + Composer 自動追加 実装済み
 
-## Features
+## 動機
 
-- List Composer threads (name, message count, Agent/Chat, date)
-- Export a thread (or many) to Markdown, including optional thinking blocks
-- Change export directory from the Command Palette
-- Optionally add the exported file to Composer as an `@` reference
-- Optional background auto-save (off by default)
-- CLI: `cursor-thread-tools list` / `export`
+Cursorの「Export Transcript」はGUI操作（ファイル保存ダイアログ）が必須で、コマンドパレットにも出ない（`f1: false`）。会話ログの保存をワークフローに組み込むには、GUIトリガーなしで動作するツールが必要。
 
-## Quick start
+## 機能
 
-### Extension (recommended for most users)
+| 機能 | 説明 | 状態 |
+|------|------|------|
+| `threadTools.list` | スレッド一覧表示（名前、メッセージ数、日時） | **Phase 1 完了** |
+| `threadTools.export` | 選択スレッドをMarkdownエクスポート | **Phase 2 完了** |
+| 自動保存 | バックグラウンドで定期的にスレッドを Markdown 保存 | **Phase 3 完了** |
+| CLI | ターミナルからスレッド一覧・エクスポートを実行 | **Phase 3 完了** |
+| エクスポートカスタマイズ | thinking/tool_call 出力制御、出力先・ファイル名設定 | **Phase 3 完了** |
+| 出力先変更コマンド | フォルダピッカーで outputDir を変更 | **Phase 5 完了** |
+| Composer 自動追加 | エクスポート後にファイルを Composer の `@` 参照に追加 | **Phase 5 完了** |
 
-1. Download a platform `.vsix` from [GitHub Releases](https://github.com/stlwolf/ai-development-hub/releases?q=cursor-thread-tools) (tag `cursor-thread-tools-v*`).
-2. Cursor → `Cmd+Shift+P` → `Extensions: Install from VSIX...` → reload window.
-3. `Cmd+Shift+P` → `Thread Tools: List Threads` / `Export Thread to Markdown`.
+詳細は [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) を参照。
 
-Native `better-sqlite3` is bundled in the `.vsix`, so the binary must match your OS/arch (e.g. `darwin-arm64`).
+## 技術的根拠
 
-### CLI
+Cursorは `state.vscdb`（SQLite）に会話データを格納。`cursorDiskKV` テーブルから `composerData` → `conversationState`（base64/hex エンコード protobuf）→ `agentKv:blob` → turn/message protobuf を辿り、Cursorの内部API非依存でトランスクリプトを再構成できる。
 
-```bash
-cd extension
-npm install
-bash scripts/setup-cli.sh   # Node-native rebuild + npm link
+詳細は [docs/plans/2026-02-20-kickoff-cursor-thread-tools.md](docs/plans/2026-02-20-kickoff-cursor-thread-tools.md) を参照。
 
-cursor-thread-tools list
-cursor-thread-tools export --all --since 7d
+## ディレクトリ構成
+
 ```
-
-Full install / rebuild notes: [extension/INSTALL.md](extension/INSTALL.md) (日本語) · [extension/INSTALL.en.md](extension/INSTALL.en.md) · [extension/CLI_USAGE.md](extension/CLI_USAGE.md).
-
-## Requirements
-
-- macOS (Windows / Linux paths exist but are untested)
-- Node.js **20+** for CLI / source builds (**22+** recommended for `@electron/rebuild`)
-- Cursor installed and launched at least once (`state.vscdb` must exist)
-- Current build target: **Electron 42.10.0** (override with `ELECTRON_VERSION=...`)
-
-## How it works (short)
-
-1. Open `state.vscdb` (SQLite) read-only
-2. Read `composerData:*` metadata from `cursorDiskKV`
-3. Decode `conversationState` (protobuf) → `agentKv:blob` → message text
-4. Emit Markdown
-
-Design choices (SQLite library, protobuf parsing, packaging, ABI split) are recorded under [`docs/decisions/`](docs/decisions/).
-
-## Project layout
-
-```text
 cursor-thread-tools/
-├── README.md
-├── LICENSE                 # MIT
-├── docs/decisions/         # ADRs (rationale only)
-└── extension/              # VS Code / Cursor extension + CLI
-    ├── src/
-    ├── scripts/install.sh  # Electron-native rebuild + build
-    ├── scripts/setup-cli.sh
-    └── INSTALL.md
+├── extension/          # VS Code拡張本体（TypeScript）
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── extension.ts        # activate/deactivate
+│       ├── commands/list.ts         # threadTools.list
+│       ├── commands/export.ts       # threadTools.export
+│       ├── commands/setOutputDir.ts # threadTools.setOutputDir
+│       ├── core/threads.ts     # 共有ロジック（VS Code非依存）
+│       ├── cli.ts              # CLI エントリポイント
+│       ├── proto/decoder.ts    # raw protobuf wire-format パーサー
+│       ├── export/markdown.ts  # Markdown 生成
+│       └── db/reader.ts        # SQLite read + blob lookup
+├── CONVENTIONS.md     # ドキュメント規約（命名規則・フォルダ構成・フロー）
+├── docs/
+│   ├── REQUIREMENTS.md         # 機能要件・非機能要件
+│   ├── VERIFICATION_MATRIX.md  # 検証マトリクス
+│   ├── plans/          # 計画・キックオフ（スレッド分化のたびに蓄積）
+│   ├── episodes/       # 作業記録・議論経緯
+│   ├── decisions/      # 確定した判断（ADR形式）
+│   └── raw-logs/       # 生ログ（gitignore対象、一時保管）
+├── scripts/            # ビルド・インストールスクリプト
+└── README.md
 ```
 
-## License
+## 関連
 
-[MIT](LICENSE)
-
-## Disclaimer
-
-This tool depends on Cursor's undocumented on-disk format. Cursor updates can break listing or export. Unsupported / empty thread formats are skipped with a warning rather than failing the whole run. Use at your own risk; the authors do not guarantee compatibility with future Cursor versions.
+- [4層モデル](../../ideas/20260220/context-persistence-4layer-model.md) — 本ツールは「層3: 生ログの抽出パイプライン」に位置づけられる
+- [CONVENTIONS.md](CONVENTIONS.md) — ドキュメント規約（命名規則・フォルダ構成・フロー）
+- [BACKLOG #2](https://github.com/stlwolf/ai-development-hub/issues/2) — 「会話ログ保存の仕組み構築」

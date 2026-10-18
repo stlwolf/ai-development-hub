@@ -43,11 +43,11 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 ### cursor-thread-tools
 
-Cursor Composer / Agent スレッドを Markdown にエクスポートする拡張 + CLI（読み取り専用）。
+Cursorスレッド会話のMarkdownエクスポートとライフサイクル管理を行うVS Code拡張。
 
 - `state.vscdb`（SQLite）からの会話データ読み取り
-- VSIX / CLI 配布。Marketplace 非公開。MIT
-- 現行ビルド対象: Cursor 3.25.x / Electron 42（v0.3.0）
+- スレッド完了報告の定型化（git diff + GitHub Issue投稿）
+- 4層モデルの「層3: 生ログ抽出パイプライン」の実装
 
 詳細は [cursor-thread-tools/README.md](cursor-thread-tools/README.md) を参照。
 

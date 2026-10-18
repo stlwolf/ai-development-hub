@@ -17,8 +17,8 @@ Cursor 内のコマンドパレットから使う**拡張機能**と、ターミ
 ## 前提条件
 
 - **macOS**（Windows / Linux はパス対応済みだが未テスト）
-- **Node.js 20 以上**（ソースから `@electron/rebuild` する場合は **22+ 推奨**）
-- **Cursor 3.25.x+**（Electron 42）
+- **Node.js 20 以上**
+- **Cursor 0.40+**（Electron 39）
 - Cursor が一度は起動済みであること（`state.vscdb` が生成されている必要がある）
 
 > **安全性**: このツールは Cursor のデータを**読み取り専用**でアクセスします。データを変更・削除することはありません。
@@ -39,7 +39,7 @@ Cursor 内のコマンドパレットから使う**拡張機能**と、ターミ
 `gh` CLI がある場合:
 
 ```bash
-gh release download cursor-thread-tools-v0.3.0 \
+gh release download cursor-thread-tools-v0.2.0 \
   --repo stlwolf/ai-development-hub --pattern '*.vsix'
 ```
 
@@ -76,7 +76,7 @@ bash scripts/install.sh
 npm run package
 ```
 
-`extension/` 直下に `cursor-thread-tools-0.3.0.vsix` が生成されます。
+`extension/` 直下に `cursor-thread-tools-0.2.0.vsix` が生成されます。
 
 ### 3. Cursor にインストール
 
@@ -190,7 +190,7 @@ read-only モードで 3 秒の busy timeout を設定して DB を開きます�
 Cursor のアップデートで Electron バージョンが変わった場合、`install.sh` に環境変数でバージョンを指定できます:
 
 ```bash
-ELECTRON_VERSION=42.10.0 bash scripts/install.sh
+ELECTRON_VERSION=39.4.0 bash scripts/install.sh
 ```
 
 現在の Cursor の Electron バージョンは Cursor の `About` 画面、または macOS の場合 `/Applications/Cursor.app/Contents/Info.plist` で確認できます。

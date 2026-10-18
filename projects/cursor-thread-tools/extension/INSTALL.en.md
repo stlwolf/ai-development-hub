@@ -17,8 +17,8 @@ Two ways to use: as a **Cursor extension** (via Command Palette) or as a **CLI**
 ## Prerequisites
 
 - **macOS** (Windows / Linux path support added but untested)
-- **Node.js 20 or later** (Node **22+** recommended for `@electron/rebuild` from source)
-- **Cursor 3.25.x+** (Electron 42)
+- **Node.js 20 or later**
+- **Cursor 0.40+** (Electron 39)
 - Cursor must have been launched at least once (`state.vscdb` needs to exist)
 
 > **Safety**: This tool accesses Cursor data in **read-only** mode. It never modifies or deletes any data.
@@ -39,7 +39,7 @@ Go to [GitHub Releases](https://github.com/stlwolf/ai-development-hub/releases?q
 With `gh` CLI:
 
 ```bash
-gh release download cursor-thread-tools-v0.3.0 \
+gh release download cursor-thread-tools-v0.2.0 \
   --repo stlwolf/ai-development-hub --pattern '*.vsix'
 ```
 
@@ -76,7 +76,7 @@ bash scripts/install.sh
 npm run package
 ```
 
-This generates `cursor-thread-tools-0.3.0.vsix` in the `extension/` directory.
+This generates `cursor-thread-tools-0.2.0.vsix` in the `extension/` directory.
 
 ### 3. Install in Cursor
 
@@ -190,7 +190,7 @@ The tool opens the database in read-only mode with a 3-second busy timeout. If C
 If Cursor updates its Electron version, specify the version via environment variable:
 
 ```bash
-ELECTRON_VERSION=42.10.0 bash scripts/install.sh
+ELECTRON_VERSION=39.4.0 bash scripts/install.sh
 ```
 
 Check Cursor's Electron version in the About screen, or on macOS via `/Applications/Cursor.app/Contents/Info.plist`.
