@@ -2,7 +2,7 @@
   "name": "cursor-thread-tools",
   "displayName": "Cursor Thread Tools",
   "description": "Export Cursor Composer threads to Markdown and manage thread lifecycle",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "stlwolf",
   "engines": {
     "vscode": "^1.85.0"
@@ -66,10 +66,10 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "compile": "tsc -p ./ --noEmit",
-    "package": "vsce package --allow-missing-repository --skip-license"
+    "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.0.0",
@@ -78,5 +78,11 @@
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.3",
     "typescript": "^5.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stlwolf/ai-development-hub.git",
+    "directory": "projects/cursor-thread-tools"
   }
 }

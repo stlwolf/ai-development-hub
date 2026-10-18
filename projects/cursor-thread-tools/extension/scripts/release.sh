@@ -129,8 +129,9 @@ gh release download ${TAG} --repo stlwolf/ai-development-hub --pattern '*.vsix'
 
 ## 前提条件
 
-- Cursor 0.40+ (Electron 39)
+- Cursor 3.25.x+ (Electron 42)
 - Cursor が一度は起動済みであること
+- ネイティブモジュールのため、Assets の OS/arch と一致する環境でのみ動作
 EOF
 
 cd "$REPO_ROOT"
