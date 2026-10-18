@@ -126,3 +126,34 @@ tags: [test, settings, sync, harness]
 - shellcheck は警告0件のまま。
 
 **既知の罠をまた踏んだ。** 1回目の実行が「`eq_sync_want�`: 未割り当ての変数です」で止まった。M5 の文言に `$eq_sync_want）` と、変数の直後に全角の括弧を書いていた。bash が全角の先頭のバイトを変数名に食って、存在しない変数を展開した。この罠は自分の memory にすでにある（heredoc で `$var` の直後に全角を置くと化ける）が、heredoc ではなくテストの中の文字列だったので、当てはまると思わずに書いた。4か所を `${…}` で囲んで直し、`$` に続く英数字の直後に ASCII 以外の文字が来る箇所が無いことを grep で確かめた。止まったのは `set -u` のおかげで、黙って空の文字列になる形ではなかった。
+
+### I1-2: 検査の側を弱めた写しで、対応する確かめが赤になった（A9・2026-10-18）
+
+`3ba6974` を `git archive` で scratchpad に3つ写し、テストのファイルだけを1か所ずつ弱めて bash 5 で走らせた。
+
+| 弱め方 | 結果 | 赤になった確かめ |
+|---|---|---|
+| W1: 不変の検査の関数が、比べずに常に空を返す | PASS=268 FAIL=1 | M2 の「不変の検査が拾うのは own_statusline の padding と personal_keys の theme だけ」 |
+| W2: sync を `"$BASH"` を前に付けて起動する | PASS=268 FAIL=1 | M5 の「sync は shebang の interpreter（主版 3）で動く」 |
+| W3: check を呼ぶ箇所を、終了コード 0 と空の出力を返す形にする | PASS=256 FAIL=13 | 本物の木の書けない相手の確かめ、M1 の一覧と理由4件と書けない相手、M3 の書けない相手と「足した項目を一致と判定する」、M6 の終了コードと理由3件 |
+
+plan の A9 が「赤になるべき」と書いたものは、3つとも赤になった。W3 では plan に書いていなかった M3 の2件も赤になったが、どちらも check の出力に頼る確かめなので、赤になるのが正しい。W1 と W2 は、赤になったのがそれぞれ1件だけで、ほかの確かめを巻き込んでいない。
+
+### I1-3: 宣言に5項目目を足した写しで、テストを変えずに緑のままだった（A7・2026-10-18）
+
+`3ba6974` を写し、写しの `settings.values.json` に値を、`settings.harness.json` に最上位の `replace` の項目（`/hub401Fifth`）を足した。テストのファイルは変えていない（`git show HEAD:` との diff が空）。
+
+- `test_apply_claude_settings.sh`: `=== PASS=271 FAIL=0 ===`。確かめが2件増えたのは、M1 と M6 の「宣言の `replace` の項目すべて」に5項目目が入ったからである。
+- `test_sync_output_styles.sh`: `=== PASS=18 FAIL=0 ===`。参照する正本を宣言から引いて写す形（#338 の直し）が効いている。
+- `test_check_claude_settings.sh`: `=== PASS=87 FAIL=7 ===`。`build_green` が4項目を名指しで組み立てるので、5項目目が「未適用」になり、`build_green` を使う7件が落ちた。#454 が受ける。
+
+### I1-4: 残りの受入（A8・A10・A11・A12・2026-10-18）
+
+- A8: `test_check_claude_settings.sh`（PASS=94）・`test_sync_output_styles.sh`（PASS=18）・`test_sync_claude_statusline.sh`（PASS=17）が、bash 5 と `/bin/bash` の両方で FAIL=0。`test_apply_claude_settings.sh` は I1-1 で両方 PASS=269 FAIL=0。どれも最後の集計の行で読んだ。
+- A10: shellcheck は警告0件（変更前と同じ）。
+- A11: `sandbox-exec` で `~/.claude`（subpath）・`~/.claude.json`（literal）・worktree（subpath）への書き込みを拒む設定の下で走らせ、`=== PASS=269 FAIL=0 ===`（43秒）。同じ設定で worktree への `touch` が `Operation not permitted` で拒まれることを先に確かめ、設定が効いていることを見た。本物の `~/.claude` への書き込みで設定を試すことはしていない（触れないため）。前後の比較では、`~/.claude/settings.json` の shasum と mtime、`~/.claude.json` の shasum、`~/.claude` の下のリンク先の一覧の digest が同じだった。違いは worktree の `git status` の2行で、比べた間に自分の変更を commit したためである。`~/.claude` の下に #401 の worktree を指すリンクは1本も無い。
+- A12: bash 5 で40秒、3.2 で36秒、sandbox の下で43秒（変更前は14秒と13秒）。60秒の照会の線には届かない。
+
+### GATE I1: A1〜A12 を満たした（2026-10-18）
+
+A1〜A6b はテストの [22] の PASS の行（両方の bash）、A7 は I1-3、A8 は I1-1 と I1-4、A9 は I1-2、A10〜A12 は I1-4 で確かめた。満たしていない項目は無い。
