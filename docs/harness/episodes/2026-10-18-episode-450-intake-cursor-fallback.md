@@ -110,3 +110,56 @@ knowledge_observations:
 - `.oe/report-450.md`（作業層）に `implementer-contract` の形で報告を書いた。Status は `DONE_WITH_CONCERNS` にした。直す箇所が brief の挙げた3か所から1つ増えたこと（C1）と、最悪15分の待ちを許すかが owner の判断に残ることが、完了の判断に効くためである。
 - 報告の宛先の統括が `oe-tree` に root `cockpit` として生きて出ていることを確かめてから、`projects/orchestration-engine/bin/oe-send` で plan と報告のパスを1行送った。exit 0。
 - ゲート3 で owner に決めてほしいことは4つで、plan の「GATE 3」節に書いた。承認が統括から届くまで、I1 には入らない。
+
+### GATE 3: owner の承認を受けた（2026-10-18）
+
+- 報告の宛先の統括から、owner が plan（`5059ca4` の版）を承認したと届いた。GATE 3 で聞いた4点はすべて推奨どおりである。表の全部の行に切り替え先を置く（DJ-1）。最悪約15分の待ちを許し、初回の基準は180秒のまま（DJ-4）。3節の C1 を直す（DJ-5）。層3 の読み取りの試しを入れる（DJ-6）。置き場は harness の木のまま。
+- 承認の記録と baseline は統括の作業層の `.oe/decision-450-gate3.md` にある。この委譲には、承認のあとに plan が変わったら owner の再承認と baseline の取り直しを要する、いまの規則が当たる（#391 はまだマージされていない）。
+- 承認時の baseline を、いまの枝で計算し直して一致を確かめた。plan の全文（`status:` の行を除く）は `b5be3c01…`、ステップ節は `52bb3e7e…`、brief は `5bc7e511…` で、記録と同じだった。枝の先頭 `7ce00d2` は episode だけを足した commit で、plan は変わっていない。
+
+### I1-0〜GATE I1: SKILL.md を直し、受入を通した（2026-10-18）
+
+- I1-0: `git fetch` のあと、`b62d618..origin/master` に commit は1つも無く、SKILL.md は動いていなかった。`check.py b62d618` は F1・D1〜D35・N1〜N6 の42項目が FAIL、S1〜S3 が PASS で、P2 と同じだった。`verify_plan()` で、承認された plan と `changes.py` の文面が一致することも確かめた。
+- I1-1: `apply.py` で C1〜C8 を当て、SKILL.md だけを commit `a3ce33e` にした。当てた結果は P2 の写し（`tmp/450-intake-cursor-fallback/after/SKILL.md`）と `cmp` で同一だった。
+- GATE I1: `check.py` は45項目がすべて PASS（exit 0）。部分的に戻す試しは20通りすべてで D か N が FAIL した。`git diff --stat b62d618..HEAD -- canonical/` は SKILL.md 1本（46行の追加・12行の削除）で、差分を読んで C1〜C8 の外の行が動いていないことを確かめた。
+
+### I1-2: 載せたコマンドをその形のまま実行した（層2・2026-10-18）
+
+- `tmp/450-intake-cursor-fallback/check-commands.sh` を書いた（shellcheck は通過）。SKILL.md の4節から `cd <` で始まる2本のコマンドを取り出し、`<…>` だけを置き換えて `bash -c` で打つ。場面の置き場はリポジトリの外（scratchpad の下）に `mktemp -d` で毎回新しく作る。最初の版は置き場を `rm -rf` で消してから作る形だったが、変数のパスへの `rm -rf` を避けて `mktemp -d` に替えた。
+- M1〜M9 の33の確かめが、すべて PASS した。結果は `tmp/450-intake-cursor-fallback/check-commands-result.txt`、場面の出力は `tmp/450-intake-cursor-fallback/layer2/` に写した。
+  - M1（利用上限を真似たスタブ）: exit 2・stdout 0 バイト・`timeout_status=error`。stderr の末尾近くに `ERROR:` の行、上のほうに問いの文があった。
+  - M2（答えを返すスタブ）: exit 0・stdout あり。
+  - M3（本物の Cursor・M1 と同じ一時ディレクトリと同じプロンプト）: exit 0・23秒・`model_requested=composer-2.5`・`model_resolved=unavailable:cli-not-exposed`。M1 と M3 の `prompt.txt` は `cmp` で一致した。Cursor の答えは一時ディレクトリの `prompt.md` だけを読んでいた（「対象は `prompt.md` 内の issue 文言のみ」と書いていた）。
+  - M4（眠るスタブ・`SO_TIMEOUT=1`）: 1回目が `timeout_empty`、`retry=1` で延長の再試行に入り、exit 2。
+  - M5（空のスタブ）: exit 1・`success_empty`・stdout 0 バイト。
+  - M6（1件出してからエラーのスタブ）: exit 1・`error_partial`・stdout に答えあり。
+  - M7（`SO_CURSOR_MODEL=claude-opus-5-5-low` を export した環境・スタブの agent）: 載せた形では `model_requested=composer-2.5`。対照として `SO_CURSOR_MODEL=` を外した形では `claude-opus-5-5-low` が渡った。上書きを外す一語が効いていることを、両側から確かめた。
+  - M8（無いプロンプトのファイル）: exit 4・stderr に `Error: invalid:not-found`。
+  - M9（ソース）: `codex`・`claude`・`agent`・`perl` のそれぞれに `reject "unavailable:…"` があり、`reject()` は `Error: <型> …` を stderr に出して `EXIT_INPUT_REJECTED`（4）で終わる。
+- 気づいたこと: Cursor の答えは、`[verified]`・`[speculation]` の印を付けて書いていた。hub が Cursor にも配っている owner のルールを読み込んで答えている。Cursor のレーンは、モデルは別の会社でも、owner の同じルールの下で答える。この単位の判断（別の会社のモデルを選ぶ）には効かないが、「別のモデルの観点」の独立さを考えるときの材料になる。
+
+### I1-3: 読み取りの試し（層3・2026-10-18）
+
+- 別の Claude のサブエージェント（sonnet）2つに、読むだけでスキルの場面を問うた。新しい文面で R1〜R11、旧い文面で R0（R1 と R3 の場面）である。依頼文と結果は `tmp/450-intake-cursor-fallback/r-new-prompt.md`・`r-old-prompt.md`・`r-results.md`。
+- 判定は答えの文を自分で読んで行い、12項目すべてが期待どおりだった。新しい文面では、利用上限・空・エラーの文言だけで切り替え、「漏れは無い」と途中までの答えでは切り替えず、`unavailable:perl`・取り決めで送れない・切り替え先も失敗では3つ目を試さずに終え、`invalid:not-found` では呼び方を直して打ち直した。Cursor の composer で動くセッションの切り替え先は `--codex-only` を選んだ。旧い文面では、利用上限でも空でも切り替えずに「できなかった」「返答なし」で終えた。試しが変更を見ていることの確かめになる。
+- これは規則が読み取れることの手がかりで、毎回切り替わることの証明ではない（plan の DJ-6）。
+- 2つの読み手とも、材料のディレクトリの一覧を見るのに Bash の `ls` を1回使ったと申告した。読むだけの操作で、書き換えや `so-compare` の実行は無い。
+- 旧い文面の読み手が、場面に書いた `so-compare` の終了コードと、meta の `exit_code`（レーン自身の終了コード）の値が違うことに気づいた。新しい文面は「`so-compare` の終了コード」と書いているが、meta の `exit_code` と取り違える読みはありうる。M1・M5・M6 の場面では取り違えても同じ結論になるが、時間切れでは meta の `exit_code` が 124 で、0・1・2・4 のどれにも当たらない。plan を変えるかどうかを決める前に、実装SO に問う。
+
+### I2-1: 実装SO の結果と採否（2026-10-18）
+
+- `so-compare --codex-only` で差分（commit `a3ce33e`）を問うた。`gpt-6.1-sol`（`model_resolved_source=config`）・`codex-cli 0.163.0`・94秒・初回で返答。Codex が返ったので、Cursor には切り替えていない。依頼文と出力は `tmp/450-intake-cursor-fallback/so-impl-prompt.md` と `so-impl-codex/`。
+- 結論は「修正後のマージを推奨」だった。差分は C1〜C8 と一字一句同じで、SO も変更前に C1〜C8 を当てた全文と HEAD の一致を独立に確かめた。節の外の規則（1-2・3・5・6・7・9・「限界」）との衝突は無く、本体の規則は `so-compare` の例なしでも成り立つ、とした。指摘は3件である。
+- **指摘1（採る・承認済みの文面を変える）: C2 と C4 が逆のことを言う。** C2 は「答えが読めれば、時間切れでも返ったものとする」、C4 は「最初の問い合わせが上限を超えたら、返らなかったものとして切り替える」で、答えを1件出してから時間切れになった場合（`timeout_partial`）に、切り替える読みと切り替えない読みが残る。設計SO の指摘1で C2 の判定の順序を一本化したとき、同じ判断をする C4 の文を直し忘れていた。knowledge item `01M486Z2ND07GQWV1GHS1SVB0J` の予測（足した文は節の中では正しく見え、同じ判断が別の箇所で起きる）を、設計SO のあとの直しの中でもう一度踏んだ。直す C4 の文面は承認済みの plan の C4 なので、SKILL.md には当てず、plan の変更として統括に申告し、owner の再承認を待つ。
+- **指摘2（採る・plan の文面は変えない）: 読み取りの試しが、終了コード `4` の `unavailable:codex`（最初の CLI が無い）と、途中まで出して時間切れ・空のまま時間切れの場面を覆っていない。** plan の DJ-6 は「場面は DJ-2 の分岐をすべて覆う」と書いており、そのとおりになっていなかった。補足の場面 R12〜R15 を作って試す。
+- **指摘3（採る・plan の文面は変えない）: R8 は plan では「切り替え先も時間切れ」なのに、材料は即時のエラーだった。** 終了コードは同じ 2 でも、時間切れの判断と理由の書き方を確かめたことにならない。眠るスタブの agent と `SO_TIMEOUT=1` で、延長しても空になる材料（`layer2/out-r8t/`・`timeout_empty`・`retry=1`・meta の `exit_code=124`）を作り直した。
+- 補足の材料として、途中まで出して時間切れになる Codex の出力（`layer2/out-r14/`・`timeout_partial`・exit 1・stdout に1件）も作った。空のまま時間切れの場面は M4 の出力（`out-m4/`・meta の `exit_code=124`）を使う。
+- 補足の読み取りの試し（R8・R12〜R15）を、今の文面と、C4 だけを直した写し（`tmp/450-intake-cursor-fallback/after-c4/SKILL.md`）の両方に当てている。結果は次の節に書く。
+
+昇格の印: 設計SO の指摘で判定の順序を直したとき、同じ判断をする別の新しい文（C4）を直し忘れ、実装SO が見つけた。直しを当てたあとにも打ち消す側を探し直す必要がある
+
+### I2-1 のつづき: 補足の読み取りの試し（2026-10-18）
+
+- 実装SO の指摘2・3を受けて、R8（材料を時間切れに作り直した）・R12〜R15 の5つの場面を、今の文面と C4 だけを直した写しの両方に問うた。結果は `tmp/450-intake-cursor-fallback/r-results.md` の「補足の場面」節にある。
+- 10項目すべてが期待どおりだった。最初の CLI が無ければ切り替え、両方の CLI が無ければ終え、途中まで出して時間切れなら切り替えず、空のまま時間切れなら切り替えた。
+- **今の文面の読み手も、C2 と C4 の矛盾に当たらなかった。** 途中まで出して時間切れ（R14）で、C2 の「答えが読めるか」に従い、「規則どうしの衝突は無かった」と答えた。矛盾は1回の読みでは表に出なかったが、文面が逆のことを言っている事実は変わらない。読み手が別のモデルや別の順で読めば逆に転びうるので、C4 を直す判断はこの結果に左右させず、plan の変更として申告する。
