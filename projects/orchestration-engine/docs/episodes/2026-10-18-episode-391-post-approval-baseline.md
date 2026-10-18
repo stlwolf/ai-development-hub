@@ -311,7 +311,7 @@ closure（2026-10-18・PR #451 の Copilot のラウンドの後・マージ前�
 
 ### 行動変更
 
-- トリガ: 規則やスキルに分類を新設するとき。機構: knowledge item `01M55M68F2Q128X7AZ1JN2X7WC` を brief の negative knowledge に注入する（統括の列挙で拾う）。着地先: `docs/harness/knowledge/items/`。`本文: knowledge の収穫と、注入された item への観測の書き戻し（2026-10-18・closure の Step 5・6 を先に実施）`
+- トリガ: 規則やスキルに分類を新設するとき。機構: knowledge item `01M55M68F2Q128X7AZ1JN2X7WC` を brief の negative knowledge に注入する（統括の列挙で拾う）。着地先: `projects/orchestration-engine/docs/knowledge/items/`（R1 で engine の木へ移した。最初は harness の木のフォルダを書いていた）。`本文: knowledge の収穫と、注入された item への観測の書き戻し（2026-10-18・closure の Step 5・6 を先に実施）`
 
 ### 蒸留シグナル
 
