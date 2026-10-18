@@ -17,6 +17,10 @@ observations:
     ref: "#390"
     state: followed
     note: "PR #397: orchestration-toolkit への routing を2箇所で規約への参照に置き換えたが、消さずに規約の末尾へ残し、grep の件数が 8→7 になったことと移動先を報告に明示した。「別の層が持つから消してよい」で済ませていない"
+  - date: 2026-10-19
+    ref: "#385"
+    state: externally_verified
+    note: "論点5 では Codex と Cursor の文書まで当てたが、論点4 では Claude Code で確かめた hook の ask の性質を「hub は3ツールへ配っている」と並べて3ツールに広げていた。設計SO が突き、Codex の公式の hooks の文書を取り直すと ask は止まらずに続行すると書かれていた"
 exclusions:
   - "配布先が1つしかない場合（一般化する余地がない）"
   - "消す対象が配布先ごとに分岐して書かれている場合（配布先ごとの判定が既に強制されている）"

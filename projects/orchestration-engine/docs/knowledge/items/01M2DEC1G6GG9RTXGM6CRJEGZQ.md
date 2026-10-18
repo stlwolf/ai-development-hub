@@ -16,6 +16,10 @@ observations:
     ref: "#390"
     state: followed
     note: "PR #397: 引用の隣の断定を引き直す工程を入れ、「人が書く節を埋めないと retire が通らない」を表の行だけに狭め、worktree の出所も直した。それでも start の失敗の枝と retire の停止条件で範囲の広い断定を3件残し、実装SO が検出した"
+  - date: 2026-10-19
+    ref: "#385"
+    state: externally_verified
+    note: "予測どおりの形が2回出て、どちらも外部の SO が見つけた。自分の表に C3（どの段の deny も allow より先に効く）を書いていながら hook を「唯一の案」と書いた。Codex の文書の X7（実行時の bash -lc の分け方）を判定の道具 codex execpolicy check の性質として書き、手元で当てると分けなかった"
 ---
 
 **引用は「読んだ」ことの証拠にはなるが、「その内容に合わせて書いた」ことの証拠にはならない。** 2つは別の工程である。

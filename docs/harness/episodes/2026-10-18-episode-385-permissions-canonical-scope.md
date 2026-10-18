@@ -3,7 +3,7 @@ id: "01M57K6294A0RG3CK6R1TEH3WT"
 title: "#385 許可規則を hub の正本に含めるかを決める（判定の材料と decision）"
 date: 2026-10-18
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/385"
@@ -26,6 +26,31 @@ knowledge_observations:
   - "01KZK26GQZ39WCFV5MYKQMRHWE"
   - "01KYMRE1NC7XX6N66RQ0MGGHF1"
   - "01M2DEC1G6GG9RTXGM6CRJEGZQ"
+promotion:
+  - subject: "本体の警告は `*` の位置しか見ず、末尾の `*` の広い規則は警告なしで残る"
+    verdict: required
+    ref: "本文: D1: 判定に効く事実が新しく2つ見つかった（2026-10-18）"
+  - subject: "比べる基準の「見つけられる範囲」を、届く場所・見分ける精度・止める力に分ける"
+    verdict: not-required
+    ref: "本文: D2: ゲート1（ゼロベースの代替探索・Codex 1レーン）を回した（2026-10-18）"
+  - subject: "ユーザー層に置く安全の仕組みは、リポジトリの設定が上書きでき、破れない境界ではない"
+    verdict: required
+    ref: "本文: D2: 設計SO（ゲート2・弱・Codex 1レーン）を回した（2026-10-18）"
+  - subject: "Codex の PreToolUse hook は `\"ask\"` を返すと止まらずに動く"
+    verdict: required
+    ref: "本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）"
+  - subject: "規則の一致を自前で真似ずに、`codex execpolicy check` に危ない形の一覧を当てる"
+    verdict: not-required
+    ref: "本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）"
+  - subject: "推奨の表を decision の1行に縮めるとき、owner が決めた範囲を未決の範囲まで広げやすい"
+    verdict: required
+    ref: "本文: D4: ゲート4（decision への SO・弱・Codex 1レーン）の結果と採否（2026-10-19）"
+  - subject: "#359 が permissions を外した理由は記録に無く、今回の理由を初めて書く"
+    verdict: required
+    ref: "本文: D1: #359 が permissions を宣言から外した理由を一次記録で探した（2026-10-18）"
+  - subject: "allow は正本に置かず、危ない形は警告で知らせ、実行の直前の hook は別の issue で決める（owner の判定）"
+    verdict: required
+    ref: "本文: D4: owner の判定を decision に書いた（2026-10-19）"
 ---
 
 # #385 許可規則を hub の正本に含めるかを決める
@@ -185,3 +210,101 @@ knowledge item `01KYMRE1NC7XX6N66RQ0MGGHF1` の教訓に従い、issue 本文と
 - 6件を直したので、2回目は回さない。
 
 昇格の印: 推奨の表を decision の1行に縮めるとき、owner が決めた範囲（allow だけ）を、隣にある未決の範囲（狭める側）まで広げて書きやすい。決定の文は判定の原文に当て直してから書く
+
+### D5: PR を作り、Copilot に1ラウンド依頼した（2026-10-19）
+
+- PR #462 を作った（本文は `Refs #385`）。master は `0287910` から動いておらず、rebase は要らなかった。
+- `gh pr edit 462 --add-reviewer @copilot` で依頼した。`requested_reviewers` は空のままだったが、timeline に `review_requested Copilot` と `copilot_work_started` が出たので、依頼は登録されていた。
+- Copilot の結論は「Approval recommended」で、指摘は1件だった。discussion の X7 の行で、インラインコードの中の `|` が表の列の区切りになって行が分断されていた。`\|` にエスケープし（`3707a6e`）、返信した。同じ形がほかの表の行に無いことは、3つの文書と新しい knowledge item 2件の表の行を走査して確かめた。未返信は0件。
+- closure は、owner の過去の指摘（closure は PR のレビューのあと・マージの前）に従い、Copilot の1ラウンドのあとに入れる。brief の D5 は「episode を閉じ、PR を作り、Copilot」の順に書いているが、どれも同じ step の中でマージの前に終わるので、終端は変わらない。
+- 収穫した knowledge item は2件（`01M57SY06E1870RP6NQEXEF532`・`01M57SY07J7C076F3765J55PEH`）で、注入された4件には観測を1件ずつ足した。どちらも `validate-knowledge` を通した。
+
+## closure（2026-10-19）
+
+### tier
+
+heavy。品質ゲートとして `so-compare` を4回明示して回した。撤回と直しが何度もあった（ゲート1 の9件・ゲート2 の8件・Codex の節の7件・ゲート4 の6件）。選択肢を比べて棄却した設計判断と、decision への昇格がある。
+
+### closure gate
+
+- **なぜ**: 冒頭の「なぜこの作業が始まったか」が自己完結している。
+- **次の消費者**: (1) #460（`sync --check` の警告）の担当。判定と検査の形は decision、Codex の判定の道具の限界は discussion の論点3 を読む。(2) #461（実行の直前の hook）の担当。Codex の `"ask"` が非対応であること・信頼の仕組み・`write_stdin` の例外・試していない形は decision の結果の節と discussion の 3.4・3.5 節を読む。(3) 許可規則の扱いを見直す人。#359 で理由が書かれなかった判断の理由は decision にある。
+- **follow-up routing**: 下の「残課題」にすべて行き先を付けた。
+- **昇格の判定**: 下の「昇格の判定」に1件ずつ書いた（frontmatter の `promotion` と同じ要約）。
+- **status**: episode・discussion・decision を `stable` にした。達成度は達成。
+- **evidence anchor**: 本文は master の作業層（`tmp/385-permissions-canonical-scope/`）を参照しているが、試験の条件と結果（T0〜T5・R1〜R3）、SO の結論と指摘の表、数えた件数は discussion と本文に書き写した。作業層が消えても判定の根拠は残る。
+- **SO 証跡**: ゲート1 `so-gate1/`・ゲート2 `so-gate2/`・Codex の節 `so-c12/`・ゲート4 `so-decision/`（いずれも master の作業層）。要約と採否は discussion の7・8・8.1 節と本文にある。
+- **観測の書き戻し**: 注入された4件（`01M1VTJJFF1TK067ZX3X912G0P`・`01KZK26GQZ39WCFV5MYKQMRHWE`・`01KYMRE1NC7XX6N66RQ0MGGHF1`・`01M2DEC1G6GG9RTXGM6CRJEGZQ`）に1件ずつ足した（下の「注入された knowledge の観測」）。
+- **認識合わせの抜け**: Codex を含めることは、確定版に無かったが、抜けではなく owner が後から範囲を足したものである（`本文: 追補 brief を受けた（2026-10-19）`）。hub の設定が3ツールに配られることは `CLAUDE.md` に書かれているので、文脈の置き場に足す記録は要らないと判断した。
+
+### 事実・失敗
+
+- 上流の断定のうち、警告が入った版（2.1.265 ではなく 2.1.246）が誤っていた。`本文: D1: 上流の断定を一次情報に当てた（2026-10-18）`
+- 自分の表に書いた事実（C3）を使わずに、hook を「唯一の案」と書いた。ゲート1 が見つけた。`本文: D2: ゲート1（ゼロベースの代替探索・Codex 1レーン）を回した（2026-10-18）`
+- 直した文の周りに、同じ判断をする見出しの断定（「1B なら取り合いは起きない」）が残り、ゲート2 がもう一度突いた。Claude Code で確かめた hook の性質を3ツールに広げていた。`本文: D2: 設計SO（ゲート2・弱・Codex 1レーン）を回した（2026-10-18）`
+- 自分の Claude Code の `block-force-push.sh` が、判定だけのコマンドを止めた。拒否には従い、回避はしなかった。`本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）`
+- Codex の文書の性質（実行時の `bash -lc` の分け方）を判定の道具の性質として書き、読んだソースの細かさ（信頼は項目ごと）と文書の例外（`write_stdin`）をまとめの文で落とした。`本文: C1・C2 の差分に設計SO（弱・Codex 1レーン）を当てた（2026-10-19）`
+- decision で、owner が決めていない範囲（狭める側の規則）を決めたように書き、#461 の方向を採否まで決めたように書いた。`本文: D4: ゲート4（decision への SO・弱・Codex 1レーン）の結果と採否（2026-10-19）`
+- R1 でモデルの返答が止めた仕組みを取り違えた。判定は ref と hook の記録と stderr で行ったので、結論には響かなかった。`本文: C2: Codex で block-force-push.sh が allow に当たった git push --force を止めるかを試した（2026-10-19）`
+- Copilot の指摘は表の Markdown の1件だった。`本文: D5: PR を作り、Copilot に1ラウンド依頼した（2026-10-19）`
+
+### 決定と根拠
+
+- 判定と理由・棄却した案は decision と discussion の6節にある。`本文: D4: owner の判定を decision に書いた（2026-10-19）`
+- 未検証の前提2つを、提案どおり「将来の隔離環境」に回さず、設定ファイルを変えずにその場で試した。`本文: D2: ゲート1 の代替3 を受けて、未検証の前提をその場で試した（2026-10-18）`
+
+### わかったこと
+
+- Claude Code の `Bash(git:*)` は `git -c …` を確認なしで通し、警告も出ない。hook の `"ask"` は allow より先に効く。`本文: D2: ゲート1 の代替3 を受けて、未検証の前提をその場で試した（2026-10-18）`
+- Codex の allow は sandbox の外で確認なしに動き、永続の承認はユーザー層に書かれる。PreToolUse の `"ask"` は対応しておらず続行する。hook の信頼は定義の hash に記録される。`本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）`
+- Codex でも、allow の規則に当たる `git push --force` を hub の hook の deny が止める。`本文: C2: Codex で block-force-push.sh が allow に当たった git push --force を止めるかを試した（2026-10-19）`
+
+### 原則
+
+- Codex に配る hook は、止めたい形を deny か exit 2 で返す（knowledge item `01M57SY06E1870RP6NQEXEF532` に収穫）。`本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）`
+- decision の決定の文は owner の判定の原文に1文ずつ当て直す（knowledge item `01M57SY07J7C076F3765J55PEH` に収穫）。`本文: D4: ゲート4（decision への SO・弱・Codex 1レーン）の結果と採否（2026-10-19）`
+
+### 昇格の判定
+
+| # | 判断（`promotion.subject` と同じ） | 判定 | 理由と材料 |
+|---|---|---|---|
+| 1 | 本体の警告は `*` の位置しか見ず、末尾の `*` の広い規則は警告なしで残る | required | decision の根拠に入れた（この PR）。Q3（前提が将来偽になりうる: 本体が警告を広げれば変わる）と Q4（許可規則を扱う人が同じ分岐に立つ）に当たる。`本文: D1: 判定に効く事実が新しく2つ見つかった（2026-10-18）` |
+| 2 | 比べる基準の「見つけられる範囲」を、届く場所・見分ける精度・止める力に分ける | not-required | この判定の材料の作り方で、discussion の2節に書いてあれば足りる。失敗の型ではないので knowledge の収穫基準（再発しうる失敗）にも当たらない。`本文: D2: ゲート1（ゼロベースの代替探索・Codex 1レーン）を回した（2026-10-18）` |
+| 3 | ユーザー層に置く安全の仕組みは、リポジトリの設定が上書きでき、破れない境界ではない | required | decision の結果の節で #461 に申し送った（この PR）。#461 で hook を決めるとき、どこまでを守りと呼ぶかの分岐に立つ。`本文: D2: 設計SO（ゲート2・弱・Codex 1レーン）を回した（2026-10-18）` |
+| 4 | Codex の PreToolUse hook は `"ask"` を返すと止まらずに動く | required | decision の結果の節に申し送り、knowledge item `01M57SY06E1870RP6NQEXEF532` に収穫した（この PR）。`本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）` |
+| 5 | 規則の一致を自前で真似ずに、`codex execpolicy check` に危ない形の一覧を当てる | not-required | 実装の形の選択肢で、決めるのは #460 である。道具が `bash -lc` を分けない限界は discussion の論点3 と decision の結果の節に書いた。`本文: C1: Codex の状態を確かめ直して discussion に足した（2026-10-19）` |
+| 6 | 推奨の表を decision の1行に縮めるとき、owner が決めた範囲を未決の範囲まで広げやすい | required | knowledge item `01M57SY07J7C076F3765J55PEH` に収穫した（この PR）。`本文: D4: ゲート4（decision への SO・弱・Codex 1レーン）の結果と採否（2026-10-19）` |
+| 7 | #359 が permissions を外した理由は記録に無く、今回の理由を初めて書く | required | decision の根拠に入れた（この PR）。`本文: D1: #359 が permissions を宣言から外した理由を一次記録で探した（2026-10-18）` |
+| 8 | allow は正本に置かず、危ない形は警告で知らせ、実行の直前の hook は別の issue で決める（owner の判定） | required | decision そのもの（この PR）。棄却した案は discussion の6節。`本文: D4: owner の判定を decision に書いた（2026-10-19）` |
+
+### 注入された knowledge の観測
+
+注入された item は `01M1VTJJFF1TK067ZX3X912G0P`・`01KZK26GQZ39WCFV5MYKQMRHWE`・`01KYMRE1NC7XX6N66RQ0MGGHF1`・`01M2DEC1G6GG9RTXGM6CRJEGZQ` の4件で、4件とも `ref: "#385"` の観測を1件ずつ足した。
+
+- `01M1VTJJFF1TK067ZX3X912G0P`: externally_verified。論点5 では3ツールに当てたが、論点4 では Claude Code の性質を3ツールに広げ、ゲート2 が突き、Codex の文書で違いが確かめられた。`本文: D2: 設計SO（ゲート2・弱・Codex 1レーン）を回した（2026-10-18）`
+- `01KZK26GQZ39WCFV5MYKQMRHWE`: followed。`本文: D1: #359 が permissions を宣言から外した理由を一次記録で探した（2026-10-18）`
+- `01KYMRE1NC7XX6N66RQ0MGGHF1`: followed。`本文: D1: 上流の断定を一次情報に当てた（2026-10-18）`
+- `01M2DEC1G6GG9RTXGM6CRJEGZQ`: externally_verified。予測どおりの形が2回出て、どちらも外部の SO が見つけた。`本文: C1・C2 の差分に設計SO（弱・Codex 1レーン）を当てた（2026-10-19）`
+
+### 残課題
+
+- Codex の PreToolUse が `"ask"` に対応していないこと、hook の信頼の仕組み、`write_stdin` の例外、試していない形（`+main` の強制 push・`--upload-pack`・`rebase -i`・対話のセッション）、Cursor の hook。行き先: #461（decision の結果の節で申し送り済み）。
+- #461 の題の「確認へ回す」と、Codex で果たせないことの食い違い。行き先: 統括（報告で知らせる。issue の題を直すかは統括と owner）。
+- Claude Code の `block-force-push.sh` が、強制 push の文字列を `bash -lc` の引数に含む判定だけのコマンドを止めた例。誤って止める例の1件として、行き先: #461（報告で統括に渡す）。
+- `codex execpolicy check` は `bash -lc` を分けないこと、検査の対象の一覧、既存のテストの期待、3.3 節と 3.5 節の試験を回帰の試験にすること、`Bash(git:*)` などが auto モードで外されるか（C16）。行き先: #460。
+- hub と別のリポジトリの手元の層、Codex の `default.rules` に残る広い規則を直すか。行き先: #460 の警告が出てから owner が決める（decision の決定7）。
+- ConfigChange が Claude Code 自身の書き込みで動くか（4C）・`/permissions` の書き先・apply の置き換えの回数。行き先: 追わない。どれも選ばなかった案の前提で、今回の判定に効かない。
+- issue 本文の「削除前 129 件・Bash 112 件」。行き先: 追わない。バックアップが残っておらず、判定に効かない。
+- Codex の hook の信頼の hash にスクリプトの中身が入らないことを手元の版で確かめること（X9）。行き先: #461。
+- mod がほかの経路で入っていないか、`skill-creator` が `tool.check` を扱うか（discussion の C25・11節）。行き先: #461。mod は managed でない hook の止めを置き換えられるので、hook を本命にするなら前提として確かめる。
+- #385 を閉じるか。行き先: ゲート6（統括と owner）。
+
+### 形式メモ
+
+- チャネルの骨格で拾えたもの: SO ごとの「自分で見つけられなかった理由」が事実・失敗にまとまった。拾えなかったもの: 4回の SO の指摘の重なり（同じ種類の誤りが繰り返したこと）は、表をまたいで見ないと分からない。皮（KPT/YWT）は使っていない。摩擦は、SO を4回回したので閉じる材料が多いことだった。
+
+### Step 4（closure の外部チェック・Codex 1レーン）
+
+- `so-compare --codex-only` で、事実・失敗の選択的な省略・follow-up の行き先・揮発するパス・ほかの文書への反映の4点だけを問うた。依頼文と出力は master の作業層 `tmp/385-permissions-canonical-scope/so-closure-prompt.md` と `so-closure/`。Codex（`gpt-6.1-sol`）が 65 秒・初回で返った。
+- 結論は「直してから閉じる」で、指摘は3件（中2・低1）。3件とも採った。1件目は、discussion の11節の「mod の入り方と `skill-creator` の確認」が残課題に引き継がれていなかったことで、残課題に足した（行き先 #461）。2件目は、discussion の 4B の行と論点4 の理由に、C2 の前に書いた「Codex は確かめていない」が残っていたことで、deny は確かめ `"ask"` は非対応という今の結果に直した。3件目は、discussion の10節の `defaultMode` の記述が見つけたときの状態のままだったことで、統括が消したことを足した。
+- 選択的な省略と揮発するパスは指摘なしだった。#460・#461 の issue の本文に申し送りが届いているかは、ワークスペースの外なので Codex は確かめていない。申し送りは報告で統括に渡す。

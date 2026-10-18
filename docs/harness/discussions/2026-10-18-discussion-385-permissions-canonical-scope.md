@@ -3,7 +3,7 @@ id: "01M57K62AARMRQA8VHXJW9G9RG"
 title: "#385 許可規則を hub の正本に含めるか（判定の材料）"
 date: 2026-10-18
 type: discussion
-status: draft
+status: stable
 related:
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/385"
@@ -263,14 +263,14 @@ R1 と R3 の差は hook の有無だけで、R2 は同じ場所への push が�
 | 案 | 中身 | K1 範囲 | K2 広がる危険 | K3 手間 |
 |---|---|---|---|---|
 | 4A | ユーザー層に規則を置く。足し合わせ（C2）で全リポジトリに効く。ask・deny なら、どの段の allow より先に効く（C3） | 届く場所は全リポジトリ。見分ける精度は前方一致の範囲（C17）。止める力は ask・deny ならある | allow は悪い・ask と deny は良い | 中。論点2 の 2B か 2B' が要る |
-| 4B | ユーザー層の PreToolUse hook を使う。実行の直前にコマンドを見て、`git -c`・`--exec-path`・`--upload-pack` のような任意の実行の形なら `"ask"` を返す | 届く場所は、Claude Code では上の条件を満たす全リポジトリ。見分ける精度は hook の作り次第で、規則の前方一致より細かく見られる（たとえば `git -C . -c` の並べ替えや前置きの環境変数）が、取りこぼしが無いことは保証されない。止める力は、Claude Code では T2 の条件で allow より先に効いた（C19）。Codex と Cursor では、hook が確認を求められるか、既存の規則より先に効くか、対話でない実行でどうなるかを確かめていない。hub が3ツールへ PreToolUse 系の hook を配っていること（4節）は、配る経路があることを示すだけである | 良い。止める・確認する側にしか働かない | 中から悪い。正当な `git -c` で確認が増える。誤って止める例と取りこぼす例を測る手間が要る。3ツールで hook の作りと受け取る入力が違う |
+| 4B | ユーザー層の PreToolUse hook を使う。実行の直前にコマンドを見て、`git -c`・`--exec-path`・`--upload-pack` のような任意の実行の形なら `"ask"` を返す | 届く場所は、Claude Code では上の条件を満たす全リポジトリ。見分ける精度は hook の作り次第で、規則の前方一致より細かく見られる（たとえば `git -C . -c` の並べ替えや前置きの環境変数）が、取りこぼしが無いことは保証されない。止める力は、Claude Code では T2 の条件で allow より先に効いた（C19）。Codex では、hook の deny が allow の規則に当たるコマンドを `codex exec` で止めることを試して確かめた（3.5 節）が、`"ask"` は対応しておらず止まらずに続く（X10）。Codex の対話のセッションでの振る舞いと、Cursor の hook が確認を求められるか・既存の規則より先に効くかは確かめていない。hub が3ツールへ PreToolUse 系の hook を配っていること（4節）は、配る経路があることを示すだけである | 良い。止める・確認する側にしか働かない | 中から悪い。正当な `git -c` で確認が増える。誤って止める例と取りこぼす例を測る手間が要る。3ツールで hook の作りと受け取る入力が違う |
 | 4C | ユーザー層の hook で、各リポジトリの手元の層を読む。SessionStart か ConfigChange（C20）で、規則のファイルに危ない形があれば知らせる | 届く場所は全リポジトリ。見分ける精度は 3A と同じ。止める力は無い | 良い | 中。ConfigChange で止めても何も表示されない（C20）ので、知らせる手段を別に用意する。Claude Code 自身が承認を書いたときに ConfigChange が動くかは確かめていない |
 | 4D | hub の検査で、この機種のほかのリポジトリのファイルを読む（3B と同じ） | 届く場所はこの機種に限る。止める力は無い | 良い | 良い |
 | 4E | managed 設定で許可規則を管理する（`allowManagedPermissionRulesOnly`） | 良い | 中 | 悪い。管理者権限が要り、owner が一時的にも上書きできなくなる（#359 の棄却案と同じ） |
 
 推奨: **届かせるなら 4B を本命にし、4A の ask を軽い代わりとして並べ、別の issue で採否を決める。** 4D は 3B として安く足せる。
 
-理由: Claude Code については、4A の ask と 4B は、どちらもユーザー層に置くので上の条件を満たすすべてのリポジトリに届き、どのファイルの allow より先に効く（C3・C19）。たとえば別のリポジトリの手元の層に `Bash(git:*)` が残っていても、hook か規則がその形を見分けられれば、`git -c core.fsmonitor=… diff` を実行する前に確認を出させられる。Codex と Cursor について同じことが言えるかは確かめていないので、別の issue ではツールごとに成り立つかを先に確かめる。差は見分ける精度と手間にある。4A は規則の文字列の前方一致なので、`git -C . -c x diff` のような並べ替えを取りこぼす（C17）。4B は hook の中でコマンドを読めるので細かく見られるが、そのぶん誤って止める例と取りこぼす例を測る手間が要る。hub はすでに同じ経路で `block-destructive.sh` を3ツールへ配っているので、4B に新しい配布の仕組みは要らない。ただし `block-destructive.sh` は破壊的な操作を止める hook で、任意の実行の形を足すのは別の論理的な変更になる。この issue では方向だけを決め、実装は分ける。
+理由: Claude Code については、4A の ask と 4B は、どちらもユーザー層に置くので上の条件を満たすすべてのリポジトリに届き、どのファイルの allow より先に効く（C3・C19）。たとえば別のリポジトリの手元の層に `Bash(git:*)` が残っていても、hook か規則がその形を見分けられれば、`git -c core.fsmonitor=… diff` を実行する前に確認を出させられる。Codex では deny で止めることは確かめたが、`"ask"` で確認に回すことはできない（下の Codex の段落）。Cursor は確かめていないので、別の issue ではツールごとに成り立つかを先に確かめる。差は見分ける精度と手間にある。4A は規則の文字列の前方一致なので、`git -C . -c x diff` のような並べ替えを取りこぼす（C17）。4B は hook の中でコマンドを読めるので細かく見られるが、そのぶん誤って止める例と取りこぼす例を測る手間が要る。hub はすでに同じ経路で `block-destructive.sh` を3ツールへ配っているので、4B に新しい配布の仕組みは要らない。ただし `block-destructive.sh` は破壊的な操作を止める hook で、任意の実行の形を足すのは別の論理的な変更になる。この issue では方向だけを決め、実装は分ける。
 
 **Codex**: hook の経路は Codex でも働く。allow の規則に当たり、sandbox の外で確認なしに動くはずの `git push --force` を、hub の `block-force-push.sh` の deny が止めた（3.5 節の R1・R3）。ただし Claude Code と違うところが2つある。1つ目は、Codex の hook は `"ask"` に対応しておらず、返すと hook の失敗として扱われてコマンドはそのまま続く（X10）。いまの PreToolUse で 4B を Codex に当てるなら、承認の画面へ回す形は使えず、deny か exit 2 で止める形になる。deny で止めると、正当な使い方を owner がその場で通す道が無いので、誤って止める例の重さが Claude Code より大きい。2つ目は、いまのユーザー層への配り方と通常の信頼の確かめのもとでは、hub が新しく足した hook と定義を変えた hook は、owner が `/hooks` で信頼し直すまで動かない（X8）。信頼し直しが要るのは足したり変えたりした項目ごとで、ほかの項目の信頼は残ると読める（X9・手元の版では未確認）。信頼の記録の置き場は設定の環境ごとなので、何回の操作が要るかはその数による。起動時に警告は出るが、信頼し直すまでのあいだ、その項目の守りは抜ける。3つ目は、すでに動いている実行のセッションへ `write_stdin` で送った入力には PreToolUse が動き直さない（X11）。hub の hook がこの経路を見られるかは確かめていない。
 
@@ -394,7 +394,7 @@ owner の判定は 2026-10-18〜19 に出た。この節の7問はすべて推�
 
 ## 10. この単位の範囲の外で見つかったこと
 
-- hub の `.claude/settings.local.json` の top-level に `defaultMode: "auto"` がある。公式のキーは `permissions.defaultMode` で、しかも `auto` は手元の層からは効かない（https://code.claude.com/docs/en/settings-reference 「permissions.defaultMode」）[verified]。この値は効いていない可能性が高い。直すかどうかは owner が決める。
+- （2026-10-18 に見つけたときの状態）- hub の `.claude/settings.local.json` の top-level に `defaultMode: "auto"` がある。公式のキーは `permissions.defaultMode` で、しかも `auto` は手元の層からは効かない（https://code.claude.com/docs/en/settings-reference 「permissions.defaultMode」）[verified]。この値は効いていない可能性が高い。直すかどうかは owner が決める。その後、owner の判定で消すと決まり、2026-10-18 に統括が消した（decision の決定8）。
 - hub の手元の層に残る広い規則（`Bash(git:*)`・`Bash(curl:*)`・`Bash(gh api:*)`・`Bash(gh auth *)`・`Bash(python3:*)`・`Bash(bash -c ':*)` など）を見直すかは、owner が手で決めることで、この issue の判定とは別である。論点3の検査を入れれば、警告として一覧に出る。
 
 ## 11. 確かめていないこと
