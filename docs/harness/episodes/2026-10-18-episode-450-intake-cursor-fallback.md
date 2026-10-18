@@ -175,3 +175,13 @@ knowledge_observations:
 
 - 報告の宛先の統括から、owner が C4 の直し（`fec7366` の plan）を再承認したと届いた。記録と張り直した baseline は統括の作業層の `.oe/decision-450-gate3.md` の末尾にある。いまの枝の plan の digest（`5e20c755…`）と brief の digest（`5bc7e511…`）は、張り直した baseline と一致した。
 - 同じ知らせで、#391 の PR #451 が master にマージされたと届いた。`origin/master` は `b62d618` から `1ab644c`（#451）に1つ進んでいた。SKILL.md は master で動いておらず、この枝が変えたファイルとの重なりもまだ無い。
+- C4 の直しを SKILL.md に当て、別の commit にした。当てた結果は C4 だけを直した写し（`after-c4/SKILL.md`）と `cmp` で同一だった。`check.py` は45項目がすべて PASS、`check.py b62d618` は42項目が FAIL、部分的に戻す試しは20通りすべてで項目が FAIL した。
+- 統括の指示どおり、枝を `origin/master`（`1ab644c`・#451）へ rebase した。衝突は無かった。rebase で commit の番号が変わり、承認された plan の commit `fec7366` は `cc2cd48` になった。plan の内容は rebase の前後で同じで、`status:` の行を除いた digest は `fec7366`・`cc2cd48`・枝の先頭のどれでも `5e20c755…`、ステップ節は `52bb3e7e…` だった。#451 が入れた規則は、digest だけで記録した進行中の委譲には遡及せず、照合は記録のアルゴリズムで digest を比べるとしているので、この委譲の照合は rebase の影響を受けない。
+- 枝は `--force-with-lease`（push 前の先頭 `fec7366` を条件にした）で push した。push のあと、`origin/master` が枝の祖先であることを確かめた。
+- C4 を直した差分に、実装SO（Codex 1レーン）をもう一度当てている。
+
+### I2-1 の2回目: C4 を直した差分への実装SO（2026-10-18）
+
+- `so-compare --codex-only` で、rebase のあとの差分（`origin/master..HEAD -- canonical/`）を問うた。`gpt-6.1-sol`（`model_resolved_source=config`）・`codex-cli 0.163.0`・70秒・初回で返答。依頼文と出力は `tmp/450-intake-cursor-fallback/so-impl2-prompt.md` と `so-impl2-codex/`。
+- 結論は「マージ可・新たな指摘なし」で、4つの問いとも問題なしだった。直した C4 は上限で打ち切ったあと C2 の定義に戻って判定し、C6 と9節とも整合する。4節を一文ずつ照合して、同じ条件で逆の動きを指示する文は見つからなかった。SO は plan の旧文と新文を自分で取り出して `origin/master` の SKILL.md に当て、HEAD と完全に一致することを独立に確かめた。補足の場面 R12〜R15 と R8 の作り直しも足りている、とした。
+- plan の文面を変える指摘は無いので、plan はこれ以上変えない。
