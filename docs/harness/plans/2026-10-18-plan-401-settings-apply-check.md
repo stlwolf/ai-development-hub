@@ -3,7 +3,7 @@ id: "01M575BACNPQ2KNXFSW5RYFQJX"
 title: "#401 宣言駆動 settings の検査を、撤去した等価性 fixture の代わりに立て直す"
 date: 2026-10-18
 type: plan
-status: in-development
+status: stable              # 実装完了（2026-10-18・PR #455）。ゲート3 の承認は dbb5b4b の版で、承認のあとの plan の変更は status の行だけ
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/401"
