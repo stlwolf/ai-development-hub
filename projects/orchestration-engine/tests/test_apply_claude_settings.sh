@@ -3,7 +3,8 @@ set -uo pipefail
 
 # test_apply_claude_settings.sh — 宣言駆動の適用を検証（#359 PR-3）。
 #
-# 一時ディレクトリの settings.json だけを触る（実 ~/.claude は読まない・書かない）。
+# 一時ディレクトリの settings.json と、[22] が作る使い捨ての HOME だけを触る
+# （実 ~/.claude は読まない・書かない）。
 # 検証する軸:
 #   - 宣言に無い項目（個人層）を一切変えない
 #   - 書き込みは1回。バックアップも1回
@@ -12,14 +13,18 @@ set -uo pipefail
 #   - 読んでから書くまでに他が書き換えたら読み直す
 #   - 1項目でも正本が解けなければ何も書かない（部分適用を作らない）
 #   - replace / merge-object / union-array / absent / statusline-wrap の各動作
+#   - full sync（sync-claude.sh）から宣言が当たり、宣言の外のキーを変えないこと。
+#     判定は check-claude-settings.sh と前後の不変で行う（[22]・#401）
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 APPLY="$REPO_ROOT/scripts/sync/apply-claude-settings.sh"
+CHECK="$REPO_ROOT/scripts/sync/check-claude-settings.sh"
 DECL="$REPO_ROOT/canonical/claude/settings.harness.json"
 HOOKS_SRC="$REPO_ROOT/canonical/hooks/claude.hooks.json"
 
 [[ -x "$APPLY" ]] || { echo "FAIL: apply script not found: $APPLY"; exit 1; }
+[[ -x "$CHECK" ]] || { echo "FAIL: check script not found: $CHECK"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 if ! _TMP_DIR="$(mktemp -d)" || [[ -z "$_TMP_DIR" || ! -d "$_TMP_DIR" ]]; then
@@ -38,6 +43,9 @@ run()   { OUT="$("$BASH" "$APPLY" --settings "$ST" 2>&1)"; RC=$?; }
 run_d() { OUT="$("$BASH" "$APPLY" --settings "$ST" --declaration "$1" 2>&1)"; RC=$?; }
 backups() { find "$CASE" -maxdepth 1 -name 'settings.json.bak.*' | wc -l | tr -d ' '; }
 bkline()  { printf '%s' "$OUT" | grep -c 'Backup:' | tr -d ' '; }
+# 宣言から、apply の結果に現れるはずの最上位のキーを導く（absent は消す指定なので除く）。
+# 項目を名指しで並べると、宣言に項目を足すたびにここを書き換えることになる（#401）。
+decl_keys() { jq -r '[.items[] | select(.op != "absent") | .pointer | ltrimstr("/") | split("/")[0] | gsub("~1"; "/") | gsub("~0"; "~")] | unique | join(" ")' "$DECL"; }
 
 # ============================================================================
 echo "[1] 宣言に無い項目を一切変えない"
@@ -80,7 +88,7 @@ run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
 ck  "バックアップは無い" "0" "$(backups)"
-ck  "宣言の4項目だけ" "disableAgentView hooks idleCompaction statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の項目だけ（宣言から導く）" "$(decl_keys)" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[5] symlink には触らず、止めない"
 fresh c5
@@ -275,7 +283,7 @@ ST="$CASE/nested/deeper/settings.json"
 run
 ck  "exit 0" "0" "$RC"
 ck  "作られる" "true" "$([[ -f "$ST" ]] && echo true || echo false)"
-ck  "宣言の4項目が入る" "disableAgentView hooks idleCompaction statusLine" "$(jq -r 'keys | join(" ")' "$ST")"
+ck  "宣言の項目が入る（宣言から導く）" "$(decl_keys)" "$(jq -r 'keys | join(" ")' "$ST")"
 
 echo "[19] ポインタの妥当性（実装SO 指摘の回帰）"
 fresh c19
@@ -331,23 +339,310 @@ ck  "symlink のまま残る" "true" "$([[ -L "$ST" ]] && echo true || echo fals
 ck  "リンク先を書き換えていない" "real" "$(jq -r '.theme' "$CASE/real.json")"
 ckc "symlink だと言う" "$OUT" "symlink なので触りません"
 
-# [22] 現行実装との等価性（fixture 比較）は撤去した（2026-09-16・#338）。
-#   何を確かめていたか: #359 の移行が挙動を変えていないこと。git の履歴から旧実装
-#   （sync_claude_hooks を含む最後の版・当時は 6d52712）を取り出し、8つの fixture で
-#   新実装と結果が一致することを主張していた。移行は着地済みで、目的は果たしている。
-#   なぜ外したか: 旧実装は hooks と statusLine の2つしか知らないので、宣言に3つ目の
-#   項目を足すと原理的に結果が一致しない（不一致になるのは書き込みが起きる5件）。
-#   残すと宣言の仕組みに項目を1つも増やせない。disableAgentView を宣言へ入れる作業で
-#   行き止まりになったため、owner 裁定で外した。
-#   失った検出能力: full sync の入口からの配線、shebang での shell 選択、sync 全体の
-#   終了コード、そして個別の主張が列挙していないキー変更。旧実装という独立した判定
-#   基準も失っている。個別の検査（missing / symlink / dir / 壊れた JSON / 個人キーの
-#   保持 / statusLine の包み）は残っているので、8件の意味がすべて消えたわけではない。
-#   置き換え案: apply の結果に check を当てて判定し、宣言外のキーが apply の前後で
-#   変わらないことも見る形（apply と check は判定ロジックを共有していないので互いの
-#   基準になれる）。凍結した2項目の宣言で旧実装を走らせる案は、sync-claude.sh が宣言の
-#   場所を apply に渡さないので、apply を直接呼ぶか使い捨ての木を作る必要がある。
-#   置き換えの案と失った能力の一覧は #401 に起票した。
+echo "[22] sync の結果に check を当て、宣言の外のキーが変わらないことを見る（#401・撤去した等価性の代わり）"
+# 撤去した旧 [22]（2026-09-16・#338）は、git の履歴から取り出した旧実装と結果を
+# 8つの fixture で比べていた。旧実装は hooks と statusLine しか知らないので、宣言に
+# 項目を足すと原理的に一致しなくなり、owner 裁定で外した。ここはその代わりである。
+# 判定の基準: 宣言の内側は check-claude-settings.sh が見て、外側は sync の前後で
+#   変わらないことを見る。check は apply と判定ロジックを共有しない別の読み手なので、
+#   apply の基準になれる。この成立条件は M6 と構造の確かめで毎回見る。
+# 起動: sync-claude.sh を shebang に任せて起動する（"$BASH" を付けない）。本番と同じく
+#   sync は /bin/bash、apply は env bash で動く。これは本番の組み合わせを走らせる
+#   主張で、bash の版ごとの主張ではない（版ごとはこのファイルの他の項目が見ている）。
+# 隔離: HOME は $_TMP_DIR の下の使い捨てで、本物の ~/.claude には触れない。
+#   本物の木で走らせるので、配る .sh に実行権が無いと sync がリポジトリへ chmod を
+#   当てる。その場合は走らせずに落とす。
+# 陽性対照: apply や宣言を差し替えた写しの木で、期待した fixture が期待した理由で
+#   落ちることを見る（M1〜M6）。項目を足してもこの節を書き換えずに済むのは、
+#   最上位の pointer に replace の項目を足す場合までである（入れ子は赤に倒れる）。
+#   設計は docs/harness/plans/2026-10-18-plan-401-settings-apply-check.md にある。
+_TMP_PHYS="$(cd "$_TMP_DIR" && pwd -P)"
+# shellcheck disable=SC2016  # jq プログラムなのでシェルに展開させない
+EQ_JQ_PTR='def ptr2path($p): $p | ltrimstr("/") | split("/") | map(gsub("~1"; "/") | gsub("~0"; "~"));'
+
+# 撤去前の旧 [22] の8つをそのまま写し、宣言から作る stale_replace を足す。
+declare -a FIX_NAMES=(missing hooks_only own_statusline wrapped broken_json symlink personal_keys dir stale_replace)
+# shellcheck disable=SC2016  # fixture の中身は literal のまま渡す
+declare -a FIX_INITS=(
+  'NONE'
+  '{"hooks":{"Stop":[{"matcher":"","hooks":[]}]}}'
+  '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}'
+  '{"statusLine":{"type":"command","command":"OE_HEARTBEAT_WRAP_CMD=/x/mybar.sh $HOME/.claude/statusline/statusline-oe-heartbeat.sh","refreshInterval":10}}'
+  '{ not json'
+  'SYMLINK'
+  '{"theme":"dark","tui":"fullscreen","model":"claude-opus-5","remoteControlAtStartup":false,"skipWorkflowUsageWarning":true}'
+  'DIR'
+  'STALE'
+)
+
+# 書けない相手では、sync は止めず、check は理由つきで 1 を返すのが正しい。
+eq_unwritable_reason() {
+  case "$1" in
+    broken_json) echo "JSON として読めません" ;;
+    symlink)     echo "symlink なので適用できません" ;;
+    dir)         echo "通常ファイルではないので適用できません" ;;
+    *)           return 1 ;;
+  esac
+}
+
+eq_init_of() {
+  local i
+  for i in "${!FIX_NAMES[@]}"; do
+    [[ "${FIX_NAMES[$i]}" == "$1" ]] && { printf '%s' "${FIX_INITS[$i]}"; return 0; }
+  done
+  return 1
+}
+
+eq_replace_ptrs() { jq -r '.items[] | select(.op == "replace") | .pointer' "$1/canonical/claude/settings.harness.json"; }
+
+# 写しの木を作る。中身は宣言から引いて集める（手で並べると、宣言に項目を
+# 足したときに写しだけ取り残される。#338 で test_sync_output_styles.sh が踏んだ）。
+eq_make_tree() {
+  local dst="$1" rel
+  mkdir -p "$dst/scripts/sync" "$dst/canonical/claude" || return 1
+  cp "$REPO_ROOT/scripts/sync/sync-claude.sh" "$APPLY" "$CHECK" "$dst/scripts/sync/" || return 1
+  cp "$DECL" "$REPO_ROOT/canonical/claude/settings-known-keys.txt" "$dst/canonical/claude/" || return 1
+  cp -R "$REPO_ROOT/canonical/claude/statusline" "$dst/canonical/claude/" || return 1
+  while IFS= read -r rel; do
+    [[ -z "$rel" || "$rel" == /* ]] && continue
+    if ! mkdir -p "$dst/$(dirname "$rel")" || ! cp "$REPO_ROOT/$rel" "$dst/$rel"; then return 1; fi
+  done < <(jq -r '.items[].source.file // empty' "$DECL")
+}
+
+# eq_inv <宣言> <前> <後> — 宣言の外で変わった最上位のキーと、handler / merge-object の
+#   pointer の中で消えたキー（statusLine.padding のように書く）を、カンマでつないで出す。
+#   何も無ければ空。比べられなければ非0で返す（「何も無い」に倒さない）。
+eq_inv() {
+  jq -rn --slurpfile d "$1" --slurpfile b "$2" --slurpfile a "$3" "$EQ_JQ_PTR"'
+    ($d[0].items | map({path: ptr2path(.pointer), op: .op})) as $its
+    | ($its | map(.path)) as $ps
+    | ($b[0] | delpaths($ps)) as $B
+    | ($a[0] | delpaths($ps)) as $A
+    | ([$B, $A] | map(keys) | add | unique
+       | map(. as $k | select((($B | has($k)) != ($A | has($k))) or ($B[$k] != $A[$k])))) as $outside
+    | ([$its[] | select(.op == "handler" or .op == "merge-object") | .path as $p
+        | ($b[0] | getpath($p)) as $bv
+        | ($a[0] | getpath($p)) as $av
+        | select(($bv | type) == "object")
+        | if ($av | type) != "object" then ($p | join("."))
+          else ($bv | keys[] | select(. as $k | $av | has($k) | not) | ($p + [.]) | join("."))
+          end]) as $inside
+    | ($outside + $inside) | join(",")'
+}
+
+# eq_run <木> <名札> <fixture 名> <初期値> — 1件を走らせ、結果を EQ_* に入れる。
+#   出力は $_TMP_DIR/eq/<名札>/<fixture 名>/ に残す（sync.out・check.out・before.json）。
+EQ_DIR=""; EQ_ST=""; EQ_SYNC_RC=""; EQ_CHECK_RC=""; EQ_INV=""; EQ_KEPT=""
+eq_run() {
+  local tree="$1" label="$2" name="$3" init="$4" home phys
+  EQ_DIR="$_TMP_DIR/eq/$label/$name"; home="$EQ_DIR/home"; EQ_ST="$home/.claude/settings.json"
+  EQ_SYNC_RC="skip"; EQ_CHECK_RC="skip"; EQ_INV="!not-run"; EQ_KEPT="!not-run"
+  mkdir -p "$home/.claude" "$EQ_DIR/proj" || return 1
+  # 使い捨ての置き場の下を指しているかを物理パスで確かめる（変数が空になる等の
+  # 書き間違いで、本物の HOME へ向けて sync を走らせない）。
+  phys="$(cd "$home" && pwd -P)" || return 1
+  case "$phys" in
+    "$_TMP_PHYS"/*) ;;
+    *) echo "  FAIL: HOME が使い捨ての置き場の外を指している: $phys"; FAIL=$((FAIL+1)); return 1 ;;
+  esac
+  case "$init" in
+    NONE)    printf '%s' '{}' > "$EQ_DIR/before.json" ;;
+    SYMLINK) printf '%s' '{"hooks":{}}' > "$home/.claude/real.json"; ln -s "$home/.claude/real.json" "$EQ_ST" ;;
+    DIR)     mkdir -p "$EQ_ST" ;;
+    STALE)
+      # 宣言の replace の項目すべてに、正本と違う値を入れる。オブジェクトにしておくと、
+      # 置き換えでなく重ね合わせにする誤りも捕まる。
+      jq -c "$EQ_JQ_PTR"' reduce (.items[] | select(.op == "replace") | .pointer) as $p
+            ({}; setpath(ptr2path($p); {"__stale401__": true}))' \
+          "$tree/canonical/claude/settings.harness.json" > "$EQ_ST" || return 1
+      cp "$EQ_ST" "$EQ_DIR/before.json" ;;
+    *)       printf '%s' "$init" > "$EQ_ST"; cp "$EQ_ST" "$EQ_DIR/before.json" ;;
+  esac
+  # shebang に任せて起動する。テストの環境の起動時のファイル（BASH_ENV / ENV）は引き継がない。
+  env -u BASH_ENV -u ENV HOME="$home" "$tree/scripts/sync/sync-claude.sh" > "$EQ_DIR/sync.out" 2>&1
+  EQ_SYNC_RC=$?
+  env -u BASH_ENV -u ENV HOME="$home" "$tree/scripts/sync/check-claude-settings.sh" \
+      --settings "$EQ_ST" --project-root "$EQ_DIR/proj" > "$EQ_DIR/check.out" 2>&1
+  EQ_CHECK_RC=$?
+  case "$init" in
+    SYMLINK)
+      if [[ -L "$EQ_ST" && "$(cat "$home/.claude/real.json")" == '{"hooks":{}}' ]]; then EQ_KEPT=yes; else EQ_KEPT=no; fi ;;
+    DIR)
+      if [[ -d "$EQ_ST" && -z "$(find "$EQ_ST" -mindepth 1 -print 2>/dev/null)" ]]; then EQ_KEPT=yes; else EQ_KEPT=no; fi ;;
+    *)
+      if cmp -s "$EQ_DIR/before.json" "$EQ_ST"; then EQ_KEPT=yes; else EQ_KEPT=no; fi ;;
+  esac
+  EQ_INV="$(eq_inv "$tree/canonical/claude/settings.harness.json" "$EQ_DIR/before.json" "$EQ_ST" 2>/dev/null)" || EQ_INV="!error"
+}
+
+# eq_matrix <木> <名札> — fixture をすべて走らせ、期待から外れたものを一覧にする。
+#   EQ_L_SYNC:  sync が 0 でなかった fixture
+#   EQ_L_CHECK: check が 0 でなかった書ける相手
+#   EQ_L_INV:   不変の検査が何かを拾った書ける相手（名前:拾ったもの）
+#   EQ_L_UNW:   書けない相手のうち、中身が変わったか、check が理由つきの 1 でなかったもの
+#   EQ_RAN:     最後まで走らせた件数
+EQ_L_SYNC=""; EQ_L_CHECK=""; EQ_L_INV=""; EQ_L_UNW=""; EQ_RAN=0
+eq_matrix() {
+  local tree="$1" label="$2" i n reason
+  EQ_L_SYNC=""; EQ_L_CHECK=""; EQ_L_INV=""; EQ_L_UNW=""; EQ_RAN=0
+  for i in "${!FIX_NAMES[@]}"; do
+    n="${FIX_NAMES[$i]}"
+    eq_run "$tree" "$label" "$n" "${FIX_INITS[$i]}" || continue
+    EQ_RAN=$((EQ_RAN+1))
+    [[ "$EQ_SYNC_RC" -ne 0 ]] && EQ_L_SYNC="${EQ_L_SYNC:+$EQ_L_SYNC }$n"
+    if reason="$(eq_unwritable_reason "$n")"; then
+      if [[ "$EQ_KEPT" != yes || "$EQ_CHECK_RC" -ne 1 ]] || ! grep -qF -- "$reason" "$EQ_DIR/check.out"; then
+        EQ_L_UNW="${EQ_L_UNW:+$EQ_L_UNW }$n"
+      fi
+    else
+      [[ "$EQ_CHECK_RC" -ne 0 ]] && EQ_L_CHECK="${EQ_L_CHECK:+$EQ_L_CHECK }$n"
+      [[ -n "$EQ_INV" ]] && EQ_L_INV="${EQ_L_INV:+$EQ_L_INV }$n:$EQ_INV"
+    fi
+  done
+  return 0
+}
+
+eq_tree_or_fail() { eq_make_tree "$1" || { echo "  FAIL: 写しの木を作れない: $1"; FAIL=$((FAIL+1)); }; }
+
+# --- 本物の木 ---
+eq_nonexec=""
+while IFS= read -r -d '' f; do
+  [[ -x "$f" ]] || eq_nonexec="${eq_nonexec:+$eq_nonexec }${f#"$REPO_ROOT"/}"
+done < <(find "$REPO_ROOT/canonical/hooks/scripts" "$REPO_ROOT/canonical/claude/statusline" -type f -name '*.sh' -print0 2>/dev/null)
+ck  "配る .sh はすべて実行可能（本物の木で sync にリポジトリへ chmod させない）" "" "$eq_nonexec"
+if [[ -z "$eq_nonexec" ]]; then
+  eq_matrix "$REPO_ROOT" base
+  ck  "本物の木: fixture をすべて走らせた" "${#FIX_NAMES[@]}" "$EQ_RAN"
+  ck  "本物の木: sync はどれも 0 を返す" "" "$EQ_L_SYNC"
+  ck  "本物の木: 書ける相手で check はどれも 0 を返す" "" "$EQ_L_CHECK"
+  ck  "本物の木: 書ける相手で宣言の外のキーが変わらない" "" "$EQ_L_INV"
+  ck  "本物の木: 書けない相手は中身を保ち、check が理由つきで 1 を返す" "" "$EQ_L_UNW"
+fi
+
+# --- 成立条件の構造の確かめ ---
+ncc "構造: check は apply のファイル名を含まない" "$(cat "$CHECK")" "apply-claude-settings"
+ncc "構造: apply は check のファイル名を含まない" "$(cat "$APPLY")" "check-claude-settings"
+ck  "構造: apply と check に、別のファイルを読み込む行が無い" "0" "$(cat "$APPLY" "$CHECK" | grep -cE "^[[:space:]]*(source|\\.)[[:space:]]+[\"'\$./~]" || true)"
+
+# --- M1: replace が手元の値を残す誤りを、check が見つける（issue の反証1） ---
+T1="$_TMP_DIR/tree-m1"; eq_tree_or_fail "$T1"
+# shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
+sed 's|if \$item.op == "replace" then setpath(\$path; \$item.expected)|if $item.op == "replace" then setpath($path; (getpath($path) // $item.expected))|' \
+    "$APPLY" > "$T1/scripts/sync/apply-claude-settings.sh"
+chmod +x "$T1/scripts/sync/apply-claude-settings.sh"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+ck  "M1: 差し替えを挿せた" "1" "$(grep -cF 'setpath($path; (getpath($path) // $item.expected))' "$T1/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
+eq_matrix "$T1" m1
+ck  "M1: fixture をすべて走らせた" "${#FIX_NAMES[@]}" "$EQ_RAN"
+ck  "M1: check が落とす書ける相手は hooks_only と stale_replace だけ" "hooks_only stale_replace" "$EQ_L_CHECK"
+ckc "M1: hooks_only を落とした理由は /hooks の置き換え" "$(cat "$_TMP_DIR/eq/m1/hooks_only/check.out" 2>/dev/null)" "差分 /hooks (replace)"
+ck  "M1: 宣言に replace の項目がある" "true" "$([[ -n "$(eq_replace_ptrs "$T1")" ]] && echo true || echo false)"
+while IFS= read -r p; do
+  ckc "M1: stale_replace を落とした理由に $p がある" "$(cat "$_TMP_DIR/eq/m1/stale_replace/check.out" 2>/dev/null)" "差分 $p (replace)"
+done < <(eq_replace_ptrs "$T1")
+ck  "M1: 不変の検査は何も拾わない（落としたのは check）" "" "$EQ_L_INV"
+ck  "M1: sync は止まらない" "" "$EQ_L_SYNC"
+ck  "M1: 書けない相手は期待どおり" "" "$EQ_L_UNW"
+
+# --- M2: check が見ない変更を、不変の検査が見つける（issue の反証2） ---
+# 宣言の外のキー（theme）を消す誤りと、独自の statusLine を包むときに手元のキー
+# （padding）を落とす誤りを入れる。どちらも check の述語には現れない。
+T2="$_TMP_DIR/tree-m2"; eq_tree_or_fail "$T2"
+# shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
+sed -e 's|^reduce \$decl\[0\]\[\] as \$item (.; apply_item(\$item))$|& \| del(.theme)|' \
+    -e 's|(\$cur + \$item.expected + {command: (\$wrap_prefix|($item.expected + {command: ($wrap_prefix|' \
+    "$APPLY" > "$T2/scripts/sync/apply-claude-settings.sh"
+chmod +x "$T2/scripts/sync/apply-claude-settings.sh"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+ck  "M2: theme を消す差し替えを挿せた" "1" "$(grep -cF 'apply_item($item)) | del(.theme)' "$T2/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
+# shellcheck disable=SC2016  # grep のパターンなのでシェルに展開させない
+ck  "M2: padding を落とす差し替えを挿せた" "1" "$(grep -cF 'setpath($path; ($item.expected + {command: ($wrap_prefix' "$T2/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
+eq_matrix "$T2" m2
+ck  "M2: fixture をすべて走らせた" "${#FIX_NAMES[@]}" "$EQ_RAN"
+ck  "M2: 書ける相手で check はどれも 0 を返す（check だけでは見えない）" "" "$EQ_L_CHECK"
+ck  "M2: 不変の検査が拾うのは own_statusline の padding と personal_keys の theme だけ" \
+    "own_statusline:statusLine.padding personal_keys:theme" "$EQ_L_INV"
+ck  "M2: sync は止まらない" "" "$EQ_L_SYNC"
+
+# --- M3: 宣言に項目を1つ足しても、この節を書き換えずに緑のまま（issue の反証3） ---
+T3="$_TMP_DIR/tree-m3"; eq_tree_or_fail "$T3"
+printf '%s' '{"hub401Probe":{"nested":{"k":[1,"two",null,false]}}}' > "$T3/canonical/claude/probe401.values.json"
+jq '.items += [{"pointer":"/hub401Probe","op":"replace","scope_behavior":"override",
+                "source":{"file":"canonical/claude/probe401.values.json","pointer":"/hub401Probe"}}]' \
+   "$DECL" > "$T3/canonical/claude/settings.harness.json"
+ck  "M3: 宣言が1項目増えた" "$(( $(jq '.items | length' "$DECL") + 1 ))" "$(jq '.items | length' "$T3/canonical/claude/settings.harness.json")"
+eq_matrix "$T3" m3
+ck  "M3: fixture をすべて走らせた" "${#FIX_NAMES[@]}" "$EQ_RAN"
+ck  "M3: sync はどれも 0 を返す" "" "$EQ_L_SYNC"
+ck  "M3: 書ける相手で check はどれも 0 を返す" "" "$EQ_L_CHECK"
+ck  "M3: 書ける相手で宣言の外のキーが変わらない" "" "$EQ_L_INV"
+ck  "M3: 書けない相手は期待どおり" "" "$EQ_L_UNW"
+# 足した項目が実際に当たっていることを見る（緑が空回りでないこと）。
+eq_probe_miss=""; eq_probe_unseen=""
+for n in "${FIX_NAMES[@]}"; do
+  eq_unwritable_reason "$n" >/dev/null && continue
+  [[ "$(jq -c '.hub401Probe' "$_TMP_DIR/eq/m3/$n/home/.claude/settings.json" 2>/dev/null)" == '{"nested":{"k":[1,"two",null,false]}}' ]] \
+    || eq_probe_miss="${eq_probe_miss:+$eq_probe_miss }$n"
+  grep -qF '一致 /hub401Probe' "$_TMP_DIR/eq/m3/$n/check.out" 2>/dev/null || eq_probe_unseen="${eq_probe_unseen:+$eq_probe_unseen }$n"
+done
+ck  "M3: 書ける相手の結果すべてに、足した項目が正本の値で入る" "" "$eq_probe_miss"
+ck  "M3: 書ける相手の check すべてが、足した項目を一致と判定する" "" "$eq_probe_unseen"
+ck  "M3: stale_replace の初期値にも足した項目が入る" "true" "$(jq -r 'has("hub401Probe")' "$_TMP_DIR/eq/m3/stale_replace/before.json" 2>/dev/null)"
+
+# --- M4: apply が失敗したら、sync も 0 でない値で終わる（終了コードの 0 でない組） ---
+T4="$_TMP_DIR/tree-m4"; eq_tree_or_fail "$T4"
+eq_first_src="$(jq -r '.items[0].source.file // empty' "$DECL")"
+if [[ -n "$eq_first_src" && "$eq_first_src" != /* ]]; then rm -f "$T4/$eq_first_src"; fi
+ck  "M4: 写しの木から最初の項目の正本を消した" "true" "$([[ -n "$eq_first_src" && ! -e "$T4/$eq_first_src" ]] && echo true || echo false)"
+eq_run "$T4" m4 personal_keys "$(eq_init_of personal_keys)"
+ck  "M4: sync が 0 でない値を返す" "nonzero" "$([[ "$EQ_SYNC_RC" != skip && "$EQ_SYNC_RC" -ne 0 ]] && echo nonzero || echo "rc=$EQ_SYNC_RC")"
+ckc "M4: 失敗の理由が apply から届く" "$(cat "$EQ_DIR/sync.out" 2>/dev/null)" "設定の適用に失敗しました（rc=2）"
+ck  "M4: settings.json はバイト単位で前のまま" "yes" "$EQ_KEPT"
+
+# --- M5: sync と apply が、それぞれ自分の shebang の interpreter で動く ---
+T5="$_TMP_DIR/tree-m5"; eq_tree_or_fail "$T5"
+# shellcheck disable=SC2016  # sed の置き換えなのでシェルに展開させない
+sed 's|^set -euo pipefail$|&\nprintf "%s" "${BASH_VERSINFO[0]}" > "${HOME}/.sync-bash-major"|' \
+    "$REPO_ROOT/scripts/sync/sync-claude.sh" > "$T5/scripts/sync/sync-claude.sh"
+# shellcheck disable=SC2016  # sed の置き換えなのでシェルに展開させない
+sed 's|^set -uo pipefail$|&\nprintf "%s" "${BASH_VERSINFO[0]}" > "${HOME}/.apply-bash-major"|' \
+    "$APPLY" > "$T5/scripts/sync/apply-claude-settings.sh"
+chmod +x "$T5/scripts/sync/sync-claude.sh" "$T5/scripts/sync/apply-claude-settings.sh"
+ck  "M5: sync に記録の行を挿せた" "1" "$(grep -cF '.sync-bash-major' "$T5/scripts/sync/sync-claude.sh" | tr -d ' ')"
+ck  "M5: apply に記録の行を挿せた" "1" "$(grep -cF '.apply-bash-major' "$T5/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
+eq_run "$T5" m5 missing NONE
+# shebang の interpreter が名乗る主版番号。"/usr/bin/env bash" は語に分けて起動する。
+eq_major_of() {
+  local interp
+  interp="$(head -1 "$1" | sed 's|^#![[:space:]]*||')"
+  # shellcheck disable=SC2086,SC2016  # interp は語に分ける。-c の中身はシェルに展開させない
+  env -u BASH_ENV -u ENV $interp -c 'printf "%s" "${BASH_VERSINFO[0]}"'
+}
+eq_sync_want="$(eq_major_of "$REPO_ROOT/scripts/sync/sync-claude.sh")"
+eq_apply_want="$(eq_major_of "$APPLY")"
+ck  "M5: sync は shebang の interpreter（主版 ${eq_sync_want}）で動く" "$eq_sync_want" "$(cat "$EQ_DIR/home/.sync-bash-major" 2>/dev/null)"
+ck  "M5: apply は shebang の interpreter（主版 ${eq_apply_want}）で動く" "$eq_apply_want" "$(cat "$EQ_DIR/home/.apply-bash-major" 2>/dev/null)"
+if [[ "$eq_sync_want" == "$eq_apply_want" ]]; then
+  echo "  NOTE: sync と apply の interpreter の主版番号が同じ（${eq_sync_want}）なので、この環境では組み合わせの違いを区別できない"
+fi
+if [[ "$eq_sync_want" == "${BASH_VERSINFO[0]}" ]]; then
+  echo "  NOTE: テストを走らせた bash と sync の interpreter の主版番号が同じ（${eq_sync_want}）なので、この実行では \"\$BASH\" での起動と区別できない"
+fi
+
+# --- M6: check は期待値を apply から作っていない（成立条件の守り） ---
+# どんな入力にも誤った値を書く apply にする。check が「空の settings に apply を当てて
+# 期待値を作る」形に変わると、誤った値が期待値にも入って緑になり、ここが落ちる。
+T6="$_TMP_DIR/tree-m6"; eq_tree_or_fail "$T6"
+# shellcheck disable=SC2016  # sed のパターンなのでシェルに展開させない
+sed 's|if \$item.op == "replace" then setpath(\$path; \$item.expected)|if $item.op == "replace" then setpath($path; {"__wrong401__": true})|' \
+    "$APPLY" > "$T6/scripts/sync/apply-claude-settings.sh"
+chmod +x "$T6/scripts/sync/apply-claude-settings.sh"
+ck  "M6: 差し替えを挿せた" "1" "$(grep -cF '__wrong401__' "$T6/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
+eq_run "$T6" m6 missing NONE
+ck  "M6: check が 1 を返す" "1" "$EQ_CHECK_RC"
+while IFS= read -r p; do
+  ckc "M6: $p の誤りを見つける" "$(cat "$EQ_DIR/check.out" 2>/dev/null)" "差分 $p (replace)"
+done < <(eq_replace_ptrs "$T6")
 
 echo "[23] 中身が同じ symlink へ直前に差し替えられても置き換えない（実装SO 指摘の回帰）"
 fresh c23
