@@ -368,7 +368,7 @@ projects/wezterm-ai-mode/
 
 ## 開発方式（検証ケース）
 
-[cursor-thread-tools](../cursor-thread-tools/) と同型の **Stage 1（Agent: プラン + peer-ai-review）→ Stage 2（Plan mode: 実装）→ Stage 3（記録）** を本リポジトリで2例目として検証する。手順の正本は [CONVENTIONS.md](CONVENTIONS.md)。
+[_archived/cursor-thread-tools](../_archived/cursor-thread-tools/) と同型の **Stage 1（Agent: プラン + peer-ai-review）→ Stage 2（Plan mode: 実装）→ Stage 3（記録）** を本リポジトリで2例目として検証する。手順の正本は [CONVENTIONS.md](CONVENTIONS.md)。
 
 ## ドキュメント
 

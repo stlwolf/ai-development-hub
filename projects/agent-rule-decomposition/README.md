@@ -42,7 +42,7 @@ cursor-thread-tools の Phase 1〜4 開発で確立した CONVENTIONS.md（集�
 |------|------|
 | [ideas/20260221/document-format-design-principles.md](../../ideas/20260221/document-format-design-principles.md) | #1/#2 の原則。ルール分割時に「何を渡すか」の判断基準になる |
 | [ideas/20260212/hypothesis-canonical-agent-definition-format.md](../../ideas/20260212/hypothesis-canonical-agent-definition-format.md) | エージェント「の」定義フォーマット。ここで扱うのはエージェント「への」ルール配布 |
-| [projects/cursor-thread-tools/CONVENTIONS.md](../cursor-thread-tools/CONVENTIONS.md) | 分割対象の集権的ルール。4フェーズの運用実績あり |
+| [projects/_archived/cursor-thread-tools/CONVENTIONS.md](../_archived/cursor-thread-tools/CONVENTIONS.md) | 分割対象の集権的ルール。4フェーズの運用実績あり（アーカイブ） |
 | [ideas/20260208/ai-orchestration-synthesis-next-steps.md](../../ideas/20260208/ai-orchestration-synthesis-next-steps.md) | 「契約で固定、ツール名では固定しない」原則 |
 
 ## 分科会知見

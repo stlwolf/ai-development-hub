@@ -43,7 +43,7 @@ so:
 上流（#403 本文と brief）の断定を、着手時の master `99d0ecd` で確かめた結果である。手順は episode の Step 0〜2 にある。
 
 - `question-driven-design` の「いつ使わないか」節に「Issue とコードベースの一次情報から主要な設計分岐を解ける」の行がある。**確認済み**（`canonical/skills/question-driven-design/SKILL.md:31`）。同じスキルの「質問フェーズの完了」節は「ユーザーに確認を取ってから次のステップ（Plan mode または直接実装）に進む」で終わっており、呼び出し元へ戻る道を持たない。**確認済み**（同 `:54`）。
-- hub の `CLAUDE.md` には、蒸留の文書（discussion / plan / episode / decision）の置き場への案内が無い。**確認済み**。`AGENTS.md` と `README.md` にも無い。蒸留の木は4つある（`docs/harness/`・`projects/orchestration-engine/docs/`・`projects/wezterm-ai-mode/docs/`・`projects/cursor-thread-tools/docs/`）。木の置き方の規則は `document-format.md`「ファイル命名規約」節にある（`docs/{name}/` と `projects/{name}/docs/`）。
+- hub の `CLAUDE.md` には、蒸留の文書（discussion / plan / episode / decision）の置き場への案内が無い。**確認済み**。`AGENTS.md` と `README.md` にも無い。蒸留の木は4つある（`docs/harness/`・`projects/orchestration-engine/docs/`・`projects/wezterm-ai-mode/docs/`・`projects/_archived/cursor-thread-tools/docs/`）。木の置き方の規則は `document-format.md`「ファイル命名規約」節にある（`docs/{name}/` と `projects/{name}/docs/`）。
 - hub には `.github/ISSUE_TEMPLATE/` が無い。**確認済み**。`issue-conventions` は、テンプレートが無ければ目的と作業内容を本文に書くとしている。したがって取り込みの最初の確認は、テンプレートが無い場合を正面から扱う必要がある。
 - **「`issue-conventions` は観測できる動作が引き金なので確実に読み込まれる」（#403 本文）は、実測では裏付けが足りない。** `docs/issues/67/step9-verification-results.md` によれば、Claude Code では Phase 1 で `issue-conventions` も `question-driven-design` も読み込まれず、description を直したあとで読み込まれた。同じ文書は `conventional-commits` について「一般知識で正しく実行できるタスクでのスキルロード強制は構造的課題」と書いている。スキルの読み込みは description との一致に頼っており、「確実」ではない。この plan は、入口が発火するかを受入の項で実測する（Step 8 の D1）。
 - 「`question-driven-design` は人が言い出さないと読み込まれない」（#403 本文）は、同じ実測と矛盾しない。**確認済み**（同上）。
