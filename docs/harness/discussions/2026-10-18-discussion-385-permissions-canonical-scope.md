@@ -126,7 +126,7 @@ owner は Codex について次のように観察している。「壊す操作�
 |---|---|---|---|
 | X5 | Codex の `prefix_rule` の `allow` は「sandbox の外で、確認なしに動かす」意味である。複数の規則に当たれば、いちばん厳しいもの（`forbidden` > `prompt` > `allow`）が勝つ | [verified] | https://developers.openai.com/codex/rules 「Understand rule fields」 |
 | X6 | TUI で allow の一覧に足すこと（その後も確認を省く、永続の承認）を選ぶと、Codex はユーザー層の `~/.codex/rules/default.rules` に書く。1回限りの承認がどこに残るかは、この節には書かれていない。Smart approvals（既定で有効）は、確認の場で `prefix_rule` を提案することがある。Codex は起動時に、有効な設定の層ごとの `rules/` を読む | [verified] | 同「Create a rules file」 |
-| X7 | `bash -lc` の中身が、普通の語と安全な演算子（`&&`・`||`・`;`・`|`）だけの並びなら、Codex は分けてから1つずつ規則に当てる。変数や置き換えや `*` を含むなら分けず、全体を1つとして当てる | [verified] | 同「Shell wrappers and compound commands」 |
+| X7 | `bash -lc` の中身が、普通の語と安全な演算子（`&&`・`\|\|`・`;`・`\|`）だけの並びなら、Codex は分けてから1つずつ規則に当てる。変数や置き換えや `*` を含むなら分けず、全体を1つとして当てる | [verified] | 同「Shell wrappers and compound commands」 |
 | X8 | managed でない hook は、owner が見て信頼するまで動かない。信頼は hook の定義の hash に対して記録され、新しい hook や変えた hook は信頼し直すまで飛ばされる。起動時に `/hooks` を開くよう警告が出る。managed の hook は信頼が要らず、`--dangerously-bypass-hook-trust` はその1回だけ信頼の確かめを飛ばす | [verified] | https://developers.openai.com/codex/hooks 「Review and trust hooks」 |
 | X9 | hash は hook の項目（handler）ごとに、その定義（イベント・matcher・コマンドの文字列など）から計算され、スクリプトの中身は入らない。したがって、ある項目を足したり書き換えたりしても、外れるのはその項目の信頼だけで、ほかの項目の信頼は残る | [unverified-summary] | `openai/codex` の main の `codex-rs/hooks/src/engine/discovery.rs` の `hook_hash`。手元の 0.163.0 のソースは確かめていない |
 | X10 | PreToolUse は、`permissionDecision: "deny"` か exit 2 で止められる。`permissionDecision: "ask"` は「まだ対応していない」とされ、hook の失敗として扱われ、コマンドはそのまま続く | [verified] | hooks 「PreToolUse」 |
