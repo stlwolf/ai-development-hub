@@ -3,7 +3,7 @@ id: "01M59P2Z6SQCC3B5J7W9XBDGWR"
 title: "#428 人向けの確認・回答用ページの形と部品を、持ち運べるスキルとして作る"
 date: 2026-10-19
 type: plan
-status: in-development   # ゲート3 の承認は 1a9b3ce の版（2026-10-19）。承認のあとの変更は末尾の「ゲート3 のあとの変更」節
+status: stable   # 実装完了（2026-10-19・PR #468）。受入の A6b だけが owner の操作待ち。ゲート3 の承認は 1a9b3ce の版で、承認のあとの変更は末尾の「ゲート3 のあとの変更」節（H1〜H6）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/428"
