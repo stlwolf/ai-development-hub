@@ -1,0 +1,71 @@
+{
+  "format": 1,
+  "title": "2つの作業の判断待ち",
+  "purpose": "decide",
+  "status": "live",
+  "why": "並行して進んでいる2つの作業から判断の依頼が届いたので、1枚にまとめて答えられるようにする。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "tmux": {"window": 2, "pane": 1, "name": "CC:shop"}
+  },
+  "sections": [
+    {
+      "type": "bundle",
+      "title": "判断待ち",
+      "groups": [
+        {
+          "source": {
+            "repo": "billing",
+            "repo_url": "https://github.com/example-org/billing",
+            "issue": 31,
+            "branch": "feature/#31_invoice_pdf",
+            "tmux": {"window": 3, "pane": 2, "name": "CC:billing"}
+          },
+          "title": "請求書の PDF の作り方",
+          "why": "請求書を PDF にする仕組みを2つから選ぶ（#31）。",
+          "cards": [
+            {
+              "key": "pdf_engine",
+              "title": "PDF はブラウザの印刷の機能で作る",
+              "recommend": "browser",
+              "reason": "画面の請求書と同じ見た目になり、別の型を持たずに済むため。",
+              "points": [
+                {"text": "#28 の調査で、ブラウザで作ると1枚あたり約0.8秒かかった。", "evidence": "verified"},
+                "専用のライブラリで作ると速いが、画面とは別に型を持つことになる。"
+              ],
+              "options": [
+                {"key": "browser", "label": "ブラウザで作る", "kind": "go"},
+                {"key": "library", "label": "専用のライブラリで作る", "kind": "warn"}
+              ]
+            }
+          ]
+        },
+        {
+          "source": {
+            "repo": "mobile",
+            "issue": 7,
+            "branch": "fix/#7_login_loop"
+          },
+          "title": "ログインの画面が繰り返し出る不具合",
+          "why": "ログインのあとに同じ画面へ戻される不具合（#7）の直し方を決める。",
+          "cards": [
+            {
+              "key": "login_fix",
+              "title": "期限切れのトークンを、起動のときに先に消す",
+              "recommend": "clear",
+              "reason": "期限切れのトークンが残ると、ログインのあとに古いトークンで認証し直して画面が戻るため。",
+              "points": [
+                {"text": "再現の手順は #5 のコメントにある。", "evidence": "sourced"}
+              ],
+              "options": [
+                {"key": "clear", "label": "起動のときに消す", "kind": "go"},
+                {"key": "retry", "label": "失敗したら取り直す", "kind": "fix"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

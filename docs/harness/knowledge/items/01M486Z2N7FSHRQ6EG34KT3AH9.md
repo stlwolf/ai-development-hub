@@ -10,7 +10,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-09-25-episode-403-issue-intake-alignment.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-19
+    ref: "#428"
+    state: followed
+    note: "発火の表に、隣の artifact-design と引き金が重なる言い方（artifact を作って）を2行入れ、description に、artifact の組み込みの指示と一緒に読み込まれたときはページの形をこのスキルが決める、と順序を書いた。ただし claude -p では Artifact の道具と artifact-design が候補に出ず、並んだときの順は測れなかった。別に、題材の欠けた言い方で読み込みが後回しになる形を見つけ、item 01M5A1ZMJXGB2TQBVJEA9T4Q9Q に収穫した"
 ---
 
 **入口のスキルの発火は、渡す側と受け取る側の両方の言い方、それに引き金が重なる隣のスキルの言い方で測る。重なるなら、description にどちらを先に通すかを書く。**

@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "title": "決済の再試行の方針を決める",
+  "purpose": "decide",
+  "status": "awaiting",
+  "why": "決済が二重に走った障害（#212）の直し方が3通りあり、実装の前に1つに決めたい。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 212,
+    "branch": "fix/#212_payment_retry",
+    "tmux": {"window": 2, "pane": 2, "name": "CC:shop"}
+  },
+  "links": [
+    {"label": "#212 の plan", "url": "https://github.com/example-org/shop/blob/fix/%23212_payment_retry/docs/plan.md"},
+    {"label": "issue #212", "url": "https://github.com/example-org/shop/issues/212"}
+  ],
+  "sections": [
+    {
+      "type": "decisions",
+      "title": "再試行の方針",
+      "cards": [
+        {
+          "key": "retry_policy",
+          "tag": "DJ-1",
+          "title": "再試行は冪等キーを付けて3回までにする",
+          "recommend": "go",
+          "reason": "冪等キーがあれば、二重の請求を決済の会社の側で止められるため。",
+          "points": [
+            "いまは再試行の上限が無く、タイムアウトのたびに `charge` を呼び直している。",
+            {"text": "決済の会社の API は、同じ冪等キーの依頼を24時間覚えて、2回目を断る。", "evidence": "verified"},
+            {"text": "3回で足りるかは、先月のタイムアウトの記録（#198）から見積もった。", "evidence": "sourced"}
+          ],
+          "options": [
+            {"key": "go", "label": "この形で進める", "kind": "go"},
+            {"key": "fix", "label": "直してほしい（補足欄に）", "kind": "fix"}
+          ]
+        },
+        {
+          "key": "alert_rule",
+          "tag": "DJ-2",
+          "title": "失敗は警告のログに残し、3回目の失敗で通知する",
+          "recommend": "go",
+          "reason": "1回目と2回目の失敗はよく起きるので、毎回通知すると大事な通知を見落としやすくなるため。",
+          "points": [
+            {"text": "先週の通知は1日あたり約40件で、そのうち3回目まで失敗したものは2件だった。", "evidence": "sourced"},
+            {"text": "3回目で通知すれば、担当が気づくまでの時間は今と変わらない見込みである。", "evidence": "guess"}
+          ],
+          "options": [
+            {"key": "go", "label": "3回目で通知する", "kind": "go"},
+            {"key": "every", "label": "毎回通知する", "kind": "warn"},
+            {"key": "never", "label": "通知しない", "kind": "no"}
+          ]
+        },
+        {
+          "key": "rollout",
+          "tag": "DJ-3",
+          "title": "本番には段階的にデプロイする",
+          "evidence": "guess",
+          "recommend": "stage",
+          "reason": "再試行の回数が変わると決済の会社への依頼が増えうるので、少ない利用者で先に確かめたいため。",
+          "points": [
+            "最初の1日は利用者の1割で動かし、二重の請求とタイムアウトの数を見てから全員に広げる。",
+            "段階的にデプロイする仕組みは https://github.com/example-org/shop/blob/main/docs/rollout.md にある。"
+          ],
+          "options": [
+            {"key": "stage", "label": "1割の利用者から始める", "kind": "go"},
+            {"key": "all", "label": "一度に全員へ", "kind": "warn"}
+          ]
+        }
+      ]
+    }
+  ]
+}
