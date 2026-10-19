@@ -79,15 +79,16 @@ def render_page(name, mutate=None, body=None, glossary=None, now=NOW):
     return build.render(d, labels, build.parse_now(now), d["source"].get("tmux"), body)
 
 
-def text_of(fragment, cls, nth=0):
-    """class が cls の <p> の中身を、タグを除いて文字として返す。"""
-    found = re.findall(r'<p class="%s"[^>]*>(.*?)</p>' % re.escape(cls), fragment, re.S)
-    return html.unescape(re.sub(r"<[^>]+>", "", found[nth]))
+def meta_of(fragment, nth=0):
+    """nth 番目の項目名と値の表を [(項目名, 値の文字)] で返す（0 はヘッダー、1 以降は束の group）。"""
+    tables = re.findall(r'<dl class="hp-meta">(.*?)</dl>', fragment, re.S)
+    rows = re.findall(r'<dt>(.*?)</dt><dd>(.*?)</dd>', tables[nth], re.S)
+    return [(html.unescape(k), html.unescape(re.sub(r"<[^>]+>", "", v))) for k, v in rows]
 
 
-def hrefs_of(fragment, cls, nth=0):
-    found = re.findall(r'<p class="%s"[^>]*>(.*?)</p>' % re.escape(cls), fragment, re.S)
-    return [html.unescape(h) for h in re.findall(r'href="([^"]*)"', found[nth])]
+def meta_hrefs(fragment, nth=0):
+    tables = re.findall(r'<dl class="hp-meta">(.*?)</dl>', fragment, re.S)
+    return [html.unescape(h) for h in re.findall(r'href="([^"]*)"', tables[nth])]
 
 
 def embedded(fragment):
@@ -337,46 +338,69 @@ class LoadStage(unittest.TestCase):
                             'key "status.live" の差し込みが （なし） であるべき所が {n} である')
 
 
-class Header(unittest.TestCase):
-    """ヘッダーの2行（送り元と、版と状態）。"""
+FULL_META = [("リポジトリ", "shop"), ("tmux", "2.2（CC:shop）"), ("issue", "#212"),
+             ("ブランチ", "fix/#212_payment_retry"), ("版", "2026-10-19 18:05 JST（最終更新）"), ("状態", "回答待ち 3 件")]
 
-    def test_two_lines(self):
-        f = render_page("decide")
-        self.assertEqual(text_of(f, "hp-src"), "shop ・ tmux 2.2「CC:shop」 ・ #212 ・ fix/#212_payment_retry")
-        self.assertEqual(text_of(f, "hp-ver"), "版 2026-10-19 18:05 JST（最終更新） ・ 回答待ち 3 件")
+
+def without(rows, *labels):
+    return [r for r in rows if r[0] not in labels]
+
+
+class Header(unittest.TestCase):
+    """ヘッダーの表（リポジトリ・tmux・issue・ブランチ・版・状態）。無い項目は行ごと省く。"""
+
+    def test_six_rows(self):
+        self.assertEqual(meta_of(render_page("decide")), FULL_META)
 
     def test_source_links(self):
-        self.assertEqual(hrefs_of(render_page("decide"), "hp-src"),
+        self.assertEqual(meta_hrefs(render_page("decide")),
                          ["https://github.com/example-org/shop/issues/212",
                           "https://github.com/example-org/shop/tree/fix/%23212_payment_retry"])
 
-    def test_missing_items_are_omitted_with_their_separators(self):
+    def test_missing_items_are_omitted_as_rows(self):
         cases = [
-            (both(drop(["source", "issue"]), drop(["source", "branch"]), drop(["source", "tmux"])), "shop"),
-            (drop(["source", "tmux"]), "shop ・ #212 ・ fix/#212_payment_retry"),
-            (drop(["source", "issue"]), "shop ・ tmux 2.2「CC:shop」 ・ fix/#212_payment_retry"),
-            (drop(["source", "branch"]), "shop ・ tmux 2.2「CC:shop」 ・ #212"),
+            (both(drop(["source", "issue"]), drop(["source", "branch"]), drop(["source", "tmux"])),
+             without(FULL_META, "tmux", "issue", "ブランチ")),
+            (drop(["source", "tmux"]), without(FULL_META, "tmux")),
+            (drop(["source", "issue"]), without(FULL_META, "issue")),
+            (drop(["source", "branch"]), without(FULL_META, "ブランチ")),
         ]
         for mutate, want in cases:
-            with self.subTest(want=want):
-                self.assertEqual(text_of(render_page("decide", mutate), "hp-src"), want)
+            with self.subTest(want=[r[0] for r in want]):
+                self.assertEqual(meta_of(render_page("decide", mutate)), want)
+
+    def test_tmux_value_has_no_tmux_word(self):
+        rows = dict(meta_of(render_page("decide")))
+        self.assertEqual(rows["tmux"], "2.2（CC:shop）")
+        self.assertNotIn("tmux", rows["tmux"])
 
     def test_no_repo_url_means_no_links(self):
         f = render_page("decide", drop(["source", "repo_url"]))
-        self.assertEqual(hrefs_of(f, "hp-src"), [])
-        self.assertEqual(text_of(f, "hp-src"), "shop ・ tmux 2.2「CC:shop」 ・ #212 ・ fix/#212_payment_retry")
+        self.assertEqual(meta_hrefs(f), [])
+        self.assertEqual(meta_of(f), FULL_META)
 
     def test_version_is_jst_whatever_the_offset(self):
         for now in ("2026-10-19T09:05:00+00:00", "2026-10-19T04:05:00-05:00", "2026-10-19T18:05:00+09:00",
                     "2026-10-19T09:05:00Z"):
             with self.subTest(now=now):
-                self.assertTrue(text_of(render_page("decide", now=now), "hp-ver").startswith("版 2026-10-19 18:05 JST（最終更新）"))
+                self.assertEqual(dict(meta_of(render_page("decide", now=now)))["版"], "2026-10-19 18:05 JST（最終更新）")
 
     def test_status_labels(self):
-        self.assertTrue(text_of(render_page("review"), "hp-ver").endswith(" ・ 随時更新"))
+        self.assertEqual(dict(meta_of(render_page("review")))["状態"], "随時更新")
         answered = both(put(["status"], "answered"),
                         put(["answers"], {"retry_policy": {"choice": "go", "note": "", "at": "2026-10-19T09:00:00Z"}}))
-        self.assertTrue(text_of(render_page("decide", answered), "hp-ver").endswith(" ・ 回答済み"))
+        self.assertEqual(dict(meta_of(render_page("decide", answered)))["状態"], "回答済み")
+
+    def test_purpose_label(self):
+        f = render_page("decide")
+        self.assertIn('<section class="hp-why"><p class="hp-lbl">目的</p>', f)
+
+    def test_bundle_groups_use_the_same_table(self):
+        f = render_page("bundle")
+        self.assertEqual(meta_of(f, 1), [("リポジトリ", "billing"), ("tmux", "3.2（CC:billing）"), ("issue", "#31"),
+                                         ("ブランチ", "feature/#31_invoice_pdf"), ("状態", "回答待ち 1 件")])
+        self.assertEqual(meta_of(f, 2), [("リポジトリ", "mobile"), ("issue", "#7"), ("ブランチ", "fix/#7_login_loop"),
+                                         ("状態", "回答待ち 1 件")])
 
     def test_tmux_is_omitted_outside_tmux(self):
         tmp = tempfile.mkdtemp()
@@ -393,7 +417,7 @@ class Header(unittest.TestCase):
             self.assertEqual(rc, 0, err)
             self.assertIn("送り元の tmux の項目を省いた: TMUX_PANE が無い", err)
             with open(out, encoding="utf-8") as fh:
-                self.assertEqual(text_of(fh.read(), "hp-src"), "shop ・ #212 ・ fix/#212_payment_retry")
+                self.assertEqual(meta_of(fh.read()), without(FULL_META, "tmux"))
         finally:
             shutil.rmtree(tmp)
 
@@ -437,7 +461,7 @@ class Escaping(unittest.TestCase):
     def test_attack_strings_stay_text(self):
         a, b, c = ATTACKS
         with open(build.DEFAULT_GLOSSARY, encoding="utf-8") as fh:
-            g = fh.read().replace("| `text.why` | なぜこのページか |", "| `text.why` | <b>なぜ</b>" + a + " |")
+            g = fh.read().replace("| `text.why` | 目的 |", "| `text.why` | <b>目的</b>" + a + " |")
         gpath = os.path.join(self.tmp, "glossary.md")
         with open(gpath, "w", encoding="utf-8") as fh:
             fh.write(g)
@@ -617,7 +641,7 @@ class GlossaryReachesEveryOutput(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(g)
             f = render_page("decide", glossary=path)
-            self.assertTrue(text_of(f, "hp-ver").endswith(" ・ 答え待ち 3 件"))
+            self.assertEqual(dict(meta_of(f))["状態"], "答え待ち 3 件")
             self.assertIn(">確認済み</span>", f)
             labels = json.loads(embedded(f))["labels"]
             self.assertEqual(labels["status.awaiting"], "答え待ち {n} 件")

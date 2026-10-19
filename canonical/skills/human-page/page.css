@@ -107,15 +107,24 @@ code {
 
 .hp { display: grid; gap: 18px; min-width: 0; }
 .hp-head { display: grid; gap: 4px; min-width: 0; }
-.hp-src, .hp-ver {
+/* ヘッダーと group の送り元: 左に項目名・右に値の表。幅の広い画面では2列に並べ、狭い画面では縦に積む */
+.hp-meta {
   margin: 0;
-  font-size: 12.5px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  border-top: 1px solid var(--line);
 }
-.hp-src a { color: var(--muted); text-decoration-color: var(--line); }
-.hp-src a:hover { color: var(--accent); }
+.hp-meta-row {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.hp-meta dt { color: var(--muted); }
+.hp-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .hp-title {
   font-size: 23px;
   font-weight: 700;
@@ -279,7 +288,6 @@ code {
 }
 .hp-group-title { font-size: 15.5px; font-weight: 700; margin: 0; text-wrap: balance; }
 .hp-group-why { margin: 0; font-size: 13.5px; max-width: 68ch; }
-.hp-group-status { margin: 0; font-size: 12.5px; color: var(--muted); }
 
 .hp-lane { margin: 0; font-size: 13px; color: var(--muted); }
 .hp-table-wrap { overflow-x: auto; min-width: 0; }
@@ -336,6 +344,7 @@ code {
 
 @media (max-width: 560px) {
   .hp-title { font-size: 20px; }
+  .hp-meta { grid-template-columns: minmax(0, 1fr); }
   .hp-card { padding: 14px; }
   .hp-table, .hp-table thead, .hp-table tbody, .hp-table tr, .hp-table td { display: block; width: 100%; }
   .hp-table thead { display: none; }

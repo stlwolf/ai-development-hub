@@ -55,6 +55,12 @@ GLOSSARY_KEYS = {
     "adopted.rejected": (),
     "recommend": (),
     "text.version": ("time",),
+    "text.head_repo": (),
+    "text.head_tmux": (),
+    "text.head_issue": (),
+    "text.head_branch": (),
+    "text.head_version": (),
+    "text.head_status": (),
     "text.why": (),
     "text.links": (),
     "text.points": (),
@@ -545,7 +551,6 @@ CSS = os.path.join(HERE, "page.css")
 JS = os.path.join(HERE, "page.js")
 TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "data", "js")
 SLOT_RE = re.compile(r"\{\{([a-z]+)\}\}")
-SEP = " ・ "
 
 # 版の時刻は JST（UTC+9）で書く。時間帯の表に頼らないよう、固定の時差で直す。
 JST = timezone(timedelta(hours=9), "JST")
@@ -656,22 +661,28 @@ def tmux_from_env():
     return {"window": int(parts[0]), "pane": int(parts[1]), "name": parts[2]}, None
 
 
-def source_line(src, tmux):
-    """送り元の1行。「repo ・ tmux 2.2「名前」 ・ #N ・ ブランチ」で、無い項目は省く。"""
+def meta_rows(src, tmux, L):
+    """送り元の表の行 [(項目名, 値の HTML)]。リポジトリ・tmux・issue・ブランチの順で、無い項目は行ごと省く。"""
     repo_url = src.get("repo_url")
-    parts = [esc(src["repo"])]
+    rows = [(L["text.head_repo"], esc(src["repo"]))]
     if tmux:
-        t = "tmux %d.%d" % (tmux["window"], tmux["pane"])
+        t = "%d.%d" % (tmux["window"], tmux["pane"])
         if tmux.get("name"):
-            t += "「%s」" % tmux["name"]
-        parts.append(esc(t))
+            t += "（%s）" % tmux["name"]
+        rows.append((L["text.head_tmux"], esc(t)))
     if "issue" in src:
         text = "#%d" % src["issue"]
-        parts.append(link(issue_url(repo_url, src["issue"]), text) if repo_url else esc(text))
+        rows.append((L["text.head_issue"], link(issue_url(repo_url, src["issue"]), text) if repo_url else esc(text)))
     if "branch" in src:
         b = src["branch"]
-        parts.append(link(branch_url(repo_url, b), b) if repo_url else esc(b))
-    return SEP.join(parts)
+        rows.append((L["text.head_branch"], link(branch_url(repo_url, b), b) if repo_url else esc(b)))
+    return rows
+
+
+def meta_table(rows):
+    """項目名と値の表。幅の広い画面では2列に並び、狭い画面では縦に積む（page.css）。"""
+    return '<dl class="hp-meta">%s</dl>' % "".join(
+        '<div class="hp-meta-row"><dt>%s</dt><dd>%s</dd></div>' % (esc(k), v) for k, v in rows)
 
 
 class Renderer:
@@ -719,9 +730,10 @@ class Renderer:
     def header(self):
         d = self.data
         h = ['<header class="hp-head">']
-        h.append('<p class="hp-src">%s</p>' % source_line(d["source"], self.tmux))
-        h.append('<p class="hp-ver">%s%s<span id="hp-status">%s</span></p>'
-                 % (esc(fill(self.L["text.version"], time=self.time)), esc(SEP), esc(self.status_text())))
+        rows = meta_rows(d["source"], self.tmux, self.L)
+        rows.append((self.L["text.head_version"], esc(fill(self.L["text.version"], time=self.time))))
+        rows.append((self.L["text.head_status"], '<span id="hp-status">%s</span>' % esc(self.status_text())))
+        h.append(meta_table(rows))
         h.append('<h1 class="hp-title">%s</h1>' % esc(d["title"]))
         h.append('<section class="hp-why"><p class="hp-lbl">%s</p><p>%s</p></section>'
                  % (esc(self.L["text.why"]), inline(d["why"], self.page_repo_url)))
@@ -778,12 +790,13 @@ class Renderer:
             repo_url = src.get("repo_url")
             self.groups.append({"id": gid, "keys": [c["key"] for c in g["cards"]]})
             out.append('<section class="hp-group" id="hp-group-%d">' % gid)
-            out.append('<p class="hp-src">%s</p>' % source_line(src, src.get("tmux")))
+            gs = self.L["status.answered"] if self.answered else fill(self.L["status.awaiting"], n=self.open_count(g["cards"]))
+            rows = meta_rows(src, src.get("tmux"), self.L)
+            rows.append((self.L["text.head_status"], '<span id="hp-group-status-%d">%s</span>' % (gid, esc(gs))))
             out.append('<h3 class="hp-group-title">%s</h3>' % inline(g["title"], repo_url))
+            out.append(meta_table(rows))
             if "why" in g:
                 out.append('<p class="hp-group-why">%s</p>' % inline(g["why"], repo_url))
-            gs = self.L["status.answered"] if self.answered else fill(self.L["status.awaiting"], n=self.open_count(g["cards"]))
-            out.append('<p class="hp-group-status" id="hp-group-status-%d">%s</p>' % (gid, esc(gs)))
             out.append('<div class="hp-cards">\n%s\n</div></section>'
                        % "\n".join(self.card(c, 4, repo_url) for c in g["cards"]))
         out.append("</section>")

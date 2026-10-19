@@ -31,8 +31,14 @@
 | `adopted.partial` | 一部採った |
 | `adopted.rejected` | 採らない |
 | `recommend` | 推奨 |
-| `text.version` | 版 {time}（最終更新） |
-| `text.why` | なぜこのページか |
+| `text.version` | {time}（最終更新） |
+| `text.head_repo` | リポジトリ |
+| `text.head_tmux` | tmux |
+| `text.head_issue` | issue |
+| `text.head_branch` | ブランチ |
+| `text.head_version` | 版 |
+| `text.head_status` | 状態 |
+| `text.why` | 目的 |
 | `text.links` | 関連リンク |
 | `text.points` | 要点 |
 | `text.reason` | 根拠 |
@@ -60,10 +66,10 @@
 各 key の意味は次のとおりである。
 
 - `evidence.*` は確かめた度合いの札である。`verified` は出典そのものを開いて確かめたこと、`sourced` は出典を挙げたが中身との対応は確かめていないこと、`guess` は出典の無い見立てであることを表す。
-- `status.*` はページの状態の札で、ヘッダーの2行目に出る。`awaiting` は答えを待っているページで、`{n}` には答えの選ばれていないカードの数が入る。`answered` は答えを回収し終えたページ、`live` は作ったあとも中身を更新していくページである。
+- `status.*` はページの状態の札で、ヘッダーの「状態」の行に出る。`awaiting` は答えを待っているページで、`{n}` には答えの選ばれていないカードの数が入る。`answered` は答えを回収し終えたページ、`live` は作ったあとも中身を更新していくページである。
 - `severity.*` は指摘の重さ、`adopted.*` は指摘を採ったかどうかの札である。
 - `recommend` は、推奨の選択肢に付ける札である。
-- `text.version` はヘッダーの版の文で、`{time}` には `2026-10-19 18:05 JST` の形の時刻が入る。
+- `text.head_*` はヘッダーの表の項目名である。`text.version` はヘッダーの「版」の行の値で、`{time}` には `2026-10-19 18:05 JST` の形の時刻が入る。`text.why` は、ページの目的の1文に付ける札である。
 - `text.store_*` は保存の状態の文で、ページの JS が出す。
 - `text.reply_*` と `text.copy*` は、保存できない表示で出す返答の文と、そのコピーのボタンの文である。`text.reply_heading` の `{title}` にはページのタイトルが、`{time}` には版の時刻が入る。
 - `text.lane` は指摘の一覧の上に出す文で、`{lane}` にはどのモデルの指摘かが入る。
