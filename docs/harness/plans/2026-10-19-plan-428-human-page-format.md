@@ -17,7 +17,7 @@ related:
   - type: reference
     ref: "docs/harness/episodes/2026-10-19-episode-428-human-page-format.md"
     reason: "この plan の実行記録。いまの判定ページを読んだ結果と設計SO の経緯はこちら"
-tags: [skill, artifact, human-page, harness]
+tags: [skill, artifact, html-one-pager, harness]
 so:
   design: weak
   impl: weak
@@ -32,7 +32,7 @@ owner に判定や回答を求めるページ（claude.ai の artifact）は、�
 
 ## この plan の範囲
 
-- やること: 新しいスキル `canonical/skills/human-page/`（名前は DJ-1・Q1）を作る。中身は、SKILL.md・ベースの HTML の型・部品の CSS と JS・データ（JSON）からページを作る小さなスクリプト・用語集・見本のデータ・スクリプトの検査である（DJ-2）。
+- やること: 新しいスキル `canonical/skills/html-one-pager/`（名前は DJ-1・Q1）を作る。中身は、SKILL.md・ベースの HTML の型・部品の CSS と JS・データ（JSON）からページを作る小さなスクリプト・用語集・見本のデータ・スクリプトの検査である（DJ-2）。
 - hub の側で変えるのは `canonical/CATALOG.md` の表に1行足すことだけである（DJ-13・Q4）。
 - 直さないもの: いまの判定ページの保存の形（`db` の collection `decisions`・doc id はカードの key・項目は key・choice・note・at）と、統括の回収の手順（`ArtifactData` の list）。新しいページは同じ形で保存する（DJ-7）。sync のスクリプトも直さない。新しいスキルは、ディレクトリに `SKILL.md` があれば、いまの sync が3つのツールへそのまま配る（`sync-claude.sh` の 228 行目・`sync-codex.sh` の 274 行目・`sync-cursor.sh` の 191 行目）。
 - 作らないもの（まとめの決定9 で、あとの版に回したもの）: 図・長いページのタブ・読み比べ・「何もしなければ受け入れ」の印付け。
@@ -58,21 +58,21 @@ owner に判定や回答を求めるページ（claude.ai の artifact）は、�
 
 | 回すこと | この plan の答え |
 |---|---|
-| スキルの名前、データの形、スクリプトの言語 | 名前は `human-page`（DJ-1・Q1）、データの形は DJ-3、言語は Python 3 の標準ライブラリだけ（DJ-4・Q2） |
+| スキルの名前、データの形、スクリプトの言語 | 名前は `html-one-pager`（DJ-1・Q1）、データの形は DJ-3、言語は Python 3 の標準ライブラリだけ（DJ-4・Q2） |
 | いまの判定ページの保存の形と、統括の回収の手順を壊さない移り方 | 新しいページは同じ collection・同じ doc id・同じ項目で保存する（DJ-7）。いまある判定ページは書き換えず、次に作るページから新しいスキルで作る。統括の回収の手順は変わらない |
 | 端から端までの確かめ | マージの前に、見本のページを private の artifact に公開し、画面で選択と補足を保存し、`ArtifactData` の list で読み、回答済みにして出し直すまでの1周を行う（受入の A6・A6b）。ページが書く形と、保存できないときの動きは手元の検査で確かめる（A7）。owner の実際の運用での評価（次の実物の判定ページで、owner が答え、統括が回収するまで）は、マージのあとに統括が行う（brief） |
 | 最初の実物で試し、表示を見て調整する | 見本のページを公開したら URL を統括へ送り、owner が見て調整を伝えられるようにする（I1-6）。調整は I2 の前後どちらで届いてもこの枝で直す（「ゲート3 のあとの変更」の扱いは I1-6 に書く） |
 
 ## 設計判断
 
-### DJ-1 スキルの名前は `human-page` にする
+### DJ-1 スキルの名前は `html-one-pager` にする
 
-人に見せて読んでもらう・答えてもらうページの形と部品を持つスキル、という役目をそのまま名前にした。hub のスキルの名前は、役目を英語の kebab-case で書く（`issue-intake`・`spec-card`）。候補と退けた理由はゲート1 の木にある。owner の確認を Q1 に置く。
+ゲート3 で承認したときの名前は `human-page` で、人に見せて読んでもらう・答えてもらうページの形と部品を持つスキル、という役目をそのまま名前にしていた。hub のスキルの名前は、役目を英語の kebab-case で書く（`issue-intake`・`spec-card`）。候補と退けた理由はゲート1 の木にある（承認したときの名前のまま残す）。そのあと owner が名前を `html-one-pager` に変えると決めた（2026-10-19・「ゲート3 のあとの変更」節の H9）。
 
 ### DJ-2 フォルダの中身
 
 ```text
-canonical/skills/human-page/
+canonical/skills/html-one-pager/
 ├── SKILL.md            いつ使うか・目的の選び方・データの書き方・作り方・公開と回収の仕方・限界
 ├── glossary.md         用語集。札の言葉（確かめた度合い・状態・重さ・採否・推奨）と、和訳しない用語
 ├── template.html       ベースの HTML の型。<title>・トークン・ヘッダーの枠と、差し込む位置の印だけを持つ
@@ -340,7 +340,7 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 
 ### DJ-13 hub の側の変更は CATALOG の1行だけにする
 
-- `canonical/CATALOG.md` の Skills の表に `human-page` の行を足し、見出しの件数を 29 から 30 にする。
+- `canonical/CATALOG.md` の Skills の表に `html-one-pager` の行を足し、見出しの件数を 29 から 30 にする。
 - 統括が判定ページを作るときにこのスキルを使う、という hub の運用の変更は、この単位では文書に書かない（brief「最小にする」）。いまは統括の手順を書いた canonical の文書が無く、統括は前のページの HTML を写して作っている（確定版の「暗黙の工程」）。マージして sync したあとは、スキルの description で読み込まれる。hub の文書に案内を足すかは Q4 に置く。
 
 ### DJ-14 文脈ごとのエスケープと、完成した HTML の確かめ
@@ -373,7 +373,7 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 
 ```text
 DJ-1 スキルの名前
-├── human-page（推奨）: 役目（人に見せて答えてもらうページ）をそのまま名前にした → 採用候補（Q1）
+├── human-page（推奨）: 役目（人に見せて答えてもらうページ）をそのまま名前にした → 採用候補（Q1）。ゲート3 で承認されたが、そのあと owner が html-one-pager に変えた（H9）
 ├── answer-page: 答えるページに寄る。読み物（ヘッダーだけ）やセカンドオピニオンの結果を見るページを含まない → 不採用
 ├── decision-page: 判断のページに寄る。同上 → 不採用
 ├── owner-page: 読む人の役割で名前を付ける。持ち出した先で owner という役割がいるとは限らない → 不採用
@@ -447,7 +447,7 @@ DJ-6 版の時刻
 
 | # | 確かめること | 見方 |
 |---|---|---|
-| A1 | スキルのフォルダに hub への参照が無い（brief の受入1） | `grep -rnE 'ai-development-hub|stlwolf|\.oe/|oe-[a-z]|統括|委譲|ゲート|cockpit|canonical/|docs/harness|orchestration|document-format|doc-flow|episode|discussion|evidence-verification' canonical/skills/human-page` が0件。`grep -rnw hub canonical/skills/human-page` も0件。`grep -rnE '#[0-9]' canonical/skills/human-page` の当たりは、`examples/` と `tests/` の中の架空のリポジトリ（`example-org/shop`・`example-org/billing`）の番号と、CSS の色だけである（1件ずつ目で分けて episode に書く） |
+| A1 | スキルのフォルダに hub への参照が無い（brief の受入1） | `grep -rnE 'ai-development-hub|stlwolf|\.oe/|oe-[a-z]|統括|委譲|ゲート|cockpit|canonical/|docs/harness|orchestration|document-format|doc-flow|episode|discussion|evidence-verification' canonical/skills/html-one-pager` が0件。`grep -rnw hub canonical/skills/html-one-pager` も0件。`grep -rnE '#[0-9]' canonical/skills/html-one-pager` の当たりは、`examples/` と `tests/` の中の架空のリポジトリ（`example-org/shop`・`example-org/billing`）の番号と、CSS の色だけである（1件ずつ目で分けて episode に書く） |
 | A1b | フォルダだけを持ち出しても動く | フォルダを `cp -RL` で scratchpad の下の新しいディレクトリへ写し、作業ディレクトリを `/` にして、`env -u TMUX_PANE PATH=/usr/bin:/bin` の下で写しの `tests/test_build.py` と見本の生成を走らせる（tmux と git が PATH に無い状態）。検査が通り、見本が作られ、送り元の tmux の項目が省かれる。`TMUX_PANE` を残して PATH から tmux を外した場合も、止まらずに省く |
 | A2 | スクリプトの検証が、壊したデータでそれぞれ期待した理由で落ちる（brief の受入2） | `python3 tests/test_build.py` を Python 3.13 と 3.9（`/usr/bin/python3`）の両方で回し、失敗0件。検査は DJ-9 の規則の条件ごとに壊したデータを持ち、出た誤りが期待した規則と場所の1件だけであることを主張する。独立した誤り2つのデータで2件が出る。読み込みの段の失敗は終了コード 2 と理由の文言で確かめる。見本の4つは誤り0件で通る |
 | A3 | 検査の側を弱めると赤になる | `build.py` の写しで、E-C3（推奨が選択肢に無い）の判定を消して検査を走らせ、落ちる検査が E-C3 の壊したデータのものだけであることを、落ちた検査の名前で確かめる。同じく E-F2（知らない項目）の判定を消して確かめる（1回だけ・I1-1） |
@@ -458,19 +458,19 @@ DJ-6 版の時刻
 | A7 | 手元の HTML として開いても、ヘッダーと答えの部品が動く（brief の受入4）。ページが書く形がいまの判定ページと同じ | `--standalone` のファイルを、手元の HTTP サーバーと `file://` の両方で Playwright で開く（`file://` が開けなければそのことを書く）。(a) `window.claude` が無いとき、ヘッダーが出て、選択肢を押すと押した状態になり、「この表示では保存できません」の文と返答の文が出て、返答の文が選んだものに合わせて変わり、コピーのボタンが写すか、欄を選んだ状態にする。(b) 記録だけをする偽物の `db` を差し込んだとき、最初の選択では `update` が断られたあとに `decisions/<key>` へ4つの項目ちょうどの `set` が1回あり、次に補足を変えると `note` と `at` だけの `update` が1回あり、2つの書き込みが重ならない。(c) `use("db")` が2秒遅れて答えるとき、そのあいだに押した選択が、つながったあとに書かれる。(d) 書き込みが断られるとき、選択が画面に残り、そのカードに「保存できませんでした」が出て、返答の文の欄が出る。(e) `use("db")` が `null` を返すとき、(a) と同じ形になる。(f) DJ-14 の攻撃の文字列を入れたページで、script が動かない（ページの JS の外の印の変数が立たない）。(g) 幅 400px で横に揺れない（`scrollWidth` が `clientWidth` を超えない）。暗い表示を真似ると `body` の背景の色が変わる。(h) `answered` のページで、選択肢と補足欄が押せず、`answers` の答えが出て、偽物の `db` が一度も呼ばれない |
 | A8 | SKILL.md に載せたコマンドが、載せた形のまま動く | SKILL.md のコードブロックのコマンドを写し、`<…>` の置き換えだけをして走らせる。見本から断片と `--standalone` ができ、`source` の補助コマンドが JSON を出す（注入された negative knowledge `01M2DRCP…`） |
 | A9 | スキルが入口の言い方で読み込まれる | 「発火の測り方」節のとおり、D0 で候補に入っていることを確かめてから、`claude -p` で8つの言い方を1回ずつ打ち、読み込まれた記録（`Skill` の呼び出し）を見る。陽性の6件で読み込まれ、陰性の2件で読み込まれない。陽性のときに `artifact-design` も読み込まれたかと、どちらが先だったかを記録する（注入された negative knowledge `01M486Z2…`） |
-| A10 | CATALOG に載っている | `canonical/CATALOG.md` の Skills の表に `human-page` の行があり、見出しの件数が表の行数と同じ |
+| A10 | CATALOG に載っている | `canonical/CATALOG.md` の Skills の表に `html-one-pager` の行があり、見出しの件数が表の行数と同じ |
 | A11 | 本物のハーネスと master の作業ツリーに書いていない | I1 の前と GATE I1 で、`~/.claude/skills` のリンクの一覧（名前と先）、`~/.claude/settings.json` の shasum、master の作業ツリーの `git status --porcelain` が同じである。除く書き込みは、CLI のセッションの記録（`~/.claude/projects` の下）・scratchpad・worktree の `tmp/` である |
 | A12 | 最後の commit で回し直す | スキルのファイル（用語集・CSS・JS・型・`build.py`）を最後に変えた commit で、A1・A1b・A2・A4・A5・A7・A8 を回し直す。owner の調整を入れたあとも同じである。回した commit の SHA を episode に書く |
 
 ### 発火の測り方（A9）
 
-マージの前なので、スキルは稼働中のハーネスに無い。リポジトリの外に一時ディレクトリ `T` を作り、`T/.claude/skills/human-page` を worktree のスキルへの symlink にして、`--add-dir "$T"` で読ませる。書き込める道具を最初から渡さない（`--tools Read,Grep,Glob,Skill` と `--permission-mode dontAsk` と `--strict-mcp-config`）。
+マージの前なので、スキルは稼働中のハーネスに無い。リポジトリの外に一時ディレクトリ `T` を作り、`T/.claude/skills/html-one-pager` を worktree のスキルへの symlink にして、`--add-dir "$T"` で読ませる。書き込める道具を最初から渡さない（`--tools Read,Grep,Glob,Skill` と `--permission-mode dontAsk` と `--strict-mcp-config`）。
 
 ```bash
 claude -p '<依頼文>' --add-dir "$T" --tools Read,Grep,Glob,Skill --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose
 ```
 
-- **D0 足場の確認（測る前のゲート）。** 同じ起動の形で、`human-page` が候補に入っていることを確かめる。見るのは、stream-json の最初の system の記録に名前が出るかと、名前を指して「human-page のスキルを読み込んで」と頼んだときに `Skill` の呼び出しが出るかの2つである。どちらも出なければ、足場（`--add-dir` の置き方）を直してから測る。発火の判定には、D0 で確かめた `Skill` の呼び出しの記録を使う。
+- **D0 足場の確認（測る前のゲート）。** 同じ起動の形で、`html-one-pager` が候補に入っていることを確かめる。見るのは、stream-json の最初の system の記録に名前が出るかと、名前を指して「html-one-pager のスキルを読み込んで」と頼んだときに `Skill` の呼び出しが出るかの2つである。どちらも出なければ、足場（`--add-dir` の置き方）を直してから測る。発火の判定には、D0 で確かめた `Skill` の呼び出しの記録を使う。
 
 | # | 種類 | 依頼文の形 |
 |---|---|---|
@@ -519,7 +519,7 @@ git -C '<worktree>' push -u origin 'feature/#428_human_page_format'
 
 承認で決めてほしいことは4つある。
 
-- Q1: スキルの名前を `human-page` にしてよいか（DJ-1）。
+- Q1: スキルの名前を `human-page` にしてよいか（DJ-1）。承認されたが、そのあと owner が `html-one-pager` に変えた（H9）。
 - Q2: スクリプトを Python 3 の標準ライブラリで書いてよいか（DJ-4）。hub のほかのスクリプトは Bash だが、hub の外へ持ち出す前提なので、追加のインストールが要らないことと、HTML のエスケープと誤りの文言を書きやすいことを優先した。
 - Q3: 回収して「回答済み」にしたページは、選択肢と補足欄を押せない状態にし、回収した答えだけを見せる形でよいか（DJ-7）。
 - Q4: hub の側の変更を CATALOG の1行だけにし、「統括の判定ページはこのスキルで作る」という案内を hub の文書に足すかは、この単位の外（統括の判断か別の issue）にしてよいか（DJ-13）。推奨は外にすることである。スキルの description で読み込まれるかは A9 で確かめる。
@@ -545,7 +545,7 @@ git -C '<worktree>' log --oneline e5d6c7f..origin/master -- canonical/skills can
 ### GATE I1-1: 検査が2つの Python で通る
 
 ```bash
-cd '<worktree>/canonical/skills/human-page' && for py in python3 /usr/bin/python3; do "$py" tests/test_build.py 2>&1 | tail -3; done
+cd '<worktree>/canonical/skills/html-one-pager' && for py in python3 /usr/bin/python3; do "$py" tests/test_build.py 2>&1 | tail -3; done
 ```
 
 - 2回とも最後が `OK` であること。A3 の結果（落ちた検査の名前）を episode に書く。
@@ -612,5 +612,6 @@ cd '<worktree>/canonical/skills/human-page' && for py in python3 /usr/bin/python
 | H6 | DJ-14 の外部の読み込みの数え方 | 実装SO（Codex のレーン）が、`srcset` と SVG の `<image href>` を見逃すことを再現した（episode の I2-1 の節） | 決まった要素と属性の並び（`<script src>` など）→ リンク（`<a>`・`<area>`）を除くすべての要素の、読み込みに使う属性（`src`・`href`・`xlink:href`・`srcset`・`imagesrcset`・`data`・`poster`・`background`）と、CSS の中の絶対 URL を見る。DJ-14 の「Google Fonts 以外を読み込まない」という結論は変えていない |
 | H7 | DJ-6 のヘッダーの形・DJ-10 の `text.why` の言葉・A5 の (1)(3) の見方 | owner の表示の調整（2026-10-19・統括が転送し、見た目と文言の直しとして補正に指定した） | タイトルの上の小さな2行（「repo ・ tmux 2.2「名前」 ・ #N ・ ブランチ」と「版 … ・ 状態」）→ 左に項目名・右に値の表で、文字は本文と同じ大きさ。項目はリポジトリ・tmux・issue・ブランチ・版・状態の6つで、無い項目は行ごと省く。tmux の値は「2.2（CC:shop）」。幅の広い画面では2列、狭い画面では縦に積む。束の group の送り元も同じ表にそろえた（状態の行を含む）。「なぜこのページか」の札は「目的」。A5 の (1)(3) は、同じ中身を表の行で主張する形に置き換えた（主張を減らしていない） |
 | H8 | A9 の「`artifact-design` と並んだときの読み込みの順を記録する」（A9-2）。**級は変更**（この節の前文の「どれも補正」の例外） | 完了前の照合で unmet と判定され、owner が「あとでいい」と再承認した（2026-10-19・統括が転送） | A9-2 はこの単位では測れない（対話でない起動では Artifact の道具と `artifact-design` が候補に出ない）ので、マージのあとに統括が対話のセッションで次の実物の判定ページを作るときに測り、#428 に記録する。owner の再承認 2026-10-19 |
+| H9 | DJ-1 のスキルの名前（Q1 の決定）。**級は変更**（この節の前文の「どれも補正」の例外） | owner がスキルの名前を変えると決めた（2026-10-19・owner の再承認「html-one-pager かな」・統括が転送） | `human-page` → `html-one-pager`。フォルダを `git mv` で `canonical/skills/html-one-pager/` にし、SKILL.md の name と本文・CATALOG の行・検査の中の名前・plan・episode・decision・knowledge item の中のスキルの名前を直した。ファイル名とブランチ名はそのまま。ゲート1 の木と Q1 の問いは、承認したときの名前のまま残した。owner の再承認 2026-10-19 |
 
 8項目の確かめ: (1) ステップ節の見出しは1つも消えていない。(2) 各 step の要件の文は消えておらず、閾値も緩んでいない。(3) ゲートの項目（設計SO・実装SO・テスト・Copilot・closure）は変わっていない。(4) 終端は I3 のままで、brief と同じである。(5) 受入の項目は減っておらず、H5 は見方の文言を、期待する検査の実際の数に合わせただけである。(6) owner が選んだ Q1〜Q4 の結論は変わっていない。(7) 範囲内の項目を範囲外へ移していない。(8) 新しい結果・対応範囲・作業義務・設計判断を求める追加は無い。H1・H2 は DJ-9 の中の細部、H3 は DJ-6 の中の細部の訂正、H6 は DJ-14 の結論を満たすための数え方の訂正である。H6 は `fa52c7d` のあとの直しである。H7 は owner の指示による見た目と文言の直しで、owner の決定4（ヘッダーの形）を owner 自身が直したものである。変更前の版は `8856985`、変更後の版は `1094927` である。

@@ -1,4 +1,4 @@
-/* human-page: 答えの保存・保存できないときの返答の文・回答待ちの件数を受け持つ。
+/* html-one-pager: 答えの保存・保存できないときの返答の文・回答待ちの件数を受け持つ。
    画面の文字は textContent と value だけで書き、innerHTML を使わない。
    保存の形は collection "decisions" の、doc id がカードの key の文書 {key, choice, note, at}。 */
 (function () {

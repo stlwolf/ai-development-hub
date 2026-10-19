@@ -23,7 +23,7 @@ related:
   - type: reference
     ref: "docs/harness/knowledge/items/01M5A1ZMJXGB2TQBVJEA9T4Q9Q.md"
     reason: "この単位から収穫した negative knowledge（入口のスキルは題材が欠けると読み込みが後回しになる）"
-tags: [skill, artifact, human-page, harness]
+tags: [skill, artifact, html-one-pager, harness]
 promotion:
   - subject: "描画をスクリプト（静的な HTML）に移し、JS は答えと保存だけにする判断"
     verdict: required
@@ -58,6 +58,8 @@ knowledge_observations:
 # #428 人向けの確認・回答用ページの形と部品を、持ち運べるスキルとして作る
 
 **この episode は着手時に枠を作り、作業しながら追記している。** 後追いで再構成した節があれば、その節の冒頭にその旨を書く。
+
+**スキルの名前は、2026-10-19 に owner の決定で `human-page` から `html-one-pager` に変わった（plan の H9）。** 本文のスキルの名前は新しい名前に書き直した。ゲート3 の承認と、I1-7 の発火の測定（D0・1回目・2回目）は、当時の名前 `human-page` で行ったものである。新しい名前での測り直しは、末尾の節に書く。
 
 ## なぜこの作業が始まったか
 
@@ -113,7 +115,7 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 
 ### GATE 3: owner の承認を受けた（2026-10-19）
 
-- 統括から、owner が plan（`1a9b3ce` の版）を承認したと届いた。Q1〜Q4 はすべて推奨どおりで、名前は `human-page`、スクリプトは Python 3 の標準ライブラリ（3.9 以上）、回答済みのページは押せない状態にして回収した答えだけを見せる、hub の側の変更は CATALOG の1行だけ、である。承認の記録と baseline は統括の作業層（`.oe/decision-428-gate3.md`）にある。owner は Q4 について、統括の判定ページをこのスキルで作る案内を、マージのあとに統括が実物で試してから別に決めると言っている。
+- 統括から、owner が plan（`1a9b3ce` の版）を承認したと届いた。Q1〜Q4 はすべて推奨どおりで、名前は `human-page`（そのあと owner が `html-one-pager` に変えた・plan の H9）、スクリプトは Python 3 の標準ライブラリ（3.9 以上）、回答済みのページは押せない状態にして回収した答えだけを見せる、hub の側の変更は CATALOG の1行だけ、である。承認の記録と baseline は統括の作業層（`.oe/decision-428-gate3.md`）にある。owner は Q4 について、統括の判定ページをこのスキルで作る案内を、マージのあとに統括が実物で試してから別に決めると言っている。
 - 統括は、見本のページを公開したら URL を途中経過として送るよう求めた。owner が表示を見て調整したいと言っている。これは plan の I1-6 と同じである。
 
 ### I1-0: baseline の確認（2026-10-19）
@@ -164,7 +166,7 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 
 ### I1-5・I1-6: CATALOG に足し、見本のページを公開した（2026-10-19）
 
-- `canonical/CATALOG.md` の Skills の表に `human-page` の行を足し、見出しの件数を 29 から 30 にした。表の行数（30）と `canonical/skills/` のディレクトリの数（30）が一致することを確かめた（A10）。
+- `canonical/CATALOG.md` の Skills の表に `html-one-pager` の行を足し、見出しの件数を 29 から 30 にした。表の行数（30）と `canonical/skills/` のディレクトリの数（30）が一致することを確かめた（A10）。
 - Artifact の道具の決まりどおり、最初に quickstart（intent は other）を通した。当てはまる型は無く、ふつうのページとして公開した。
 - `examples/decide.json` から作った断片を、`capabilities: {db: {}}` で private の artifact に公開した。URL は https://claude.ai/artifact/S42QtFnVmKGhDujRrzYnLu である。架空のデータであることは、公開の `description` に書いた。
 - A6: `ArtifactData` の list で `decisions` は空だった。見本のカードの key（`rollout`）で4つの項目の文書を1件書くと、list に version 1 で出た。消して、空に戻ることを確かめた。
@@ -174,9 +176,9 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 
 ### I1-7: 発火の測定の足場（D0・2026-10-19）
 
-- リポジトリの外の scratchpad に一時ディレクトリ `T` を作り、`T/.claude/skills/human-page` を worktree のスキルへの symlink にした。`claude -p`（Claude Code 2.1.303）を hub の checkout で、`--add-dir "$T"`・`--tools Read,Grep,Glob,Skill`・`--permission-mode dontAsk`・`--strict-mcp-config`・stream-json で起動した。
-- D0: stream-json の init の記録の `skills` に `human-page` が入り、「human-page のスキルを読み込んで」と頼むと `Skill` の呼び出しに `human-page` が出た。足場は使える。判定の正本は `Skill` の呼び出しの記録にする。
-- **隣の `artifact-design` は、この足場では測れなかった。** init の記録の `skills` に `artifact-design` が無かった。`--tools` に `Artifact` を足しても、init の `tools` は4つのままで、Artifact の道具が出なかった。print モードでは Artifact の道具とその組み込みのスキルが出ないと見られる（推測。出ない理由の一次の記述は確かめていない）。そのため、plan の A9 の「`artifact-design` も読み込まれたかと、どちらが先だったか」は記録できない。測れるのは、artifact の言い方（表の2と5）で `human-page` が読み込まれるかまでである。
+- リポジトリの外の scratchpad に一時ディレクトリ `T` を作り、`T/.claude/skills/html-one-pager` を worktree のスキルへの symlink にした。`claude -p`（Claude Code 2.1.303）を hub の checkout で、`--add-dir "$T"`・`--tools Read,Grep,Glob,Skill`・`--permission-mode dontAsk`・`--strict-mcp-config`・stream-json で起動した。
+- D0: stream-json の init の記録の `skills` に `html-one-pager` が入り、「html-one-pager のスキルを読み込んで」と頼むと `Skill` の呼び出しに `html-one-pager` が出た。足場は使える。判定の正本は `Skill` の呼び出しの記録にする。
+- **隣の `artifact-design` は、この足場では測れなかった。** init の記録の `skills` に `artifact-design` が無かった。`--tools` に `Artifact` を足しても、init の `tools` は4つのままで、Artifact の道具が出なかった。print モードでは Artifact の道具とその組み込みのスキルが出ないと見られる（推測。出ない理由の一次の記述は確かめていない）。そのため、plan の A9 の「`artifact-design` も読み込まれたかと、どちらが先だったか」は記録できない。測れるのは、artifact の言い方（表の2と5）で `html-one-pager` が読み込まれるかまでである。
 
 ### I1-7: 発火の測定の1回目と、description の1回だけの直し（2026-10-19）
 
@@ -191,14 +193,14 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 | 7 | 単体テストを書く（陰性） | 読み込まれなかった |
 | 8 | README の節を直す（陰性） | 読み込まれなかった |
 
-- 1件目は、スキルを知らなかったのではなかった。モデルは題材のファイルを2回探したあと、返答の本文に「分かれば `human-page` スキルで判定ページを作ります」と書き、題材を聞き返して止まった。description との一致は起きていたが、「題材が決まるまで読み込まない」という順で動いた。結果だけを見ると正しい聞き返しに見えるが、スキルの照合（部品の形に沿った聞き返し）は通っていない。注入された negative knowledge `01M486Z2…` が言う「素通りされても結果が正しく見える」の形である。
+- 1件目は、スキルを知らなかったのではなかった。モデルは題材のファイルを2回探したあと、返答の本文に「分かれば `html-one-pager` スキルで判定ページを作ります」と書き、題材を聞き返して止まった。description との一致は起きていたが、「題材が決まるまで読み込まない」という順で動いた。結果だけを見ると正しい聞き返しに見えるが、スキルの照合（部品の形に沿った聞き返し）は通っていない。注入された negative knowledge `01M486Z2…` が言う「素通りされても結果が正しく見える」の形である。
 - plan のとおり description を1回だけ直した。直したのは1文で、「何を載せるか（題材）がまだ決まっていなくても、ページを作る依頼を受けたら、題材を聞き返したり探したりする前に読み込む（何を聞けばよいかは、このスキルの部品の形で決まるため）」を足した。同じ8件を測り直す。
 
 昇格の印: 入口のスキルは、依頼の題材が欠けているとき、モデルが聞き返しを先にして読み込みを後回しにする（description が一致していても素通りされる）
 
 ### I1-7: 発火の測定の2回目（A9・2026-10-19）
 
-- description を直したあと、同じ8件を測り直した。陽性の6件はすべて、最初の道具の呼び出しが `Skill`（`human-page`）だった。1回目に題材を8回探してから読み込んだ2件目も、最初に読み込むようになった。陰性の2件は読み込まなかった。A9 を満たした。
+- description を直したあと、同じ8件を測り直した。陽性の6件はすべて、最初の道具の呼び出しが `Skill`（`html-one-pager`）だった。1回目に題材を8回探してから読み込んだ2件目も、最初に読み込むようになった。陰性の2件は読み込まなかった。A9 を満たした。
 - この測定が言えることは弱い。各形1回ずつであること、短い新しいセッションでは本番の長い会話より読み込まれやすい見込みであること（推測）、道具を読むものだけに絞った起動で `Bash` を渡していないので部品を実際に使うところまでは見ていないこと、print モードでは隣の `artifact-design` が候補に入らず、並んだときの順は測れていないこと、の4つである。Codex と Cursor では測っていない（SKILL.md の「限界」に書いた）。
 - 測定は hub の checkout で走らせたので、モデルは題材を探して hub の文書や統括の作業層を読んだ（道具は読むものだけなので、書き込みは無い）。
 
@@ -253,7 +255,7 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 
 - tier: **heavy**。品質ゲートのために明示して起動した外部レビュー（設計SO の `so-compare`・実装SO の `oe-review`）を使い、実行中の失敗と撤回があり（`本文: I1-1: 検証・用語集・見本・検査を書いた（2026-10-19）`・`本文: I1-4: SKILL.md を書き、A8・A1・A1b を確かめた（2026-10-19）`・`本文: I2-3: Copilot の1ラウンド（2026-10-19）`）、選択肢を比べて退けた設計判断と昇格の候補がある。
 - なぜ: 冒頭の「なぜこの作業が始まったか」に書いた。
-- 次の消費者: 統括（マージの判断・マージのあとの sync・次の実物の判定ページでの端から端までの確かめ）、owner（見本のページの表示の調整と A6b の操作）、次に `human-page` を直す担当（decision・plan の DJ と受入・この episode の I1-3 と I2 の確かめの手順）。
+- 次の消費者: 統括（マージの判断・マージのあとの sync・次の実物の判定ページでの端から端までの確かめ）、owner（見本のページの表示の調整と A6b の操作）、次に `html-one-pager` を直す担当（decision・plan の DJ と受入・この episode の I1-3 と I2 の確かめの手順）。
 - status: stable。達成度は **達成** である。closure を書いた時点では、受入のうち A6b（公開したページの画面で選んで保存し、list で読み、回答済みにして出し直す1周）が owner の操作を待って残っていたが、そのあと owner の操作を受けて済ませた（`本文: closure のあと: A6b の後半（2026-10-19）`）。
 - evidence anchor: SO と Copilot の出力は `tmp/`（作業層）にあるが、結論・件数・モデル・採否は本文の各節に写した。A12 の確かめのスクリプトは scratchpad にあり、確かめた中身（A1・A1b・A2・A8）と結果は `本文: GATE I1: 受入の状態（2026-10-19・b38cf08）` と `本文: I2-3: Copilot の1ラウンド（2026-10-19）` にある。
 - 観測の書き戻し: brief に注入された3件（frontmatter の `knowledge_observations`）すべてに、`ref: "#428"` で観測を1件ずつ足し、`validate-knowledge` を通した。3件とも `followed` である。`01M00KCC…` は、A7 の hidden の属性の見方で1回踏んだことを note に書いた。
@@ -297,7 +299,7 @@ frontmatter の `promotion` に8件を置いた。`required` の6件は、この
 
 ### 行動変更
 
-- `human-page` の description に、題材を確かめる前に読み込むことを足した（着地先: `canonical/skills/human-page/SKILL.md`・トリガ: ページを作る依頼を受けたとき・機構: description の一致）。
+- `html-one-pager` の description に、題材を確かめる前に読み込むことを足した（着地先: `canonical/skills/html-one-pager/SKILL.md`・トリガ: ページを作る依頼を受けたとき・機構: description の一致）。
 
 ### 残課題と行き先
 
@@ -337,3 +339,10 @@ frontmatter の `promotion` に8件を置いた。`required` の6件は、この
 - これで A6b を満たした。公開したページの JS が本物の保存先に書き、統括の回収の手順（`ArtifactData` の list）で読め、回答済みにして同じ URL に出し直すまでの1周が通った。ただし、回答済みの版 5 を claude.ai の画面で見たのは自分ではない（Playwright のブラウザは claude.ai に入れない）。同じ描画は、手元のブラウザの (h) で確かめてある（`本文: I1-3: 手元のブラウザで確かめた（A7・2026-10-19）`）。
 - 回答済みにしたあとは、保存先を読み直さない（SKILL.md の「回答済みにして出し直す」の4）。
 - 完了前の照合で A9-2（`artifact-design` と並んだときの読み込みの順の記録）が unmet と判定され、owner が「あとでいい」と再承認した（2026-10-19）。plan の「ゲート3 のあとの変更」節に H8（級は変更）として、マージのあとに統括が対話のセッションで次の実物の判定ページを作るときに測り #428 に記録する、と書いた。
+
+### closure のあと: スキルの名前を html-one-pager に変えた（2026-10-19〜20）
+
+- 統括から、owner がスキルの名前を `html-one-pager` に変えると決めたと届いた（Q1 の決定の変更・級は変更・owner の再承認 2026-10-19「html-one-pager かな」）。フォルダを `git mv` で `canonical/skills/html-one-pager/` にし、SKILL.md の name と本文・CATALOG の行・検査の中の名前（読み込む module の名前を含む）・plan・episode・decision・knowledge item の中のスキルの名前を直した。ファイル名とブランチ名はそのままにした。plan のゲート1 の木と Q1 の問い、この episode のゲート3 の承認の記録は、承認したときの名前 `human-page` のまま残した。plan の「ゲート3 のあとの変更」節に H9（級は変更）を足し、PR #468 の題と本文も直した。
+- 回し直し: A1・A1b・A2（Python 3.13 と 3.9.6 で127件）・A4（A2 の検査の中）・A8（SKILL.md のコマンド6本を新しいパスで）・A10（CATALOG の件数30・表の行30・スキルのディレクトリ30、`human-page` の行は無い）を回し、すべて通った。
+- A9-1 の測り直し: 一時ディレクトリに `html-one-pager` の名前でリンクを置き、同じ起動の形で D0 と8つの言い方を打った。D0 では init の `skills` に `html-one-pager` が入り、名前を指すと `Skill` の呼び出しが出た。陽性の6件はすべて、最初の道具の呼び出しが `Skill`（`html-one-pager`）だった。陰性の2件は読み込まなかった。前回より1件ごとの起動が長く（読み込んだあと題材を探してページを作ろうとし続け、呼び出しが14〜61回）、2件は上限の300秒で打ち切られたが、判定に使う最初の呼び出しは記録に残っていた。
+

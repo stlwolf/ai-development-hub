@@ -1,6 +1,6 @@
 ---
 id: "01M5A21WFJFSNWY2MYFHPJPRY4"
-title: "人向けのページは持ち運べるスキル human-page で作る — Python 3 の標準ライブラリで静的に描き、答えは変えた項目だけを書き、回収のあとは answers を正とする"
+title: "人向けのページは持ち運べるスキル html-one-pager で作る — Python 3 の標準ライブラリで静的に描き、答えは変えた項目だけを書き、回収のあとは answers を正とする"
 date: 2026-10-19
 type: decision
 status: stable
@@ -15,12 +15,12 @@ related:
     ref: "docs/harness/episodes/2026-10-19-episode-428-human-page-format.md"
     reason: "実装・ブラウザでの確かめ・発火の測定・実装SO と Copilot の指摘と採否の経緯"
   - type: reference
-    ref: "canonical/skills/human-page/SKILL.md"
+    ref: "canonical/skills/html-one-pager/SKILL.md"
     reason: "データの形・保存の形・検証の規則の現行の正本。本 decision は値の一覧を写さず、ここを指す"
-tags: [harness, skill, artifact, human-page, decision]
+tags: [harness, skill, artifact, html-one-pager, decision]
 ---
 
-# 人向けのページは持ち運べるスキル human-page で作る
+# 人向けのページは持ち運べるスキル html-one-pager で作る
 
 ## コンテキスト
 
@@ -63,6 +63,6 @@ owner に判定や回答を求めるページ（claude.ai の artifact）は、�
 
 ## 結果
 
-- スキルは `canonical/skills/human-page/` にあり、PR #468 で入る。マージのあとに sync で3つのツールへ配られる。
+- スキルは `canonical/skills/html-one-pager/` にあり、PR #468 で入る。名前は、ゲート3 で承認したときの `human-page` から、owner の決定で `html-one-pager` に変わった（2026-10-19・plan の H9）。マージのあとに sync で3つのツールへ配られる。
 - 統括の判定ページをこのスキルで作るという hub の運用の案内は、owner の Q4 の判断どおり、マージのあとに統括が実物で試してから別に決める。
 - 決定1 の前提（Python 3.9 以上がある）が崩れる持ち出し先が出たら、設計SO が挙げたブラウザで動く生成器をもう一度検討する。決定2 の前提（JS の自動の検査を持たない）は、部品が増えて JS の振る舞いが増えたら見直す。

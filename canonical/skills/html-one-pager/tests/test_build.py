@@ -24,7 +24,7 @@ SKILL = os.path.dirname(TESTS)
 BUILD = os.path.join(SKILL, "build.py")
 EXAMPLES = os.path.join(SKILL, "examples")
 
-_spec = importlib.util.spec_from_file_location("human_page_build", BUILD)
+_spec = importlib.util.spec_from_file_location("html_one_pager_build", BUILD)
 build = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(build)
 
