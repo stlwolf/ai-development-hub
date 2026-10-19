@@ -47,6 +47,8 @@
   var saved = table();  // key -> {choice, note}: 保存できた回数
   var chains = table(); // key -> Promise: 同じ文書への書き込みを1つずつ順に行う
   var noteTimers = table();
+  var queued = table();   // key -> true: 書き込みが列に入っていて、まだ始まっていない
+  var incoming = table(); // key -> 保存先から最後に届いた補足
 
   function counters(map, key) {
     if (!map[key]) { map[key] = { choice: 0, note: 0 }; }
@@ -124,12 +126,19 @@
     paintReply();
   }
 
-  function write(key, field) {
+  // その key の、まだ保存できていない項目（choice・note）をまとめて1回で書く。
+  // 文書がまだ無くて update が断られたときだけ、4つの項目を set で書く。
+  function dirtyFields(key) {
+    return ["choice", "note"].filter(function (f) { return isDirty(key, f); });
+  }
+  function write(key) {
+    var fields = dirtyFields(key);
+    if (!fields.length) { return null; }
     var s = state[key];
     var r = { choice: counters(rev, key).choice, note: counters(rev, key).note };
     var at = new Date().toISOString();
     var patch = { at: at };
-    patch[field] = field === "choice" ? (s.choice || null) : (s.note || "");
+    fields.forEach(function (f) { patch[f] = f === "choice" ? (s.choice || null) : (s.note || ""); });
     var ref = col.doc(key);
     var wroteAll = false;
     setSaved(key, L["text.store_saving"], "");
@@ -143,33 +152,31 @@
       throw e;
     }).then(function () {
       var sv = counters(saved, key);
-      var fields = wroteAll ? ["choice", "note"] : [field];
-      fields.forEach(function (f) { if (sv[f] < r[f]) { sv[f] = r[f]; } });
-      setSaved(key, L["text.store_saved"], "is-ok");
+      (wroteAll ? ["choice", "note"] : fields).forEach(function (f) { if (sv[f] < r[f]) { sv[f] = r[f]; } });
+      // 書いているあいだに変わった項目があれば、次の書き込みが続く。全部そろったときだけ「保存しました」と出す。
+      if (dirtyFields(key).length) { queue(key); } else { setSaved(key, L["text.store_saved"], "is-ok"); }
     }, function () {
       setSaved(key, L["text.store_failed"], "is-bad");
       showReply();
     });
   }
-  function queue(key, field) {
-    var target = counters(rev, key)[field];
+  function queue(key) {
+    if (queued[key]) { return; }
+    queued[key] = true;
     chains[key] = (chains[key] || Promise.resolve()).then(function () {
-      if (counters(saved, key)[field] >= target) { return null; }
-      return write(key, field);
+      queued[key] = false;
+      return write(key);
     });
   }
   function flush() {
-    cards.forEach(function (c) {
-      if (isDirty(c.key, "choice")) { queue(c.key, "choice"); }
-      if (isDirty(c.key, "note")) { queue(c.key, "note"); }
-    });
+    cards.forEach(function (c) { if (dirtyFields(c.key).length) { queue(c.key); } });
   }
 
   function change(key, value) {
     state[key].choice = value;
     counters(rev, key).choice += 1;
     paint();
-    if (mode === "ready") { queue(key, "choice"); } else if (mode === "unavailable") { showReply(); }
+    if (mode === "ready") { queue(key); } else if (mode === "unavailable") { showReply(); }
   }
   function noteInput(key, ta) {
     state[key].note = ta.value;
@@ -177,8 +184,15 @@
     paint();
     clearTimeout(noteTimers[key]);
     noteTimers[key] = setTimeout(function () {
-      if (mode === "ready") { queue(key, "note"); }
+      if (mode === "ready") { queue(key); }
     }, 900);
+  }
+  // 入力欄を選んでいるあいだに届いた補足は捨てずに持っておき、欄を離れたときに映す。
+  function noteBlur(key) {
+    if (own(incoming, key) && !isDirty(key, "note") && state[key].note !== incoming[key]) {
+      state[key].note = incoming[key];
+      paint();
+    }
   }
 
   function onSnapshot(snap) {
@@ -191,9 +205,10 @@
       if (!isDirty(key, "choice") && (v.choice === null || (typeof v.choice === "string" && isOption(key, v.choice)))) {
         s.choice = v.choice;
       }
-      var ta = $("hp-note-" + key);
-      if (!isDirty(key, "note") && typeof v.note === "string" && !(ta && document.activeElement === ta)) {
-        s.note = v.note;
+      if (typeof v.note === "string") {
+        incoming[key] = v.note;
+        var ta = $("hp-note-" + key);
+        if (!isDirty(key, "note") && !(ta && document.activeElement === ta)) { s.note = v.note; }
       }
     });
     paint();
@@ -270,7 +285,10 @@
       if (b) { b.addEventListener("click", function () { if (!answered) { change(c.key, o.key); } }); }
     });
     var ta = $("hp-note-" + c.key);
-    if (ta) { ta.addEventListener("input", function () { if (!answered) { noteInput(c.key, ta); } }); }
+    if (ta) {
+      ta.addEventListener("input", function () { if (!answered) { noteInput(c.key, ta); } });
+      ta.addEventListener("blur", function () { if (!answered) { noteBlur(c.key); } });
+    }
   });
   var copy = $("hp-copy");
   if (copy) { copy.addEventListener("click", onCopy); }

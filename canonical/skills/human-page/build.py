@@ -34,8 +34,9 @@ SECTION_TYPES = ("decisions", "bundle", "findings")
 ANSWER_SECTION_TYPES = ("decisions", "bundle")
 
 # カードと選択肢の key。db の doc id が許す文字より狭い、このスキルの決まり。
-KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-URL_RE = re.compile(r"^https?://\S+$")
+# match（先頭から）で使い、終わりは \Z で固定する（$ は末尾の改行の前でも合うので使わない）。
+KEY_RE = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
+URL_RE = re.compile(r"https?://\S+\Z")
 
 # 用語集に要る key と、それぞれの言葉が持つ差し込み。受け付ける値の集まりはここが正本で、
 # 用語集が持つのは表に出す言葉だけである。
@@ -900,7 +901,7 @@ def standalone(fragment):
 # 完成した HTML の外部の読み込み。Google Fonts だけを許す（--body の断片から入ったものを含めて数える）。
 # リンク（<a>・<area>）を除くすべての要素の、読み込みに使う属性と、CSS の中の絶対 URL を見る。
 ALLOWED_LOADS = ("https://fonts.googleapis.com/", "https://fonts.gstatic.com/")
-_TAG_RE = re.compile(r"<([a-zA-Z][a-zA-Z0-9:-]*)\b([^>]*)>")
+_TAG_RE = re.compile(r"""<([a-zA-Z][a-zA-Z0-9:-]*)\b((?:[^>"']|"[^"]*"|'[^']*')*)>""")
 _NOT_LOADS = ("a", "area")
 _LOAD_ATTR_RE = re.compile(r"""(?<![\w:-])(xlink:href|href|src|srcset|imagesrcset|data|poster|background)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
 _STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)

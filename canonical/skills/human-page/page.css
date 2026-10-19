@@ -73,6 +73,8 @@
 }
 
 * { box-sizing: border-box; }
+/* artifact の外で開いたときも、hidden の要素を部品の display で出してしまわない */
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--ink);

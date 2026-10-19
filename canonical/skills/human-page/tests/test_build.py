@@ -134,6 +134,8 @@ BROKEN = [
     ("h2_repo_url_javascript", "decide", put(["source", "repo_url"], "javascript:alert(1)"),
      [("E-H2", "source.repo_url")], False),
     ("h2_link_url_relative", "decide", put(["links", 0, "url"], "docs/plan.md"), [("E-H2", "links[0].url")], False),
+    ("h2_url_trailing_newline", "decide", put(["links", 0, "url"], "https://github.com/example-org/shop\n"),
+     [("E-H2", "links[0].url")], False),
     ("h2_branch_empty", "decide", put(["source", "branch"], ""), [("E-H2", "source.branch")], False),
     ("h2_tmux_window_negative", "decide", put(["source", "tmux", "window"], -1), [("E-H2", "source.tmux.window")], False),
     ("h2_tmux_pane_true", "decide", put(["source", "tmux", "pane"], True), [("E-H2", "source.tmux.pane")], False),
@@ -153,6 +155,7 @@ BROKEN = [
     # E-C1 カードの key
     ("c1_key_upper", "decide", put(CARD0 + ["key"], "Retry"), [("E-C1", "sections[0].cards[0].key")], False),
     ("c1_key_digit_first", "decide", put(CARD0 + ["key"], "1retry"), [("E-C1", "sections[0].cards[0].key")], False),
+    ("c1_key_trailing_newline", "decide", put(CARD0 + ["key"], "retry_policy\n"), [("E-C1", "sections[0].cards[0].key")], False),
     ("c1_key_duplicate", "decide", put(CARD1 + ["key"], "retry_policy"), [("E-C1", "sections[0].cards[1].key")], False),
     ("c1_key_duplicate_across_groups", "bundle", put(GROUP1 + ["cards", 0, "key"], "pdf_engine"),
      [("E-C1", "sections[0].groups[1].cards[0].key")], False),
@@ -162,6 +165,8 @@ BROKEN = [
     ("c2_option_key_duplicate", "decide", put(CARD0 + ["options", 1, "key"], "go"),
      [("E-C2", "sections[0].cards[0].options[1].key")], False),
     ("c2_option_key_shape", "decide", put(CARD0 + ["options", 1, "key"], "Fix!"),
+     [("E-C2", "sections[0].cards[0].options[1].key")], False),
+    ("c2_option_key_trailing_newline", "decide", put(CARD0 + ["options", 1, "key"], "fix\n"),
      [("E-C2", "sections[0].cards[0].options[1].key")], False),
     # E-C3 推奨が選択肢に無い
     ("c3_recommend_missing_option", "decide", put(CARD0 + ["recommend"], "ok"),
@@ -525,6 +530,8 @@ class Contract(unittest.TestCase):
             self.assertLessEqual(set(re.findall(r"(--[a-z0-9-]+):", block)), defined)
         self.assertEqual(set(re.findall(r"(--[a-z0-9-]+):", dark_media.group(1))),
                          set(re.findall(r"(--[a-z0-9-]+):", dark_attr.group(1))))
+        # artifact の外で開いたときも hidden が効く（部品の display が hidden を上書きしない）。
+        self.assertIn("[hidden] { display: none !important; }", css)
         body = re.search(r"^body \{(.*?)^\}", css, re.S | re.M).group(1)
         self.assertIn("background: var(--bg);", body)
         self.assertIn("padding-left: max(16px, env(safe-area-inset-left, 0px));", body)
@@ -562,6 +569,10 @@ class ExternalLoads(unittest.TestCase):
         self.check('<svg><image xlink:href="https://evil.example/a.svg"/></svg>', 1)
         self.check('<script src="//evil.example/x.js"></script>', 1)
         self.check('<base href="https://evil.example/">', 1)
+
+    def test_quoted_greater_than_does_not_end_the_tag(self):
+        self.check('<img alt=">" src="https://evil.example/a.png">', 1)
+        self.check("<img alt='a>b' srcset='https://evil.example/a.png 1x'>", 1)
 
     def test_css_urls_without_url_function(self):
         self.check('<style>.x { background-image: image-set("https://evil.example/a.png" 1x); }</style>', 1)
