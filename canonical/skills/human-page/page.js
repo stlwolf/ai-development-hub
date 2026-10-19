@@ -11,7 +11,10 @@
   var cards = D.cards || [];
   if (!cards.length) { return; }
 
-  var byKey = {};
+  // key はデータから来るので、constructor のような名前でもプロトタイプを拾わない表にする。
+  function table() { return Object.create(null); }
+  function own(obj, key) { return !!obj && Object.prototype.hasOwnProperty.call(obj, key); }
+  var byKey = table();
   cards.forEach(function (c) { byKey[c.key] = c; });
 
   function $(id) { return document.getElementById(id); }
@@ -28,9 +31,9 @@
     return false;
   }
 
-  var state = {};
+  var state = table();
   cards.forEach(function (c) {
-    var a = D.answers && D.answers[c.key];
+    var a = own(D.answers, c.key) ? D.answers[c.key] : null;
     state[c.key] = {
       choice: a && typeof a.choice === "string" ? a.choice : null,
       note: a && typeof a.note === "string" ? a.note : ""
@@ -40,10 +43,10 @@
   var answered = D.status === "answered";
   var mode = answered ? "answered" : "connecting"; // connecting | ready | unavailable | answered
   var col = null;
-  var rev = {};    // key -> {choice, note}: 手元で変えた回数
-  var saved = {};  // key -> {choice, note}: 保存できた回数
-  var chains = {}; // key -> Promise: 同じ文書への書き込みを1つずつ順に行う
-  var noteTimers = {};
+  var rev = table();    // key -> {choice, note}: 手元で変えた回数
+  var saved = table();  // key -> {choice, note}: 保存できた回数
+  var chains = table(); // key -> Promise: 同じ文書への書き込みを1つずつ順に行う
+  var noteTimers = table();
 
   function counters(map, key) {
     if (!map[key]) { map[key] = { choice: 0, note: 0 }; }
@@ -96,7 +99,7 @@
     cards.forEach(function (c) {
       var s = state[c.key];
       c.options.forEach(function (o) {
-        var b = $("hp-opt-" + c.key + "-" + o.key);
+        var b = $("hp-opt-" + c.key + "." + o.key);
         if (b) { b.setAttribute("aria-pressed", s.choice === o.key ? "true" : "false"); }
       });
       var ta = $("hp-note-" + c.key);
@@ -183,7 +186,7 @@
       var v = d && typeof d.data === "function" ? d.data() : null;
       if (!v) { return; }
       var key = typeof v.key === "string" ? v.key : d.id;
-      if (!byKey[key]) { return; }
+      if (!own(byKey, key)) { return; }
       var s = state[key];
       if (!isDirty(key, "choice") && (v.choice === null || (typeof v.choice === "string" && isOption(key, v.choice)))) {
         s.choice = v.choice;
@@ -263,7 +266,7 @@
 
   cards.forEach(function (c) {
     c.options.forEach(function (o) {
-      var b = $("hp-opt-" + c.key + "-" + o.key);
+      var b = $("hp-opt-" + c.key + "." + o.key);
       if (b) { b.addEventListener("click", function () { if (!answered) { change(c.key, o.key); } }); }
     });
     var ta = $("hp-note-" + c.key);

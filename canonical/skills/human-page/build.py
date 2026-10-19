@@ -819,7 +819,7 @@ class Renderer:
         for o in c["options"]:
             pressed = "true" if choice == o["key"] else "false"
             rec = self.chip("hp-chip-rec", L["recommend"]) if o["key"] == c["recommend"] else ""
-            buttons.append('<button type="button" class="hp-opt k-%s" id="hp-opt-%s-%s" aria-pressed="%s"%s>%s%s</button>'
+            buttons.append('<button type="button" class="hp-opt k-%s" id="hp-opt-%s.%s" aria-pressed="%s"%s>%s%s</button>'
                            % (o.get("kind", "plain"), esc(key), esc(o["key"]), pressed,
                               " disabled" if self.answered else "", esc(o["label"]), rec))
         h.append('<div class="hp-choose" role="group" aria-label="%s">%s</div>' % (title_attr, "".join(buttons)))
@@ -898,12 +898,14 @@ def standalone(fragment):
 
 
 # 完成した HTML の外部の読み込み。Google Fonts だけを許す（--body の断片から入ったものを含めて数える）。
+# リンク（<a>・<area>）を除くすべての要素の、読み込みに使う属性と、CSS の中の絶対 URL を見る。
 ALLOWED_LOADS = ("https://fonts.googleapis.com/", "https://fonts.gstatic.com/")
-_LOAD_TAG_RE = re.compile(r"<(script|img|iframe|frame|embed|object|source|audio|video|track|input|link)\b([^>]*)>", re.I)
-_LOAD_ATTR_RE = re.compile(r"""\b(src|href|data|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+_TAG_RE = re.compile(r"<([a-zA-Z][a-zA-Z0-9:-]*)\b([^>]*)>")
+_NOT_LOADS = ("a", "area")
+_LOAD_ATTR_RE = re.compile(r"""(?<![\w:-])(xlink:href|href|src|srcset|imagesrcset|data|poster|background)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
 _STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
-_STYLE_ATTR_RE = re.compile(r"""\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
-_CSS_LOAD_RE = re.compile(r"""@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^\s;)]+))|url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)""", re.I)
+_STYLE_ATTR_RE = re.compile(r"""(?<![\w:-])style\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
+_CSS_URL_RE = re.compile(r"""https?://[^\s"'()<>;,]+|(?<![:/\w])//[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+[^\s"'()<>;,]*""", re.I)
 
 
 def _external(url):
@@ -913,21 +915,30 @@ def _external(url):
     return False
 
 
+def _candidates(attr, value):
+    if attr.lower() in ("srcset", "imagesrcset"):
+        return [c.strip().split()[0] for c in html.unescape(value).split(",") if c.strip()]
+    return [value]
+
+
 def external_loads(fragment):
     """許していない外部の読み込みを並べる。[(規則, 場所, 理由)] の形で返す。"""
     found = []
-    for m in _LOAD_TAG_RE.finditer(fragment):
+    for m in _TAG_RE.finditer(fragment):
+        tag = m.group(1).lower()
+        if tag in _NOT_LOADS:
+            continue
         for a in _LOAD_ATTR_RE.finditer(m.group(2)):
-            url = next(g for g in a.groups()[1:] if g is not None)
-            if _external(url):
-                found.append(("<%s %s>" % (m.group(1).lower(), a.group(1).lower()), url))
+            value = next(g for g in a.groups()[1:] if g is not None)
+            for url in _candidates(a.group(1), value):
+                if _external(url):
+                    found.append(("<%s %s>" % (tag, a.group(1).lower()), url))
     css = [m.group(1) for m in _STYLE_BLOCK_RE.finditer(fragment)]
     css += [m.group(1) or m.group(2) for m in _STYLE_ATTR_RE.finditer(fragment)]
     for block in css:
-        for m in _CSS_LOAD_RE.finditer(block):
-            url = next((g for g in m.groups() if g is not None), "")
-            if _external(url):
-                found.append(("CSS の @import か url()", url))
+        for m in _CSS_URL_RE.finditer(html.unescape(block)):
+            if _external(m.group(0)):
+                found.append(("CSS の中の URL", m.group(0)))
     return [("E-B1", "html", "許していない外部の読み込みがある（%s: %s）。読み込めるのは Google Fonts だけである" % f)
             for f in found]
 

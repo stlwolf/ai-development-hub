@@ -555,6 +555,22 @@ class ExternalLoads(unittest.TestCase):
         self.check('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">'
                    '<img src="data:image/png;base64,AAAA" alt="">', 0)
 
+    def test_srcset_and_svg_images(self):
+        self.check('<img srcset="data:image/png;base64,AAAA 1x, https://evil.example/a.png 2x" alt="">', 1)
+        self.check('<link rel="preload" as="image" imagesrcset="https://evil.example/a.png 1x">', 1)
+        self.check('<svg><image href="https://evil.example/a.svg"/></svg>', 1)
+        self.check('<svg><image xlink:href="https://evil.example/a.svg"/></svg>', 1)
+        self.check('<script src="//evil.example/x.js"></script>', 1)
+        self.check('<base href="https://evil.example/">', 1)
+
+    def test_css_urls_without_url_function(self):
+        self.check('<style>.x { background-image: image-set("https://evil.example/a.png" 1x); }</style>', 1)
+        self.check('<div style="background: url(//evil.example/a.png)"></div>', 1)
+
+    def test_links_and_fragments_are_not_loads(self):
+        self.check('<a href="https://evil.example/">リンク</a><svg><use href="#icon"/></svg>'
+                   '<svg><image href="data:image/svg+xml;base64,AAAA"/></svg>', 0)
+
     def test_url_written_as_text_is_not_a_load(self):
         f = render_page("decide", put(["why"], "url(https://evil.example/a.png) と書いた文"))
         self.assertEqual(build.external_loads(f), [])
@@ -599,6 +615,32 @@ class GlossaryReachesEveryOutput(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class ElementIds(unittest.TestCase):
+    """カードと選択肢の key がどう組み合わさっても、要素の id は重ならない。"""
+
+    def ids(self, f):
+        return re.findall(r'\bid="([^"]*)"', f)
+
+    def test_ids_are_unique_in_every_example(self):
+        for name, body in (("decide", None), ("bundle", None), ("review", None)):
+            with self.subTest(page=name):
+                ids = self.ids(render_page(name, body=body))
+                self.assertEqual(len(ids), len(set(ids)))
+
+    def test_hyphenated_keys_do_not_collide(self):
+        cards = [
+            {"key": "a-b", "title": "1", "recommend": "c", "reason": "r",
+             "options": [{"key": "c", "label": "C"}, {"key": "d", "label": "D"}]},
+            {"key": "a", "title": "2", "recommend": "b-c", "reason": "r",
+             "options": [{"key": "b-c", "label": "BC"}, {"key": "e", "label": "E"}]},
+        ]
+        f = render_page("decide", put(["sections", 0, "cards"], cards))
+        ids = self.ids(f)
+        self.assertEqual(len(ids), len(set(ids)), [i for i in ids if ids.count(i) > 1])
+        self.assertIn('id="hp-opt-a-b.c"', f)
+        self.assertIn('id="hp-opt-a.b-c"', f)
+
+
 class AnsweredPage(unittest.TestCase):
     def render(self):
         return render_page("decide", both(put(["status"], "answered"), put(["answers"], {
@@ -607,7 +649,7 @@ class AnsweredPage(unittest.TestCase):
 
     def test_inputs_are_locked_and_show_collected_answers(self):
         f = self.render()
-        buttons = re.findall(r'<button type="button" class="hp-opt[^"]*" id="hp-opt-([a-z0-9_-]+)-([a-z0-9_-]+)" aria-pressed="(true|false)"( disabled)?>', f)
+        buttons = re.findall(r'<button type="button" class="hp-opt[^"]*" id="hp-opt-([a-z0-9_-]+)\.([a-z0-9_-]+)" aria-pressed="(true|false)"( disabled)?>', f)
         self.assertEqual(len(buttons), 7)
         self.assertTrue(all(b[3] == " disabled" for b in buttons))
         self.assertEqual(sorted((b[0], b[1]) for b in buttons if b[2] == "true"), [("retry_policy", "go"), ("rollout", "stage")])
