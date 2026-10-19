@@ -8,9 +8,11 @@
 """
 
 import copy
+import html
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -57,10 +59,40 @@ def both(*fs):
     return f
 
 
-def run_cli(*args):
+def run_cli(*args, env=None):
     p = subprocess.run([sys.executable, BUILD] + list(args), stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8")
+                       stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", env=env)
     return p.returncode, p.stdout, p.stderr
+
+
+NOW = "2026-10-19T09:05:00+00:00"
+
+
+def render_page(name, mutate=None, body=None, glossary=None, now=NOW):
+    """見本を（必要なら壊さずに直してから）描く。tmux はデータに書いたものだけを使う（--tmux off と同じ）。"""
+    d = copy.deepcopy(example(name))
+    if mutate:
+        mutate(d)
+    errors = build.validate(d, has_body=body is not None)
+    assert errors == [], errors
+    labels = build.load_glossary(glossary or build.DEFAULT_GLOSSARY)
+    return build.render(d, labels, build.parse_now(now), d["source"].get("tmux"), body)
+
+
+def text_of(fragment, cls, nth=0):
+    """class が cls の <p> の中身を、タグを除いて文字として返す。"""
+    found = re.findall(r'<p class="%s"[^>]*>(.*?)</p>' % re.escape(cls), fragment, re.S)
+    return html.unescape(re.sub(r"<[^>]+>", "", found[nth]))
+
+
+def hrefs_of(fragment, cls, nth=0):
+    found = re.findall(r'<p class="%s"[^>]*>(.*?)</p>' % re.escape(cls), fragment, re.S)
+    return [html.unescape(h) for h in re.findall(r'href="([^"]*)"', found[nth])]
+
+
+def embedded(fragment):
+    m = re.search(r'<script type="application/json" id="hp-data">(.*?)</script>', fragment, re.S)
+    return m.group(1)
 
 
 CARD0 = ["sections", 0, "cards", 0]
@@ -298,6 +330,328 @@ class LoadStage(unittest.TestCase):
     def test_glossary_extra_placeholder_exits_2(self):
         self.check_glossary(self.glossary_variant("| `status.live` | 随時更新 |", "| `status.live` | 随時更新 {n} |"),
                             'key "status.live" の差し込みが （なし） であるべき所が {n} である')
+
+
+class Header(unittest.TestCase):
+    """ヘッダーの2行（送り元と、版と状態）。"""
+
+    def test_two_lines(self):
+        f = render_page("decide")
+        self.assertEqual(text_of(f, "hp-src"), "shop ・ tmux 2.2「CC:shop」 ・ #212 ・ fix/#212_payment_retry")
+        self.assertEqual(text_of(f, "hp-ver"), "版 2026-10-19 18:05 JST（最終更新） ・ 回答待ち 3 件")
+
+    def test_source_links(self):
+        self.assertEqual(hrefs_of(render_page("decide"), "hp-src"),
+                         ["https://github.com/example-org/shop/issues/212",
+                          "https://github.com/example-org/shop/tree/fix/%23212_payment_retry"])
+
+    def test_missing_items_are_omitted_with_their_separators(self):
+        cases = [
+            (both(drop(["source", "issue"]), drop(["source", "branch"]), drop(["source", "tmux"])), "shop"),
+            (drop(["source", "tmux"]), "shop ・ #212 ・ fix/#212_payment_retry"),
+            (drop(["source", "issue"]), "shop ・ tmux 2.2「CC:shop」 ・ fix/#212_payment_retry"),
+            (drop(["source", "branch"]), "shop ・ tmux 2.2「CC:shop」 ・ #212"),
+        ]
+        for mutate, want in cases:
+            with self.subTest(want=want):
+                self.assertEqual(text_of(render_page("decide", mutate), "hp-src"), want)
+
+    def test_no_repo_url_means_no_links(self):
+        f = render_page("decide", drop(["source", "repo_url"]))
+        self.assertEqual(hrefs_of(f, "hp-src"), [])
+        self.assertEqual(text_of(f, "hp-src"), "shop ・ tmux 2.2「CC:shop」 ・ #212 ・ fix/#212_payment_retry")
+
+    def test_version_is_jst_whatever_the_offset(self):
+        for now in ("2026-10-19T09:05:00+00:00", "2026-10-19T04:05:00-05:00", "2026-10-19T18:05:00+09:00",
+                    "2026-10-19T09:05:00Z"):
+            with self.subTest(now=now):
+                self.assertTrue(text_of(render_page("decide", now=now), "hp-ver").startswith("版 2026-10-19 18:05 JST（最終更新）"))
+
+    def test_status_labels(self):
+        self.assertTrue(text_of(render_page("review"), "hp-ver").endswith(" ・ 随時更新"))
+        answered = both(put(["status"], "answered"),
+                        put(["answers"], {"retry_policy": {"choice": "go", "note": "", "at": "2026-10-19T09:00:00Z"}}))
+        self.assertTrue(text_of(render_page("decide", answered), "hp-ver").endswith(" ・ 回答済み"))
+
+    def test_tmux_is_omitted_outside_tmux(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            d = example("decide")
+            del d["source"]["tmux"]
+            data = os.path.join(tmp, "d.json")
+            with open(data, "w", encoding="utf-8") as fh:
+                json.dump(d, fh, ensure_ascii=False)
+            env = dict(os.environ)
+            env.pop("TMUX_PANE", None)
+            out = os.path.join(tmp, "o.html")
+            rc, _, err = run_cli("build", data, "-o", out, "--now", NOW, env=env)
+            self.assertEqual(rc, 0, err)
+            self.assertIn("送り元の tmux の項目を省いた: TMUX_PANE が無い", err)
+            with open(out, encoding="utf-8") as fh:
+                self.assertEqual(text_of(fh.read(), "hp-src"), "shop ・ #212 ・ fix/#212_payment_retry")
+        finally:
+            shutil.rmtree(tmp)
+
+
+class Links(unittest.TestCase):
+    def test_bundle_groups_link_to_their_own_repo(self):
+        f = render_page("bundle")
+        self.assertIn('href="https://github.com/example-org/billing/issues/28"', f)
+        self.assertIn('href="https://github.com/example-org/billing/issues/31"', f)
+        # repo_url の無い group（mobile）の #5 と #7 は、ページのリポジトリへ戻してリンクにしない。
+        for n in (5, 7):
+            self.assertNotIn("/issues/%d\"" % n, f)
+        self.assertIn("#5 のコメント", f)
+
+    def test_issue_ref_followed_by_word_char_is_not_linked(self):
+        f = render_page("decide", put(CARD0 + ["points", 0], "feature/#212_x と #212 を見る。"))
+        self.assertIn("feature/#212_x と ", f)
+        self.assertIn('<a href="https://github.com/example-org/shop/issues/212" target="_blank" rel="noopener">#212</a> を見る。', f)
+
+    def test_url_in_text_is_linked_without_trailing_punctuation(self):
+        f = render_page("decide")
+        self.assertIn('<a href="https://github.com/example-org/shop/blob/main/docs/rollout.md" target="_blank" '
+                      'rel="noopener">https://github.com/example-org/shop/blob/main/docs/rollout.md</a> にある。', f)
+
+    def test_code_span(self):
+        self.assertIn("<code>charge</code>", render_page("decide"))
+
+
+ATTACKS = ("</script><script>alert(1)</script>", "\"><img src=x onerror=alert(1)>", "`</code><b>`")
+
+
+class Escaping(unittest.TestCase):
+    """データと用語集の文字列は、要素にならず文字として出る。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_attack_strings_stay_text(self):
+        a, b, c = ATTACKS
+        with open(build.DEFAULT_GLOSSARY, encoding="utf-8") as fh:
+            g = fh.read().replace("| `text.why` | なぜこのページか |", "| `text.why` | <b>なぜ</b>" + a + " |")
+        gpath = os.path.join(self.tmp, "glossary.md")
+        with open(gpath, "w", encoding="utf-8") as fh:
+            fh.write(g)
+        mutate = both(put(["title"], a), put(["why"], b), put(CARD0 + ["points", 0], c + " " + a),
+                      put(CARD0 + ["options", 1, "label"], b), put(["status"], "answered"),
+                      put(["answers"], {"retry_policy": {"choice": "go", "note": a + b, "at": "2026-10-19T09:00:00Z"}}))
+        f = render_page("decide", mutate, glossary=gpath)
+        self.assertNotIn("<script>alert(1)", f)
+        self.assertNotIn("<img src=x", f)
+        self.assertNotIn("<b>", f)
+        self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", f)
+        self.assertIn("<title>&lt;/script&gt;", f)
+        self.assertIn("<code>&lt;/code&gt;&lt;b&gt;</code>", f)
+        data = embedded(f)
+        self.assertNotIn("<", data)
+        self.assertIn(chr(92) + "u003c/script", data)
+        self.assertEqual(json.loads(data)["title"], a)
+
+
+class Contract(unittest.TestCase):
+    """artifact の決まり（page contract）と、2つの出力の形。"""
+
+    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"))
+
+    def pages(self):
+        for name, body_file in self.PAGES:
+            body = None
+            if body_file:
+                with open(os.path.join(EXAMPLES, body_file), encoding="utf-8") as fh:
+                    body = fh.read()
+            yield name, render_page(name, body=body)
+
+    def test_fragment_has_no_document_skeleton(self):
+        for name, f in self.pages():
+            with self.subTest(page=name):
+                self.assertIsNone(re.search(r"<!doctype|<html[\s>]|<head[\s>]|<body[\s>]", f, re.I))
+
+    def test_title_is_in_first_8kb(self):
+        for name, f in self.pages():
+            with self.subTest(page=name):
+                self.assertTrue(f.startswith("<title>"))
+                self.assertLess(f.encode("utf-8").index(b"</title>"), 8192)
+
+    def test_only_google_fonts_are_loaded(self):
+        for name, f in self.pages():
+            with self.subTest(page=name):
+                loads = re.findall(r'<(?!a[\s>])[a-z]+\b[^>]*\b(?:src|href)\s*=\s*"([^"]*)"', f, re.I)
+                self.assertTrue(loads)
+                for u in loads:
+                    self.assertTrue(u.startswith("https://fonts.googleapis.com/"), u)
+                self.assertEqual(build.external_loads(f), [])
+
+    def test_size_is_under_16mb(self):
+        for name, f in self.pages():
+            with self.subTest(page=name):
+                self.assertLess(len(f.encode("utf-8")), 16 * 1024 * 1024)
+
+    def test_standalone_only_wraps(self):
+        for name, f in self.pages():
+            with self.subTest(page=name):
+                s = build.standalone(f)
+                self.assertTrue(s.startswith(build.STANDALONE_HEAD))
+                self.assertTrue(s.endswith(build.STANDALONE_TAIL))
+                self.assertEqual(s[len(build.STANDALONE_HEAD):-len(build.STANDALONE_TAIL)], f)
+                self.assertIn('<meta charset="utf-8">', build.STANDALONE_HEAD)
+
+    def test_cli_outputs_differ_only_by_wrapping(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            a, b = os.path.join(tmp, "a.html"), os.path.join(tmp, "b.html")
+            data = os.path.join(EXAMPLES, "decide.json")
+            self.assertEqual(run_cli("build", data, "-o", a, "--now", NOW, "--tmux", "off")[0], 0)
+            self.assertEqual(run_cli("build", data, "-o", b, "--now", NOW, "--tmux", "off", "--standalone")[0], 0)
+            with open(a, encoding="utf-8") as fa, open(b, encoding="utf-8") as fb:
+                self.assertEqual(build.standalone(fa.read()), fb.read())
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_theme_tokens(self):
+        with open(build.CSS, encoding="utf-8") as fh:
+            css = fh.read()
+        root = re.search(r"^:root \{(.*?)^\}", css, re.S | re.M).group(1)
+        defined = set(re.findall(r"(--[a-z0-9-]+):", root))
+        dark_media = re.search(r'@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{(.*?)\}', css, re.S)
+        dark_attr = re.search(r':root\[data-theme="dark"\] \{(.*?)\}', css, re.S)
+        self.assertIsNotNone(dark_media)
+        self.assertIsNotNone(dark_attr)
+        for block in (dark_media.group(1), dark_attr.group(1)):
+            self.assertIn("color-scheme: dark", block)
+            self.assertLessEqual(set(re.findall(r"(--[a-z0-9-]+):", block)), defined)
+        self.assertEqual(set(re.findall(r"(--[a-z0-9-]+):", dark_media.group(1))),
+                         set(re.findall(r"(--[a-z0-9-]+):", dark_attr.group(1))))
+        body = re.search(r"^body \{(.*?)^\}", css, re.S | re.M).group(1)
+        self.assertIn("background: var(--bg);", body)
+        self.assertIn("padding-left: max(16px, env(safe-area-inset-left, 0px));", body)
+        self.assertIn("padding-right: max(16px, env(safe-area-inset-right, 0px));", body)
+        with open(os.path.join(EXAMPLES, "grasp-body.html"), encoding="utf-8") as fh:
+            used = set(re.findall(r"var\((--[a-z0-9-]+)\)", css + fh.read()))
+        self.assertEqual(used - defined, set())
+
+
+class ExternalLoads(unittest.TestCase):
+    """E-B1: 完成した HTML の外部の読み込み（--body から入ったものを含む）。"""
+
+    def check(self, body, n):
+        f = render_page("grasp", body=body)
+        got = build.external_loads(f)
+        self.assertEqual([(c, p) for c, p, _ in got], [("E-B1", "html")] * n, got)
+
+    def test_external_script_in_body(self):
+        self.check('<script src="https://evil.example/x.js"></script>', 1)
+
+    def test_css_import_in_body(self):
+        self.check('<style>@import "https://evil.example/x.css";</style>', 1)
+
+    def test_css_url_in_style_attribute(self):
+        self.check('<div style="background:url(https://evil.example/a.png)"></div>', 1)
+
+    def test_allowed_loads(self):
+        self.check('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">'
+                   '<img src="data:image/png;base64,AAAA" alt="">', 0)
+
+    def test_url_written_as_text_is_not_a_load(self):
+        f = render_page("decide", put(["why"], "url(https://evil.example/a.png) と書いた文"))
+        self.assertEqual(build.external_loads(f), [])
+
+    def test_cli_refuses_to_write(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            body = os.path.join(tmp, "b.html")
+            with open(body, "w", encoding="utf-8") as fh:
+                fh.write('<script src="https://evil.example/x.js"></script>')
+            out = os.path.join(tmp, "o.html")
+            rc, _, err = run_cli("build", os.path.join(EXAMPLES, "grasp.json"), "--body", body, "-o", out, "--tmux", "off")
+            self.assertEqual(rc, 1)
+            self.assertIn("E-B1 html: 許していない外部の読み込みがある（<script src>: https://evil.example/x.js）", err)
+            self.assertFalse(os.path.exists(out))
+        finally:
+            shutil.rmtree(tmp)
+
+
+class GlossaryReachesEveryOutput(unittest.TestCase):
+    """用語集の1行を直すと、静的に描く文字・JS が使う文字の両方が変わる。"""
+
+    def test_changed_words(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            with open(build.DEFAULT_GLOSSARY, encoding="utf-8") as fh:
+                g = fh.read()
+            g = g.replace("| `status.awaiting` | 回答待ち {n} 件 |", "| `status.awaiting` | 答え待ち {n} 件 |")
+            g = g.replace("| `evidence.verified` | 確かめた |", "| `evidence.verified` | 確認済み |")
+            g = g.replace("| `text.reply_heading` | 「{title}」への答え（版 {time}） |",
+                          "| `text.reply_heading` | 「{title}」の返事（{time}） |")
+            path = os.path.join(tmp, "glossary.md")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(g)
+            f = render_page("decide", glossary=path)
+            self.assertTrue(text_of(f, "hp-ver").endswith(" ・ 答え待ち 3 件"))
+            self.assertIn(">確認済み</span>", f)
+            labels = json.loads(embedded(f))["labels"]
+            self.assertEqual(labels["status.awaiting"], "答え待ち {n} 件")
+            self.assertEqual(labels["text.reply_heading"], "「{title}」の返事（{time}）")
+        finally:
+            shutil.rmtree(tmp)
+
+
+class AnsweredPage(unittest.TestCase):
+    def render(self):
+        return render_page("decide", both(put(["status"], "answered"), put(["answers"], {
+            "retry_policy": {"choice": "go", "note": "上限は5回にしたい", "at": "2026-10-19T09:00:00Z"},
+            "rollout": {"choice": "stage", "note": "", "at": "2026-10-19T09:01:00Z"}})))
+
+    def test_inputs_are_locked_and_show_collected_answers(self):
+        f = self.render()
+        buttons = re.findall(r'<button type="button" class="hp-opt[^"]*" id="hp-opt-([a-z0-9_-]+)-([a-z0-9_-]+)" aria-pressed="(true|false)"( disabled)?>', f)
+        self.assertEqual(len(buttons), 7)
+        self.assertTrue(all(b[3] == " disabled" for b in buttons))
+        self.assertEqual(sorted((b[0], b[1]) for b in buttons if b[2] == "true"), [("retry_policy", "go"), ("rollout", "stage")])
+        self.assertEqual(f.count('<p class="hp-unanswered">未回答</p>'), 1)
+        self.assertRegex(f, r'<textarea class="hp-note" id="hp-note-retry_policy"[^>]* disabled>上限は5回にしたい</textarea>')
+        self.assertIn('<p class="hp-notice">', f)
+        self.assertNotIn('id="hp-store"', f)
+        self.assertNotIn('id="hp-reply"', f)
+        self.assertEqual(json.loads(embedded(f))["answers"]["retry_policy"]["choice"], "go")
+
+    def test_awaiting_page_is_open(self):
+        f = render_page("decide")
+        self.assertNotIn(" disabled", f)
+        self.assertIn('id="hp-store"', f)
+        self.assertIn('id="hp-reply" hidden', f)
+        self.assertIsNone(json.loads(embedded(f))["answers"])
+
+
+class SourceCommand(unittest.TestCase):
+    def test_remote_urls(self):
+        cases = {
+            "git@github.com:example-org/shop.git": "https://github.com/example-org/shop",
+            "ssh://git@github.com/example-org/shop.git": "https://github.com/example-org/shop",
+            "https://github.com/example-org/shop.git": "https://github.com/example-org/shop",
+            "https://user@gitlab.example.com/group/shop": "https://gitlab.example.com/group/shop",
+            "/srv/git/shop.git": None,
+        }
+        for remote, want in cases.items():
+            with self.subTest(remote=remote):
+                self.assertEqual(build._https_remote(remote), want)
+
+    @unittest.skipIf(shutil.which("git") is None, "git が無い")
+    def test_source_from_git(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            for args in (["init", "-q"], ["remote", "add", "origin", "git@github.com:example-org/shop.git"],
+                         ["checkout", "-q", "-b", "fix/#212_payment_retry"]):
+                subprocess.run(["git", "-C", tmp] + args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            rc, out, err = run_cli("source", "--git", tmp, "--tmux", "off")
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(json.loads(out), {"repo": "shop", "repo_url": "https://github.com/example-org/shop",
+                                               "branch": "fix/#212_payment_retry"})
+        finally:
+            shutil.rmtree(tmp)
 
 
 if __name__ == "__main__":

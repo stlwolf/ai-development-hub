@@ -11,10 +11,14 @@
 """
 
 import argparse
+import html
 import json
 import os
 import re
+import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_GLOSSARY = os.path.join(HERE, "glossary.md")
@@ -533,7 +537,467 @@ def format_errors(errors):
     return ["%s %s: %s" % e for e in errors]
 
 
+# ---------------------------------------------------------------- 描画
+
+TEMPLATE = os.path.join(HERE, "template.html")
+CSS = os.path.join(HERE, "page.css")
+JS = os.path.join(HERE, "page.js")
+TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "data", "js")
+SLOT_RE = re.compile(r"\{\{([a-z]+)\}\}")
+SEP = " ・ "
+
+# 版の時刻は JST（UTC+9）で書く。時間帯の表に頼らないよう、固定の時差で直す。
+JST = timezone(timedelta(hours=9), "JST")
+
+# 本文の中で効く書式は3つだけ: `…` をコードに、https://… をリンクに、#N を issue へのリンクにする。
+CODE_RE = re.compile(r"`([^`\n]+)`")
+_URL_STOP = r"\s<>\"'`" + chr(0x3000) + "-" + chr(0x303F) + chr(0xFF01) + "-" + chr(0xFF60)
+LINK_RE = re.compile(r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))")
+URL_TRAIL = ".,;:!?)]}"
+
+# JSON をページに埋め込むとき、要素を閉じたり行を分けたりしうる文字を \u の形に置き換える。
+_JSON_UNSAFE = ("<", ">", "&", chr(0x2028), chr(0x2029))
+
+
+def esc(s):
+    return html.escape(str(s), quote=True)
+
+
+def link(url, text):
+    return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (esc(url), esc(text))
+
+
+def issue_url(repo_url, num):
+    return "%s/issues/%s" % (repo_url.rstrip("/"), num)
+
+
+def branch_url(repo_url, branch):
+    return "%s/tree/%s" % (repo_url.rstrip("/"), quote(branch, safe="/"))
+
+
+def inline(text, repo_url):
+    """平文をエスケープし、コード・URL・#N の書式だけを足した HTML を返す。"""
+    out = []
+    pos = 0
+    for m in CODE_RE.finditer(text):
+        out.append(_linkify(text[pos:m.start()], repo_url))
+        out.append("<code>%s</code>" % esc(m.group(1)))
+        pos = m.end()
+    out.append(_linkify(text[pos:], repo_url))
+    return "".join(out)
+
+
+def _linkify(text, repo_url):
+    out = []
+    pos = 0
+    for m in LINK_RE.finditer(text):
+        out.append(esc(text[pos:m.start()]))
+        if m.group("url"):
+            url = m.group("url")
+            trail = ""
+            while url and url[-1] in URL_TRAIL:
+                trail = url[-1] + trail
+                url = url[:-1]
+            out.append(link(url, url) + esc(trail))
+        elif repo_url:
+            out.append(link(issue_url(repo_url, m.group("num")), m.group("issue")))
+        else:
+            out.append(esc(m.group("issue")))
+        pos = m.end()
+    out.append(esc(text[pos:]))
+    return "".join(out)
+
+
+def embed_json(obj):
+    s = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+    for c in _JSON_UNSAFE:
+        s = s.replace(c, chr(92) + "u%04x" % ord(c))
+    return s
+
+
+def fill(template, **values):
+    return PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), template)
+
+
+def format_time(now):
+    return now.astimezone(JST).strftime("%Y-%m-%d %H:%M") + " JST"
+
+
+def parse_now(value):
+    if value is None:
+        return datetime.now(timezone.utc)
+    s = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        raise LoadError("--now の時刻（%s）を読めない。2026-10-19T09:05:00+00:00 の形で渡す" % value)
+    if dt.tzinfo is None:
+        raise LoadError("--now の時刻（%s）に時差が無い。+09:00 や +00:00 を付ける" % value)
+    return dt
+
+
+def tmux_from_env():
+    """作ったセッションのペインの位置を引く。引けなければ (None, 理由) を返す。"""
+    pane = os.environ.get("TMUX_PANE")
+    if not pane:
+        return None, "TMUX_PANE が無い（tmux の外で走らせた）"
+    try:
+        p = subprocess.run(["tmux", "display-message", "-p", "-t", pane,
+                            "#{window_index}\t#{pane_index}\t#{window_name}"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, "tmux を呼べない（%s）" % e
+    if p.returncode != 0:
+        return None, "tmux が答えない（%s）" % p.stderr.strip()
+    parts = p.stdout.rstrip("\n").split("\t")
+    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None, "tmux の答え（%r）を読めない" % p.stdout
+    return {"window": int(parts[0]), "pane": int(parts[1]), "name": parts[2]}, None
+
+
+def source_line(src, tmux):
+    """送り元の1行。「repo ・ tmux 2.2「名前」 ・ #N ・ ブランチ」で、無い項目は省く。"""
+    repo_url = src.get("repo_url")
+    parts = [esc(src["repo"])]
+    if tmux:
+        t = "tmux %d.%d" % (tmux["window"], tmux["pane"])
+        if tmux.get("name"):
+            t += "「%s」" % tmux["name"]
+        parts.append(esc(t))
+    if "issue" in src:
+        text = "#%d" % src["issue"]
+        parts.append(link(issue_url(repo_url, src["issue"]), text) if repo_url else esc(text))
+    if "branch" in src:
+        b = src["branch"]
+        parts.append(link(branch_url(repo_url, b), b) if repo_url else esc(b))
+    return SEP.join(parts)
+
+
+class Renderer:
+    def __init__(self, data, labels, now, tmux):
+        self.data = data
+        self.L = labels
+        self.time = format_time(now)
+        self.tmux = tmux
+        self.page_repo_url = data["source"].get("repo_url")
+        self.answered = data["status"] == "answered"
+        self.answers = data.get("answers") or {}
+        self.cards = []   # JS に渡すカード
+        self.groups = []  # JS に渡す group
+
+    def chip(self, cls, text):
+        return '<span class="hp-chip %s">%s</span>' % (cls, esc(text))
+
+    def evidence(self, value):
+        return self.chip("hp-ev-" + value, self.L["evidence." + value]) if value else ""
+
+    def open_count(self, cards):
+        return sum(1 for c in cards if not (self.answers.get(c["key"]) or {}).get("choice"))
+
+    def status_text(self):
+        status = self.data["status"]
+        if status == "awaiting":
+            return fill(self.L["status.awaiting"], n=self.open_count(self.all_cards()))
+        return self.L["status." + status]
+
+    def all_cards(self):
+        out = []
+        for sec in self.data["sections"]:
+            if sec["type"] == "decisions":
+                out.extend(sec["cards"])
+            elif sec["type"] == "bundle":
+                for g in sec["groups"]:
+                    out.extend(g["cards"])
+        return out
+
+    def has_answer_part(self):
+        return any(sec["type"] in ANSWER_SECTION_TYPES for sec in self.data["sections"])
+
+    # ヘッダー ------------------------------------------------------------
+
+    def header(self):
+        d = self.data
+        h = ['<header class="hp-head">']
+        h.append('<p class="hp-src">%s</p>' % source_line(d["source"], self.tmux))
+        h.append('<p class="hp-ver">%s%s<span id="hp-status">%s</span></p>'
+                 % (esc(fill(self.L["text.version"], time=self.time)), esc(SEP), esc(self.status_text())))
+        h.append('<h1 class="hp-title">%s</h1>' % esc(d["title"]))
+        h.append('<section class="hp-why"><p class="hp-lbl">%s</p><p>%s</p></section>'
+                 % (esc(self.L["text.why"]), inline(d["why"], self.page_repo_url)))
+        if d.get("links"):
+            items = "".join("<li>%s</li>" % link(ln["url"], ln["label"]) for ln in d["links"])
+            h.append('<nav class="hp-links" aria-label="%s"><p class="hp-lbl">%s</p><ul>%s</ul></nav>'
+                     % (esc(self.L["text.links"]), esc(self.L["text.links"]), items))
+        h.append("</header>")
+        return "\n".join(h)
+
+    def bar(self):
+        if not self.has_answer_part():
+            return ""
+        if self.answered:
+            return '<p class="hp-notice">%s</p>' % esc(self.L["text.answered_notice"])
+        return ('<div class="hp-bar"><p class="hp-allrec">%s</p><p class="hp-store" id="hp-store" aria-live="polite">%s</p></div>'
+                % (esc(self.L["text.all_recommended"]), esc(self.L["text.store_connecting"])))
+
+    def reply(self):
+        if not self.has_answer_part() or self.answered:
+            return ""
+        return ('<section class="hp-reply" id="hp-reply" hidden>'
+                '<h2 class="hp-sec-title">%s</h2>'
+                '<textarea class="hp-reply-text" id="hp-reply-text" readonly aria-label="%s"></textarea>'
+                '<div class="hp-reply-actions"><button type="button" class="hp-copy" id="hp-copy">%s</button>'
+                '<span class="hp-copy-msg" id="hp-copy-msg" aria-live="polite"></span></div>'
+                '</section>'
+                % (esc(self.L["text.reply_title"]), esc(self.L["text.reply_title"]), esc(self.L["text.copy"])))
+
+    # 部品 ------------------------------------------------------------------
+
+    def sections(self):
+        out = []
+        for sec in self.data["sections"]:
+            if sec["type"] == "decisions":
+                out.append(self.decisions(sec))
+            elif sec["type"] == "bundle":
+                out.append(self.bundle(sec))
+            else:
+                out.append(self.findings(sec))
+        return "\n".join(out)
+
+    def decisions(self, sec):
+        cards = "\n".join(self.card(c, 3, self.page_repo_url) for c in sec["cards"])
+        return ('<section class="hp-sec hp-decisions"><h2 class="hp-sec-title">%s</h2><div class="hp-cards">\n%s\n</div></section>'
+                % (inline(sec["title"], self.page_repo_url), cards))
+
+    def bundle(self, sec):
+        out = ['<section class="hp-sec hp-bundle"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], self.page_repo_url)]
+        for g in sec["groups"]:
+            gid = len(self.groups)
+            src = g["source"]
+            # group の中の #N は group の送り元の repo_url だけを使う。無ければページの送り元へは戻らない。
+            repo_url = src.get("repo_url")
+            self.groups.append({"id": gid, "keys": [c["key"] for c in g["cards"]]})
+            out.append('<section class="hp-group" id="hp-group-%d">' % gid)
+            out.append('<p class="hp-src">%s</p>' % source_line(src, src.get("tmux")))
+            out.append('<h3 class="hp-group-title">%s</h3>' % inline(g["title"], repo_url))
+            if "why" in g:
+                out.append('<p class="hp-group-why">%s</p>' % inline(g["why"], repo_url))
+            gs = self.L["status.answered"] if self.answered else fill(self.L["status.awaiting"], n=self.open_count(g["cards"]))
+            out.append('<p class="hp-group-status" id="hp-group-status-%d">%s</p>' % (gid, esc(gs)))
+            out.append('<div class="hp-cards">\n%s\n</div></section>'
+                       % "\n".join(self.card(c, 4, repo_url) for c in g["cards"]))
+        out.append("</section>")
+        return "\n".join(out)
+
+    def card(self, c, level, repo_url):
+        key = c["key"]
+        L = self.L
+        ans = self.answers.get(key) if self.answered else None
+        choice = ans.get("choice") if ans else None
+        note = ans.get("note", "") if ans else ""
+        self.cards.append({"key": key, "options": [{"key": o["key"], "label": o["label"]} for o in c["options"]]})
+        rec_label = next(o["label"] for o in c["options"] if o["key"] == c["recommend"])
+        h = ['<article class="hp-card%s" id="hp-card-%s">' % (" is-locked" if self.answered else "", esc(key))]
+        head = '<div class="hp-card-head">'
+        if "tag" in c:
+            head += '<span class="hp-tag">%s</span>' % esc(c["tag"])
+        head += '<h%d class="hp-card-title">%s</h%d>' % (level, inline(c["title"], repo_url), level)
+        head += self.evidence(c.get("evidence")) + "</div>"
+        h.append(head)
+        h.append('<p class="hp-rec">%s<span class="hp-rec-choice">%s</span></p>'
+                 % (self.chip("hp-chip-rec", L["recommend"]), inline(rec_label, repo_url)))
+        h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], repo_url)))
+        if c.get("points"):
+            items = []
+            for p in c["points"]:
+                if isinstance(p, str):
+                    items.append("<li>%s</li>" % inline(p, repo_url))
+                else:
+                    items.append("<li>%s%s</li>" % (inline(p["text"], repo_url), self.evidence(p.get("evidence"))))
+            h.append('<p class="hp-lbl">%s</p><ul class="hp-points">%s</ul>' % (esc(L["text.points"]), "".join(items)))
+        title_attr = esc(c["title"])
+        buttons = []
+        for o in c["options"]:
+            pressed = "true" if choice == o["key"] else "false"
+            rec = self.chip("hp-chip-rec", L["recommend"]) if o["key"] == c["recommend"] else ""
+            buttons.append('<button type="button" class="hp-opt k-%s" id="hp-opt-%s-%s" aria-pressed="%s"%s>%s%s</button>'
+                           % (o.get("kind", "plain"), esc(key), esc(o["key"]), pressed,
+                              " disabled" if self.answered else "", esc(o["label"]), rec))
+        h.append('<div class="hp-choose" role="group" aria-label="%s">%s</div>' % (title_attr, "".join(buttons)))
+        if self.answered and not choice:
+            h.append('<p class="hp-unanswered">%s</p>' % esc(L["text.unanswered"]))
+        h.append('<textarea class="hp-note" id="hp-note-%s" placeholder="%s" aria-label="%s %s"%s>%s</textarea>'
+                 % (esc(key), esc(L["text.note_placeholder"]), title_attr, esc(L["text.note_placeholder"]),
+                    " disabled" if self.answered else "", esc(note)))
+        h.append('<p class="hp-saved" id="hp-saved-%s" aria-live="polite"></p>' % esc(key))
+        h.append("</article>")
+        return "\n".join(h)
+
+    def findings(self, sec):
+        L = self.L
+        repo_url = self.page_repo_url
+        out = ['<section class="hp-sec hp-findings"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], repo_url)]
+        if "lane" in sec:
+            out.append('<p class="hp-lane">%s</p>' % esc(fill(L["text.lane"], lane=sec["lane"])))
+        cols = (L["text.col_text"], L["text.col_severity"], L["text.col_adopted"], L["text.col_reason"])
+        out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
+                   % "".join("<th>%s</th>" % esc(c) for c in cols))
+        for it in sec["items"]:
+            out.append('<tr><td data-label="%s">%s%s</td><td data-label="%s">%s</td><td data-label="%s">%s</td><td data-label="%s">%s</td></tr>'
+                       % (esc(cols[0]), inline(it["text"], repo_url), self.evidence(it.get("evidence")),
+                          esc(cols[1]), self.chip("hp-sev-" + it["severity"], L["severity." + it["severity"]]),
+                          esc(cols[2]), self.chip("hp-ad-" + it["adopted"], L["adopted." + it["adopted"]]),
+                          esc(cols[3]), inline(it["reason"], repo_url)))
+        out.append("</tbody></table></div></section>")
+        return "\n".join(out)
+
+
+def render(data, labels, now, tmux, body=None):
+    """検証を通ったデータから、artifact に公開する断片を返す。"""
+    template = read_text(TEMPLATE, "型（template.html）")
+    for slot in TEMPLATE_SLOTS:
+        if template.count("{{%s}}" % slot) != 1:
+            raise LoadError("型（%s）に {{%s}} がちょうど1つあるべき所が %d 個ある"
+                            % (TEMPLATE, slot, template.count("{{%s}}" % slot)))
+    r = Renderer(data, labels, now, tmux)
+    header = r.header()
+    sections = r.sections()  # ここでカードと group を集める
+    page_data = {
+        "title": data["title"],
+        "time": r.time,
+        "status": data["status"],
+        "labels": labels,
+        "cards": r.cards,
+        "groups": r.groups,
+        "answers": data.get("answers") if r.answered else None,
+    }
+    values = {
+        "title": esc(data["title"]),
+        "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
+        "purpose": esc(data["purpose"]),
+        "status": esc(data["status"]),
+        "header": header,
+        "bar": r.bar(),
+        "body": (body or "").rstrip("\n"),
+        "sections": sections,
+        "reply": r.reply(),
+        "data": embed_json(page_data),
+        "js": read_text(JS, "JS（page.js）").rstrip("\n"),
+    }
+    return SLOT_RE.sub(lambda m: values[m.group(1)], template)
+
+
+STANDALONE_HEAD = ('<!doctype html>\n<html lang="ja">\n<head>\n<meta charset="utf-8">\n'
+                   '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+                   '</head>\n<body>\n')
+STANDALONE_TAIL = "</body>\n</html>\n"
+
+
+def standalone(fragment):
+    """断片を、手元のブラウザで開ける完全な文書で包む。中身は変えない。"""
+    return STANDALONE_HEAD + fragment + STANDALONE_TAIL
+
+
+# 完成した HTML の外部の読み込み。Google Fonts だけを許す（--body の断片から入ったものを含めて数える）。
+ALLOWED_LOADS = ("https://fonts.googleapis.com/", "https://fonts.gstatic.com/")
+_LOAD_TAG_RE = re.compile(r"<(script|img|iframe|frame|embed|object|source|audio|video|track|input|link)\b([^>]*)>", re.I)
+_LOAD_ATTR_RE = re.compile(r"""\b(src|href|data|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+_STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
+_STYLE_ATTR_RE = re.compile(r"""\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
+_CSS_LOAD_RE = re.compile(r"""@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^\s;)]+))|url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)""", re.I)
+
+
+def _external(url):
+    u = html.unescape(url).strip().lower()
+    if u.startswith("http://") or u.startswith("https://") or u.startswith("//"):
+        return not u.startswith(ALLOWED_LOADS)
+    return False
+
+
+def external_loads(fragment):
+    """許していない外部の読み込みを並べる。[(規則, 場所, 理由)] の形で返す。"""
+    found = []
+    for m in _LOAD_TAG_RE.finditer(fragment):
+        for a in _LOAD_ATTR_RE.finditer(m.group(2)):
+            url = next(g for g in a.groups()[1:] if g is not None)
+            if _external(url):
+                found.append(("<%s %s>" % (m.group(1).lower(), a.group(1).lower()), url))
+    css = [m.group(1) for m in _STYLE_BLOCK_RE.finditer(fragment)]
+    css += [m.group(1) or m.group(2) for m in _STYLE_ATTR_RE.finditer(fragment)]
+    for block in css:
+        for m in _CSS_LOAD_RE.finditer(block):
+            url = next((g for g in m.groups() if g is not None), "")
+            if _external(url):
+                found.append(("CSS の @import か url()", url))
+    return [("E-B1", "html", "許していない外部の読み込みがある（%s: %s）。読み込めるのは Google Fonts だけである" % f)
+            for f in found]
+
+
+# ---------------------------------------------------------------- 送り元の補助
+
+
+def _https_remote(url):
+    url = url.strip()
+    if url.endswith(".git"):
+        url = url[:-4]
+    m = re.match(r"^https?://(?:[^@/]+@)?([^/]+)/(.+)$", url)
+    if m:
+        return "https://%s/%s" % (m.group(1), m.group(2))
+    m = re.match(r"^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", url)
+    if m:
+        return "https://%s/%s" % (m.group(1), m.group(2))
+    m = re.match(r"^(?:[^@/]+@)?([^/:]+):(?!/)(.+)$", url)
+    if m:
+        return "https://%s/%s" % (m.group(1), m.group(2))
+    return None
+
+
+def _git(directory, *args):
+    try:
+        p = subprocess.run(["git", "-C", directory] + list(args), stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def source_from_env(git_dir, use_tmux):
+    """作ったセッションの送り元を引く。返すのは (送り元の辞書, 引けなかった理由の並び)。"""
+    src = {}
+    notes = []
+    if git_dir:
+        top = _git(git_dir, "rev-parse", "--show-toplevel")
+        if top is None:
+            notes.append("%s から git の作業ツリーを引けない" % git_dir)
+        else:
+            remote = _git(git_dir, "remote", "get-url", "origin")
+            url = _https_remote(remote) if remote else None
+            name = url.rstrip("/").rsplit("/", 1)[-1] if url else os.path.basename(top)
+            src["repo"] = name
+            if url:
+                src["repo_url"] = url
+            else:
+                notes.append("origin の URL を https の形に直せないので repo_url を省いた")
+            branch = _git(git_dir, "branch", "--show-current")
+            if branch:
+                src["branch"] = branch
+            else:
+                notes.append("いまのブランチを引けない（detached など）ので branch を省いた")
+    if use_tmux:
+        tmux, why = tmux_from_env()
+        if tmux:
+            src["tmux"] = tmux
+        else:
+            notes.append("tmux の項目を省いた: " + why)
+    return src, notes
+
+
 # ---------------------------------------------------------------- コマンド
+
+
+def report(errors):
+    for line in format_errors(errors):
+        print(line, file=sys.stderr)
+    print("誤りが %d 件ある。直してから作り直す。" % len(errors), file=sys.stderr)
 
 
 def cmd_check(args):
@@ -543,11 +1007,48 @@ def cmd_check(args):
         read_text(args.body, "--body の本文")
     errors = validate(data, has_body=bool(args.body))
     if errors:
-        for line in format_errors(errors):
-            print(line, file=sys.stderr)
-        print("誤りが %d 件ある。直してから作り直す。" % len(errors), file=sys.stderr)
+        report(errors)
         return 1
     print("誤りは無い: %s" % args.data, file=sys.stderr)
+    return 0
+
+
+def cmd_build(args):
+    labels = load_glossary(args.glossary)
+    data = load_data(args.data)
+    body = read_text(args.body, "--body の本文") if args.body else None
+    now = parse_now(args.now)
+    errors = validate(data, has_body=body is not None)
+    if errors:
+        report(errors)
+        return 1
+    tmux = data["source"].get("tmux")
+    if tmux is None and args.tmux == "auto":
+        tmux, why = tmux_from_env()
+        if tmux is None:
+            print("送り元の tmux の項目を省いた: %s" % why, file=sys.stderr)
+    fragment = render(data, labels, now, tmux, body)
+    errors = external_loads(fragment)
+    if errors:
+        report(errors)
+        return 1
+    out = standalone(fragment) if args.standalone else fragment
+    try:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(out)
+    except OSError as e:
+        raise LoadError("書き出し先（%s）に書けない: %s" % (args.out, e))
+    print("書いた: %s（%d バイト・%s）" % (args.out, len(out.encode("utf-8")),
+                                        "手元で開く完全な文書" if args.standalone else "artifact に公開する断片"),
+          file=sys.stderr)
+    return 0
+
+
+def cmd_source(args):
+    src, notes = source_from_env(args.git, args.tmux == "auto")
+    for n in notes:
+        print(n, file=sys.stderr)
+    print(json.dumps(src, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -558,6 +1059,18 @@ def make_parser():
     pc.add_argument("data", help="ページのデータ（JSON）")
     pc.add_argument("--body", help="読み物の本文の HTML の断片（sections が空でよくなる）")
     pc.add_argument("--glossary", default=DEFAULT_GLOSSARY, help=argparse.SUPPRESS)
+    pb = sub.add_parser("build", help="データを検証し、通ったときだけ HTML を書く")
+    pb.add_argument("data", help="ページのデータ（JSON）")
+    pb.add_argument("-o", "--out", required=True, help="書き出す HTML のパス")
+    pb.add_argument("--standalone", action="store_true", help="手元のブラウザで開く完全な文書にする（既定は artifact に公開する断片）")
+    pb.add_argument("--body", help="ヘッダーの下に差し込む本文の HTML の断片（信頼したコードとして扱う）")
+    pb.add_argument("--tmux", choices=("auto", "off"), default="auto",
+                    help="データに source.tmux が無いとき、作ったセッションのペインから引くか（既定 auto）")
+    pb.add_argument("--now", help="版の時刻（時差つきの ISO 8601。既定は走らせた時刻）")
+    pb.add_argument("--glossary", default=DEFAULT_GLOSSARY, help=argparse.SUPPRESS)
+    ps = sub.add_parser("source", help="作ったセッションの送り元の JSON を出す")
+    ps.add_argument("--git", help="repo・repo_url・branch を引く作業ツリーのディレクトリ")
+    ps.add_argument("--tmux", choices=("auto", "off"), default="auto", help="tmux の項目を引くか（既定 auto）")
     return ap
 
 
@@ -567,13 +1080,12 @@ def main(argv=None):
     if not args.cmd:
         ap.print_help(sys.stderr)
         return 2
+    commands = {"check": cmd_check, "build": cmd_build, "source": cmd_source}
     try:
-        if args.cmd == "check":
-            return cmd_check(args)
+        return commands[args.cmd](args)
     except LoadError as e:
         print("読み込めない: %s" % e, file=sys.stderr)
         return 2
-    return 2
 
 
 if __name__ == "__main__":
