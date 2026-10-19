@@ -130,3 +130,12 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-13 にあり�
 - **A8 の最初の試しは、意味の無い緑だった。** SKILL.md のコードブロックを取り出し、`<…>` を `sed` で置き換えて打ったところ、6本とも `rc=0` だった。ところが `sed` は、置き換え先の worktree のパスに入っている `#` を区切り文字と取り違えて失敗しており、`bash -c` に渡ったのは空の文字列だった。空のコマンドは 0 を返すので、6本とも緑に見えた。標準エラーの `bad flag in substitute command` と、書き出した HTML が無いことで気づいた。置き換えを Python の文字列の置き換えに替えて打ち直し、6本とも実際の出力（検証の文・書き出した断片と完全な文書・送り元の JSON・検査の `OK`）を伴って通ることを確かめた。期待した色が出たときに、その理由（書き出したファイルがあるか）まで見ないと、足場の失敗を通してしまう形で、注入された negative knowledge `01M00KCC…` の形そのものだった。
 - A1: 禁じた語の検索と `hub` の語の検索は、どちらも0件だった。`#` と数字の当たりは、`page.css` の36件がすべて CSS の色、`examples/` と `tests/` の当たりがすべて架空のリポジトリ（`example-org/shop`・`example-org/billing`・`mobile`）の番号で、SKILL.md と `glossary.md` には当たりが無かった。当たりの全件を一覧にして目で分けた。
 - A1b: フォルダを `cp -RL` で scratchpad へ写し（写しの中に symlink は0件）、作業ディレクトリを `/` にし、PATH を Python 3.9 だけにして（tmux も git も無い）走らせた。検査は115件で、git を使う1件だけが飛ばされ、残りは通った。見本の生成は通り、送り元の tmux は「TMUX_PANE が無い」として省かれた。`TMUX_PANE` を残して tmux だけを PATH から外したときも、「tmux を呼べない」として省かれ、止まらなかった。
+
+### I1-5・I1-6: CATALOG に足し、見本のページを公開した（2026-10-19）
+
+- `canonical/CATALOG.md` の Skills の表に `human-page` の行を足し、見出しの件数を 29 から 30 にした。表の行数（30）と `canonical/skills/` のディレクトリの数（30）が一致することを確かめた（A10）。
+- Artifact の道具の決まりどおり、最初に quickstart（intent は other）を通した。当てはまる型は無く、ふつうのページとして公開した。
+- `examples/decide.json` から作った断片を、`capabilities: {db: {}}` で private の artifact に公開した。URL は https://claude.ai/artifact/S42QtFnVmKGhDujRrzYnLu である。架空のデータであることは、公開の `description` に書いた。
+- A6: `ArtifactData` の list で `decisions` は空だった。見本のカードの key（`rollout`）で4つの項目の文書を1件書くと、list に version 1 で出た。消して、空に戻ることを確かめた。
+- A6b: Playwright のブラウザで artifact の URL を開くと、claude.ai のサインインの画面になった。ブラウザが claude.ai に入れていないので、画面の操作は自分ではできない。plan のとおり、統括を通して owner に、見本のページの1枚のカードで選択と補足を保存してもらうよう頼む。
+- 承認のあとの plan の直しを、plan の末尾の「ゲート3 のあとの変更」節に5件まとめた。どれも補正として申告する。
