@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "title": "決済の再試行の実装へのレビュー",
+  "purpose": "review",
+  "status": "live",
+  "why": "決済の再試行の実装（#212）に2つのモデルがレビューで出した指摘と、それぞれを採ったかを1枚で見られるようにする。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 212,
+    "branch": "fix/#212_payment_retry"
+  },
+  "links": [
+    {"label": "PR #215", "url": "https://github.com/example-org/shop/pull/215"}
+  ],
+  "sections": [
+    {
+      "type": "findings",
+      "title": "1つ目のモデルの指摘",
+      "lane": "Codex",
+      "items": [
+        {
+          "text": "冪等キーを依頼ごとに作り直しているので、再試行のたびに別の依頼として扱われる。",
+          "severity": "high",
+          "adopted": "adopted",
+          "reason": "最初の依頼のときに作ったキーを、再試行でも使い回す形に直した。",
+          "evidence": "verified"
+        },
+        {
+          "text": "タイムアウトの秒数が設定ファイルと定数の2か所にある。",
+          "severity": "mid",
+          "adopted": "partial",
+          "reason": "定数を消して設定ファイルに寄せた。設定ファイルの既定値の見直しは #216 に分けた。"
+        }
+      ]
+    },
+    {
+      "type": "findings",
+      "title": "2つ目のモデルの指摘",
+      "lane": "Cursor",
+      "items": [
+        {
+          "text": "再試行の間隔を固定にすると、障害のときに一斉に依頼が集まる。",
+          "severity": "mid",
+          "adopted": "adopted",
+          "reason": "間隔に小さなゆらぎを足した。",
+          "evidence": "sourced"
+        },
+        {
+          "text": "ログの文言を英語にそろえたほうがよい。",
+          "severity": "low",
+          "adopted": "rejected",
+          "reason": "運用の担当が日本語で検索しているので、いまの文言のままにする。",
+          "evidence": "guess"
+        }
+      ]
+    }
+  ]
+}

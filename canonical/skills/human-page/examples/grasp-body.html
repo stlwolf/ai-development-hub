@@ -1,0 +1,14 @@
+<style>
+  .grasp-flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .grasp-flow li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 0; }
+  .grasp-flow .name { font-family: var(--font-mono); font-weight: 500; color: var(--accent); }
+  .grasp-flow .to { color: var(--muted); font-size: 13px; }
+</style>
+<section class="hp-sec">
+  <h2 class="hp-sec-title">決済の依頼が流れる順</h2>
+  <ol class="grasp-flow">
+    <li><span class="name">checkout</span>: 注文を受けて、決済の依頼を作る。<span class="to">次は payment-client へ渡す。</span></li>
+    <li><span class="name">payment-client</span>: 決済の会社の API を呼ぶ。タイムアウトしたら呼び直す（ここが今回の障害の場所）。<span class="to">結果を ledger へ渡す。</span></li>
+    <li><span class="name">ledger</span>: 請求の記録を残す。二重の請求は、ここで初めて見つかった。</li>
+  </ol>
+</section>
