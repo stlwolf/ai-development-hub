@@ -3,7 +3,7 @@ id: "01M5CD2SKX5W6D1JNV6J00BT87"
 title: "#469 html-one-pager を実物の記録で直す（表の部品・本文の class・根拠の省略ほか）"
 date: 2026-10-20
 type: plan
-status: draft   # ゲート3 で承認済み（2026-10-20・owner・全部推奨どおり＋Q4）。実装中
+status: stable   # 実装完了（2026-10-20・PR #475）。受入の A1〜A13 をすべて満たした。ゲート3 の承認は ff30d3c の版で、承認のあとの補正は末尾の「ゲート3 のあとの変更」節（H1〜H5）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/469"
