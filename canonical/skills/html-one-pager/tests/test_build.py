@@ -101,6 +101,13 @@ CARD1 = ["sections", 0, "cards", 1]
 GROUP0 = ["sections", 0, "groups", 0]
 GROUP1 = ["sections", 0, "groups", 1]
 ITEM0 = ["sections", 0, "items", 0]
+COL0 = ["sections", 0, "columns", 0]
+COL1 = ["sections", 0, "columns", 1]
+ROW0 = ["sections", 0, "rows", 0]
+TRACKER0 = ["source", "trackers", 0]
+OPS = {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
+BLOCKS = ["sections", 0, "cards", 0, "blocks"]
+BLOCK0 = BLOCKS + [0]
 
 # (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
 BROKEN = [
@@ -120,7 +127,7 @@ BROKEN = [
     ("f3_sections_object", "decide", put(["sections"], {}), [("E-F3", "sections")], False),
     ("f3_cards_string", "decide", put(["sections", 0, "cards"], "x"), [("E-F3", "sections[0].cards")], False),
     ("f3_source_string_stops_children", "decide", put(["source"], "shop"), [("E-F3", "source")], False),
-    ("f3_missing_card_reason", "decide", drop(CARD0 + ["reason"]), [("E-F3", "sections[0].cards[0].reason")], False),
+    ("f3_missing_card_recommend", "decide", drop(CARD0 + ["recommend"]), [("E-F3", "sections[0].cards[0].recommend")], False),
     # E-H1 ページの文字
     ("h1_title_blank", "decide", put(["title"], "   "), [("E-H1", "title")], False),
     ("h1_why_empty", "decide", put(["why"], ""), [("E-H1", "why")], False),
@@ -219,6 +226,58 @@ BROKEN = [
     ("a1_at_null", "decide",
      both(put(["status"], "answered"), put(["answers"], {"retry_policy": {"choice": "go", "note": "", "at": None}})),
      [("E-A1", "answers.retry_policy.at")], False),
+    # 表の部品（E-S1・E-S3・E-F2・E-F3・E-T1・E-L1）
+    ("s1_table_no_columns", "table", put(["sections", 0, "columns"], []), [("E-S1", "sections[0].columns")], False),
+    ("s1_table_no_rows", "table", put(["sections", 0, "rows"], []), [("E-S1", "sections[0].rows")], False),
+    ("s1_table_title_empty", "table", put(["sections", 0, "title"], ""), [("E-S1", "sections[0].title")], False),
+    # 列の定義が壊れていると、行の key（no）を照らさない。誤りは列の1件だけ
+    ("s3_column_key_shape_stops_rows", "table", put(COL0 + ["key"], "No"), [("E-S3", "sections[0].columns[0].key")], False),
+    ("s3_column_key_duplicate", "table", put(COL1 + ["key"], "no"), [("E-S3", "sections[0].columns[1].key")], False),
+    ("s3_column_label_blank", "table", put(COL0 + ["label"], " "), [("E-S3", "sections[0].columns[0].label")], False),
+    ("s3_column_type_unknown", "table", put(COL1 + ["type"], "link"), [("E-S3", "sections[0].columns[1].type")], False),
+    ("s3_cell_text_empty", "table", put(ROW0 + ["what", "text"], ""), [("E-S3", "sections[0].rows[0].what.text")], False),
+    ("f2_row_unknown_key", "table", put(ROW0 + ["extra"], "x"), [("E-F2", "sections[0].rows[0].extra")], False),
+    ("f2_cell_unknown_item", "table", put(ROW0 + ["what", "colour"], "x"), [("E-F2", "sections[0].rows[0].what.colour")], False),
+    ("f3_row_missing_key", "table", drop(ROW0 + ["result"]), [("E-F3", "sections[0].rows[0].result")], False),
+    ("f3_text_cell_number", "table", put(ROW0 + ["no"], 1), [("E-F3", "sections[0].rows[0].no")], False),
+    ("f3_ref_cell_object", "table", put(ROW0 + ["refs"], {"x": 1}), [("E-F3", "sections[0].rows[0].refs")], False),
+    ("f3_ref_item_number", "table", put(ROW0 + ["refs"], ["#212", 215]), [("E-F3", "sections[0].rows[0].refs[1]")], False),
+    ("t1_cell_evidence", "table", put(ROW0 + ["what", "evidence"], "checked"), [("E-T1", "sections[0].rows[0].what.evidence")], False),
+    ("l1_number_and_id_in_one_cell", "table", put(ROW0 + ["refs"], ["A1 #212"]), [("E-L1", "sections[0].rows[0].refs[0]")], False),
+    ("l1_empty_ref_string", "table", put(ROW0 + ["tracker"], ""), [("E-L1", "sections[0].rows[0].tracker")], False),
+    ("l1_issue_number_too_long", "table", put(ROW0 + ["refs"], ["#12345678"]), [("E-L1", "sections[0].rows[0].refs[0]")], False),
+    ("l1_unregistered_prefix", "table", put(ROW0 + ["tracker"], "ENG-3"), [("E-L1", "sections[0].rows[0].tracker")], False),
+    # 識別子の形は、送り元が壊れていても見る（送り元に頼る判定だけを省く）
+    ("l1_shape_is_checked_even_if_source_is_broken", "table", both(put(["source", "repo"], ""), put(ROW0 + ["refs"], ["not-a-ref"])),
+     [("E-H2", "source.repo"), ("E-L1", "sections[0].rows[0].refs[0]")], False),
+    # 列が壊れていても、行がオブジェクトかは見る
+    ("f3_row_not_object_even_if_columns_are_broken", "table",
+     both(put(COL0 + ["label"], ""), put(["sections", 0, "rows", 1], 123)),
+     [("E-S3", "sections[0].columns[0].label"), ("E-F3", "sections[0].rows[1]")], False),
+    ("l1_issue_without_repo_url", "table", drop(["source", "repo_url"]),
+     [("E-L1", "sections[0].rows[0].refs[0]"), ("E-L1", "sections[0].rows[0].refs[1]"), ("E-L1", "sections[0].rows[1].refs[0]")], False),
+    # 送り元の trackers（E-H2・E-F2・E-F3）。送り元が壊れていると、識別子をリンクにできるかは判定しない（E-L1 を重ねない）
+    ("h2_tracker_prefix_lowercase_stops_l1", "table", put(TRACKER0 + ["prefix"], "ops"), [("E-H2", "source.trackers[0].prefix")], False),
+    ("h2_tracker_prefix_duplicate", "table", put(["source", "trackers"], [OPS, dict(OPS)]), [("E-H2", "source.trackers[1].prefix")], False),
+    ("h2_tracker_url_without_id", "table", put(TRACKER0 + ["url"], "https://tracker.example.com/browse/"),
+     [("E-H2", "source.trackers[0].url")], False),
+    ("h2_tracker_url_two_ids", "table", put(TRACKER0 + ["url"], "https://tracker.example.com/{id}/{id}"),
+     [("E-H2", "source.trackers[0].url")], False),
+    ("h2_tracker_url_javascript", "table", put(TRACKER0 + ["url"], "javascript:{id}"), [("E-H2", "source.trackers[0].url")], False),
+    ("f2_tracker_unknown_item", "table", put(TRACKER0 + ["name"], "x"), [("E-F2", "source.trackers[0].name")], False),
+    ("f3_trackers_object", "table", put(["source", "trackers"], {}), [("E-F3", "source.trackers")], False),
+    ("h2_group_tracker_prefix", "bundle", put(GROUP0 + ["source", "trackers"], [{"prefix": "ops", "url": OPS["url"]}]),
+     [("E-H2", "sections[0].groups[0].source.trackers[0].prefix")], False),
+    # カードの塊（blocks）
+    ("c5_blocks_empty", "confirm", put(BLOCKS, []), [("E-C5", "sections[0].cards[0].blocks")], False),
+    ("c5_block_title_empty", "confirm", put(BLOCK0 + ["title"], ""), [("E-C5", "sections[0].cards[0].blocks[0].title")], False),
+    ("c5_block_points_empty", "confirm", put(BLOCK0 + ["points"], []), [("E-C5", "sections[0].cards[0].blocks[0].points")], False),
+    ("c5_block_point_empty", "confirm", put(BLOCK0 + ["points", 0], " "), [("E-C5", "sections[0].cards[0].blocks[0].points[0]")], False),
+    ("f3_blocks_object", "confirm", put(BLOCKS, {}), [("E-F3", "sections[0].cards[0].blocks")], False),
+    ("f3_block_missing_points", "confirm", drop(BLOCK0 + ["points"]), [("E-F3", "sections[0].cards[0].blocks[0].points")], False),
+    ("f2_block_unknown_item", "confirm", put(BLOCK0 + ["heading"], "x"), [("E-F2", "sections[0].cards[0].blocks[0].heading")], False),
+    ("t1_block_point_evidence", "confirm", put(["sections", 0, "cards", 0, "blocks", 1, "points", 0, "evidence"], "maybe"),
+     [("E-T1", "sections[0].cards[0].blocks[1].points[0].evidence")], False),
     # 独立した誤り2つは2件とも出る
     ("two_independent_errors", "decide", both(put(["title"], ""), put(CARD0 + ["recommend"], "ok")),
      [("E-C3", "sections[0].cards[0].recommend"), ("E-H1", "title")], False),
@@ -227,9 +286,15 @@ BROKEN = [
 
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
-        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True)):
+        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False), ("confirm", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
+
+    def test_card_without_reason_is_allowed(self):
+        # 根拠（reason）は任意。書いたのに空なら E-C4（BROKEN の c4_reason_empty）
+        d = example("decide")
+        del d["sections"][0]["cards"][0]["reason"]
+        self.assertEqual(build.validate(d), [])
 
     def test_answered_with_null_choice_is_allowed(self):
         d = example("decide")
@@ -259,7 +324,7 @@ for _name, _base, _mutate, _expected, _has_body in BROKEN:
 class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
-                 "E-C5", "E-T1", "E-S1", "E-S2", "E-A1"}
+                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
 
@@ -282,6 +347,15 @@ class LoadStage(unittest.TestCase):
     def test_example_check_exits_0(self):
         rc, _, err = run_cli("check", os.path.join(EXAMPLES, "decide.json"))
         self.assertEqual(rc, 0, err)
+
+    def test_check_with_body_accepts_a_reading_page(self):
+        # SKILL.md のコマンドの節に載せた check --body の形。--body が無ければ、部品も本文も無いページとして止まる
+        data = os.path.join(EXAMPLES, "grasp.json")
+        rc, _, err = run_cli("check", data, "--body", os.path.join(EXAMPLES, "grasp-body.html"))
+        self.assertEqual(rc, 0, err)
+        rc, _, err = run_cli("check", data)
+        self.assertEqual(rc, 1)
+        self.assertIn("E-S1 sections: 部品が1つも無く、--body の本文も無い", err)
 
     def test_data_error_exits_1_with_rule_line(self):
         d = example("decide")
@@ -446,7 +520,85 @@ class Links(unittest.TestCase):
         self.assertIn("<code>charge</code>", render_page("decide"))
 
 
-ATTACKS = ("</script><script>alert(1)</script>", "\"><img src=x onerror=alert(1)>", "`</code><b>`")
+def a_tag(url, text):
+    return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (url, text)
+
+
+TRACKER_URL = "https://tracker.example.com/browse/"
+
+
+class TableAndTrackerLinks(unittest.TestCase):
+    """表の識別子の列と、外部の課題管理の ID のリンク。"""
+
+    def test_ref_cells_keep_their_text_and_link(self):
+        f = render_page("table")
+        self.assertIn(a_tag("https://github.com/example-org/shop/issues/212", "#212"), f)
+        self.assertIn(a_tag("https://github.com/example-org/shop/issues/215", "PR #215"), f)
+        self.assertIn(a_tag(TRACKER_URL + "OPS-42", "OPS-42") + a_tag(TRACKER_URL + "OPS-43", "OPS-43"), f)
+        # 空の配列は空の欄になる
+        self.assertIn('<td class="hp-ref-cell" data-label="外部の課題"></td>', f)
+        self.assertIn('<td class="hp-ref-cell" data-label="issue / PR"></td>', f)
+
+    def test_cells_are_labelled_for_narrow_screens(self):
+        f = render_page("table")
+        self.assertEqual(re.findall(r"<th>(.*?)</th>", f), ["番号", "issue / PR", "外部の課題", "中身", "結果"])
+        self.assertEqual(f.count('data-label="番号"'), 3)
+        self.assertIn('<td data-label="結果"></td>', f)
+
+    def test_text_cells_use_the_same_conversion(self):
+        f = render_page("table")
+        self.assertIn("<code>charge</code>", f)
+        self.assertIn(a_tag(TRACKER_URL + "OPS-41", "OPS-41") + " の記録を元にする。", f)
+        self.assertIn('<span class="hp-chip hp-ev-sourced">出典あり・未確認</span>', f)
+
+    def test_ids_in_text_are_linked_only_where_they_stand_alone(self):
+        text = ("OPS-41 と `OPS-42` と https://x.example/OPS-43 と XOPS-44 と OPSX-45 と "
+                "feature/OPS-46_x と ENG-47 と（OPS-48）。")
+        f = render_page("decide", both(put(["source", "trackers"], [OPS]), put(CARD0 + ["points", 0], text)))
+        point = re.search(r'<ul class="hp-points"><li>(.*?)</li>', f).group(1)
+        self.assertEqual(re.findall(r'href="([^"]*)"', point),
+                         [TRACKER_URL + "OPS-41", "https://x.example/OPS-43", TRACKER_URL + "OPS-48"])
+        self.assertIn("<code>OPS-42</code>", point)
+        for plain in ("XOPS-44", "OPSX-45", "feature/OPS-46_x", "ENG-47"):
+            self.assertIn(" %s " % plain, point)
+
+    def test_long_numbers_are_linked(self):
+        # ID の数字の桁に上限は置かない（表の欄でも文字列でも）
+        d = example("table")
+        d["sections"][0]["rows"][0]["tracker"] = "OPS-1234567890"
+        self.assertEqual(build.validate(d), [])
+        f = render_page("decide", both(put(["source", "trackers"], [OPS]), put(CARD0 + ["points", 0], "OPS-1234567890 を見る")))
+        self.assertIn(a_tag(TRACKER_URL + "OPS-1234567890", "OPS-1234567890"), f)
+
+    def test_longer_prefix_is_not_cut_by_a_shorter_one(self):
+        trackers = [{"prefix": "OP", "url": "https://a.example/{id}"}, {"prefix": "OPS", "url": "https://b.example/{id}"}]
+        f = render_page("decide", both(put(["source", "trackers"], trackers), put(CARD0 + ["points", 0], "OP-1 と OPS-2")))
+        self.assertIn(a_tag("https://a.example/OP-1", "OP-1") + " と " + a_tag("https://b.example/OPS-2", "OPS-2"), f)
+
+    def test_groups_use_only_their_own_trackers(self):
+        g0 = {"prefix": "OPS", "url": "https://billing.example/{id}"}
+        mutate = both(put(["source", "trackers"], [OPS]), put(GROUP0 + ["source", "trackers"], [g0]),
+                      put(GROUP0 + ["cards", 0, "points", 1], "OPS-1 を見る。"),
+                      put(GROUP1 + ["cards", 0, "points", 0], "OPS-2 を見る。"))
+        f = render_page("bundle", mutate)
+        self.assertIn(a_tag("https://billing.example/OPS-1", "OPS-1"), f)
+        # group の送り元に trackers が無ければ、ページの送り元へは戻らない
+        self.assertIn("<li>OPS-2 を見る。", f)
+        self.assertNotIn("OPS-2</a>", f)
+
+    def test_titles_and_buttons_are_not_converted(self):
+        mutate = both(put(["source", "trackers"], [OPS]), put(["title"], "OPS-41 の判断"),
+                      put(CARD0 + ["options", 1, "label"], "OPS-41 に寄せる"))
+        f = render_page("decide", mutate)
+        self.assertIn("<title>OPS-41 の判断</title>", f)
+        self.assertIn('<h1 class="hp-title">OPS-41 の判断</h1>', f)
+        self.assertRegex(f, r'<button [^>]*>OPS-41 に寄せる</button>')
+
+    def test_trackers_without_ids_change_nothing(self):
+        self.assertEqual(render_page("decide", put(["source", "trackers"], [OPS])), render_page("decide"))
+
+
+ATTACKS =("</script><script>alert(1)</script>", "\"><img src=x onerror=alert(1)>", "`</code><b>`")
 
 
 class Escaping(unittest.TestCase):
@@ -480,11 +632,26 @@ class Escaping(unittest.TestCase):
         self.assertIn(chr(92) + "u003c/script", data)
         self.assertEqual(json.loads(data)["title"], a)
 
+    def test_table_strings_stay_text(self):
+        # 列の見出し（th と data-label 属性）・欄の文字・trackers から作る URL（href 属性）
+        a, b, c = ATTACKS
+        mutate = both(put(["sections", 0, "columns", 3, "label"], b), put(ROW0 + ["what"], a),
+                      put(["sections", 0, "rows", 1, "result"], c + " " + a),
+                      put(TRACKER0 + ["url"], 'https://tracker.example.com/{id}"onmouseover="alert(1)'))
+        f = render_page("table", mutate)
+        self.assertNotIn("<script>alert(1)", f)
+        self.assertNotIn("<img src=x", f)
+        self.assertNotIn('"onmouseover="', f)
+        self.assertIn("<th>&quot;&gt;&lt;img src=x onerror=alert(1)&gt;</th>", f)
+        self.assertIn('data-label="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"', f)
+        self.assertIn('href="https://tracker.example.com/OPS-41&quot;onmouseover=&quot;alert(1)"', f)
+        self.assertIn("<code>&lt;/code&gt;&lt;b&gt;</code>", f)
+
 
 class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
-    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"))
+    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -563,6 +730,82 @@ class Contract(unittest.TestCase):
         with open(os.path.join(EXAMPLES, "grasp-body.html"), encoding="utf-8") as fh:
             used = set(re.findall(r"var\((--[a-z0-9-]+)\)", css + fh.read()))
         self.assertEqual(used - defined, set())
+
+
+def main_of(fragment):
+    """部品が描く <main class="hp-main"> の中身を返す。"""
+    start = fragment.index('<main class="hp-main">') + len('<main class="hp-main">')
+    return fragment[start:fragment.index("</main>")]
+
+
+# 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
+BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm")
+
+
+class BodyLooks(unittest.TestCase):
+    """本文（--body）の素の要素の見た目と、本文で使える class の一覧。"""
+
+    def test_listed_classes_are_defined_in_css(self):
+        with open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8") as fh:
+            text = fh.read()
+        sec = re.search(r"^## 本文（`--body`）の見た目\n(.*?)^## ", text, re.S | re.M).group(1)
+        listed = set(re.findall(r"`(hp-[a-z0-9-]+)`", sec))
+        self.assertGreaterEqual(len(listed), 10)
+        with open(build.CSS, encoding="utf-8") as fh:
+            defined = set(re.findall(r"\.(hp-[a-z0-9-]+)", fh.read()))
+        self.assertEqual(listed - defined, set())
+
+    def test_bare_rules_only_touch_elements_without_class(self):
+        # セレクター全体を :where() で包み（詳細度 0）、.hp-main の中の class を持たない要素だけに当てる。
+        with open(build.CSS, encoding="utf-8") as fh:
+            css = re.sub(r"/\*.*?\*/", "", fh.read(), flags=re.S)
+        selectors = [s.strip() for s in re.findall(r"([^{}]*:not\(\[class\]\)[^{}]*)\{", css)]
+        self.assertGreaterEqual(len(selectors), 9)
+        # 表のセルは、表とセルの両方が class を持たないときだけ（class の付いたセルにも効かない）
+        part_re = r"^\.hp-main (%s):not\(\[class\]\)( (th|td):not\(\[class\]\))?$" % "|".join(BARE_TAGS)
+        for sel in selectors:
+            with self.subTest(selector=sel):
+                self.assertTrue(sel.startswith(":where(") and sel.endswith(")"))
+                for part in sel[len(":where("):-1].split(","):
+                    self.assertRegex(part.strip(), part_re)
+
+    def test_generated_parts_do_not_meet_bare_rules(self):
+        # 部品が .hp-main の中に描く要素は class を持つので、素の要素の規則は部品に効かない。
+        for name in GENERATED_PAGES:
+            with self.subTest(page=name):
+                found = re.findall(r"<(%s)\b([^>]*)>" % "|".join(BARE_TAGS), main_of(render_page(name)))
+                self.assertTrue(found)
+                for tag, attrs in found:
+                    self.assertIn('class="', attrs, tag)
+
+
+class SkillMdExamples(unittest.TestCase):
+    """SKILL.md に載せた JSON の例は、載せた形のまま検証を通る（部品・カード・送り元・保存される答え）。"""
+
+    def test_json_examples_validate(self):
+        with open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8") as fh:
+            blocks = re.findall(r"^```json\n(.*?)^```", fh.read(), re.S | re.M)
+        self.assertGreaterEqual(len(blocks), 3)
+        for i, text in enumerate(blocks):
+            with self.subTest(block=i, head=text[:40]):
+                obj = json.loads(text)
+                if "type" in obj:
+                    d = example("table")
+                    d["sections"] = [obj]
+                elif "options" in obj:
+                    d = example("decide")
+                    d["sections"][0]["cards"] = [obj]
+                elif "repo" in obj:
+                    d = example("table")
+                    d["source"] = obj
+                elif "choice" in obj:
+                    d = example("decide")
+                    d["status"] = "answered"
+                    d["answers"] = {obj["key"]: {k: obj[k] for k in ("choice", "note", "at")}}
+                else:
+                    self.fail("検査の知らない形の例である")
+                self.assertEqual(build.validate(d), [])
 
 
 class ExternalLoads(unittest.TestCase):
@@ -657,7 +900,7 @@ class ElementIds(unittest.TestCase):
         return re.findall(r'\bid="([^"]*)"', f)
 
     def test_ids_are_unique_in_every_example(self):
-        for name, body in (("decide", None), ("bundle", None), ("review", None)):
+        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None)):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -701,6 +944,88 @@ class AnsweredPage(unittest.TestCase):
         self.assertIn('id="hp-store"', f)
         self.assertIn('id="hp-reply" hidden', f)
         self.assertIsNone(json.loads(embedded(f))["answers"])
+
+
+class Reason(unittest.TestCase):
+    """根拠を書かないカードには根拠の行が出ず、推奨の行と選択肢はそのまま出る。"""
+
+    def test_card_without_reason_has_no_reason_line(self):
+        f = render_page("decide", drop(CARD0 + ["reason"]))
+        card = re.search(r'<article class="hp-card" id="hp-card-retry_policy">(.*?)</article>', f, re.S).group(1)
+        self.assertNotIn("hp-reason", card)
+        self.assertIn('<p class="hp-rec"><span class="hp-chip hp-chip-rec">推奨</span><span class="hp-rec-choice">この形で進める</span></p>', card)
+        self.assertEqual(f.count('<p class="hp-reason">'), 2)
+
+    def test_reply_and_saved_data_do_not_carry_reason(self):
+        f = render_page("decide", drop(CARD0 + ["reason"]))
+        self.assertEqual(json.loads(embedded(f))["cards"], json.loads(embedded(render_page("decide")))["cards"])
+
+
+class Blocks(unittest.TestCase):
+    """カードの小見出し付きの要点の塊。"""
+
+    def test_blocks_follow_points_with_a_lower_heading(self):
+        f = render_page("confirm")
+        card = re.search(r'<article class="hp-card" id="hp-card-intake_216">(.*?)</article>', f, re.S).group(1)
+        self.assertEqual(re.findall(r'<h4 class="hp-block-title">(.*?)</h4>', card),
+                         ["この issue でやること", "issue に書いていないが要ること", "どの観点で見たか"])
+        self.assertNotIn('<p class="hp-reason">', card)
+        self.assertNotIn('<p class="hp-lbl">要点</p>', card)
+        self.assertIn(a_tag(TRACKER_URL + "OPS-42", "OPS-42"), card)
+        self.assertIn('<span class="hp-chip hp-ev-guess">推測</span>', card)
+
+    def test_points_come_before_blocks(self):
+        f = render_page("confirm", put(["sections", 0, "cards", 0, "points"], ["先に読む要点"]))
+        card = re.search(r'<article class="hp-card" id="hp-card-intake_216">(.*?)</article>', f, re.S).group(1)
+        self.assertLess(card.index("先に読む要点"), card.index('class="hp-block"'))
+
+    def test_heading_level_follows_the_card_title_in_a_bundle(self):
+        block = {"title": "やること", "points": ["#31 を見る"]}
+        f = render_page("bundle", put(GROUP0 + ["cards", 0, "blocks"], [block]))
+        self.assertIn('<h5 class="hp-block-title">やること</h5>', f)
+        self.assertIn(a_tag("https://github.com/example-org/billing/issues/31", "#31") + " を見る", f)
+
+    def test_block_strings_stay_text(self):
+        a, b, c = ATTACKS
+        f = render_page("confirm", both(put(BLOCK0 + ["title"], b), put(BLOCK0 + ["points", 0], c + " " + a)))
+        self.assertNotIn("<script>alert(1)", f)
+        self.assertNotIn("<img src=x", f)
+        self.assertIn('<h4 class="hp-block-title">&quot;&gt;&lt;img src=x onerror=alert(1)&gt;</h4>', f)
+        self.assertIn("<code>&lt;/code&gt;&lt;b&gt;</code>", f)
+
+    def test_saved_data_does_not_carry_blocks(self):
+        cards = json.loads(embedded(render_page("confirm")))["cards"]
+        self.assertEqual([sorted(c) for c in cards], [["key", "options"], ["key", "options"]])
+
+
+class SaveCode(unittest.TestCase):
+    """保存のコード（page.js）と埋め込みのデータは、答える部品のあるページにだけ入る。"""
+
+    def test_pages_with_answer_parts_carry_the_save_code(self):
+        with open(build.JS, encoding="utf-8") as fh:
+            js = fh.read().rstrip("\n")
+        for name in ("decide", "bundle"):
+            with self.subTest(page=name):
+                f = render_page(name)
+                self.assertEqual(f.count("<script"), 2)
+                self.assertIn("<script>\n%s\n</script>" % js, f)
+                self.assertIsInstance(json.loads(embedded(f))["cards"], list)
+
+    def test_pages_without_answer_parts_have_no_scripts(self):
+        with open(os.path.join(EXAMPLES, "grasp-body.html"), encoding="utf-8") as fh:
+            body = fh.read()
+        for name, b in (("review", None), ("grasp", body), ("table", None)):
+            with self.subTest(page=name):
+                f = render_page(name, body=b)
+                self.assertNotIn("<script", f)
+                self.assertNotIn("claude.use", f)
+                self.assertNotIn('id="hp-data"', f)
+
+    def test_a_card_added_to_a_reading_page_brings_the_save_code(self):
+        card = example("decide")["sections"][0]
+        f = render_page("review", lambda d: d["sections"].append(card))
+        self.assertEqual(f.count("<script"), 2)
+        self.assertIn("claude.use", f)
 
 
 class SourceCommand(unittest.TestCase):
