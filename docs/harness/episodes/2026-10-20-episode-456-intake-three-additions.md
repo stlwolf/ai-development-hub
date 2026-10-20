@@ -92,3 +92,10 @@ knowledge_observations:
 昇格の印: 「issue 側に、前提・目標・きっかけの正本を持つ」案が #412（案F）と #456（案I）の設計SO で続けて出た。issue を作る側の設計の論点として、どこかに行き先を付けて残すべきかもしれない
 
 - 直したあと、`check.py`（変更後の写しで55項目 PASS・変更前で47項目 FAIL と番兵8項目 PASS）・`partial_revert.py`（NG 0件）・`verify_plan()`（0件）を通し直した。plan の「直す箇所と直し方」節は直した `changes.py` から生成し直した。
+
+### P3: 報告して止まった（2026-10-20）
+
+- plan と episode を `83e1b1b` としてコミットし、枝を push した。PR はまだ作っていない。
+- 報告を `.oe/report-456.md`（作業層）に書いた。ゲート3 で owner に決めてほしいこととして、DJ-7（確定版の形の例に issue の URL を入れない読み）・DJ-5（20行の目安を20のままにする）・DJ-4（「修正範囲」の例の置き場）・DJ-2 と設計SO の案 H・I の扱い、の4点を挙げた。
+- 送る直前に `oe-tree` で、宛先の統括が root `cockpit` として生きていることを確かめ、`projects/orchestration-engine/bin/oe-send` で1行のポインタを送った。exit 0（配送の成功を意味しない）。
+- ここで止まり、ゲート3（owner の plan 承認）を待つ。承認は「報告の宛先」の統括からの送信で届いたものだけを数える。
