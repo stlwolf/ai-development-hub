@@ -341,6 +341,15 @@ class LoadStage(unittest.TestCase):
         rc, _, err = run_cli("check", os.path.join(EXAMPLES, "decide.json"))
         self.assertEqual(rc, 0, err)
 
+    def test_check_with_body_accepts_a_reading_page(self):
+        # SKILL.md のコマンドの節に載せた check --body の形。--body が無ければ、部品も本文も無いページとして止まる
+        data = os.path.join(EXAMPLES, "grasp.json")
+        rc, _, err = run_cli("check", data, "--body", os.path.join(EXAMPLES, "grasp-body.html"))
+        self.assertEqual(rc, 0, err)
+        rc, _, err = run_cli("check", data)
+        self.assertEqual(rc, 1)
+        self.assertIn("E-S1 sections: 部品が1つも無く、--body の本文も無い", err)
+
     def test_data_error_exits_1_with_rule_line(self):
         d = example("decide")
         d["sections"][0]["cards"][0]["recommend"] = "ok"
