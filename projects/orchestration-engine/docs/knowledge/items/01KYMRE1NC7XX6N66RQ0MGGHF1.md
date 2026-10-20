@@ -49,6 +49,10 @@ observations:
     ref: "#403"
     state: externally_verified
     note: "確実に読み込まれるという上流の断定を裏付け不足と書いて実測に回した。実測で委譲と子の側の不発火が実際に出た"
+  - date: 2026-10-20
+    ref: "#407"
+    state: externally_verified
+    note: "issue 本文の「宣言は3項目」「2.1.289 で止まった」は公式の文書と会話記録に当てて書いた（4項目・中継の拒否2件はどちらも 2.1.289 だが同じ規則の拒否は後の版にもある）。一方、engine の verb の冒頭の説明の「read-only」を、引数の扱いを確かめずに verb 全体の性質として写し、設計SO（ゲート2）が oe-confirm の状態を書く引数と oe-tree --pick を挙げて突いた"
 
   - date: 2026-09-13
     ref: "#390"
