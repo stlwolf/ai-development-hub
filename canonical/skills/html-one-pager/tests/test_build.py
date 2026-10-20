@@ -750,6 +750,36 @@ class AnsweredPage(unittest.TestCase):
         self.assertIsNone(json.loads(embedded(f))["answers"])
 
 
+class SaveCode(unittest.TestCase):
+    """保存のコード（page.js）と埋め込みのデータは、答える部品のあるページにだけ入る。"""
+
+    def test_pages_with_answer_parts_carry_the_save_code(self):
+        with open(build.JS, encoding="utf-8") as fh:
+            js = fh.read().rstrip("\n")
+        for name in ("decide", "bundle"):
+            with self.subTest(page=name):
+                f = render_page(name)
+                self.assertEqual(f.count("<script"), 2)
+                self.assertIn("<script>\n%s\n</script>" % js, f)
+                self.assertIsInstance(json.loads(embedded(f))["cards"], list)
+
+    def test_pages_without_answer_parts_have_no_scripts(self):
+        with open(os.path.join(EXAMPLES, "grasp-body.html"), encoding="utf-8") as fh:
+            body = fh.read()
+        for name, b in (("review", None), ("grasp", body)):
+            with self.subTest(page=name):
+                f = render_page(name, body=b)
+                self.assertNotIn("<script", f)
+                self.assertNotIn("claude.use", f)
+                self.assertNotIn('id="hp-data"', f)
+
+    def test_a_card_added_to_a_reading_page_brings_the_save_code(self):
+        card = example("decide")["sections"][0]
+        f = render_page("review", lambda d: d["sections"].append(card))
+        self.assertEqual(f.count("<script"), 2)
+        self.assertIn("claude.use", f)
+
+
 class SourceCommand(unittest.TestCase):
     def test_remote_urls(self):
         cases = {

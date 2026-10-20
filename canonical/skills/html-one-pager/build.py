@@ -549,7 +549,7 @@ def format_errors(errors):
 TEMPLATE = os.path.join(HERE, "template.html")
 CSS = os.path.join(HERE, "page.css")
 JS = os.path.join(HERE, "page.js")
-TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "data", "js")
+TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "scripts")
 SLOT_RE = re.compile(r"\{\{([a-z]+)\}\}")
 
 # 版の時刻は JST（UTC+9）で書く。時間帯の表に頼らないよう、固定の時差で直す。
@@ -875,15 +875,21 @@ def render(data, labels, now, tmux, body=None):
     r = Renderer(data, labels, now, tmux)
     header = r.header()
     sections = r.sections()  # ここでカードと group を集める
-    page_data = {
-        "title": data["title"],
-        "time": r.time,
-        "status": data["status"],
-        "labels": labels,
-        "cards": r.cards,
-        "groups": r.groups,
-        "answers": data.get("answers") if r.answered else None,
-    }
+    # 答える部品の無いページには、保存のコード（page.js）とそれが読むデータを入れない。
+    # page.js はカードが無いと何もしないので振る舞いは変わらず、ページの中に保存先を使うコードが残らない。
+    scripts = ""
+    if r.has_answer_part():
+        page_data = {
+            "title": data["title"],
+            "time": r.time,
+            "status": data["status"],
+            "labels": labels,
+            "cards": r.cards,
+            "groups": r.groups,
+            "answers": data.get("answers") if r.answered else None,
+        }
+        scripts = ('<script type="application/json" id="hp-data">%s</script>\n<script>\n%s\n</script>'
+                   % (embed_json(page_data), read_text(JS, "JS（page.js）").rstrip("\n")))
     values = {
         "title": esc(data["title"]),
         "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
@@ -894,8 +900,7 @@ def render(data, labels, now, tmux, body=None):
         "body": (body or "").rstrip("\n"),
         "sections": sections,
         "reply": r.reply(),
-        "data": embed_json(page_data),
-        "js": read_text(JS, "JS（page.js）").rstrip("\n"),
+        "scripts": scripts,
     }
     return SLOT_RE.sub(lambda m: values[m.group(1)], template)
 
