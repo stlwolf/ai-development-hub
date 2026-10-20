@@ -300,6 +300,9 @@ code {
 }
 .hp-table th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .hp-table td .hp-chip { margin-left: 0; }
+/* 表の部品の識別子の列: 識別子ごとに折り返さず、識別子のあいだで折り返す */
+.hp-refs { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.hp-refs a { white-space: nowrap; }
 
 /* 本文（--body）の素の要素: .hp-main の中の class を持たない要素だけに当てる。
    class の付いた要素（部品と、書き手が class を付けたもの）には効かない。

@@ -46,8 +46,8 @@ claude.ai の artifact に公開するときは、Artifact の道具の説明と
 | 目的（`purpose`） | 勧める部品 | 答える部品 | 状態（`status`）の目安 |
 |---|---|---|---|
 | `decide`（判断してもらう） | 判定カード（`decisions`）・判断待ちの束（`bundle`） | ふつうは持つ | 答えを待つ間は `awaiting`。束のように判断が足されていくなら `live`。回収したら `answered` |
-| `grasp`（把握してもらう・見取り図） | `--body` の本文 | ふつうは持たない。確かめてほしい点があれば判定カードを足してよい | `live` |
-| `review`（レビューの結果を見てもらう） | 指摘の一覧（`findings`） | ふつうは持たない。採否を決めてほしい指摘があれば判定カードを足す | `live`。判定カードを足したら `awaiting` |
+| `grasp`（把握してもらう・見取り図） | `--body` の本文・表（`table`） | ふつうは持たない。確かめてほしい点があれば判定カードを足してよい | `live` |
+| `review`（レビューの結果を見てもらう） | 指摘の一覧（`findings`）・表（`table`） | ふつうは持たない。採否を決めてほしい指摘があれば判定カードを足す | `live`。判定カードを足したら `awaiting` |
 
 目的は部品の組み合わせを縛らない。答える部品の有無は、目的と別に選んでよい。
 
@@ -65,6 +65,7 @@ claude.ai の artifact に公開するときは、Artifact の道具の説明と
 - `examples/bundle.json`: 別のリポジトリの2つの作業の判断待ちをまとめたページ
 - `examples/review.json`: レビューの指摘の一覧のページ
 - `examples/grasp.json` と `examples/grasp-body.html`: 読み物のページ（ヘッダーだけをそろえる）
+- `examples/table.json`: 表の部品と、外部の課題管理の ID のリンクのページ
 
 | 場所 | 項目 | 必須 | 決まり |
 |---|---|---|---|
@@ -82,9 +83,11 @@ claude.ai の artifact に公開するときは、Artifact の道具の説明と
 | source | `issue` | 任意 | issue の番号（1以上の整数） |
 | source | `branch` | 任意 | ブランチの名前 |
 | source | `tmux` | 任意 | `{window, pane, name}`。ページの `source` で書かなければ、作ったセッションのペインから引く |
+| source | `trackers` | 任意 | 外部の課題管理の `{prefix, url}` の並び。書き方は「表の部品の書き方」の節 |
 | `decisions` | `title`・`cards` | 必須 | 判定カードを1枚以上 |
 | `bundle` | `title`・`groups` | 必須 | 各 group は `source`・`title`・`cards`（必須）と `why`（任意） |
 | `findings` | `title`・`items` | 必須 | `lane`（任意・どのモデルの指摘か）。各 item は `text`・`severity`（`high`・`mid`・`low`）・`adopted`（`adopted`・`partial`・`rejected`）・`reason` が必須で、`evidence` は任意 |
+| `table` | `title`・`columns`・`rows` | 必須 | 列を1つ以上・行を1つ以上。書き方は「表の部品の書き方」の節 |
 | カード | `key` | 必須 | 英小文字で始まり、英小文字・数字・`_`・`-` が続く64文字まで。ページ全体で重ねない（保存先の文書の id になる） |
 | カード | `title`・`recommend`・`reason`・`options` | 必須 | `recommend` は推奨する選択肢の key。`reason` は推奨の根拠。`options` は2つ以上 |
 | カード | `tag`・`points`・`evidence` | 任意 | `tag` は判断の番号などの短い札。`points` の各要素は文字列か `{text, evidence}` |
@@ -93,7 +96,48 @@ claude.ai の artifact に公開するときは、Artifact の道具の説明と
 - 推奨は先に出る。カードの中で、タイトルのすぐ下に推奨の選択肢と根拠が出て、選択肢のボタンにも「推奨」の札が付く。
 - 確かめた度合い（`evidence`）は `verified`（確かめた）・`sourced`（出典あり・未確認）・`guess`（推測）で書く。カード・要点・指摘に付けられる。
 - 札とページの固定の文は `glossary.md` の言葉で出る。データには英語の key を書く。用語は `glossary.md` の「和訳しない用語」に合わせる（ブランチを「枝」と書かない、など）。
-- 本文の文字列はすべて平文として扱われ、HTML にはならない。効く書式は3つだけで、`` `…` `` がコードの書式に、`https://…` がリンクに、`#N` が issue へのリンク（近い送り元に `repo_url` があるとき）になる。束の group の中では group の送り元を使い、group に `repo_url` が無ければリンクにしない。
+- 本文の文字列はすべて平文として扱われ、HTML にはならない。効く書式は4つだけで、`` `…` `` がコードの書式に、`https://…` がリンクに、`#N` が issue へのリンク（近い送り元に `repo_url` があるとき）に、外部の課題管理の ID（`OPS-41` の形）がその課題へのリンク（近い送り元の `trackers` にその接頭辞があるとき）になる。束の group の中では group の送り元を使い、group に `repo_url` や `trackers` が無ければリンクにしない（ページの送り元へは戻らない）。ページのタイトル・選択肢のボタン・リンクの `label`・`tag`・`lane` には書式が効かず、文字のまま出る。
+### 表の部品の書き方
+
+番号・識別子・中身・状態を並べる表は、`--body` に HTML で書かず、表の部品（`table`）でデータとして書く。線・エスケープ・リンク・幅の狭い画面での形（行をカードの形に積み、各欄の上に列の見出しを出す）が部品の側で決まる。
+
+```json
+{
+  "type": "table",
+  "title": "手番",
+  "columns": [
+    {"key": "no", "label": "番号"},
+    {"key": "refs", "label": "issue / PR", "type": "ref"},
+    {"key": "tracker", "label": "外部の課題", "type": "ref"},
+    {"key": "what", "label": "中身"},
+    {"key": "result", "label": "結果"}
+  ],
+  "rows": [
+    {"no": "A1", "refs": ["#212", "PR #215"], "tracker": "OPS-41", "what": {"text": "再試行を3回までにする", "evidence": "verified"}, "result": "マージ済み"},
+    {"no": "A2", "refs": [], "tracker": ["OPS-42", "OPS-43"], "what": "振り返りを書く", "result": ""}
+  ]
+}
+```
+
+- **列**（`columns`）: 各列は `key`（カードの key と同じ形・表の中で重ねない）・`label`（列の見出し）・`type`（任意）を持つ。`type` は `text`（既定）か `ref`（識別子の列）である。
+- **行**（`rows`）: 各行は、列の `key` をちょうどそろえたオブジェクトで書く。足りない key も知らない key も誤りになる。
+- **`text` の欄**: 文字列か `{text, evidence}`。ほかの文字列と同じ書式（コード・URL・`#N`・外部の課題管理の ID）が効く。空の文字列は空の欄になる。
+- **`ref` の欄**: 識別子1つの文字列か、識別子の配列。受け付ける形は `#N`（issue）・`PR #N`・外部の課題管理の ID（`<接頭辞>-<数字>`）の3つで、どれも必ずリンクになる。表示の文字は書いたまま残る（`PR #215` は「PR #215」と出て、`<repo_url>/issues/215` へリンクする）。リンクにできないとき（形が違う・`#N` なのに送り元に `repo_url` が無い・接頭辞が送り元の `trackers` に無い）は E-L1 で止まる。空の配列は空の欄になる。
+- **番号と識別子は別の列にする。** 番号（`A1`・`DJ-1` など）は `text` の列に、issue・PR・外部の課題管理の ID は `ref` の列に書く。1つの欄に混ぜると、幅の狭い画面で2行に分かれて読みにくく、識別子がリンクにもならない。`ref` の列に番号を混ぜると E-L1 で止まる。
+- **外部の課題管理の ID** は、送り元（`source`）の `trackers` に接頭辞と URL の元を書いたときだけリンクになる。`url` には `{id}` をちょうど1つ書き、そこに ID の全体（`OPS-41`）が入る。接頭辞は英大文字で始まり、英大文字と数字が続く10文字までである。
+
+```json
+{
+  "repo": "shop",
+  "repo_url": "https://github.com/example-org/shop",
+  "trackers": [{"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}]
+}
+```
+
+- 表は答える部品ではない。表だけのページは保存のコードを持たず、`db` を付けずに公開する。
+
+### 判断待ちの束
+
 - 判断待ちの束を作るときは、判断を出す側のセッションが `build.py source --git <作業しているディレクトリ>` で自分の送り元を出し、カードと一緒に束を作る側へ渡す。カードの key は、作業ごとに前置きを付けるなどして、ページ全体で重ならないようにする。
 
 ## コマンド
@@ -160,7 +204,7 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 | E-F2 | 知らない項目がある |
 | E-F3 | 必須の項目が無いか、型が違う（型が違う項目の下は見ない） |
 | E-H1 | `title`・`why`・リンクの `label`・group の `why` が空 |
-| E-H2 | 送り元の値（repo・issue・branch・tmux）か URL の誤り |
+| E-H2 | 送り元の値（repo・issue・branch・tmux・trackers）か URL の誤り |
 | E-H3 | `purpose`・`status` が決まった値でない |
 | E-P2 | 状態と部品の組み合わせの誤り（回答待ちなのに答える部品が無い・回答済みでないのに `answers` がある・回答済みなのに `answers` が無い） |
 | E-C1 | カードの key が形に合わないか、ページの中で重なる |
@@ -169,8 +213,10 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 | E-C4 | 推奨の根拠が空 |
 | E-C5 | カードのタイトル・札・要点・選択肢の label が空 |
 | E-T1 | 札の値（`evidence`・`severity`・`adopted`・`kind`）が決まった値でない |
-| E-S1 | 部品の `type`・`title`・中身の誤り（知らない type・カードや item が0件・部品も本文も無い） |
+| E-S1 | 部品の `type`・`title`・中身の誤り（知らない type・カードや item や表の列・行が0件・部品も本文も無い） |
 | E-S2 | 指摘の本文・理由・`lane` が空 |
+| E-S3 | 表の列の誤り（列の `key` が形に合わないか重なる・`label` が空・`type` が `text` と `ref` のどちらでもない）と、表の欄の `{text, evidence}` の `text` が空。列に誤りがあると、行は見ない |
+| E-L1 | 表の `ref` の欄の識別子をリンクにできない（形が違う・`#N` なのに送り元に `repo_url` が無い・接頭辞が `trackers` に無い） |
 | E-A1 | `answers` の key がカードに無いか、`choice` がそのカードの選択肢でも `null` でもないか、`note`・`at` が文字列でない |
 | E-B1 | 完成した HTML に、Google Fonts 以外の外部の読み込みがある（`--body` の本文から入ったものを含む）。`build` のときだけ見る |
 
@@ -245,4 +291,5 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 - 保存先の書き込みを止める仕組みは無い。回答済みにしたあとの書き込みは、`answers` を正とすることで扱う。
 - 2つの画面がほぼ同時に同じ項目を書いたとき、またはまだ文書の無いカードの違う項目を初めて書いたときは、後から届いた書き込みが残る（「答えの保存の形」の節）。
 - `--body` の本文の安全さは、外部の読み込みが無いことまでしか確かめない。
+- 外部の課題管理の ID としてリンクにできるのは `<接頭辞>-<数字>` の形だけである。数字だけの ID や小文字の接頭辞の ID はリンクにならない。`--body` の本文の中の `#N` と ID も、リンクには変えない。
 - 図・長いページのタブ・読み比べ・「何もしなければ受け入れ」の印付けの部品は、まだ無い。

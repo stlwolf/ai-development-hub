@@ -30,13 +30,21 @@ EVIDENCE = ("verified", "sourced", "guess")
 SEVERITIES = ("high", "mid", "low")
 ADOPTIONS = ("adopted", "partial", "rejected")
 KINDS = ("go", "fix", "warn", "no")
-SECTION_TYPES = ("decisions", "bundle", "findings")
+SECTION_TYPES = ("decisions", "bundle", "findings", "table")
 ANSWER_SECTION_TYPES = ("decisions", "bundle")
+COLUMN_TYPES = ("text", "ref")
 
 # カードと選択肢の key。db の doc id が許す文字より狭い、このスキルの決まり。
 # match（先頭から）で使い、終わりは \Z で固定する（$ は末尾の改行の前でも合うので使わない）。
 KEY_RE = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
 URL_RE = re.compile(r"https?://\S+\Z")
+
+# 外部の課題管理の ID は <接頭辞>-<数字> の形に固定する。接頭辞は送り元の trackers に登録したものだけを使う。
+TRACKER_PREFIX_RE = re.compile(r"[A-Z][A-Z0-9]{0,9}\Z")
+TRACKER_ID_PLACEHOLDER = "{id}"
+# 表の識別子の列が受け付ける形。#N の桁は本文の変換（LINK_RE）と同じ 1〜7 桁にそろえる。
+REF_ISSUE_RE = re.compile(r"(?:PR )?#(\d{1,7})\Z")
+REF_TRACKER_RE = re.compile(r"([A-Z][A-Z0-9]{0,9})-(\d{1,9})\Z")
 
 # 用語集に要る key と、それぞれの言葉が持つ差し込み。受け付ける値の集まりはここが正本で、
 # 用語集が持つのは表に出す言葉だけである。
@@ -214,6 +222,9 @@ class Validator:
         self.errors = []
         self.card_paths = {}   # カードの key -> 最初に現れた場所
         self.card_options = {}  # カードの key -> 選択肢の key の並び
+        # ページの送り元からリンクにできるもの（repo_url があるか・登録した接頭辞）。
+        # 送り元に誤りがあれば None にし、表の識別子をリンクにできるかの判定（E-L1）を重ねて出さない。
+        self.page_links = None
 
     def add(self, code, path, msg):
         self.errors.append((code, path, msg))
@@ -290,7 +301,11 @@ class Validator:
         if "status" in data:
             self.enum("status", data["status"], STATUSES, "E-H3")
         if "source" in data:
+            before = len(self.errors)
             self.source("source", data["source"])
+            if len(self.errors) == before:
+                src = data["source"]
+                self.page_links = ("repo_url" in src, {t["prefix"] for t in src.get("trackers", [])})
         if "links" in data:
             self.links("links", data["links"])
         has_answer_part = False
@@ -322,8 +337,10 @@ class Validator:
             self.answers("answers", data["answers"])
 
     def source(self, path, s):
-        if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux")):
+        if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux", "trackers")):
             return
+        if "trackers" in s:
+            self.trackers(join(path, "trackers"), s["trackers"])
         if "repo" in s:
             self.text(join(path, "repo"), s["repo"], "E-H2")
         if "repo_url" in s:
@@ -343,6 +360,36 @@ class Validator:
                                  % (f, json.dumps(t[f], ensure_ascii=False)))
                 if "name" in t:
                     self.text(join(tp, "name"), t["name"], "E-H2")
+
+    def trackers(self, path, trackers):
+        if not isinstance(trackers, list):
+            self.add("E-F3", path, "配列であるべき所が%sである" % type_name(trackers))
+            return
+        seen = set()
+        for i, t in enumerate(trackers):
+            tp = "%s[%d]" % (path, i)
+            if not self.obj(tp, t, ("prefix", "url")):
+                continue
+            if "prefix" in t:
+                p = t["prefix"]
+                pp = join(tp, "prefix")
+                if not isinstance(p, str):
+                    self.add("E-F3", pp, "文字列であるべき所が%sである" % type_name(p))
+                elif not TRACKER_PREFIX_RE.match(p):
+                    self.add("E-H2", pp, '接頭辞 "%s" が形に合わない（英大文字で始まり、英大文字と数字が続く10文字まで）' % p)
+                elif p in seen:
+                    self.add("E-H2", pp, '接頭辞 "%s" が重なる' % p)
+                else:
+                    seen.add(p)
+            if "url" in t:
+                u = t["url"]
+                up = join(tp, "url")
+                if not isinstance(u, str):
+                    self.add("E-F3", up, "文字列であるべき所が%sである" % type_name(u))
+                elif u.count(TRACKER_ID_PLACEHOLDER) != 1:
+                    self.add("E-H2", up, "{id} をちょうど1つ含むべき所が %d 個ある" % u.count(TRACKER_ID_PLACEHOLDER))
+                elif not URL_RE.match(u.replace(TRACKER_ID_PLACEHOLDER, "X-1")):
+                    self.add("E-H2", up, "http:// か https:// で始まる URL でない")
 
     def links(self, path, links):
         if not isinstance(links, list):
@@ -383,6 +430,13 @@ class Validator:
                     if self.array(gp, sec["groups"], "E-S1", "group が1つも無い"):
                         for i, g in enumerate(sec["groups"]):
                             self.group("%s[%d]" % (gp, i), g)
+        elif t == "table":
+            if self.obj(path, sec, ("type", "title", "columns", "rows")):
+                if "title" in sec:
+                    self.text(join(path, "title"), sec["title"], "E-S1")
+                cols = self.columns(join(path, "columns"), sec["columns"]) if "columns" in sec else None
+                if "rows" in sec:
+                    self.rows(join(path, "rows"), sec["rows"], cols)
         else:
             if self.obj(path, sec, ("type", "title", "items"), ("lane",)):
                 if "title" in sec:
@@ -395,6 +449,86 @@ class Validator:
                         for i, it in enumerate(sec["items"]):
                             self.finding("%s[%d]" % (ip, i), it)
         return t
+
+    def columns(self, path, cols):
+        """表の列を見て、[(key, type)] を返す。列が読めなければ（1つでも誤りがあれば）None を返す。"""
+        if not self.array(path, cols, "E-S1", "列が1つも無い"):
+            return None
+        before = len(self.errors)
+        keys = []
+        for i, c in enumerate(cols):
+            cp = "%s[%d]" % (path, i)
+            if not self.obj(cp, c, ("key", "label"), ("type",)):
+                continue
+            if "key" in c:
+                k = c["key"]
+                kp = join(cp, "key")
+                if not isinstance(k, str):
+                    self.add("E-F3", kp, "文字列であるべき所が%sである" % type_name(k))
+                elif not KEY_RE.match(k):
+                    self.add("E-S3", kp, '列の key "%s" が形に合わない（英小文字で始まり、英小文字・数字・_・- が続く64文字まで）' % k)
+                elif k in keys:
+                    self.add("E-S3", kp, '列の key "%s" が重なる' % k)
+                else:
+                    keys.append(k)
+            if "label" in c:
+                self.text(join(cp, "label"), c["label"], "E-S3")
+            if "type" in c:
+                self.enum(join(cp, "type"), c["type"], COLUMN_TYPES, "E-S3")
+        if len(self.errors) != before:
+            return None
+        return [(c["key"], c.get("type", "text")) for c in cols]
+
+    def rows(self, path, rows, cols):
+        """表の行を見る。列が読めないとき（cols が None）は、行の key と値を見ない（同じ原因の誤りを重ねない）。"""
+        if not self.array(path, rows, "E-S1", "行が1つも無い") or cols is None:
+            return
+        keys = tuple(k for k, _ in cols)
+        for i, row in enumerate(rows):
+            rp = "%s[%d]" % (path, i)
+            if not self.obj(rp, row, keys):
+                continue
+            for k, kind in cols:
+                if k in row:
+                    self.cell(join(rp, k), row[k], kind)
+
+    def cell(self, path, v, kind):
+        if kind == "ref":
+            if isinstance(v, str):
+                self.ref(path, v)
+            elif isinstance(v, list):
+                for i, r in enumerate(v):
+                    ip = "%s[%d]" % (path, i)
+                    if isinstance(r, str):
+                        self.ref(ip, r)
+                    else:
+                        self.add("E-F3", ip, "文字列であるべき所が%sである" % type_name(r))
+            else:
+                self.add("E-F3", path, "文字列か文字列の配列であるべき所が%sである" % type_name(v))
+        elif isinstance(v, dict):
+            if self.obj(path, v, ("text",), ("evidence",)):
+                if "text" in v:
+                    self.text(join(path, "text"), v["text"], "E-S3")
+                if "evidence" in v:
+                    self.enum(join(path, "evidence"), v["evidence"], EVIDENCE, "E-T1")
+        elif not isinstance(v, str):
+            self.add("E-F3", path, "文字列か {text, evidence} であるべき所が%sである" % type_name(v))
+
+    def ref(self, path, r):
+        """表の識別子の列の値1つが、リンクにできる識別子かを見る。送り元に誤りがあれば判定しない。"""
+        if self.page_links is None:
+            return
+        has_repo_url, prefixes = self.page_links
+        if REF_ISSUE_RE.match(r):
+            if not has_repo_url:
+                self.add("E-L1", path, '"%s" をリンクにする repo_url が送り元に無い' % r)
+            return
+        m = REF_TRACKER_RE.match(r)
+        if m:
+            if m.group(1) not in prefixes:
+                self.add("E-L1", path, '"%s" の接頭辞 "%s" が送り元の trackers に無い' % (r, m.group(1)))
+            return
+        self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・<接頭辞>-<数字>）でない' % r)
 
     def group(self, path, g):
         if not self.obj(path, g, ("source", "title", "cards"), ("why",)):
@@ -555,10 +689,13 @@ SLOT_RE = re.compile(r"\{\{([a-z]+)\}\}")
 # 版の時刻は JST（UTC+9）で書く。時間帯の表に頼らないよう、固定の時差で直す。
 JST = timezone(timedelta(hours=9), "JST")
 
-# 本文の中で効く書式は3つだけ: `…` をコードに、https://… をリンクに、#N を issue へのリンクにする。
+# 本文の中で効く書式は4つだけ: `…` をコードに、https://… をリンクに、#N を issue へのリンクに、
+# 送り元の trackers に登録した接頭辞の ID（OPS-41 など）を外部の課題管理へのリンクにする。
 CODE_RE = re.compile(r"`([^`\n]+)`")
 _URL_STOP = r"\s<>\"'`" + chr(0x3000) + "-" + chr(0x303F) + chr(0xFF01) + "-" + chr(0xFF60)
-LINK_RE = re.compile(r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))")
+LINK_PATTERN = r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))"
+LINK_RE = re.compile(LINK_PATTERN)
+TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d{1,9}(?![A-Za-z0-9_-]))"
 URL_TRAIL = ".,;:!?)]}"
 
 # JSON をページに埋め込むとき、要素を閉じたり行を分けたりしうる文字を \u の形に置き換える。
@@ -581,22 +718,47 @@ def branch_url(repo_url, branch):
     return "%s/tree/%s" % (repo_url.rstrip("/"), quote(branch, safe="/"))
 
 
-def inline(text, repo_url):
-    """平文をエスケープし、コード・URL・#N の書式だけを足した HTML を返す。"""
+class Refs:
+    """文字列の中の #N と外部の課題管理の ID をリンクにするための、いちばん近い送り元の情報。"""
+
+    def __init__(self, src):
+        self.repo_url = src.get("repo_url")
+        self.trackers = {t["prefix"]: t["url"] for t in src.get("trackers", [])}
+        pattern = LINK_PATTERN
+        if self.trackers:
+            # 長い接頭辞を先に置き、短い接頭辞が長い接頭辞の頭に当たらないようにする。
+            names = sorted(self.trackers, key=lambda p: (-len(p), p))
+            pattern += TRACKER_PATTERN % "|".join(re.escape(p) for p in names)
+        self.link_re = re.compile(pattern)
+
+    def tracker_url(self, ident, prefix):
+        return self.trackers[prefix].replace(TRACKER_ID_PLACEHOLDER, quote(ident, safe=""))
+
+    def ref_link(self, ref):
+        """表の識別子の列の値1つ（検証を通ったもの）をリンクにする。表示の文字は書いたまま残す。"""
+        m = REF_ISSUE_RE.match(ref)
+        if m:
+            return link(issue_url(self.repo_url, m.group(1)), ref)
+        return link(self.tracker_url(ref, REF_TRACKER_RE.match(ref).group(1)), ref)
+
+
+def inline(text, refs):
+    """平文をエスケープし、コード・URL・#N・外部の課題管理の ID の書式だけを足した HTML を返す。"""
     out = []
     pos = 0
     for m in CODE_RE.finditer(text):
-        out.append(_linkify(text[pos:m.start()], repo_url))
+        out.append(_linkify(text[pos:m.start()], refs))
         out.append("<code>%s</code>" % esc(m.group(1)))
         pos = m.end()
-    out.append(_linkify(text[pos:], repo_url))
+    out.append(_linkify(text[pos:], refs))
     return "".join(out)
 
 
-def _linkify(text, repo_url):
+def _linkify(text, refs):
+    # URL・#N・ID を1回の走査で左から見る。URL に当たった部分の中の #N や ID はリンクにしない。
     out = []
     pos = 0
-    for m in LINK_RE.finditer(text):
+    for m in refs.link_re.finditer(text):
         out.append(esc(text[pos:m.start()]))
         if m.group("url"):
             url = m.group("url")
@@ -605,10 +767,13 @@ def _linkify(text, repo_url):
                 trail = url[-1] + trail
                 url = url[:-1]
             out.append(link(url, url) + esc(trail))
-        elif repo_url:
-            out.append(link(issue_url(repo_url, m.group("num")), m.group("issue")))
+        elif m.group("issue"):
+            if refs.repo_url:
+                out.append(link(issue_url(refs.repo_url, m.group("num")), m.group("issue")))
+            else:
+                out.append(esc(m.group("issue")))
         else:
-            out.append(esc(m.group("issue")))
+            out.append(link(refs.tracker_url(m.group("tracker"), m.group("prefix")), m.group("tracker")))
         pos = m.end()
     out.append(esc(text[pos:]))
     return "".join(out)
@@ -691,7 +856,7 @@ class Renderer:
         self.L = labels
         self.time = format_time(now)
         self.tmux = tmux
-        self.page_repo_url = data["source"].get("repo_url")
+        self.page_refs = Refs(data["source"])
         self.answered = data["status"] == "answered"
         self.answers = data.get("answers") or {}
         self.cards = []   # JS に渡すカード
@@ -736,7 +901,7 @@ class Renderer:
         h.append(meta_table(rows))
         h.append('<h1 class="hp-title">%s</h1>' % esc(d["title"]))
         h.append('<section class="hp-why"><p class="hp-lbl">%s</p><p>%s</p></section>'
-                 % (esc(self.L["text.why"]), inline(d["why"], self.page_repo_url)))
+                 % (esc(self.L["text.why"]), inline(d["why"], self.page_refs)))
         if d.get("links"):
             items = "".join("<li>%s</li>" % link(ln["url"], ln["label"]) for ln in d["links"])
             h.append('<nav class="hp-links" aria-label="%s"><p class="hp-lbl">%s</p><ul>%s</ul></nav>'
@@ -772,37 +937,39 @@ class Renderer:
                 out.append(self.decisions(sec))
             elif sec["type"] == "bundle":
                 out.append(self.bundle(sec))
+            elif sec["type"] == "table":
+                out.append(self.table(sec))
             else:
                 out.append(self.findings(sec))
         return "\n".join(out)
 
     def decisions(self, sec):
-        cards = "\n".join(self.card(c, 3, self.page_repo_url) for c in sec["cards"])
+        cards = "\n".join(self.card(c, 3, self.page_refs) for c in sec["cards"])
         return ('<section class="hp-sec hp-decisions"><h2 class="hp-sec-title">%s</h2><div class="hp-cards">\n%s\n</div></section>'
-                % (inline(sec["title"], self.page_repo_url), cards))
+                % (inline(sec["title"], self.page_refs), cards))
 
     def bundle(self, sec):
-        out = ['<section class="hp-sec hp-bundle"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], self.page_repo_url)]
+        out = ['<section class="hp-sec hp-bundle"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], self.page_refs)]
         for g in sec["groups"]:
             gid = len(self.groups)
             src = g["source"]
-            # group の中の #N は group の送り元の repo_url だけを使う。無ければページの送り元へは戻らない。
-            repo_url = src.get("repo_url")
+            # group の中の #N と ID は group の送り元だけを使う。無ければページの送り元へは戻らない。
+            refs = Refs(src)
             self.groups.append({"id": gid, "keys": [c["key"] for c in g["cards"]]})
             out.append('<section class="hp-group" id="hp-group-%d">' % gid)
             gs = self.L["status.answered"] if self.answered else fill(self.L["status.awaiting"], n=self.open_count(g["cards"]))
             rows = meta_rows(src, src.get("tmux"), self.L)
             rows.append((self.L["text.head_status"], '<span id="hp-group-status-%d">%s</span>' % (gid, esc(gs))))
-            out.append('<h3 class="hp-group-title">%s</h3>' % inline(g["title"], repo_url))
+            out.append('<h3 class="hp-group-title">%s</h3>' % inline(g["title"], refs))
             out.append(meta_table(rows))
             if "why" in g:
-                out.append('<p class="hp-group-why">%s</p>' % inline(g["why"], repo_url))
+                out.append('<p class="hp-group-why">%s</p>' % inline(g["why"], refs))
             out.append('<div class="hp-cards">\n%s\n</div></section>'
-                       % "\n".join(self.card(c, 4, repo_url) for c in g["cards"]))
+                       % "\n".join(self.card(c, 4, refs) for c in g["cards"]))
         out.append("</section>")
         return "\n".join(out)
 
-    def card(self, c, level, repo_url):
+    def card(self, c, level, refs):
         key = c["key"]
         L = self.L
         ans = self.answers.get(key) if self.answered else None
@@ -814,19 +981,19 @@ class Renderer:
         head = '<div class="hp-card-head">'
         if "tag" in c:
             head += '<span class="hp-tag">%s</span>' % esc(c["tag"])
-        head += '<h%d class="hp-card-title">%s</h%d>' % (level, inline(c["title"], repo_url), level)
+        head += '<h%d class="hp-card-title">%s</h%d>' % (level, inline(c["title"], refs), level)
         head += self.evidence(c.get("evidence")) + "</div>"
         h.append(head)
         h.append('<p class="hp-rec">%s<span class="hp-rec-choice">%s</span></p>'
-                 % (self.chip("hp-chip-rec", L["recommend"]), inline(rec_label, repo_url)))
-        h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], repo_url)))
+                 % (self.chip("hp-chip-rec", L["recommend"]), inline(rec_label, refs)))
+        h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], refs)))
         if c.get("points"):
             items = []
             for p in c["points"]:
                 if isinstance(p, str):
-                    items.append("<li>%s</li>" % inline(p, repo_url))
+                    items.append("<li>%s</li>" % inline(p, refs))
                 else:
-                    items.append("<li>%s%s</li>" % (inline(p["text"], repo_url), self.evidence(p.get("evidence"))))
+                    items.append("<li>%s%s</li>" % (inline(p["text"], refs), self.evidence(p.get("evidence"))))
             h.append('<p class="hp-lbl">%s</p><ul class="hp-points">%s</ul>' % (esc(L["text.points"]), "".join(items)))
         title_attr = esc(c["title"])
         buttons = []
@@ -848,8 +1015,8 @@ class Renderer:
 
     def findings(self, sec):
         L = self.L
-        repo_url = self.page_repo_url
-        out = ['<section class="hp-sec hp-findings"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], repo_url)]
+        refs = self.page_refs
+        out = ['<section class="hp-sec hp-findings"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], refs)]
         if "lane" in sec:
             out.append('<p class="hp-lane">%s</p>' % esc(fill(L["text.lane"], lane=sec["lane"])))
         cols = (L["text.col_text"], L["text.col_severity"], L["text.col_adopted"], L["text.col_reason"])
@@ -857,10 +1024,33 @@ class Renderer:
                    % "".join("<th>%s</th>" % esc(c) for c in cols))
         for it in sec["items"]:
             out.append('<tr><td data-label="%s">%s%s</td><td data-label="%s">%s</td><td data-label="%s">%s</td><td data-label="%s">%s</td></tr>'
-                       % (esc(cols[0]), inline(it["text"], repo_url), self.evidence(it.get("evidence")),
+                       % (esc(cols[0]), inline(it["text"], refs), self.evidence(it.get("evidence")),
                           esc(cols[1]), self.chip("hp-sev-" + it["severity"], L["severity." + it["severity"]]),
                           esc(cols[2]), self.chip("hp-ad-" + it["adopted"], L["adopted." + it["adopted"]]),
-                          esc(cols[3]), inline(it["reason"], repo_url)))
+                          esc(cols[3]), inline(it["reason"], refs)))
+        out.append("</tbody></table></div></section>")
+        return "\n".join(out)
+
+    def table(self, sec):
+        """列と行をデータで書く表。指摘の一覧と同じ hp-table で描き、幅の狭い画面では行を積む。"""
+        refs = self.page_refs
+        cols = [(c["key"], c["label"], c.get("type", "text")) for c in sec["columns"]]
+        out = ['<section class="hp-sec hp-tablesec"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], refs)]
+        out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
+                   % "".join("<th>%s</th>" % esc(label) for _, label, _ in cols))
+        for row in sec["rows"]:
+            cells = []
+            for key, label, kind in cols:
+                v = row[key]
+                if kind == "ref":
+                    items = [v] if isinstance(v, str) else v
+                    body = ('<span class="hp-refs">%s</span>' % "".join(refs.ref_link(r) for r in items)) if items else ""
+                    cells.append('<td class="hp-ref-cell" data-label="%s">%s</td>' % (esc(label), body))
+                elif isinstance(v, dict):
+                    cells.append('<td data-label="%s">%s%s</td>' % (esc(label), inline(v["text"], refs), self.evidence(v.get("evidence"))))
+                else:
+                    cells.append('<td data-label="%s">%s</td>' % (esc(label), inline(v, refs)))
+            out.append("<tr>%s</tr>" % "".join(cells))
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
