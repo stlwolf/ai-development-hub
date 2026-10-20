@@ -153,3 +153,21 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-8 にあり�
 - **A10 で見た目の欠けを1つ見つけて直した（plan の H3・補正）。** 画面の写しを目で見たところ、6列の素の表を 900px で開くと、折り返せない長い URL の欄が幅を取り、「結果」の列が1文字の幅まで潰れ、「番号」の見出しが縦に割れていた。数値の確かめ（線がある・横に揺れない）はすべて通っていたが、読める表になっているかは数値の確かめでは拾えなかった。素の `th` に `white-space: nowrap`（`hp-table` の見出しと同じ）、素の `td` に `overflow-wrap: anywhere` を足し、900px で各列に幅が分かれ、400px でも表がページの幅に収まることを確かめた。表の部品（`hp-table`）の側は 900px で読める形だったので変えていない。
 - **A11（公開のときの注意）**: private の artifact を1つ作り、同じ URL に3回出した（`capabilities` は付けていない）。版1は `3c00c11` の `build.py` で作った指摘の一覧のページで、道具が「このページは `db` を参照しているが宣言していない」という注意を出した。版2は最後の `build.py` で作った同じページで、注意は出なかった。版3は表のページで、注意は出なかった。確かめられたので、SKILL.md の「公開する」に「注意は出ない」と書いた。
 - 検査は 187 件で、3.13.5 と 3.9.6 の両方で失敗0件だった。
+
+### A12・GATE I1: 最後のコミットで回し直した（2026-10-20）
+
+- スキルのファイルを最後に変えたのは `93b8006`（素の表のセルと SKILL.md の公開の文）で、そのあと検査のファイルだけを変える `de57575`（`check --body` の CLI の検査）を足した。A1・A3・A5・A6・A7・A8・A9・A10 を `93b8006` で回し直し、すべて通った。A10 は `93b8006` から作り直したページで、(a)〜(i) を1本の Playwright のスクリプトで見た。`de57575` では、変わったのが `tests/test_build.py` だけであること（`git diff --stat`）を確かめ、描画に関わらない A10 を除いて A1・A5・A6・A7・A8・A9 を回し直した。
+- 検査は 188 件で、3.13.5 と 3.9.6 の両方で失敗0件である（変更前は127件）。
+- A1 の、DJ ごとの検査の対応は次のとおりである。
+
+| DJ | 検査 |
+|---|---|
+| DJ-1 素の要素の見た目と class の一覧 | `BodyLooks`（一覧の class が CSS にある・素の要素の規則がすべて `:where(.hp-main …:not([class]))` の形・部品が描く要素がすべて class を持つ） |
+| DJ-2 `check --body` | `LoadStage.test_check_with_body_accepts_a_reading_page`、A5（SKILL.md のコマンドをそのまま打つ） |
+| DJ-3 保存のコードを外す | `SaveCode`（3件）、A9、A11 |
+| DJ-4 表の部品 | `BrokenData` の表の22件、`TableAndTrackerLinks` の表の3件、`Escaping.test_table_strings_stay_text`、`SkillMdExamples` |
+| DJ-5 外部の課題管理の ID | `BrokenData` の `trackers` の8件、`TableAndTrackerLinks` の文字列の5件 |
+| DJ-6 根拠を任意に | `ExamplesPass.test_card_without_reason_is_allowed`、`Reason`（2件）、`BrokenData.test_c4_reason_empty` |
+| DJ-7 カードの塊 | `BrokenData` の塊の8件、`Blocks`（5件）、`SkillMdExamples` |
+
+- GATE I1: A1〜A13 はすべて満たした。A11 は公開して確かめられた（「確かめていない」で通したものは無い）。
