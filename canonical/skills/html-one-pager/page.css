@@ -323,15 +323,15 @@ code {
 :where(.hp-main p:not([class])) { margin: 0; max-width: 68ch; }
 :where(.hp-main ul:not([class]), .hp-main ol:not([class])) { margin: 0; padding-left: 1.4em; }
 :where(.hp-main table:not([class])) { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--surface); }
-:where(.hp-main table:not([class]) th, .hp-main table:not([class]) td) {
+:where(.hp-main table:not([class]) th:not([class]), .hp-main table:not([class]) td:not([class])) {
   border: 1px solid var(--line);
   padding: 6px 8px;
   text-align: left;
   vertical-align: top;
 }
-:where(.hp-main table:not([class]) th) { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+:where(.hp-main table:not([class]) th:not([class])) { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 /* 長い URL や識別子が1つの欄で幅を取り、ほかの列を1文字の幅まで潰さないよう、欄の中では語の途中でも折り返す */
-:where(.hp-main table:not([class]) td) { overflow-wrap: anywhere; }
+:where(.hp-main table:not([class]) td:not([class])) { overflow-wrap: anywhere; }
 :where(.hp-main pre:not([class])) {
   margin: 0;
   font-family: var(--font-mono);

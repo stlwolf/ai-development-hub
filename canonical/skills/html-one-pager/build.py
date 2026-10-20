@@ -44,7 +44,7 @@ TRACKER_PREFIX_RE = re.compile(r"[A-Z][A-Z0-9]{0,9}\Z")
 TRACKER_ID_PLACEHOLDER = "{id}"
 # 表の識別子の列が受け付ける形。#N の桁は本文の変換（LINK_RE）と同じ 1〜7 桁にそろえる。
 REF_ISSUE_RE = re.compile(r"(?:PR )?#(\d{1,7})\Z")
-REF_TRACKER_RE = re.compile(r"([A-Z][A-Z0-9]{0,9})-(\d{1,9})\Z")
+REF_TRACKER_RE = re.compile(r"([A-Z][A-Z0-9]{0,9})-(\d+)\Z")
 
 # 用語集に要る key と、それぞれの言葉が持つ差し込み。受け付ける値の集まりはここが正本で、
 # 用語集が持つのは表に出す言葉だけである。
@@ -480,12 +480,17 @@ class Validator:
         return [(c["key"], c.get("type", "text")) for c in cols]
 
     def rows(self, path, rows, cols):
-        """表の行を見る。列が読めないとき（cols が None）は、行の key と値を見ない（同じ原因の誤りを重ねない）。"""
-        if not self.array(path, rows, "E-S1", "行が1つも無い") or cols is None:
+        """表の行を見る。列が読めないとき（cols が None）は、行がオブジェクトかだけを見て、
+        行の key と値は見ない（列の誤りと同じ原因の誤りを重ねない）。"""
+        if not self.array(path, rows, "E-S1", "行が1つも無い"):
             return
-        keys = tuple(k for k, _ in cols)
+        keys = tuple(k for k, _ in cols) if cols is not None else None
         for i, row in enumerate(rows):
             rp = "%s[%d]" % (path, i)
+            if keys is None:
+                if not isinstance(row, dict):
+                    self.add("E-F3", rp, "オブジェクトであるべき所が%sである" % type_name(row))
+                continue
             if not self.obj(rp, row, keys):
                 continue
             for k, kind in cols:
@@ -515,20 +520,20 @@ class Validator:
             self.add("E-F3", path, "文字列か {text, evidence} であるべき所が%sである" % type_name(v))
 
     def ref(self, path, r):
-        """表の識別子の列の値1つが、リンクにできる識別子かを見る。送り元に誤りがあれば判定しない。"""
+        """表の識別子の列の値1つが、リンクにできる識別子かを見る。
+        形は送り元と関係なく見る。送り元に誤りがあれば、送り元に頼る判定（repo_url・接頭辞の登録）だけを省く。"""
+        issue = REF_ISSUE_RE.match(r)
+        tracker = None if issue else REF_TRACKER_RE.match(r)
+        if not issue and not tracker:
+            self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・<接頭辞>-<数字>）でない' % r)
+            return
         if self.page_links is None:
             return
         has_repo_url, prefixes = self.page_links
-        if REF_ISSUE_RE.match(r):
-            if not has_repo_url:
-                self.add("E-L1", path, '"%s" をリンクにする repo_url が送り元に無い' % r)
-            return
-        m = REF_TRACKER_RE.match(r)
-        if m:
-            if m.group(1) not in prefixes:
-                self.add("E-L1", path, '"%s" の接頭辞 "%s" が送り元の trackers に無い' % (r, m.group(1)))
-            return
-        self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・<接頭辞>-<数字>）でない' % r)
+        if issue and not has_repo_url:
+            self.add("E-L1", path, '"%s" をリンクにする repo_url が送り元に無い' % r)
+        elif tracker and tracker.group(1) not in prefixes:
+            self.add("E-L1", path, '"%s" の接頭辞 "%s" が送り元の trackers に無い' % (r, tracker.group(1)))
 
     def group(self, path, g):
         if not self.obj(path, g, ("source", "title", "cards"), ("why",)):
@@ -712,7 +717,7 @@ CODE_RE = re.compile(r"`([^`\n]+)`")
 _URL_STOP = r"\s<>\"'`" + chr(0x3000) + "-" + chr(0x303F) + chr(0xFF01) + "-" + chr(0xFF60)
 LINK_PATTERN = r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))"
 LINK_RE = re.compile(LINK_PATTERN)
-TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d{1,9}(?![A-Za-z0-9_-]))"
+TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d+(?![A-Za-z0-9_-]))"
 URL_TRAIL = ".,;:!?)]}"
 
 # JSON をページに埋め込むとき、要素を閉じたり行を分けたりしうる文字を \u の形に置き換える。

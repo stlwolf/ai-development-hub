@@ -245,7 +245,7 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 | E-T1 | 札の値（`evidence`・`severity`・`adopted`・`kind`）が決まった値でない |
 | E-S1 | 部品の `type`・`title`・中身の誤り（知らない type・カードや item や表の列・行が0件・部品も本文も無い） |
 | E-S2 | 指摘の本文・理由・`lane` が空 |
-| E-S3 | 表の列の誤り（列の `key` が形に合わないか重なる・`label` が空・`type` が `text` と `ref` のどちらでもない）と、表の欄の `{text, evidence}` の `text` が空。列に誤りがあると、行は見ない |
+| E-S3 | 表の列の誤り（列の `key` が形に合わないか重なる・`label` が空・`type` が `text` と `ref` のどちらでもない）と、表の欄の `{text, evidence}` の `text` が空。列に誤りがあると、行はオブジェクトかだけを見て、行の key と値は見ない |
 | E-L1 | 表の `ref` の欄の識別子をリンクにできない（形が違う・`#N` なのに送り元に `repo_url` が無い・接頭辞が `trackers` に無い） |
 | E-A1 | `answers` の key がカードに無いか、`choice` がそのカードの選択肢でも `null` でもないか、`note`・`at` が文字列でない |
 | E-B1 | 完成した HTML に、Google Fonts 以外の外部の読み込みがある（`--body` の本文から入ったものを含む）。`build` のときだけ見る |

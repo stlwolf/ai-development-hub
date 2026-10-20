@@ -247,6 +247,13 @@ BROKEN = [
     ("l1_empty_ref_string", "table", put(ROW0 + ["tracker"], ""), [("E-L1", "sections[0].rows[0].tracker")], False),
     ("l1_issue_number_too_long", "table", put(ROW0 + ["refs"], ["#12345678"]), [("E-L1", "sections[0].rows[0].refs[0]")], False),
     ("l1_unregistered_prefix", "table", put(ROW0 + ["tracker"], "ENG-3"), [("E-L1", "sections[0].rows[0].tracker")], False),
+    # 識別子の形は、送り元が壊れていても見る（送り元に頼る判定だけを省く）
+    ("l1_shape_is_checked_even_if_source_is_broken", "table", both(put(["source", "repo"], ""), put(ROW0 + ["refs"], ["not-a-ref"])),
+     [("E-H2", "source.repo"), ("E-L1", "sections[0].rows[0].refs[0]")], False),
+    # 列が壊れていても、行がオブジェクトかは見る
+    ("f3_row_not_object_even_if_columns_are_broken", "table",
+     both(put(COL0 + ["label"], ""), put(["sections", 0, "rows", 1], 123)),
+     [("E-S3", "sections[0].columns[0].label"), ("E-F3", "sections[0].rows[1]")], False),
     ("l1_issue_without_repo_url", "table", drop(["source", "repo_url"]),
      [("E-L1", "sections[0].rows[0].refs[0]"), ("E-L1", "sections[0].rows[0].refs[1]"), ("E-L1", "sections[0].rows[1].refs[0]")], False),
     # 送り元の trackers（E-H2・E-F2・E-F3）。送り元が壊れていると、識別子をリンクにできるかは判定しない（E-L1 を重ねない）
@@ -555,6 +562,14 @@ class TableAndTrackerLinks(unittest.TestCase):
         for plain in ("XOPS-44", "OPSX-45", "feature/OPS-46_x", "ENG-47"):
             self.assertIn(" %s " % plain, point)
 
+    def test_long_numbers_are_linked(self):
+        # ID の数字の桁に上限は置かない（表の欄でも文字列でも）
+        d = example("table")
+        d["sections"][0]["rows"][0]["tracker"] = "OPS-1234567890"
+        self.assertEqual(build.validate(d), [])
+        f = render_page("decide", both(put(["source", "trackers"], [OPS]), put(CARD0 + ["points", 0], "OPS-1234567890 を見る")))
+        self.assertIn(a_tag(TRACKER_URL + "OPS-1234567890", "OPS-1234567890"), f)
+
     def test_longer_prefix_is_not_cut_by_a_shorter_one(self):
         trackers = [{"prefix": "OP", "url": "https://a.example/{id}"}, {"prefix": "OPS", "url": "https://b.example/{id}"}]
         f = render_page("decide", both(put(["source", "trackers"], trackers), put(CARD0 + ["points", 0], "OP-1 と OPS-2")))
@@ -747,7 +762,8 @@ class BodyLooks(unittest.TestCase):
             css = re.sub(r"/\*.*?\*/", "", fh.read(), flags=re.S)
         selectors = [s.strip() for s in re.findall(r"([^{}]*:not\(\[class\]\)[^{}]*)\{", css)]
         self.assertGreaterEqual(len(selectors), 9)
-        part_re = r"^\.hp-main (%s):not\(\[class\]\)( (th|td))?$" % "|".join(BARE_TAGS)
+        # 表のセルは、表とセルの両方が class を持たないときだけ（class の付いたセルにも効かない）
+        part_re = r"^\.hp-main (%s):not\(\[class\]\)( (th|td):not\(\[class\]\))?$" % "|".join(BARE_TAGS)
         for sel in selectors:
             with self.subTest(selector=sel):
                 self.assertTrue(sel.startswith(":where(") and sel.endswith(")"))
