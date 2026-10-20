@@ -3,7 +3,7 @@ id: "01M5CDAJZ2RTZMBTY8YA2D5TS6"
 title: "#456・#463・#470 issue-intake の出力を3点直す（本文の数と状態・issue の URL・修正範囲）"
 date: 2026-10-20
 type: plan
-status: in-development      # ゲート3 承認済み（2026-10-20）。承認時点の版は、ゲート3 の承認に含まれる追加を I2-2 に書いた commit
+status: stable              # 実装完了（2026-10-20・PR #474）。ゲート3 の承認時点の版は c595acc
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/456"
