@@ -565,6 +565,53 @@ class Contract(unittest.TestCase):
         self.assertEqual(used - defined, set())
 
 
+def main_of(fragment):
+    """部品が描く <main class="hp-main"> の中身を返す。"""
+    start = fragment.index('<main class="hp-main">') + len('<main class="hp-main">')
+    return fragment[start:fragment.index("</main>")]
+
+
+# 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
+BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
+GENERATED_PAGES = ("decide", "bundle", "review")
+
+
+class BodyLooks(unittest.TestCase):
+    """本文（--body）の素の要素の見た目と、本文で使える class の一覧。"""
+
+    def test_listed_classes_are_defined_in_css(self):
+        with open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8") as fh:
+            text = fh.read()
+        sec = re.search(r"^## 本文（`--body`）の見た目\n(.*?)^## ", text, re.S | re.M).group(1)
+        listed = set(re.findall(r"`(hp-[a-z0-9-]+)`", sec))
+        self.assertGreaterEqual(len(listed), 10)
+        with open(build.CSS, encoding="utf-8") as fh:
+            defined = set(re.findall(r"\.(hp-[a-z0-9-]+)", fh.read()))
+        self.assertEqual(listed - defined, set())
+
+    def test_bare_rules_only_touch_elements_without_class(self):
+        # セレクター全体を :where() で包み（詳細度 0）、.hp-main の中の class を持たない要素だけに当てる。
+        with open(build.CSS, encoding="utf-8") as fh:
+            css = re.sub(r"/\*.*?\*/", "", fh.read(), flags=re.S)
+        selectors = [s.strip() for s in re.findall(r"([^{}]*:not\(\[class\]\)[^{}]*)\{", css)]
+        self.assertGreaterEqual(len(selectors), 9)
+        part_re = r"^\.hp-main (%s):not\(\[class\]\)( (th|td))?$" % "|".join(BARE_TAGS)
+        for sel in selectors:
+            with self.subTest(selector=sel):
+                self.assertTrue(sel.startswith(":where(") and sel.endswith(")"))
+                for part in sel[len(":where("):-1].split(","):
+                    self.assertRegex(part.strip(), part_re)
+
+    def test_generated_parts_do_not_meet_bare_rules(self):
+        # 部品が .hp-main の中に描く要素は class を持つので、素の要素の規則は部品に効かない。
+        for name in GENERATED_PAGES:
+            with self.subTest(page=name):
+                found = re.findall(r"<(%s)\b([^>]*)>" % "|".join(BARE_TAGS), main_of(render_page(name)))
+                self.assertTrue(found)
+                for tag, attrs in found:
+                    self.assertIn('class="', attrs, tag)
+
+
 class ExternalLoads(unittest.TestCase):
     """E-B1: 完成した HTML の外部の読み込み（--body から入ったものを含む）。"""
 

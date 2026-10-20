@@ -62,7 +62,7 @@ so:
 
 二択でなく両方を行う。class を忘れた本文でも読める見た目になり、一覧があれば部品と同じ見た目に寄せられる。
 
-- **素の要素の見た目は、class を持たない要素だけに当てる。** 規則は `.hp-main` の中で、`class` 属性の無い `section`・`h2`・`h3`・`p`・`ul`・`ol`・`table`・`pre` と、`class` 属性の無い `table` の中の `th`・`td` に限る（`:where(.hp-main) section:not([class])`・`:where(.hp-main table:not([class])) td` の形）。class の付いた要素には、プロパティが重なるかどうかにかかわらず1つも効かない。本文の書き手の class（`.grasp-flow` など）も部品の class（`.hp-sec`）も、いまの見た目のまま残る（設計SO 指摘1）。`:where()` で詳細度を要素1つ分に下げ、本文の書き手の CSS がいつも勝つようにもしておく。
+- **素の要素の見た目は、class を持たない要素だけに当てる。** 規則は `.hp-main` の中で、`class` 属性の無い `section`・`h2`・`h3`・`p`・`ul`・`ol`・`table`・`pre` と、`class` 属性の無い `table` の中の `th`・`td` に限る（`:where(.hp-main section:not([class]))`・`:where(.hp-main table:not([class]) td)` の形）。class の付いた要素には、プロパティが重なるかどうかにかかわらず1つも効かない。本文の書き手の class（`.grasp-flow` など）も部品の class（`.hp-sec`）も、いまの見た目のまま残る（設計SO 指摘1）。セレクター全体を `:where()` で包んで詳細度を 0 にし、本文の書き手の CSS がいつも勝つようにもしておく（承認のあとの補正 H1）。
 - **本文を包まない。** 初稿は本文を `<div class="hp-body">` で包む形だったが、包むと本文の書き手の CSS（`.hp-main > section` など）が効かなくなる（設計SO 指摘1）。範囲を `.hp-main` の中の class を持たない要素に限れば、包みが無くても部品には効かない。部品が描く要素は、指摘の一覧の表のセル（`th`・`td`）を除いてすべて class を持つ（見本の4つで確かめた・episode の P2）。セルは class を持つ表（`hp-table`）の中なので規則に当たらない。この前提が崩れないことを、見本の出力で確かめる検査を足す（部品が描く `.hp-main` の中の要素に、規則に当たるものが無いこと）。
 - **当てるプロパティ**（部品と同じトークンを使う）:
 
@@ -374,3 +374,11 @@ git -C '<worktree>' push -u origin 'feat/#469_one_pager_real_use_fixes'
 ### I3: episode を閉じ、報告して止まる
 
 - episode を閉じる（`episode-retrospective`）。`.oe/report-469.md` に報告を書き（`implementer-contract` の形）、「報告の宛先」へ `oe-send` で送って exit code を確かめて止まる。マージ・worktree の掃除・issue の close はしない。
+
+## ゲート3 のあとの変更
+
+承認時点の plan は `ff30d3c` である。そのあとの直しを、効果の級（補正・変更）とともに並べる。
+
+| # | 級 | 直したところ | 中身と理由 |
+|---|---|---|---|
+| H1 | 補正 | DJ-1 | 素の要素の規則の形を `:where(.hp-main) section:not([class])` から `:where(.hp-main section:not([class]))`（セレクター全体を包む）に直した。前の形では `:not([class])` の属性の分だけ詳細度が残り（0,1,1）、本文の書き手が要素のセレクターで書いた CSS（`section p` など）に勝ってしまう。DJ-1 が掲げる「本文の書き手の CSS がいつも勝つ」を満たすための直しで、当てる要素・プロパティ・受入は変えていない。実装（I1-1）で気づいた |

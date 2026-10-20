@@ -89,3 +89,16 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-8 にあり�
 - 加えて Q4 が届いた。統括が、P3 の報告の out-of-scope に書いた CATALOG の行の件を拾って提案し、owner が承認した。`canonical/CATALOG.md` の html-one-pager の行に表の部品を足すことを、この PR に含める。brief の範囲（スキルのフォルダの中だけ）を owner が広げたもので、brief の終端の書き換え・step の飛び越し・要件の弱体化のどれにも当たらないので、指示矛盾ガードの照会は要らないと判断した。
 - 統括の手順どおり、Q4 を plan に反映（DJ-8 の直し・I1-5b の1コミット・受入 A13）してから commit・push し、その SHA を承認時点の plan として統括へ送る。そのあと I1 に進む。
 - CATALOG は #456 の単位も直しうる。同じファイルを2つの PR が直すことになるので、plan の DJ-8 に rebase の扱いを書いた（同じファイルへの追記が衝突の元になった前例があるため）。
+
+### I1-0: baseline の確認（2026-10-20）
+
+- `git fetch` のあとの `origin/master` は `3c00c11` のままだった。
+- `git archive 3c00c11 canonical/skills/html-one-pager` でスキルのフォルダを `tmp/469-one-pager-real-use-fixes/baseline/skill/` に取り出し、その `build.py` で `decide`・`bundle`・`review`・`grasp`（`--body` つき）の断片と `--standalone` を `--now 2026-10-19T09:05:00+00:00 --tmux off` で作った（A9・A10 の (b) の比べる元）。
+- A6 の3つの `grep` を変更前のフォルダに打ち、どれも終了コード 1（当たり無し）だった。
+
+### I1-1: 本文の class の一覧と素の要素の見た目（2026-10-20）
+
+- `page.css` に、`.hp-main` の中の class を持たない `section`・`h2`・`h3`・`p`・`ul`・`ol`・`table`（中の `th`・`td`）・`pre` の規則と、幅の狭い画面で素の表を横に送る規則を足した。SKILL.md に「本文（`--body`）の見た目」の節（素の要素の説明と class の一覧）を足した。`build.py` は変えていない。
+- **規則の形を、plan の書いた形から1段直した（plan の H1・補正）。** plan は `:where(.hp-main) section:not([class])` と書いていたが、`:not()` は中の `[class]` の詳細度を持つので、規則の詳細度は (0,1,1) になる。本文の書き手が `section p { … }` のような要素だけのセレクターで書くと (0,0,2) で負け、「書き手の CSS がいつも勝つ」が成り立たない。セレクター全体を `:where()` で包み、詳細度を 0 にした。書いている途中で、`:not()` の詳細度の決まりを思い出して気づいた。
+- 検査を3つ足した（`BodyLooks`）。SKILL.md の一覧の class がすべて `page.css` にあること、`:not([class])` を含む規則がすべて `:where(.hp-main …)` で包まれ、決まった要素だけを指すこと、部品が `.hp-main` の中に描く要素がすべて class を持つこと、である。2つ目は、`page.css` の写しで1つの規則の包みを外すと赤になることを確かめた。
+- 検査は 130 件で、3.13.5 と 3.9.6（`/usr/bin/python3`）の両方で失敗0件だった。

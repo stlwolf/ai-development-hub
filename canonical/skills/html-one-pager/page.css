@@ -301,6 +301,39 @@ code {
 .hp-table th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .hp-table td .hp-chip { margin-left: 0; }
 
+/* 本文（--body）の素の要素: .hp-main の中の class を持たない要素だけに当てる。
+   class の付いた要素（部品と、書き手が class を付けたもの）には効かない。
+   セレクター全体を :where() で包んで詳細度を 0 にし、書き手の CSS がいつも勝つようにする */
+:where(.hp-main section:not([class])) { display: grid; gap: 12px; min-width: 0; }
+:where(.hp-main h2:not([class])) {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--muted);
+  letter-spacing: .03em;
+  text-wrap: balance;
+}
+:where(.hp-main h3:not([class])) { font-size: 14px; font-weight: 700; margin: 0; text-wrap: balance; }
+:where(.hp-main p:not([class])) { margin: 0; max-width: 68ch; }
+:where(.hp-main ul:not([class]), .hp-main ol:not([class])) { margin: 0; padding-left: 1.4em; }
+:where(.hp-main table:not([class])) { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--surface); }
+:where(.hp-main table:not([class]) th, .hp-main table:not([class]) td) {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+:where(.hp-main table:not([class]) th) { font-size: 12px; color: var(--muted); font-weight: 500; }
+:where(.hp-main pre:not([class])) {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--code-bg);
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
 .hp-reply {
   display: grid;
   gap: 8px;
@@ -351,6 +384,8 @@ code {
   .hp-table tr { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
   .hp-table td { border: 0; padding: 3px 0; }
   .hp-table td::before { content: attr(data-label); display: block; font-size: 11.5px; color: var(--muted); }
+  /* 素の表には data-label が無いので行を積まず、表の中だけを横に送る（ページは揺れない） */
+  :where(.hp-main table:not([class])) { display: block; overflow-x: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
