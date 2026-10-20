@@ -106,6 +106,8 @@ COL1 = ["sections", 0, "columns", 1]
 ROW0 = ["sections", 0, "rows", 0]
 TRACKER0 = ["source", "trackers", 0]
 OPS = {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
+BLOCKS = ["sections", 0, "cards", 0, "blocks"]
+BLOCK0 = BLOCKS + [0]
 
 # (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
 BROKEN = [
@@ -259,6 +261,16 @@ BROKEN = [
     ("f3_trackers_object", "table", put(["source", "trackers"], {}), [("E-F3", "source.trackers")], False),
     ("h2_group_tracker_prefix", "bundle", put(GROUP0 + ["source", "trackers"], [{"prefix": "ops", "url": OPS["url"]}]),
      [("E-H2", "sections[0].groups[0].source.trackers[0].prefix")], False),
+    # カードの塊（blocks）
+    ("c5_blocks_empty", "confirm", put(BLOCKS, []), [("E-C5", "sections[0].cards[0].blocks")], False),
+    ("c5_block_title_empty", "confirm", put(BLOCK0 + ["title"], ""), [("E-C5", "sections[0].cards[0].blocks[0].title")], False),
+    ("c5_block_points_empty", "confirm", put(BLOCK0 + ["points"], []), [("E-C5", "sections[0].cards[0].blocks[0].points")], False),
+    ("c5_block_point_empty", "confirm", put(BLOCK0 + ["points", 0], " "), [("E-C5", "sections[0].cards[0].blocks[0].points[0]")], False),
+    ("f3_blocks_object", "confirm", put(BLOCKS, {}), [("E-F3", "sections[0].cards[0].blocks")], False),
+    ("f3_block_missing_points", "confirm", drop(BLOCK0 + ["points"]), [("E-F3", "sections[0].cards[0].blocks[0].points")], False),
+    ("f2_block_unknown_item", "confirm", put(BLOCK0 + ["heading"], "x"), [("E-F2", "sections[0].cards[0].blocks[0].heading")], False),
+    ("t1_block_point_evidence", "confirm", put(["sections", 0, "cards", 0, "blocks", 1, "points", 0, "evidence"], "maybe"),
+     [("E-T1", "sections[0].cards[0].blocks[1].points[0].evidence")], False),
     # 独立した誤り2つは2件とも出る
     ("two_independent_errors", "decide", both(put(["title"], ""), put(CARD0 + ["recommend"], "ok")),
      [("E-C3", "sections[0].cards[0].recommend"), ("E-H1", "title")], False),
@@ -267,7 +279,7 @@ BROKEN = [
 
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
-        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False)):
+        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False), ("confirm", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
 
@@ -615,7 +627,7 @@ class Escaping(unittest.TestCase):
 class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
-    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None))
+    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -704,7 +716,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm")
 
 
 class BodyLooks(unittest.TestCase):
@@ -863,7 +875,7 @@ class ElementIds(unittest.TestCase):
         return re.findall(r'\bid="([^"]*)"', f)
 
     def test_ids_are_unique_in_every_example(self):
-        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None)):
+        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None)):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -922,6 +934,43 @@ class Reason(unittest.TestCase):
     def test_reply_and_saved_data_do_not_carry_reason(self):
         f = render_page("decide", drop(CARD0 + ["reason"]))
         self.assertEqual(json.loads(embedded(f))["cards"], json.loads(embedded(render_page("decide")))["cards"])
+
+
+class Blocks(unittest.TestCase):
+    """カードの小見出し付きの要点の塊。"""
+
+    def test_blocks_follow_points_with_a_lower_heading(self):
+        f = render_page("confirm")
+        card = re.search(r'<article class="hp-card" id="hp-card-intake_216">(.*?)</article>', f, re.S).group(1)
+        self.assertEqual(re.findall(r'<h4 class="hp-block-title">(.*?)</h4>', card),
+                         ["この issue でやること", "issue に書いていないが要ること", "どの観点で見たか"])
+        self.assertNotIn('<p class="hp-reason">', card)
+        self.assertNotIn('<p class="hp-lbl">要点</p>', card)
+        self.assertIn(a_tag(TRACKER_URL + "OPS-42", "OPS-42"), card)
+        self.assertIn('<span class="hp-chip hp-ev-guess">推測</span>', card)
+
+    def test_points_come_before_blocks(self):
+        f = render_page("confirm", put(["sections", 0, "cards", 0, "points"], ["先に読む要点"]))
+        card = re.search(r'<article class="hp-card" id="hp-card-intake_216">(.*?)</article>', f, re.S).group(1)
+        self.assertLess(card.index("先に読む要点"), card.index('class="hp-block"'))
+
+    def test_heading_level_follows_the_card_title_in_a_bundle(self):
+        block = {"title": "やること", "points": ["#31 を見る"]}
+        f = render_page("bundle", put(GROUP0 + ["cards", 0, "blocks"], [block]))
+        self.assertIn('<h5 class="hp-block-title">やること</h5>', f)
+        self.assertIn(a_tag("https://github.com/example-org/billing/issues/31", "#31") + " を見る", f)
+
+    def test_block_strings_stay_text(self):
+        a, b, c = ATTACKS
+        f = render_page("confirm", both(put(BLOCK0 + ["title"], b), put(BLOCK0 + ["points", 0], c + " " + a)))
+        self.assertNotIn("<script>alert(1)", f)
+        self.assertNotIn("<img src=x", f)
+        self.assertIn('<h4 class="hp-block-title">&quot;&gt;&lt;img src=x onerror=alert(1)&gt;</h4>', f)
+        self.assertIn("<code>&lt;/code&gt;&lt;b&gt;</code>", f)
+
+    def test_saved_data_does_not_carry_blocks(self):
+        cards = json.loads(embedded(render_page("confirm")))["cards"]
+        self.assertEqual([sorted(c) for c in cards], [["key", "options"], ["key", "options"]])
 
 
 class SaveCode(unittest.TestCase):

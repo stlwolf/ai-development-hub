@@ -549,7 +549,7 @@ class Validator:
 
     def card(self, path, c):
         if not self.obj(path, c, ("key", "title", "recommend", "options"),
-                        ("reason", "tag", "points", "evidence")):
+                        ("reason", "tag", "points", "blocks", "evidence")):
             return
         key = None
         if "key" in c:
@@ -573,6 +573,8 @@ class Validator:
             self.enum(join(path, "evidence"), c["evidence"], EVIDENCE, "E-T1")
         if "points" in c:
             self.points(join(path, "points"), c["points"])
+        if "blocks" in c:
+            self.blocks(join(path, "blocks"), c["blocks"])
         option_keys = None
         if "options" in c:
             option_keys = self.options(join(path, "options"), c["options"])
@@ -602,6 +604,21 @@ class Validator:
                         self.enum(join(pp, "evidence"), p["evidence"], EVIDENCE, "E-T1")
             else:
                 self.add("E-F3", pp, "文字列か {text, evidence} であるべき所が%sである" % type_name(p))
+
+    def blocks(self, path, blocks):
+        """カードの小見出し付きの要点の塊。塊は1つ以上、各塊の要点も1つ以上（見出しだけの塊は意味が無い）。"""
+        if not self.array(path, blocks, "E-C5", "塊が1つも無い"):
+            return
+        for i, b in enumerate(blocks):
+            bp = "%s[%d]" % (path, i)
+            if not self.obj(bp, b, ("title", "points")):
+                continue
+            if "title" in b:
+                self.text(join(bp, "title"), b["title"], "E-C5")
+            if "points" in b:
+                pp = join(bp, "points")
+                if self.array(pp, b["points"], "E-C5", "要点が1つも無い"):
+                    self.points(pp, b["points"])
 
     def options(self, path, opts):
         """選択肢を見て、形の合った key の並びを返す。2つ未満なら None を返す。"""
@@ -990,13 +1007,11 @@ class Renderer:
         if "reason" in c:
             h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], refs)))
         if c.get("points"):
-            items = []
-            for p in c["points"]:
-                if isinstance(p, str):
-                    items.append("<li>%s</li>" % inline(p, refs))
-                else:
-                    items.append("<li>%s%s</li>" % (inline(p["text"], refs), self.evidence(p.get("evidence"))))
-            h.append('<p class="hp-lbl">%s</p><ul class="hp-points">%s</ul>' % (esc(L["text.points"]), "".join(items)))
+            h.append('<p class="hp-lbl">%s</p>%s' % (esc(L["text.points"]), self.point_list(c["points"], refs)))
+        # 塊は要点の後に、カードの見出しより1段下の見出しを付けて並べる。
+        for b in c.get("blocks", []):
+            h.append('<div class="hp-block"><h%d class="hp-block-title">%s</h%d>%s</div>'
+                     % (level + 1, inline(b["title"], refs), level + 1, self.point_list(b["points"], refs)))
         title_attr = esc(c["title"])
         buttons = []
         for o in c["options"]:
@@ -1014,6 +1029,15 @@ class Renderer:
         h.append('<p class="hp-saved" id="hp-saved-%s" aria-live="polite"></p>' % esc(key))
         h.append("</article>")
         return "\n".join(h)
+
+    def point_list(self, points, refs):
+        items = []
+        for p in points:
+            if isinstance(p, str):
+                items.append("<li>%s</li>" % inline(p, refs))
+            else:
+                items.append("<li>%s%s</li>" % (inline(p["text"], refs), self.evidence(p.get("evidence"))))
+        return '<ul class="hp-points">%s</ul>' % "".join(items)
 
     def findings(self, sec):
         L = self.L

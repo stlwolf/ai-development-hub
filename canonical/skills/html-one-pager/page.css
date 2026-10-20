@@ -214,6 +214,9 @@ code {
 .hp-reason .hp-lbl { display: inline; margin-right: 6px; }
 .hp-points { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
 .hp-points li { overflow-wrap: anywhere; }
+/* カードの小見出し付きの要点の塊 */
+.hp-block { display: grid; gap: 4px; min-width: 0; }
+.hp-block-title { font-size: 13.5px; font-weight: 700; margin: 0; color: var(--ink); text-wrap: balance; }
 
 .hp-chip {
   display: inline-block;

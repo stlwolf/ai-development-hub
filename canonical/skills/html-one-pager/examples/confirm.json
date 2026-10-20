@@ -1,0 +1,91 @@
+{
+  "format": 1,
+  "title": "2つの issue の認識合わせ",
+  "purpose": "decide",
+  "status": "awaiting",
+  "why": "決済の障害のあとに起こした2つの issue（#216・#218）に着手する前に、何をやるかの認識を合わせたい。内容に違和感が無ければ「この内容で確定」を選ぶ。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "trackers": [
+      {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
+    ]
+  },
+  "links": [
+    {"label": "issue #216", "url": "https://github.com/example-org/shop/issues/216"},
+    {"label": "issue #218", "url": "https://github.com/example-org/shop/issues/218"}
+  ],
+  "sections": [
+    {
+      "type": "decisions",
+      "title": "認識合わせ",
+      "cards": [
+        {
+          "key": "intake_216",
+          "tag": "#216",
+          "title": "タイムアウトの既定値を見直す",
+          "recommend": "ok",
+          "blocks": [
+            {
+              "title": "この issue でやること",
+              "points": [
+                "なぜ: 障害の振り返り（OPS-42）で、タイムアウトが設定ファイルと定数の2か所にあったことが分かった。",
+                "設定ファイルの既定値を、先月の記録から決め直す。",
+                "望む結果: タイムアウトの値が1か所にあり、その根拠が設定ファイルの注釈に書いてある。"
+              ]
+            },
+            {
+              "title": "issue に書いていないが要ること",
+              "points": [
+                {"text": "決め直した値で、再試行の3回が上限の時間に収まるかを確かめる。", "evidence": "guess"}
+              ]
+            },
+            {
+              "title": "どの観点で見たか",
+              "points": [
+                "完成後の人手の残り: 値の見直しを、次の障害のあとにも誰かが思い出す必要がある。",
+                "達成を見る数: タイムアウトの件数（いまは1日あたり約40件）。"
+              ]
+            }
+          ],
+          "options": [
+            {"key": "ok", "label": "この内容で確定", "kind": "go"},
+            {"key": "fix", "label": "直してほしい（補足欄に）", "kind": "fix"}
+          ]
+        },
+        {
+          "key": "intake_218",
+          "tag": "#218",
+          "title": "二重の請求を見つける仕組みを足す",
+          "recommend": "ok",
+          "blocks": [
+            {
+              "title": "この issue でやること",
+              "points": [
+                "なぜ: 二重の請求は、請求の記録（`ledger`）で初めて見つかった（#212）。",
+                "同じ注文に2つの請求ができたら、1時間以内に通知する。",
+                "望む結果: 二重の請求が、利用者から問い合わせが来る前に見つかる。"
+              ]
+            },
+            {
+              "title": "issue に書いていないが要ること",
+              "points": [
+                "通知の宛先を決める（いまの障害の通知と同じでよいか）。"
+              ]
+            },
+            {
+              "title": "どの観点で見たか",
+              "points": [
+                "暗黙の工程: いまは担当が毎朝 `ledger` の記録を目で見ている。"
+              ]
+            }
+          ],
+          "options": [
+            {"key": "ok", "label": "この内容で確定", "kind": "go"},
+            {"key": "fix", "label": "直してほしい（補足欄に）", "kind": "fix"}
+          ]
+        }
+      ]
+    }
+  ]
+}
