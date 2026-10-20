@@ -329,7 +329,9 @@ code {
   text-align: left;
   vertical-align: top;
 }
-:where(.hp-main table:not([class]) th) { font-size: 12px; color: var(--muted); font-weight: 500; }
+:where(.hp-main table:not([class]) th) { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+/* 長い URL や識別子が1つの欄で幅を取り、ほかの列を1文字の幅まで潰さないよう、欄の中では語の途中でも折り返す */
+:where(.hp-main table:not([class]) td) { overflow-wrap: anywhere; }
 :where(.hp-main pre:not([class])) {
   margin: 0;
   font-family: var(--font-mono);
