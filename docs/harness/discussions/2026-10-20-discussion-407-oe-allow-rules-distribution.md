@@ -3,7 +3,7 @@ id: "01M5C1J5CZJQHHYFCGB494Z3KP"
 title: "#407 oe の verb の許可規則を hub の宣言で配るか（判定の材料）"
 date: 2026-10-20
 type: discussion
-status: draft
+status: stable
 related:
   - type: refs
     ref: "https://github.com/stlwolf/ai-development-hub/issues/407"
@@ -368,6 +368,8 @@ engine の `bin/` の verb を、コードの冒頭の説明と引数の扱い�
 16. **項目の分け方**（論点4・4B）: 読み取り・登記と受領印・送信を別の項目にするか。
 
 採否が決まったあとで、書く場所と担当を決める。2 の手順を書く場所（hub のスキルか、運用の文書か）と、8 の結果を issue へ書く人（統括か、この単位の子か）である。判定のあと、統括が実装の issue を起こし、その番号を decision に書く。
+
+owner の判定は 2026-10-20 に出た。前半10問はすべて推奨どおりで、後半6問は「配らない」を選んだので答えていない。3 と 4 は1つの issue（#471）にまとめた。9 と 10 は消すと決まり、統括が消した（10 はそのリポジトリの統括に依頼した）。判定と理由、2 の手順を書く場所の提案は decision に記録する。
 
 ## 10. この単位の範囲の外で見つかったこと
 
