@@ -548,8 +548,8 @@ class Validator:
                 self.card("%s[%d]" % (path, i), c)
 
     def card(self, path, c):
-        if not self.obj(path, c, ("key", "title", "recommend", "reason", "options"),
-                        ("tag", "points", "evidence")):
+        if not self.obj(path, c, ("key", "title", "recommend", "options"),
+                        ("reason", "tag", "points", "evidence")):
             return
         key = None
         if "key" in c:
@@ -986,7 +986,9 @@ class Renderer:
         h.append(head)
         h.append('<p class="hp-rec">%s<span class="hp-rec-choice">%s</span></p>'
                  % (self.chip("hp-chip-rec", L["recommend"]), inline(rec_label, refs)))
-        h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], refs)))
+        # 根拠は任意。推奨に説明が要らないカードでは書かず、根拠の行も出さない。
+        if "reason" in c:
+            h.append('<p class="hp-reason"><span class="hp-lbl">%s</span>%s</p>' % (esc(L["text.reason"]), inline(c["reason"], refs)))
         if c.get("points"):
             items = []
             for p in c["points"]:

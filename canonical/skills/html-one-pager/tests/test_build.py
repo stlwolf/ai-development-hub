@@ -125,7 +125,7 @@ BROKEN = [
     ("f3_sections_object", "decide", put(["sections"], {}), [("E-F3", "sections")], False),
     ("f3_cards_string", "decide", put(["sections", 0, "cards"], "x"), [("E-F3", "sections[0].cards")], False),
     ("f3_source_string_stops_children", "decide", put(["source"], "shop"), [("E-F3", "source")], False),
-    ("f3_missing_card_reason", "decide", drop(CARD0 + ["reason"]), [("E-F3", "sections[0].cards[0].reason")], False),
+    ("f3_missing_card_recommend", "decide", drop(CARD0 + ["recommend"]), [("E-F3", "sections[0].cards[0].recommend")], False),
     # E-H1 ページの文字
     ("h1_title_blank", "decide", put(["title"], "   "), [("E-H1", "title")], False),
     ("h1_why_empty", "decide", put(["why"], ""), [("E-H1", "why")], False),
@@ -270,6 +270,12 @@ class ExamplesPass(unittest.TestCase):
         for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
+
+    def test_card_without_reason_is_allowed(self):
+        # 根拠（reason）は任意。書いたのに空なら E-C4（BROKEN の c4_reason_empty）
+        d = example("decide")
+        del d["sections"][0]["cards"][0]["reason"]
+        self.assertEqual(build.validate(d), [])
 
     def test_answered_with_null_choice_is_allowed(self):
         d = example("decide")
@@ -901,6 +907,21 @@ class AnsweredPage(unittest.TestCase):
         self.assertIn('id="hp-store"', f)
         self.assertIn('id="hp-reply" hidden', f)
         self.assertIsNone(json.loads(embedded(f))["answers"])
+
+
+class Reason(unittest.TestCase):
+    """根拠を書かないカードには根拠の行が出ず、推奨の行と選択肢はそのまま出る。"""
+
+    def test_card_without_reason_has_no_reason_line(self):
+        f = render_page("decide", drop(CARD0 + ["reason"]))
+        card = re.search(r'<article class="hp-card" id="hp-card-retry_policy">(.*?)</article>', f, re.S).group(1)
+        self.assertNotIn("hp-reason", card)
+        self.assertIn('<p class="hp-rec"><span class="hp-chip hp-chip-rec">推奨</span><span class="hp-rec-choice">この形で進める</span></p>', card)
+        self.assertEqual(f.count('<p class="hp-reason">'), 2)
+
+    def test_reply_and_saved_data_do_not_carry_reason(self):
+        f = render_page("decide", drop(CARD0 + ["reason"]))
+        self.assertEqual(json.loads(embedded(f))["cards"], json.loads(embedded(render_page("decide")))["cards"])
 
 
 class SaveCode(unittest.TestCase):
