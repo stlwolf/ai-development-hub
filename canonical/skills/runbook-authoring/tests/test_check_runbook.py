@@ -7,11 +7,15 @@ Python 3.9 以上の標準ライブラリだけを使う。
 
 import importlib.util
 import os
+import pty
 import re
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -386,6 +390,301 @@ class SkillMatchesScript(unittest.TestCase):
     def test_rule_table(self):
         rows = re.findall(r"^\|\s*(R\d+)\s*\|", section_of(skill_text(), "### 機械が見る項目"), re.M)
         self.assertEqual(rows, check_runbook.RULE_ORDER)
+
+
+EXAMPLES = os.path.join(SKILL, "examples")
+EXAMPLE_RUNBOOK = os.path.join("docs", "runbooks", "shop-config-apply.md")
+PROMPT_TAIL = "入力する: ".encode("utf-8")
+
+
+class ExampleCopy:
+    """見本のフォルダの写しと、毎回空の反映先。"""
+
+    def __init__(self):
+        self.tmp = tempfile.mkdtemp(prefix="runbook-example-")
+        self.root = os.path.join(self.tmp, "repo")
+        shutil.copytree(EXAMPLES, self.root)
+        self.state = os.path.join(self.tmp, "state")
+        self.env = dict(os.environ)
+        self.env.update({"SHOP_STATE_DIR": self.state, "SHOP_TOKEN": "token-value-for-test-0123456789"})
+
+    def path(self, rel):
+        return os.path.join(self.root, rel)
+
+    def read(self, rel):
+        with open(self.path(rel), encoding="utf-8") as f:
+            return f.read()
+
+    def write(self, rel, text):
+        with open(self.path(rel), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def check(self):
+        args = [sys.executable, CHECK, "--root", self.root, os.path.join(self.root, "docs", "runbooks")]
+        p = subprocess.run(args, capture_output=True, text=True)
+        return p.returncode, p.stdout, p.stderr
+
+    def run(self, cmd, cwd=None, env=None):
+        """端末なしで実行する（新しいセッションにして、制御端末を持たせない）。"""
+        p = subprocess.run(
+            ["/bin/bash", "-c", cmd],
+            cwd=cwd or self.root,
+            env=env or self.env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            start_new_session=True,
+        )
+        return p.returncode, p.stdout + p.stderr
+
+    def run_tty(self, cmd, answer="yes", timeout=60):
+        """端末つきで実行し、確認の問いが出たら answer を入力する。"""
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                os.chdir(self.root)
+                os.execve("/bin/bash", ["/bin/bash", "-c", cmd], self.env)
+            finally:
+                os._exit(127)
+        out = b""
+        sent = False
+        end = time.time() + timeout
+        try:
+            while True:
+                if time.time() > end:
+                    os.kill(pid, signal.SIGKILL)
+                    raise AssertionError("時間内に終わらない: " + cmd)
+                ready, _, _ = select.select([fd], [], [], 0.1)
+                if not ready:
+                    continue
+                try:
+                    data = os.read(fd, 4096)
+                except OSError:
+                    break
+                if not data:
+                    break
+                out += data
+                if answer is not None and not sent and PROMPT_TAIL in out:
+                    os.write(fd, (answer + "\n").encode("utf-8"))
+                    sent = True
+        finally:
+            os.close(fd)
+        _, status = os.waitpid(pid, 0)
+        code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
+        return code, out.decode("utf-8", "replace").replace("\r\n", "\n")
+
+    def current(self):
+        link = os.path.join(self.state, "current")
+        return os.readlink(link) if os.path.islink(link) else None
+
+    def close(self):
+        shutil.rmtree(self.tmp)
+
+
+def blocks_of(text, section, title=None):
+    """手順書の節（title を渡せば、その段）のコマンドのブロックを、書いてある文字のまま返す。"""
+    doc = check_runbook.Doc("runbook.md", text)
+    start, end = doc.section_range(section)
+    if title is not None:
+        steps = [no for no, level, t in doc.headings if level == 3 and start < no < end]
+        named = [no for no, level, t in doc.headings if level == 3 and t == title]
+        start = named[0]
+        later = [no for no in steps if no > start]
+        end = later[0] if later else end
+    return ["\n".join(line for _, line in b.lines) for b in doc.shell_blocks(start, end)]
+
+
+def step_titles(text):
+    doc = check_runbook.Doc("runbook.md", text)
+    start, end = doc.section_range("手順")
+    return [t for no, level, t in doc.headings if level == 3 and start < no < end]
+
+
+class Examples(unittest.TestCase):
+    """見本が検査を通り、brief の4つの壊し方で落ちること（受入 A2・A4）。"""
+
+    def setUp(self):
+        self.ex = ExampleCopy()
+
+    def tearDown(self):
+        self.ex.close()
+
+    def expect(self, rules):
+        rc, out, err = self.ex.check()
+        self.assertEqual(err, "")
+        self.assertEqual(rules_of(out), set(rules), out)
+        self.assertEqual(rc, 1 if rules else 0, out)
+
+    def mutate(self, old, new, rel=EXAMPLE_RUNBOOK):
+        self.ex.write(rel, replace_once(self.ex.read(rel), old, new))
+
+    def test_examples_pass(self):
+        self.assertEqual(self.ex.check(), (0, "", ""))
+
+    def test_human_steps_are_four_to_six(self):
+        self.assertTrue(4 <= len(step_titles(self.ex.read(EXAMPLE_RUNBOOK))) <= 6)
+
+    def test_removed_section(self):
+        text = self.ex.read(EXAMPLE_RUNBOOK)
+        head, rest = text.split("## 確かめ方\n", 1)
+        self.ex.write(EXAMPLE_RUNBOOK, head + "## 止まったときに読む表\n" + rest.split("## 止まったときに読む表\n", 1)[1])
+        self.expect(["R1"])
+
+    def test_missing_script(self):
+        self.mutate("scripts/shop-config.sh verify", "scripts/shop-config-check.sh verify")
+        self.expect(["R5"])
+
+    def test_issue_number(self):
+        self.mutate("- かかる時間の目安: 5分。", "- かかる時間の目安: 5分（#12 で測った）。")
+        self.expect(["R6"])
+
+    def test_full_width_after_variable(self):
+        self.mutate("scripts/shop-config.sh status", 'scripts/shop-config.sh status "$SHOP_STATE_DIR（反映先）"')
+        self.expect(["R9"])
+
+    def test_full_width_after_variable_in_script(self):
+        old = "printf '今の版: %s\\n'"
+        self.mutate(old, 'echo "$STATE（反映先）"\n  ' + old, rel=os.path.join("scripts", "shop-config.sh"))
+        self.expect(["R9"])
+
+
+class ExampleScript(unittest.TestCase):
+    """見本のスクリプトが、手順書に載せた形のまま動くこと（受入 A3）。"""
+
+    def setUp(self):
+        self.ex = ExampleCopy()
+        self.text = self.ex.read(EXAMPLE_RUNBOOK)
+
+    def tearDown(self):
+        self.ex.close()
+
+    def run_steps(self):
+        outs = []
+        for title in step_titles(self.text):
+            for block in blocks_of(self.text, "手順", title):
+                rc, out = self.ex.run_tty(block)
+                self.assertEqual(rc, 0, block + "\n" + out)
+                outs.append(out)
+        return outs
+
+    def test_runbook_blocks_as_written(self):
+        # 1回目の反映（はじめて）
+        outs = self.run_steps()
+        self.assertIn("前提はすべて満たした", outs[0])
+        self.assertIn("変わるキー:", outs[1])
+        self.assertIn("反映した: 版", outs[2])
+        self.assertIn("確かめた: すべて期待どおり", outs[3])
+        self.assertRegex(outs[3], r"記録: shop の設定を反映した・版 [0-9a-f]{12}・.*・時刻 \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+        first = self.ex.current()
+        # 設定ファイルを直した2回目の反映
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        outs = self.run_steps()
+        self.assertIn("変わるキー: price.cake", outs[1])
+        second = self.ex.current()
+        self.assertNotEqual(first, second)
+        # 止まったときに読む表・失敗や中断のとき・AI が実行するとき
+        for section in ["止まったときに読む表", "失敗や中断のとき", "AI が実行するとき"]:
+            for block in blocks_of(self.text, section):
+                rc, out = self.ex.run_tty(block)
+                self.assertEqual(rc, 0, block + "\n" + out)
+                if "rollback" in block:
+                    self.assertIn("戻した: 版", out)
+                    self.assertEqual(self.ex.current(), first)
+        self.assertEqual(self.ex.current(), second)
+        rc, out = self.ex.run_tty(blocks_of(self.text, "手順", step_titles(self.text)[-1])[0])
+        self.assertEqual(rc, 0, out)
+
+    def test_same_version_changes_nothing(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 0)
+        self.assertIn("変わっていない:", out)
+        self.assertNotIn("実行した:", out)
+
+    def test_refused_confirmation_changes_nothing(self):
+        rc, out = self.ex.run_tty("scripts/shop-config.sh apply", answer="no")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("yes ではないので止めた", out)
+        self.assertIsNone(self.ex.current())
+
+    def test_no_terminal_without_yes_changes_nothing(self):
+        rc, out = self.ex.run("scripts/shop-config.sh apply")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("端末が無いので", out)
+        self.assertIsNone(self.ex.current())
+
+    def test_dry_run_lines_match_real_run(self):
+        rc, dry = self.ex.run("scripts/shop-config.sh apply --dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIsNone(self.ex.current())
+        rc, real = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 0)
+        planned = [line for line in dry.splitlines() if line.startswith("実行する: ")]
+        self.assertTrue(planned)
+        self.assertEqual(planned, [line for line in real.splitlines() if line.startswith("実行する: ")])
+        done = [line.replace("実行した: ", "実行する: ", 1) for line in real.splitlines() if line.startswith("実行した: ")]
+        self.assertEqual(planned, done)
+
+    def test_missing_token_stops_before_changes(self):
+        env = dict(self.ex.env)
+        del env["SHOP_TOKEN"]
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes", env=env)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("NG C2", out)
+        self.assertIsNone(self.ex.current())
+
+    def test_token_value_is_never_printed(self):
+        token = self.ex.env["SHOP_TOKEN"]
+        for cmd in ["check", "diff", "apply --yes", "verify", "status"]:
+            rc, out = self.ex.run("scripts/shop-config.sh " + cmd)
+            self.assertEqual(rc, 0, out)
+            self.assertNotIn(token, out)
+        self.assertIn("（{} 文字・値は出さない）".format(len(token)), self.ex.run("scripts/shop-config.sh check")[1])
+
+    def test_broken_config_stops(self):
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.tea=430\n")
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NG C4", out)
+        self.assertIn("キー price.tea が重なっている", out)
+        self.assertIsNone(self.ex.current())
+
+    def test_verify_finds_changed_contents(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        with open(os.path.join(self.ex.state, "current", "shop.conf"), "a", encoding="utf-8") as f:
+            f.write("price.water=100\n")
+        rc, out = self.ex.run("scripts/shop-config.sh verify")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NG V2", out)
+        self.assertNotIn("記録:", out)
+
+    def test_rollback_without_previous(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        rc, out = self.ex.run("scripts/shop-config.sh rollback --yes")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NG B1", out)
+
+    def test_wrong_usage(self):
+        for cmd in ["", "deploy", "check --yes", "apply --force"]:
+            self.assertEqual(self.ex.run("scripts/shop-config.sh " + cmd)[0], 2, cmd)
+
+    def test_runs_from_another_directory(self):
+        rc, out = self.ex.run(os.path.join(self.ex.root, "scripts", "shop-config.sh") + " check", cwd=self.ex.tmp)
+        self.assertEqual(rc, 0, out)
+
+    def test_old_bash(self):
+        if not os.path.exists("/bin/bash"):
+            self.skipTest("/bin/bash が無い")
+        for cmd in ["check", "apply --yes", "verify", "status"]:
+            rc, out = self.ex.run("/bin/bash scripts/shop-config.sh " + cmd)
+            self.assertEqual(rc, 0, cmd + "\n" + out)
+
+    def test_shellcheck(self):
+        tool = shutil.which("shellcheck")
+        if tool is None:
+            self.skipTest("shellcheck が無い")
+        p = subprocess.run([tool, self.ex.path(os.path.join("scripts", "shop-config.sh"))], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout)
 
 
 if __name__ == "__main__":
