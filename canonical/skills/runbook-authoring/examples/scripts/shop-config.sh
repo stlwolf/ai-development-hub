@@ -4,18 +4,20 @@
 # 使い方: scripts/shop-config.sh <名前> [--dry-run] [--yes]
 #   check     前提を確かめる（何も変えない）
 #   diff      反映先の今の版と、設定ファイルの差分を出す（何も変えない）
-#   apply     設定ファイルを反映する（変える。--dry-run と --yes を受ける）
+#   apply     反映先を設定ファイルに合わせる（変える。--dry-run と --yes を受ける）
 #   verify    反映のあとを確かめ、記録の行を出す（何も変えない）
 #   status    反映先の今の版と前の版を出す（何も変えない）
-#   rollback  前の版に戻す（変える。--dry-run と --yes を受ける）
+#   rollback  今の版を前の版に合わせる（変える。--dry-run と --yes を受ける）
+#
+# 変える名前は、何度実行しても同じ結果になる。要る操作だけを実行し、要る操作が無ければ何もしない。
 #
 # 終了コード:
 #   0 期待どおりに終わった（変える名前なら、変えたか、もともと同じで何もしなかった）
 #   1 止まった（確かめが外れたか、確認で断った）。何も変えていない
-#   2 呼び方の誤りか、前提が足りない（依存・資格情報・端末が無い）。何も変えていない
+#   2 呼び方の誤りか、前提が足りない（依存・資格情報・反映先・端末が無い）。何も変えていない
 #   3 変える途中で失敗した。変わったかもしれない
 #
-# 反映先は環境変数 SHOP_STATE_DIR で決める。無ければ ${TMPDIR:-/tmp}/shop-example-state を使う。
+# 反映先は環境変数 SHOP_STATE_DIR（/ 以外の絶対パス）で決める。無ければ ${TMPDIR:-/tmp}/shop-example-state を使う。
 # 資格情報 SHOP_TOKEN は長さだけを確かめる。値は画面に出さず、どこにも送らない。
 set -euo pipefail
 
@@ -23,9 +25,12 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CONFIG="${ROOT}/config/shop.conf"
 STATE="${SHOP_STATE_DIR:-${TMPDIR:-/tmp}/shop-example-state}"
-STATE="${STATE%/}"
+while [ "${STATE}" != "${STATE%/}" ]; do
+  STATE="${STATE%/}"
+done
 export TZ=UTC
 KEY_RE='^[a-z][a-z0-9_.]*='
+VERSION_RE='^[0-9a-f]{12}$'
 
 usage() {
   printf '使い方: scripts/shop-config.sh check|diff|apply|verify|status|rollback [--dry-run] [--yes]\n' >&2
@@ -35,13 +40,67 @@ usage() {
 ok() { printf 'OK %s %s\n' "$1" "$2"; }
 ng() { printf 'NG %s %s\n' "$1" "$2"; }
 
-# 設定ファイルの中身から作る12桁の版
-version_of_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -c1-12
-  else
-    shasum -a 256 "$1" | cut -c1-12
+have_tools() {
+  command -v diff >/dev/null 2>&1 && command -v cmp >/dev/null 2>&1 &&
+    { command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; }
+}
+
+# 反映先の誤りを1つ出す。誤りが無ければ何も出さない
+state_problem() {
+  local parent name
+  case "${STATE}" in
+    /?*) ;;
+    *)
+      printf '反映先は / 以外の絶対パスで書く（いまの値: %s）' "${SHOP_STATE_DIR:-}"
+      return 0
+      ;;
+  esac
+  parent="${STATE}"
+  while [ ! -e "${parent}" ]; do
+    parent=$(dirname "${parent}")
+  done
+  if [ ! -d "${parent}" ] || [ ! -w "${parent}" ]; then
+    printf '書けない: %s' "${parent}"
+    return 0
   fi
+  for name in current previous; do
+    if [ -e "${STATE}/${name}" ] && [ ! -L "${STATE}/${name}" ]; then
+      printf '%s/%s がリンクでない' "${STATE}" "${name}"
+      return 0
+    fi
+  done
+  if [ -e "${STATE}/releases" ] && [ ! -d "${STATE}/releases" ]; then
+    printf '%s/releases がフォルダでない' "${STATE}"
+  fi
+}
+
+# 何も変えない名前の前に、依存と反映先だけを確かめる。外れたら終了コード 2 で止まる
+require_basics() {
+  local bad
+  if ! have_tools; then
+    ng C1 '依存（diff・cmp・sha256 の道具）が無い'
+    exit 2
+  fi
+  bad=$(state_problem)
+  if [ -n "${bad}" ]; then
+    ng C3 "反映先に問題がある: ${bad}"
+    exit 2
+  fi
+}
+
+# 設定ファイルの中身から作る12桁の版。作れなければ終了コード 2 で止まる
+version_of_file() {
+  local v
+  if command -v sha256sum >/dev/null 2>&1; then
+    v=$(sha256sum "$1" | cut -c1-12) || v=''
+  else
+    v=$(shasum -a 256 "$1" | cut -c1-12) || v=''
+  fi
+  if ! printf '%s\n' "${v}" | grep -Eq "${VERSION_RE}"; then
+    printf '版を計算できない: %s\n' "$1" >&2
+    exit 2
+  fi
+  printf '%s' "${v}"
 }
 
 # 反映先のリンクが指す版。リンクが無ければ空
@@ -53,8 +112,8 @@ version_of_link() {
 
 # 設定ファイルの形の誤りを1つ出す。誤りが無ければ何も出さない
 config_problem() {
-  if [ ! -f "${CONFIG}" ]; then
-    printf '設定ファイルが無い: %s' "${CONFIG}"
+  if [ ! -f "${CONFIG}" ] || [ ! -r "${CONFIG}" ]; then
+    printf '設定ファイルが無いか読めない: %s' "${CONFIG}"
     return 0
   fi
   local n=0 line key seen='|'
@@ -78,24 +137,27 @@ config_problem() {
   done <"${CONFIG}"
 }
 
-# 2つの設定ファイルで、値が変わる・足される・消されるキー
+# $1 にあって $2 に無い行。grep の終了コード 1（当たり無し）は正常、2 以上は失敗として返す
+lines_only_in() {
+  local rc=0
+  grep -Fxv -f "$2" "$1" || rc=$?
+  [ "${rc}" -le 1 ]
+}
+
+# 2つの設定ファイルで、値が変わる・足される・消されるキー。読めなければ失敗を返す
 changed_keys() {
-  local keys
-  keys=$(
-    {
-      grep -Fxv -f "$1" "${CONFIG}" || true
-      grep -Fxv -f "${CONFIG}" "$1" || true
-    } | { grep -E "${KEY_RE}" || true; } | sed 's/=.*//' | sort -u | tr '\n' ' '
-  )
+  local added removed keys
+  added=$(lines_only_in "${CONFIG}" "$1") || return 2
+  removed=$(lines_only_in "$1" "${CONFIG}") || return 2
+  keys=$(printf '%s\n%s\n' "${added}" "${removed}" | { grep -E "${KEY_RE}" || true; } | sed 's/=.*//' | sort -u | tr '\n' ' ')
   keys="${keys% }"
   printf '%s' "${keys:-無い}"
 }
 
 # 前提の確かめ。C1〜C3 が外れたら 2、C4 が外れたら 1 を返す。何も変えない
 check_prereq() {
-  local worst=0 parent bad
-  if command -v diff >/dev/null 2>&1 && command -v cmp >/dev/null 2>&1 &&
-    { command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; }; then
+  local worst=0 bad
+  if have_tools; then
     ok C1 '依存（diff・cmp・sha256 の道具）がある'
   else
     ng C1 '依存（diff・cmp・sha256 の道具）が無い'
@@ -107,14 +169,11 @@ check_prereq() {
     ng C2 '資格情報 SHOP_TOKEN が無いか空'
     worst=2
   fi
-  parent="${STATE}"
-  while [ ! -e "${parent}" ]; do
-    parent=$(dirname "${parent}")
-  done
-  if [ -d "${parent}" ] && [ -w "${parent}" ]; then
+  bad=$(state_problem)
+  if [ -z "${bad}" ]; then
     ok C3 "反映先に書ける: ${STATE}"
   else
-    ng C3 "反映先に書けない: ${STATE}"
+    ng C3 "反映先に問題がある: ${bad}"
     worst=2
   fi
   bad=$(config_problem)
@@ -167,20 +226,21 @@ op() {
   printf '\n'
 }
 
+# 反映先を版 new に合わせる操作のうち、要るものだけ
 apply_ops() {
-  local mode="$1" new="$2" cur="$3"
-  op "${mode}" mkdir -p "${STATE}/releases/${new}"
-  op "${mode}" cp "${CONFIG}" "${STATE}/releases/${new}/shop.conf"
-  if [ -n "${cur}" ]; then
+  local mode="$1" new="$2" cur="$3" prev="$4"
+  if [ ! -d "${STATE}/releases/${new}" ]; then
+    op "${mode}" mkdir -p "${STATE}/releases/${new}"
+  fi
+  if ! cmp -s "${CONFIG}" "${STATE}/releases/${new}/shop.conf" 2>/dev/null; then
+    op "${mode}" cp "${CONFIG}" "${STATE}/releases/${new}/shop.conf"
+  fi
+  if [ -n "${cur}" ] && [ "${cur}" != "${new}" ] && [ "${prev}" != "${cur}" ]; then
     op "${mode}" ln -sfn "releases/${cur}" "${STATE}/previous"
   fi
-  op "${mode}" ln -sfn "releases/${new}" "${STATE}/current"
-}
-
-rollback_ops() {
-  local mode="$1" cur="$2" prev="$3"
-  op "${mode}" ln -sfn "releases/${prev}" "${STATE}/current"
-  op "${mode}" ln -sfn "releases/${cur}" "${STATE}/previous"
+  if [ "${cur}" != "${new}" ]; then
+    op "${mode}" ln -sfn "releases/${new}" "${STATE}/current"
+  fi
 }
 
 cmd_check() {
@@ -193,7 +253,8 @@ cmd_check() {
 }
 
 cmd_diff() {
-  local cur old rc=0
+  local cur old rc=0 keys
+  require_basics
   cur=$(version_of_link "${STATE}/current")
   if [ -z "${cur}" ]; then
     printf '反映先にまだ版が無い。設定ファイルのすべての行が足される\n'
@@ -204,14 +265,18 @@ cmd_diff() {
   fi
   diff -u "${old}" "${CONFIG}" || rc=$?
   if [ "${rc}" -gt 1 ]; then
-    printf '差分を出せなかった\n' >&2
+    printf '差分を出せなかった\n'
     exit 2
   fi
-  printf '変わるキー: %s\n' "$(changed_keys "${old}")"
+  keys=$(changed_keys "${old}") || {
+    printf '変わるキーを出せなかった\n'
+    exit 2
+  }
+  printf '変わるキー: %s\n' "${keys}"
 }
 
 cmd_apply() {
-  local rc=0 new cur old
+  local rc=0 new cur prev old keys plan
   check_prereq || rc=$?
   if [ "${rc}" -ne 0 ]; then
     printf '前提が満たされていないので止めた（何も変えていない）\n'
@@ -219,7 +284,9 @@ cmd_apply() {
   fi
   new=$(version_of_file "${CONFIG}")
   cur=$(version_of_link "${STATE}/current")
-  if [ "${new}" = "${cur}" ]; then
+  prev=$(version_of_link "${STATE}/previous")
+  plan=$(apply_ops show "${new}" "${cur}" "${prev}")
+  if [ -z "${plan}" ]; then
     printf '変わっていない: 版 %s はすでに反映先にある（何もしない）\n' "${new}"
     exit 0
   fi
@@ -227,24 +294,43 @@ cmd_apply() {
   if [ -z "${cur}" ]; then
     old=/dev/null
   fi
-  printf '変わるキー: %s\n' "$(changed_keys "${old}")"
-  if [ -n "${cur}" ]; then
+  keys=$(changed_keys "${old}") || {
+    printf '変わるキーを出せなかった（何も変えていない）\n'
+    exit 2
+  }
+  printf '変わるキー: %s\n' "${keys}"
+  if [ -n "${cur}" ] && [ "${cur}" != "${new}" ]; then
     printf '戻し方: scripts/shop-config.sh rollback（今の版 %s に戻る）\n' "${cur}"
-  else
+  elif [ -z "${cur}" ]; then
     printf '戻し方: はじめての反映なので、戻す先の版は無い\n'
+  else
+    printf '戻し方: 版は変わらない。反映先の中身を設定ファイルに合わせ直すだけである\n'
   fi
-  apply_ops show "${new}" "${cur}"
+  printf '%s\n' "${plan}"
   if [ "${DRY}" -eq 1 ]; then
     printf '%s\n' '--dry-run なので何も変えていない'
     exit 0
   fi
   confirm '反映するなら yes と入力する: '
-  apply_ops run "${new}" "${cur}"
-  printf '反映した: 版 %s（前の版 %s）\n' "${new}" "${cur:-無し}"
+  if [ "$(version_of_file "${CONFIG}")" != "${new}" ]; then
+    printf '確認のあいだに設定ファイルが変わった。手順の2からやり直す（何も変えていない）\n'
+    exit 1
+  fi
+  apply_ops run "${new}" "${cur}" "${prev}"
+  if [ "$(version_of_file "${STATE}/releases/${new}/shop.conf")" != "${new}" ]; then
+    printf '写した中身の版が %s でない。反映先が変わったかもしれない。手順書の「失敗や中断のとき」を読む\n' "${new}"
+    exit 3
+  fi
+  if [ "${cur}" = "${new}" ]; then
+    printf '反映した: 版 %s（版は変わらず、中身を合わせ直した）\n' "${new}"
+  else
+    printf '反映した: 版 %s（前の版 %s）\n' "${new}" "${cur:-無し}"
+  fi
 }
 
 cmd_verify() {
   local new cur fails=0
+  require_basics
   new=$(version_of_file "${CONFIG}")
   cur=$(version_of_link "${STATE}/current")
   if [ "${cur}" = "${new}" ]; then
@@ -268,6 +354,7 @@ cmd_verify() {
 
 cmd_status() {
   local cur prev
+  require_basics
   cur=$(version_of_link "${STATE}/current")
   prev=$(version_of_link "${STATE}/previous")
   printf '今の版: %s\n' "${cur:-無し}"
@@ -276,22 +363,27 @@ cmd_status() {
 
 cmd_rollback() {
   local cur prev
+  require_basics
   cur=$(version_of_link "${STATE}/current")
   prev=$(version_of_link "${STATE}/previous")
-  if [ -z "${prev}" ] || [ ! -d "${STATE}/releases/${prev}" ]; then
+  if [ -z "${prev}" ] || [ ! -f "${STATE}/releases/${prev}/shop.conf" ]; then
     ng B1 '戻す先の版が無い'
     exit 1
   fi
   ok B1 "戻す先の版がある: ${prev}"
-  printf '戻すと、今の版 %s が前の版になる\n' "${cur}"
-  rollback_ops show "${cur}" "${prev}"
+  if [ "${cur}" = "${prev}" ]; then
+    printf '変わっていない: すでに前の版 %s を使っている（何もしない）\n' "${prev}"
+    exit 0
+  fi
+  printf '戻すと、今の版は %s になる。元に戻すときは、設定ファイルの版を apply する\n' "${prev}"
+  op show ln -sfn "releases/${prev}" "${STATE}/current"
   if [ "${DRY}" -eq 1 ]; then
     printf '%s\n' '--dry-run なので何も変えていない'
     exit 0
   fi
   confirm '戻すなら yes と入力する: '
-  rollback_ops run "${cur}" "${prev}"
-  printf '戻した: 版 %s（戻す前の版 %s）\n' "${prev}" "${cur}"
+  op run ln -sfn "releases/${prev}" "${STATE}/current"
+  printf '戻した: 版 %s（戻す前の版 %s）\n' "${prev}" "${cur:-無し}"
 }
 
 if [ "$#" -lt 1 ]; then

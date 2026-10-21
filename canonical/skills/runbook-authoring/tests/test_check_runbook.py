@@ -248,6 +248,34 @@ class ReferencesR5(Base):
     def test_arguments_are_not_references(self):
         self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/run.sh check config/missing.conf"))
 
+    def test_semicolon_is_an_operator(self):
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/run.sh; scripts/run.sh check"))
+
+    def test_command_after_semicolon(self):
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/run.sh check; scripts/missing.sh check"))
+
+    def test_prefix_command_with_option_value(self):
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "sudo -u root bash scripts/missing.sh"))
+
+    def test_command_string_of_bash_c(self):
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "bash -c 'scripts/missing.sh check'"))
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "bash -c 'scripts/run.sh check'"))
+
+    def test_redirect_target_and_comment(self):
+        text = replace_once(VALID, "scripts/run.sh check", "scripts/run.sh check > out/missing.txt # 注釈 scripts/missing.sh")
+        self.expect([], runbook=text)
+
+    def test_hash_inside_a_path(self):
+        extra = {"scripts/a#b.sh": SCRIPT}
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/a#b.sh check"), extra=extra)
+
+    def test_reference_style_and_angle_links(self):
+        self.expect(["R5"], runbook=replace_once(VALID, "- まだ無い。", "- [背景][b] を読む。\n\n[b]: missing.md"))
+        self.expect(["R5"], runbook=replace_once(VALID, "- まだ無い。", "- [背景](<missing file.md>) を読む。"))
+        extra = {"docs/a b.md": "x\n", "docs/c.md": "x\n"}
+        text = replace_once(VALID, "- まだ無い。", "- [背景](<../a b.md>) と [別][c] を読む。\n\n[c]: ../c.md")
+        self.expect([], runbook=text, extra=extra)
+
 
 class IssueNumbersR6(Base):
     def test_issue_number_in_prose(self):
@@ -263,6 +291,14 @@ class IssueNumbersR6(Base):
 
     def test_bare_number_in_pitfalls(self):
         self.expect(["R6"], runbook=replace_once(VALID, "- まだ無い。", "- 前に詰まった（#12）。"))
+
+    def test_number_after_letters(self):
+        self.expect(["R6"], runbook=replace_once(VALID, "使うとき: 試すとき。", "使うとき: issue#123 を試すとき。"))
+        self.expect(["R6"], runbook=replace_once(VALID, "使うとき: 試すとき。", "使うとき: 対応#123 を試すとき。"))
+
+    def test_url_fragment_and_entity_are_not_issue_numbers(self):
+        text = replace_once(VALID, "使うとき: 試すとき。", "使うとき: https://example.com/doc#12 と &#123; を見るとき。")
+        self.expect([], runbook=text)
 
     def test_inline_code_and_blocks_are_ignored(self):
         text = replace_once(VALID, "使うとき: 試すとき。", "使うとき: `#123` を試すとき。")
@@ -307,6 +343,15 @@ class NonAsciiAfterVariableR9(Base):
     def test_comment_line_is_ignored(self):
         self.expect([], script=SCRIPT + '# "$c（" は書かない\n')
 
+    def test_not_expanded_forms_are_ignored(self):
+        body = "echo '$c（'\necho \\$c（\ncat <<'EOF'\n$c（\nEOF\ncat <<-\\END\n\t$c（\n\tEND\ncat <<<\"${c}（\"\n"
+        self.expect([], script=SCRIPT + body)
+
+    def test_expanded_forms_are_found(self):
+        for body in ['echo "$c（"\n', "cat <<EOF\n$c（\nEOF\n", "echo 'a\nb' \"$c（\"\n", 'x=1 # 注釈\necho $c（\n']:
+            rc, out, err = self.run_case(script=SCRIPT + body)
+            self.assertEqual(rules_of(out), {"R9"}, body + out)
+
 
 class IndexR10(Base):
     def test_unlisted_runbook(self):
@@ -317,6 +362,9 @@ class IndexR10(Base):
 
     def test_missing_index(self):
         self.expect(["R10"], index=None)
+
+    def test_query_and_fragment_in_index_links(self):
+        self.expect([], index=replace_once(INDEX, "(ok.md)", "(ok.md?raw=1#いつ使うか)"))
 
     def test_single_file_skips_index(self):
         repo = Repo(index=None)
@@ -351,6 +399,22 @@ class ExitCodes(Base):
             self.assertEqual((rc, out), (2, ""))
         finally:
             repo.close()
+
+    def test_unreadable_files(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root は権限に関係なく読める")
+        for rel in ["docs/runbooks", "docs/runbooks/README.md", "docs/runbooks/ok.md", "scripts/run.sh"]:
+            repo = Repo()
+            target = os.path.join(repo.root, rel)
+            os.chmod(target, 0)
+            try:
+                rc, out, err = repo.check()
+                self.assertEqual((rc, out), (2, ""), rel)
+                self.assertIn("検査できない", err, rel)
+                self.assertNotIn("Traceback", err, rel)
+            finally:
+                os.chmod(target, 0o755)
+                repo.close()
 
 
 def skill_text():
@@ -437,8 +501,8 @@ class ExampleCopy:
         )
         return p.returncode, p.stdout + p.stderr
 
-    def run_tty(self, cmd, answer="yes", timeout=60):
-        """端末つきで実行し、確認の問いが出たら answer を入力する。"""
+    def run_tty(self, cmd, answer="yes", timeout=60, before_answer=None):
+        """端末つきで実行し、確認の問いが出たら answer を入力する（その前に before_answer を呼ぶ）。"""
         pid, fd = pty.fork()
         if pid == 0:
             try:
@@ -465,6 +529,8 @@ class ExampleCopy:
                     break
                 out += data
                 if answer is not None and not sent and PROMPT_TAIL in out:
+                    if before_answer is not None:
+                        before_answer()
                     os.write(fd, (answer + "\n").encode("utf-8"))
                     sent = True
         finally:
@@ -476,6 +542,22 @@ class ExampleCopy:
     def current(self):
         link = os.path.join(self.state, "current")
         return os.readlink(link) if os.path.islink(link) else None
+
+    def snapshot(self):
+        """反映先の全体（パス・種類・リンクの先・中身）。何も変えていないことを比べるのに使う。"""
+        out = {}
+        for top, dirs, files in os.walk(self.state):
+            for name in dirs + files:
+                p = os.path.join(top, name)
+                rel = os.path.relpath(p, self.state)
+                if os.path.islink(p):
+                    out[rel] = ("link", os.readlink(p))
+                elif os.path.isdir(p):
+                    out[rel] = ("dir", None)
+                else:
+                    with open(p, "rb") as f:
+                        out[rel] = ("file", f.read())
+        return out
 
     def close(self):
         shutil.rmtree(self.tmp)
@@ -582,48 +664,85 @@ class ExampleScript(unittest.TestCase):
         self.assertIn("変わるキー: price.cake", outs[1])
         second = self.ex.current()
         self.assertNotEqual(first, second)
-        # 止まったときに読む表・失敗や中断のとき・AI が実行するとき
-        for section in ["止まったときに読む表", "失敗や中断のとき", "AI が実行するとき"]:
-            for block in blocks_of(self.text, section):
-                rc, out = self.ex.run_tty(block)
-                self.assertEqual(rc, 0, block + "\n" + out)
-                if "rollback" in block:
-                    self.assertIn("戻した: 版", out)
-                    self.assertEqual(self.ex.current(), first)
+        # 止まったときに読む表（今の版を見る）
+        for block in blocks_of(self.text, "止まったときに読む表"):
+            rc, out = self.ex.run_tty(block)
+            self.assertEqual(rc, 0, block + "\n" + out)
+            self.assertIn("今の版: " + os.path.basename(second), out)
+        # 失敗や中断のとき（前の版に戻す）
+        for block in blocks_of(self.text, "失敗や中断のとき"):
+            rc, out = self.ex.run_tty(block)
+            self.assertEqual(rc, 0, block + "\n" + out)
+        self.assertIn("戻した: 版", out)
+        self.assertEqual(self.ex.current(), first)
+        # AI が実行するとき（反映の dry-run と --yes、戻すの dry-run と --yes）
+        expected = [first, second, second, first]
+        blocks = blocks_of(self.text, "AI が実行するとき")
+        self.assertEqual(len(blocks), len(expected), blocks)
+        for block, want in zip(blocks, expected):
+            rc, out = self.ex.run_tty(block, answer=None)
+            self.assertEqual(rc, 0, block + "\n" + out)
+            self.assertEqual(self.ex.current(), want, block)
+        # 手順の3と4をやり直して、新しい版に戻す
+        titles = step_titles(self.text)
+        for title in titles[2:]:
+            rc, out = self.ex.run_tty(blocks_of(self.text, "手順", title)[0])
+            self.assertEqual(rc, 0, out)
         self.assertEqual(self.ex.current(), second)
-        rc, out = self.ex.run_tty(blocks_of(self.text, "手順", step_titles(self.text)[-1])[0])
-        self.assertEqual(rc, 0, out)
+        self.assertIn("確かめた: すべて期待どおり", out)
 
     def test_same_version_changes_nothing(self):
         self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        before = self.ex.snapshot()
         rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
         self.assertEqual(rc, 0)
         self.assertIn("変わっていない:", out)
         self.assertNotIn("実行した:", out)
+        self.assertEqual(self.ex.snapshot(), before)
 
     def test_refused_confirmation_changes_nothing(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        before = self.ex.snapshot()
         rc, out = self.ex.run_tty("scripts/shop-config.sh apply", answer="no")
         self.assertEqual(rc, 1, out)
         self.assertIn("yes ではないので止めた", out)
-        self.assertIsNone(self.ex.current())
+        self.assertEqual(self.ex.snapshot(), before)
 
     def test_no_terminal_without_yes_changes_nothing(self):
-        rc, out = self.ex.run("scripts/shop-config.sh apply")
-        self.assertEqual(rc, 2, out)
-        self.assertIn("端末が無いので", out)
-        self.assertIsNone(self.ex.current())
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        before = self.ex.snapshot()
+        for cmd in ["apply", "rollback"]:
+            rc, out = self.ex.run("scripts/shop-config.sh " + cmd)
+            self.assertIn(rc, (1, 2), out)
+            self.assertEqual(self.ex.snapshot(), before, cmd)
+        self.assertIn("端末が無いので", self.ex.run("scripts/shop-config.sh apply")[1])
+
+    def test_config_changed_while_confirming(self):
+        def change():
+            self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        rc, out = self.ex.run_tty("scripts/shop-config.sh apply", before_answer=change)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("確認のあいだに設定ファイルが変わった", out)
+        self.assertFalse(os.path.exists(self.ex.state))
 
     def test_dry_run_lines_match_real_run(self):
-        rc, dry = self.ex.run("scripts/shop-config.sh apply --dry-run")
-        self.assertEqual(rc, 0)
-        self.assertIsNone(self.ex.current())
-        rc, real = self.ex.run("scripts/shop-config.sh apply --yes")
-        self.assertEqual(rc, 0)
-        planned = [line for line in dry.splitlines() if line.startswith("実行する: ")]
-        self.assertTrue(planned)
-        self.assertEqual(planned, [line for line in real.splitlines() if line.startswith("実行する: ")])
-        done = [line.replace("実行した: ", "実行する: ", 1) for line in real.splitlines() if line.startswith("実行した: ")]
-        self.assertEqual(planned, done)
+        for cmd in ["apply", "rollback"]:
+            if cmd == "rollback":
+                self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+                self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+            before = self.ex.snapshot() if os.path.exists(self.ex.state) else None
+            rc, dry = self.ex.run("scripts/shop-config.sh {} --dry-run".format(cmd))
+            self.assertEqual(rc, 0, dry)
+            self.assertEqual(self.ex.snapshot() if before is not None else None, before)
+            rc, real = self.ex.run("scripts/shop-config.sh {} --yes".format(cmd))
+            self.assertEqual(rc, 0, real)
+            planned = [line for line in dry.splitlines() if line.startswith("実行する: ")]
+            self.assertTrue(planned, cmd)
+            self.assertEqual(planned, [line for line in real.splitlines() if line.startswith("実行する: ")])
+            done = [line.replace("実行した: ", "実行する: ", 1) for line in real.splitlines() if line.startswith("実行した: ")]
+            self.assertEqual(planned, done)
 
     def test_missing_token_stops_before_changes(self):
         env = dict(self.ex.env)
@@ -631,7 +750,7 @@ class ExampleScript(unittest.TestCase):
         rc, out = self.ex.run("scripts/shop-config.sh apply --yes", env=env)
         self.assertEqual(rc, 2, out)
         self.assertIn("NG C2", out)
-        self.assertIsNone(self.ex.current())
+        self.assertFalse(os.path.exists(self.ex.state))
 
     def test_token_value_is_never_printed(self):
         token = self.ex.env["SHOP_TOKEN"]
@@ -647,9 +766,9 @@ class ExampleScript(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("NG C4", out)
         self.assertIn("キー price.tea が重なっている", out)
-        self.assertIsNone(self.ex.current())
+        self.assertFalse(os.path.exists(self.ex.state))
 
-    def test_verify_finds_changed_contents(self):
+    def test_changed_contents_are_found_and_repaired(self):
         self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
         with open(os.path.join(self.ex.state, "current", "shop.conf"), "a", encoding="utf-8") as f:
             f.write("price.water=100\n")
@@ -657,12 +776,67 @@ class ExampleScript(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("NG V2", out)
         self.assertNotIn("記録:", out)
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("中身を合わせ直した", out)
+        self.assertEqual(self.ex.run("scripts/shop-config.sh verify")[0], 0)
 
     def test_rollback_without_previous(self):
         self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
         rc, out = self.ex.run("scripts/shop-config.sh rollback --yes")
         self.assertEqual(rc, 1, out)
         self.assertIn("NG B1", out)
+
+    def test_rollback_twice_is_the_same_as_once(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        first = self.ex.current()
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        self.assertEqual(self.ex.run("scripts/shop-config.sh rollback --yes")[0], 0)
+        self.assertEqual(self.ex.current(), first)
+        before = self.ex.snapshot()
+        rc, out = self.ex.run("scripts/shop-config.sh rollback --yes")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("変わっていない:", out)
+        self.assertEqual(self.ex.snapshot(), before)
+
+    def test_failure_midway_and_rerun(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root は権限に関係なく書ける")
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        first = self.ex.current()
+        self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
+        rc, dry = self.ex.run("scripts/shop-config.sh apply --dry-run")
+        version = re.search(r"releases/([0-9a-f]{12})", dry.split("実行する: mkdir", 1)[1]).group(1)
+        locked = os.path.join(self.ex.state, "releases", version)
+        os.makedirs(locked)
+        os.chmod(locked, 0o555)
+        try:
+            rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+            self.assertEqual(rc, 3, out)
+            self.assertIn("変える途中で失敗した", out)
+            self.assertEqual(self.ex.current(), first)
+        finally:
+            os.chmod(locked, 0o755)
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("実行した: mkdir", out)
+        self.assertEqual(self.ex.current(), "releases/" + version)
+        self.assertEqual(self.ex.run("scripts/shop-config.sh verify")[0], 0)
+
+    def test_bad_state_dir_stops_before_changes(self):
+        for value in ["/", "relative/state"]:
+            env = dict(self.ex.env, SHOP_STATE_DIR=value)
+            for cmd in ["check", "apply --yes", "status"]:
+                rc, out = self.ex.run("scripts/shop-config.sh " + cmd, env=env)
+                self.assertEqual(rc, 2, value + " " + cmd + "\n" + out)
+                self.assertIn("NG C3", out)
+        os.makedirs(os.path.join(self.ex.state, "current"))
+        before = self.ex.snapshot()
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("リンクでない", out)
+        self.assertEqual(self.ex.snapshot(), before)
 
     def test_wrong_usage(self):
         for cmd in ["", "deploy", "check --yes", "apply --force"]:
@@ -672,12 +846,24 @@ class ExampleScript(unittest.TestCase):
         rc, out = self.ex.run(os.path.join(self.ex.root, "scripts", "shop-config.sh") + " check", cwd=self.ex.tmp)
         self.assertEqual(rc, 0, out)
 
-    def test_old_bash(self):
-        if not os.path.exists("/bin/bash"):
-            self.skipTest("/bin/bash が無い")
-        for cmd in ["check", "apply --yes", "verify", "status"]:
-            rc, out = self.ex.run("/bin/bash scripts/shop-config.sh " + cmd)
-            self.assertEqual(rc, 0, cmd + "\n" + out)
+    def test_each_bash(self):
+        """/bin/bash と PATH の bash のそれぞれで、名前を明示して動かす（macOS では 3.2 と新しい版）。"""
+        shells = []
+        for b in ["/bin/bash", shutil.which("bash")]:
+            if b and os.path.exists(b) and os.path.realpath(b) not in [os.path.realpath(x) for x in shells]:
+                shells.append(b)
+        for b in shells:
+            ex = ExampleCopy()
+            try:
+                for cmd in ["check", "diff", "apply --yes", "verify", "status"]:
+                    rc, out = ex.run("{} scripts/shop-config.sh {}".format(b, cmd))
+                    self.assertEqual(rc, 0, b + " " + cmd + "\n" + out)
+                ex.write("config/shop.conf", ex.read("config/shop.conf") + "price.cake=500\n")
+                for cmd in ["apply --yes", "rollback --yes", "rollback --yes"]:
+                    rc, out = ex.run("{} scripts/shop-config.sh {}".format(b, cmd))
+                    self.assertEqual(rc, 0, b + " " + cmd + "\n" + out)
+            finally:
+                ex.close()
 
     def test_shellcheck(self):
         tool = shutil.which("shellcheck")
