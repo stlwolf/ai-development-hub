@@ -190,7 +190,80 @@ plan の初稿を書いた。判断の結論は plan の DJ-1〜DJ-11 にあり�
 
   ブロック1の grep が囲み忘れを拾うこと（陽性の対照）は、P2 の設計SO の採否のところで `$c（` の行を拾うことで確かめてある。
 
-- **A11（人が見る表示）。** 見本の写しで、手順の1〜4を端末つきで実行し、確認に `yes` を入れ、さらに設定ファイルに1行足して差分と反映をもう1回実行した。ロケールは `ja_JP.UTF-8` にした。写しは worktree の `tmp/467-runbook-skill/a11-transcript.txt`（作業層）にあり、PR の本文に等幅で載せる。2回目の差分では「変わるキー: price.cake」だけが出て、戻し方には前の版の番号が出た。
+- **A11（人が見る表示）。** 見本の写しで、手順の1〜4を端末つきで実行し、確認に `yes` を入れ、さらに設定ファイルに1行足して差分と反映をもう1回実行した。ロケールは `ja_JP.UTF-8` にした。2回目の差分では「変わるキー: price.cake」だけが出て、戻し方には前の版の番号が出た。下の写しは、Copilot の直しのあとのスクリプト（`6bea978`）で作り直したもので、一時フォルダのパスを `<作業場>` に置き換えてある（このブロックの日時は実行したときの時刻である）。同じ写しを PR の本文にも載せた。
+
+  ```text
+  $ scripts/shop-config.sh check
+  OK C1 依存（diff・cmp・sha256 の道具）がある
+  OK C2 資格情報 SHOP_TOKEN がある（32 文字・値は出さない）
+  OK C3 反映先に書ける: <作業場>/state
+  OK C4 設定ファイルの形が正しい（キー 3 個）
+  前提はすべて満たした
+
+  $ scripts/shop-config.sh diff
+  反映先にまだ版が無い。設定ファイルのすべての行が足される
+  --- /dev/null	2026-10-21 10:56:08
+  +++ <作業場>/repo/config/shop.conf	2026-10-21 10:56:08
+  @@ -0,0 +1,4 @@
+  +# shop の設定（見本・架空の値）。キー=値 の形で1行に1つ書く。
+  +price.coffee=480
+  +price.tea=420
+  +open.hours=09-18
+  変わるキー: open.hours price.coffee price.tea
+
+  $ scripts/shop-config.sh apply
+  OK C1 依存（diff・cmp・sha256 の道具）がある
+  OK C2 資格情報 SHOP_TOKEN がある（32 文字・値は出さない）
+  OK C3 反映先に書ける: <作業場>/state
+  OK C4 設定ファイルの形が正しい（キー 3 個）
+  変わるキー: open.hours price.coffee price.tea
+  戻し方: はじめての反映なので、戻す先の版は無い
+  実行する: mkdir -p <作業場>/state/releases/c38497d11ed6
+  実行する: cp <作業場>/repo/config/shop.conf <作業場>/state/releases/c38497d11ed6/shop.conf
+  実行する: ln -sfn releases/c38497d11ed6 <作業場>/state/current
+  反映するなら yes と入力する: yes
+  実行した: mkdir -p <作業場>/state/releases/c38497d11ed6
+  実行した: cp <作業場>/repo/config/shop.conf <作業場>/state/releases/c38497d11ed6/shop.conf
+  実行した: ln -sfn releases/c38497d11ed6 <作業場>/state/current
+  反映した: 版 c38497d11ed6（前の版 無し）
+
+  $ scripts/shop-config.sh verify
+  OK V1 反映先の版が設定ファイルと同じ: c38497d11ed6
+  OK V2 反映先の中身が設定ファイルと同じ
+  確かめた: すべて期待どおり
+  記録: shop の設定を反映した・版 c38497d11ed6・反映先 <作業場>/state・時刻 2026-10-21T10:56:08Z
+
+  （設定ファイルに price.cake=500 を足して、2回目）
+
+  $ scripts/shop-config.sh diff
+  反映先の今の版: c38497d11ed6
+  --- <作業場>/state/current/shop.conf	2026-10-21 10:56:08
+  +++ <作業場>/repo/config/shop.conf	2026-10-21 10:56:08
+  @@ -2,3 +2,4 @@
+   price.coffee=480
+   price.tea=420
+   open.hours=09-18
+  +price.cake=500
+  変わるキー: price.cake
+
+  $ scripts/shop-config.sh apply
+  OK C1 依存（diff・cmp・sha256 の道具）がある
+  OK C2 資格情報 SHOP_TOKEN がある（32 文字・値は出さない）
+  OK C3 反映先に書ける: <作業場>/state
+  OK C4 設定ファイルの形が正しい（キー 4 個）
+  変わるキー: price.cake
+  戻し方: scripts/shop-config.sh rollback（今の版 c38497d11ed6 に戻る）
+  実行する: mkdir -p <作業場>/state/releases/980871584c5b
+  実行する: cp <作業場>/repo/config/shop.conf <作業場>/state/releases/980871584c5b/shop.conf
+  実行する: ln -sfn releases/c38497d11ed6 <作業場>/state/previous
+  実行する: ln -sfn releases/980871584c5b <作業場>/state/current
+  反映するなら yes と入力する: yes
+  実行した: mkdir -p <作業場>/state/releases/980871584c5b
+  実行した: cp <作業場>/repo/config/shop.conf <作業場>/state/releases/980871584c5b/shop.conf
+  実行した: ln -sfn releases/c38497d11ed6 <作業場>/state/previous
+  実行した: ln -sfn releases/980871584c5b <作業場>/state/current
+  反映した: 版 980871584c5b（前の版 c38497d11ed6）
+  ```
 
 - **A9（発火）の1回目は、測定の足場の誤りで汚れていて、使えなかった。** #428 と同じく、scratchpad の一時ディレクトリにスキルへの symlink を置き、hub の checkout から `claude -p`（Claude Code 2.1.306）を `--add-dir`・`--tools Read,Grep,Glob,Skill`・`--permission-mode dontAsk`・`--strict-mcp-config`・stream-json で起動した。10個の依頼文をファイルに1行ずつ書き、`while read` のループで順に起動した。ところが、ループの中の `claude -p` が、ループの標準入力（まだ読んでいない依頼文の行）を読み、依頼文に足していた。D0 の返答が「一緒に送られた9行の依頼の一覧について」と書いたことで気づいた。陽性の2つ（p2）と陰性の1つ（n7）の返答にも同じ印があった。測りたいのは1つの依頼文での読み込みなので、1回目の結果はすべて捨てた（写しは worktree の `tmp/467-runbook-skill/fire/run1-contaminated/`・作業層）。`claude -p` の標準入力を `/dev/null` にして、10回すべてを測り直した。
 
@@ -298,6 +371,12 @@ A10 は I1-4 で満たした。A1〜A13 をすべて満たしたので、GATE I1
 
 昇格の印: 手順書の検査がシェルを読むなら、引用・注釈・ヒアドキュメント・行の継ぎを1つの読み取りで追う。行ごとの正規表現や shlex の後で比べる形は、どれか1つを取りこぼす（実装SO と Copilot で3回に分けて見つかった）
 
+### GATE I1 の A11 に戻った（2026-10-21）
+
+- 統括が完了の前に `unmet-gate-check` で照合し、受入 A11 が未達と出た（ほかは未達0件）。A11 は「見本の4つの段を端末で実行した出力を、等幅の写しで episode と PR の本文に載せる」だが、episode には作業層の写しを指す文しか無く、PR の本文には手順の3（2回目の反映）の写ししか無かった。作業層の写しは worktree の掃除で消える。
+- 自分では I1-5 で「PR の本文に等幅で載せる」と書き、PR の本文には1段だけを載せ、A13・GATE I1 で A11 を満たしたと数えていた。受入の文の「4つの段」と「episode と PR の本文」の2つの条件を、どちらも満たしていなかった。
+- `6bea978` のスクリプトで写しを作り直し、4つの段（`check`・`diff`・`apply`・`verify`）と2回目の `diff`・`apply` を、等幅のブロックで I1-5 の A11 の項目と PR の本文の両方に載せた。載せたあとに、材料の語の一覧と、ペインの番号の形の文字列と、手元の利用者のホームのパスが、episode と PR の本文に無いことを grep で確かめた。
+
 ## 振り返り（closure・2026-10-21）
 
 ### tier と closure gate
@@ -305,7 +384,7 @@ A10 は I1-4 で満たした。A1〜A13 をすべて満たしたので、GATE I1
 - **tier: heavy。** 意図的に起動した外部レビュー（設計SO・実装SO・closure の外部チェック）があり、失敗と撤回（発火の測定の1回目を捨てた・見本の戻す操作を作り直した）があり、選択肢を比べて棄却した設計判断（DJ-4・DJ-6・DJ-9）がある。
 - **なぜ**: 冒頭の「なぜこの作業が始まったか」に、2文で自己完結して書いてある。
 - **次の消費者**: (1) この PR をレビューしてマージを決める owner と統括。(2) 業務のリポジトリ2つで手順書をこの形に書き直す統括と子（スキルを読み、decision の決定1〜3 の前提を確かめる）。(3) 次に hub で手順書や書き方の決まりを持つスキルを作る担当（knowledge item 2件）。
-- **status**: 下の frontmatter を `stable` にした。達成度は「達成」で、受入 A1〜A13 をすべて満たした（A9 は Claude Code だけで測った）。
+- **status**: 下の frontmatter を `stable` にした。達成度は「達成」で、受入 A1〜A13 をすべて満たした（A9 は Claude Code だけで測った）。A11 は統括の照合で未達と出たあとに満たした（`本文: GATE I1 の A11 に戻った（2026-10-21）`）。
 - **evidence anchor**: 本文が指す作業層（worktree の `tmp/467-runbook-skill/`）の要点は、本文に転記してある。設計SO と実装SO のモデル・時間・結論・指摘の件数と採否は `本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-10-21）` と `本文: I2-1: 実装SO の結果と採否（2026-10-21）`、発火の結果の表は `本文: I1-5: 確かめ（2026-10-21）`、受入の回し直しの結果は `本文: A13・GATE I1: 最後のスキルの commit で回し直した（2026-10-21）` にある。作業層が消えても結論は追える。
 - **SO 証跡**: 設計SO と実装SO の出力の要約は上の2節にある。closure の外部チェックは下の「外部チェック（Step 4）」にある。
 - **観測の書き戻し**: 注入された4件（`01M5A1ZMJXGB2TQBVJEA9T4Q9Q`・`01M2DRCP3SNPTHWDV2FJ9RZ4N0`・`01M579XZNAT7EXY4VPGRM9J8JW`・`01KYMRE1NC7XX6N66RQ0MGGHF1`）のすべてに、`ref: "#467"` で1レコードずつ書き戻した（下の「注入された knowledge の観測」）。
@@ -337,6 +416,7 @@ A10 は I1-4 で満たした。A1〜A13 をすべて満たしたので、GATE I1
 - 受入の A4 の例は、前例の受入を規則が重なるかを見ずに写して誤った（`本文: I2-1: 実装SO の結果と採否（2026-10-21）`）。
 - 自分の用語の決まりを、description の初稿と用語集の写した行で2回破った（`本文: P2: plan の初稿と、そこで下した判断の理由（2026-10-21）`・`本文: I1-1: SKILL.md と glossary.md（2026-10-21・88dcdc9）`）。
 - Copilot への返信の2件で、`\` を2文字に見える形で書いた（`本文: I2-3: Copilot の1ラウンド（2026-10-21）`）。
+- 受入 A11 を満たさないまま GATE I1 を通したと数え、統括の照合で未達と出た。写しを作業層に置いたままにし、PR の本文には1段だけを載せていた（`本文: GATE I1 の A11 に戻った（2026-10-21）`）。
 
 ### 決定と根拠
 
