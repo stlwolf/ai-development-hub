@@ -269,6 +269,26 @@ class ReferencesR5(Base):
         extra = {"scripts/a#b.sh": SCRIPT}
         self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/a#b.sh check"), extra=extra)
 
+    def test_heredoc_body_is_not_a_command(self):
+        for opener in ["cat <<'EOF'", "cat <<EOF", "cat <<-EOF"]:
+            text = replace_once(VALID, "scripts/run.sh check", opener + "\nscripts/not-a-command.sh\nEOF")
+            self.expect([], runbook=text)
+        text = replace_once(VALID, "scripts/run.sh check", "cat <<'EOF'\nx\nEOF\nscripts/missing.sh check")
+        self.expect(["R5"], runbook=text)
+
+    def test_backslash_newline_joins_without_space(self):
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/ru\\\nn.sh check"))
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/run.sh check \\\n  && scripts/missing.sh"))
+
+    def test_quoted_operator_is_not_an_operator(self):
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "printf '%s\\n' '|' scripts/not-a-command.sh"))
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "scripts/run.sh check | scripts/missing.sh"))
+
+    def test_inline_source_of_other_languages(self):
+        self.expect([], runbook=replace_once(VALID, "scripts/run.sh check", "python3 -c 'print(\"docs/example\")'"))
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "bash -lc 'scripts/missing.sh'"))
+        self.expect(["R5"], runbook=replace_once(VALID, "scripts/run.sh check", "python3 scripts/missing.py"))
+
     def test_reference_style_and_angle_links(self):
         self.expect(["R5"], runbook=replace_once(VALID, "- まだ無い。", "- [背景][b] を読む。\n\n[b]: missing.md"))
         self.expect(["R5"], runbook=replace_once(VALID, "- まだ無い。", "- [背景](<missing file.md>) を読む。"))
@@ -299,6 +319,14 @@ class IssueNumbersR6(Base):
     def test_url_fragment_and_entity_are_not_issue_numbers(self):
         text = replace_once(VALID, "使うとき: 試すとき。", "使うとき: https://example.com/doc#12 と &#123; を見るとき。")
         self.expect([], runbook=text)
+
+    def test_reference_link_in_pitfalls(self):
+        definition = "\n\n[past]: https://example.com/org/repo/issues/12"
+        self.expect([], runbook=replace_once(VALID, "- まだ無い。", "- 前に詰まった（[経緯][past]）。" + definition))
+        self.expect([], runbook=replace_once(VALID, "- まだ無い。", "- 前に詰まった（[past]）。" + definition))
+        text = replace_once(VALID, "- 期待どおりか。", "- 期待どおりか（[経緯][past]）。")
+        self.expect(["R6"], runbook=replace_once(text, "- まだ無い。", "- 前に詰まった（[経緯][past]）。" + definition))
+        self.expect(["R6"], runbook=replace_once(VALID, "- まだ無い。", "- まだ無い。" + definition))
 
     def test_inline_code_and_blocks_are_ignored(self):
         text = replace_once(VALID, "使うとき: 試すとき。", "使うとき: `#123` を試すとき。")
@@ -776,6 +804,20 @@ class ExampleScript(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("NG V2", out)
         self.assertNotIn("記録:", out)
+        rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("中身を合わせ直した", out)
+        self.assertEqual(self.ex.run("scripts/shop-config.sh verify")[0], 0)
+
+    def test_missing_contents_are_restored(self):
+        self.assertEqual(self.ex.run("scripts/shop-config.sh apply --yes")[0], 0)
+        os.remove(os.path.join(self.ex.state, "current", "shop.conf"))
+        rc, out = self.ex.run("scripts/shop-config.sh verify")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NG V2", out)
+        rc, out = self.ex.run("scripts/shop-config.sh diff")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("中身が無い", out)
         rc, out = self.ex.run("scripts/shop-config.sh apply --yes")
         self.assertEqual(rc, 0, out)
         self.assertIn("中身を合わせ直した", out)

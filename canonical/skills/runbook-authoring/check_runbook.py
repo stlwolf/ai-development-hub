@@ -16,7 +16,6 @@ Python 3.9 以上の標準ライブラリだけで動く。規則の意味は同
 import argparse
 import os
 import re
-import shlex
 import sys
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 from urllib.parse import unquote
@@ -41,7 +40,10 @@ MAX_STEPS = 6
 WARNING_MARKS = ["⚠", "❗", "❕", "‼", "⁉", "★", "☆", "🚨", "⛔", "🛑", "🔥", "❌"]
 
 SHELL_LANGS = {"bash", "sh", "shell", "zsh"}
-INTERPRETERS = {"bash", "sh", "zsh", "python", "python3", "node", "ruby", "perl"}
+SHELLS = {"bash", "sh", "zsh"}
+INTERPRETERS = SHELLS | {"python", "python3", "node", "ruby", "perl"}
+# 次の引数をソースの文字列として受け取る、シェルでない解釈器のオプション
+INLINE_SOURCE_OPTIONS = {"-c", "-e", "-m", "-E", "--eval"}
 # 前に付くコマンドと、値を1つ取るそのオプション
 PREFIX_COMMANDS = {
     "env": {"-u", "-C", "-S"},
@@ -54,6 +56,8 @@ PREFIX_COMMANDS = {
 }
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", ";;", "(", ")"}
 REDIRECTS = {"<", ">", ">>", "<<", "<<<", "<>", ">|", "&>", "&>>", ">&", "<&"}
+# 引用の外で演算子として読む文字の並び（長いものから試す）
+OPERATORS = sorted(SEPARATORS | REDIRECTS, key=len, reverse=True)
 RULE_ORDER = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10"]
 
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
@@ -64,7 +68,9 @@ INLINE_LINK_RE = re.compile(r"!?\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^)\s]+))(?:\s+\"
 # 参照の形のリンクの定義 [名前]: 先
 REF_DEF_RE = re.compile(r"^\s{0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))")
 # 参照の形のリンクの使う側 [文字][名前]
-REF_USE_RE = re.compile(r"\[[^\]]*\]\[[^\]]*\]")
+REF_USE_RE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
+# 参照の形のリンクの省略した使い方 [名前]（定義があるときだけリンクになる）
+REF_SHORT_RE = re.compile(r"\[([^\]]+)\](?![\[(:])")
 AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]*:[^>\s]*>")
 BARE_URL_RE = re.compile(r"https?://\S+")
 SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
@@ -170,6 +176,32 @@ class Doc:
         stop = len(self.lines) + 1 if end is None else end
         return [b for b in self.blocks if b.lang in SHELL_LANGS and start <= b.start < stop]
 
+    def ref_definitions(self) -> Dict[str, Tuple[int, str]]:
+        """参照の形のリンクの定義。名前（小文字）から (行番号, 先)。"""
+        defs: Dict[str, Tuple[int, str]] = {}
+        for no, text in self.prose():
+            m = REF_DEF_RE.match(text)
+            if m:
+                defs.setdefault(m.group(1).strip().lower(), (no, m.group(2) or m.group(3)))
+        return defs
+
+    def ref_uses(self, defs: Dict[str, Tuple[int, str]]) -> List[Tuple[int, str]]:
+        """参照の形のリンクを使っている所。(行番号, 名前（小文字）)。定義の行は除く。"""
+        out = []
+        for no, text in self.prose():
+            if REF_DEF_RE.match(text):
+                continue
+            rest = INLINE_LINK_RE.sub("", text)
+            for m in REF_USE_RE.finditer(rest):
+                name = (m.group(2) or m.group(1)).strip().lower()
+                if name in defs:
+                    out.append((no, name))
+            for m in REF_SHORT_RE.finditer(REF_USE_RE.sub("", rest)):
+                name = m.group(1).strip().lower()
+                if name in defs:
+                    out.append((no, name))
+        return out
+
     def link_targets(self) -> List[Tuple[int, str]]:
         """本文のリンクの先（インラインの形と、参照の形の定義）。"""
         out = []
@@ -196,6 +228,7 @@ def without_links(text: str) -> str:
     """インラインのリンク・参照の形のリンク・自動のリンクを外した文。"""
     text = INLINE_LINK_RE.sub("", text)
     text = REF_USE_RE.sub("", text)
+    text = REF_SHORT_RE.sub("", text)
     return AUTOLINK_RE.sub("", text)
 
 
@@ -218,41 +251,87 @@ def labeled(line: str, label: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
-def comment_start(line: str) -> int:
-    """引用の外で、語の頭にある `#` の位置（シェルの注釈の始まり）。無ければ行の長さ。"""
-    quote = ""
-    i = 0
-    while i < len(line):
-        c = line[i]
-        if quote == "'":
-            if c == "'":
-                quote = ""
-        elif quote == '"':
-            if c == "\\":
+class ShellText(NamedTuple):
+    code: List[Tuple[int, str, bool]]  # (行番号, 注釈を外したコマンドの行, 行の終わりで引用が開いているか)
+    non_ascii: List[Tuple[int, str]]  # 展開される `$名前` の直後に ASCII 以外の文字が来る所（R9）
+
+
+def scan_shell(lines: List[Tuple[int, str]]) -> ShellText:
+    """シェルの行を、引用・注釈・ヒアドキュメントを追いながら1回読む。
+
+    ヒアドキュメントの本文と終端の行はコマンドに入れない。区切りを引用した本文は展開されないので R9 も見ない。
+    """
+    code: List[Tuple[int, str, bool]] = []
+    out: List[Tuple[int, str]] = []
+    quote = ""  # "" / "'" / '"'（行をまたいで続く）
+    heredoc: Optional[Tuple[str, bool, bool]] = None  # (区切り, 展開しない, 先頭のタブを外す)
+    pending: List[Tuple[str, bool, bool]] = []
+    for no, line in lines:
+        if heredoc is not None:
+            delim, literal, dash = heredoc
+            if (line.lstrip("\t") if dash else line) == delim:
+                heredoc = pending.pop(0) if pending else None
+            elif not literal:
+                check_dollars(no, line, out)
+            continue
+        i = 0
+        cut = len(line)
+        while i < len(line):
+            c = line[i]
+            if quote == "'":
+                if c == "'":
+                    quote = ""
                 i += 1
-            elif c == '"':
-                quote = ""
-        elif c == "\\":
+                continue
+            if c == "\\":
+                i += 2
+                continue
+            if quote == '"':
+                if c == '"':
+                    quote = ""
+                elif c == "$":
+                    check_dollar(no, line, i, out)
+                i += 1
+                continue
+            if c in "'\"":
+                quote = c
+            elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()"):
+                cut = i
+                break
+            elif c == "$":
+                check_dollar(no, line, i, out)
+            elif line.startswith("<<<", i):
+                i += 3  # here-string はヒアドキュメントではない
+                continue
+            elif c == "<":
+                m = HEREDOC_RE.match(line, i)
+                if m:
+                    pending.append((m.group(4), bool(m.group(2) or m.group(3)), m.group(1) == "-"))
+                    i = m.end()
+                    continue
             i += 1
-        elif c in "'\"":
-            quote = c
-        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()"):
-            return i
-        i += 1
-    return len(line)
+        code.append((no, line[:cut], quote != ""))
+        if pending and quote == "":
+            heredoc = pending.pop(0)
+    return ShellText(code, out)
 
 
 def logical_lines(block: Block) -> List[Tuple[int, str]]:
-    """注釈を外し、行の末尾の `\\` でつないだ行を1つにする。空の行は除く。"""
+    """コマンドの行を、行の末尾の `\\` と、行をまたぐ引用でつないで1つにする。空の行は除く。
+
+    シェルは `\\` と改行を取り除くだけで空白を足さないので、ここでも空白を足さずにつなぐ。
+    """
     out: List[Tuple[int, str]] = []
     buf = ""
     first = 0
-    for no, line in block.lines:
+    for no, code, quote_open in scan_shell(block.lines).code:
         if not buf:
             first = no
-        code = line[: comment_start(line)].rstrip()
-        if code.endswith("\\"):
-            buf += code[:-1] + " "
+        if quote_open:
+            buf += code + "\n"
+            continue
+        if code.endswith("\\") and not code.endswith("\\\\"):
+            buf += code[:-1]
             continue
         buf += code
         if buf.strip():
@@ -263,30 +342,85 @@ def logical_lines(block: Block) -> List[Tuple[int, str]]:
     return out
 
 
-def tokens_of(text: str) -> List[str]:
-    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    try:
-        return list(lexer)
-    except ValueError:
-        return text.split()
+def shell_words(text: str) -> List[Tuple[str, bool]]:
+    """コマンドの行を語に分ける。(語, 演算子か)。引用とエスケープを外し、演算子は引用の外のものだけを演算子にする。"""
+    words: List[Tuple[str, bool]] = []
+    buf = ""
+    started = False
+    quote = ""
+    i = 0
+
+    def flush() -> None:
+        nonlocal buf, started
+        if started:
+            words.append((buf, False))
+        buf = ""
+        started = False
+
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            if c == "'":
+                quote = ""
+            else:
+                buf += c
+            i += 1
+            continue
+        if quote == '"':
+            if c == '"':
+                quote = ""
+            elif c == "\\" and i + 1 < len(text) and text[i + 1] in '$`"\\':
+                buf += text[i + 1]
+                i += 1
+            else:
+                buf += c
+            i += 1
+            continue
+        if c == "\\":
+            if i + 1 < len(text):
+                buf += text[i + 1]
+                started = True
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            started = True
+            i += 1
+            continue
+        if c.isspace():
+            flush()
+            i += 1
+            continue
+        op = next((o for o in OPERATORS if text.startswith(o, i)), None)
+        if op is not None:
+            if op[0] in "<>" and started and buf.isdigit():
+                buf = ""  # 2> のように番号の付いたリダイレクト
+                started = False
+            flush()
+            words.append((op, True))
+            i += len(op)
+            continue
+        buf += c
+        started = True
+        i += 1
+    flush()
+    return words
 
 
 def called_paths(text: str) -> List[str]:
     """コマンドの行で、呼んでいるファイルのパスらしい語（`/` を含む相対のパス）。"""
     segments: List[List[str]] = [[]]
     skip_next = False
-    for tok in tokens_of(text):
+    for word, is_op in shell_words(text):
         if skip_next:
             skip_next = False
             continue
-        if tok in SEPARATORS:
+        if is_op and word in SEPARATORS:
             segments.append([])
-        elif tok in REDIRECTS:
-            skip_next = True  # 書き出し先・読み込み元は呼ぶファイルではない
+        elif is_op:
+            skip_next = True  # リダイレクトの先・元は呼ぶファイルではない
         else:
-            segments[-1].append(tok)
+            segments[-1].append(word)
     found: List[str] = []
     for seg in segments:
         i = 0
@@ -304,14 +438,21 @@ def called_paths(text: str) -> List[str]:
             continue
         cand = seg[i]
         if cand in INTERPRETERS:
+            shell = cand in SHELLS
             i += 1
+            inline = False
             while i < len(seg) and seg[i].startswith("-"):
-                if seg[i] == "-c" and i + 1 < len(seg):
-                    found.extend(called_paths(seg[i + 1]))
-                    i = len(seg)
+                opt = seg[i]
+                if shell and not opt.startswith("--") and "c" in opt[1:]:
+                    if i + 1 < len(seg):
+                        found.extend(called_paths(seg[i + 1]))  # bash -c '…' の中はシェルのコマンド
+                    inline = True
+                    break
+                if not shell and (opt in INLINE_SOURCE_OPTIONS or opt[:2] in INLINE_SOURCE_OPTIONS):
+                    inline = True  # python3 -c '…' などの中はシェルではないので読まない
                     break
                 i += 1
-            if i >= len(seg):
+            if inline or i >= len(seg):
                 continue
             cand = seg[i]
         if looks_relative_path(cand):
@@ -339,61 +480,8 @@ def is_shell_script(path: str) -> bool:
 
 
 def non_ascii_after_var(lines: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
-    """展開される `$名前` の直後に ASCII 以外の文字が来る所。
-
-    単一引用の中・`\\$`・注釈・引用した区切りのヒアドキュメントの中は展開されないので見ない。
-    """
-    out: List[Tuple[int, str]] = []
-    quote = ""  # "" / "'" / '"'（行をまたいで続く）
-    heredoc: Optional[Tuple[str, bool, bool]] = None  # (区切り, 展開しない, 先頭のタブを外す)
-    pending: List[Tuple[str, bool, bool]] = []
-    for no, line in lines:
-        if heredoc is not None:
-            delim, literal, dash = heredoc
-            if (line.lstrip("\t") if dash else line) == delim:
-                heredoc = pending.pop(0) if pending else None
-                continue
-            if literal:
-                continue
-            check_dollars(no, line, out)
-            continue
-        i = 0
-        while i < len(line):
-            c = line[i]
-            if quote == "'":
-                if c == "'":
-                    quote = ""
-                i += 1
-                continue
-            if c == "\\":
-                i += 2
-                continue
-            if quote == '"':
-                if c == '"':
-                    quote = ""
-                elif c == "$":
-                    check_dollar(no, line, i, out)
-                i += 1
-                continue
-            if c in "'\"":
-                quote = c
-            elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()"):
-                break
-            elif c == "$":
-                check_dollar(no, line, i, out)
-            elif line.startswith("<<<", i):
-                i += 3  # here-string はヒアドキュメントではない
-                continue
-            elif c == "<":
-                m = HEREDOC_RE.match(line, i)
-                if m:
-                    pending.append((m.group(4), bool(m.group(2) or m.group(3)), m.group(1) == "-"))
-                    i = m.end()
-                    continue
-            i += 1
-        if pending and quote == "":
-            heredoc = pending.pop(0)
-    return out
+    """展開される `$名前` の直後に ASCII 以外の文字が来る所（R9）。"""
+    return scan_shell(lines).non_ascii
 
 
 def check_dollars(no: int, line: str, out: List[Tuple[int, str]]) -> None:
@@ -503,11 +591,26 @@ def check_runbook(doc: Doc, root: str, scripts: Dict[str, str]) -> List[Finding]
                     scripts.setdefault(path, doc.path)
 
     # R6 issue の番号・R7 日付・R8 警告の印
+    # 参照の形のリンクは、定義の行でなく、使っている所の節で判定する
     pitfalls = doc.section_range("間違えやすい所")
+
+    def in_pitfalls(no: int) -> bool:
+        return bool(pitfalls and pitfalls[0] <= no < pitfalls[1])
+
+    defs = doc.ref_definitions()
+    uses = doc.ref_uses(defs)
+    used = {name for _, name in uses}
+    for no, name in uses:
+        m = ISSUE_PATH_RE.search(defs[name][1])
+        if m and not in_pitfalls(no):
+            add(no, "R6", "参照の形のリンクの先に issue の番号がある: [{}] {}".format(name, m.group(0)))
+    def_lines = {no: name for name, (no, _) in defs.items()}
     for no, text in doc.prose():
-        in_pitfalls = bool(pitfalls and pitfalls[0] <= no < pitfalls[1])
-        scan = without_links(text) if in_pitfalls else text
-        m = ISSUE_NUMBER_RE.search(without_targets(scan)) or ISSUE_PATH_RE.search(scan)
+        if no in def_lines:
+            m = ISSUE_PATH_RE.search(text) if def_lines[no] not in used else None
+        else:
+            scan = without_links(text) if in_pitfalls(no) else text
+            m = ISSUE_NUMBER_RE.search(without_targets(scan)) or ISSUE_PATH_RE.search(scan)
         if m:
             add(no, "R6", "本文に issue の番号がある: " + m.group(0))
         clean = without_targets(text)

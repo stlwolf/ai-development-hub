@@ -256,12 +256,15 @@ cmd_diff() {
   local cur old rc=0 keys
   require_basics
   cur=$(version_of_link "${STATE}/current")
+  old="${STATE}/current/shop.conf"
   if [ -z "${cur}" ]; then
     printf '反映先にまだ版が無い。設定ファイルのすべての行が足される\n'
     old=/dev/null
+  elif [ ! -f "${old}" ]; then
+    printf '反映先の今の版 %s の中身が無い。設定ファイルのすべての行が足される\n' "${cur}"
+    old=/dev/null
   else
     printf '反映先の今の版: %s\n' "${cur}"
-    old="${STATE}/current/shop.conf"
   fi
   diff -u "${old}" "${CONFIG}" || rc=$?
   if [ "${rc}" -gt 1 ]; then
@@ -290,8 +293,9 @@ cmd_apply() {
     printf '変わっていない: 版 %s はすでに反映先にある（何もしない）\n' "${new}"
     exit 0
   fi
+  # 今の版が無いか、その中身が消えていれば、空と比べる
   old="${STATE}/current/shop.conf"
-  if [ -z "${cur}" ]; then
+  if [ -z "${cur}" ] || [ ! -f "${old}" ]; then
     old=/dev/null
   fi
   keys=$(changed_keys "${old}") || {
