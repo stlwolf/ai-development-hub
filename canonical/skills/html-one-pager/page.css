@@ -383,6 +383,13 @@ code {
   outline-offset: 2px;
 }
 
+/* ページの中のアンカー（本文の Q2・候補4 のリンク）で飛んだ先のカードと行。上に余白を取り、枠の色で示す。 */
+.hp-card:target, .hp-table tr:target {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  scroll-margin-top: 16px;
+}
+
 @media (max-width: 560px) {
   .hp-title { font-size: 20px; }
   .hp-meta { grid-template-columns: minmax(0, 1fr); }

@@ -366,6 +366,13 @@ BROKEN = [
     ("i1_pick_number_from_another_prefix", "pick", put(["sections", 2, "rows", 0, "no"], "A1"), [("E-I1", "sections[2].rows[0].no")], False),
     ("i1_pick_numbers_mixed", "pick", put(["sections", 2, "rows", 0, "no"], "候補1"), [("E-I1", "sections[2].rows[1].no")], False),
     ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "項目1"), [("E-I2", "sections[0].rows[1].no")], False),
+    # 番号を並べる書き方（E-I3）。3つ以上並び、並んだ番号がすべて定義されているときだけ止める
+    ("i3_pick_listed_numbers", "pick", put(["sections", 1, "rows", 0, "cands"], "候補1・2・3"),
+     [("E-I3", "sections[1].rows[0].cands")], False),
+    ("i3_listed_numbers_with_spaces", "pick", put(["sections", 1, "rows", 0, "cands"], "候補1 、 2 、 3 を比べる"),
+     [("E-I3", "sections[1].rows[0].cands")], False),
+    ("i3_approve_listed_numbers_with_a_unit", "decide", put(CARD0 + ["points", 0], "Q1・2・3件は先に決める"),
+     [("E-I3", "sections[0].cards[0].points[0]")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
@@ -447,7 +454,8 @@ for _name, _base, _mutate, _expected, _has_body in BROKEN:
 class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
-                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2"}
+                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
+                 "E-I3"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
 
@@ -492,6 +500,83 @@ class Identifiers(unittest.TestCase):
         f = build.render(d, build.load_glossary(build.DEFAULT_GLOSSARY), build.parse_now(NOW), None)
         self.assertNotIn("<img src=x", f)
         self.assertIn("&quot;&gt;&lt;img src=x onerror=alert(1)&gt;", f)
+
+
+def anchor(target, text):
+    return '<a href="#%s">%s</a>' % (target, text)
+
+
+class Anchors(unittest.TestCase):
+    """ページで定義した識別子だけを、ページの中のアンカーにする。"""
+
+    def point(self, text, name="decide"):
+        f = render_page(name, put(CARD0 + ["points", 0], text))
+        return re.search(r'<ul class="hp-points"><li>(.*?)</li>', f).group(1)
+
+    def test_card_tags_link_to_the_card(self):
+        self.assertEqual(self.point("Q2 を先に決める。"), anchor("hp-card-alert_rule", "Q2") + " を先に決める。")
+
+    def test_numbers_link_to_the_row(self):
+        f = render_page("pick")
+        self.assertIn(anchor("hp-row-2-1", "候補2") + "・" + anchor("hp-row-3-1", "候補5"), f)
+        self.assertIn('<tr id="hp-row-2-1">', f)
+        self.assertIn('<tr id="hp-row-3-1">', f)
+
+    def test_rows_without_a_number_column_have_no_id(self):
+        f = render_page("pick")
+        summary = re.search(r'<h2 class="hp-sec-title">上位の候補</h2>(.*?)</section>', f, re.S).group(1)
+        self.assertNotIn("<tr id=", summary)
+        self.assertEqual(render_page("review").count("<tr id="), 0)
+
+    def test_anchors_do_not_open_a_new_tab(self):
+        f = render_page("pick")
+        for a in re.findall(r'<a href="#[^"]*"[^>]*>', f):
+            self.assertNotIn("target=", a)
+
+    def test_undefined_identifiers_and_bare_numbers_stay_text(self):
+        got = self.point("DJ-4 と Q9 と 2 と #hp-card-rollout を見る。")
+        self.assertNotIn('href="#', got)
+
+    def test_boundaries(self):
+        cases = {
+            "FAQ2": False, "docs/Q2": False, "feature/Q2": False, "x-Q2": False, "Q2.md": False, "Q2-3": False,
+            "Q2/x": False, "Q2a": False, "Q21": False, "`Q2`": False, "https://x.example/Q2": False,
+            "Q2を見る": True, "Q2。": True, "(Q2)": True, "Q2.": True, "Q2 と": True,
+        }
+        for text, linked in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual('href="#hp-card-alert_rule"' in self.point(text), linked)
+
+    def test_longer_number_is_not_cut(self):
+        # 候補4 を定義していても、候補43 の中の 候補4 はリンクにしない
+        f = render_page("pick", put(["sections", 1, "rows", 0, "why"], "候補43 は無い。候補4 はある。"))
+        self.assertIn("候補43 は無い。" + anchor("hp-row-3-0", "候補4") + " はある。", f)
+
+    def test_anchors_work_in_every_converted_place(self):
+        f = render_page("decide", both(put(["why"], "Q1 から読む。"), put(CARD1 + ["reason"], "Q3 と同じ理由。"),
+                                       put(["sections", 0, "title"], "Q1〜Q3")))
+        for a in (anchor("hp-card-retry_policy", "Q1"), anchor("hp-card-rollout", "Q3")):
+            self.assertIn(a, f)
+        self.assertIn('<h2 class="hp-sec-title">' + anchor("hp-card-retry_policy", "Q1") + "〜" + anchor("hp-card-rollout", "Q3"), f)
+
+    def test_titles_and_buttons_are_not_converted(self):
+        f = render_page("decide", both(put(["title"], "Q1 の判断"), put(CARD0 + ["options", 1, "label"], "Q2 に寄せる")))
+        self.assertIn("<title>Q1 の判断</title>", f)
+        self.assertRegex(f, r'<button [^>]*>Q2 に寄せる</button>')
+
+    def test_two_listed_numbers_are_not_stopped(self):
+        # 番号が2つだけの形は、普通の文（Q2・3件）と見分けられないので止めない。後ろの数字は文字のまま
+        for text in ("Q2・3件", "候補は Q1・2 の2つ"):
+            with self.subTest(text=text):
+                self.assertEqual(build.validate(put_copy("decide", CARD0 + ["points", 0], text)), [])
+        self.assertEqual(build.validate(put_copy("pick", ["sections", 1, "rows", 0, "cands"], "候補1・2・9")), [])
+        self.assertIn(anchor("hp-card-alert_rule", "Q2") + "・3件", self.point("Q2・3件"))
+
+
+def put_copy(name, path, value):
+    d = copy.deepcopy(example(name))
+    put(path, value)(d)
+    return d
 
 
 class LoadStage(unittest.TestCase):

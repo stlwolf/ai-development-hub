@@ -390,7 +390,9 @@ class Validator:
                 if kind is not None and sections_readable and (secs or self.has_body):
                     self.kind_parts(kind, secs)
                 if kind is not None:
-                    self.identifiers(kind, secs)
+                    defined = self.identifiers(kind, secs)
+                    if defined:
+                        self.listed_numbers(kind, data, defined)
         status = data.get("status")
         if status == "awaiting" and sections_readable and not has_answer_part:
             self.add("E-P2", "status", "awaiting（回答待ち）なのに、答える部品（decisions か bundle）が無い")
@@ -517,7 +519,7 @@ class Validator:
                 if isinstance(t, str) and t.strip() and not ISSUE_TAG_RE.match(t):
                     self.add("E-I1", join(path, "tag"), '認識合わせのカードの札 "%s" が issue の形（#N・owner/repo#N）でない' % t)
         card_key, row_key, auto = KIND_IDS.get(kind, (None, None, False))
-        defined = {}
+        defined = {}  # 識別子 -> 定義した場所（振る番号を含む）
         if card_key:
             approval = self.words["tag.approval"] if kind == "approve" else None
             if approval:
@@ -547,6 +549,24 @@ class Validator:
                     if isinstance(v, str):
                         items.append(("%s.rows[%d].%s" % (path, r, no[0]), v or None))
             self.numbered(items, self.words[row_key], auto, "番号の列の値", defined)
+        return defined
+
+    def listed_numbers(self, kind, data, defined):
+        """1つの接頭辞のあとに番号を3つ以上並べた書き方（候補43・41・49）を止める（E-I3）。
+        並んだ番号に同じ接頭辞を付けた識別子が、すべてページで定義されているときだけ止める。
+        番号が2つだけの形（Q2・3件）は普通の文と見分けられないので止めない。"""
+        card_key, row_key, _ = KIND_IDS[kind]
+        prefixes = [self.words[k] for k in (card_key, row_key) if k]
+        listed = re.compile(r"(?<![A-Za-z0-9_./#-])(%s)([1-9][0-9]*)((?:\s*[%s]\s*[0-9]+){2,})(?![0-9])"
+                            % ("|".join(re.escape(x) for x in prefixes), LIST_SEPARATORS))
+        for path, text in display_texts(data):
+            text = _URL_AND_CODE_RE.sub(" ", text)
+            for m in listed.finditer(text):
+                nums = [m.group(2)] + re.findall(r"[0-9]+", m.group(3))
+                if all(m.group(1) + n in defined for n in nums):
+                    self.add("E-I3", path, '"%s" のように番号を並べている。%s%s のように番号ごとに接頭辞を書く'
+                             % (m.group(0), m.group(1), nums[1]))
+                    break
 
     def approval_card(self, cards, approval):
         """承認のページの全体の承認のカード（札が承認の語）は、ページの最後のカードに1枚だけ置く。"""
@@ -574,6 +594,10 @@ class Validator:
             first_written = items.index(good[0]) < items.index(omitted[0])
             self.add("E-I1", omitted[0][0] if first_written else good[0][0],
                      "%sを書いたものと書かないものが混ざっている（書くなら全部に書く）" % what)
+        elif omitted and auto and not written:
+            # 全部を書かなければ、順に振る番号を定義として数える（本文の参照をアンカーにする判定と同じ）。
+            for n, (path, _) in enumerate(items, 1):
+                defined["%s%d" % (prefix, n)] = path
         for path, v in good:
             if v in defined:
                 self.add("E-I2", path, '識別子 "%s" が %s と重なる' % (v, defined[v]))
@@ -940,6 +964,66 @@ class Validator:
                     self.add("E-A1", join(ap, f), "%s は文字列であるべき所が%sである" % (f, type_name(a[f])))
 
 
+LIST_SEPARATORS = "・、,，"
+_URL_AND_CODE_RE = re.compile(r"`[^`\n]+`|https?://\S+")
+
+
+def display_texts(data):
+    """ページの送り元で書式を変換する表示の文を、[(場所, 文字列)] で返す（Renderer が inline に渡すものと同じ）。
+    束の group の中は group の送り元で変換し、識別子も定義しないので含めない。形の崩れた所は飛ばす。"""
+    out = []
+
+    def add(path, v):
+        if isinstance(v, str):
+            out.append((path, v))
+        elif isinstance(v, dict) and isinstance(v.get("text"), str):
+            out.append((join(path, "text"), v["text"]))
+
+    def add_points(path, points):
+        if isinstance(points, list):
+            for k, pt in enumerate(points):
+                add("%s[%d]" % (path, k), pt)
+
+    if not isinstance(data, dict):
+        return out
+    add("why", data.get("why"))
+    secs = data.get("sections")
+    for i, sec in enumerate(secs if isinstance(secs, list) else []):
+        if not isinstance(sec, dict):
+            continue
+        sp = "sections[%d]" % i
+        add(join(sp, "title"), sec.get("title"))
+        if sec.get("type") == "decisions" and isinstance(sec.get("cards"), list):
+            for j, c in enumerate(sec["cards"]):
+                if not isinstance(c, dict):
+                    continue
+                cp = "%s.cards[%d]" % (sp, j)
+                for f in ("title", "reason"):
+                    add(join(cp, f), c.get(f))
+                add_points(join(cp, "points"), c.get("points"))
+                for k, b in enumerate(c.get("blocks") if isinstance(c.get("blocks"), list) else []):
+                    if isinstance(b, dict):
+                        add("%s.blocks[%d].title" % (cp, k), b.get("title"))
+                        add_points("%s.blocks[%d].points" % (cp, k), b.get("points"))
+                # 推奨の選択肢の文は、カードの推奨の行で変換される（選択肢のボタンは変換しない）。
+                for k, o in enumerate(c.get("options") if isinstance(c.get("options"), list) else []):
+                    if isinstance(o, dict) and o.get("key") == c.get("recommend"):
+                        add("%s.options[%d].label" % (cp, k), o.get("label"))
+        elif sec.get("type") == "findings" and isinstance(sec.get("items"), list):
+            for j, it in enumerate(sec["items"]):
+                if isinstance(it, dict):
+                    for f in ("text", "reason"):
+                        add("%s.items[%d].%s" % (sp, j, f), it.get(f))
+        elif sec.get("type") == "table" and isinstance(sec.get("columns"), list) and isinstance(sec.get("rows"), list):
+            text_keys = [c.get("key") for c in sec["columns"] if isinstance(c, dict) and c.get("type", "text") == "text"]
+            for j, row in enumerate(sec["rows"]):
+                if isinstance(row, dict):
+                    for k in text_keys:
+                        if isinstance(k, str):
+                            add("%s.rows[%d].%s" % (sp, j, k), row.get(k))
+    return out
+
+
 def validate(data, has_body=False, words=None):
     """データを検証し、誤りの並び [(規則の番号, 場所, 理由)] を返す。空なら誤りは無い。
     words は用語集の識別子の接頭辞（load_words の結果）。省けば既定の用語集から読む。"""
@@ -970,6 +1054,9 @@ _URL_STOP = r"\s<>\"'`" + chr(0x3000) + "-" + chr(0x303F) + chr(0xFF01) + "-" + 
 LINK_PATTERN = r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))"
 LINK_RE = re.compile(LINK_PATTERN)
 TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d+(?![A-Za-z0-9_-]))"
+# ページで定義した識別子（Q2・候補4）。前に英数字・_・.・/・#・- が続くもの（FAQ2・docs/Q2）、
+# 後ろに英数字・_ が続くもの（候補43 の中の 候補4）と、. / - と英数字が続くもの（Q2.md・Q2-3）はリンクにしない。
+ANCHOR_PATTERN = r"|(?P<anchor>(?<![A-Za-z0-9_./#-])(?:%s)(?![0-9A-Za-z_])(?![./-][A-Za-z0-9]))"
 URL_TRAIL = ".,;:!?)]}"
 
 # JSON をページに埋め込むとき、要素を閉じたり行を分けたりしうる文字を \u の形に置き換える。
@@ -993,16 +1080,22 @@ def branch_url(repo_url, branch):
 
 
 class Refs:
-    """文字列の中の #N と外部の課題管理の ID をリンクにするための、いちばん近い送り元の情報。"""
+    """文字列の中の #N・外部の課題管理の ID・ページの中の識別子をリンクにするための、いちばん近い送り元の情報。
+    anchors はページで定義した識別子から、飛び先の要素の id への辞書（ページの送り元だけが持つ）。"""
 
-    def __init__(self, src):
+    def __init__(self, src, anchors=None):
         self.repo_url = src.get("repo_url")
         self.trackers = {t["prefix"]: t["url"] for t in src.get("trackers", [])}
+        self.anchors = anchors or {}
         pattern = LINK_PATTERN
         if self.trackers:
             # 長い接頭辞を先に置き、短い接頭辞が長い接頭辞の頭に当たらないようにする。
             names = sorted(self.trackers, key=lambda p: (-len(p), p))
             pattern += TRACKER_PATTERN % "|".join(re.escape(p) for p in names)
+        if self.anchors:
+            # 長い識別子を先に置き、Q12 の頭の Q1 に当たらないようにする。
+            names = sorted(self.anchors, key=lambda a: (-len(a), a))
+            pattern += ANCHOR_PATTERN % "|".join(re.escape(a) for a in names)
         self.link_re = re.compile(pattern)
 
     def tracker_url(self, ident, prefix):
@@ -1046,6 +1139,9 @@ def _linkify(text, refs):
                 out.append(link(issue_url(refs.repo_url, m.group("num")), m.group("issue")))
             else:
                 out.append(esc(m.group("issue")))
+        elif m.lastgroup == "anchor":
+            # ページの中の行やカードへ飛ぶリンク。外へのリンクと違い、新しいタブを開かない。
+            out.append('<a href="#%s">%s</a>' % (esc(refs.anchors[m.group("anchor")]), esc(m.group("anchor"))))
         else:
             out.append(link(refs.tracker_url(m.group("tracker"), m.group("prefix")), m.group("tracker")))
         pos = m.end()
@@ -1152,9 +1248,12 @@ class Renderer:
         self.data = data
         self.L = labels
         self.tags, self.numbers = assign_numbers(data, words)
+        # ページで定義した識別子の飛び先。カードはいまある id、番号の列のある表の行には行の id を付ける。
+        anchors = {tag: "hp-card-" + key for key, tag in self.tags.items()}
+        anchors.update({num: "hp-row-%d-%d" % pos for pos, num in self.numbers.items()})
         self.time = format_time(now)
         self.tmux = tmux
-        self.page_refs = Refs(data["source"])
+        self.page_refs = Refs(data["source"], anchors)
         self.answered = data["status"] == "answered"
         self.answers = data.get("answers") or {}
         self.cards = []   # JS に渡すカード
@@ -1360,7 +1459,8 @@ class Renderer:
                     cells.append('<td data-label="%s">%s%s</td>' % (esc(label), inline(v["text"], refs), self.evidence(v.get("evidence"))))
                 else:
                     cells.append('<td data-label="%s">%s</td>' % (esc(label), inline(v, refs)))
-            out.append("<tr>%s</tr>" % "".join(cells))
+            row_id = ' id="hp-row-%d-%d"' % (si, ri) if (si, ri) in self.numbers else ""
+            out.append("<tr%s>%s</tr>" % (row_id, "".join(cells)))
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
