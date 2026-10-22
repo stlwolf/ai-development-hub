@@ -163,3 +163,58 @@ plan の初稿を `docs/harness/plans/2026-10-23-plan-478-one-pager-kinds.md` �
 - ページで定義した識別子だけを、カードの id（いまある `hp-card-<key>`）と、番号の列のある表の行に足した id（`hp-row-<部品>-<行>`）へのリンクにした。`page.css` に `:target` の規則を足した。
 - E-I3 は、表示の文を集める `display_texts`（`inline` に渡すものと同じ場所）で2回目の走査として見る。振った番号も定義として数える。
 - 検査は 261件で、3.13 と 3.9.6 の両方で通った。出力の違いは、`table.json` の行の id と、CSS の `:target` の規則だけだった。
+
+### I1-4: `PR #N` と `owner/repo#N`（2026-10-23・`2603026`）
+
+- 本文の変換の照合の順を URL → `PR #N` → `owner/repo#N` → `#N` にし、表の識別子の列でも `owner/repo#N` を受け付けた。`owner/repo#N` の先のホストは、送り元の `repo_url` のホストから組み立てる。
+- **自分の誤りを1つ、検査の前に見つけて直した。** `_linkify` の中で、当たった識別子を入れる変数に `text` と名付け、関数の引数の `text`（変換する文字列の全体）を上書きしていた。そのため、リンクのあいだの文字（`PR #215 と #212` の ` と `）と最後の文字が消えた。検査を回す前に、手で `inline` に何通りかの文を通して見つけ、変数の名前を変えた。この形の誤りは、リンクの前後の文字をそのまま比べる検査（`test_pr_links_to_the_pull_request`）で拾えるので、その検査を足した。
+- 表の識別子の列の `PR #215` のリンク先が `/pull/215` になったので、いまの検査（`test_ref_cells_keep_their_text_and_link`）の期待を直した（plan で決めた違い）。
+- 検査は 270件。出力の違いは、`table.json` の `PR #215` のリンク先だけだった。
+
+### I1-5: 手番の1枚（2026-10-23・`a07d555`）
+
+- `board` を種別に足した。判定カードの節を先に、表をあとに置き、判定カードが無ければ番号の列を持つ表が要る。札と番号の列の値は `Q<数字>` を必ず書かせる（カードと行が同じ接頭辞を使い、重なりはページ全体で見る）。本文は置けない。
+- 見本 `board.json` は、要る順の節2つ（今日・今週中）・決まったことの表（Q1〜Q3）・もらう値の表を持ち、カードの要点から決まったことの行（Q2）を指す。
+- 検査の期待の位置を1つ誤っていた（見本の部品は4つなので、足した部品は `sections[4]`）。直して通した。検査は 279件。
+- SKILL.md に「手番の1枚の更新のしかた」の節を足した（決まったカードを表へ移す・番号を使い直さない・値の依頼をカードにしない・表の行を正とする）。
+
+### I1-6・I1-7: 承認の見本・SKILL.md の仕上げ・CATALOG（2026-10-23・`698c9c8`・`8915756`）
+
+- 承認の見本 `approve.json` を足した（問いのカード3枚と全体の承認のカード・目的の文とカードの要点で `Q1`・`Q2` を指す・`PR #215` と `example-org/billing#31` を含む・判断のあとに表）。検査は 280件。
+- CATALOG の html-one-pager の行に、種別の一覧と番号のリンクを足した（1行の変更）。
+
+### I1-8: 受入の確かめ（2026-10-23）
+
+- **A5**: SKILL.md の `bash` のコードブロック7つを、`<…>` の置き換えだけ（Python で置き換えた。パスに `#` を含むため）をして走らせた。7つとも終了コード 0 で、書き出し先のある3つはファイルができた。データには `approve.json`、`--body` を付けるものには `grasp.json` と `grasp-body.html` を使った。
+- **A6**: `grep -rnoE '"(tag|no)": *"[^"]*"'` の当たりは15件で、`承認` 1件・`項目<数字>` 5件（見本3・SKILL.md の例2）・issue の形 3件（認識合わせの見本2・SKILL.md の例1）・`Q<数字>` 6件（手番の1枚の見本）だった。用語集の形にも issue の形にも当たらないものは無かった。検査の壊したデータ（わざと誤った札を書いたもの）は Python の書き方なので、この grep には当たらない。
+- **A7**: 3つの grep は、どれも終了コード 1（当たり無し）だった。
+- **A8**: `git diff 9d41e4b` の `build.py` で、E-B1 の補助の名前に語の境界を付けて当てた grep は当たり無し（終了コード 1）。境界を付けない grep は `ISSUE_TAG_RE` の中の `_TAG_RE` に当たったので、境界を付けて確かめ直した。`build.py` の E-B1 の部分（「完成した HTML の外部の読み込み」から「送り元の補助」まで）は `9d41e4b` と1文字も違わず、検査の `ExternalLoads` の class も同じだった。
+- **A9**: `git diff 9d41e4b -- page.js template.html` は空だった。
+- **A10**: `9d41e4b` と最後のコミットで、6つの見本を同じ条件で作り、`<style>` の中身を除いて比べた。`bundle`・`review`・`grasp`・`confirm` は1文字も違わなかった。`decide` の違いは札の3つ（`DJ-1`〜`DJ-3` → `Q1`〜`Q3`・データの直し）だけだった。`table` の違いは、番号の3つ（`A1`〜`A3` → `項目1`〜`項目3`・データの直し）、行の id の3つ（描き方）、`PR #215` のリンク先（`/issues/215` → `/pull/215`・描き方）だけだった。答える部品のあるページの埋め込みデータ（`labels`）も変わっていない。
+- **A11**（手元の作業層の7件・写しは worktree の `tmp/478-one-pager-kinds/real/`・gitignored）:
+  - 段1（元のデータ）: 7件とも終了コード 1 で、出た規則は E-F2（`purpose`）1件と E-F3（`kind`）1件だけだった。
+  - 段2（`kind` を足して `purpose` を消しただけ）: 問いの束が E-I1 16件、承認（括弧書きの札）の2件がそれぞれ E-I1 1件、一覧から選ぶが E-K1 1件、認識合わせ（平らな要点）が E-K1 4件で止まった。認識合わせ（塊あり）と、括弧書きの無い承認は通った。plan の DJ-3 の表のとおりである。
+  - 段3（中身も直す）: 初めの写しでは、一覧から選ぶページが E-I3 で2件止まった。選び方のカードの根拠と塊の中に `候補43・41・49・58・44` の形が残っていた（写しを作る手元のスクリプトが表の行だけを直していた）。E-I3 が実物の書き方を拾った例である。スクリプトをページのすべての文字列に当てるよう直すと、7件とも `check` と `build` を通った。一覧から選ぶページでは、本文の候補の番号20か所が行へのアンカーになった。
+  - 実物の書き方で、もう1つ分かったことがある。上位の候補を並べた表で、書き手は `候補 3` のように接頭辞と番号のあいだに空白を入れていた。いまの決まりでは、空白のある形はページの中の識別子として扱わない（リンクにならず、止まりもしない）。
+  - 7件の文字列（12文字以上と、長い文の頭24文字）を、コミットした差分の17ファイルに当てた。当たったのは、リポジトリの名前・公開しているスキルの名前（CATALOG）・認識合わせの塊の見出し（いまの見本にもある）・公開している #478・#477 の確定版の文だけだった。業務の組織やページの名前が入っていたページからは、リポジトリの名前のほかに当たりは無かった。
+- **A12**（`--standalone` で作った `approve.json`・`pick.json`・`board.json` を手元の HTTP サーバーから Playwright で開いた）: (a) 目的の文の `Q2` を押すと、URL の `#` のあとが `hp-card-inquiry_number` になり、そのカードが画面の上から16px に入り、`:target` の枠（2px の実線）が付いた。(b) 上位の候補の表の `候補5` を押すと、その行が画面に入り、`:target` が付いた。(c) ページの中のリンク6つはどれも `target` を持たず、外へのリンクはすべて `target="_blank"` だった。(d) 幅 400px で、3つのページとも `scrollWidth` と `clientWidth` が 400 で、横に揺れなかった。画面の写しは、Playwright の道具が worktree の外への保存を断ったので残していない。
+- **A13**: `git diff --numstat 9d41e4b -- canonical/CATALOG.md` は1行の追加と1行の削除で、html-one-pager の行だけだった。
+
+昇格の印: 書き手が接頭辞と番号のあいだに空白を入れる（候補 3）形が実物にあった。いまはアンカーにも止まりにもならない
+
+#### 変更ごとの検査の対応（A1）
+
+検査は 191件から 280件になった（3.13.5 と 3.9.6 の両方で失敗0件）。
+
+| 変更 | 対応する検査 |
+|---|---|
+| DJ-1 種別 | `ExamplesPass.test_every_kind_has_an_example`・壊したデータの `h3_kind`・`h3_kind_number_is_f3` |
+| DJ-2 `purpose` の置き換え | `f2_purpose_is_replaced_by_kind`・`test_purpose_message_says_it_was_replaced`・`test_data_purpose_attribute_is_derived_from_kind` |
+| DJ-3 `kind` の必須 | `f3_kind_missing`・`old_data_reports_only_kind_and_purpose` |
+| DJ-4 部品の組み合わせ | 種別ごとの `k1_*`・`k2_*`・`k3_*`（22件）・`test_body_is_allowed_only_in_body_kinds` |
+| DJ-5 手番の1枚 | `i1_board_*`・`i2_board_card_and_row_share_a_number`・`k3_board_table_before_cards`・`k2_board_*`・`k1_board_without_cards_or_decided_table`・`Identifiers.test_board_*` |
+| DJ-6 識別子と番号 | `i1_*`・`i2_*`・`c5_tag_empty_is_not_i1`・`k3_approve_approval_card_not_last`・`k2_approve_two_approval_cards`・`Identifiers`・`LoadStage.test_words_broken_exit_2`・`test_changed_words_change_both_check_and_build`・`PrefixWordsAcrossTheFolder`・`test_number_column_cells_may_be_omitted`・`f3_number_cell_number` |
+| DJ-7 アンカーと番号を並べる書き方 | `Anchors`（境界・効く場所・変換しない場所・2つだけの形）・`i3_*` |
+| DJ-8 `PR #N` と `owner/repo#N` | `Links.test_pr_*`・`test_xrepo_links_to_that_repo_on_the_same_host`・`test_paths_and_branches_are_not_xrepo`・`test_without_repo_url_pr_and_xrepo_stay_text`・`test_bare_numbers_are_not_linked`・`TableAndTrackerLinks.test_ref_cells_keep_their_text_and_link`・`test_xrepo_ref_links_to_that_repo`・`l1_xrepo_without_repo_url`・`l1_repo_name_without_owner` |
+| DJ-9 見本と SKILL.md | `ExamplesPass`・`SkillMdExamples`・`Contract`（8つの見本）・`PrefixWordsAcrossTheFolder`・`Anchors.test_approve_example_links_every_kind_of_number` |
+| DJ-10 規則の割り当て | `EveryRuleIsCovered`（E-K1〜E-K3・E-I1〜E-I3 を足した） |
