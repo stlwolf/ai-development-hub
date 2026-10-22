@@ -572,6 +572,14 @@ class Anchors(unittest.TestCase):
         self.assertNotIn("<tr id=", summary)
         self.assertEqual(render_page("review").count("<tr id="), 0)
 
+    def test_targets_clear_the_sticky_bar(self):
+        # 答える部品のあるページでは、上に貼り付く帯が飛んだ先を隠さないよう、帯の高さのぶん余白を足す
+        with open(build.CSS, encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn("position: sticky;", re.search(r"^\.hp-bar \{(.*?)^\}", css, re.S | re.M).group(1))
+        rules = re.findall(r"\.hp:has\(\.hp-bar\) \.hp-card:target, \.hp:has\(\.hp-bar\) \.hp-table tr:target \{ scroll-margin-top: (\d+)px; \}", css)
+        self.assertEqual(rules, ["104", "148"])
+
     def test_anchors_do_not_open_a_new_tab(self):
         f = render_page("pick")
         for a in re.findall(r'<a href="#[^"]*"[^>]*>', f):

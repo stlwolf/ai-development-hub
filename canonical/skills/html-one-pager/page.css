@@ -389,8 +389,12 @@ code {
   outline-offset: 2px;
   scroll-margin-top: 16px;
 }
+/* 答える部品のあるページでは、上に貼り付く帯（.hp-bar）が飛んだ先の上端を隠さないよう、帯の高さのぶん余白を足す。
+   帯の高さは、保存できない表示の長い文のとき、幅 600px 以上で 84px、それより狭いと 128px だった（実測）。 */
+.hp:has(.hp-bar) .hp-card:target, .hp:has(.hp-bar) .hp-table tr:target { scroll-margin-top: 104px; }
 
 @media (max-width: 560px) {
+  .hp:has(.hp-bar) .hp-card:target, .hp:has(.hp-bar) .hp-table tr:target { scroll-margin-top: 148px; }
   .hp-title { font-size: 20px; }
   .hp-meta { grid-template-columns: minmax(0, 1fr); }
   .hp-card { padding: 14px; }
