@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "title": "通知の仕組みの plan の承認",
+  "kind": "approve",
+  "status": "awaiting",
+  "why": "監視の道具を選んだ（#220）あと、二重の請求を通知する仕組みの plan を書いた。実装の前に、3つの問いに答えたうえで plan を承認してほしい。Q2 の答えで実装の順が変わる。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 222,
+    "branch": "feature/#222_double_charge_alert"
+  },
+  "links": [
+    {"label": "#222 の plan", "url": "https://github.com/example-org/shop/blob/feature/%23222_double_charge_alert/docs/plan.md"},
+    {"label": "issue #222", "url": "https://github.com/example-org/shop/issues/222"}
+  ],
+  "sections": [
+    {
+      "type": "decisions",
+      "title": "問い",
+      "cards": [
+        {
+          "key": "alert_channel",
+          "title": "通知はチャットに送り、当番の電話は3回続いたときだけにする",
+          "recommend": "chat",
+          "reason": "二重の請求は1日に数件で、毎回の電話では夜の当番の負担が大きいため。",
+          "points": [
+            "`ledger` の記録で、同じ注文に2つの請求ができたら通知する。",
+            "請求の仕組みのリポジトリ（example-org/billing#31）でも、同じ通知の形を使っている。"
+          ],
+          "options": [
+            {"key": "chat", "label": "チャットに送る", "kind": "go"},
+            {"key": "phone", "label": "毎回電話する", "kind": "warn"}
+          ]
+        },
+        {
+          "key": "inquiry_number",
+          "title": "通知の文に、決済の会社の問い合わせの番号を入れる",
+          "recommend": "add",
+          "reason": "当番が決済の会社に問い合わせるとき、番号を探す手間が無くなるため。",
+          "points": [
+            "Q1 の通知の文に足す。入れないなら、下の「実装の順」の2つ目を外す。",
+            {"text": "番号の形は PR #215 で決めたものを使う。", "evidence": "verified"}
+          ],
+          "options": [
+            {"key": "add", "label": "入れる", "kind": "go"},
+            {"key": "skip", "label": "入れない", "kind": "no"}
+          ]
+        },
+        {
+          "key": "trial",
+          "title": "まず1割の利用者で2週間動かす",
+          "recommend": "stage",
+          "points": [
+            "Q1 と Q2 の答えのまま動かし、通知の数を見てから全員に広げる。"
+          ],
+          "options": [
+            {"key": "stage", "label": "1割から始める", "kind": "go"},
+            {"key": "all", "label": "一度に全員へ", "kind": "warn"}
+          ]
+        },
+        {
+          "key": "approve_plan",
+          "tag": "承認",
+          "title": "上の問いの答えを入れたうえで、この plan で実装に進む",
+          "recommend": "approve",
+          "points": [
+            "Q2 を「入れない」にしたときは、実装の順の2つ目を外して進む。"
+          ],
+          "options": [
+            {"key": "approve", "label": "承認する", "kind": "go"},
+            {"key": "fix", "label": "直してから（補足欄に）", "kind": "fix"},
+            {"key": "later", "label": "あとで決める", "kind": "warn"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "実装の順",
+      "columns": [
+        {"key": "step", "label": "順"},
+        {"key": "what", "label": "中身"},
+        {"key": "refs", "label": "issue / PR", "type": "ref"}
+      ],
+      "rows": [
+        {"step": "1つ目", "what": "二重の請求を見つけて、チャットに通知する。", "refs": ["#222"]},
+        {"step": "2つ目", "what": "通知の文に問い合わせの番号を入れる（Q2 で「入れる」のとき）。", "refs": ["PR #215"]},
+        {"step": "3つ目", "what": "1割の利用者で動かす設定を足す。", "refs": ["example-org/billing#31"]}
+      ]
+    }
+  ]
+}

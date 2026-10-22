@@ -399,12 +399,12 @@ BROKEN = [
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
         for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False),
-                               ("confirm", False), ("pick", False), ("board", False)):
+                               ("confirm", False), ("pick", False), ("board", False), ("approve", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
 
     def test_every_kind_has_an_example(self):
-        kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board")}
+        kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board", "approve")}
         self.assertEqual(kinds, set(build.PAGE_KINDS))
 
     def test_body_is_allowed_only_in_body_kinds(self):
@@ -545,6 +545,15 @@ class Anchors(unittest.TestCase):
 
     def test_card_tags_link_to_the_card(self):
         self.assertEqual(self.point("Q2 を先に決める。"), anchor("hp-card-alert_rule", "Q2") + " を先に決める。")
+
+    def test_approve_example_links_every_kind_of_number(self):
+        f = render_page("approve")
+        self.assertEqual(re.findall(r'<span class="hp-tag">(.*?)</span>', f), ["Q1", "Q2", "Q3", "承認"])
+        self.assertIn(anchor("hp-card-alert_channel", "Q1") + " の通知の文に足す。", f)
+        self.assertIn(a_tag("https://github.com/example-org/shop/pull/215", "PR #215"), f)
+        self.assertIn(a_tag("https://github.com/example-org/billing/issues/31", "example-org/billing#31"), f)
+        # 目的の文の Q2 もアンカーになる
+        self.assertIn(anchor("hp-card-inquiry_number", "Q2") + " の答えで実装の順が変わる。", f)
 
     def test_numbers_link_to_the_row(self):
         f = render_page("pick")
@@ -1000,7 +1009,7 @@ class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
     PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None),
-             ("pick", None), ("board", None))
+             ("pick", None), ("board", None), ("approve", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -1089,7 +1098,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board", "approve")
 
 
 class BodyLooks(unittest.TestCase):
@@ -1280,7 +1289,7 @@ class ElementIds(unittest.TestCase):
 
     def test_ids_are_unique_in_every_example(self):
         for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None),
-                           ("board", None)):
+                           ("board", None), ("approve", None)):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -1384,7 +1393,7 @@ class SaveCode(unittest.TestCase):
     def test_pages_with_answer_parts_carry_the_save_code(self):
         with open(build.JS, encoding="utf-8") as fh:
             js = fh.read().rstrip("\n")
-        for name in ("decide", "bundle", "confirm", "pick", "board"):
+        for name in ("decide", "bundle", "confirm", "pick", "board", "approve"):
             with self.subTest(page=name):
                 f = render_page(name)
                 self.assertEqual(f.count("<script"), 2)
