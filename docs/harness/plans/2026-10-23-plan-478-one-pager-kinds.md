@@ -3,7 +3,7 @@ id: "01M5J8EN1AW3HX54GY9GXG9DEP"
 title: "#478・#477 html-one-pager に種別（kind）を定義し、番号と識別子のリンク先を決める"
 date: 2026-10-23
 type: plan
-status: draft
+status: in-development   # ゲート3 で承認（2026-10-23・owner がこのセッションに直接「全部推奨」と書いた）。承認時点の plan は、owner の追加の要件（I2-3・A16）の反映まで
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/478"
@@ -329,7 +329,8 @@ DJ-8 PR と別のリポジトリ
 | A12 | ブラウザでアンカーを確かめる | `--standalone` で作った `approve.json` と `pick.json` のページを、手元の HTTP サーバーから Playwright で開く。(a) 本文の `Q2` のリンクを押すと、URL の `#` のあとが `hp-card-<key>` になり、そのカードが画面に入り、`:target` の見た目が付く。(b) `pick.json` の上位の表の `候補N` のリンクを押すと、その行が画面に入る。(c) 外へのリンク（`#N`・`PR #N`）は `target="_blank"` のまま、アンカーは `target` を持たない。(d) 幅 400px で、2つのページとも横に揺れない（`scrollWidth` が `clientWidth` を超えない） |
 | A13 | CATALOG の行 | `git diff 9d41e4b -- canonical/CATALOG.md` が html-one-pager の行1つだけの変更で、その行に種別の一覧がある。見出しの件数と表の行数は変わらない |
 | A14 | 最後のコミットで回し直す | スキルのファイルを最後に変えたコミットで、A1・A3・A5〜A12 を回し直し、回したコミットの SHA を episode に書く |
-| A15 | artifact の中でアンカーが動くか | `approve.json` の断片を private の artifact に1回公開し、本文の `Q2` のリンクを押してそのカードへ移るかを確かめる。公開できないか、artifact の画面を操作できなければ、A15 は「確かめていない」とし、報告にそう書く（`DONE_WITH_CONCERNS`）。GATE I1 で唯一それを許す受入とする |
+| A15 | artifact の中でアンカーが動くか | A16 で公開した承認の種別のサンプル（`approve.json` の断片）で、本文の `Q2` のリンクを押してそのカードへ移るかを確かめる。公開できないか、artifact の画面を操作できなければ、A15 は「確かめていない」とし、報告にそう書く（`DONE_WITH_CONCERNS`）。GATE I2 で唯一それを許す受入とする |
+| A16 | 種別ごとのサンプルを owner が確かめられる（owner の追加の要件） | I2-3 のとおり、7つの種別の見本をそれぞれ private の artifact に公開し、7つの URL が報告にある。どのページも公開の結果に誤りが無い。答える部品のある5つ（認識合わせ・承認・一覧から選ぶ・束・手番の1枚。見本の手番の1枚は開いたカードを持つ）は `db` を付けて公開し、保存先を1回読めた。答える部品の無い2つ（見取り図・レビュー）には `db` を付けていない |
 
 A6 の `grep`（`canonical/skills/html-one-pager` に対して打つ）。札の値と `no` の key の値をすべて並べ、1件ずつ「用語集の接頭辞の語の形」「`承認`」「issue の形」「札が自由な種別のカード」「`no` の key だが番号の列ではない（`text` の列）」「使わない書き方を挙げる行」のどれに当たるかを episode に書く。どれにも当たらないものが残っていれば直す:
 
@@ -376,7 +377,7 @@ git -C '<worktree>' push -u origin 'feature/#478_one_pager_kinds'
 
 - PR はまだ作らない。brief の「報告の宛先」の統括（`oe-tree` に root `cockpit` として出ることを確かめる）へ `projects/orchestration-engine/bin/oe-send` で plan のパスを1行送り、exit code を確かめて止まる。
 
-### GATE 3: owner の plan 承認（「報告の宛先」の統括からの送信で届いたものだけを数える）
+### GATE 3: owner の plan 承認（owner の応答として届いたものだけを数える。「報告の宛先」の統括からの送信か、owner がこのセッションに直接書いたもの）
 
 承認で決めてほしいことは4つある。
 
@@ -390,6 +391,14 @@ git -C '<worktree>' push -u origin 'feature/#478_one_pager_kinds'
 - `PR #N` は `/pull/N` へのリンクになる（DJ-8・owner の深掘りの決定）。GitHub の形なので、GitLab などのリポジトリでは PR のリンクが開けない。SKILL.md の限界に書く。
 - 既存の見本のうち2つ（`decide.json` の札・`table.json` の番号）は、新しい決まりに合わせてデータを直すので、出力の札と番号の文字が変わる（A10）。
 - 受入の A15 で、確かめのために private の artifact を1つ作り、1回公開する（アンカーが artifact の中で動くかを見る）。
+
+**結果（2026-10-23）**: owner がこのセッションに直接「とりあえず全部推奨で問題なさそう」と書いた。Q1〜Q4 は推奨のとおりとし、ゲート3 の承認として扱う（統括にも送って伝えた）。
+
+- Q1: 種別の表と接頭辞の語は DJ-1・DJ-6 のとおり（`Q`・`候補`・`項目`・`承認`）。
+- Q2: 「手番の1枚」は B（既存の部品の組み合わせ・決定4 に規則を1つ足す）。I1-5 を行う。
+- Q3: `purpose` を `kind` に置き換え、`kind` を必須にする。
+- Q4: 番号が3つ以上並ぶ書き方を止める。
+- 同じ応答で owner が要件を1つ足した: **PR をレビューできる段階になったら（owner がレビューする番になったときに）、今回作る種別ごとに artifact のサンプルを1つずつ作り、確かめられるようにしておく。** I2 に工程 I2-3 を、受入に A16 を足した。A15 は A16 の承認の種別のサンプルで確かめる。この反映までを、承認時点の plan とする。
 
 ### I1-0: baseline の確認
 
@@ -439,11 +448,15 @@ git -C '<worktree>' push -u origin 'feature/#478_one_pager_kinds'
 
 - A10 の比べと A11 の実物の7件は、結果を episode に書く。A11 の直しの写しと確かめのスクリプトは worktree の `tmp/478-one-pager-kinds/` に置き、コミットしない。
 
-### GATE I1: A1〜A15 がすべて満たされている（A15 だけは、確かめられなかったときに「確かめていない」として報告に書けば通す）
+### GATE I1: A1〜A14 がすべて満たされている（A15 と A16 は I2-3 で確かめる）
 
 ### I2: 実装SO・PR・Copilot
 
-- 実装SO（弱・Codex 1レーン）を回し、採否を episode に書く。PR を作る（`pr-conventions`・本文は `Refs #478 #477`）。Copilot 1ラウンドを通して未返信を0件にする。
+- I2-1: 実装SO（弱・Codex 1レーン）を回し、採否を episode に書く。
+- I2-2: PR を作る（`pr-conventions`・本文は `Refs #478 #477`）。Copilot 1ラウンドを通して未返信を0件にする。
+- I2-3: 種別ごとのサンプルを artifact に公開する（owner の追加の要件・A15・A16）。最後のコミットの `build.py` で、種別ごとに見本を1つずつ断片で作り（`confirm.json`・`approve.json`・`pick.json`・`table.json`〔見取り図〕・`bundle.json`・`review.json`・`board.json` の7つ）、それぞれ private の artifact に公開する。答える部品のあるページは `capabilities: {db: {}}` を付け、無いページには付けない。公開のあと、答える部品のあるページは保存先を1回読んで確かめる。7つの URL を、種別の名前と見本の名前と一緒に `.oe/report-478.md` と報告の最後の応答に書く（PR の本文には書かない。private の artifact で、PR は公開のリポジトリにあるため）。
+
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件で、A15・A16 が満たされている（A15 だけは、確かめられなかったときに「確かめていない」として報告に書けば通す）
 
 ### I3: episode を閉じ、報告して止まる
 
