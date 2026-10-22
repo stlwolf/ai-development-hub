@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (30)
+## Skills (31)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -36,6 +36,7 @@
 | pr-conventions | PR作成の規約を適用する | `skills/pr-conventions/SKILL.md` | — |
 | predecision-exploration | 設計判断を確定する前にゼロベースで代替案を最低1回引き出し、探索木を確定前 artifact に残してから確定する（so-compare 選択肢拡張・確定前証跡・暫定停止条件）。exhaustion-before-conclusion-rule の設計ドメイン層2（soft forcing。hard 版は defer） | `skills/predecision-exploration/SKILL.md` | skill: so-compare, skill: kickoff-to-plan, skill: episode-retrospective, command: peer-ai-review |
 | question-driven-design | 実装前に設計ツリーを質問で網羅的に掘り下げ、暗黙の前提を明示化する | `skills/question-driven-design/SKILL.md` | — |
+| runbook-authoring | 手順書（ランブック）の書き方と、手順書・スキル・スクリプトの役割の分け方。人向けの粗い段（多くても6）と AI 向けの1ブロック1確かめの書き分け・固定する8つの節と前提の型・手順書の種類・スクリプトに包む粒度（終了コード・確認と非対話・秘密・時刻と文字）・確かめの落とし穴・用語の決まり。check_runbook.py（R1〜R10）で検査し、架空のサービスの見本を持つ。持ち運べる形（フォルダの外を参照しない・Python 3.9+・bash） | `skills/runbook-authoring/SKILL.md` | — |
 | sentry-investigation | Sentry APIからエラー情報・スタックトレースを取得するパターン集 | `skills/sentry-investigation/SKILL.md` | — |
 | so-compare | so-compare.shでセカンドオピニオン（Codex/Claude/Cursor）を取得し比較する。**弱 SO**（1周可・partial=disclose・0はなし）。強 SO は `peer-ai-review` | `skills/so-compare/SKILL.md` | cli: so-compare |
 | spec-card | 蒸留パイプラインのドキュメントフォーマット適用ガイド（frontmatter・ULID・status） | `skills/spec-card/SKILL.md` | — |

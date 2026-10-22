@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-19-episode-428-human-page-format.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-21
+    ref: "#467"
+    state: followed
+    note: "description に「どの作業の手順書か（題材）がまだ決まっていなくても、手順書を書く・直す依頼を受けたら、題材を聞き返したり探したりする前に読み込む」の文を初めから入れ、発火の表に題材の欠けた言い方（ランブックを書いて・手順書を直して）を2行入れた。claude -p の測り直しで、題材の欠けた2つを含む陽性の6つが、どれも題材を探す前の最初の呼び出しで読み込まれた"
 ---
 
 **入口のスキルの description には、題材が決まる前でも先に読み込むことを書く。そして発火の測定に、題材の欠けた言い方を必ず入れる。**

@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-18-episode-401-settings-apply-check.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-21
+    ref: "#467"
+    state: followed
+    note: "見本のスクリプトは変数をすべて ${…} で囲み、スキルの決まりと検査（R9）にも入れた。item が書く確かめのコマンド grep -nP は、macOS 付属の grep（BSD grep 2.6.0）が -P を受け付けず終了コード 2 になるので、スキルには LC_ALL=C grep -nE '\\$[A-Za-z_][A-Za-z0-9_]*[^[:space:] -~]' を載せ、囲み忘れの行だけを拾うことを確かめた"
 ---
 
 **bash で、変数の直後に ASCII 以外の文字が来る位置は、必ず `${var}` で囲む。書いたら `grep -nP '\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]' <ファイル>` で、囲み忘れが無いことを確かめる。**
