@@ -1,0 +1,80 @@
+{
+  "format": 1,
+  "title": "監視の道具の候補",
+  "kind": "pick",
+  "status": "awaiting",
+  "why": "決済が二重に走った障害（#212）は、利用者からの問い合わせで初めて分かった。次は先に気づけるよう、監視の道具の候補を6つ集めたので、どれを試すかを選んでほしい。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 220,
+    "branch": "feature/#220_monitoring"
+  },
+  "links": [
+    {"label": "issue #220", "url": "https://github.com/example-org/shop/issues/220"}
+  ],
+  "sections": [
+    {
+      "type": "decisions",
+      "title": "試す候補の選び方",
+      "cards": [
+        {
+          "key": "pick_tools",
+          "title": "どの候補を試すか",
+          "recommend": "top",
+          "reason": "上位の2つは、いまのログの置き場をそのまま使え、月の費用も小さいため。",
+          "points": [
+            "上位の2つは、下の「上位の候補」の表にある。",
+            {"text": "どの候補も、試すのは2週間で、元に戻すのは設定を消すだけで済む。", "evidence": "sourced"}
+          ],
+          "options": [
+            {"key": "top", "label": "上位の2つを試す", "kind": "go"},
+            {"key": "choose", "label": "選んで試す（補足欄に候補の番号）", "kind": "fix"},
+            {"key": "none", "label": "どれも試さない", "kind": "no"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "上位の候補",
+      "columns": [
+        {"key": "cands", "label": "候補"},
+        {"key": "why", "label": "推す理由"}
+      ],
+      "rows": [
+        {"cands": "候補2・候補5", "why": "いまのログの置き場（`ledger` の記録）をそのまま読め、二重の請求を1時間以内に通知できる。"}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "ログを集める道具（3件）",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "name", "label": "名前"},
+        {"key": "what", "label": "できること"},
+        {"key": "cost", "label": "月の費用"}
+      ],
+      "rows": [
+        {"name": "LogCollector A", "what": "サーバーのログを1か所に集める。", "cost": "約3万円"},
+        {"name": "LogCollector B", "what": {"text": "ログを集め、決まった文字列が出たら通知する。", "evidence": "verified"}, "cost": "約1万円"},
+        {"name": "LogCollector C", "what": "ログを集めて長く残す。通知は無い。", "cost": "約5千円"}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "通知を送る道具（3件）",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "name", "label": "名前"},
+        {"key": "what", "label": "できること"},
+        {"key": "cost", "label": "月の費用"}
+      ],
+      "rows": [
+        {"name": "Notifier D", "what": "電話とメールで通知する。", "cost": "約2万円"},
+        {"name": "Notifier E", "what": {"text": "チャットに通知し、同じ通知をまとめる。", "evidence": "sourced"}, "cost": "無料の範囲"},
+        {"name": "Notifier F", "what": "通知の当番を決めて順に送る。", "cost": "約4万円"}
+      ]
+    }
+  ]
+}

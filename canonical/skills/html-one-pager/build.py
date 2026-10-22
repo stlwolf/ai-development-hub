@@ -24,7 +24,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_GLOSSARY = os.path.join(HERE, "glossary.md")
 
 FORMAT_VERSION = 1
-PURPOSES = ("decide", "grasp", "review")
+# ページの種別。種別は既存の部品の組み合わせの名前で、要る部品・置いてよい補足・並びを決める（SKILL.md の種別の表）。
+# 型の data-purpose の属性には、種別から導いた値を出す（どこからも読まれていないが、出力を変えないために残す）。
+PAGE_KINDS = ("confirm", "approve", "pick", "map", "bundle", "review")
+KIND_PURPOSE = {"confirm": "decide", "approve": "decide", "pick": "decide", "map": "grasp",
+                "bundle": "decide", "review": "review"}
+# 表に番号の列（型 no）を置ける種別。
+ROW_NUMBER_KINDS = ("pick", "map")
+# --body の本文を置ける種別。本文は型の上でいつも部品の上に出るので、部品の上にあっても読む順を壊さない種別だけにする。
+BODY_KINDS = ("approve", "map", "bundle", "review")
+# 前の版で使っていた項目。知らない項目として止め、理由を添える。
+REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
 EVIDENCE = ("verified", "sourced", "guess")
 SEVERITIES = ("high", "mid", "low")
@@ -32,7 +42,7 @@ ADOPTIONS = ("adopted", "partial", "rejected")
 KINDS = ("go", "fix", "warn", "no")
 SECTION_TYPES = ("decisions", "bundle", "findings", "table")
 ANSWER_SECTION_TYPES = ("decisions", "bundle")
-COLUMN_TYPES = ("text", "ref")
+COLUMN_TYPES = ("text", "ref", "no")
 
 # カードと選択肢の key。db の doc id が許す文字より狭い、このスキルの決まり。
 # match（先頭から）で使い、終わりは \Z で固定する（$ は末尾の改行の前でも合うので使わない）。
@@ -225,20 +235,26 @@ class Validator:
         # ページの送り元からリンクにできるもの（repo_url があるか・登録した接頭辞）。
         # 送り元に誤りがあれば None にし、表の識別子をリンクにできるかの判定（E-L1）を重ねて出さない。
         self.page_links = None
+        # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
+        self.tables = {}
 
     def add(self, code, path, msg):
         self.errors.append((code, path, msg))
 
     # 形の決まり --------------------------------------------------------
 
-    def obj(self, path, val, required, optional=()):
-        """オブジェクトかを見て、知らない項目と足りない項目を出す。型が違えば下を見ない。"""
+    def obj(self, path, val, required, optional=(), replaced=None):
+        """オブジェクトかを見て、知らない項目と足りない項目を出す。型が違えば下を見ない。
+        replaced は前の版で使っていた項目と、その理由の文。知らない項目として止め、理由を添える。"""
         if not isinstance(val, dict):
             self.add("E-F3", path, "オブジェクトであるべき所が%sである" % type_name(val))
             return False
         for k in val:
             if k not in required and k not in optional:
-                self.add("E-F2", join(path, k), '知らない項目 "%s" がある' % k)
+                if replaced and k in replaced:
+                    self.add("E-F2", join(path, k), '知らない項目 "%s" がある（%s）' % (k, replaced[k]))
+                else:
+                    self.add("E-F2", join(path, k), '知らない項目 "%s" がある' % k)
         for k in required:
             if k not in val:
                 self.add("E-F3", join(path, k), "必須の項目が無い")
@@ -290,14 +306,15 @@ class Validator:
             shown = "無い" if "format" not in data else json.dumps(fmt, ensure_ascii=False)
             self.add("E-F1", "format", "format は %d であるべき所が %s" % (FORMAT_VERSION, shown))
             return
-        self.obj("$", data, ("format", "title", "purpose", "status", "why", "source", "sections"),
-                 ("links", "answers"))
+        self.obj("$", data, ("format", "title", "kind", "status", "why", "source", "sections"),
+                 ("links", "answers"), replaced=REPLACED_FIELDS)
         if "title" in data:
             self.text("title", data["title"], "E-H1")
         if "why" in data:
             self.text("why", data["why"], "E-H1")
-        if "purpose" in data:
-            self.enum("purpose", data["purpose"], PURPOSES, "E-H3")
+        kind = None
+        if "kind" in data and self.enum("kind", data["kind"], PAGE_KINDS, "E-H3"):
+            kind = data["kind"]
         if "status" in data:
             self.enum("status", data["status"], STATUSES, "E-H3")
         if "source" in data:
@@ -321,11 +338,15 @@ class Validator:
                 if not secs and not self.has_body:
                     self.add("E-S1", "sections", "部品が1つも無く、--body の本文も無い")
                 for i, sec in enumerate(secs):
-                    kind = self.section("sections[%d]" % i, sec)
-                    if kind is None:
+                    t = self.section("sections[%d]" % i, sec)
+                    if t is None:
                         sections_readable = False
-                    elif kind in ANSWER_SECTION_TYPES:
+                    elif t in ANSWER_SECTION_TYPES:
                         has_answer_part = True
+                # 種別の部品は、種別が決まった値で、部品がどれも読めたときだけ見る。
+                # 部品も本文も無ければ E-S1 だけを出す（同じ原因の誤りを重ねない）。
+                if kind is not None and sections_readable and (secs or self.has_body):
+                    self.kind_parts(kind, secs)
         status = data.get("status")
         if status == "awaiting" and sections_readable and not has_answer_part:
             self.add("E-P2", "status", "awaiting（回答待ち）なのに、答える部品（decisions か bundle）が無い")
@@ -335,6 +356,106 @@ class Validator:
             self.add("E-P2", "answers", "status が answered なのに、回収した答え（answers）が無い")
         if "answers" in data:
             self.answers("answers", data["answers"])
+
+    # 種別ごとの部品の決まり（E-K1〜E-K3）--------------------------------
+
+    def kind_parts(self, kind, secs):
+        """種別に要る部品・置いてよい補足・並びを見る。部品はどれもオブジェクトで、type は決まった値である。
+        見るのは部品の数・種類・順と、種別が見る場所（カードの blocks・表の列の型）だけで、壊れた中身には触れない。"""
+        types = [s["type"] for s in secs]
+        paths = ["sections[%d]" % i for i in range(len(secs))]
+        if self.has_body and kind not in BODY_KINDS:
+            self.add("E-K2", "--body", "種別 %s のページには --body の本文を置かない" % kind)
+        for i, t in enumerate(types):
+            cols = self.tables.get(paths[i]) if t == "table" else None
+            if not cols:
+                continue
+            nos = [j for j, (_, ct) in enumerate(cols) if ct == "no"]
+            if nos and kind not in ROW_NUMBER_KINDS:
+                self.add("E-K2", "%s.columns[%d]" % (paths[i], nos[0]), "種別 %s の表には番号の列（type no）を置かない" % kind)
+            elif len(nos) > 1:
+                self.add("E-K2", "%s.columns[%d]" % (paths[i], nos[1]), "番号の列（type no）は1つの表に1列までにする")
+        getattr(self, "kind_" + kind)(types, paths, secs)
+
+    def kind_allowed(self, kind, types, paths, allowed):
+        """置けない部品を止め、置ける部品の位置の並びを返す（並びの判定は置ける部品だけで行い、誤りを重ねない）。"""
+        for i, t in enumerate(types):
+            if t not in allowed:
+                self.add("E-K2", paths[i], "種別 %s のページには部品 %s を置かない（置けるのは %s）"
+                         % (kind, t, "・".join(allowed)))
+        return [i for i, t in enumerate(types) if t in allowed]
+
+    def only_one(self, positions, paths, what):
+        for i in positions[1:]:
+            self.add("E-K2", paths[i], "%sは1つにする" % what)
+
+    def has_number_table(self, positions, paths):
+        """表の少なくとも1つが番号の列を持つか。列の読めない表があれば判定しない（None を返す）。"""
+        found = False
+        for i in positions:
+            cols = self.tables.get(paths[i])
+            if cols is None:
+                return None
+            found = found or any(ct == "no" for _, ct in cols)
+        return found
+
+    def kind_confirm(self, types, paths, secs):
+        dec = self.kind_allowed("confirm", types, paths, ("decisions",))
+        if not dec:
+            self.add("E-K1", "sections", "認識合わせのページには判定カードの節（decisions）が1つ要る")
+            return
+        self.only_one(dec, paths, "判定カードの節")
+        cards = secs[dec[0]].get("cards")
+        if isinstance(cards, list):
+            for j, c in enumerate(cards):
+                if isinstance(c, dict) and "blocks" not in c:
+                    self.add("E-K1", "%s.cards[%d]" % (paths[dec[0]], j),
+                             "認識合わせのカードは塊（blocks）を持つ。平らな要点で足りる確かめは、承認（approve）の問いとして書く")
+
+    def kind_approve(self, types, paths, secs):
+        allowed = self.kind_allowed("approve", types, paths, ("decisions", "table"))
+        dec = [i for i in allowed if types[i] == "decisions"]
+        if not dec:
+            self.add("E-K1", "sections", "承認のページには判定カードの節（decisions）が1つ以上要る")
+            return
+        for i in allowed:
+            if types[i] == "table" and i < dec[-1]:
+                self.add("E-K3", paths[i], "表は判定カードの節のあとに置く")
+
+    def kind_pick(self, types, paths, secs):
+        allowed = self.kind_allowed("pick", types, paths, ("decisions", "table"))
+        dec = [i for i in allowed if types[i] == "decisions"]
+        tab = [i for i in allowed if types[i] == "table"]
+        if not dec:
+            self.add("E-K1", "sections", "一覧から選ぶページには、選び方のカードを1枚置いた判定カードの節（decisions）が1つ要る")
+        else:
+            if dec[0] != allowed[0]:
+                self.add("E-K3", paths[dec[0]], "選び方のカードの節は部品の先頭（表の上）に置く")
+            self.only_one(dec, paths, "判定カードの節")
+            cards = secs[dec[0]].get("cards")
+            if isinstance(cards, list) and len(cards) > 1:
+                self.add("E-K2", "%s.cards[1]" % paths[dec[0]], "選び方のカードは1枚にする")
+        if not tab:
+            self.add("E-K1", "sections", "一覧から選ぶページには表（table）が1つ以上要る")
+        elif self.has_number_table(tab, paths) is False:
+            self.add("E-K1", "sections", "一覧から選ぶページには、番号の列（type no）を持つ表が1つ以上要る")
+
+    def kind_map(self, types, paths, secs):
+        self.kind_allowed("map", types, paths, ("table",))
+
+    def kind_bundle(self, types, paths, secs):
+        b = self.kind_allowed("bundle", types, paths, ("bundle",))
+        if not b:
+            self.add("E-K1", "sections", "束のページには判断待ちの束の部品（bundle）が1つ要る")
+        self.only_one(b, paths, "判断待ちの束の部品")
+
+    def kind_review(self, types, paths, secs):
+        allowed = self.kind_allowed("review", types, paths, ("findings", "table", "decisions"))
+        f = [i for i in allowed if types[i] == "findings"]
+        if not f:
+            self.add("E-K1", "sections", "レビューのページには指摘の一覧（findings）が1つ以上要る")
+        elif f[0] != allowed[0]:
+            self.add("E-K3", paths[allowed[0]], "指摘の一覧を部品の先頭に置き、表と判定カードはそのあとに置く")
 
     def source(self, path, s):
         if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux", "trackers")):
@@ -435,6 +556,7 @@ class Validator:
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
                 cols = self.columns(join(path, "columns"), sec["columns"]) if "columns" in sec else None
+                self.tables[path] = cols
                 if "rows" in sec:
                     self.rows(join(path, "rows"), sec["rows"], cols)
         else:
@@ -484,21 +606,27 @@ class Validator:
         行の key と値は見ない（列の誤りと同じ原因の誤りを重ねない）。"""
         if not self.array(path, rows, "E-S1", "行が1つも無い"):
             return
-        keys = tuple(k for k, _ in cols) if cols is not None else None
+        # 番号の列は、行の key を省いてよい唯一の列である（省けばスクリプトが番号を振る）。
+        keys = tuple(k for k, kind in cols if kind != "no") if cols is not None else None
+        optional = tuple(k for k, kind in cols if kind == "no") if cols is not None else ()
         for i, row in enumerate(rows):
             rp = "%s[%d]" % (path, i)
             if keys is None:
                 if not isinstance(row, dict):
                     self.add("E-F3", rp, "オブジェクトであるべき所が%sである" % type_name(row))
                 continue
-            if not self.obj(rp, row, keys):
+            if not self.obj(rp, row, keys, optional):
                 continue
             for k, kind in cols:
                 if k in row:
                     self.cell(join(rp, k), row[k], kind)
 
     def cell(self, path, v, kind):
-        if kind == "ref":
+        if kind == "no":
+            # 番号の列の値は文字列。接頭辞の形はページの中の識別子の検証で見る。
+            if not isinstance(v, str):
+                self.add("E-F3", path, "文字列であるべき所が%sである" % type_name(v))
+        elif kind == "ref":
             if isinstance(v, str):
                 self.ref(path, v)
             elif isinstance(v, list):
@@ -1072,8 +1200,10 @@ class Renderer:
         for row in sec["rows"]:
             cells = []
             for key, label, kind in cols:
-                v = row[key]
-                if kind == "ref":
+                v = row.get(key, "")
+                if kind == "no":
+                    cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(v)))
+                elif kind == "ref":
                     items = [v] if isinstance(v, str) else v
                     body = ('<span class="hp-refs">%s</span>' % "".join(refs.ref_link(r) for r in items)) if items else ""
                     cells.append('<td class="hp-ref-cell" data-label="%s">%s</td>' % (esc(label), body))
@@ -1114,7 +1244,7 @@ def render(data, labels, now, tmux, body=None):
     values = {
         "title": esc(data["title"]),
         "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
-        "purpose": esc(data["purpose"]),
+        "purpose": esc(KIND_PURPOSE[data["kind"]]),
         "status": esc(data["status"]),
         "header": header,
         "bar": r.bar(),

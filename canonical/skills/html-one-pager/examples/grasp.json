@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "決済の仕組みの見取り図",
-  "purpose": "grasp",
+  "kind": "map",
   "status": "live",
   "why": "決済が二重に走った障害（#212）を調べる前に、決済に関わる部分のつながりを共有しておきたい。",
   "source": {

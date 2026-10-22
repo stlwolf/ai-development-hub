@@ -109,6 +109,27 @@ OPS = {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
 BLOCKS = ["sections", 0, "cards", 0, "blocks"]
 BLOCK0 = BLOCKS + [0]
 
+
+def append(path, value):
+    def f(d):
+        at(d, path).append(copy.deepcopy(value))
+    return f
+
+
+# 種別の検査で足す部品。中身はどれも誤りの無い形にし、出る誤りが種別の規則だけになるようにする
+TABLE_SEC = {"type": "table", "title": "補足", "columns": [{"key": "what", "label": "中身"}], "rows": [{"what": "補足の行"}]}
+NUMBER_TABLE_SEC = {"type": "table", "title": "番号つきの補足", "columns": [{"key": "no", "label": "番号", "type": "no"},
+                                                                     {"key": "what", "label": "中身"}],
+                    "rows": [{"what": "補足の行"}]}
+FINDINGS_SEC = {"type": "findings", "title": "指摘", "items": [{"text": "指摘の文", "severity": "low", "adopted": "adopted",
+                                                               "reason": "採った理由"}]}
+CONFIRM_CARD = {"key": "extra_card", "title": "足したカード", "recommend": "ok",
+                "blocks": [{"title": "やること", "points": ["中身"]}],
+                "options": [{"key": "ok", "label": "この内容で確定"}, {"key": "fix", "label": "直してほしい"}]}
+CONFIRM_SEC = {"type": "decisions", "title": "足した節", "cards": [CONFIRM_CARD]}
+BUNDLE_SEC = {"type": "bundle", "title": "束", "groups": [{"source": {"repo": "billing"}, "title": "作業",
+                                                          "cards": [dict(CONFIRM_CARD, key="bundle_card")]}]}
+
 # (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
 BROKEN = [
     # E-F1 format
@@ -150,10 +171,16 @@ BROKEN = [
     ("h2_tmux_name_empty", "decide", put(["source", "tmux", "name"], ""), [("E-H2", "source.tmux.name")], False),
     ("h2_group_repo_empty", "bundle", put(GROUP1 + ["source", "repo"], ""),
      [("E-H2", "sections[0].groups[1].source.repo")], False),
-    # E-H3 決まった値
-    ("h3_purpose", "decide", put(["purpose"], "decision"), [("E-H3", "purpose")], False),
+    # E-H3 決まった値。kind は前の版の purpose の値（decide）を受け付けない
+    ("h3_kind", "decide", put(["kind"], "decide"), [("E-H3", "kind")], False),
     ("h3_status", "decide", put(["status"], "waiting"), [("E-H3", "status")], False),
-    ("h3_purpose_number_is_f3", "decide", put(["purpose"], 3), [("E-F3", "purpose")], False),
+    ("h3_kind_number_is_f3", "decide", put(["kind"], 3), [("E-F3", "kind")], False),
+    # kind は必須。purpose は kind に置き換えた（知らない項目として理由つきで止める）
+    ("f3_kind_missing", "decide", drop(["kind"]), [("E-F3", "kind")], False),
+    ("f2_purpose_is_replaced_by_kind", "decide", put(["purpose"], "decide"), [("E-F2", "purpose")], False),
+    # 前の版のデータ（kind が無く purpose がある）は、種別の検証をしないので、中身が種別に合わなくても2件だけ
+    ("old_data_reports_only_kind_and_purpose", "confirm",
+     both(drop(["kind"]), put(["purpose"], "decide"), drop(BLOCKS)), [("E-F3", "kind"), ("E-F2", "purpose")], False),
     # E-P2 状態と部品・答え
     ("p2_awaiting_without_answer_part", "review", put(["status"], "awaiting"), [("E-P2", "status")], False),
     ("p2_answers_but_awaiting", "decide",
@@ -278,6 +305,46 @@ BROKEN = [
     ("f2_block_unknown_item", "confirm", put(BLOCK0 + ["heading"], "x"), [("E-F2", "sections[0].cards[0].blocks[0].heading")], False),
     ("t1_block_point_evidence", "confirm", put(["sections", 0, "cards", 0, "blocks", 1, "points", 0, "evidence"], "maybe"),
      [("E-T1", "sections[0].cards[0].blocks[1].points[0].evidence")], False),
+    # 種別の部品（E-K1〜E-K3）。種別ごとに「要る部品が無い」「置けない部品がある」「並びが違う」を見る
+    # 認識合わせ: 部品が判定カードの節1つだけなので、並びの誤りは起きない
+    ("k1_confirm_card_without_blocks", "confirm", drop(BLOCKS), [("E-K1", "sections[0].cards[0]")], False),
+    ("k2_confirm_table", "confirm", append(["sections"], TABLE_SEC), [("E-K2", "sections[1]")], False),
+    ("k2_confirm_second_decisions", "confirm", append(["sections"], CONFIRM_SEC), [("E-K2", "sections[1]")], False),
+    ("k2_confirm_body", "confirm", lambda d: None, [("E-K2", "--body")], True),
+    # 判定カードの節を表に替えると、要る部品が無いことと置けない部品があることの2つになる
+    ("k1_k2_confirm_decisions_replaced_by_table", "confirm", both(put(["status"], "live"), put(["sections"], [TABLE_SEC])),
+     [("E-K1", "sections"), ("E-K2", "sections[0]")], False),
+    # 承認
+    ("k1_approve_without_decisions", "decide", both(put(["status"], "live"), put(["sections"], [TABLE_SEC])),
+     [("E-K1", "sections")], False),
+    ("k2_approve_findings", "decide", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[1]")], False),
+    ("k2_approve_number_column", "decide", append(["sections"], NUMBER_TABLE_SEC), [("E-K2", "sections[1].columns[0]")], False),
+    ("k3_approve_table_before_cards", "decide", lambda d: d["sections"].insert(0, TABLE_SEC), [("E-K3", "sections[0]")], False),
+    # 一覧から選ぶ
+    ("k1_pick_without_card", "pick", both(put(["status"], "live"), lambda d: d["sections"].pop(0)), [("E-K1", "sections")], False),
+    ("k1_pick_without_tables", "pick", lambda d: d["sections"].__delitem__(slice(1, None)), [("E-K1", "sections")], False),
+    ("k1_pick_without_number_table", "pick", lambda d: d["sections"].__delitem__(slice(2, None)), [("E-K1", "sections")], False),
+    ("k2_pick_second_card", "pick", append(["sections", 0, "cards"], CONFIRM_CARD), [("E-K2", "sections[0].cards[1]")], False),
+    ("k2_pick_second_decisions", "pick", append(["sections"], CONFIRM_SEC), [("E-K2", "sections[4]")], False),
+    ("k2_pick_findings", "pick", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[4]")], False),
+    ("k2_pick_body", "pick", lambda d: None, [("E-K2", "--body")], True),
+    ("k2_pick_two_number_columns", "pick", append(["sections", 2, "columns"], {"key": "no2", "label": "番号2", "type": "no"}),
+     [("E-K2", "sections[2].columns[4]")], False),
+    ("k3_pick_card_after_tables", "pick", lambda d: d["sections"].append(d["sections"].pop(0)), [("E-K3", "sections[3]")], False),
+    # 見取り図: 要る部品が無いときは E-S1（s1_no_sections_no_body）が受け持つ。部品は表だけなので並びの誤りは起きない
+    ("k2_map_decisions", "table", append(["sections"], CONFIRM_SEC), [("E-K2", "sections[1]")], False),
+    ("k2_map_findings", "table", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[1]")], False),
+    # 束: 部品は判断待ちの束1つだけなので並びの誤りは起きない
+    ("k1_k2_bundle_replaced_by_table", "bundle", put(["sections"], [TABLE_SEC]),
+     [("E-K1", "sections"), ("E-K2", "sections[0]")], False),
+    ("k2_bundle_table", "bundle", append(["sections"], TABLE_SEC), [("E-K2", "sections[1]")], False),
+    # レビュー
+    ("k1_review_without_findings", "review", put(["sections"], [TABLE_SEC]), [("E-K1", "sections")], False),
+    ("k2_review_bundle", "review", append(["sections"], BUNDLE_SEC), [("E-K2", "sections[2]")], False),
+    ("k2_review_number_column", "review", append(["sections"], NUMBER_TABLE_SEC), [("E-K2", "sections[2].columns[0]")], False),
+    ("k3_review_table_first", "review", lambda d: d["sections"].insert(0, TABLE_SEC), [("E-K3", "sections[0]")], False),
+    # 番号の列の値は文字列
+    ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
     ("two_independent_errors", "decide", both(put(["title"], ""), put(CARD0 + ["recommend"], "ok")),
      [("E-C3", "sections[0].cards[0].recommend"), ("E-H1", "title")], False),
@@ -286,9 +353,42 @@ BROKEN = [
 
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
-        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False), ("confirm", False)):
+        for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False),
+                               ("confirm", False), ("pick", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
+
+    def test_every_kind_has_an_example(self):
+        kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick")}
+        self.assertEqual(kinds, set(build.PAGE_KINDS))
+
+    def test_body_is_allowed_only_in_body_kinds(self):
+        # 本文を置ける種別は、部品の上に本文があっても読む順を壊さないもの（承認・見取り図・束・レビュー）
+        for name in ("decide", "table", "bundle", "review"):
+            with self.subTest(example=name):
+                self.assertIn(example(name)["kind"], build.BODY_KINDS)
+                self.assertEqual(build.validate(example(name), has_body=True), [])
+
+    def test_number_column_cells_may_be_omitted(self):
+        # 番号の列は、行の key を省いてよい唯一の列である（ほかの列の key が足りなければ E-F3）
+        d = example("table")
+        d["sections"][0]["columns"][0]["type"] = "no"
+        for row in d["sections"][0]["rows"]:
+            del row["no"]
+        self.assertEqual(build.validate(d), [])
+
+    def test_purpose_message_says_it_was_replaced(self):
+        d = example("decide")
+        d["purpose"] = "decide"
+        msgs = [m for code, path, m in build.validate(d) if path == "purpose"]
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("kind に置き換えた", msgs[0])
+
+    def test_data_purpose_attribute_is_derived_from_kind(self):
+        for name, purpose in (("decide", "decide"), ("pick", "decide"), ("confirm", "decide"), ("bundle", "decide"),
+                              ("table", "grasp"), ("review", "review")):
+            with self.subTest(example=name):
+                self.assertIn('data-purpose="%s"' % purpose, render_page(name))
 
     def test_card_without_reason_is_allowed(self):
         # 根拠（reason）は任意。書いたのに空なら E-C4（BROKEN の c4_reason_empty）
@@ -324,7 +424,7 @@ for _name, _base, _mutate, _expected, _has_body in BROKEN:
 class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
-                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1"}
+                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
 
@@ -651,7 +751,8 @@ class Escaping(unittest.TestCase):
 class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
-    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None))
+    PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None),
+             ("pick", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -740,7 +841,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick")
 
 
 class BodyLooks(unittest.TestCase):
@@ -900,7 +1001,7 @@ class ElementIds(unittest.TestCase):
         return re.findall(r'\bid="([^"]*)"', f)
 
     def test_ids_are_unique_in_every_example(self):
-        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None)):
+        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None)):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -1004,7 +1105,7 @@ class SaveCode(unittest.TestCase):
     def test_pages_with_answer_parts_carry_the_save_code(self):
         with open(build.JS, encoding="utf-8") as fh:
             js = fh.read().rstrip("\n")
-        for name in ("decide", "bundle"):
+        for name in ("decide", "bundle", "confirm", "pick"):
             with self.subTest(page=name):
                 f = render_page(name)
                 self.assertEqual(f.count("<script"), 2)

@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "決済の再試行の方針を決める",
-  "purpose": "decide",
+  "kind": "approve",
   "status": "awaiting",
   "why": "決済が二重に走った障害（#212）の直し方が3通りあり、実装の前に1つに決めたい。",
   "source": {
