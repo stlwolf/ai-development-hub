@@ -283,6 +283,11 @@ BROKEN = [
      [("E-S3", "sections[0].columns[0].label"), ("E-F3", "sections[0].rows[1]")], False),
     ("l1_issue_without_repo_url", "table", drop(["source", "repo_url"]),
      [("E-L1", "sections[0].rows[0].refs[0]"), ("E-L1", "sections[0].rows[0].refs[1]"), ("E-L1", "sections[0].rows[1].refs[0]")], False),
+    # 別のリポジトリの番号は owner/repo#N で書く。repo_url が無ければリンクにできない
+    ("l1_xrepo_without_repo_url", "table", both(drop(["source", "repo_url"]), put(ROW0 + ["refs"], []),
+                                                put(["sections", 0, "rows", 1, "refs"], ["example-org/billing#31"])),
+     [("E-L1", "sections[0].rows[1].refs[0]")], False),
+    ("l1_repo_name_without_owner", "table", put(ROW0 + ["refs"], ["billing#31"]), [("E-L1", "sections[0].rows[0].refs[0]")], False),
     # 送り元の trackers（E-H2・E-F2・E-F3）。送り元が壊れていると、識別子をリンクにできるかは判定しない（E-L1 を重ねない）
     ("h2_tracker_prefix_lowercase_stops_l1", "table", put(TRACKER0 + ["prefix"], "ops"), [("E-H2", "source.trackers[0].prefix")], False),
     ("h2_tracker_prefix_duplicate", "table", put(["source", "trackers"], [OPS, dict(OPS)]), [("E-H2", "source.trackers[1].prefix")], False),
@@ -801,6 +806,36 @@ class Links(unittest.TestCase):
     def test_code_span(self):
         self.assertIn("<code>charge</code>", render_page("decide"))
 
+    def point(self, text, mutate=None):
+        f = render_page("decide", both(put(CARD0 + ["points", 0], text), mutate or (lambda d: None)))
+        return re.search(r'<ul class="hp-points"><li>(.*?)</li>', f).group(1)
+
+    def test_pr_links_to_the_pull_request(self):
+        self.assertEqual(self.point("PR #215 と #212 を見る。"),
+                         a_tag("https://github.com/example-org/shop/pull/215", "PR #215") + " と "
+                         + a_tag("https://github.com/example-org/shop/issues/212", "#212") + " を見る。")
+
+    def test_pr_needs_a_boundary_before_it(self):
+        # XPR #3 は PR #N にならず、#3 だけが issue のリンクになる
+        self.assertEqual(self.point("XPR #3"), "XPR " + a_tag("https://github.com/example-org/shop/issues/3", "#3"))
+
+    def test_xrepo_links_to_that_repo_on_the_same_host(self):
+        self.assertEqual(self.point("（example-org/billing#31）"),
+                         "（" + a_tag("https://github.com/example-org/billing/issues/31", "example-org/billing#31") + "）")
+        gitlab = put(["source", "repo_url"], "https://gitlab.example.com/group/shop")
+        self.assertIn(a_tag("https://gitlab.example.com/other/repo/issues/3", "other/repo#3"), self.point("other/repo#3", gitlab))
+
+    def test_paths_and_branches_are_not_xrepo(self):
+        self.assertEqual(self.point("docs/a/b#3 と feature/#212_x"), "docs/a/b#3 と feature/#212_x")
+        # feature/#212 の #212 は、いまと同じく issue のリンクになる（#N の境界は変えていない）
+        self.assertEqual(self.point("feature/#212"), "feature/" + a_tag("https://github.com/example-org/shop/issues/212", "#212"))
+
+    def test_without_repo_url_pr_and_xrepo_stay_text(self):
+        self.assertEqual(self.point("PR #215 と a/b#3", drop(["source", "repo_url"])), "PR #215 と a/b#3")
+
+    def test_bare_numbers_are_not_linked(self):
+        self.assertEqual(self.point("3 と 212 番"), "3 と 212 番")
+
 
 def a_tag(url, text):
     return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (url, text)
@@ -815,7 +850,8 @@ class TableAndTrackerLinks(unittest.TestCase):
     def test_ref_cells_keep_their_text_and_link(self):
         f = render_page("table")
         self.assertIn(a_tag("https://github.com/example-org/shop/issues/212", "#212"), f)
-        self.assertIn(a_tag("https://github.com/example-org/shop/issues/215", "PR #215"), f)
+        # PR #N は PR の URL（/pull/N）へ。表示の文字は書いたまま残す
+        self.assertIn(a_tag("https://github.com/example-org/shop/pull/215", "PR #215"), f)
         self.assertIn(a_tag(TRACKER_URL + "OPS-42", "OPS-42") + a_tag(TRACKER_URL + "OPS-43", "OPS-43"), f)
         # 空の配列は空の欄になる
         self.assertIn('<td class="hp-ref-cell" data-label="外部の課題"></td>', f)
@@ -875,6 +911,11 @@ class TableAndTrackerLinks(unittest.TestCase):
         self.assertIn("<title>OPS-41 の判断</title>", f)
         self.assertIn('<h1 class="hp-title">OPS-41 の判断</h1>', f)
         self.assertRegex(f, r'<button [^>]*>OPS-41 に寄せる</button>')
+
+    def test_xrepo_ref_links_to_that_repo(self):
+        f = render_page("table", put(ROW0 + ["refs"], ["example-org/billing#31", "#212"]))
+        self.assertIn(a_tag("https://github.com/example-org/billing/issues/31", "example-org/billing#31")
+                      + a_tag("https://github.com/example-org/shop/issues/212", "#212"), f)
 
     def test_trackers_without_ids_change_nothing(self):
         self.assertEqual(render_page("decide", put(["source", "trackers"], [OPS])), render_page("decide"))

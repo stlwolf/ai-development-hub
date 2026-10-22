@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_GLOSSARY = os.path.join(HERE, "glossary.md")
@@ -38,8 +38,11 @@ BODY_KINDS = ("approve", "map", "bundle", "review")
 KIND_IDS = {"approve": ("prefix.question", None, True),
             "pick": (None, "prefix.candidate", True),
             "map": (None, "prefix.item", True)}
+# 別のリポジトリの issue（owner/repo#N）。オーナーは英数字で始まり英数字と - が続く39文字まで、
+# リポジトリは英数字・.・_・- の100文字まで。#N の桁は本文の変換（LINK_RE）と同じ 1〜7 桁にそろえる。
+XREPO = r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})#(\d{1,7})"  # 括弧は3つの組だけ（本文の変換では組を外して使う）
 # 認識合わせのカードの札は、確かめる対象の issue の形（#N・owner/repo#N）だけを受け付ける。
-ISSUE_TAG_RE = re.compile(r"(?:#\d{1,7}|[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}#\d{1,7})\Z")
+ISSUE_TAG_RE = re.compile(r"(?:#\d{1,7}|" + XREPO + r")\Z")
 # 前の版で使っていた項目。知らない項目として止め、理由を添える。
 REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
@@ -61,6 +64,7 @@ TRACKER_PREFIX_RE = re.compile(r"[A-Z][A-Z0-9]{0,9}\Z")
 TRACKER_ID_PLACEHOLDER = "{id}"
 # 表の識別子の列が受け付ける形。#N の桁は本文の変換（LINK_RE）と同じ 1〜7 桁にそろえる。
 REF_ISSUE_RE = re.compile(r"(?:PR )?#(\d{1,7})\Z")
+REF_XREPO_RE = re.compile(XREPO + r"\Z")
 REF_TRACKER_RE = re.compile(r"([A-Z][A-Z0-9]{0,9})-(\d+)\Z")
 
 # 用語集に要る key と、それぞれの言葉が持つ差し込み。受け付ける値の集まりはここが正本で、
@@ -797,10 +801,10 @@ class Validator:
     def ref(self, path, r):
         """表の識別子の列の値1つが、リンクにできる識別子かを見る。
         形は送り元と関係なく見る。送り元に誤りがあれば、送り元に頼る判定（repo_url・接頭辞の登録）だけを省く。"""
-        issue = REF_ISSUE_RE.match(r)
+        issue = REF_ISSUE_RE.match(r) or REF_XREPO_RE.match(r)
         tracker = None if issue else REF_TRACKER_RE.match(r)
         if not issue and not tracker:
-            self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・<接頭辞>-<数字>）でない' % r)
+            self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・owner/repo#N・<接頭辞>-<数字>）でない' % r)
             return
         if self.page_links is None:
             return
@@ -1051,7 +1055,13 @@ JST = timezone(timedelta(hours=9), "JST")
 # 送り元の trackers に登録した接頭辞の ID（OPS-41 など）を外部の課題管理へのリンクにする。
 CODE_RE = re.compile(r"`([^`\n]+)`")
 _URL_STOP = r"\s<>\"'`" + chr(0x3000) + "-" + chr(0x303F) + chr(0xFF01) + "-" + chr(0xFF60)
-LINK_PATTERN = r"(?P<url>https?://[^" + _URL_STOP + r"]+)|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))"
+# 同じ位置から始まる候補は、URL → PR #N → owner/repo#N → #N の順に当てる（外部の課題管理の ID と
+# ページの中の識別子は、そのあとに足す）。PR #N は前に英数字か _ が続くと PR #N として扱わない（XPR #3 は #3 だけ）。
+# owner/repo#N は、前に英数字・_・.・/・- が続くもの（docs/a/b#3 の中の a/b#3）を扱わない。
+LINK_PATTERN = (r"(?P<url>https?://[^" + _URL_STOP + r"]+)"
+                r"|(?P<pr>(?<![A-Za-z0-9_])PR #(?P<prnum>\d{1,7})(?![A-Za-z0-9_]))"
+                r"|(?P<xrepo>(?<![A-Za-z0-9_./-])" + XREPO.replace("(", "(?:") + r"(?![A-Za-z0-9_]))"
+                r"|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))")
 LINK_RE = re.compile(LINK_PATTERN)
 TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d+(?![A-Za-z0-9_-]))"
 # ページで定義した識別子（Q2・候補4）。前に英数字・_・.・/・#・- が続くもの（FAQ2・docs/Q2）、
@@ -1073,6 +1083,17 @@ def link(url, text):
 
 def issue_url(repo_url, num):
     return "%s/issues/%s" % (repo_url.rstrip("/"), num)
+
+
+def pull_url(repo_url, num):
+    return "%s/pull/%s" % (repo_url.rstrip("/"), num)
+
+
+def xrepo_url(repo_url, ident):
+    """owner/repo#N を、送り元の repo_url と同じホストの、そのリポジトリの issue の URL にする。"""
+    owner, name, num = REF_XREPO_RE.match(ident).groups()
+    u = urlsplit(repo_url)
+    return "%s://%s/%s/%s/issues/%s" % (u.scheme, u.netloc, owner, name, num)
 
 
 def branch_url(repo_url, branch):
@@ -1105,7 +1126,10 @@ class Refs:
         """表の識別子の列の値1つ（検証を通ったもの）をリンクにする。表示の文字は書いたまま残す。"""
         m = REF_ISSUE_RE.match(ref)
         if m:
-            return link(issue_url(self.repo_url, m.group(1)), ref)
+            url = pull_url if ref.startswith("PR ") else issue_url
+            return link(url(self.repo_url, m.group(1)), ref)
+        if REF_XREPO_RE.match(ref):
+            return link(xrepo_url(self.repo_url, ref), ref)
         return link(self.tracker_url(ref, REF_TRACKER_RE.match(ref).group(1)), ref)
 
 
@@ -1134,6 +1158,15 @@ def _linkify(text, refs):
                 trail = url[-1] + trail
                 url = url[:-1]
             out.append(link(url, url) + esc(trail))
+        elif m.group("pr") or m.group("xrepo"):
+            # 近い送り元に repo_url が無ければ、#N と同じく文字のまま出す。
+            ident = m.group(0)
+            if not refs.repo_url:
+                out.append(esc(ident))
+            elif m.group("pr"):
+                out.append(link(pull_url(refs.repo_url, m.group("prnum")), ident))
+            else:
+                out.append(link(xrepo_url(refs.repo_url, ident), ident))
         elif m.group("issue"):
             if refs.repo_url:
                 out.append(link(issue_url(refs.repo_url, m.group("num")), m.group("issue")))
