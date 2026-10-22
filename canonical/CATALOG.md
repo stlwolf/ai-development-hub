@@ -22,7 +22,7 @@
 | diff-audit | PR diff全体を原則ベースでレビューする。4つの問いを軸に、チェックリスト外の問題も含めて拾う。既知パターンは各問いのヒントとして残す | `skills/diff-audit/SKILL.md` | — |
 | doc-flow-guardrail | ドキュメントフロー全体の地図・委譲固定節テンプレ・cold-start を注入する薄い枠（DJ-11 二層＝大原則1行 + routing 表のみ・中身は個別スキルへ routing） | `skills/doc-flow-guardrail/SKILL.md` | skill: spec-card, skill: delegate-task, skill: episode-retrospective, skill: predecision-exploration |
 | episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル〔構造化 FB セクション向け〕・tier 判定・本文と closure の read/write 契約＝pointer 許容で二重執筆を止める） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
-| html-one-pager | 人に見せて読んでもらう・答えてもらうページ（判定・確認・回答を集めるページ、判断待ちの束、レビューの指摘の一覧、読み物）の形と部品。データ（JSON）を build.py で検証してから1枚の HTML を描く。ヘッダー（送り元・版・状態）・判定カード・列と行をデータで書く表（識別子の列は issue・PR・外部の課題管理へのリンク）・確かめた度合いの札・答えの保存（db の decisions）と保存できないときの返答の文。持ち運べる形（フォルダの外を参照しない・Python 3.9+） | `skills/html-one-pager/SKILL.md` | — |
+| html-one-pager | 人に見せて読んでもらう・答えてもらうページ（判定・確認・回答を集めるページ、判断待ちの束、レビューの指摘の一覧、読み物）の形と部品。データ（JSON）を build.py で検証してから1枚の HTML を描く。ページの種別（認識合わせ・承認・一覧から選ぶ・見取り図・束・レビュー・手番の1枚）ごとに要る部品と並び・札と番号の接頭辞を決めて検証する。ヘッダー（送り元・版・状態）・判定カード・列と行をデータで書く表（識別子の列は issue・PR・別のリポジトリ・外部の課題管理へのリンク、番号の列は本文から飛べるページの中のアンカー）・確かめた度合いの札・答えの保存（db の decisions）と保存できないときの返答の文。持ち運べる形（フォルダの外を参照しない・Python 3.9+） | `skills/html-one-pager/SKILL.md` | — |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | issue-intake | issue 着手時の認識合わせ（やること・書いていないが要ること・見た観点の3つを出し、owner の応答1回で確定版を issue コメントに残す。深掘りの合図で question-driven-design へ受け渡す） | `skills/issue-intake/SKILL.md` | skill: question-driven-design, skill: so-compare |
