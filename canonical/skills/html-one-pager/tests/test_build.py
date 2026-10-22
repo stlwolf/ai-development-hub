@@ -343,6 +343,29 @@ BROKEN = [
     ("k2_review_bundle", "review", append(["sections"], BUNDLE_SEC), [("E-K2", "sections[2]")], False),
     ("k2_review_number_column", "review", append(["sections"], NUMBER_TABLE_SEC), [("E-K2", "sections[2].columns[0]")], False),
     ("k3_review_table_first", "review", lambda d: d["sections"].insert(0, TABLE_SEC), [("E-K3", "sections[0]")], False),
+    # ページの中の識別子（E-I1・E-I2）。承認の問いのカードの札は Q<数字>、全体の承認のカードの札は「承認」
+    ("i1_approve_tag_from_another_document", "decide", put(CARD0 + ["tag"], "DJ-1"), [("E-I1", "sections[0].cards[0].tag")], False),
+    ("i1_approve_tag_zero", "decide", put(CARD0 + ["tag"], "Q0"), [("E-I1", "sections[0].cards[0].tag")], False),
+    ("i1_approve_tag_with_a_note", "decide", both(put(CARD0 + ["tag"], "Q1（足した問い）"), put(CARD1 + ["tag"], "Q2"),
+                                                  put(["sections", 0, "cards", 2, "tag"], "Q3")),
+     [("E-I1", "sections[0].cards[0].tag")], False),
+    ("i1_approve_written_and_omitted_mixed", "decide", put(CARD0 + ["tag"], "Q1"), [("E-I1", "sections[0].cards[1].tag")], False),
+    ("i2_approve_tag_duplicate", "decide", both(put(CARD0 + ["tag"], "Q1"), put(CARD1 + ["tag"], "Q1"),
+                                                put(["sections", 0, "cards", 2, "tag"], "Q2")),
+     [("E-I2", "sections[0].cards[1].tag")], False),
+    # 空の札は E-C5 だけ（E-I1 を重ねない）
+    ("c5_tag_empty_is_not_i1", "decide", both(put(CARD0 + ["tag"], ""), put(CARD1 + ["tag"], "Q2"),
+                                              put(["sections", 0, "cards", 2, "tag"], "Q3")),
+     [("E-C5", "sections[0].cards[0].tag")], False),
+    ("k3_approve_approval_card_not_last", "decide", put(CARD0 + ["tag"], "承認"), [("E-K3", "sections[0].cards[0]")], False),
+    ("k2_approve_two_approval_cards", "decide", both(put(CARD1 + ["tag"], "承認"), put(["sections", 0, "cards", 2, "tag"], "承認")),
+     [("E-K2", "sections[0].cards[2]")], False),
+    # 認識合わせの札は issue の形
+    ("i1_confirm_tag_not_an_issue", "confirm", put(CARD0 + ["tag"], "intake-1"), [("E-I1", "sections[0].cards[0].tag")], False),
+    # 番号の列の値は接頭辞の形で、書いたものと書かないものを混ぜない
+    ("i1_pick_number_from_another_prefix", "pick", put(["sections", 2, "rows", 0, "no"], "A1"), [("E-I1", "sections[2].rows[0].no")], False),
+    ("i1_pick_numbers_mixed", "pick", put(["sections", 2, "rows", 0, "no"], "候補1"), [("E-I1", "sections[2].rows[1].no")], False),
+    ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "項目1"), [("E-I2", "sections[0].rows[1].no")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
@@ -424,9 +447,51 @@ for _name, _base, _mutate, _expected, _has_body in BROKEN:
 class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
-                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3"}
+                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
+
+
+class Identifiers(unittest.TestCase):
+    """札と番号の列の値。書かなければ、種別の接頭辞とページの中の順から振る。"""
+
+    def tags(self, f):
+        return re.findall(r'<span class="hp-tag">(.*?)</span>', f)
+
+    def numbers(self, f):
+        return [html.unescape(v) for v in re.findall(r'<td data-label="番号">(.*?)</td>', f)]
+
+    def test_question_cards_are_numbered_in_order(self):
+        self.assertEqual(self.tags(render_page("decide")), ["Q1", "Q2", "Q3"])
+
+    def test_written_tags_are_kept(self):
+        mutate = both(put(CARD0 + ["tag"], "Q3"), put(CARD1 + ["tag"], "Q1"), put(["sections", 0, "cards", 2, "tag"], "Q2"))
+        self.assertEqual(self.tags(render_page("decide", mutate)), ["Q3", "Q1", "Q2"])
+
+    def test_approval_card_is_not_numbered(self):
+        f = render_page("decide", put(["sections", 0, "cards", 2, "tag"], "承認"))
+        self.assertEqual(self.tags(f), ["Q1", "Q2", "承認"])
+
+    def test_rows_are_numbered_across_tables(self):
+        self.assertEqual(self.numbers(render_page("pick")), ["候補%d" % i for i in range(1, 7)])
+
+    def test_written_numbers_are_kept(self):
+        self.assertEqual(self.numbers(render_page("table")), ["項目1", "項目2", "項目3"])
+
+    def test_free_tags_stay_as_written(self):
+        # 札が自由な種別（一覧から選ぶ・レビュー・束のカード）は、書いたまま出し、識別子にしない
+        f = render_page("pick", put(["sections", 0, "cards", 0, "tag"], "選ぶ"))
+        self.assertEqual(self.tags(f), ["選ぶ"])
+        self.assertEqual(self.tags(render_page("confirm")), ["#216", "#218"])
+
+    def test_number_cells_stay_text(self):
+        a, b, c = ATTACKS
+        d = copy.deepcopy(example("table"))
+        d["sections"][0]["rows"][0]["no"] = b
+        # 形の誤りで止まる値でも、描くときにエスケープされることを、検証を通さず描いて確かめる
+        f = build.render(d, build.load_glossary(build.DEFAULT_GLOSSARY), build.parse_now(NOW), None)
+        self.assertNotIn("<img src=x", f)
+        self.assertIn("&quot;&gt;&lt;img src=x onerror=alert(1)&gt;", f)
 
 
 class LoadStage(unittest.TestCase):
@@ -506,6 +571,38 @@ class LoadStage(unittest.TestCase):
     def test_glossary_missing_placeholder_exits_2(self):
         self.check_glossary(self.glossary_variant("| `status.awaiting` | 回答待ち {n} 件 |", "| `status.awaiting` | 回答待ち |"),
                             'key "status.awaiting" の差し込みが {n} であるべき所が （なし） である')
+
+    def test_words_broken_exit_2(self):
+        cases = [
+            ("| `prefix.item` | 項目 |\n", "", 'key "prefix.item" が無い'),
+            ("| `prefix.item` | 項目 |", "| `prefix.item` | 項目- |", '語 "項目-" が文字だけからなっていない'),
+            ("| `prefix.item` | 項目 |", "| `prefix.item` | A1 |", '語 "A1" が文字だけからなっていない'),
+            ("| `prefix.item` | 項目 |", "| `prefix.item` | QA |", '"QA"'),
+            ("| `tag.approval` | 承認 |", "| `tag.approval` | 承認 |\n| `prefix.other` | 他 |", '知らない key "prefix.other" がある'),
+        ]
+        for old, new, expected in cases:
+            with self.subTest(new=new):
+                self.check_glossary(self.glossary_variant(old, new), expected)
+
+    def test_changed_words_change_both_check_and_build(self):
+        # 用語集の語を変えると、check と build の両方で、受け付ける札と振る番号が変わる
+        path = self.glossary_variant("| `prefix.question` | Q |", "| `prefix.question` | 問い |")
+        data = os.path.join(EXAMPLES, "decide.json")
+        out = os.path.join(self.tmp, "o.html")
+        self.assertEqual(run_cli("check", data, "--glossary", path)[0], 0)
+        self.assertEqual(run_cli("build", data, "-o", out, "--tmux", "off", "--glossary", path)[0], 0)
+        with open(out, encoding="utf-8") as fh:
+            self.assertEqual(re.findall(r'<span class="hp-tag">(.*?)</span>', fh.read()), ["問い1", "問い2", "問い3"])
+        d = example("decide")
+        d["sections"][0]["cards"][0]["tag"] = "Q1"
+        d["sections"][0]["cards"][1]["tag"] = "Q2"
+        d["sections"][0]["cards"][2]["tag"] = "Q3"
+        written = self.write("d.json", json.dumps(d, ensure_ascii=False))
+        for cmd in (["check", written], ["build", written, "-o", out, "--tmux", "off"]):
+            with self.subTest(cmd=cmd[0]):
+                rc, _, err = run_cli(*(cmd + ["--glossary", path]))
+                self.assertEqual(rc, 1)
+                self.assertIn('E-I1 sections[0].cards[0].tag: 問いのカードの札 "Q1" が 問い<数字> の形でない', err)
 
     def test_glossary_extra_placeholder_exits_2(self):
         self.check_glossary(self.glossary_variant("| `status.live` | 随時更新 |", "| `status.live` | 随時更新 {n} |"),
@@ -895,7 +992,8 @@ class SkillMdExamples(unittest.TestCase):
                     d = example("table")
                     d["sections"] = [obj]
                 elif "options" in obj:
-                    d = example("decide")
+                    # 塊（blocks）を持つカードは認識合わせの見本に、ほかは承認の見本に入れる（例の形に合った種別）
+                    d = example("confirm" if "blocks" in obj else "decide")
                     d["sections"][0]["cards"] = [obj]
                 elif "repo" in obj:
                     d = example("table")
@@ -907,6 +1005,35 @@ class SkillMdExamples(unittest.TestCase):
                 else:
                     self.fail("検査の知らない形の例である")
                 self.assertEqual(build.validate(d), [])
+
+
+class PrefixWordsAcrossTheFolder(unittest.TestCase):
+    """書き方の決まり（札と番号の接頭辞）を、スキルのフォルダの見本と SKILL.md の例にも当てる。
+    検査の壊したデータ（BROKEN）は、使わない書き方をわざと書いたものなので除く。"""
+
+    def values(self, page):
+        out = []
+        for sec in page.get("sections", []):
+            cards = sec.get("cards", []) + [c for g in sec.get("groups", []) for c in g["cards"]]
+            out += [c["tag"] for c in cards if "tag" in c]
+            no = [c["key"] for c in sec.get("columns", []) if c.get("type") == "no"]
+            out += [r[no[0]] for r in sec.get("rows", []) if no and r.get(no[0])]
+        return out
+
+    def test_examples_and_skill_md_use_only_the_glossary_words(self):
+        w = build.load_words(build.DEFAULT_GLOSSARY)
+        prefixes = "|".join(re.escape(w[k]) for k in ("prefix.question", "prefix.candidate", "prefix.item"))
+        ok = re.compile(r"(?:(?:%s)[1-9][0-9]*|%s)\Z" % (prefixes, re.escape(w["tag.approval"])))
+        pages = [example(n) for n in sorted(f[:-5] for f in os.listdir(EXAMPLES) if f.endswith(".json"))]
+        with open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8") as fh:
+            for text in re.findall(r"^```json\n(.*?)^```", fh.read(), re.S | re.M):
+                obj = json.loads(text)
+                pages.append({"sections": [obj] if "type" in obj else [{"cards": [obj]}] if "options" in obj else []})
+        found = [v for page in pages for v in self.values(page)]
+        self.assertTrue(found)
+        for v in found:
+            with self.subTest(value=v):
+                self.assertTrue(ok.match(v) or build.ISSUE_TAG_RE.match(v), v)
 
 
 class ExternalLoads(unittest.TestCase):

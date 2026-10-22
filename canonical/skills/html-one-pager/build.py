@@ -33,6 +33,13 @@ KIND_PURPOSE = {"confirm": "decide", "approve": "decide", "pick": "decide", "map
 ROW_NUMBER_KINDS = ("pick", "map")
 # --body の本文を置ける種別。本文は型の上でいつも部品の上に出るので、部品の上にあっても読む順を壊さない種別だけにする。
 BODY_KINDS = ("approve", "map", "bundle", "review")
+# 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
+# key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
+KIND_IDS = {"approve": ("prefix.question", None, True),
+            "pick": (None, "prefix.candidate", True),
+            "map": (None, "prefix.item", True)}
+# 認識合わせのカードの札は、確かめる対象の issue の形（#N・owner/repo#N）だけを受け付ける。
+ISSUE_TAG_RE = re.compile(r"(?:#\d{1,7}|[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}#\d{1,7})\Z")
 # 前の版で使っていた項目。知らない項目として止め、理由を添える。
 REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
@@ -105,6 +112,11 @@ GLOSSARY_KEYS = {
     "text.col_reason": (),
 }
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
+# 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
+# 「札の言葉と固定の文」の表とは分けて持つ。そちらの言葉は答える部品のあるページに丸ごと埋め込まれるので、
+# ここの語を混ぜると既存のページの出力が変わり、JS が使わない語をページに持ち込むためである。
+WORD_KEYS = ("prefix.question", "prefix.candidate", "prefix.item", "tag.approval")
+WORDS_SECTION = "## 識別子の接頭辞"
 GLOSSARY_ROW_RE = re.compile(r"^\|\s*`([a-z][a-z0-9_.]*)`\s*\|\s*(.*?)\s*\|\s*$")
 PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
 
@@ -150,14 +162,14 @@ def load_data(path):
     return parse_json(read_text(path, "データ"), "データ（%s）" % path)
 
 
-def load_glossary(path):
-    """用語集の「札の言葉と固定の文」の表を読み、key から言葉への辞書を返す。"""
+def _glossary_table(path, section):
+    """用語集の見出し section の下の表を読み、(key から言葉への辞書, 見つけた問題の並び) を返す。"""
     lines = read_text(path, "用語集").splitlines()
     try:
-        start = lines.index(GLOSSARY_SECTION)
+        start = lines.index(section)
     except ValueError:
-        raise LoadError("用語集（%s）に見出し「%s」が無い" % (path, GLOSSARY_SECTION[3:]))
-    labels = {}
+        raise LoadError("用語集（%s）に見出し「%s」が無い" % (path, section[3:]))
+    table = {}
     problems = []
     for line in lines[start + 1:]:
         if line.startswith("## "):
@@ -166,10 +178,16 @@ def load_glossary(path):
         if not m:
             continue
         key, word = m.group(1), m.group(2)
-        if key in labels:
+        if key in table:
             problems.append('key "%s" が2回ある' % key)
             continue
-        labels[key] = word
+        table[key] = word
+    return table, problems
+
+
+def load_glossary(path):
+    """用語集の「札の言葉と固定の文」の表を読み、key から言葉への辞書を返す。"""
+    labels, problems = _glossary_table(path, GLOSSARY_SECTION)
     for key in labels:
         if key not in GLOSSARY_KEYS:
             problems.append('知らない key "%s" がある' % key)
@@ -194,6 +212,29 @@ def load_glossary(path):
 
 def _braces(names):
     return "（なし）" if not names else "・".join("{%s}" % n for n in names)
+
+
+def load_words(path):
+    """用語集の「識別子の接頭辞」の表を読み、key から語への辞書を返す。
+    語は文字（英字・漢字・かな）だけからなり、互いに重ならず、どれもほかの語の頭に当たらない。
+    記号と数字を許さないので、ページの中の識別子（Q2）は外部の課題管理の ID（OPS-41）・#N・PR #N と同じ文字列にならない。"""
+    words, problems = _glossary_table(path, WORDS_SECTION)
+    for key in words:
+        if key not in WORD_KEYS:
+            problems.append('知らない key "%s" がある' % key)
+    for key in WORD_KEYS:
+        if key not in words:
+            problems.append('key "%s" が無い' % key)
+        elif not words[key] or not words[key].isalpha():
+            problems.append('key "%s" の語 "%s" が文字だけからなっていない（数字・空白・記号を含めない）' % (key, words[key]))
+    found = [(k, words[k]) for k in WORD_KEYS if words.get(k)]
+    for i, (ka, a) in enumerate(found):
+        for kb, b in found[i + 1:]:
+            if a.startswith(b) or b.startswith(a):
+                problems.append('key "%s" の語 "%s" と key "%s" の語 "%s" が重なるか、片方がもう片方の頭に当たる' % (ka, a, kb, b))
+    if problems:
+        raise LoadError("用語集（%s）の識別子の接頭辞が壊れている: %s" % (path, "; ".join(problems)))
+    return words
 
 
 # ---------------------------------------------------------------- 検証
@@ -227,8 +268,9 @@ def join(path, key):
 class Validator:
     """データの誤りを全部集める。1つの誤りから同じ原因の誤りを重ねて出さない。"""
 
-    def __init__(self, has_body):
+    def __init__(self, has_body, words):
         self.has_body = has_body
+        self.words = words
         self.errors = []
         self.card_paths = {}   # カードの key -> 最初に現れた場所
         self.card_options = {}  # カードの key -> 選択肢の key の並び
@@ -347,6 +389,8 @@ class Validator:
                 # 部品も本文も無ければ E-S1 だけを出す（同じ原因の誤りを重ねない）。
                 if kind is not None and sections_readable and (secs or self.has_body):
                     self.kind_parts(kind, secs)
+                if kind is not None:
+                    self.identifiers(kind, secs)
         status = data.get("status")
         if status == "awaiting" and sections_readable and not has_answer_part:
             self.add("E-P2", "status", "awaiting（回答待ち）なのに、答える部品（decisions か bundle）が無い")
@@ -456,6 +500,85 @@ class Validator:
             self.add("E-K1", "sections", "レビューのページには指摘の一覧（findings）が1つ以上要る")
         elif f[0] != allowed[0]:
             self.add("E-K3", paths[allowed[0]], "指摘の一覧を部品の先頭に置き、表と判定カードはそのあとに置く")
+
+    # ページの中の識別子（E-I1・E-I2 と、承認のカードの置き場所）-----------
+
+    def identifiers(self, kind, secs):
+        """札と番号の列の値が種別の形か（E-I1）、ページの中で重ならないか（E-I2）を見る。
+        札は空でない文字列のものだけを見る（空なら E-C5・型が違えば E-F3 だけを出す）。
+        番号の列は、列の定義に誤りの無い表の、文字列の値だけを見る。"""
+        cards = []
+        for i, sec in enumerate(secs):
+            if isinstance(sec, dict) and sec.get("type") == "decisions" and isinstance(sec.get("cards"), list):
+                cards.extend(("sections[%d].cards[%d]" % (i, j), c) for j, c in enumerate(sec["cards"]) if isinstance(c, dict))
+        if kind == "confirm":
+            for path, c in cards:
+                t = c.get("tag")
+                if isinstance(t, str) and t.strip() and not ISSUE_TAG_RE.match(t):
+                    self.add("E-I1", join(path, "tag"), '認識合わせのカードの札 "%s" が issue の形（#N・owner/repo#N）でない' % t)
+        card_key, row_key, auto = KIND_IDS.get(kind, (None, None, False))
+        defined = {}
+        if card_key:
+            approval = self.words["tag.approval"] if kind == "approve" else None
+            if approval:
+                self.approval_card(cards, approval)
+            items = []
+            for path, c in cards:
+                t = c.get("tag")
+                if approval and t == approval:
+                    continue
+                if "tag" not in c:
+                    items.append((join(path, "tag"), None))
+                elif isinstance(t, str) and t.strip():
+                    items.append((join(path, "tag"), t))
+            self.numbered(items, self.words[card_key], auto, "問いのカードの札", defined)
+        if row_key:
+            items = []
+            for i, sec in enumerate(secs):
+                path = "sections[%d]" % i
+                cols = self.tables.get(path) if isinstance(sec, dict) and sec.get("type") == "table" else None
+                no = [k for k, ct in (cols or []) if ct == "no"]
+                if not no or not isinstance(sec.get("rows"), list):
+                    continue
+                for r, row in enumerate(sec["rows"]):
+                    if not isinstance(row, dict):
+                        continue
+                    v = row.get(no[0], "")
+                    if isinstance(v, str):
+                        items.append(("%s.rows[%d].%s" % (path, r, no[0]), v or None))
+            self.numbered(items, self.words[row_key], auto, "番号の列の値", defined)
+
+    def approval_card(self, cards, approval):
+        """承認のページの全体の承認のカード（札が承認の語）は、ページの最後のカードに1枚だけ置く。"""
+        found = [(p, c) for p, c in cards if c.get("tag") == approval]
+        for p, _ in found[1:]:
+            self.add("E-K2", p, "全体の承認のカード（札 %s）は1枚にする" % approval)
+        if len(found) == 1 and found[0][1] is not cards[-1][1]:
+            self.add("E-K3", found[0][0], "全体の承認のカード（札 %s）はページの最後のカードにする" % approval)
+
+    def numbered(self, items, prefix, auto, what, defined):
+        """items は [(値の場所, 書いた値か、省いたときの None)]。形（E-I1）と重なり（E-I2）を見る。
+        書かなければ番号を振る種別では、書いたものと書かないものを混ぜると、振る番号が書いた番号と重なりうるので止める。"""
+        pat = re.compile(re.escape(prefix) + r"[1-9][0-9]*\Z")
+        written = [x for x in items if x[1] is not None]
+        omitted = [x for x in items if x[1] is None]
+        for path, v in written:
+            if not pat.match(v):
+                self.add("E-I1", path, '%s "%s" が %s<数字> の形でない' % (what, v, prefix))
+        # 混ざっているかは、形の合った値だけで見る（形の誤りと同じ原因の誤りを重ねない）。
+        good = [x for x in written if pat.match(x[1])]
+        if omitted and not auto:
+            for path, _ in omitted:
+                self.add("E-I1", path, "%sを書く（%s<数字>。番号を動かさないため、自動では振らない）" % (what, prefix))
+        elif omitted and good:
+            first_written = items.index(good[0]) < items.index(omitted[0])
+            self.add("E-I1", omitted[0][0] if first_written else good[0][0],
+                     "%sを書いたものと書かないものが混ざっている（書くなら全部に書く）" % what)
+        for path, v in good:
+            if v in defined:
+                self.add("E-I2", path, '識別子 "%s" が %s と重なる' % (v, defined[v]))
+            else:
+                defined[v] = path
 
     def source(self, path, s):
         if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux", "trackers")):
@@ -817,9 +940,10 @@ class Validator:
                     self.add("E-A1", join(ap, f), "%s は文字列であるべき所が%sである" % (f, type_name(a[f])))
 
 
-def validate(data, has_body=False):
-    """データを検証し、誤りの並び [(規則の番号, 場所, 理由)] を返す。空なら誤りは無い。"""
-    v = Validator(has_body)
+def validate(data, has_body=False, words=None):
+    """データを検証し、誤りの並び [(規則の番号, 場所, 理由)] を返す。空なら誤りは無い。
+    words は用語集の識別子の接頭辞（load_words の結果）。省けば既定の用語集から読む。"""
+    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY))
     v.page(data)
     return v.errors
 
@@ -1000,10 +1124,34 @@ def meta_table(rows):
         '<div class="hp-meta-row"><dt>%s</dt><dd>%s</dd></div>' % (esc(k), v) for k, v in rows)
 
 
+def assign_numbers(data, words):
+    """検証を通ったデータの、出す札（カードの key -> 札）と番号の列の値（(部品の順, 行の順) -> 値）を返す。
+    書かれていなければ、種別の接頭辞とページの中の順（問いのカードの順・番号の列のある行の順）から振る。"""
+    card_key, row_key, _ = KIND_IDS.get(data["kind"], (None, None, False))
+    tags, numbers = {}, {}
+    if card_key:
+        approval = words["tag.approval"] if data["kind"] == "approve" else None
+        questions = [c for sec in data["sections"] if sec["type"] == "decisions" for c in sec["cards"]
+                     if not (approval and c.get("tag") == approval)]
+        for i, c in enumerate(questions, 1):
+            tags[c["key"]] = c.get("tag") or "%s%d" % (words[card_key], i)
+    if row_key:
+        n = 0
+        for si, sec in enumerate(data["sections"]):
+            no = [c["key"] for c in sec["columns"] if c.get("type") == "no"] if sec["type"] == "table" else []
+            if not no:
+                continue
+            for ri, row in enumerate(sec["rows"]):
+                n += 1
+                numbers[(si, ri)] = row.get(no[0]) or "%s%d" % (words[row_key], n)
+    return tags, numbers
+
+
 class Renderer:
-    def __init__(self, data, labels, now, tmux):
+    def __init__(self, data, labels, now, tmux, words):
         self.data = data
         self.L = labels
+        self.tags, self.numbers = assign_numbers(data, words)
         self.time = format_time(now)
         self.tmux = tmux
         self.page_refs = Refs(data["source"])
@@ -1082,13 +1230,13 @@ class Renderer:
 
     def sections(self):
         out = []
-        for sec in self.data["sections"]:
+        for si, sec in enumerate(self.data["sections"]):
             if sec["type"] == "decisions":
                 out.append(self.decisions(sec))
             elif sec["type"] == "bundle":
                 out.append(self.bundle(sec))
             elif sec["type"] == "table":
-                out.append(self.table(sec))
+                out.append(self.table(sec, si))
             else:
                 out.append(self.findings(sec))
         return "\n".join(out)
@@ -1129,8 +1277,9 @@ class Renderer:
         rec_label = next(o["label"] for o in c["options"] if o["key"] == c["recommend"])
         h = ['<article class="hp-card%s" id="hp-card-%s">' % (" is-locked" if self.answered else "", esc(key))]
         head = '<div class="hp-card-head">'
-        if "tag" in c:
-            head += '<span class="hp-tag">%s</span>' % esc(c["tag"])
+        tag = self.tags.get(key, c.get("tag"))
+        if tag:
+            head += '<span class="hp-tag">%s</span>' % esc(tag)
         head += '<h%d class="hp-card-title">%s</h%d>' % (level, inline(c["title"], refs), level)
         head += self.evidence(c.get("evidence")) + "</div>"
         h.append(head)
@@ -1190,19 +1339,19 @@ class Renderer:
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
-    def table(self, sec):
+    def table(self, sec, si):
         """列と行をデータで書く表。指摘の一覧と同じ hp-table で描き、幅の狭い画面では行を積む。"""
         refs = self.page_refs
         cols = [(c["key"], c["label"], c.get("type", "text")) for c in sec["columns"]]
         out = ['<section class="hp-sec hp-tablesec"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], refs)]
         out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
                    % "".join("<th>%s</th>" % esc(label) for _, label, _ in cols))
-        for row in sec["rows"]:
+        for ri, row in enumerate(sec["rows"]):
             cells = []
             for key, label, kind in cols:
                 v = row.get(key, "")
                 if kind == "no":
-                    cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(v)))
+                    cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get((si, ri), v))))
                 elif kind == "ref":
                     items = [v] if isinstance(v, str) else v
                     body = ('<span class="hp-refs">%s</span>' % "".join(refs.ref_link(r) for r in items)) if items else ""
@@ -1216,14 +1365,14 @@ class Renderer:
         return "\n".join(out)
 
 
-def render(data, labels, now, tmux, body=None):
-    """検証を通ったデータから、artifact に公開する断片を返す。"""
+def render(data, labels, now, tmux, body=None, words=None):
+    """検証を通ったデータから、artifact に公開する断片を返す。words は validate と同じ識別子の接頭辞。"""
     template = read_text(TEMPLATE, "型（template.html）")
     for slot in TEMPLATE_SLOTS:
         if template.count("{{%s}}" % slot) != 1:
             raise LoadError("型（%s）に {{%s}} がちょうど1つあるべき所が %d 個ある"
                             % (TEMPLATE, slot, template.count("{{%s}}" % slot)))
-    r = Renderer(data, labels, now, tmux)
+    r = Renderer(data, labels, now, tmux, words if words is not None else load_words(DEFAULT_GLOSSARY))
     header = r.header()
     sections = r.sections()  # ここでカードと group を集める
     # 答える部品の無いページには、保存のコード（page.js）とそれが読むデータを入れない。
@@ -1383,10 +1532,11 @@ def report(errors):
 
 def cmd_check(args):
     load_glossary(args.glossary)
+    words = load_words(args.glossary)
     data = load_data(args.data)
     if args.body:
         read_text(args.body, "--body の本文")
-    errors = validate(data, has_body=bool(args.body))
+    errors = validate(data, has_body=bool(args.body), words=words)
     if errors:
         report(errors)
         return 1
@@ -1396,10 +1546,11 @@ def cmd_check(args):
 
 def cmd_build(args):
     labels = load_glossary(args.glossary)
+    words = load_words(args.glossary)
     data = load_data(args.data)
     body = read_text(args.body, "--body の本文") if args.body else None
     now = parse_now(args.now)
-    errors = validate(data, has_body=body is not None)
+    errors = validate(data, has_body=body is not None, words=words)
     if errors:
         report(errors)
         return 1
@@ -1408,7 +1559,7 @@ def cmd_build(args):
         tmux, why = tmux_from_env()
         if tmux is None:
             print("送り元の tmux の項目を省いた: %s" % why, file=sys.stderr)
-    fragment = render(data, labels, now, tmux, body)
+    fragment = render(data, labels, now, tmux, body, words)
     errors = external_loads(fragment)
     if errors:
         report(errors)
