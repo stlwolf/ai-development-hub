@@ -1,0 +1,98 @@
+{
+  "format": 1,
+  "title": "決済の会社の切り替えの手番",
+  "kind": "board",
+  "status": "live",
+  "why": "決済の会社の切り替え（#230）を前に、いま決めること・決まったこと・もらう値を1枚で見られるようにする。上から順に読む。1 は今日、2 は今週中に決める。決まったことは下の表にあり、選べない。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 230,
+    "branch": "feature/#230_payment_switch"
+  },
+  "links": [
+    {"label": "issue #230", "url": "https://github.com/example-org/shop/issues/230"}
+  ],
+  "sections": [
+    {
+      "type": "decisions",
+      "title": "1. 今日決めること（切り替えの手順を書くため）",
+      "cards": [
+        {
+          "key": "rollback_window",
+          "tag": "Q4",
+          "title": "切り替えのあと、元の決済の会社へ戻せる期間を1週間にする",
+          "recommend": "week",
+          "reason": "請求の締めが週ごとなので、1週間あれば締めを1回またいで確かめられるため。",
+          "points": [
+            "Q2 で決めた日程（月末を避ける）に合わせる。",
+            {"text": "元の会社の契約は、切り替えの日から30日は残せる。", "evidence": "verified"}
+          ],
+          "options": [
+            {"key": "week", "label": "1週間", "kind": "go"},
+            {"key": "month", "label": "30日", "kind": "warn"}
+          ]
+        },
+        {
+          "key": "notify_users",
+          "tag": "Q5",
+          "title": "利用者への知らせは、切り替えの3日前に出す",
+          "recommend": "three",
+          "points": [
+            "知らせの文は Q3 の答え（決済の画面の文言を変えない）に合わせる。"
+          ],
+          "options": [
+            {"key": "three", "label": "3日前に出す", "kind": "go"},
+            {"key": "none", "label": "出さない", "kind": "no"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "decisions",
+      "title": "2. 今週中に決めること（当日の段取りのため）",
+      "cards": [
+        {
+          "key": "on_call",
+          "tag": "Q6",
+          "title": "当日の当番は2人にする",
+          "recommend": "two",
+          "reason": "片方が決済の会社と、片方が利用者の問い合わせと話せるようにするため。",
+          "options": [
+            {"key": "two", "label": "2人", "kind": "go"},
+            {"key": "one", "label": "1人", "kind": "warn"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "決まったこと（選べない・記録）",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "what", "label": "決めたこと"},
+        {"key": "answer", "label": "答え"},
+        {"key": "when", "label": "いつ"},
+        {"key": "refs", "label": "issue / PR", "type": "ref"}
+      ],
+      "rows": [
+        {"no": "Q1", "what": "切り替える決済の会社", "answer": "新しい会社 B にする", "when": "10-20", "refs": ["#230"]},
+        {"no": "Q2", "what": "切り替えの日程", "answer": "月末と月初を避け、11月の第2週にする", "when": "10-21", "refs": []},
+        {"no": "Q3", "what": "決済の画面の文言", "answer": "変えない（補足: 会社の名前だけを差し替える）", "when": "10-22", "refs": ["PR #233"]}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "もらう値（カードにせず、補足欄か会話で受け取る）",
+      "columns": [
+        {"key": "name", "label": "値の名前"},
+        {"key": "where", "label": "どこで読むか"},
+        {"key": "state", "label": "状態"}
+      ],
+      "rows": [
+        {"name": "新しい会社の店舗 ID", "where": "会社 B の管理画面の「店舗の設定」", "state": "まだ"},
+        {"name": "通知を受ける URL の署名の鍵", "where": "会社 B の管理画面の「通知」", "state": "受け取った（10-22）"}
+      ]
+    }
+  ]
+}

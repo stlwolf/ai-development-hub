@@ -378,6 +378,16 @@ BROKEN = [
      [("E-I3", "sections[1].rows[0].cands")], False),
     ("i3_approve_listed_numbers_with_a_unit", "decide", put(CARD0 + ["points", 0], "Q1・2・3件は先に決める"),
      [("E-I3", "sections[0].cards[0].points[0]")], False),
+    # 手番の1枚: カードの札と番号の列の値（決まったこと）は Q<数字> を必ず書く。表は判定カードの節のあと
+    ("i1_board_tag_missing", "board", drop(CARD0 + ["tag"]), [("E-I1", "sections[0].cards[0].tag")], False),
+    ("i1_board_number_missing", "board", drop(["sections", 2, "rows", 0, "no"]), [("E-I1", "sections[2].rows[0].no")], False),
+    ("i2_board_card_and_row_share_a_number", "board", put(CARD0 + ["tag"], "Q1"), [("E-I2", "sections[2].rows[0].no")], False),
+    ("k3_board_table_before_cards", "board", lambda d: d["sections"].insert(0, d["sections"].pop(2)), [("E-K3", "sections[0]")], False),
+    ("k2_board_body", "board", lambda d: None, [("E-K2", "--body")], True),
+    ("k2_board_findings", "board", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[4]")], False),
+    # 判定カードが無ければ、番号の列を持つ表（決まったこと）が要る
+    ("k1_board_without_cards_or_decided_table", "board", lambda d: d["sections"].__delitem__(slice(0, 3)),
+     [("E-K1", "sections")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
@@ -389,12 +399,12 @@ BROKEN = [
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
         for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False),
-                               ("confirm", False), ("pick", False)):
+                               ("confirm", False), ("pick", False), ("board", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
 
     def test_every_kind_has_an_example(self):
-        kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick")}
+        kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board")}
         self.assertEqual(kinds, set(build.PAGE_KINDS))
 
     def test_body_is_allowed_only_in_body_kinds(self):
@@ -490,6 +500,21 @@ class Identifiers(unittest.TestCase):
 
     def test_written_numbers_are_kept(self):
         self.assertEqual(self.numbers(render_page("table")), ["項目1", "項目2", "項目3"])
+
+    def test_board_keeps_written_numbers_and_links_to_decided_rows(self):
+        f = render_page("board")
+        self.assertEqual(self.tags(f), ["Q4", "Q5", "Q6"])
+        self.assertEqual(self.numbers(f), ["Q1", "Q2", "Q3"])
+        # 決まったことの表へ移した Q2 を本文で指すと、その行へ移る
+        self.assertIn(anchor("hp-row-2-1", "Q2") + " で決めた日程", f)
+
+    def test_board_with_every_card_moved_has_no_save_code(self):
+        # 決まったカードをすべて表へ移したページは、答える部品の無いページとして描かれる
+        d = example("board")
+        del d["sections"][0:2]
+        self.assertEqual(build.validate(d), [])
+        f = render_page("board", lambda x: x["sections"].__delitem__(slice(0, 2)))
+        self.assertNotIn("<script", f)
 
     def test_free_tags_stay_as_written(self):
         # 札が自由な種別（一覧から選ぶ・レビュー・束のカード）は、書いたまま出し、識別子にしない
@@ -975,7 +1000,7 @@ class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
     PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None),
-             ("pick", None))
+             ("pick", None), ("board", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -1064,7 +1089,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board")
 
 
 class BodyLooks(unittest.TestCase):
@@ -1254,7 +1279,8 @@ class ElementIds(unittest.TestCase):
         return re.findall(r'\bid="([^"]*)"', f)
 
     def test_ids_are_unique_in_every_example(self):
-        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None)):
+        for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None),
+                           ("board", None)):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -1358,7 +1384,7 @@ class SaveCode(unittest.TestCase):
     def test_pages_with_answer_parts_carry_the_save_code(self):
         with open(build.JS, encoding="utf-8") as fh:
             js = fh.read().rstrip("\n")
-        for name in ("decide", "bundle", "confirm", "pick"):
+        for name in ("decide", "bundle", "confirm", "pick", "board"):
             with self.subTest(page=name):
                 f = render_page(name)
                 self.assertEqual(f.count("<script"), 2)

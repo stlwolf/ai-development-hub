@@ -26,18 +26,21 @@ DEFAULT_GLOSSARY = os.path.join(HERE, "glossary.md")
 FORMAT_VERSION = 1
 # ページの種別。種別は既存の部品の組み合わせの名前で、要る部品・置いてよい補足・並びを決める（SKILL.md の種別の表）。
 # 型の data-purpose の属性には、種別から導いた値を出す（どこからも読まれていないが、出力を変えないために残す）。
-PAGE_KINDS = ("confirm", "approve", "pick", "map", "bundle", "review")
+PAGE_KINDS = ("confirm", "approve", "pick", "map", "bundle", "review", "board")
 KIND_PURPOSE = {"confirm": "decide", "approve": "decide", "pick": "decide", "map": "grasp",
-                "bundle": "decide", "review": "review"}
+                "bundle": "decide", "review": "review", "board": "decide"}
 # 表に番号の列（型 no）を置ける種別。
-ROW_NUMBER_KINDS = ("pick", "map")
+ROW_NUMBER_KINDS = ("pick", "map", "board")
 # --body の本文を置ける種別。本文は型の上でいつも部品の上に出るので、部品の上にあっても読む順を壊さない種別だけにする。
 BODY_KINDS = ("approve", "map", "bundle", "review")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
+# 手番の1枚（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
+# 番号は必ず書かせる（位置で振ると、カードを移すたびに残りの番号がずれ、本文の参照が別の問いを指す）。
 KIND_IDS = {"approve": ("prefix.question", None, True),
             "pick": (None, "prefix.candidate", True),
-            "map": (None, "prefix.item", True)}
+            "map": (None, "prefix.item", True),
+            "board": ("prefix.question", "prefix.question", False)}
 # 別のリポジトリの issue（owner/repo#N）。オーナーは英数字で始まり英数字と - が続く39文字まで、
 # リポジトリは英数字・.・_・- の100文字まで。#N の桁は本文の変換（LINK_RE）と同じ 1〜7 桁にそろえる。
 XREPO = r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})#(\d{1,7})"  # 括弧は3つの組だけ（本文の変換では組を外して使う）
@@ -560,7 +563,7 @@ class Validator:
         並んだ番号に同じ接頭辞を付けた識別子が、すべてページで定義されているときだけ止める。
         番号が2つだけの形（Q2・3件）は普通の文と見分けられないので止めない。"""
         card_key, row_key, _ = KIND_IDS[kind]
-        prefixes = [self.words[k] for k in (card_key, row_key) if k]
+        prefixes = sorted({self.words[k] for k in (card_key, row_key) if k})
         listed = re.compile(r"(?<![A-Za-z0-9_./#-])(%s)([1-9][0-9]*)((?:\s*[%s]\s*[0-9]+){2,})(?![0-9])"
                             % ("|".join(re.escape(x) for x in prefixes), LIST_SEPARATORS))
         for path, text in display_texts(data):
@@ -607,6 +610,18 @@ class Validator:
                 self.add("E-I2", path, '識別子 "%s" が %s と重なる' % (v, defined[v]))
             else:
                 defined[v] = path
+
+    def kind_board(self, types, paths, secs):
+        """手番の1枚: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無ければ
+        （決まったカードをすべて表へ移したページ）、番号の列を持つ表（決まったこと）が1つ以上要る。"""
+        allowed = self.kind_allowed("board", types, paths, ("decisions", "table"))
+        dec = [i for i in allowed if types[i] == "decisions"]
+        tab = [i for i in allowed if types[i] == "table"]
+        for i in tab:
+            if dec and i < dec[-1]:
+                self.add("E-K3", paths[i], "表は判定カードの節のあとに置く（いま決めることを上に置く）")
+        if not dec and self.has_number_table(tab, paths) is False:
+            self.add("E-K1", "sections", "手番の1枚のページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
 
     def source(self, path, s):
         if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux", "trackers")):
