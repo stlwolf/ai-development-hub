@@ -3,7 +3,7 @@ id: "01M5J8EN1AW3HX54GY9GXG9DEP"
 title: "#478・#477 html-one-pager に種別（kind）を定義し、番号と識別子のリンク先を決める"
 date: 2026-10-23
 type: plan
-status: in-development   # ゲート3 で承認（2026-10-23・owner がこのセッションに直接「全部推奨」と書いた）。承認時点の plan は、owner の追加の要件（I2-3・A16）の反映まで
+status: stable   # 実装完了（2026-10-23・PR #482）。受入の A1〜A16 をすべて満たした。ゲート3 の承認は 383d8a5 の版で（owner がこのセッションに直接「全部推奨」と書いた）、承認のあとの補正は末尾の「ゲート3 のあとの変更」節（H1〜H7）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/478"
