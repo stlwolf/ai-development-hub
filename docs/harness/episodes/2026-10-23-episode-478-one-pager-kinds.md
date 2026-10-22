@@ -211,7 +211,7 @@ plan の初稿を `docs/harness/plans/2026-10-23-plan-478-one-pager-kinds.md` �
 | DJ-1 種別 | `ExamplesPass.test_every_kind_has_an_example`・壊したデータの `h3_kind`・`h3_kind_number_is_f3` |
 | DJ-2 `purpose` の置き換え | `f2_purpose_is_replaced_by_kind`・`test_purpose_message_says_it_was_replaced`・`test_data_purpose_attribute_is_derived_from_kind` |
 | DJ-3 `kind` の必須 | `f3_kind_missing`・`old_data_reports_only_kind_and_purpose` |
-| DJ-4 部品の組み合わせ | 種別ごとの `k1_*`・`k2_*`・`k3_*`（22件）・`test_body_is_allowed_only_in_body_kinds` |
+| DJ-4 部品の組み合わせ | 種別ごとの `k1_*`・`k2_*`・`k3_*`（手番の1枚と全体の承認のカードの分を含めて32件）・`test_body_is_allowed_only_in_body_kinds` |
 | DJ-5 手番の1枚 | `i1_board_*`・`i2_board_card_and_row_share_a_number`・`k3_board_table_before_cards`・`k2_board_*`・`k1_board_without_cards_or_decided_table`・`Identifiers.test_board_*` |
 | DJ-6 識別子と番号 | `i1_*`・`i2_*`・`c5_tag_empty_is_not_i1`・`k3_approve_approval_card_not_last`・`k2_approve_two_approval_cards`・`Identifiers`・`LoadStage.test_words_broken_exit_2`・`test_changed_words_change_both_check_and_build`・`PrefixWordsAcrossTheFolder`・`test_number_column_cells_may_be_omitted`・`f3_number_cell_number` |
 | DJ-7 アンカーと番号を並べる書き方 | `Anchors`（境界・効く場所・変換しない場所・2つだけの形）・`i3_*` |
