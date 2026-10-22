@@ -218,3 +218,23 @@ plan の初稿を `docs/harness/plans/2026-10-23-plan-478-one-pager-kinds.md` �
 | DJ-8 `PR #N` と `owner/repo#N` | `Links.test_pr_*`・`test_xrepo_links_to_that_repo_on_the_same_host`・`test_paths_and_branches_are_not_xrepo`・`test_without_repo_url_pr_and_xrepo_stay_text`・`test_bare_numbers_are_not_linked`・`TableAndTrackerLinks.test_ref_cells_keep_their_text_and_link`・`test_xrepo_ref_links_to_that_repo`・`l1_xrepo_without_repo_url`・`l1_repo_name_without_owner` |
 | DJ-9 見本と SKILL.md | `ExamplesPass`・`SkillMdExamples`・`Contract`（8つの見本）・`PrefixWordsAcrossTheFolder`・`Anchors.test_approve_example_links_every_kind_of_number` |
 | DJ-10 規則の割り当て | `EveryRuleIsCovered`（E-K1〜E-K3・E-I1〜E-I3 を足した） |
+
+### I2-1: 実装SO の結果と採否（2026-10-23）
+
+- `so-compare --codex-only`（`SO_TIMEOUT=600`）を背景で回した。依頼文は `tmp/478-one-pager-kinds/so-impl-prompt.md`、出力は `tmp/478-one-pager-kinds/so-impl-codex/`（作業層・消える）。読んでよいものを差分・スキルのフォルダ・plan・#428 の decision に限り、実物のページのデータは渡していない。モデルは `gpt-6.1-sol`（設定から読んだ値）、`codex-cli 0.163.0`、186秒、初回で返った。Cursor には切り替えていない。
+- 結論は「直してから PR に」で、指摘は6件（中3・低3）。6件とも採った。指摘1〜4 は、採る前に自分で再現した。
+
+| # | 重さ | 指摘 | 再現と採否 |
+|---|---|---|---|
+| 1 | 中 | `repo_url` が `https://[bad` で、本文に `a/b#3` があると、検証は通るのに描画で `urlsplit` が `ValueError` を投げる | 再現した。**採った**。ホストを `repo_url` の先頭から取る形に直し、描画が落ちない検査を足した（plan の H6） |
+| 2 | 中 | `https://x.example。Q1・2・3` が E-I3 で止まらない。E-I3 は URL を空白まで除くが、描くときの URL は句点で終わり、Q1 はアンカーになる | 再現した。**採った**。除く範囲を描くときの URL の形にそろえ、検査を足した（plan の H6） |
+| 3 | 中 | レビューのページで、指摘・表・指摘の並びが通る | 再現した。**採った**。指摘の一覧の前やあいだの補足を E-K3 で止め、検査を足した（plan の H4） |
+| 4 | 低 | 空の `sections` の回答待ちのページで、E-S1 と E-P2 が重なる | 再現した。**採った**。E-S1 だけを出す形にし、検査を足した（plan の H5） |
+| 5 | 低 | SKILL.md の E-S3 の行が、列の型を `text` と `ref` だけと書いている | **採った**。`no` を足した |
+| 6 | 低 | SKILL.md の「認識合わせのカードには `points` を使えない」は、実装（`blocks` と `points` の併用を許す）と食い違う | **採った**。「`points` だけでは書けず、必ず `blocks` を持つ」に直した |
+
+- 問題なしとされた点: 正しいデータでの番号の振り方と、識別子とアンカーの先の対応。接頭辞の語を変えた用語集での検証と描画の一致。リンクの変換で文字が欠けたり重なったりしないことと、エスケープ（100通りの文字列で確かめたとのこと）。型を置き換えた 6,168通りで例外が無いこと。Python 3.9 で動かない書き方や、標準ライブラリの外への依存が無いこと。
+- SO の環境では、検査 280件のうち20件が、読み取り専用の環境で一時ディレクトリを作れずにエラーになったと書いていた。手元では、直したあとの 284件が 3.13 と 3.9.6 の両方で通っている。
+- 直しは `f150c0e`。既存の見本の出力は、直す前と1文字も違わなかった。
+
+昇格の印: 検証が URL の形の一部（http(s):// で始まる）しか見ないなら、描画で URL を部品に分ける処理を使わない（検証と描画の前提をそろえる）
