@@ -234,6 +234,8 @@ BROKEN = [
     ("s1_group_no_cards", "bundle", put(GROUP0 + ["cards"], []), [("E-S1", "sections[0].groups[0].cards")], False),
     ("s1_no_items", "review", put(["sections", 0, "items"], []), [("E-S1", "sections[0].items")], False),
     ("s1_no_sections_no_body", "grasp", lambda d: None, [("E-S1", "sections")], False),
+    # 回答待ちのページでも、部品も本文も無ければ E-S1 だけ（E-P2 を重ねない）
+    ("s1_no_sections_awaiting_is_only_s1", "decide", put(["sections"], []), [("E-S1", "sections")], False),
     ("s1_section_title_empty", "decide", put(["sections", 0, "title"], ""), [("E-S1", "sections[0].title")], False),
     ("s1_group_title_empty", "bundle", put(GROUP0 + ["title"], ""), [("E-S1", "sections[0].groups[0].title")], False),
     # E-S2 指摘
@@ -348,6 +350,7 @@ BROKEN = [
     ("k2_review_bundle", "review", append(["sections"], BUNDLE_SEC), [("E-K2", "sections[2]")], False),
     ("k2_review_number_column", "review", append(["sections"], NUMBER_TABLE_SEC), [("E-K2", "sections[2].columns[0]")], False),
     ("k3_review_table_first", "review", lambda d: d["sections"].insert(0, TABLE_SEC), [("E-K3", "sections[0]")], False),
+    ("k3_review_table_between_findings", "review", lambda d: d["sections"].insert(1, TABLE_SEC), [("E-K3", "sections[1]")], False),
     # ページの中の識別子（E-I1・E-I2）。承認の問いのカードの札は Q<数字>、全体の承認のカードの札は「承認」
     ("i1_approve_tag_from_another_document", "decide", put(CARD0 + ["tag"], "DJ-1"), [("E-I1", "sections[0].cards[0].tag")], False),
     ("i1_approve_tag_zero", "decide", put(CARD0 + ["tag"], "Q0"), [("E-I1", "sections[0].cards[0].tag")], False),
@@ -378,6 +381,8 @@ BROKEN = [
      [("E-I3", "sections[1].rows[0].cands")], False),
     ("i3_approve_listed_numbers_with_a_unit", "decide", put(CARD0 + ["points", 0], "Q1・2・3件は先に決める"),
      [("E-I3", "sections[0].cards[0].points[0]")], False),
+    # URL は句点で終わる（描くときと同じ範囲）ので、句点のすぐあとの並べる書き方も見る
+    ("i3_listed_numbers_right_after_a_url", "decide", put(["why"], "https://x.example。Q1・2・3 を見る"), [("E-I3", "why")], False),
     # 手番の1枚: カードの札と番号の列の値（決まったこと）は Q<数字> を必ず書く。表は判定カードの節のあと
     ("i1_board_tag_missing", "board", drop(CARD0 + ["tag"]), [("E-I1", "sections[0].cards[0].tag")], False),
     ("i1_board_number_missing", "board", drop(["sections", 2, "rows", 0, "no"]), [("E-I1", "sections[2].rows[0].no")], False),
@@ -863,6 +868,12 @@ class Links(unittest.TestCase):
         self.assertEqual(self.point("docs/a/b#3 と feature/#212_x"), "docs/a/b#3 と feature/#212_x")
         # feature/#212 の #212 は、いまと同じく issue のリンクになる（#N の境界は変えていない）
         self.assertEqual(self.point("feature/#212"), "feature/" + a_tag("https://github.com/example-org/shop/issues/212", "#212"))
+
+    def test_broken_host_in_repo_url_does_not_break_rendering(self):
+        # 検証は repo_url が http(s):// で始まることしか見ないので、形の崩れたホストでも描画が落ちない
+        mutate = both(put(["source", "repo_url"], "https://[bad"), put(["why"], "a/b#3 を見る"))
+        f = render_page("decide", mutate)
+        self.assertIn(a_tag("https://[bad/a/b/issues/3", "a/b#3"), f)
 
     def test_without_repo_url_pr_and_xrepo_stay_text(self):
         self.assertEqual(self.point("PR #215 と a/b#3", drop(["source", "repo_url"])), "PR #215 と a/b#3")

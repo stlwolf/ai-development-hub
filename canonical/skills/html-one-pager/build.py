@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_GLOSSARY = os.path.join(HERE, "glossary.md")
@@ -401,7 +401,9 @@ class Validator:
                     if defined:
                         self.listed_numbers(kind, data, defined)
         status = data.get("status")
-        if status == "awaiting" and sections_readable and not has_answer_part:
+        # 部品も本文も無いときは E-S1 だけを出し、状態の誤りを重ねない。
+        no_parts = sections_readable and not data["sections"] and not self.has_body
+        if status == "awaiting" and sections_readable and not has_answer_part and not no_parts:
             self.add("E-P2", "status", "awaiting（回答待ち）なのに、答える部品（decisions か bundle）が無い")
         if "answers" in data and status in STATUSES and status != "answered":
             self.add("E-P2", "answers", "answers があるのに、status が answered でない")
@@ -507,8 +509,10 @@ class Validator:
         f = [i for i in allowed if types[i] == "findings"]
         if not f:
             self.add("E-K1", "sections", "レビューのページには指摘の一覧（findings）が1つ以上要る")
-        elif f[0] != allowed[0]:
-            self.add("E-K3", paths[allowed[0]], "指摘の一覧を部品の先頭に置き、表と判定カードはそのあとに置く")
+            return
+        for i in allowed:
+            if types[i] != "findings" and i < f[-1]:
+                self.add("E-K3", paths[i], "指摘の一覧をすべて先に置き、表と判定カードはそのあとに置く")
 
     # ページの中の識別子（E-I1・E-I2 と、承認のカードの置き場所）-----------
 
@@ -567,7 +571,8 @@ class Validator:
         listed = re.compile(r"(?<![A-Za-z0-9_./#-])(%s)([1-9][0-9]*)((?:\s*[%s]\s*[0-9]+){2,})(?![0-9])"
                             % ("|".join(re.escape(x) for x in prefixes), LIST_SEPARATORS))
         for path, text in display_texts(data):
-            text = _URL_AND_CODE_RE.sub(" ", text)
+            # コードと URL の中は、描くときと同じ範囲で除く（URL は句点などの区切りで終わる）。
+            text = _SKIP_FOR_LISTS_RE.sub(" ", text)
             for m in listed.finditer(text):
                 nums = [m.group(2)] + re.findall(r"[0-9]+", m.group(3))
                 if all(m.group(1) + n in defined for n in nums):
@@ -984,7 +989,6 @@ class Validator:
 
 
 LIST_SEPARATORS = "・、,，"
-_URL_AND_CODE_RE = re.compile(r"`[^`\n]+`|https?://\S+")
 
 
 def display_texts(data):
@@ -1078,6 +1082,8 @@ LINK_PATTERN = (r"(?P<url>https?://[^" + _URL_STOP + r"]+)"
                 r"|(?P<xrepo>(?<![A-Za-z0-9_./-])" + XREPO.replace("(", "(?:") + r"(?![A-Za-z0-9_]))"
                 r"|(?P<issue>(?<![A-Za-z0-9_])#(?P<num>\d{1,7})(?![A-Za-z0-9_]))")
 LINK_RE = re.compile(LINK_PATTERN)
+# 番号を並べる書き方（E-I3）を探すときに除く範囲。描くときのコードの書式と URL の範囲にそろえる。
+_SKIP_FOR_LISTS_RE = re.compile(r"`[^`\n]+`|https?://[^" + _URL_STOP + r"]+")
 TRACKER_PATTERN = r"|(?P<tracker>(?<![A-Za-z0-9_-])(?P<prefix>%s)-\d+(?![A-Za-z0-9_-]))"
 # ページで定義した識別子（Q2・候補4）。前に英数字・_・.・/・#・- が続くもの（FAQ2・docs/Q2）、
 # 後ろに英数字・_ が続くもの（候補43 の中の 候補4）と、. / - と英数字が続くもの（Q2.md・Q2-3）はリンクにしない。
@@ -1104,11 +1110,15 @@ def pull_url(repo_url, num):
     return "%s/pull/%s" % (repo_url.rstrip("/"), num)
 
 
+# repo_url の先頭の http(s)://<ホスト> の部分。検証は http(s):// で始まることしか見ないので、
+# URL の部品に分ける処理（urlsplit）を使わず、形の崩れたホストでも例外にしない。
+_URL_ORIGIN_RE = re.compile(r"https?://[^/?#]*")
+
+
 def xrepo_url(repo_url, ident):
     """owner/repo#N を、送り元の repo_url と同じホストの、そのリポジトリの issue の URL にする。"""
     owner, name, num = REF_XREPO_RE.match(ident).groups()
-    u = urlsplit(repo_url)
-    return "%s://%s/%s/%s/issues/%s" % (u.scheme, u.netloc, owner, name, num)
+    return "%s/%s/%s/issues/%s" % (_URL_ORIGIN_RE.match(repo_url).group(0), owner, name, num)
 
 
 def branch_url(repo_url, branch):
