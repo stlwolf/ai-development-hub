@@ -9,6 +9,7 @@
 
 import copy
 import html
+import html.parser
 import importlib.util
 import json
 import os
@@ -557,6 +558,12 @@ class PickRows(unittest.TestCase):
         d["status"] = "answered"
         d["answers"] = {long_key + "--1": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"}}
         self.assertEqual(build.validate(d), [])
+
+    def test_every_row_has_a_save_mark(self):
+        # 行の保存の成否を書く場所（判定カードと同じ hp-saved-<key>）。描かないと JS の知らせが消える
+        f = render_page("pick")
+        self.assertEqual(re.findall(r'<span class="hp-saved" id="hp-saved-(pick_tools--[0-9]+)" aria-live="polite"></span></td>', f),
+                         ["pick_tools--%d" % i for i in range(1, 7)])
 
     def test_pages_without_select_have_no_checkboxes(self):
         self.assertNotIn("hp-pick-box", main_of(render_page("pick", drop(["sections", 0, "cards", 0, "select"]))))
@@ -1554,6 +1561,145 @@ class SaveCode(unittest.TestCase):
         f = render_page("review", lambda d: d["sections"].append(card))
         self.assertEqual(f.count("<script"), 2)
         self.assertIn("claude.use", f)
+
+
+class _Elements(html.parser.HTMLParser):
+    """描いた断片から、id のある要素の初めの状態（隠す・押せる・チェック・class）を集める。"""
+
+    def __init__(self):
+        super().__init__()
+        self.found = {}
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if "id" in a:
+            self.found[a["id"]] = {"tag": tag, "className": a.get("class") or "", "hidden": "hidden" in a,
+                                   "disabled": "disabled" in a, "checked": "checked" in a}
+
+
+# page.js を node で走らせる台。document は getElementById だけを持つ偽物で、要素は描いた断片から作る。
+# 保存先（window.claude）は検査ごとの setup が作り、after が操作して結果を返す。setup から after へ渡す値は global に置く。
+PAGE_DRIVER = r"""
+const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const els = {};
+for (const [id, a] of Object.entries(input.elements)) {
+  els[id] = { id: id, tagName: a.tag, className: a.className, hidden: a.hidden, disabled: a.disabled, checked: a.checked,
+    textContent: "", value: "", attrs: {}, handlers: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
+    focus() {}, select() {},
+    fire(t) { (this.handlers[t] || []).forEach(function (f) { f({}); }); } };
+}
+els["hp-data"].textContent = input.data;
+global.window = global;
+global.document = { getElementById: function (id) { return els[id] || null; }, activeElement: null };
+const log = { writes: [] };
+const tick = function (n) { let p = Promise.resolve(); for (let i = 0; i < (n || 20); i += 1) { p = p.then(function () { return new Promise(function (r) { setTimeout(r, 0); }); }); } return p; };
+function fakeDb(subscribe, fail) {
+  const col = {
+    doc: function (k) { return {
+      update: function (patch) { log.writes.push(k + " " + JSON.stringify(patch.choice)); const e = new Error("missing"); e.code = "invalid_argument"; return Promise.reject(e); },
+      set: function (obj) { log.writes.push(k + " " + JSON.stringify(obj.choice)); return fail ? Promise.reject(new Error("down")) : Promise.resolve(); } }; },
+    onSnapshot: function (onSnap, onErr) { return subscribe(onSnap, onErr); }
+  };
+  return { collection: function () { return col; } };
+}
+let openDb = null;
+function useDb(subscribe, fail) {
+  window.claude = { use: function () { return new Promise(function (r) { openDb = function () { r(fakeDb(subscribe, fail)); }; }); } };
+}
+(async function () {
+  eval(input.setup);
+  eval(input.js);
+  const out = await (new (Object.getPrototypeOf(async function () {}).constructor)("els", "log", "tick", "openDb", input.after))(els, log, tick, function () { openDb(); });
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+})().catch(function (e) { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node が無い環境では page.js の振る舞いを確かめない")
+class PageScript(unittest.TestCase):
+    """page.js の振る舞いを、偽物の document と保存先で確かめる。
+
+    保存先の購読（onSnapshot）が投げるか、最初の答えより先に失敗を返すと、保存できない表示にして
+    一覧の行のチェックを押せるようにし、書き込みを始めない。最初の答えのあとの失敗は今までどおり。
+    行の保存の成否は、その行の印に出る。"""
+
+    STATE = """
+      const boxes = Object.keys(els).filter(function (k) { return k.indexOf("hp-pick-") === 0; });
+      return { store: els["hp-store"] ? els["hp-store"].textContent : null,
+               reply_hidden: els["hp-reply"].hidden,
+               rows_locked: boxes.filter(function (k) { return els[k].disabled; }).length,
+               rows: boxes.length, writes: log.writes,
+               saved2: els["hp-saved-pick_tools--2"] ? [els["hp-saved-pick_tools--2"].textContent, els["hp-saved-pick_tools--2"].className] : null };
+    """
+    # 保存先が開く前にカードの選択肢を押しておく（開いたあとの書き込みの有無を見るため）
+    BEFORE_OPEN = 'els["hp-opt-pick_tools.chosen"].fire("click"); openDb(); await tick();'
+
+    def run_page(self, setup, after, name="pick"):
+        f = render_page(name)
+        parser = _Elements()
+        parser.feed(f)
+        with open(build.JS, encoding="utf-8") as fh:
+            js = fh.read()
+        payload = {"elements": parser.found, "data": html.unescape(embedded(f)), "js": js, "setup": setup, "after": after}
+        p = subprocess.run(["node", "-e", PAGE_DRIVER], input=json.dumps(payload), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, encoding="utf-8", timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def labels(self):
+        return build.load_glossary(build.DEFAULT_GLOSSARY)
+
+    def assert_unavailable(self, out):
+        self.assertEqual(out["store"], self.labels()["text.store_unavailable"])
+        self.assertFalse(out["reply_hidden"])
+        self.assertEqual((out["rows"], out["rows_locked"]), (6, 0))
+
+    def test_rows_wait_for_the_first_answer_and_then_unlock(self):
+        # 比べの元: 購読が答えを返すまでは押せず、返すと押せて、先に押したカードを書く
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            self.BEFORE_OPEN + "const before = els['hp-pick-pick_tools--1'].disabled; deliver({docs: []}); await tick();"
+                            + "const s = (function () {" + self.STATE + "})(); s.before = before; return s;")
+        self.assertTrue(out["before"])
+        self.assertEqual(out["rows_locked"], 0)
+        self.assertEqual(out["store"], "")
+        self.assertEqual(out["writes"], ['pick_tools "chosen"', 'pick_tools "chosen"'])
+
+    def test_subscription_that_throws_shows_unavailable_and_writes_nothing(self):
+        out = self.run_page('useDb(function () { throw new Error("blocked"); });', self.BEFORE_OPEN + self.STATE)
+        self.assert_unavailable(out)
+        self.assertEqual(out["writes"], [])
+
+    def test_error_callback_before_the_first_answer_shows_unavailable_and_writes_nothing(self):
+        out = self.run_page('useDb(function (onSnap, onErr) { onErr(new Error("denied")); });', self.BEFORE_OPEN + self.STATE)
+        self.assert_unavailable(out)
+        self.assertEqual(out["writes"], [])
+
+    def test_late_error_callback_before_the_first_answer_unlocks_the_rows(self):
+        # 購読がいったん返り、答えより先に失敗が届く。書き込みはすでに始まっているが、行は押せるようになる
+        out = self.run_page('useDb(function (onSnap, onErr) { global.fail = onErr; });',
+                            self.BEFORE_OPEN + "fail(new Error('denied')); await tick();" + self.STATE)
+        self.assert_unavailable(out)
+
+    def test_error_after_the_first_answer_keeps_saving(self):
+        out = self.run_page('useDb(function (onSnap, onErr) { onSnap({docs: []}); global.fail = onErr; });',
+                            "openDb(); await tick(); fail(new Error('lost')); await tick();"
+                            "const b = els['hp-pick-pick_tools--2']; b.checked = true; b.fire('change'); await tick();" + self.STATE)
+        self.assertEqual(out["store"], self.labels()["text.store_failed"])
+        self.assertFalse(out["reply_hidden"])
+        self.assertEqual(out["rows_locked"], 0)
+        self.assertEqual(out["writes"], ['pick_tools--2 "pick"', 'pick_tools--2 "pick"'])
+
+    def test_row_save_result_shows_on_the_row(self):
+        L = self.labels()
+        pick2 = "const b = els['hp-pick-pick_tools--2']; b.checked = true; b.fire('change'); await tick();"
+        ok = self.run_page("useDb(function (onSnap) { onSnap({docs: []}); });", "openDb(); await tick();" + pick2 + self.STATE)
+        self.assertEqual(ok["saved2"], [L["text.store_saved"], "hp-saved is-ok"])
+        bad = self.run_page("useDb(function (onSnap) { onSnap({docs: []}); }, true);", "openDb(); await tick();" + pick2 + self.STATE)
+        self.assertEqual(bad["saved2"], [L["text.store_failed"], "hp-saved is-bad"])
+        self.assertFalse(bad["reply_hidden"])
 
 
 class SourceCommand(unittest.TestCase):

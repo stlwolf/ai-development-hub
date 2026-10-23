@@ -274,6 +274,16 @@
     showReply();
     paint();
   }
+  // 保存先の答えを読み始められなかった（購読が投げた・最初の答えより先に失敗が届いた）ときは、保存できない表示にする。
+  // 一覧の行のチェックが読み込み待ちのまま押せなくなるのを防ぐ。最初の答えが届いたあとの失敗は、今までどおり知らせと返答の文を出す。
+  function syncFailed() {
+    if (synced) {
+      setStore(L["text.store_failed"], true);
+      showReply();
+      return;
+    }
+    unavailable();
+  }
   function connect() {
     var claude = window.claude;
     if (!claude || typeof claude.use !== "function") { unavailable(); return; }
@@ -293,15 +303,12 @@
       mode = "ready";
       setStore("", false);
       try {
-        col.onSnapshot(onSnapshot, function () {
-          setStore(L["text.store_failed"], true);
-          showReply();
-        });
+        col.onSnapshot(onSnapshot, syncFailed);
       } catch (e) {
-        setStore(L["text.store_failed"], true);
-        showReply();
+        syncFailed();
       }
-      flush();
+      // 購読がその場で失敗して保存できない表示になったときは、書き込みを始めない。
+      if (mode === "ready") { flush(); }
     }, function () {
       if (done) { return; }
       done = true;

@@ -1622,15 +1622,17 @@ class Renderer:
                 % (esc(self.select_rule()), esc(self.pick["card"]), esc(text)))
 
     def pick_cell(self, label, si, ri):
-        """番号の列の欄に、行を選ぶチェックを付ける。推奨の行には推奨の札を付ける。"""
+        """番号の列の欄に、行を選ぶチェックを付ける。推奨の行には推奨の札を付ける。
+        行の保存の成否は、判定カードと同じ印（hp-saved-<行の key>）に JS が書く。"""
         rk, num = self.pick["rows"][(si, ri)]
         checked = self.answered and (self.answers.get(rk) or {}).get("choice") == PICK_CHOICE
         rec = self.chip("hp-chip-rec", self.L["recommend"]) if num in self.pick["recommend"] else ""
         return ('<td class="hp-no" data-label="%s"><label class="hp-pick">'
                 '<input type="checkbox" class="hp-pick-box" id="hp-pick-%s" aria-label="%s %s"%s%s>'
-                '<span class="hp-pick-id">%s</span></label>%s</td>'
+                '<span class="hp-pick-id">%s</span></label>%s'
+                '<span class="hp-saved" id="hp-saved-%s" aria-live="polite"></span></td>'
                 % (esc(label), esc(rk), esc(num), esc(self.L["text.pick"]),
-                   " checked" if checked else "", " disabled" if self.answered else "", esc(num), rec))
+                   " checked" if checked else "", " disabled" if self.answered else "", esc(num), rec, esc(rk)))
 
     def point_list(self, points, refs):
         items = []
