@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "決済の再試行の実装へのレビュー",
-  "purpose": "review",
+  "kind": "review",
   "status": "live",
   "why": "決済の再試行の実装（#212）に2つのモデルがレビューで出した指摘と、それぞれを採ったかを1枚で見られるようにする。",
   "source": {
@@ -13,6 +13,13 @@
   "links": [
     {"label": "PR #215", "url": "https://github.com/example-org/shop/pull/215"}
   ],
+  "request": {
+    "target": "PR #215 の差分（決済の再試行）",
+    "type": "実装のレビュー",
+    "via": "セカンドオピニオン（別の会社のモデル2つ）",
+    "focus": "冪等キーの使い回し・タイムアウトの値の置き場・再試行の間隔",
+    "why": "決済の会社への依頼が増えうる変更なので、マージの前に別の目で見たい。"
+  },
   "sections": [
     {
       "type": "findings",

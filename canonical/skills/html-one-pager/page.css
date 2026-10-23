@@ -81,7 +81,10 @@ body {
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.7;
-  max-width: 900px;
+  /* 大きな画面（27インチなど）では表とカードの並びを広く使う。段落と目的の文は 68ch で止めている。
+     1200px は左右の余白を除いた中身の幅なので、body だけ content-box にする */
+  box-sizing: content-box;
+  max-width: 1200px;
   margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -146,6 +149,7 @@ code {
   max-width: 68ch;
 }
 .hp-why p { margin: 0; }
+.hp-request { display: grid; gap: 6px; min-width: 0; }
 .hp-links ul {
   list-style: none;
   margin: 2px 0 0;
@@ -303,6 +307,22 @@ code {
 }
 .hp-table th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .hp-table td .hp-chip { margin-left: 0; }
+/* 番号の列の値（候補4・ID:2・Q3）は折り返さない */
+.hp-table td.hp-no { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* 一覧から選ぶページの行のチェックと、選び方のカードの選ぶ数・選んだ行 */
+.hp-pick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.hp-pick-box { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.hp-pick-box:disabled { cursor: not-allowed; }
+.hp-pick-box:disabled + .hp-pick-id { color: var(--muted); }
+.hp-pick-box:checked + .hp-pick-id { font-weight: 700; color: var(--accent); }
+.hp-pick-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hp-table td.hp-no .hp-chip { margin-left: 6px; }
+/* 行の保存の成否は、チェックの下に出す。文が長いときは欄の中で折り返す */
+.hp-table td.hp-no .hp-saved { display: block; min-height: 0; max-width: 12em; white-space: normal; }
+.hp-select { margin: 0; display: grid; gap: 2px; font-size: 13.5px; }
+.hp-select-rule { font-weight: 700; }
+.hp-select-chosen { color: var(--muted); }
+.hp-select-chosen.is-bad { color: var(--bad); }
 /* 表の部品の識別子の列: 識別子ごとに折り返さず、識別子のあいだで折り返す */
 .hp-refs { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .hp-refs a { white-space: nowrap; }
@@ -383,7 +403,18 @@ code {
   outline-offset: 2px;
 }
 
+/* ページの中のアンカー（本文の Q2・候補4 のリンク）で飛んだ先のカードと行。上に余白を取り、枠の色で示す。 */
+.hp-card:target, .hp-table tr:target {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  scroll-margin-top: 16px;
+}
+/* 答える部品のあるページでは、上に貼り付く帯（.hp-bar）が飛んだ先の上端を隠さないよう、帯の高さのぶん余白を足す。
+   帯の高さは、保存できない表示の長い文のとき、幅 600px 以上で 84px、それより狭いと 128px だった（実測）。 */
+.hp:has(.hp-bar) .hp-card:target, .hp:has(.hp-bar) .hp-table tr:target { scroll-margin-top: 104px; }
+
 @media (max-width: 560px) {
+  .hp:has(.hp-bar) .hp-card:target, .hp:has(.hp-bar) .hp-table tr:target { scroll-margin-top: 148px; }
   .hp-title { font-size: 20px; }
   .hp-meta { grid-template-columns: minmax(0, 1fr); }
   .hp-card { padding: 14px; }

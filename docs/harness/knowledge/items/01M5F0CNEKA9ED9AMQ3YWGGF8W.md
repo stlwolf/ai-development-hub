@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-21-episode-467-runbook-skill.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-23
+    ref: "#478"
+    state: followed
+    note: "教訓に従い、札と番号の接頭辞の決まりを見本・SKILL.md の JSON の例・検査に当てる検査（PrefixWordsAcrossTheFolder）と grep を受入 A6 に置き、見本の札 DJ-1〜3 と番号 A1〜3、SKILL.md の例の番号を決まりの形に直した"
 ---
 
 **書き方の決まりを持つスキルは、その決まりをスキル自身のフォルダ全体にも当てる受入を置く。** 例外は、使わない語を挙げる表の行だけにする。

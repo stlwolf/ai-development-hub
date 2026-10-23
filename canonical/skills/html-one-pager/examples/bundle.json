@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "2つの作業の判断待ち",
-  "purpose": "decide",
+  "kind": "bundle",
   "status": "live",
   "why": "並行して進んでいる2つの作業から判断の依頼が届いたので、1枚にまとめて答えられるようにする。",
   "source": {

@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "2つの issue の認識合わせ",
-  "purpose": "decide",
+  "kind": "confirm",
   "status": "awaiting",
   "why": "決済の障害のあとに起こした2つの issue（#216・#218）に着手する前に、何をやるかの認識を合わせたい。内容に違和感が無ければ「この内容で確定」を選ぶ。",
   "source": {

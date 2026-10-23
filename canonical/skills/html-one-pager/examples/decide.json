@@ -1,7 +1,7 @@
 {
   "format": 1,
   "title": "決済の再試行の方針を決める",
-  "purpose": "decide",
+  "kind": "approve",
   "status": "awaiting",
   "why": "決済が二重に走った障害（#212）の直し方が3通りあり、実装の前に1つに決めたい。",
   "source": {
@@ -22,7 +22,6 @@
       "cards": [
         {
           "key": "retry_policy",
-          "tag": "DJ-1",
           "title": "再試行は冪等キーを付けて3回までにする",
           "recommend": "go",
           "reason": "冪等キーがあれば、二重の請求を決済の会社の側で止められるため。",
@@ -38,7 +37,6 @@
         },
         {
           "key": "alert_rule",
-          "tag": "DJ-2",
           "title": "失敗は警告のログに残し、3回目の失敗で通知する",
           "recommend": "go",
           "reason": "1回目と2回目の失敗はよく起きるので、毎回通知すると大事な通知を見落としやすくなるため。",
@@ -54,7 +52,6 @@
         },
         {
           "key": "rollout",
-          "tag": "DJ-3",
           "title": "本番には段階的にデプロイする",
           "evidence": "guess",
           "recommend": "stage",

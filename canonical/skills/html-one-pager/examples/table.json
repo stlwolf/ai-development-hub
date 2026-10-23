@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "title": "決済の障害の手番の一覧",
-  "purpose": "grasp",
+  "title": "決済の障害の対応の一覧",
+  "kind": "map",
   "status": "live",
-  "why": "決済が二重に走った障害（#212）のあと、直しと振り返りの手番が5つに分かれたので、どこまで進んだかを1枚で見られるようにする。",
+  "why": "決済が二重に走った障害（#212）のあと、直しと振り返りの対応が5つに分かれたので、どこまで進んだかを1枚で見られるようにする。",
   "source": {
     "repo": "shop",
     "repo_url": "https://github.com/example-org/shop",
@@ -18,9 +18,9 @@
   "sections": [
     {
       "type": "table",
-      "title": "手番",
+      "title": "対応",
       "columns": [
-        {"key": "no", "label": "番号"},
+        {"key": "no", "label": "番号", "type": "no"},
         {"key": "refs", "label": "issue / PR", "type": "ref"},
         {"key": "tracker", "label": "外部の課題", "type": "ref"},
         {"key": "what", "label": "中身"},
@@ -28,21 +28,21 @@
       ],
       "rows": [
         {
-          "no": "A1",
+          "no": "ID:1",
           "refs": ["#212", "PR #215"],
           "tracker": "OPS-41",
           "what": {"text": "再試行に冪等キーを付けて3回までにする。`charge` の呼び直しを止める。", "evidence": "verified"},
           "result": "マージ済み"
         },
         {
-          "no": "A2",
+          "no": "ID:2",
           "refs": ["#216"],
           "tracker": [],
           "what": "タイムアウトの既定値を見直す。値の出どころは https://github.com/example-org/shop/blob/main/config/payment.yml にある。",
           "result": "レビュー中"
         },
         {
-          "no": "A3",
+          "no": "ID:3",
           "refs": [],
           "tracker": ["OPS-42", "OPS-43"],
           "what": {"text": "障害の振り返りを書く。OPS-41 の記録を元にする。", "evidence": "sourced"},
