@@ -414,6 +414,9 @@ BROKEN = [
     ("a1_pick_row_choice_not_pick", "pick",
      both(put(["status"], "answered"), put(["answers"], {"pick_tools--2": {"choice": "yes", "note": "", "at": "2026-10-23T09:00:00Z"}})),
      [("E-A1", "answers.pick_tools--2.choice")], False),
+    ("a1_pick_rows_over_max", "pick",
+     both(put(["status"], "answered"), put(["answers"], {"pick_tools--%d" % n: {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"} for n in (1, 2, 3)})),
+     [("E-A1", "answers")], False),
     ("a1_pick_row_undefined", "pick",
      both(put(["status"], "answered"), put(["answers"], {"pick_tools--9": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"}})),
      [("E-A1", "answers.pick_tools--9")], False),
@@ -545,6 +548,15 @@ class PickRows(unittest.TestCase):
         self.assertEqual(checked, ["pick_tools--2", "pick_tools--4"])
         self.assertEqual(len(re.findall(r'class="hp-pick-box"[^>]* disabled>', f)), 6)
         self.assertIn("選んだ行（2）: 候補2、候補4", f)
+
+    def test_row_keys_may_exceed_the_card_key_length(self):
+        # 行の答えの key は、カードの key（64文字まで）に「--」と番号の数字を足したもので、64文字の決まりの外にある
+        long_key = "p" * 64
+        d = copy.deepcopy(example("pick"))
+        d["sections"][0]["cards"][0]["key"] = long_key
+        d["status"] = "answered"
+        d["answers"] = {long_key + "--1": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"}}
+        self.assertEqual(build.validate(d), [])
 
     def test_pages_without_select_have_no_checkboxes(self):
         self.assertNotIn("hp-pick-box", main_of(render_page("pick", drop(["sections", 0, "cards", 0, "select"]))))

@@ -134,6 +134,7 @@ GLOSSARY_KEYS = {
     "text.select_exact": ("max",),
     "text.select_chosen": ("n", "rows"),
     "text.select_none": (),
+    "text.select_over": ("n",),
     "text.pick": (),
     "text.reply_rows": ("rows",),
 }
@@ -307,6 +308,8 @@ class Validator:
         self.tables = {}
         # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None)]
         self.selects = []
+        # 一覧から選ぶ行: カードの key -> (選べる数の上限, 行の答えの key の並び)。回収した答えの上限の検査に使う。
+        self.pick_limits = {}
 
     def add(self, code, path, msg):
         self.errors.append((code, path, msg))
@@ -612,8 +615,10 @@ class Validator:
                     self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" がページの番号の列で定義されていない' % r)
             if sel.get("min", 0) > len(rows):
                 self.add("E-C6", join(path, "select"), "min（%d）が選べる行の数（%d）を超える" % (sel["min"], len(rows)))
-            for ident in rows:
-                self.card_options[key + PICK_KEY_SEP + ident[len(prefix):]] = [PICK_CHOICE]
+            row_keys = [key + PICK_KEY_SEP + ident[len(prefix):] for ident in rows]
+            for rk in row_keys:
+                self.card_options[rk] = [PICK_CHOICE]
+            self.pick_limits[key] = (sel["max"], row_keys)
 
     def listed_numbers(self, kind, data, defined):
         """1つの接頭辞のあとに番号を3つ以上並べた書き方（候補43・41・49）を止める（E-I3）。
@@ -957,9 +962,9 @@ class Validator:
     def select(self, path, sel):
         """一覧から選ぶページの選び方のカードの、行を選ぶ数と推奨の行。形が合えば sel を、誤りがあれば None を返す。
         max は必須の1以上の整数、min は任意の1以上の整数で max 以下、recommend は任意の識別子の並びで max 個まで。"""
+        before = len(self.errors)  # 項目の欠け（E-F3）も形の誤りに数える
         if not self.obj(path, sel, ("max",), ("min", "recommend")):
             return None
-        before = len(self.errors)
         for f in ("max", "min"):
             if f in sel and not (is_int(sel[f]) and sel[f] >= 1):
                 self.add("E-F3", join(path, f), "%s は1以上の整数であるべき所が %s" % (f, json.dumps(sel[f], ensure_ascii=False)))
@@ -1077,6 +1082,11 @@ class Validator:
             for f in ("note", "at"):
                 if f in a and not isinstance(a[f], str):
                     self.add("E-A1", join(ap, f), "%s は文字列であるべき所が%sである" % (f, type_name(a[f])))
+        # 一覧から選ぶ行の答えは、選び方の上限を超えない（別の画面で選んだ行が重なると、ページでは超えうる）。
+        for card_key, (mx, row_keys) in self.pick_limits.items():
+            chosen = [rk for rk in row_keys if isinstance(ans.get(rk), dict) and ans[rk].get("choice") == PICK_CHOICE]
+            if len(chosen) > mx:
+                self.add("E-A1", path, "カード %s の選んだ行が %d つで、選べる数（max %d）を超える" % (card_key, len(chosen), mx))
 
 
 LIST_SEPARATORS = "・、,，"

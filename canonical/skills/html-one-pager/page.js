@@ -58,6 +58,9 @@
 
   var answered = D.status === "answered";
   var mode = answered ? "answered" : "connecting"; // connecting | ready | unavailable | answered
+  // 保存先の答えを一度読み終えたか。読み終えるまで、一覧の行のチェックは押せない（別の画面で選んだ行が
+  // 遅れて届き、上限を超えて選べてしまうのを防ぐ）。保存できない表示では待たない。
+  var synced = false;
   var col = null;
   var rev = table();    // key -> {choice, note}: 手元で変えた回数
   var saved = table();  // key -> {choice, note}: 保存できた回数
@@ -134,6 +137,7 @@
       if (st) { st.textContent = fill(L["status.awaiting"], { n: open }); }
     }
     // 一覧から選ぶ行: チェックの状態・上限に達したら選んでいない行を押せなくする・選んだ行の文。
+    var waiting = !answered && mode !== "unavailable" && !synced;
     picks.forEach(function (p) {
       var ids = chosenIds(p);
       var full = ids.length >= p.max;
@@ -142,10 +146,16 @@
         if (!box) { return; }
         var on = state[r.key].choice === "pick";
         box.checked = on;
-        box.disabled = answered || (full && !on);
+        box.disabled = answered || waiting || (full && !on);
       });
+      // 別の画面で選んだ行が届いて上限を超えたときは、外すよう知らせる（ここでは外さない）。
+      var over = ids.length - p.max;
       var chosen = $("hp-select-chosen-" + p.card);
-      if (chosen) { chosen.textContent = fill(L["text.select_chosen"], { n: ids.length, rows: rowsText(ids) }); }
+      if (chosen) {
+        chosen.textContent = fill(L["text.select_chosen"], { n: ids.length, rows: rowsText(ids) }) +
+          (over > 0 ? " " + fill(L["text.select_over"], { n: over }) : "");
+        chosen.className = "hp-select-chosen" + (over > 0 ? " is-bad" : "");
+      }
     });
     if (!answered) {
       (D.groups || []).forEach(function (g) {
@@ -253,6 +263,7 @@
         if (!isDirty(key, "note") && !(ta && document.activeElement === ta)) { s.note = v.note; }
       }
     });
+    synced = true;
     paint();
   }
 
@@ -261,6 +272,7 @@
     mode = "unavailable";
     setStore(L["text.store_unavailable"], true);
     showReply();
+    paint();
   }
   function connect() {
     var claude = window.claude;
