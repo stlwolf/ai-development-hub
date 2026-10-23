@@ -1,6 +1,7 @@
 /* html-one-pager: 答えの保存・保存できないときの返答の文・回答待ちの件数を受け持つ。
    画面の文字は textContent と value だけで書き、innerHTML を使わない。
-   保存の形は collection "decisions" の、doc id がカードの key の文書 {key, choice, note, at}。 */
+   保存の形は collection "decisions" の、doc id がカードの key の文書 {key, choice, note, at}。
+   一覧から選ぶページの行の選択も同じ形で、doc id は <カードの key>--<番号の数字>、choice は "pick" か null。 */
 (function () {
   "use strict";
   var dataEl = document.getElementById("hp-data");
@@ -16,6 +17,15 @@
   function own(obj, key) { return !!obj && Object.prototype.hasOwnProperty.call(obj, key); }
   var byKey = table();
   cards.forEach(function (c) { byKey[c.key] = c; });
+  // 一覧から選ぶページの行。選択肢が1つ（"pick"）のカードとして同じ保存の仕組みに載せ、回答待ちの件数には数えない。
+  var picks = D.picks || [];
+  var rowKeys = [];
+  picks.forEach(function (p) {
+    p.rows.forEach(function (r) {
+      byKey[r.key] = { key: r.key, options: [{ key: "pick", label: L["text.pick"] }] };
+      rowKeys.push(r.key);
+    });
+  });
 
   function $(id) { return document.getElementById(id); }
   function fill(template, values) {
@@ -32,13 +42,19 @@
   }
 
   var state = table();
-  cards.forEach(function (c) {
+  cards.concat(rowKeys.map(function (k) { return byKey[k]; })).forEach(function (c) {
     var a = own(D.answers, c.key) ? D.answers[c.key] : null;
     state[c.key] = {
       choice: a && typeof a.choice === "string" ? a.choice : null,
       note: a && typeof a.note === "string" ? a.note : ""
     };
   });
+  function chosenIds(p) {
+    return p.rows.filter(function (r) { return state[r.key].choice === "pick"; }).map(function (r) { return r.id; });
+  }
+  function rowsText(ids) {
+    return ids.length ? ids.join("、") : L["text.select_none"];
+  }
 
   var answered = D.status === "answered";
   var mode = answered ? "answered" : "connecting"; // connecting | ready | unavailable | answered
@@ -81,6 +97,9 @@
       if (s.note && s.note.trim()) {
         lines.push("  " + fill(L["text.reply_note"], { note: s.note.replace(/\r?\n/g, "\n    ") }));
       }
+      picks.forEach(function (p) {
+        if (p.card === c.key) { lines.push("  " + fill(L["text.reply_rows"], { rows: rowsText(chosenIds(p)) })); }
+      });
     });
     return lines.join("\n");
   }
@@ -114,6 +133,20 @@
       var st = $("hp-status");
       if (st) { st.textContent = fill(L["status.awaiting"], { n: open }); }
     }
+    // 一覧から選ぶ行: チェックの状態・上限に達したら選んでいない行を押せなくする・選んだ行の文。
+    picks.forEach(function (p) {
+      var ids = chosenIds(p);
+      var full = ids.length >= p.max;
+      p.rows.forEach(function (r) {
+        var box = $("hp-pick-" + r.key);
+        if (!box) { return; }
+        var on = state[r.key].choice === "pick";
+        box.checked = on;
+        box.disabled = answered || (full && !on);
+      });
+      var chosen = $("hp-select-chosen-" + p.card);
+      if (chosen) { chosen.textContent = fill(L["text.select_chosen"], { n: ids.length, rows: rowsText(ids) }); }
+    });
     if (!answered) {
       (D.groups || []).forEach(function (g) {
         var el = $("hp-group-status-" + g.id);
@@ -170,10 +203,19 @@
   }
   function flush() {
     cards.forEach(function (c) { if (dirtyFields(c.key).length) { queue(c.key); } });
+    rowKeys.forEach(function (k) { if (dirtyFields(k).length) { queue(k); } });
   }
 
   function change(key, value) {
     state[key].choice = value;
+    counters(rev, key).choice += 1;
+    paint();
+    if (mode === "ready") { queue(key); } else if (mode === "unavailable") { showReply(); }
+  }
+  function rowChange(p, key, box) {
+    // 上限に達しているのに選ぼうとしたときは、選ばずに戻す（押せない状態にしているので、ふつうは起きない）。
+    if (box.checked && chosenIds(p).length >= p.max) { box.checked = false; return; }
+    state[key].choice = box.checked ? "pick" : null;
     counters(rev, key).choice += 1;
     paint();
     if (mode === "ready") { queue(key); } else if (mode === "unavailable") { showReply(); }
@@ -289,6 +331,12 @@
       ta.addEventListener("input", function () { if (!answered) { noteInput(c.key, ta); } });
       ta.addEventListener("blur", function () { if (!answered) { noteBlur(c.key); } });
     }
+  });
+  picks.forEach(function (p) {
+    p.rows.forEach(function (r) {
+      var box = $("hp-pick-" + r.key);
+      if (box) { box.addEventListener("change", function () { if (!answered) { rowChange(p, r.key, box); } }); }
+    });
   });
   var copy = $("hp-copy");
   if (copy) { copy.addEventListener("click", onCopy); }

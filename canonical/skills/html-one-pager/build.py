@@ -48,6 +48,10 @@ XREPO = r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})#(\d{1,7})"  # 
 ISSUE_TAG_RE = re.compile(r"(?:#\d{1,7}|" + XREPO + r")\Z")
 # レビューのページの「依頼したレビュー」の項目（どれも必須の、空でない文字列）。表に出す順でもある。
 REQUEST_FIELDS = ("target", "type", "via", "focus", "why")
+# 一覧から選ぶページの、行ごとに選ぶ答え。行の答えの key は <選び方のカードの key>--<行の番号の数字> で、
+# choice は選んだら PICK_CHOICE、外したら null（保存の形は判定カードと同じ {key, choice, note, at}）。
+PICK_CHOICE = "pick"
+PICK_KEY_SEP = "--"
 # 前の版で使っていた項目。知らない項目として止め、理由を添える。
 REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
@@ -125,6 +129,13 @@ GLOSSARY_KEYS = {
     "text.req_via": (),
     "text.req_focus": (),
     "text.req_why": (),
+    "text.select_upto": ("max",),
+    "text.select_between": ("min", "max"),
+    "text.select_exact": ("max",),
+    "text.select_chosen": ("n", "rows"),
+    "text.select_none": (),
+    "text.pick": (),
+    "text.reply_rows": ("rows",),
 }
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
@@ -294,6 +305,8 @@ class Validator:
         self.page_links = None
         # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
         self.tables = {}
+        # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None)]
+        self.selects = []
 
     def add(self, code, path, msg):
         self.errors.append((code, path, msg))
@@ -561,6 +574,7 @@ class Validator:
                 elif isinstance(t, str) and t.strip():
                     items.append((join(path, "tag"), t))
             self.numbered(items, self.words[card_key], auto, "問いのカードの札", defined)
+        rows_ok = True
         if row_key:
             items = []
             for i, sec in enumerate(secs):
@@ -575,8 +589,31 @@ class Validator:
                     v = row.get(no[0], "")
                     if isinstance(v, str):
                         items.append(("%s.rows[%d].%s" % (path, r, no[0]), v or None))
+            before = len(self.errors)
             self.numbered(items, self.words[row_key], auto, "番号の列の値", defined)
+            rows_ok = len(self.errors) == before and bool(items)
+        self.pick_rows(kind, row_key, defined, rows_ok)
         return defined
+
+    def pick_rows(self, kind, row_key, defined, rows_ok):
+        """選び方（select）は一覧から選ぶページのカードにだけ置ける。推奨の行はページで定義した番号で、
+        行の答えの key（<カードの key>--<番号の数字>）を、回収した答え（answers）の検査に登録する。
+        行の番号に誤りがあるか、番号の列のある行が無いときは、推奨の行と数を見ない（同じ原因の誤りを重ねない）。"""
+        for path, key, sel in self.selects:
+            if kind != "pick":
+                self.add("E-K2", join(path, "select"), "選び方（select）を置けるのは、一覧から選ぶページの選び方のカードだけである")
+                continue
+            if sel is None or key is None or not rows_ok:
+                continue
+            prefix = self.words[row_key]
+            rows = [ident for ident in defined if ident.startswith(prefix) and ident[len(prefix):].isdigit()]
+            for i, r in enumerate(sel.get("recommend", [])):
+                if r not in rows:
+                    self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" がページの番号の列で定義されていない' % r)
+            if sel.get("min", 0) > len(rows):
+                self.add("E-C6", join(path, "select"), "min（%d）が選べる行の数（%d）を超える" % (sel["min"], len(rows)))
+            for ident in rows:
+                self.card_options[key + PICK_KEY_SEP + ident[len(prefix):]] = [PICK_CHOICE]
 
     def listed_numbers(self, kind, data, defined):
         """1つの接頭辞のあとに番号を3つ以上並べた書き方（候補43・41・49）を止める（E-I3）。
@@ -876,7 +913,7 @@ class Validator:
 
     def card(self, path, c):
         if not self.obj(path, c, ("key", "title", "recommend", "options"),
-                        ("reason", "tag", "points", "blocks", "evidence")):
+                        ("reason", "tag", "points", "blocks", "evidence", "select")):
             return
         key = None
         if "key" in c:
@@ -914,6 +951,37 @@ class Validator:
                 self.add("E-C3", rp, '推奨 "%s" が選択肢（%s）に無い' % (r, ", ".join(option_keys)))
         if key is not None:
             self.card_options[key] = option_keys or []
+        if "select" in c:
+            self.selects.append((path, key, self.select(join(path, "select"), c["select"])))
+
+    def select(self, path, sel):
+        """一覧から選ぶページの選び方のカードの、行を選ぶ数と推奨の行。形が合えば sel を、誤りがあれば None を返す。
+        max は必須の1以上の整数、min は任意の1以上の整数で max 以下、recommend は任意の識別子の並びで max 個まで。"""
+        if not self.obj(path, sel, ("max",), ("min", "recommend")):
+            return None
+        before = len(self.errors)
+        for f in ("max", "min"):
+            if f in sel and not (is_int(sel[f]) and sel[f] >= 1):
+                self.add("E-F3", join(path, f), "%s は1以上の整数であるべき所が %s" % (f, json.dumps(sel[f], ensure_ascii=False)))
+        rec = sel.get("recommend", [])
+        if "recommend" in sel:
+            if not isinstance(rec, list):
+                self.add("E-F3", join(path, "recommend"), "配列であるべき所が%sである" % type_name(rec))
+                rec = []
+            else:
+                for i, r in enumerate(rec):
+                    if not isinstance(r, str) or not r.strip():
+                        self.add("E-F3", "%s.recommend[%d]" % (path, i), "空でない文字列であるべき所が %s" % json.dumps(r, ensure_ascii=False))
+        if len(self.errors) != before:
+            return None
+        mx = sel.get("max")
+        if "min" in sel and mx is not None and sel["min"] > mx:
+            self.add("E-C6", path, "min（%d）が max（%d）より大きい" % (sel["min"], mx))
+        if mx is not None and len(rec) > mx:
+            self.add("E-C6", join(path, "recommend"), "推奨の行が %d つで、選べる数（max %d）を超える" % (len(rec), mx))
+        if len(set(rec)) != len(rec):
+            self.add("E-C6", join(path, "recommend"), "推奨の行が重なる")
+        return sel if len(self.errors) == before else None
 
     def points(self, path, points):
         if not isinstance(points, list):
@@ -1327,6 +1395,20 @@ def assign_numbers(data, words):
     return tags, numbers
 
 
+def pick_info(data, words, numbers):
+    """一覧から選ぶページで、選び方のカードに select があれば、行の選択の情報を返す（無ければ None）。
+    rows は (部品の順, 行の順) -> (行の答えの key, 番号)。"""
+    if data["kind"] != "pick":
+        return None
+    card = next((c for sec in data["sections"] if sec["type"] == "decisions" for c in sec["cards"] if "select" in c), None)
+    if card is None:
+        return None
+    prefix = words[KIND_IDS["pick"][1]]
+    rows = {pos: (card["key"] + PICK_KEY_SEP + num[len(prefix):], num) for pos, num in numbers.items()}
+    sel = card["select"]
+    return {"card": card["key"], "max": sel["max"], "min": sel.get("min"), "recommend": list(sel.get("recommend", [])), "rows": rows}
+
+
 class Renderer:
     def __init__(self, data, labels, now, tmux, words):
         self.data = data
@@ -1342,6 +1424,8 @@ class Renderer:
         self.answers = data.get("answers") or {}
         self.cards = []   # JS に渡すカード
         self.groups = []  # JS に渡す group
+        # 一覧から選ぶページの行の選択（選び方のカードに select があるときだけ）。
+        self.pick = pick_info(data, words, self.numbers)
 
     def chip(self, cls, text):
         return '<span class="hp-chip %s">%s</span>' % (cls, esc(text))
@@ -1483,6 +1567,8 @@ class Renderer:
         for b in c.get("blocks", []):
             h.append('<div class="hp-block"><h%d class="hp-block-title">%s</h%d>%s</div>'
                      % (level + 1, inline(b["title"], refs), level + 1, self.point_list(b["points"], refs)))
+        if self.pick and self.pick["card"] == key:
+            h.append(self.select_line())
         title_attr = esc(c["title"])
         buttons = []
         for o in c["options"]:
@@ -1500,6 +1586,41 @@ class Renderer:
         h.append('<p class="hp-saved" id="hp-saved-%s" aria-live="polite"></p>' % esc(key))
         h.append("</article>")
         return "\n".join(h)
+
+    def select_rule(self):
+        p, L = self.pick, self.L
+        if p["min"] and p["min"] == p["max"]:
+            return fill(L["text.select_exact"], max=p["max"])
+        if p["min"]:
+            return fill(L["text.select_between"], min=p["min"], max=p["max"])
+        return fill(L["text.select_upto"], max=p["max"])
+
+    def chosen_rows(self):
+        """回答済みのページで選ばれている行の番号の並び（回答待ちのページでは空。JS が埋める）。"""
+        if not self.answered:
+            return []
+        return [num for _, (rk, num) in sorted(self.pick["rows"].items())
+                if (self.answers.get(rk) or {}).get("choice") == PICK_CHOICE]
+
+    def select_line(self):
+        """選び方のカードの、選ぶ数と選んだ行の行。選んだ行は JS が書き換える。"""
+        chosen = self.chosen_rows()
+        text = fill(self.L["text.select_chosen"], n=len(chosen),
+                    rows="、".join(chosen) if chosen else self.L["text.select_none"])
+        return ('<p class="hp-select"><span class="hp-select-rule">%s</span>'
+                '<span class="hp-select-chosen" id="hp-select-chosen-%s" aria-live="polite">%s</span></p>'
+                % (esc(self.select_rule()), esc(self.pick["card"]), esc(text)))
+
+    def pick_cell(self, label, si, ri):
+        """番号の列の欄に、行を選ぶチェックを付ける。推奨の行には推奨の札を付ける。"""
+        rk, num = self.pick["rows"][(si, ri)]
+        checked = self.answered and (self.answers.get(rk) or {}).get("choice") == PICK_CHOICE
+        rec = self.chip("hp-chip-rec", self.L["recommend"]) if num in self.pick["recommend"] else ""
+        return ('<td class="hp-no" data-label="%s"><label class="hp-pick">'
+                '<input type="checkbox" class="hp-pick-box" id="hp-pick-%s" aria-label="%s %s"%s%s>'
+                '<span class="hp-pick-id">%s</span></label>%s</td>'
+                % (esc(label), esc(rk), esc(num), esc(self.L["text.pick"]),
+                   " checked" if checked else "", " disabled" if self.answered else "", esc(num), rec))
 
     def point_list(self, points, refs):
         items = []
@@ -1539,7 +1660,9 @@ class Renderer:
             cells = []
             for key, label, kind in cols:
                 v = row.get(key, "")
-                if kind == "no":
+                if kind == "no" and self.pick and (si, ri) in self.pick["rows"]:
+                    cells.append(self.pick_cell(label, si, ri))
+                elif kind == "no":
                     cells.append('<td class="hp-no" data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get((si, ri), v))))
                 elif kind == "ref":
                     items = [v] if isinstance(v, str) else v
@@ -1576,6 +1699,9 @@ def render(data, labels, now, tmux, body=None, words=None):
             "labels": labels,
             "cards": r.cards,
             "groups": r.groups,
+            "picks": ([{"card": r.pick["card"], "max": r.pick["max"], "min": r.pick["min"],
+                        "rows": [{"key": rk, "id": num} for _, (rk, num) in sorted(r.pick["rows"].items())]}]
+                      if r.pick else []),
             "answers": data.get("answers") if r.answered else None,
         }
         scripts = ('<script type="application/json" id="hp-data">%s</script>\n<script>\n%s\n</script>'

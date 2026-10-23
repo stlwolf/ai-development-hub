@@ -70,6 +70,13 @@
 | `text.req_via` | 経由 |
 | `text.req_focus` | 観点 |
 | `text.req_why` | なぜ |
+| `text.select_upto` | 表の行を {max} つまで選ぶ |
+| `text.select_between` | 表の行を {min}〜{max} つ選ぶ |
+| `text.select_exact` | 表の行を {max} つ選ぶ |
+| `text.select_chosen` | 選んだ行（{n}）: {rows} |
+| `text.select_none` | まだ選んでいない |
+| `text.pick` | 選ぶ |
+| `text.reply_rows` | 選んだ行: {rows} |
 
 各 key の意味は次のとおりである。
 
@@ -83,6 +90,7 @@
 - `text.lane` は指摘の一覧の上に出す文で、`{lane}` にはどのモデルの指摘かが入る。
 - `text.col_*` は指摘の一覧の列の見出しである。
 - `text.req_*` は、レビューのページの「依頼したレビュー」の表の見出しと項目名である（対象・種類・経由・観点・なぜ）。
+- `text.select_*` は、一覧から選ぶページの選び方のカードに出る、選ぶ数（`{min}`・`{max}`）と選んだ行（`{n}` は数・`{rows}` は番号の並び）の文である。`text.pick` は行のチェックの名前（読み上げに使う）、`text.reply_rows` は保存できない表示の返答の文に足す選んだ行の文である。
 
 ## 識別子の接頭辞
 

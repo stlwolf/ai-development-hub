@@ -400,6 +400,23 @@ BROKEN = [
     ("h1_request_field_empty", "review", put(["request", "why"], " "), [("E-H1", "request.why")], False),
     ("f3_request_field_missing", "review", drop(["request", "via"]), [("E-F3", "request.via")], False),
     ("f2_request_unknown_field", "review", put(["request", "lane"], "x"), [("E-F2", "request.lane")], False),
+    # 一覧から選ぶ行の選択（select）。選び方のカードにだけ置ける・max は必須・数と推奨の行の誤り
+    ("k2_select_on_approve", "decide", put(CARD0 + ["select"], {"max": 1}), [("E-K2", "sections[0].cards[0].select")], False),
+    ("f3_select_max_missing", "pick", put(["sections", 0, "cards", 0, "select"], {"min": 1}), [("E-F3", "sections[0].cards[0].select.max")], False),
+    ("f3_select_max_true", "pick", put(["sections", 0, "cards", 0, "select", "max"], True), [("E-F3", "sections[0].cards[0].select.max")], False),
+    ("f2_select_unknown_item", "pick", put(["sections", 0, "cards", 0, "select", "count"], 2), [("E-F2", "sections[0].cards[0].select.count")], False),
+    ("c6_select_min_over_max", "pick", put(["sections", 0, "cards", 0, "select", "min"], 3), [("E-C6", "sections[0].cards[0].select")], False),
+    ("c6_select_recommend_over_max", "pick", put(["sections", 0, "cards", 0, "select", "max"], 1),
+     [("E-C6", "sections[0].cards[0].select.recommend")], False),
+    ("c6_select_min_over_rows", "pick", put(["sections", 0, "cards", 0, "select"], {"min": 7, "max": 7}), [("E-C6", "sections[0].cards[0].select")], False),
+    ("i1_select_recommend_undefined", "pick", put(["sections", 0, "cards", 0, "select", "recommend"], ["候補2", "候補9"]),
+     [("E-I1", "sections[0].cards[0].select.recommend[1]")], False),
+    ("a1_pick_row_choice_not_pick", "pick",
+     both(put(["status"], "answered"), put(["answers"], {"pick_tools--2": {"choice": "yes", "note": "", "at": "2026-10-23T09:00:00Z"}})),
+     [("E-A1", "answers.pick_tools--2.choice")], False),
+    ("a1_pick_row_undefined", "pick",
+     both(put(["status"], "answered"), put(["answers"], {"pick_tools--9": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"}})),
+     [("E-A1", "answers.pick_tools--9")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
@@ -481,10 +498,57 @@ for _name, _base, _mutate, _expected, _has_body in BROKEN:
 class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
-                 "E-C5", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
+                 "E-C5", "E-C6", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
                  "E-I3"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
+
+
+class PickRows(unittest.TestCase):
+    """一覧から選ぶページの、行ごとに選ぶ答え。番号の欄にチェックが付き、選び方のカードに選ぶ数と選んだ行が出る。"""
+
+    def test_rows_get_a_checkbox_and_recommended_rows_a_chip(self):
+        f = render_page("pick")
+        boxes = re.findall(r'<input type="checkbox" class="hp-pick-box" id="hp-pick-([a-z0-9_-]+)" aria-label="([^"]*)"( checked)?( disabled)?>', f)
+        self.assertEqual([b[0] for b in boxes], ["pick_tools--%d" % i for i in range(1, 7)])
+        self.assertEqual(boxes[1][1], "候補2 選ぶ")
+        self.assertTrue(all(not b[2] and not b[3] for b in boxes))
+        for n in (2, 5):
+            self.assertRegex(f, r'<span class="hp-pick-id">候補%d</span></label><span class="hp-chip hp-chip-rec">推奨</span>' % n)
+        self.assertNotRegex(f, r'<span class="hp-pick-id">候補1</span></label><span class="hp-chip')
+
+    def test_select_line_shows_the_rule_and_the_chosen_rows(self):
+        f = render_page("pick")
+        self.assertIn('<span class="hp-select-rule">表の行を 2 つまで選ぶ</span>', f)
+        self.assertIn('id="hp-select-chosen-pick_tools" aria-live="polite">選んだ行（0）: まだ選んでいない</span>', f)
+        between = render_page("pick", put(["sections", 0, "cards", 0, "select", "min"], 1))
+        self.assertIn("表の行を 1〜2 つ選ぶ", between)
+        exact = render_page("pick", put(["sections", 0, "cards", 0, "select", "min"], 2))
+        self.assertIn("表の行を 2 つ選ぶ", exact)
+
+    def test_embedded_data_lists_the_rows(self):
+        picks = json.loads(embedded(render_page("pick")))["picks"]
+        self.assertEqual(picks[0]["card"], "pick_tools")
+        self.assertEqual(picks[0]["max"], 2)
+        self.assertEqual(picks[0]["rows"][4], {"key": "pick_tools--5", "id": "候補5"})
+        # 回答待ちの件数に数えるカードは、選び方のカード1枚だけ
+        self.assertEqual([c["key"] for c in json.loads(embedded(render_page("pick")))["cards"]], ["pick_tools"])
+        self.assertEqual(dict(meta_of(render_page("pick")))["状態"], "回答待ち 1 件")
+
+    def test_answered_page_shows_the_chosen_rows_locked(self):
+        answers = {"pick_tools": {"choice": "chosen", "note": "", "at": "2026-10-23T09:00:00Z"},
+                   "pick_tools--2": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:01Z"},
+                   "pick_tools--4": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:02Z"},
+                   "pick_tools--5": {"choice": None, "note": "", "at": "2026-10-23T09:00:03Z"}}
+        f = render_page("pick", both(put(["status"], "answered"), put(["answers"], answers)))
+        checked = re.findall(r'id="hp-pick-([a-z0-9_-]+)"[^>]* checked disabled>', f)
+        self.assertEqual(checked, ["pick_tools--2", "pick_tools--4"])
+        self.assertEqual(len(re.findall(r'class="hp-pick-box"[^>]* disabled>', f)), 6)
+        self.assertIn("選んだ行（2）: 候補2、候補4", f)
+
+    def test_pages_without_select_have_no_checkboxes(self):
+        self.assertNotIn("hp-pick-box", main_of(render_page("pick", drop(["sections", 0, "cards", 0, "select"]))))
+        self.assertNotIn("hp-pick-box", main_of(render_page("table")))
 
 
 class ReviewRequest(unittest.TestCase):
@@ -515,7 +579,8 @@ class Identifiers(unittest.TestCase):
         return re.findall(r'<span class="hp-tag">(.*?)</span>', f)
 
     def numbers(self, f):
-        return [html.unescape(re.sub(r"<[^>]+>", "", v)) for v in re.findall(r'<td class="hp-no" data-label="番号">(.*?)</td>', f)]
+        cells = re.findall(r'<td class="hp-no" data-label="番号">(.*?)</td>', f)
+        return [html.unescape(re.sub(r"<[^>]+>", "", re.sub(r'<span class="hp-chip[^"]*">.*?</span>', "", v))) for v in cells]
 
     def test_question_cards_are_numbered_in_order(self):
         self.assertEqual(self.tags(render_page("decide")), ["Q1", "Q2", "Q3"])
@@ -1203,8 +1268,9 @@ class SkillMdExamples(unittest.TestCase):
                     d = example("table")
                     d["sections"] = [obj]
                 elif "options" in obj:
-                    # 塊（blocks）を持つカードは認識合わせの見本に、ほかは承認の見本に入れる（例の形に合った種別）
-                    d = example("confirm" if "blocks" in obj else "decide")
+                    # 塊（blocks）を持つカードは認識合わせの見本に、選び方（select）を持つカードは一覧から選ぶ見本に、
+                    # ほかは承認の見本に入れる（例の形に合った種別）
+                    d = example("confirm" if "blocks" in obj else "pick" if "select" in obj else "decide")
                     d["sections"][0]["cards"] = [obj]
                 elif "repo" in obj:
                     d = example("table")
