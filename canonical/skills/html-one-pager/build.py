@@ -46,6 +46,8 @@ KIND_IDS = {"approve": ("prefix.question", None, True),
 XREPO = r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})#(\d{1,7})"  # 括弧は3つの組だけ（本文の変換では組を外して使う）
 # 認識合わせのカードの札は、確かめる対象の issue の形（#N・owner/repo#N）だけを受け付ける。
 ISSUE_TAG_RE = re.compile(r"(?:#\d{1,7}|" + XREPO + r")\Z")
+# レビューのページの「依頼したレビュー」の項目（どれも必須の、空でない文字列）。表に出す順でもある。
+REQUEST_FIELDS = ("target", "type", "via", "focus", "why")
 # 前の版で使っていた項目。知らない項目として止め、理由を添える。
 REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
@@ -117,6 +119,12 @@ GLOSSARY_KEYS = {
     "text.col_severity": (),
     "text.col_adopted": (),
     "text.col_reason": (),
+    "text.req_title": (),
+    "text.req_target": (),
+    "text.req_type": (),
+    "text.req_via": (),
+    "text.req_focus": (),
+    "text.req_why": (),
 }
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
@@ -356,7 +364,7 @@ class Validator:
             self.add("E-F1", "format", "format は %d であるべき所が %s" % (FORMAT_VERSION, shown))
             return
         self.obj("$", data, ("format", "title", "kind", "status", "why", "source", "sections"),
-                 ("links", "answers"), replaced=REPLACED_FIELDS)
+                 ("links", "answers", "request"), replaced=REPLACED_FIELDS)
         if "title" in data:
             self.text("title", data["title"], "E-H1")
         if "why" in data:
@@ -366,6 +374,14 @@ class Validator:
             kind = data["kind"]
         if "status" in data:
             self.enum("status", data["status"], STATUSES, "E-H3")
+        # 依頼したレビューの情報は、レビューのページでは必須、ほかの種別では置けない。
+        if "request" in data:
+            if kind is not None and kind != "review":
+                self.add("E-K2", "request", "request（依頼したレビュー）を置けるのはレビューのページだけである")
+            else:
+                self.request("request", data["request"])
+        elif kind == "review":
+            self.add("E-K1", "request", "レビューのページには、依頼したレビューの情報（request: %s）が要る" % "・".join(REQUEST_FIELDS))
         if "source" in data:
             before = len(self.errors)
             self.source("source", data["source"])
@@ -627,6 +643,13 @@ class Validator:
                 self.add("E-K3", paths[i], "表は判定カードの節のあとに置く（いま決めることを上に置く）")
         if not dec and self.has_number_table(tab, paths) is False:
             self.add("E-K1", "sections", "手番の1枚のページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
+
+    def request(self, path, req):
+        if not self.obj(path, req, REQUEST_FIELDS):
+            return
+        for f in REQUEST_FIELDS:
+            if f in req:
+                self.text(join(path, f), req[f], "E-H1")
 
     def source(self, path, s):
         if not self.obj(path, s, ("repo",), ("repo_url", "issue", "branch", "tmux", "trackers")):
@@ -1010,6 +1033,9 @@ def display_texts(data):
     if not isinstance(data, dict):
         return out
     add("why", data.get("why"))
+    if isinstance(data.get("request"), dict):
+        for f in REQUEST_FIELDS:
+            add(join("request", f), data["request"].get(f))
     secs = data.get("sections")
     for i, sec in enumerate(secs if isinstance(secs, list) else []):
         if not isinstance(sec, dict):
@@ -1361,6 +1387,12 @@ class Renderer:
             items = "".join("<li>%s</li>" % link(ln["url"], ln["label"]) for ln in d["links"])
             h.append('<nav class="hp-links" aria-label="%s"><p class="hp-lbl">%s</p><ul>%s</ul></nav>'
                      % (esc(self.L["text.links"]), esc(self.L["text.links"]), items))
+        # レビューのページの依頼したレビュー。指摘の一覧の前に、ヘッダーと同じ項目名と値の表で出す。
+        if d.get("request"):
+            req = d["request"]
+            rows = [(self.L["text.req_" + f], inline(req[f], self.page_refs)) for f in REQUEST_FIELDS]
+            h.append('<section class="hp-request"><p class="hp-lbl">%s</p>%s</section>'
+                     % (esc(self.L["text.req_title"]), meta_table(rows)))
         h.append("</header>")
         return "\n".join(h)
 

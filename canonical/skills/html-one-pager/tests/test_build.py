@@ -127,6 +127,7 @@ CONFIRM_CARD = {"key": "extra_card", "title": "足したカード", "recommend":
                 "blocks": [{"title": "やること", "points": ["中身"]}],
                 "options": [{"key": "ok", "label": "この内容で確定"}, {"key": "fix", "label": "直してほしい"}]}
 CONFIRM_SEC = {"type": "decisions", "title": "足した節", "cards": [CONFIRM_CARD]}
+REQUEST = {"target": "PR #215", "type": "実装のレビュー", "via": "Copilot", "focus": "再試行", "why": "マージの前に見たい"}
 BUNDLE_SEC = {"type": "bundle", "title": "束", "groups": [{"source": {"repo": "billing"}, "title": "作業",
                                                           "cards": [dict(CONFIRM_CARD, key="bundle_card")]}]}
 
@@ -393,6 +394,12 @@ BROKEN = [
     # 判定カードが無ければ、番号の列を持つ表（決まったこと）が要る
     ("k1_board_without_cards_or_decided_table", "board", lambda d: d["sections"].__delitem__(slice(0, 3)),
      [("E-K1", "sections")], False),
+    # レビューのページの依頼したレビュー（request）。レビューでは必須、ほかの種別では置けない
+    ("k1_review_without_request", "review", drop(["request"]), [("E-K1", "request")], False),
+    ("k2_request_on_approve", "decide", put(["request"], REQUEST), [("E-K2", "request")], False),
+    ("h1_request_field_empty", "review", put(["request", "why"], " "), [("E-H1", "request.why")], False),
+    ("f3_request_field_missing", "review", drop(["request", "via"]), [("E-F3", "request.via")], False),
+    ("f2_request_unknown_field", "review", put(["request", "lane"], "x"), [("E-F2", "request.lane")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
     # 独立した誤り2つは2件とも出る
@@ -478,6 +485,27 @@ class EveryRuleIsCovered(unittest.TestCase):
                  "E-I3"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
+
+
+class ReviewRequest(unittest.TestCase):
+    """レビューのページの依頼したレビュー。ヘッダーの最後（指摘の一覧の前）に、項目名と値の表で出る。"""
+
+    def test_request_table_comes_before_findings(self):
+        f = render_page("review")
+        self.assertLess(f.index('<section class="hp-request">'), f.index('class="hp-sec hp-findings"'))
+        self.assertLess(f.index('class="hp-links"'), f.index('<section class="hp-request">'))
+        rows = meta_of(f, 1)
+        self.assertEqual([k for k, _ in rows], ["対象", "種類", "経由", "観点", "なぜ"])
+        self.assertIn('<p class="hp-lbl">依頼したレビュー</p>', f)
+
+    def test_request_values_use_the_same_conversion(self):
+        self.assertIn(a_tag("https://github.com/example-org/shop/pull/215", "PR #215") + " の差分（決済の再試行）", render_page("review"))
+
+    def test_request_strings_stay_text(self):
+        a, b, c = ATTACKS
+        f = render_page("review", both(put(["request", "via"], b), put(["request", "focus"], c + " " + a)))
+        self.assertNotIn("<img src=x", f)
+        self.assertNotIn("<script>alert(1)", f)
 
 
 class Identifiers(unittest.TestCase):
@@ -1167,7 +1195,11 @@ class SkillMdExamples(unittest.TestCase):
         for i, text in enumerate(blocks):
             with self.subTest(block=i, head=text[:40]):
                 obj = json.loads(text)
-                if "type" in obj:
+                # 依頼したレビュー（request）は type の項目を持つので、部品の例より先に見分ける
+                if "via" in obj:
+                    d = example("review")
+                    d["request"] = obj
+                elif "type" in obj:
                     d = example("table")
                     d["sections"] = [obj]
                 elif "options" in obj:
@@ -1207,6 +1239,8 @@ class PrefixWordsAcrossTheFolder(unittest.TestCase):
         with open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8") as fh:
             for text in re.findall(r"^```json\n(.*?)^```", fh.read(), re.S | re.M):
                 obj = json.loads(text)
+                if "via" in obj:
+                    continue  # 依頼したレビューの例は札も番号も持たない
                 pages.append({"sections": [obj] if "type" in obj else [{"cards": [obj]}] if "options" in obj else []})
         found = [v for page in pages for v in self.values(page)]
         self.assertTrue(found)

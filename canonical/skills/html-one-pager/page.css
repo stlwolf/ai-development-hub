@@ -147,6 +147,7 @@ code {
   max-width: 68ch;
 }
 .hp-why p { margin: 0; }
+.hp-request { display: grid; gap: 6px; min-width: 0; }
 .hp-links ul {
   list-style: none;
   margin: 2px 0 0;

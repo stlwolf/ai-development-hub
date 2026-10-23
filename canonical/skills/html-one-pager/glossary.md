@@ -64,6 +64,12 @@
 | `text.col_severity` | 重さ |
 | `text.col_adopted` | 採否 |
 | `text.col_reason` | 理由 |
+| `text.req_title` | 依頼したレビュー |
+| `text.req_target` | 対象 |
+| `text.req_type` | 種類 |
+| `text.req_via` | 経由 |
+| `text.req_focus` | 観点 |
+| `text.req_why` | なぜ |
 
 各 key の意味は次のとおりである。
 
@@ -76,6 +82,7 @@
 - `text.reply_*` と `text.copy*` は、保存できない表示で出す返答の文と、そのコピーのボタンの文である。`text.reply_heading` の `{title}` にはページのタイトルが、`{time}` には版の時刻が入る。
 - `text.lane` は指摘の一覧の上に出す文で、`{lane}` にはどのモデルの指摘かが入る。
 - `text.col_*` は指摘の一覧の列の見出しである。
+- `text.req_*` は、レビューのページの「依頼したレビュー」の表の見出しと項目名である（対象・種類・経由・観点・なぜ）。
 
 ## 識別子の接頭辞
 
