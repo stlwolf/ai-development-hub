@@ -81,7 +81,8 @@ body {
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.7;
-  max-width: 900px;
+  /* 大きな画面（27インチなど）では表とカードの並びを広く使う。段落と目的の文は 68ch で止めている */
+  max-width: 1200px;
   margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
