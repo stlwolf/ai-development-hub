@@ -88,7 +88,7 @@
 |---|---|
 | `prefix.question` | Q |
 | `prefix.candidate` | 候補 |
-| `prefix.item` | 項目 |
+| `prefix.item` | ID |
 | `tag.approval` | 承認 |
 
 各 key の意味は次のとおりである。

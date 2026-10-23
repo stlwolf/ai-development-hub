@@ -1508,7 +1508,7 @@ class Renderer:
             for key, label, kind in cols:
                 v = row.get(key, "")
                 if kind == "no":
-                    cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get((si, ri), v))))
+                    cells.append('<td class="hp-no" data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get((si, ri), v))))
                 elif kind == "ref":
                     items = [v] if isinstance(v, str) else v
                     body = ('<span class="hp-refs">%s</span>' % "".join(refs.ref_link(r) for r in items)) if items else ""

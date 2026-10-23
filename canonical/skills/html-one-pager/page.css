@@ -303,6 +303,8 @@ code {
 }
 .hp-table th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .hp-table td .hp-chip { margin-left: 0; }
+/* 番号の列の値（候補4・ID2・Q3）は折り返さない */
+.hp-table td.hp-no { white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* 表の部品の識別子の列: 識別子ごとに折り返さず、識別子のあいだで折り返す */
 .hp-refs { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .hp-refs a { white-space: nowrap; }

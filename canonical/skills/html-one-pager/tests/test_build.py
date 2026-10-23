@@ -373,7 +373,7 @@ BROKEN = [
     # 番号の列の値は接頭辞の形で、書いたものと書かないものを混ぜない
     ("i1_pick_number_from_another_prefix", "pick", put(["sections", 2, "rows", 0, "no"], "A1"), [("E-I1", "sections[2].rows[0].no")], False),
     ("i1_pick_numbers_mixed", "pick", put(["sections", 2, "rows", 0, "no"], "候補1"), [("E-I1", "sections[2].rows[1].no")], False),
-    ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "項目1"), [("E-I2", "sections[0].rows[1].no")], False),
+    ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "ID1"), [("E-I2", "sections[0].rows[1].no")], False),
     # 番号を並べる書き方（E-I3）。3つ以上並び、並んだ番号がすべて定義されているときだけ止める
     ("i3_pick_listed_numbers", "pick", put(["sections", 1, "rows", 0, "cands"], "候補1・2・3"),
      [("E-I3", "sections[1].rows[0].cands")], False),
@@ -487,7 +487,7 @@ class Identifiers(unittest.TestCase):
         return re.findall(r'<span class="hp-tag">(.*?)</span>', f)
 
     def numbers(self, f):
-        return [html.unescape(v) for v in re.findall(r'<td data-label="番号">(.*?)</td>', f)]
+        return [html.unescape(re.sub(r"<[^>]+>", "", v)) for v in re.findall(r'<td class="hp-no" data-label="番号">(.*?)</td>', f)]
 
     def test_question_cards_are_numbered_in_order(self):
         self.assertEqual(self.tags(render_page("decide")), ["Q1", "Q2", "Q3"])
@@ -504,7 +504,7 @@ class Identifiers(unittest.TestCase):
         self.assertEqual(self.numbers(render_page("pick")), ["候補%d" % i for i in range(1, 7)])
 
     def test_written_numbers_are_kept(self):
-        self.assertEqual(self.numbers(render_page("table")), ["項目1", "項目2", "項目3"])
+        self.assertEqual(self.numbers(render_page("table")), ["ID1", "ID2", "ID3"])
 
     def test_board_keeps_written_numbers_and_links_to_decided_rows(self):
         f = render_page("board")
@@ -711,10 +711,10 @@ class LoadStage(unittest.TestCase):
 
     def test_words_broken_exit_2(self):
         cases = [
-            ("| `prefix.item` | 項目 |\n", "", 'key "prefix.item" が無い'),
-            ("| `prefix.item` | 項目 |", "| `prefix.item` | 項目- |", '語 "項目-" が文字だけからなっていない'),
-            ("| `prefix.item` | 項目 |", "| `prefix.item` | A1 |", '語 "A1" が文字だけからなっていない'),
-            ("| `prefix.item` | 項目 |", "| `prefix.item` | QA |", '"QA"'),
+            ("| `prefix.item` | ID |\n", "", 'key "prefix.item" が無い'),
+            ("| `prefix.item` | ID |", "| `prefix.item` | ID- |", '語 "ID-" が文字だけからなっていない'),
+            ("| `prefix.item` | ID |", "| `prefix.item` | A1 |", '語 "A1" が文字だけからなっていない'),
+            ("| `prefix.item` | ID |", "| `prefix.item` | QA |", '"QA"'),
             ("| `tag.approval` | 承認 |", "| `tag.approval` | 承認 |\n| `prefix.other` | 他 |", '知らない key "prefix.other" がある'),
         ]
         for old, new, expected in cases:
