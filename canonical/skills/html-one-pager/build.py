@@ -35,7 +35,7 @@ ROW_NUMBER_KINDS = ("pick", "map", "board")
 BODY_KINDS = ("approve", "map", "bundle", "review")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
-# 手番の1枚（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
+# 判断ボード（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
 # 番号は必ず書かせる（位置で振ると、カードを移すたびに残りの番号がずれ、本文の参照が別の問いを指す）。
 KIND_IDS = {"approve": ("prefix.question", None, True),
             "pick": (None, "prefix.candidate", True),
@@ -670,7 +670,7 @@ class Validator:
                 defined[v] = path
 
     def kind_board(self, types, paths, secs):
-        """手番の1枚: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無ければ
+        """判断ボード: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無ければ
         （決まったカードをすべて表へ移したページ）、番号の列を持つ表（決まったこと）が1つ以上要る。"""
         allowed = self.kind_allowed("board", types, paths, ("decisions", "table"))
         dec = [i for i in allowed if types[i] == "decisions"]
@@ -679,7 +679,7 @@ class Validator:
             if dec and i < dec[-1]:
                 self.add("E-K3", paths[i], "表は判定カードの節のあとに置く（いま決めることを上に置く）")
         if not dec and self.has_number_table(tab, paths) is False:
-            self.add("E-K1", "sections", "手番の1枚のページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
+            self.add("E-K1", "sections", "判断ボードのページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
 
     def request(self, path, req):
         if not self.obj(path, req, REQUEST_FIELDS):

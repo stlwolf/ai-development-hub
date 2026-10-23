@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "title": "決済の障害の手番の一覧",
+  "title": "決済の障害の対応の一覧",
   "kind": "map",
   "status": "live",
-  "why": "決済が二重に走った障害（#212）のあと、直しと振り返りの手番が5つに分かれたので、どこまで進んだかを1枚で見られるようにする。",
+  "why": "決済が二重に走った障害（#212）のあと、直しと振り返りの対応が5つに分かれたので、どこまで進んだかを1枚で見られるようにする。",
   "source": {
     "repo": "shop",
     "repo_url": "https://github.com/example-org/shop",
@@ -18,7 +18,7 @@
   "sections": [
     {
       "type": "table",
-      "title": "手番",
+      "title": "対応",
       "columns": [
         {"key": "no", "label": "番号", "type": "no"},
         {"key": "refs", "label": "issue / PR", "type": "ref"},

@@ -384,7 +384,7 @@ BROKEN = [
      [("E-I3", "sections[0].cards[0].points[0]")], False),
     # URL は句点で終わる（描くときと同じ範囲）ので、句点のすぐあとの並べる書き方も見る
     ("i3_listed_numbers_right_after_a_url", "decide", put(["why"], "https://x.example。Q1・2・3 を見る"), [("E-I3", "why")], False),
-    # 手番の1枚: カードの札と番号の列の値（決まったこと）は Q<数字> を必ず書く。表は判定カードの節のあと
+    # 判断ボード: カードの札と番号の列の値（決まったこと）は Q<数字> を必ず書く。表は判定カードの節のあと
     ("i1_board_tag_missing", "board", drop(CARD0 + ["tag"]), [("E-I1", "sections[0].cards[0].tag")], False),
     ("i1_board_number_missing", "board", drop(["sections", 2, "rows", 0, "no"]), [("E-I1", "sections[2].rows[0].no")], False),
     ("i2_board_card_and_row_share_a_number", "board", put(CARD0 + ["tag"], "Q1"), [("E-I2", "sections[2].rows[0].no")], False),
