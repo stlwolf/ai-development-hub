@@ -242,8 +242,8 @@ def _braces(names):
 
 def load_words(path):
     """用語集の「識別子の接頭辞」の表を読み、key から語への辞書を返す。
-    語は文字（英字・漢字・かな）だけからなり、互いに重ならず、どれもほかの語の頭に当たらない。
-    記号と数字を許さないので、ページの中の識別子（Q2）は外部の課題管理の ID（OPS-41）・#N・PR #N と同じ文字列にならない。"""
+    語は文字（英字・漢字・かな）だけからなり（末尾にだけ「:」を1つ置ける・ID:1 の形）、互いに重ならず、どれもほかの語の頭に当たらない。
+    ほかの記号と数字を許さないので、ページの中の識別子（Q2・ID:1）は外部の課題管理の ID（OPS-41）・#N・PR #N と同じ文字列にならない。"""
     words, problems = _glossary_table(path, WORDS_SECTION)
     for key in words:
         if key not in WORD_KEYS:
@@ -251,8 +251,8 @@ def load_words(path):
     for key in WORD_KEYS:
         if key not in words:
             problems.append('key "%s" が無い' % key)
-        elif not words[key] or not words[key].isalpha():
-            problems.append('key "%s" の語 "%s" が文字だけからなっていない（数字・空白・記号を含めない）' % (key, words[key]))
+        elif not words[key].rstrip(":") or not words[key][:-1 if words[key].endswith(":") else None].isalpha():
+            problems.append('key "%s" の語 "%s" が文字だけからなっていない（数字・空白・記号を含めない。末尾の「:」だけは1つ置ける）' % (key, words[key]))
     found = [(k, words[k]) for k in WORD_KEYS if words.get(k)]
     for i, (ka, a) in enumerate(found):
         for kb, b in found[i + 1:]:

@@ -28,21 +28,21 @@
       ],
       "rows": [
         {
-          "no": "ID1",
+          "no": "ID:1",
           "refs": ["#212", "PR #215"],
           "tracker": "OPS-41",
           "what": {"text": "再試行に冪等キーを付けて3回までにする。`charge` の呼び直しを止める。", "evidence": "verified"},
           "result": "マージ済み"
         },
         {
-          "no": "ID2",
+          "no": "ID:2",
           "refs": ["#216"],
           "tracker": [],
           "what": "タイムアウトの既定値を見直す。値の出どころは https://github.com/example-org/shop/blob/main/config/payment.yml にある。",
           "result": "レビュー中"
         },
         {
-          "no": "ID3",
+          "no": "ID:3",
           "refs": [],
           "tracker": ["OPS-42", "OPS-43"],
           "what": {"text": "障害の振り返りを書く。OPS-41 の記録を元にする。", "evidence": "sourced"},

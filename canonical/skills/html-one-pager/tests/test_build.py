@@ -374,7 +374,7 @@ BROKEN = [
     # 番号の列の値は接頭辞の形で、書いたものと書かないものを混ぜない
     ("i1_pick_number_from_another_prefix", "pick", put(["sections", 2, "rows", 0, "no"], "A1"), [("E-I1", "sections[2].rows[0].no")], False),
     ("i1_pick_numbers_mixed", "pick", put(["sections", 2, "rows", 0, "no"], "候補1"), [("E-I1", "sections[2].rows[1].no")], False),
-    ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "ID1"), [("E-I2", "sections[0].rows[1].no")], False),
+    ("i2_map_number_duplicate", "table", put(["sections", 0, "rows", 1, "no"], "ID:1"), [("E-I2", "sections[0].rows[1].no")], False),
     # 番号を並べる書き方（E-I3）。3つ以上並び、並んだ番号がすべて定義されているときだけ止める
     ("i3_pick_listed_numbers", "pick", put(["sections", 1, "rows", 0, "cands"], "候補1・2・3"),
      [("E-I3", "sections[1].rows[0].cands")], False),
@@ -597,7 +597,7 @@ class Identifiers(unittest.TestCase):
         self.assertEqual(self.numbers(render_page("pick")), ["候補%d" % i for i in range(1, 7)])
 
     def test_written_numbers_are_kept(self):
-        self.assertEqual(self.numbers(render_page("table")), ["ID1", "ID2", "ID3"])
+        self.assertEqual(self.numbers(render_page("table")), ["ID:1", "ID:2", "ID:3"])
 
     def test_board_keeps_written_numbers_and_links_to_decided_rows(self):
         f = render_page("board")
@@ -658,6 +658,11 @@ class Anchors(unittest.TestCase):
         self.assertIn(anchor("hp-row-2-1", "候補2") + "・" + anchor("hp-row-3-1", "候補5"), f)
         self.assertIn('<tr id="hp-row-2-1">', f)
         self.assertIn('<tr id="hp-row-3-1">', f)
+
+    def test_map_ids_with_a_colon_link_to_the_row(self):
+        # 見取り図の番号は ID:1 の形（接頭辞の語の末尾の「:」）。本文の ID:2 はその行へのアンカーになり、ID:21 の中の ID:2 はならない
+        f = render_page("table", put(["sections", 0, "rows", 2, "what", "text"], "ID:2 の続き。ID:21 は無い。"))
+        self.assertIn(anchor("hp-row-0-1", "ID:2") + " の続き。ID:21 は無い。", f)
 
     def test_rows_without_a_number_column_have_no_id(self):
         f = render_page("pick")
@@ -804,10 +809,13 @@ class LoadStage(unittest.TestCase):
 
     def test_words_broken_exit_2(self):
         cases = [
-            ("| `prefix.item` | ID |\n", "", 'key "prefix.item" が無い'),
-            ("| `prefix.item` | ID |", "| `prefix.item` | ID- |", '語 "ID-" が文字だけからなっていない'),
-            ("| `prefix.item` | ID |", "| `prefix.item` | A1 |", '語 "A1" が文字だけからなっていない'),
-            ("| `prefix.item` | ID |", "| `prefix.item` | QA |", '"QA"'),
+            ("| `prefix.item` | ID: |\n", "", 'key "prefix.item" が無い'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | ID- |", '語 "ID-" が文字だけからなっていない'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | I:D |", '語 "I:D" が文字だけからなっていない'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | ID:: |", '語 "ID::" が文字だけからなっていない'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | : |", '語 ":" が文字だけからなっていない'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | A1 |", '語 "A1" が文字だけからなっていない'),
+            ("| `prefix.item` | ID: |", "| `prefix.item` | QA |", '"QA"'),
             ("| `tag.approval` | 承認 |", "| `tag.approval` | 承認 |\n| `prefix.other` | 他 |", '知らない key "prefix.other" がある'),
         ]
         for old, new, expected in cases:
