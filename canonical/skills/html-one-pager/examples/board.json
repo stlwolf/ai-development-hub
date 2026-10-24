@@ -87,7 +87,41 @@
             {"key": "two", "label": "2人", "kind": "go"},
             {"key": "one", "label": "1人", "kind": "warn"}
           ]
+        },
+        {
+          "key": "trial_shops_pick",
+          "tag": "Q7",
+          "title": "切り替えの前日に、どの店舗で試しの決済をするか",
+          "recommend": "chosen",
+          "select": {"max": 2, "tables": ["trial_shops"], "recommend": ["候補1", "候補3"]},
+          "blocks": [
+            {"title": "何を決めるか", "points": [
+              "切り替えの前日に、新しい会社で本物の決済を少しだけ通す店舗を、すぐ下の表から2つまで選ぶ。"
+            ]},
+            {"title": "推奨の中身", "points": [
+              "候補1 と 候補3 で試す。決済の数が多い店舗と、返金の多い店舗を1つずつにする。"
+            ]}
+          ],
+          "options": [
+            {"key": "chosen", "label": "選んだ店舗で試す", "kind": "go"},
+            {"key": "skip", "label": "試さずに切り替える", "kind": "warn"}
+          ]
         }
+      ]
+    },
+    {
+      "type": "table",
+      "key": "trial_shops",
+      "title": "試しの決済をする店舗の候補（Q7 で選ぶ）",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "shop", "label": "店舗"},
+        {"key": "why", "label": "向いている理由"}
+      ],
+      "rows": [
+        {"no": "候補1", "shop": "本店（オンライン）", "why": "1日の決済がいちばん多く、二重の請求が起きればすぐ分かる。"},
+        {"no": "候補2", "shop": "駅前店", "why": "決済は少ないが、店頭の端末も新しい会社に替わる。"},
+        {"no": "候補3", "shop": "アウトレット", "why": "返金が多く、返金の流れを確かめられる。"}
       ]
     },
     {

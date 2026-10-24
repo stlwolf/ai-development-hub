@@ -29,8 +29,10 @@ FORMAT_VERSION = 1
 PAGE_KINDS = ("confirm", "approve", "pick", "map", "bundle", "review", "board")
 KIND_PURPOSE = {"confirm": "decide", "approve": "decide", "pick": "decide", "map": "grasp",
                 "bundle": "decide", "review": "review", "board": "decide"}
-# 表に番号の列（型 no）を置ける種別。
+# 表に番号の列（型 no）を置ける種別。承認と束でも、選び方のカードが名指した表（選ぶ表）には置ける。
 ROW_NUMBER_KINDS = ("pick", "map", "board")
+# 選び方（select）を置ける種別。一覧から選ぶページのほかは、select.tables で選ぶ表を名指す。
+SELECT_KINDS = ("pick", "approve", "bundle", "board")
 # --body の本文を置ける種別。本文は型の上でいつも部品の上に出るので、部品の上にあっても読む順を壊さない種別だけにする。
 BODY_KINDS = ("approve", "map", "bundle", "review")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
@@ -359,8 +361,14 @@ class Validator:
         self.page_links = None
         # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
         self.tables = {}
-        # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None)]
+        # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None, 書いた select)]
         self.selects = []
+        # 表の key -> 表の場所（ページの表と束の group の表。重なりは E-S3）
+        self.table_keys = {}
+        # 選び方のカードが名指した表（選ぶ表）の場所 -> 名指したカードの場所
+        self.named = {}
+        # 選び方のカードの場所 -> 選ぶ表の場所の並び（名指しに誤りがあれば None。表に頼る判定を省く）
+        self.select_tables = {}
         # 一覧から選ぶ行: カードの key -> (選べる数の上限, 行の答えの key の並び)。回収した答えの上限の検査に使う。
         self.pick_limits = {}
 
@@ -477,6 +485,9 @@ class Validator:
                         sections_readable = False
                     elif t in ANSWER_SECTION_TYPES:
                         has_answer_part = True
+                # 選び方のカードが名指した表を先に解決する（種別の部品・識別子の判定が、選ぶ表かどうかを使う）。
+                if kind is not None:
+                    self.resolve_selects(kind, secs)
                 # 種別の部品は、種別が決まった値で、部品がどれも読めたときだけ見る。
                 # 部品も本文も無ければ E-S1 だけを出す（同じ原因の誤りを重ねない）。
                 if kind is not None and sections_readable and (secs or self.has_body):
@@ -512,11 +523,33 @@ class Validator:
             if not cols:
                 continue
             nos = [j for j, (_, ct) in enumerate(cols) if ct == "no"]
-            if nos and kind not in ROW_NUMBER_KINDS:
-                self.add("E-K2", "%s.columns[%d]" % (paths[i], nos[0]), "種別 %s の表には番号の列（type no）を置かない" % kind)
+            if nos and kind not in ROW_NUMBER_KINDS and paths[i] not in self.named:
+                hint = "（選ぶ表なら、選び方の tables で名指す）" if kind in SELECT_KINDS else ""
+                self.add("E-K2", "%s.columns[%d]" % (paths[i], nos[0]), "種別 %s の表には番号の列（type no）を置かない%s" % (kind, hint))
             elif len(nos) > 1:
                 self.add("E-K2", "%s.columns[%d]" % (paths[i], nos[1]), "番号の列（type no）は1つの表に1列までにする")
         getattr(self, "kind_" + kind)(types, paths, secs)
+
+    def select_runs(self, types, paths, secs, dec):
+        """承認と判断ボード: 判定カードの節の直後に、その節の選び方のカードが名指した表を、カードの順・tables の順で続けて置く（E-K3）。
+        名指しに誤りのあるカードの表は並びを見ない（E-C7 だけ）。"""
+        for i in dec:
+            cards = secs[i].get("cards") if isinstance(secs[i].get("cards"), list) else []
+            expected = []
+            for j in range(len(cards)):
+                cp = "%s.cards[%d]" % (paths[i], j)
+                expected.extend(self.select_tables.get(cp) or [])
+            got = paths[i + 1:i + 1 + len(expected)]
+            for want, have in zip(expected, got + [None] * (len(expected) - len(got))):
+                if want != have:
+                    self.add("E-K3", want, "選ぶ表は、選び方のカードのある判定カードの節（%s）の直後に、カードの順・tables の順で続けて置く" % paths[i])
+                    break
+
+    def unnamed_tables_after_cards(self, types, paths, allowed, dec, msg):
+        """選ぶ表でない表は、最後の判定カードの節のあとに置く（E-K3）。"""
+        for i in allowed:
+            if types[i] == "table" and paths[i] not in self.named and dec and i < dec[-1]:
+                self.add("E-K3", paths[i], msg)
 
     def kind_allowed(self, kind, types, paths, allowed):
         """置けない部品を止め、置ける部品の位置の並びを返す（並びの判定は置ける部品だけで行い、誤りを重ねない）。"""
@@ -559,9 +592,8 @@ class Validator:
         if not dec:
             self.add("E-K1", "sections", "承認のページには判定カードの節（decisions）が1つ以上要る")
             return
-        for i in allowed:
-            if types[i] == "table" and i < dec[-1]:
-                self.add("E-K3", paths[i], "表は判定カードの節のあとに置く")
+        self.unnamed_tables_after_cards(types, paths, allowed, dec, "表は判定カードの節のあとに置く")
+        self.select_runs(types, paths, secs, dec)
 
     def kind_pick(self, types, paths, secs):
         allowed = self.kind_allowed("pick", types, paths, ("decisions", "table"))
@@ -631,14 +663,25 @@ class Validator:
                 elif isinstance(t, str) and t.strip():
                     items.append((join(path, "tag"), t))
             self.numbered(items, self.words[card_key], auto, "問いのカードの札", defined)
-        rows_ok = True
-        if row_key:
+        # 番号の列の値。種別と、選ぶ表かどうかで接頭辞と振り方が決まる（一覧から選ぶページと見取り図は今のとおり、
+        # 承認・束・判断ボードの選ぶ表は候補で必ず書く、判断ボードの選ぶ表でない表は Q で必ず書く）。
+        cand = self.words["prefix.candidate"]
+        groups = []  # (表の場所の並び, 接頭辞, 振るか)
+        number_tables = [p for p, _ in self.all_tables(secs) if any(ct == "no" for _, ct in (self.tables.get(p) or []))]
+        if row_key and kind in ("pick", "map"):
+            groups.append(([p for p in number_tables if "groups[" not in p], self.words[row_key], auto))
+        elif kind == "board":
+            groups.append(([p for p in number_tables if p not in self.named], self.words[row_key], False))
+            groups.append(([p for p in number_tables if p in self.named], cand, False))
+        elif kind in ("approve", "bundle"):
+            groups.append(([p for p in number_tables if p in self.named], cand, False))
+        secs_by_path = dict(self.all_tables(secs))
+        for tables, prefix, numbering in groups:
             items = []
-            for i, sec in enumerate(secs):
-                path = "sections[%d]" % i
-                cols = self.tables.get(path) if isinstance(sec, dict) and sec.get("type") == "table" else None
-                no = [k for k, ct in (cols or []) if ct == "no"]
-                if not no or not isinstance(sec.get("rows"), list):
+            for path in tables:
+                sec = secs_by_path[path]
+                no = [k for k, ct in self.tables[path] if ct == "no"]
+                if not isinstance(sec.get("rows"), list):
                     continue
                 for r, row in enumerate(sec["rows"]):
                     if not isinstance(row, dict):
@@ -646,31 +689,109 @@ class Validator:
                     v = row.get(no[0], "")
                     if isinstance(v, str):
                         items.append(("%s.rows[%d].%s" % (path, r, no[0]), v or None))
-            before = len(self.errors)
-            self.numbered(items, self.words[row_key], auto, "番号の列の値", defined)
-            rows_ok = len(self.errors) == before and bool(items)
-        self.pick_rows(kind, row_key, defined, rows_ok)
+            self.numbered(items, prefix, numbering, "番号の列の値", defined)
+        self.select_rows(defined)
         return defined
 
-    def pick_rows(self, kind, row_key, defined, rows_ok):
-        """選び方（select）は一覧から選ぶページのカードにだけ置ける。推奨の行はページで定義した番号で、
-        行の答えの key（<カードの key>--<番号の数字>）を、回収した答え（answers）の検査に登録する。
-        行の番号に誤りがあるか、番号の列のある行が無いときは、推奨の行と数を見ない（同じ原因の誤りを重ねない）。"""
-        for path, key, sel in self.selects:
-            if kind != "pick":
-                self.add("E-K2", join(path, "select"), "選び方（select）を置けるのは、一覧から選ぶページの選び方のカードだけである")
+    def all_tables(self, secs):
+        """ページの表と束の group の表を、[(場所, 表)] で返す。形の崩れた所は飛ばす。"""
+        out = []
+        for i, sec in enumerate(secs):
+            if not isinstance(sec, dict):
                 continue
-            if sel is None or key is None or not rows_ok:
+            if sec.get("type") == "table":
+                out.append(("sections[%d]" % i, sec))
+            elif sec.get("type") == "bundle" and isinstance(sec.get("groups"), list):
+                for g, grp in enumerate(sec["groups"]):
+                    if isinstance(grp, dict) and isinstance(grp.get("tables"), list):
+                        out.extend(("sections[%d].groups[%d].tables[%d]" % (i, g, t), tb)
+                                   for t, tb in enumerate(grp["tables"]) if isinstance(tb, dict))
+        return out
+
+    def resolve_selects(self, kind, secs):
+        """選び方（select）を置ける種別かを見て（E-K2）、tables の名指しを表に解決する（E-C7）。
+        一覧から選ぶページで tables を書かなければ、ページの番号の列のある表をすべて選ぶ表にする（今の書き方）。
+        名指しに誤りのあるカードは、選ぶ表を None にし、表に頼る判定（推奨の行・選べる行の数・行の答えの key）を省く。"""
+        page_number_tables = [p for p, _ in self.all_tables(secs)
+                              if "groups[" not in p and any(ct == "no" for _, ct in (self.tables.get(p) or []))]
+        for path, key, sel, raw in self.selects:
+            if kind not in SELECT_KINDS:
+                self.add("E-K2", join(path, "select"), "選び方（select）を置けるのは、一覧から選ぶページ・承認・束・判断ボードのカードだけである")
                 continue
-            prefix = self.words[row_key]
-            rows = [ident for ident in defined if ident.startswith(prefix) and ident[len(prefix):].isdigit()]
+            if not isinstance(raw, dict):
+                continue
+            if "tables" not in raw:
+                if kind == "pick":
+                    self.select_tables[path] = list(page_number_tables)
+                    for t in page_number_tables:
+                        self.named.setdefault(t, path)
+                else:
+                    self.add("E-C7", join(path, "select"), "種別 %s の選び方には、選ぶ表を tables で名指す" % kind)
+                    self.select_tables[path] = None
+                continue
+            names = raw["tables"] if isinstance(raw["tables"], list) else []
+            # 形の誤り（空・重なり・文字列でない）は E-F3・E-C7 で出している。名指しの解決は読める名前でだけ続け、
+            # 名指された表を「名指されていない表」として重ねて止めないようにする。表に頼る判定は省く（broken）。
+            resolved, broken = [], not self.select_tables_ok(raw)
+            group = re.match(r"sections\[\d+\]\.groups\[\d+\]", path)
+            seen = set()
+            for i, name in enumerate(names):
+                if not isinstance(name, str) or name in seen:
+                    continue
+                seen.add(name)
+                tp = "%s.select.tables[%d]" % (path, i)
+                t = self.table_keys.get(name)
+                if t is None:
+                    self.add("E-C7", tp, '名指した表 "%s" がページに無い' % name)
+                    broken = True
+                    continue
+                if kind == "bundle" and not (group and t.startswith(group.group(0) + ".tables[")):
+                    if "groups[" in t:
+                        self.add("E-C7", tp, '表 "%s" は別の group の表である（同じ group の表だけを名指す）' % name)
+                    broken = True  # 束のページの部品の表は E-K2 で止めている
+                    continue
+                if t in self.named:
+                    self.add("E-C7", tp, '表 "%s" は %s がすでに名指している（1つの表を名指せるのは1枚のカードだけ）' % (name, self.named[t]))
+                    broken = True
+                    continue
+                self.named[t] = path
+                cols = self.tables.get(t)
+                if cols is None:
+                    broken = True  # 列の誤りは E-S3 で出している
+                    continue
+                if not any(ct == "no" for _, ct in cols):
+                    self.add("E-C7", tp, '名指した表 "%s" に番号の列（type no）が無い' % name)
+                    broken = True
+                    continue
+                resolved.append(t)
+            self.select_tables[path] = None if broken else resolved
+
+    def select_rows(self, defined):
+        """選び方のカードごとに、選ぶ表の行の番号から、推奨の行（E-I1）と選べる行の数（E-C6）を見て、
+        行の答えの key（<カードの key>--<番号の数字>）を回収した答え（answers）の検査に登録する。
+        行の答えの key がほかのカードの key と重なれば止める（E-C1・同じ保存先になるため）。
+        選ぶ表が決まらないか、その表の番号に誤りがあるか、行が無いときは見ない（同じ原因の誤りを重ねない）。"""
+        cand = self.words["prefix.candidate"]
+        for path, key, sel, _ in self.selects:
+            tables = self.select_tables.get(path)
+            if sel is None or key is None or not tables:
+                continue
+            if any(code in ("E-I1", "E-I2") and any(p.startswith(t + ".rows[") for t in tables) for code, p, _ in self.errors):
+                continue
+            rows = [ident for ident, p in defined.items()
+                    if ident.startswith(cand) and ident[len(cand):].isdigit() and any(p.startswith(t + ".rows[") for t in tables)]
+            if not rows:
+                continue
             for i, r in enumerate(sel.get("recommend", [])):
                 if r not in rows:
-                    self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" がページの番号の列で定義されていない' % r)
+                    self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" が選ぶ表の番号の列で定義されていない' % r)
             if sel.get("min", 0) > len(rows):
                 self.add("E-C6", join(path, "select"), "min（%d）が選べる行の数（%d）を超える" % (sel["min"], len(rows)))
-            row_keys = [key + PICK_KEY_SEP + ident[len(prefix):] for ident in rows]
+            row_keys = [key + PICK_KEY_SEP + ident[len(cand):] for ident in rows]
             for rk in row_keys:
+                if rk in self.card_paths:
+                    self.add("E-C1", join(self.card_paths[rk], "key"),
+                             'key "%s" が、選び方のカード %s の行の答えの key と重なる（同じ保存先になる）' % (rk, path))
                 self.card_options[rk] = [PICK_CHOICE]
             self.pick_limits[key] = (sel["max"], row_keys)
 
@@ -678,8 +799,8 @@ class Validator:
         """1つの接頭辞のあとに番号を3つ以上並べた書き方（候補43・41・49）を止める（E-I3）。
         並んだ番号に同じ接頭辞を付けた識別子が、すべてページで定義されているときだけ止める。
         番号が2つだけの形（Q2・3件）は普通の文と見分けられないので止めない。"""
-        card_key, row_key, _ = KIND_IDS[kind]
-        prefixes = sorted({self.words[k] for k in (card_key, row_key) if k})
+        words = (self.words[k] for k in ("prefix.question", "prefix.candidate", "prefix.item"))
+        prefixes = sorted({w for w in words if any(d.startswith(w) and d[len(w):].isdigit() for d in defined)})
         listed = re.compile(r"(?<![A-Za-z0-9_./#-])(%s)([1-9][0-9]*)((?:\s*[%s]\s*[0-9]+){2,})(?![0-9])"
                             % ("|".join(re.escape(x) for x in prefixes), LIST_SEPARATORS))
         for path, text in display_texts(data):
@@ -790,9 +911,8 @@ class Validator:
         allowed = self.kind_allowed("board", types, paths, ("decisions", "table"))
         dec = [i for i in allowed if types[i] == "decisions"]
         tab = [i for i in allowed if types[i] == "table"]
-        for i in tab:
-            if dec and i < dec[-1]:
-                self.add("E-K3", paths[i], "表は判定カードの節のあとに置く（いま決めることを上に置く）")
+        self.unnamed_tables_after_cards(types, paths, allowed, dec, "表は判定カードの節のあとに置く（いま決めることを上に置く）")
+        self.select_runs(types, paths, secs, dec)
         if not dec and self.has_number_table(tab, paths) is False:
             self.add("E-K1", "sections", "判断ボードのページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
 
@@ -898,7 +1018,8 @@ class Validator:
                         for i, g in enumerate(sec["groups"]):
                             self.group("%s[%d]" % (gp, i), g)
         elif t == "table":
-            if self.obj(path, sec, ("type", "title", "columns", "rows")):
+            if self.obj(path, sec, ("type", "title", "columns", "rows"), ("key",)):
+                self.table_key(path, sec)
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
                 cols = self.columns(join(path, "columns"), sec["columns"]) if "columns" in sec else None
@@ -1067,14 +1188,43 @@ class Validator:
         if key is not None:
             self.card_options[key] = option_keys or []
         if "select" in c:
-            self.selects.append((path, key, self.select(join(path, "select"), c["select"])))
+            self.selects.append((path, key, self.select(join(path, "select"), c["select"]), c["select"]))
 
     def select(self, path, sel):
-        """一覧から選ぶページの選び方のカードの、行を選ぶ数と推奨の行。形が合えば sel を、誤りがあれば None を返す。
-        max は必須の1以上の整数、min は任意の1以上の整数で max 以下、recommend は任意の識別子の並びで max 個まで。"""
+        """選び方のカードの、行を選ぶ数・推奨の行・選ぶ表。形が合えば sel を、誤りがあれば None を返す。
+        max は必須の1以上の整数、min は任意の1以上の整数で max 以下、recommend は任意の識別子の並びで max 個まで、
+        tables は任意の表の key の並び（1つ以上・重ねない）。tables の名指しの誤り（E-C7）は返す値に関わらない
+        （名指しは表の解決で別に見るので、選ぶ数の判定を隠さない）。"""
         before = len(self.errors)  # 項目の欠け（E-F3）も形の誤りに数える
-        if not self.obj(path, sel, ("max",), ("min", "recommend")):
+        if not self.obj(path, sel, ("max",), ("min", "recommend", "tables")):
             return None
+        result = self.select_counts(path, sel, before)
+        if "tables" in sel:
+            tp = join(path, "tables")
+            t = sel["tables"]
+            if not isinstance(t, list):
+                self.add("E-F3", tp, "配列であるべき所が%sである" % type_name(t))
+            elif not t:
+                self.add("E-C7", tp, "選ぶ表の名指しが空である（表の key を1つ以上書く）")
+            else:
+                seen = set()
+                for i, name in enumerate(t):
+                    if not isinstance(name, str):
+                        self.add("E-F3", "%s[%d]" % (tp, i), "文字列であるべき所が%sである" % type_name(name))
+                    elif name in seen:
+                        self.add("E-C7", "%s[%d]" % (tp, i), '表 "%s" を2回名指している' % name)
+                    else:
+                        seen.add(name)
+        return result
+
+    @staticmethod
+    def select_tables_ok(sel):
+        """select の tables が、名指しの解決に使える形か（文字列の並びで、空でなく、重ならない）。"""
+        t = sel.get("tables") if isinstance(sel, dict) else None
+        return isinstance(t, list) and bool(t) and all(isinstance(x, str) for x in t) and len(set(t)) == len(t)
+
+    def select_counts(self, path, sel, before):
+        """選ぶ数と推奨の行の形と数の誤りを見て、誤りが無ければ sel を返す（tables は見ない）。"""
         for f in ("max", "min"):
             if f in sel and not (is_int(sel[f]) and sel[f] >= 1):
                 self.add("E-F3", join(path, f), "%s は1以上の整数であるべき所が %s" % (f, json.dumps(sel[f], ensure_ascii=False)))
@@ -1097,6 +1247,21 @@ class Validator:
         if len(set(rec)) != len(rec):
             self.add("E-C6", join(path, "recommend"), "推奨の行が重なる")
         return sel if len(self.errors) == before else None
+
+    def table_key(self, path, sec):
+        """表の key（任意）。形はカードの key と同じで、ページの表と束の group の表を合わせて重ねない。"""
+        if "key" not in sec:
+            return
+        k = sec["key"]
+        kp = join(path, "key")
+        if not isinstance(k, str):
+            self.add("E-F3", kp, "文字列であるべき所が%sである" % type_name(k))
+        elif not KEY_RE.match(k):
+            self.add("E-S3", kp, '表の key "%s" が形に合わない（英小文字で始まり、英小文字・数字・_・- が続く64文字まで）' % k)
+        elif k in self.table_keys:
+            self.add("E-S3", kp, '表の key "%s" が %s と重なる' % (k, self.table_keys[k]))
+        else:
+            self.table_keys[k] = path
 
     def points(self, path, points):
         if not isinstance(points, list):
@@ -1499,9 +1664,30 @@ def meta_table(rows):
         '<div class="hp-meta-row"><dt>%s</dt><dd>%s</dd></div>' % (esc(k), v) for k, v in rows)
 
 
+def page_tables(data):
+    """検証を通ったデータの表を、[(表の位置, 表)] で返す。ページの表の位置は (部品の順,)、
+    束の group の表の位置は (部品の順, group の順, 表の順) である。行の位置は、表の位置に行の順を足したもの。"""
+    out = []
+    for si, sec in enumerate(data["sections"]):
+        if sec["type"] == "table":
+            out.append(((si,), sec))
+        elif sec["type"] == "bundle":
+            for gi, g in enumerate(sec["groups"]):
+                out.extend(((si, gi, ti), tb) for ti, tb in enumerate(g.get("tables", [])))
+    return out
+
+
+def row_id(pos):
+    """行の位置から、飛び先の要素の id を作る（ページの表は hp-row-<部品>-<行>、group の表は hp-row-<部品>-g<group>-t<表>-<行>）。"""
+    if len(pos) == 2:
+        return "hp-row-%d-%d" % pos
+    return "hp-row-%d-g%d-t%d-%d" % pos
+
+
 def assign_numbers(data, words):
-    """検証を通ったデータの、出す札（カードの key -> 札）と番号の列の値（(部品の順, 行の順) -> 値）を返す。
-    書かれていなければ、種別の接頭辞とページの中の順（問いのカードの順・番号の列のある行の順）から振る。"""
+    """検証を通ったデータの、出す札（カードの key -> 札）と番号の列の値（行の位置 -> 値）を返す。
+    一覧から選ぶページと見取り図は、書かれていなければ、種別の接頭辞とページの中の順（番号の列のある行の順）から振る。
+    ほかの種別の番号の列（判断ボードの決まったこと・選ぶ表）は、検証が書いてあることを確かめている。"""
     card_key, row_key, _ = KIND_IDS.get(data["kind"], (None, None, False))
     tags, numbers = {}, {}
     if card_key:
@@ -1510,30 +1696,45 @@ def assign_numbers(data, words):
                      if not (approval and c.get("tag") == approval)]
         for i, c in enumerate(questions, 1):
             tags[c["key"]] = c.get("tag") or "%s%d" % (words[card_key], i)
-    if row_key:
-        n = 0
-        for si, sec in enumerate(data["sections"]):
-            no = [c["key"] for c in sec["columns"] if c.get("type") == "no"] if sec["type"] == "table" else []
-            if not no:
-                continue
-            for ri, row in enumerate(sec["rows"]):
-                n += 1
-                numbers[(si, ri)] = row.get(no[0]) or "%s%d" % (words[row_key], n)
+    n = 0
+    for tpos, sec in page_tables(data):
+        no = [c["key"] for c in sec["columns"] if c.get("type") == "no"]
+        if not no:
+            continue
+        for ri, row in enumerate(sec["rows"]):
+            n += 1
+            numbers[tpos + (ri,)] = row.get(no[0]) or ("%s%d" % (words[row_key], n) if row_key else "")
     return tags, numbers
 
 
-def pick_info(data, words, numbers):
-    """一覧から選ぶページで、選び方のカードに select があれば、行の選択の情報を返す（無ければ None）。
-    rows は (部品の順, 行の順) -> (行の答えの key, 番号)。"""
-    if data["kind"] != "pick":
-        return None
-    card = next((c for sec in data["sections"] if sec["type"] == "decisions" for c in sec["cards"] if "select" in c), None)
-    if card is None:
-        return None
-    prefix = words[KIND_IDS["pick"][1]]
-    rows = {pos: (card["key"] + PICK_KEY_SEP + num[len(prefix):], num) for pos, num in numbers.items()}
-    sel = card["select"]
-    return {"card": card["key"], "max": sel["max"], "min": sel.get("min"), "recommend": list(sel.get("recommend", [])), "rows": rows}
+def picks_info(data, words, numbers):
+    """選び方のカード（select のあるカード）ごとの、行の選択の情報の並び（カードの順）。
+    rows は 行の位置 -> (行の答えの key, 番号)。選ぶ表は select の tables、書かなければ（一覧から選ぶページ）
+    ページの番号の列のある表のすべてである。"""
+    cand = words["prefix.candidate"]
+    by_key = {sec["key"]: tpos for tpos, sec in page_tables(data) if "key" in sec}
+    number_tables = [tpos for tpos, sec in page_tables(data)
+                     if len(tpos) == 1 and any(c.get("type") == "no" for c in sec["columns"])]
+    cards = []
+    for sec in data["sections"]:
+        if sec["type"] == "decisions":
+            cards.extend(sec["cards"])
+        elif sec["type"] == "bundle":
+            cards.extend(c for g in sec["groups"] for c in g["cards"])
+    out = []
+    for card in cards:
+        if "select" not in card:
+            continue
+        sel = card["select"]
+        tables = [by_key[k] for k in sel["tables"]] if "tables" in sel else number_tables
+        rows = {}
+        for tpos in tables:
+            for pos in sorted(p for p in numbers if p[:-1] == tpos):
+                num = numbers[pos]
+                rows[pos] = (card["key"] + PICK_KEY_SEP + num[len(cand):], num)
+        out.append({"card": card["key"], "max": sel["max"], "min": sel.get("min"),
+                    "recommend": list(sel.get("recommend", [])), "rows": rows})
+    return out
 
 
 class Renderer:
@@ -1543,7 +1744,8 @@ class Renderer:
         self.tags, self.numbers = assign_numbers(data, words)
         # ページで定義した識別子の飛び先。カードはいまある id、番号の列のある表の行には行の id を付ける。
         anchors = {tag: "hp-card-" + key for key, tag in self.tags.items()}
-        anchors.update({num: "hp-row-%d-%d" % pos for pos, num in self.numbers.items()})
+        anchors.update({num: row_id(pos) for pos, num in self.numbers.items()})
+        self.anchors = anchors
         self.time = format_time(now)
         self.tmux = tmux
         self.page_refs = Refs(data["source"], anchors)
@@ -1551,8 +1753,10 @@ class Renderer:
         self.answers = data.get("answers") or {}
         self.cards = []   # JS に渡すカード
         self.groups = []  # JS に渡す group
-        # 一覧から選ぶページの行の選択（選び方のカードに select があるときだけ）。
-        self.pick = pick_info(data, words, self.numbers)
+        # 選び方のカードごとの行の選択（カードの key -> 情報）と、選ぶ表の行の位置 -> 情報。
+        self.picks = picks_info(data, words, self.numbers)
+        self.pick_of = {p["card"]: p for p in self.picks}
+        self.row_pick = {pos: p for p in self.picks for pos in p["rows"]}
 
     def chip(self, cls, text):
         return '<span class="hp-chip %s">%s</span>' % (cls, esc(text))
@@ -1636,7 +1840,7 @@ class Renderer:
             elif sec["type"] == "bundle":
                 out.append(self.bundle(sec))
             elif sec["type"] == "table":
-                out.append(self.table(sec, si))
+                out.append(self.table(sec, (si,)))
             else:
                 out.append(self.findings(sec))
         return "\n".join(out)
@@ -1703,8 +1907,8 @@ class Renderer:
         for b in c.get("blocks", []):
             h.append('<div class="hp-block"><h%d class="hp-block-title">%s</h%d>%s</div>'
                      % (level + 1, inline(b["title"], refs), level + 1, self.point_list(b["points"], refs)))
-        if self.pick and self.pick["card"] == key:
-            h.append(self.select_line())
+        if key in self.pick_of:
+            h.append(self.select_line(self.pick_of[key]))
         title_attr = esc(c["title"])
         buttons = []
         for o in c["options"]:
@@ -1729,41 +1933,42 @@ class Renderer:
         L = self.L
         label = next((o["label"] for o in c["options"] if o["key"] == choice), L["text.unanswered"])
         text = fill(L["text.folded_answer"], label=label)
-        if self.pick and self.pick["card"] == c["key"]:
-            chosen = self.chosen_rows()
+        if c["key"] in self.pick_of:
+            chosen = self.chosen_rows(self.pick_of[c["key"]])
             text += "（%s）" % fill(L["text.reply_rows"], rows="、".join(chosen) if chosen else L["text.select_none"])
         return text
 
-    def select_rule(self):
-        p, L = self.pick, self.L
+    def select_rule(self, p):
+        L = self.L
         if p["min"] and p["min"] == p["max"]:
             return fill(L["text.select_exact"], max=p["max"])
         if p["min"]:
             return fill(L["text.select_between"], min=p["min"], max=p["max"])
         return fill(L["text.select_upto"], max=p["max"])
 
-    def chosen_rows(self):
+    def chosen_rows(self, p):
         """回答済みのページで選ばれている行の番号の並び（回答待ちのページでは空。JS が埋める）。"""
         if not self.answered:
             return []
-        return [num for _, (rk, num) in sorted(self.pick["rows"].items())
+        return [num for _, (rk, num) in sorted(p["rows"].items())
                 if (self.answers.get(rk) or {}).get("choice") == PICK_CHOICE]
 
-    def select_line(self):
+    def select_line(self, p):
         """選び方のカードの、選ぶ数と選んだ行の行。選んだ行は JS が書き換える。"""
-        chosen = self.chosen_rows()
+        chosen = self.chosen_rows(p)
         text = fill(self.L["text.select_chosen"], n=len(chosen),
                     rows="、".join(chosen) if chosen else self.L["text.select_none"])
         return ('<p class="hp-select"><span class="hp-select-rule">%s</span>'
                 '<span class="hp-select-chosen" id="hp-select-chosen-%s" aria-live="polite">%s</span></p>'
-                % (esc(self.select_rule()), esc(self.pick["card"]), esc(text)))
+                % (esc(self.select_rule(p)), esc(p["card"]), esc(text)))
 
-    def pick_cell(self, label, si, ri):
+    def pick_cell(self, label, pos):
         """番号の列の欄に、行を選ぶチェックを付ける。推奨の行には推奨の札を付ける。
         行の保存の成否は、判定カードと同じ印（hp-saved-<行の key>）に JS が書く。"""
-        rk, num = self.pick["rows"][(si, ri)]
+        p = self.row_pick[pos]
+        rk, num = p["rows"][pos]
         checked = self.answered and (self.answers.get(rk) or {}).get("choice") == PICK_CHOICE
-        rec = self.chip("hp-chip-rec", self.L["recommend"]) if num in self.pick["recommend"] else ""
+        rec = self.chip("hp-chip-rec", self.L["recommend"]) if num in p["recommend"] else ""
         return ('<td class="hp-no" data-label="%s"><label class="hp-pick">'
                 '<input type="checkbox" class="hp-pick-box" id="hp-pick-%s" aria-label="%s %s"%s%s>'
                 '<span class="hp-pick-id">%s</span></label>%s'
@@ -1798,21 +2003,23 @@ class Renderer:
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
-    def table(self, sec, si):
-        """列と行をデータで書く表。指摘の一覧と同じ hp-table で描き、幅の狭い画面では行を積む。"""
-        refs = self.page_refs
+    def table(self, sec, tpos, refs=None, heading="h2"):
+        """列と行をデータで書く表。指摘の一覧と同じ hp-table で描き、幅の狭い画面では行を積む。
+        tpos は表の位置（ページの表は (部品の順,)、束の group の表は (部品の順, group の順, 表の順)）。"""
+        refs = refs or self.page_refs
         cols = [(c["key"], c["label"], c.get("type", "text")) for c in sec["columns"]]
-        out = ['<section class="hp-sec hp-tablesec"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], refs)]
+        out = ['<section class="hp-sec hp-tablesec"><%s class="hp-sec-title">%s</%s>' % (heading, inline(sec["title"], refs), heading)]
         out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
                    % "".join("<th>%s</th>" % esc(label) for _, label, _ in cols))
         for ri, row in enumerate(sec["rows"]):
+            pos = tpos + (ri,)
             cells = []
             for key, label, kind in cols:
                 v = row.get(key, "")
-                if kind == "no" and self.pick and (si, ri) in self.pick["rows"]:
-                    cells.append(self.pick_cell(label, si, ri))
+                if kind == "no" and pos in self.row_pick:
+                    cells.append(self.pick_cell(label, pos))
                 elif kind == "no":
-                    cells.append('<td class="hp-no" data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get((si, ri), v))))
+                    cells.append('<td class="hp-no" data-label="%s">%s</td>' % (esc(label), esc(self.numbers.get(pos, v))))
                 elif kind == "ref":
                     items = [v] if isinstance(v, str) else v
                     body = ('<span class="hp-refs">%s</span>' % "".join(refs.ref_link(r) for r in items)) if items else ""
@@ -1821,8 +2028,8 @@ class Renderer:
                     cells.append('<td data-label="%s">%s%s</td>' % (esc(label), inline(v["text"], refs), self.evidence(v.get("evidence"))))
                 else:
                     cells.append('<td data-label="%s">%s</td>' % (esc(label), inline(v, refs)))
-            row_id = ' id="hp-row-%d-%d"' % (si, ri) if (si, ri) in self.numbers else ""
-            out.append("<tr%s>%s</tr>" % (row_id, "".join(cells)))
+            rid = ' id="%s"' % row_id(pos) if pos in self.numbers else ""
+            out.append("<tr%s>%s</tr>" % (rid, "".join(cells)))
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
@@ -1848,9 +2055,8 @@ def render(data, labels, now, tmux, body=None, words=None):
             "labels": labels,
             "cards": r.cards,
             "groups": r.groups,
-            "picks": ([{"card": r.pick["card"], "max": r.pick["max"], "min": r.pick["min"],
-                        "rows": [{"key": rk, "id": num} for _, (rk, num) in sorted(r.pick["rows"].items())]}]
-                      if r.pick else []),
+            "picks": [{"card": p["card"], "max": p["max"], "min": p["min"],
+                       "rows": [{"key": rk, "id": num} for _, (rk, num) in sorted(p["rows"].items())]} for p in r.picks],
             "answers": data.get("answers") if r.answered else None,
         }
         scripts = ('<script type="application/json" id="hp-data">%s</script>\n<script>\n%s\n</script>'

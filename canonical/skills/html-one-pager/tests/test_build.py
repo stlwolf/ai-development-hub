@@ -134,6 +134,37 @@ REQUEST = {"target": "PR #215", "type": "実装のレビュー", "via": "Copilot
 BUNDLE_SEC = {"type": "bundle", "title": "束", "groups": [{"source": {"repo": "billing"}, "title": "作業",
                                                           "cards": [dict(CONFIRM_CARD, key="bundle_card")]}]}
 
+
+# 一覧から選ぶ問いを承認のページ（decide の見本）に置くための部品。選ぶ表は key を持ち、番号は候補で必ず書く
+def select_table(key, numbers, title="候補"):
+    return {"type": "table", "key": key, "title": title,
+            "columns": [{"key": "no", "label": "番号", "type": "no"}, {"key": "name", "label": "名前"}],
+            "rows": [{"no": n, "name": "名前 " + n} for n in numbers]}
+
+
+def select_card(key, tables, mx=1, recommend=None, **more):
+    sel = dict({"max": mx, "tables": tables}, **more)
+    if recommend:
+        sel["recommend"] = recommend
+    return dict(CONFIRM_CARD, key=key, select=sel)
+
+
+PICK_CARD = ["sections", 0, "cards", 3]  # with_pick で足した選び方のカード
+
+
+def with_pick(d):
+    """decide の見本の判定カードの節の最後に選び方のカードを足し、その直後に選ぶ表を置く（正しい形）。"""
+    d["sections"][0]["cards"].append(select_card("pick_tool", ["tools"], 1, ["候補1"]))
+    d["sections"].insert(1, select_table("tools", ["候補1", "候補2", "候補3"]))
+
+
+def with_two_picks(d):
+    """decide の見本に、選び方のカードと選ぶ表の組を2つ置く（節を分け、それぞれの直後に表）。"""
+    with_pick(d)
+    d["sections"].insert(2, {"type": "decisions", "title": "2つ目の組",
+                             "cards": [select_card("pick_shop", ["shops"], 2, ["候補4", "候補6"])]})
+    d["sections"].insert(3, select_table("shops", ["候補4", "候補5", "候補6"]))
+
 # (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
 BROKEN = [
     # E-F1 format
@@ -389,13 +420,13 @@ BROKEN = [
     ("i3_listed_numbers_right_after_a_url", "decide", put(["why"], "https://x.example。Q1・2・3 を見る"), [("E-I3", "why")], False),
     # 判断ボード: カードの札と番号の列の値（決まったこと）は Q<数字> を必ず書く。表は判定カードの節のあと
     ("i1_board_tag_missing", "board", drop(CARD0 + ["tag"]), [("E-I1", "sections[0].cards[0].tag")], False),
-    ("i1_board_number_missing", "board", drop(["sections", 2, "rows", 0, "no"]), [("E-I1", "sections[2].rows[0].no")], False),
-    ("i2_board_card_and_row_share_a_number", "board", put(CARD0 + ["tag"], "Q1"), [("E-I2", "sections[2].rows[0].no")], False),
-    ("k3_board_table_before_cards", "board", lambda d: d["sections"].insert(0, d["sections"].pop(2)), [("E-K3", "sections[0]")], False),
+    ("i1_board_number_missing", "board", drop(["sections", 3, "rows", 0, "no"]), [("E-I1", "sections[3].rows[0].no")], False),
+    ("i2_board_card_and_row_share_a_number", "board", put(CARD0 + ["tag"], "Q1"), [("E-I2", "sections[3].rows[0].no")], False),
+    ("k3_board_table_before_cards", "board", lambda d: d["sections"].insert(0, d["sections"].pop(3)), [("E-K3", "sections[0]")], False),
     ("k2_board_body", "board", lambda d: None, [("E-K2", "--body")], True),
-    ("k2_board_findings", "board", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[4]")], False),
+    ("k2_board_findings", "board", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[5]")], False),
     # 判定カードが無ければ、番号の列を持つ表（決まったこと）が要る
-    ("k1_board_without_cards_or_decided_table", "board", lambda d: d["sections"].__delitem__(slice(0, 3)),
+    ("k1_board_without_cards_or_decided_table", "board", lambda d: d["sections"].__delitem__(slice(0, 4)),
      [("E-K1", "sections")], False),
     # レビューのページの依頼したレビュー（request）。レビューでは必須、ほかの種別では置けない
     ("k1_review_without_request", "review", drop(["request"]), [("E-K1", "request")], False),
@@ -404,7 +435,9 @@ BROKEN = [
     ("f3_request_field_missing", "review", drop(["request", "via"]), [("E-F3", "request.via")], False),
     ("f2_request_unknown_field", "review", put(["request", "lane"], "x"), [("E-F2", "request.lane")], False),
     # 一覧から選ぶ行の選択（select）。選び方のカードにだけ置ける・max は必須・数と推奨の行の誤り
-    ("k2_select_on_approve", "decide", put(CARD0 + ["select"], {"max": 1}), [("E-K2", "sections[0].cards[0].select")], False),
+    # 承認・束・判断ボードの選び方は、選ぶ表を tables で名指す。認識合わせとレビューのカードには置けない
+    ("c7_select_on_approve_without_tables", "decide", put(CARD0 + ["select"], {"max": 1}), [("E-C7", "sections[0].cards[0].select")], False),
+    ("k2_select_on_confirm", "confirm", put(["sections", 0, "cards", 0, "select"], {"max": 1}), [("E-K2", "sections[0].cards[0].select")], False),
     ("f3_select_max_missing", "pick", put(["sections", 0, "cards", 0, "select"], {"min": 1}), [("E-F3", "sections[0].cards[0].select.max")], False),
     ("f3_select_max_true", "pick", put(["sections", 0, "cards", 0, "select", "max"], True), [("E-F3", "sections[0].cards[0].select.max")], False),
     ("f2_select_unknown_item", "pick", put(["sections", 0, "cards", 0, "select", "count"], 2), [("E-F2", "sections[0].cards[0].select.count")], False),
@@ -425,6 +458,64 @@ BROKEN = [
      [("E-A1", "answers.pick_tools--9")], False),
     # 番号の列の値は文字列
     ("f3_number_cell_number", "pick", put(["sections", 2, "rows", 0, "no"], 1), [("E-F3", "sections[2].rows[0].no")], False),
+    # 一覧から選ぶ問いを承認・判断ボードに置く（選び方の tables で選ぶ表を名指す）
+    ("k2_select_on_review", "review", append(["sections"], dict(CONFIRM_SEC, cards=[dict(CONFIRM_CARD, select={"max": 1})])),
+     [("E-K2", "sections[2].cards[0].select")], False),
+    ("c7_tables_empty", "decide", both(with_pick, put(PICK_CARD + ["select", "tables"], [])),
+     # 名指しが空なので表は名指されず、承認の番号の列として止まる（名指しの両端を指す2件）
+     [("E-C7", "sections[0].cards[3].select.tables"), ("E-K2", "sections[1].columns[0]")], False),
+    ("c7_table_named_twice_in_one_card", "decide", both(with_pick, put(PICK_CARD + ["select", "tables"], ["tools", "tools"])),
+     [("E-C7", "sections[0].cards[3].select.tables[1]")], False),
+    ("f3_tables_not_array", "decide", both(with_pick, put(PICK_CARD + ["select", "tables"], "tools")),
+     [("E-F3", "sections[0].cards[3].select.tables"), ("E-K2", "sections[1].columns[0]")], False),
+    ("c7_unknown_table", "decide", both(with_pick, put(PICK_CARD + ["select", "tables"], ["tools", "nope"])),
+     [("E-C7", "sections[0].cards[3].select.tables[1]")], False),
+    ("c7_table_without_number_column", "decide",
+     both(with_pick, put(PICK_CARD + ["select", "tables"], ["tools", "plain"]),
+          lambda d: d["sections"].insert(2, dict(TABLE_SEC, key="plain"))),
+     [("E-C7", "sections[0].cards[3].select.tables[1]")], False),
+    ("c7_two_cards_name_one_table", "decide",
+     both(with_pick, append(["sections", 0, "cards"], select_card("pick_again", ["tools"])),
+          # 全体の承認のカードは無いので、足したカードの順はどこでもよい
+          lambda d: None),
+     [("E-C7", "sections[0].cards[4].select.tables[0]")], False),
+    ("k3_select_table_not_right_after_its_section", "decide",
+     both(with_pick, lambda d: d["sections"].insert(1, TABLE_SEC)),
+     [("E-K3", "sections[2]")], False),
+    ("k3_select_tables_out_of_card_order", "decide",
+     both(with_pick, append(["sections", 0, "cards"], select_card("pick_more", ["more"])),
+          lambda d: d["sections"].insert(1, select_table("more", ["候補7"]))),
+     [("E-K3", "sections[2]")], False),
+    ("i1_select_number_not_candidate", "decide", both(with_pick, put(["sections", 1, "rows", 0, "no"], "A1")),
+     [("E-I1", "sections[1].rows[0].no")], False),
+    ("i1_select_number_missing_on_approve", "decide", both(with_pick, drop(["sections", 1, "rows", 0, "no"])),
+     [("E-I1", "sections[1].rows[0].no")], False),
+    ("i1_select_number_missing_on_board", "board", drop(["sections", 2, "rows", 0, "no"]), [("E-I1", "sections[2].rows[0].no")], False),
+    ("i1_select_recommend_not_in_its_tables", "decide", both(with_two_picks, put(PICK_CARD + ["select", "recommend"], ["候補4"])),
+     [("E-I1", "sections[0].cards[3].select.recommend[0]")], False),
+    ("i2_candidate_numbers_overlap_across_pairs", "decide", both(with_two_picks, put(["sections", 3, "rows", 0, "no"], "候補1")),
+     [("E-I2", "sections[3].rows[0].no")], False),
+    ("c6_select_min_over_its_rows", "decide", both(with_pick, put(PICK_CARD + ["select"], {"max": 4, "min": 4, "tables": ["tools"]})),
+     [("E-C6", "sections[0].cards[3].select")], False),
+    ("s3_table_key_form", "decide", append(["sections"], dict(TABLE_SEC, key="Bad Key")), [("E-S3", "sections[1].key")], False),
+    ("s3_table_key_duplicate", "decide",
+     both(append(["sections"], dict(TABLE_SEC, key="same")), append(["sections"], dict(TABLE_SEC, key="same"))),
+     [("E-S3", "sections[2].key")], False),
+    ("c1_card_key_is_a_row_answer_key", "decide", both(with_pick, put(CARD0 + ["key"], "pick_tool--2")),
+     [("E-C1", "sections[0].cards[0].key")], False),
+    ("a1_rows_over_max_per_pair", "decide",
+     both(with_two_picks, put(["status"], "answered"),
+          put(["answers"], {"pick_tool--1": {"choice": "pick", "note": "", "at": "2026-10-24T09:00:00Z"},
+                            "pick_tool--2": {"choice": "pick", "note": "", "at": "2026-10-24T09:00:00Z"}})),
+     [("E-A1", "answers")], False),
+    # 名指しの誤りは、名指しに頼らない誤りを隠さない（2件とも出る）
+    ("c7_and_c6_on_one_card", "decide",
+     both(with_pick, put(PICK_CARD + ["select"], {"max": 1, "min": 2, "tables": ["tools", "nope"]})),
+     [("E-C7", "sections[0].cards[3].select.tables[1]"), ("E-C6", "sections[0].cards[3].select")], False),
+    ("c7_and_another_pairs_recommend", "decide",
+     both(with_two_picks, put(PICK_CARD + ["select", "tables"], ["tools", "nope"]),
+          put(["sections", 2, "cards", 0, "select", "recommend"], ["候補9"])),
+     [("E-C7", "sections[0].cards[3].select.tables[1]"), ("E-I1", "sections[2].cards[0].select.recommend[0]")], False),
     # 独立した誤り2つは2件とも出る
     ("two_independent_errors", "decide", both(put(["title"], ""), put(CARD0 + ["recommend"], "ok")),
      [("E-C3", "sections[0].cards[0].recommend"), ("E-H1", "title")], False),
@@ -547,9 +638,71 @@ class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
                  "E-C5", "E-C6", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
-                 "E-I3", "E-Q1", "E-Q2", "E-Q3"}
+                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
+
+
+class SelectOnAnyKind(unittest.TestCase):
+    """一覧から選ぶ問いを、承認・判断ボードのページに置く（選び方の tables で選ぶ表を名指す・組をいくつも置ける）。"""
+
+    def boxes(self, f):
+        return re.findall(r'<input type="checkbox" class="hp-pick-box" id="hp-pick-([a-z0-9_-]+)"', f)
+
+    def test_two_pairs_on_an_approve_page(self):
+        f = render_page("decide", with_two_picks)
+        self.assertEqual(self.boxes(f), ["pick_tool--1", "pick_tool--2", "pick_tool--3", "pick_shop--4", "pick_shop--5", "pick_shop--6"])
+        self.assertIn('id="hp-select-chosen-pick_tool"', f)
+        self.assertIn('id="hp-select-chosen-pick_shop"', f)
+        self.assertIn("表の行を 1 つまで選ぶ", f)
+        self.assertIn("表の行を 2 つまで選ぶ", f)
+        picks = json.loads(html.unescape(embedded(f)))["picks"]
+        self.assertEqual([(p["card"], p["max"], [r["id"] for r in p["rows"]]) for p in picks],
+                         [("pick_tool", 1, ["候補1", "候補2", "候補3"]), ("pick_shop", 2, ["候補4", "候補5", "候補6"])])
+        # 推奨の札は、それぞれの組の推奨の行に付く
+        for n in (1, 4, 6):
+            self.assertRegex(f, r'<span class="hp-pick-id">候補%d</span></label><span class="hp-chip hp-chip-rec">推奨</span>' % n)
+        # 承認のページの問いの札は、選び方のカードにも Q の番号が振られる
+        self.assertEqual(re.findall(r'<span class="hp-tag">(.*?)</span>', f), ["Q1", "Q2", "Q3", "Q4", "Q5"])
+
+    def test_board_example_has_a_pair_right_after_its_section(self):
+        f = render_page("board")
+        self.assertEqual(self.boxes(f), ["trial_shops_pick--1", "trial_shops_pick--2", "trial_shops_pick--3"])
+        # 選ぶ表の題の Q7 はカードへ、カードの推奨の中身の 候補1 は選ぶ表の行へ飛ぶ
+        self.assertIn(anchor("hp-card-trial_shops_pick", "Q7"), f)
+        self.assertIn(anchor("hp-row-2-0", "候補1") + " と " + anchor("hp-row-2-2", "候補3"), f)
+        # 選ぶ表は選び方のカードの節の直後、決まったことの表はそのあと
+        self.assertLess(f.index("試しの決済をする店舗の候補"), f.index("決まったこと（選べない・記録）"))
+
+    def test_pick_page_forms_still_pass(self):
+        """今の一覧から選ぶページの書き方を狭めない。"""
+        def third_number_table(d):
+            d["sections"].append(copy.deepcopy(d["sections"][3]))
+        def write_numbers(d):
+            n = 0
+            for sec in d["sections"][2:]:
+                for row in sec["rows"]:
+                    n += 1
+                    row["no"] = "候補%d" % n
+        forms = {"select_absent": drop(["sections", 0, "cards", 0, "select"]),
+                 "tables_absent": lambda d: None,
+                 "three_number_tables": third_number_table,
+                 "numbers_omitted": lambda d: None,
+                 "numbers_written": write_numbers,
+                 "tables_named": both(put(["sections", 2, "key"], "logs"), put(["sections", 0, "cards", 0, "select", "tables"], ["logs"]),
+                                      put(["sections", 0, "cards", 0, "select", "recommend"], ["候補2"]))}
+        for name, mutate in forms.items():
+            with self.subTest(form=name):
+                d = copy.deepcopy(example("pick"))
+                mutate(d)
+                self.assertEqual(build.validate(d), [])
+                render_page("pick", mutate)
+
+    def test_listed_candidate_numbers_are_stopped_on_an_approve_page(self):
+        d = copy.deepcopy(example("decide"))
+        with_two_picks(d)
+        d["sections"][0]["cards"][0]["blocks"][0]["points"][0] = "候補4・5・6 を比べる"
+        self.assertEqual([(c, p) for c, p, _ in build.validate(d)], [("E-I3", "sections[0].cards[0].blocks[0].points[0]")])
 
 
 class PickRows(unittest.TestCase):
@@ -664,17 +817,19 @@ class Identifiers(unittest.TestCase):
 
     def test_board_keeps_written_numbers_and_links_to_decided_rows(self):
         f = render_page("board")
-        self.assertEqual(self.tags(f), ["Q4", "Q5", "Q6"])
-        self.assertEqual(self.numbers(f), ["Q1", "Q2", "Q3"])
+        self.assertEqual(self.tags(f), ["Q4", "Q5", "Q6", "Q7"])
+        # 選ぶ表の番号は候補、決まったことの表の番号は Q（どちらも書いたまま）
+        self.assertEqual(self.numbers(f), ["候補1", "候補2", "候補3", "Q1", "Q2", "Q3"])
         # 決まったことの表へ移した Q2 を本文で指すと、その行へ移る
-        self.assertIn(anchor("hp-row-2-1", "Q2") + " で決めた日程", f)
+        self.assertIn(anchor("hp-row-3-1", "Q2") + " で決めた日程", f)
 
     def test_board_with_every_card_moved_has_no_save_code(self):
         # 決まったカードをすべて表へ移したページは、答える部品の無いページとして描かれる
+        # 選び方のカードを移すときは、そのカードが名指した表（選ぶ表）も一緒に除く
         d = example("board")
-        del d["sections"][0:2]
+        del d["sections"][0:3]
         self.assertEqual(build.validate(d), [])
-        f = render_page("board", lambda x: x["sections"].__delitem__(slice(0, 2)))
+        f = render_page("board", lambda x: x["sections"].__delitem__(slice(0, 3)))
         self.assertNotIn("<script", f)
 
     def test_free_tags_stay_as_written(self):
@@ -1769,8 +1924,8 @@ class PageScript(unittest.TestCase):
     # 保存先が開く前にカードの選択肢を押しておく（開いたあとの書き込みの有無を見るため）
     BEFORE_OPEN = 'els["hp-opt-pick_tools.chosen"].fire("click"); openDb(); await tick();'
 
-    def run_page(self, setup, after, name="pick"):
-        f = render_page(name)
+    def run_page(self, setup, after, name="pick", mutate=None):
+        f = render_page(name, mutate)
         parser = _Elements()
         parser.feed(f)
         with open(build.JS, encoding="utf-8") as fh:
@@ -1871,6 +2026,31 @@ class PageScript(unittest.TestCase):
         self.assertEqual((out["retry"], out["alert"], out["rollout"]), (True, True, True))
         self.assertEqual(out["ans"], "答え: 冪等キーを付けて3回までにする")
         self.assertEqual(out["ans_alert"], "答え: 未回答")
+
+    # 一覧から選ぶ問いの組が2つあるページ: 上限は組ごとに効き、返答の文には組ごとの選んだ行が出る
+    def test_two_pairs_have_their_own_limits_and_reply_lines(self):
+        check = "const c = function (k) { const b = els['hp-pick-' + k]; b.checked = true; b.fire('change'); };"
+        out = self.run_page("", check + "c('pick_tool--1'); c('pick_shop--4'); c('pick_shop--6'); await tick();"
+                            "return { tool2: els['hp-pick-pick_tool--2'].disabled, shop5: els['hp-pick-pick_shop--5'].disabled,"
+                            " tool: els['hp-select-chosen-pick_tool'].textContent, shop: els['hp-select-chosen-pick_shop'].textContent,"
+                            " reply: els['hp-reply-text'].value, fold: els['hp-fold-ans-pick_shop'].textContent };",
+                            name="decide", mutate=with_two_picks)
+        # pick_tool は1つまでなので残りが押せず、pick_shop は2つまでなので候補5 が押せない
+        self.assertEqual((out["tool2"], out["shop5"]), (True, True))
+        self.assertEqual(out["tool"], "選んだ行（1）: 候補1")
+        self.assertEqual(out["shop"], "選んだ行（2）: 候補4、候補6")
+        self.assertIn("- pick_tool: 未回答\n  選んだ行: 候補1", out["reply"])
+        self.assertIn("- pick_shop: 未回答\n  選んだ行: 候補4、候補6", out["reply"])
+        self.assertEqual(out["fold"], "答え: 未回答（選んだ行: 候補4、候補6）")
+
+    def test_cards_and_rows_are_saved_to_their_own_documents(self):
+        """ふつうのカード・選び方のカード・行を混ぜたページで、答えがそれぞれの doc id に書かれる。"""
+        out = self.run_page("useDb(function (onSnap) { onSnap({docs: []}); });",
+                            "openDb(); await tick(); els['hp-opt-retry_policy.go'].fire('click');"
+                            "els['hp-opt-pick_tool.ok'].fire('click');"
+                            "const b = els['hp-pick-pick_tool--2']; b.checked = true; b.fire('change'); await tick();"
+                            "return { writes: log.writes };", name="decide", mutate=with_pick)
+        self.assertEqual(sorted(set(out["writes"])), ['pick_tool "ok"', 'pick_tool--2 "pick"', 'retry_policy "go"'])
 
 
 class FoldedCards(unittest.TestCase):
