@@ -2007,15 +2007,27 @@ class SaveCode(unittest.TestCase):
 class _Elements(html.parser.HTMLParser):
     """描いた断片から、id のある要素の初めの状態（隠す・押せる・チェック・class）を集める。"""
 
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
     def __init__(self):
         super().__init__()
         self.found = {}
+        self.stack = []  # 開いている要素の (タグ, id)。中にある要素の祖先の id を記録する（偽の contains に使う）
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if "id" in a:
             self.found[a["id"]] = {"tag": tag, "className": a.get("class") or "", "hidden": "hidden" in a,
-                                   "disabled": "disabled" in a, "checked": "checked" in a, "open": "open" in a}
+                                   "disabled": "disabled" in a, "checked": "checked" in a, "open": "open" in a,
+                                   "ancestors": [i for _, i in self.stack if i]}
+        if tag not in self.VOID:
+            self.stack.append((tag, a.get("id")))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
 
 
 # page.js を node で走らせる台。document は getElementById だけを持つ偽物で、要素は描いた断片から作る。
@@ -2025,7 +2037,8 @@ const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const els = {};
 for (const [id, a] of Object.entries(input.elements)) {
   els[id] = { id: id, tagName: a.tag, className: a.className, hidden: a.hidden, disabled: a.disabled, checked: a.checked, open: a.open,
-    textContent: "", value: "", attrs: {}, handlers: {},
+    textContent: "", value: "", attrs: {}, handlers: {}, ancestors: a.ancestors,
+    contains(o) { return !!o && (o === this || (o.ancestors || []).indexOf(this.id) >= 0); },
     setAttribute(k, v) { this.attrs[k] = String(v); },
     addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
     focus() {}, select() {},
@@ -2182,6 +2195,28 @@ class PageScript(unittest.TestCase):
                             "deliver({docs: [%s, %s]}); await tick();" % (self.doc("retry_policy", "go"), self.doc("alert_rule", "go"))
                             + self.FOLD_STATE, name="decide")
         self.assertEqual((out["retry"], out["alert"]), (True, False))
+
+    def test_card_with_a_focused_button_stays_open(self):
+        # キーボードで選択肢のボタンにフォーカスがある（まだ押していない）カードも、最初の答えで畳まない
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); document.activeElement = els['hp-opt-retry_policy.fix'];"
+                            "deliver({docs: [%s, %s]}); await tick();" % (self.doc("retry_policy", "go"), self.doc("alert_rule", "go"))
+                            + self.FOLD_STATE, name="decide")
+        self.assertEqual((out["retry"], out["alert"]), (True, False))
+
+    def test_selection_card_over_its_limit_stays_open_and_says_so(self):
+        # 別の画面で選んだ行が届いて選べる数（1つ）を超えた選び方のカードは、最初の答えで畳まず、畳んだときの行にも外すよう出す
+        docs = ", ".join([self.doc("pick_tool", "ok"), self.doc("pick_tool--1", "pick"), self.doc("pick_tool--2", "pick"),
+                          self.doc("retry_policy", "go")])
+        state = ("return { pick: els['hp-fold-pick_tool'].open, retry: els['hp-fold-retry_policy'].open,"
+                 " ans: els['hp-fold-pick_tool.ans'].textContent, chosen: els['hp-select-chosen-pick_tool'].textContent };")
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); deliver({docs: [%s]}); await tick();" % docs + state,
+                            name="decide", mutate=both(with_pick, put(PICK_CARD + ["select"], {"max": 1, "tables": ["tools"]})))
+        over = self.labels()["text.select_over"].replace("{n}", "1")
+        self.assertEqual((out["pick"], out["retry"]), (True, False))
+        self.assertTrue(out["ans"].endswith(over), out["ans"])
+        self.assertTrue(out["chosen"].endswith(over), out["chosen"])
 
     def test_unavailable_display_folds_nothing(self):
         out = self.run_page("", "els['hp-opt-retry_policy.go'].fire('click'); await tick();" + self.FOLD_STATE, name="decide")

@@ -120,25 +120,34 @@
     paintReply();
   }
 
-  // 畳んだカードの開閉の行に出す答えの文（build.py の folded_answer と同じ形）。
+  // 選び方のカードで、選んだ行が選べる数を超えている組があるか（別の画面で選んだ行が届いたとき）。
+  function overLimit(c) {
+    return picks.some(function (p) { return p.card === c.key && chosenIds(p).length > p.max; });
+  }
+  // 畳んだカードの開閉の行に出す答えの文（build.py の folded_answer と同じ形）。選べる数を超えていれば、外すよう知らせる文を
+  // 足す（畳んだあとに届いた行で超えたときも、畳んだまま分かるように。回答済みのページは検査で超えないので build.py には無い）。
   function foldedAnswer(c) {
     var s = state[c.key];
     var label = L["text.unanswered"];
     c.options.forEach(function (o) { if (o.key === s.choice) { label = o.label; } });
     var text = fill(L["text.folded_answer"], { label: label });
     picks.forEach(function (p) {
-      if (p.card === c.key) { text += "（" + fill(L["text.reply_rows"], { rows: rowsText(chosenIds(p)) }) + "）"; }
+      if (p.card !== c.key) { return; }
+      var ids = chosenIds(p);
+      text += "（" + fill(L["text.reply_rows"], { rows: rowsText(ids) }) + "）";
+      if (ids.length > p.max) { text += " " + fill(L["text.select_over"], { n: ids.length - p.max }); }
     });
     return text;
   }
-  // 保存先の答えを最初に読み終えたときに1回だけ、答えのあるカードを畳む。読む前に手元で選んだか補足を書いたカードと、
-  // 補足欄に入力中のカードは畳まない（入力中の欄を隠さないため）。そのあとに届いた答えでは畳まない。
+  // 保存先の答えを最初に読み終えたときに1回だけ、答えのあるカードを畳む。読む前に手元で選んだか補足を書いたカード、
+  // 中の要素（補足欄・選択肢のボタン・リンク）にフォーカスがあるカード、選んだ行が選べる数を超えているカードは畳まない
+  // （入力中や操作中の要素と、外すよう知らせる文を隠さないため）。そのあとに届いた答えでは畳まない。
   function foldAnswered() {
+    var focused = document.activeElement;
     cards.forEach(function (c) {
       var r = counters(rev, c.key);
-      var ta = $("hp-note-" + c.key);
       var d = $("hp-fold-" + c.key);
-      if (d && state[c.key].choice && r.choice === 0 && r.note === 0 && !(ta && document.activeElement === ta)) {
+      if (d && state[c.key].choice && r.choice === 0 && r.note === 0 && !(focused && d.contains(focused)) && !overLimit(c)) {
         d.open = false;
       }
     });
