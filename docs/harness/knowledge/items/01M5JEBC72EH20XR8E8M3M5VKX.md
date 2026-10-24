@@ -10,7 +10,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-23-episode-478-one-pager-kinds.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-24
+    ref: "#536"
+    state: followed
+    note: "教訓に従い、畳んだカードへ本文の番号から飛ぶ確かめを、画面に入るかでなく帯の下端と頭の上端の比較と elementFromPoint で行い（幅 900px で 81 と 121、帯がいちばん高い幅 400px の保存できない表示で 128 と 163）、受入 A12 に置いて最後のコミットでも回し直した"
 ---
 
 **見せる先が「見える」ことを確かめるときは、画面に入るかでなく、ほかの要素に隠れていないかで確かめる。貼り付く帯があるなら、見せる先の上端が帯の下端より下に来ることを条件にする。**

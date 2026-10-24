@@ -3,7 +3,7 @@ id: "01M5PNMC35KNMNBTZAHK56BQHR"
 title: "#536 html-one-pager の問いのカードの書き方・答えたカードを畳む・一覧から選ぶ問いを同じページに置く"
 date: 2026-10-24
 type: plan
-status: in-development   # ゲート3 の承認は 9e16a57 の版で（owner が判断ボードで Q1〜Q4 と全体の承認に推奨を選んだ・2026-10-24）
+status: stable   # 実装完了（2026-10-24・PR #543）。受入の A1〜A16 をすべて満たした（A16 は d193db5 で回し直した）。ゲート3 の承認は 9e16a57 の版で（owner が判断ボードで Q1〜Q4 と全体の承認に推奨を選んだ）、承認のあとの補正は末尾の「ゲート3 のあとの変更」節（H1〜H3）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/536"
@@ -477,16 +477,16 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 
 ### GATE I1: A1〜A12・A14・A15 がすべて満たされている（A13 と A16 は I2 で確かめる）
 
-### I2: 見本の公開・実装SO・PR・Copilot
+### I2: 見本の公開・実装SO・PR・Copilot（完了・結果は episode の I2-1〜I2-4）
 
 - I2-1: 7つの種別の見本を、#478 の見本の URL に上書きして private の artifact に出し直す（A13）。
 - I2-2: 実装SO（弱・Codex 1レーン）。依頼文には差分・plan・スキルのフォルダだけを渡し、実物のデータと作業層の中身を入れない。返らなければ `--cursor-only` に1回だけ切り替える。採否を episode に書き、採ったものを直す。
 - I2-3: PR を作る（`pr-conventions`・本文は `Refs #536`）。Copilot に1ラウンドのレビューを頼み、`copilot-review-response` で未返信を0件にする。
 - I2-4: 最後のコミットで A16 を回し直し、見本を出し直す。
 
-### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件で、A13・A16 が満たされている
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件で、A13・A16 が満たされている（通過・`d193db5`）
 
-### I3: episode を閉じ、報告して止まる
+### I3: episode を閉じ、報告して止まる（完了・episode の「フィードバック」節）
 
 - `episode-retrospective` で閉じる。注入した knowledge item 4件すべてに観測を書き戻す。この単位から出る decision（DJ-2・DJ-6・DJ-7・DJ-8・DJ-12・DJ-14 と、変えた決定の一覧）を `docs/harness/decisions/` に昇格し、この枝の PR に入れる。
 - `.oe/report-536.md` に報告を書き（`implementer-contract` の形）、「報告の宛先」へ `oe-send` で1行送り、exit code を確かめて止まる。マージ・worktree の掃除・issue の close はしない。
