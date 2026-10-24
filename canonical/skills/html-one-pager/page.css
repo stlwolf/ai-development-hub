@@ -218,6 +218,14 @@ code {
 .hp-reason .hp-lbl { display: inline; margin-right: 6px; }
 .hp-points { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
 .hp-points li { overflow-wrap: anywhere; }
+/* 答えたカードを畳む開閉の要素。頭（札・題）は外に置き、開閉の行には畳んだときだけ答えと「開く」、開いたときは「畳む」が見える */
+.hp-fold { min-width: 0; }
+.hp-fold-toggle { cursor: pointer; font-size: 13px; color: var(--muted); width: fit-content; max-width: 100%; }
+.hp-fold-ans { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; margin-right: 8px; }
+.hp-fold-open, .hp-fold-close { color: var(--accent); }
+.hp-fold[open] .hp-fold-ans, .hp-fold[open] .hp-fold-open { display: none; }
+.hp-fold:not([open]) .hp-fold-close { display: none; }
+.hp-fold-body { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
 /* カードの小見出し付きの要点の塊 */
 .hp-block { display: grid; gap: 4px; min-width: 0; }
 .hp-block-title { font-size: 13.5px; font-weight: 700; margin: 0; color: var(--ink); text-wrap: balance; }
@@ -398,7 +406,8 @@ code {
 .hp-copy-msg { font-size: 12px; color: var(--muted); }
 .hp-copy-msg.is-bad { color: var(--bad); }
 
-.hp-opt:focus-visible, .hp-note:focus-visible, .hp-copy:focus-visible, .hp-reply-text:focus-visible, a:focus-visible {
+.hp-opt:focus-visible, .hp-note:focus-visible, .hp-copy:focus-visible, .hp-reply-text:focus-visible, a:focus-visible,
+.hp-fold-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

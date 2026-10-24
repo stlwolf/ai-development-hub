@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-20-episode-469-one-pager-real-use-fixes.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-24
+    ref: "#536"
+    state: externally_verified
+    note: "教訓に従い、重ねない抑止を足すたびに原因の違う誤りを2つ入れて2件とも出る検査を足した（I1-1 で3件・I1-3 で2件ほか）。それでも予測どおり、選ぶ数の誤りで行の答えの key の重なり（E-C1）を黙って消す抑止を実装SO が見つけ、画面でも同じ向きの形（補足欄だけを守ってボタンのフォーカスと上限超えの知らせを畳んで隠す）を Copilot が見つけた"
 ---
 
 **同じ原因の誤りを重ねないための抑止を足すときは、「重ねない」検査と一緒に「隠さない」検査を足す。** 原因の違う誤りを2つ同時に入れ、2件とも出ることを確かめる。

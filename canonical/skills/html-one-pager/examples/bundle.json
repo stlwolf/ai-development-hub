@@ -27,16 +27,60 @@
           "cards": [
             {
               "key": "pdf_engine",
-              "title": "PDF はブラウザの印刷の機能で作る",
+              "title": "請求書の PDF を、どの仕組みで作るか",
               "recommend": "browser",
               "reason": "画面の請求書と同じ見た目になり、別の型を持たずに済むため。",
-              "points": [
-                {"text": "#28 の調査で、ブラウザで作ると1枚あたり約0.8秒かかった。", "evidence": "verified"},
-                "専用のライブラリで作ると速いが、画面とは別に型を持つことになる。"
+              "blocks": [
+                {"title": "何を決めるか", "points": [
+                  "請求書を PDF にする仕組みを、ブラウザの印刷の機能と専用のライブラリから選ぶ（#31）。"
+                ]},
+                {"title": "推奨の中身", "points": [
+                  "ブラウザの印刷の機能で作る。画面の請求書をそのまま PDF にする。",
+                  {"text": "#28 の調査で、ブラウザで作ると1枚あたり約0.8秒かかった。", "evidence": "verified"}
+                ]},
+                {"title": "ほかの案", "points": [
+                  "専用のライブラリで作る。速いが、画面とは別に型を持つことになる。"
+                ]}
               ],
               "options": [
                 {"key": "browser", "label": "ブラウザで作る", "kind": "go"},
                 {"key": "library", "label": "専用のライブラリで作る", "kind": "warn"}
+              ]
+            },
+            {
+              "key": "pdf_font",
+              "title": "請求書の PDF に埋め込む書体を、どれにするか",
+              "recommend": "chosen",
+              "select": {"max": 1, "tables": ["pdf_fonts"], "recommend": ["候補2"]},
+              "blocks": [
+                {"title": "何を決めるか", "points": [
+                  "PDF に埋め込む書体を、下の表の3つから1つ選ぶ。書体によって PDF の大きさと、古い端末での見え方が変わる。"
+                ]},
+                {"title": "推奨の中身", "points": [
+                  "候補2 を使う。PDF が小さく、#29 で確かめた古い端末でも崩れない。"
+                ]}
+              ],
+              "options": [
+                {"key": "chosen", "label": "選んだ書体を使う", "kind": "go"},
+                {"key": "later", "label": "PDF の作り方が決まってから選ぶ", "kind": "warn"}
+              ]
+            }
+          ],
+          "tables": [
+            {
+              "type": "table",
+              "key": "pdf_fonts",
+              "title": "書体の候補",
+              "columns": [
+                {"key": "no", "label": "番号", "type": "no"},
+                {"key": "name", "label": "書体"},
+                {"key": "size", "label": "PDF の大きさ"},
+                {"key": "refs", "label": "issue", "type": "ref"}
+              ],
+              "rows": [
+                {"no": "候補1", "name": "明朝体", "size": "1枚あたり約900KB", "refs": []},
+                {"no": "候補2", "name": "ゴシック体（使う文字だけを埋め込む）", "size": "1枚あたり約120KB", "refs": ["#29"]},
+                {"no": "候補3", "name": "端末の書体を使う（埋め込まない）", "size": "1枚あたり約40KB", "refs": ["#30"]}
               ]
             }
           ]
@@ -52,11 +96,20 @@
           "cards": [
             {
               "key": "login_fix",
-              "title": "期限切れのトークンを、起動のときに先に消す",
+              "title": "ログインの画面が繰り返し出る不具合を、どう直すか",
               "recommend": "clear",
               "reason": "期限切れのトークンが残ると、ログインのあとに古いトークンで認証し直して画面が戻るため。",
-              "points": [
-                {"text": "再現の手順は #5 のコメントにある。", "evidence": "sourced"}
+              "blocks": [
+                {"title": "何を決めるか", "points": [
+                  "ログインのあとに同じ画面へ戻される不具合（#7）の直し方を決める。",
+                  {"text": "再現の手順は #5 のコメントにある。", "evidence": "sourced"}
+                ]},
+                {"title": "推奨の中身", "points": [
+                  "起動のときに、期限切れのトークンを先に消す。"
+                ]},
+                {"title": "ほかの案", "points": [
+                  "認証が失敗したらトークンを取り直す。直るが、失敗のたびに1回余分に通信する。"
+                ]}
               ],
               "options": [
                 {"key": "clear", "label": "起動のときに消す", "kind": "go"},

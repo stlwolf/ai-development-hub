@@ -8,7 +8,11 @@ prediction: "新しい案の決まりは、それだけを読めば筋が通っ�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-10-24-episode-466-page-lifecycle-in-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-24
+    ref: "#536"
+    state: externally_verified
+    note: "教訓に従い、plan に前提にした決定を1つずつ並べて扱いを書く表（#428・#469・#478・#466 の決定10行）を置いた。それでも予測どおり、初稿の表に無かった #478 の決定3（ページで定義した識別子はアンカーにする）と束の候補の番号の扱いの食い違いを設計SO が見つけ、表に行を足して直した"
 exclusions:
   - "前提にする決定が1文で、要約と本文が同じ場合"
   - "新しい案が、前提にした決定を変えることを明示して owner に問う場合（そのときは食い違いが問いそのものになる）"
