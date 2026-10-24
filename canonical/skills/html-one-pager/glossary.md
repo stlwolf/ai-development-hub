@@ -79,6 +79,9 @@
 | `text.select_over` | 選べる数を {n} つ超えています。どれかを外してください |
 | `text.pick` | 選ぶ |
 | `text.reply_rows` | 選んだ行: {rows} |
+| `text.folded_answer` | 答え: {label} |
+| `text.unfold` | 開く |
+| `text.fold` | 畳む |
 
 各 key の意味は次のとおりである。
 
@@ -92,7 +95,8 @@
 - `text.lane` は指摘の一覧の上に出す文で、`{lane}` にはどのモデルの指摘かが入る。
 - `text.col_*` は指摘の一覧の列の見出しである。
 - `text.req_*` は、レビューのページの「依頼したレビュー」の表の見出しと項目名である（対象・種類・経由・観点・なぜ）。
-- `text.select_*` は、一覧から選ぶページの選び方のカードに出る、選ぶ数（`{min}`・`{max}`）と選んだ行（`{n}` は数・`{rows}` は番号の並び）の文である。`text.select_over` は、別の画面で選んだ行が届いて選べる数を超えたときに足す文（`{n}` は超えた数）である。`text.pick` は行のチェックの名前（読み上げに使う）、`text.reply_rows` は保存できない表示の返答の文に足す選んだ行の文である。
+- `text.select_*` は、一覧から選ぶページの選び方のカードに出る、選ぶ数（`{min}`・`{max}`）と選んだ行（`{n}` は数・`{rows}` は番号の並び）の文である。`text.select_over` は、別の画面で選んだ行が届いて選べる数を超えたときに足す文（`{n}` は超えた数）である。`text.pick` は行のチェックの名前（読み上げに使う）、`text.reply_rows` は保存できない表示の返答の文と、畳んだ選び方のカードの答えの行に足す選んだ行の文である。
+- `text.folded_answer`・`text.unfold`・`text.fold` は、カードの頭の下の開閉の行の文である。畳んでいるときは `text.folded_answer`（`{label}` には選んだ選択肢の名前か、`text.unanswered` が入る）と `text.unfold` が、開いているときは `text.fold` が出る。
 
 ## 識別子の接頭辞
 

@@ -1706,7 +1706,7 @@ class _Elements(html.parser.HTMLParser):
         a = dict(attrs)
         if "id" in a:
             self.found[a["id"]] = {"tag": tag, "className": a.get("class") or "", "hidden": "hidden" in a,
-                                   "disabled": "disabled" in a, "checked": "checked" in a}
+                                   "disabled": "disabled" in a, "checked": "checked" in a, "open": "open" in a}
 
 
 # page.js を node で走らせる台。document は getElementById だけを持つ偽物で、要素は描いた断片から作る。
@@ -1715,7 +1715,7 @@ PAGE_DRIVER = r"""
 const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const els = {};
 for (const [id, a] of Object.entries(input.elements)) {
-  els[id] = { id: id, tagName: a.tag, className: a.className, hidden: a.hidden, disabled: a.disabled, checked: a.checked,
+  els[id] = { id: id, tagName: a.tag, className: a.className, hidden: a.hidden, disabled: a.disabled, checked: a.checked, open: a.open,
     textContent: "", value: "", attrs: {}, handlers: {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
     addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
@@ -1832,6 +1832,94 @@ class PageScript(unittest.TestCase):
         bad = self.run_page("useDb(function (onSnap) { onSnap({docs: []}); }, true);", "openDb(); await tick();" + pick2 + self.STATE)
         self.assertEqual(bad["saved2"], [L["text.store_failed"], "hp-saved is-bad"])
         self.assertFalse(bad["reply_hidden"])
+
+    # 畳む表示: 保存先の最初の答えで、答えのあるカードだけを1回畳む
+    FOLD_STATE = """
+      return { retry: els["hp-fold-retry_policy"].open, alert: els["hp-fold-alert_rule"].open, rollout: els["hp-fold-rollout"].open,
+               ans: els["hp-fold-ans-retry_policy"].textContent, ans_alert: els["hp-fold-ans-alert_rule"].textContent };
+    """
+
+    @staticmethod
+    def doc(key, choice, note=""):
+        return '{id: "%s", data: function () { return {key: "%s", choice: "%s", note: "%s", at: "2026-10-24T09:00:00Z"}; }}' % (key, key, choice, note)
+
+    def test_first_answer_folds_answered_cards_only(self):
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); deliver({docs: [%s]}); await tick();"
+                            "deliver({docs: [%s, %s]}); await tick();" % (self.doc("retry_policy", "go"), self.doc("retry_policy", "go"),
+                                                                         self.doc("alert_rule", "every"))
+                            + self.FOLD_STATE, name="decide")
+        # 最初の答えにあった retry_policy だけが畳まれ、あとから届いた alert_rule は開いたまま。答えの行の文字は答えに合う
+        self.assertEqual((out["retry"], out["alert"], out["rollout"]), (False, True, True))
+        self.assertEqual(out["ans"], "答え: 冪等キーを付けて3回までにする")
+        self.assertEqual(out["ans_alert"], "答え: 毎回通知する")
+
+    def test_cards_touched_before_the_first_answer_stay_open(self):
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "els['hp-opt-retry_policy.fix'].fire('click');"
+                            "const ta = els['hp-note-rollout']; ta.value = '先に書いた補足'; ta.fire('input');"
+                            "openDb(); await tick(); deliver({docs: [%s, %s, %s]}); await tick();"
+                            % (self.doc("retry_policy", "fix"), self.doc("rollout", "stage", "先に書いた補足"), self.doc("alert_rule", "go"))
+                            + self.FOLD_STATE, name="decide")
+        # 手元で選んだカードと補足を書いたカードは、保存先に答えがあっても畳まない（保存先の答えは手元の書き込みが届いたもの）。
+        # 手を付けていない alert_rule だけ畳む
+        self.assertEqual((out["retry"], out["rollout"], out["alert"]), (True, True, False))
+        self.assertEqual(out["ans"], "答え: 直してほしい（補足欄に）")
+
+    def test_unavailable_display_folds_nothing(self):
+        out = self.run_page("", "els['hp-opt-retry_policy.go'].fire('click'); await tick();" + self.FOLD_STATE, name="decide")
+        self.assertEqual((out["retry"], out["alert"], out["rollout"]), (True, True, True))
+        self.assertEqual(out["ans"], "答え: 冪等キーを付けて3回までにする")
+        self.assertEqual(out["ans_alert"], "答え: 未回答")
+
+
+class FoldedCards(unittest.TestCase):
+    """答えたカードを畳む表示。頭（札・題）は外、中身は開閉の要素の中。回答済みのページは答えのあるカードを畳んで描く。"""
+
+    def fold(self, f, key):
+        m = re.search(r'<details class="hp-fold" id="hp-fold-%s"( open)?><summary class="hp-fold-toggle">'
+                      r'<span class="hp-fold-ans" id="hp-fold-ans-%s">(.*?)</span>' % (key, key), f)
+        return bool(m.group(1)), html.unescape(m.group(2))
+
+    def test_awaiting_cards_are_open_with_the_toggle_line(self):
+        f = render_page("decide")
+        for key in ("retry_policy", "alert_rule", "rollout"):
+            with self.subTest(key=key):
+                self.assertEqual(self.fold(f, key), (True, "答え: 未回答"))
+        self.assertEqual(f.count('<span class="hp-fold-open">開く</span><span class="hp-fold-close">畳む</span></summary>'), 3)
+
+    def test_head_is_outside_and_the_rest_inside(self):
+        f = render_page("decide")
+        card = re.search(r'<article class="hp-card" id="hp-card-retry_policy">(.*?)</article>', f, re.S).group(1)
+        head, rest = card.split('<details class="hp-fold"', 1)
+        self.assertIn('<h3 class="hp-card-title">', head)
+        self.assertIn('<span class="hp-tag">Q1</span>', head)
+        inside = rest.split('<div class="hp-fold-body">', 1)[1]
+        for part in ('<p class="hp-rec">', '<div class="hp-block">', '<div class="hp-choose"', '<textarea class="hp-note"',
+                     '<p class="hp-saved"'):
+            with self.subTest(part=part):
+                self.assertIn(part, inside)
+                self.assertNotIn(part, head)
+        self.assertTrue(inside.rstrip().endswith("</div></details>"))
+
+    def test_answered_page_folds_cards_with_an_answer(self):
+        f = AnsweredPage().render()
+        self.assertEqual(self.fold(f, "retry_policy"), (False, "答え: 冪等キーを付けて3回までにする"))
+        self.assertEqual(self.fold(f, "rollout"), (False, "答え: 1割の利用者から始める"))
+        # 未回答のカードは開いたまま
+        self.assertEqual(self.fold(f, "alert_rule"), (True, "答え: 未回答"))
+
+    def test_answered_pick_card_shows_the_chosen_rows(self):
+        f = render_page("pick", both(put(["status"], "answered"), put(["answers"], {
+            "pick_tools": {"choice": "chosen", "note": "", "at": "2026-10-23T09:00:00Z"},
+            "pick_tools--2": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"},
+            "pick_tools--5": {"choice": "pick", "note": "", "at": "2026-10-23T09:00:00Z"}})))
+        self.assertEqual(self.fold(f, "pick_tools"), (False, "答え: 選んだ候補を試す（選んだ行: 候補2、候補5）"))
+
+    def test_bundle_and_confirm_cards_fold_too(self):
+        for name, key in (("bundle", "pdf_engine"), ("confirm", "intake_216")):
+            with self.subTest(name=name):
+                self.assertEqual(self.fold(render_page(name), key), (True, "答え: 未回答"))
 
 
 class SourceCommand(unittest.TestCase):

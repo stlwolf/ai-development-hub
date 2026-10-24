@@ -1,4 +1,6 @@
-/* html-one-pager: 答えの保存・保存できないときの返答の文・回答待ちの件数を受け持つ。
+/* html-one-pager: 答えの保存・保存できないときの返答の文・回答待ちの件数と、答えに応じた畳む表示を受け持つ。
+   カードの開閉そのものはブラウザ（details と summary）が受け持つ。JS が動かすのは、保存先の答えを最初に読んだときに
+   答えのあるカードを1回だけ畳むことと、畳んだときに見える答えの行の文字だけである。
    画面の文字は textContent と value だけで書き、innerHTML を使わない。
    保存の形は collection "decisions" の、doc id がカードの key の文書 {key, choice, note, at}。
    一覧から選ぶページの行の選択も同じ形で、doc id は <カードの key>--<番号の数字>、choice は "pick" か null。 */
@@ -118,6 +120,30 @@
     paintReply();
   }
 
+  // 畳んだカードの開閉の行に出す答えの文（build.py の folded_answer と同じ形）。
+  function foldedAnswer(c) {
+    var s = state[c.key];
+    var label = L["text.unanswered"];
+    c.options.forEach(function (o) { if (o.key === s.choice) { label = o.label; } });
+    var text = fill(L["text.folded_answer"], { label: label });
+    picks.forEach(function (p) {
+      if (p.card === c.key) { text += "（" + fill(L["text.reply_rows"], { rows: rowsText(chosenIds(p)) }) + "）"; }
+    });
+    return text;
+  }
+  // 保存先の答えを最初に読み終えたときに1回だけ、答えのあるカードを畳む。読む前に手元で選んだか補足を書いたカードと、
+  // 補足欄に入力中のカードは畳まない（入力中の欄を隠さないため）。そのあとに届いた答えでは畳まない。
+  function foldAnswered() {
+    cards.forEach(function (c) {
+      var r = counters(rev, c.key);
+      var ta = $("hp-note-" + c.key);
+      var d = $("hp-fold-" + c.key);
+      if (d && state[c.key].choice && r.choice === 0 && r.note === 0 && !(ta && document.activeElement === ta)) {
+        d.open = false;
+      }
+    });
+  }
+
   function paint() {
     var open = 0;
     cards.forEach(function (c) {
@@ -126,6 +152,8 @@
         var b = $("hp-opt-" + c.key + "." + o.key);
         if (b) { b.setAttribute("aria-pressed", s.choice === o.key ? "true" : "false"); }
       });
+      var fa = $("hp-fold-ans-" + c.key);
+      if (fa) { fa.textContent = foldedAnswer(c); }
       var ta = $("hp-note-" + c.key);
       if (ta && document.activeElement !== ta && !isDirty(c.key, "note") && ta.value !== s.note) {
         ta.value = s.note;
@@ -263,6 +291,7 @@
         if (!isDirty(key, "note") && !(ta && document.activeElement === ta)) { s.note = v.note; }
       }
     });
+    if (!synced) { foldAnswered(); }
     synced = true;
     paint();
   }

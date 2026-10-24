@@ -137,6 +137,9 @@ GLOSSARY_KEYS = {
     "text.select_over": ("n",),
     "text.pick": (),
     "text.reply_rows": ("rows",),
+    "text.folded_answer": ("label",),
+    "text.unfold": (),
+    "text.fold": (),
 }
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
@@ -1680,6 +1683,15 @@ class Renderer:
         head += '<h%d class="hp-card-title">%s</h%d>' % (level, inline(c["title"], refs), level)
         head += self.evidence(c.get("evidence")) + "</div>"
         h.append(head)
+        # 頭（札・題）の下の中身を、ブラウザの開閉の要素で包む。開閉はブラウザが受け持ち、JS は持たない。
+        # 回答済みのページでは、答えのあるカードを畳んで描く。開閉の行には、畳んだときだけ答えが見える。
+        folded = self.answered and bool(choice)
+        h.append('<details class="hp-fold" id="hp-fold-%s"%s><summary class="hp-fold-toggle">'
+                 '<span class="hp-fold-ans" id="hp-fold-ans-%s">%s</span>'
+                 '<span class="hp-fold-open">%s</span><span class="hp-fold-close">%s</span></summary>'
+                 '<div class="hp-fold-body">'
+                 % (esc(key), "" if folded else " open", esc(key), esc(self.folded_answer(c, choice)),
+                    esc(L["text.unfold"]), esc(L["text.fold"])))
         h.append('<p class="hp-rec">%s<span class="hp-rec-choice">%s</span></p>'
                  % (self.chip("hp-chip-rec", L["recommend"]), inline(rec_label, refs)))
         # 根拠は任意。推奨に説明が要らないカードでは書かず、根拠の行も出さない。
@@ -1708,8 +1720,19 @@ class Renderer:
                  % (esc(key), esc(L["text.note_placeholder"]), title_attr, esc(L["text.note_placeholder"]),
                     " disabled" if self.answered else "", esc(note)))
         h.append('<p class="hp-saved" id="hp-saved-%s" aria-live="polite"></p>' % esc(key))
+        h.append("</div></details>")
         h.append("</article>")
         return "\n".join(h)
+
+    def folded_answer(self, c, choice):
+        """畳んだカードの開閉の行に出す答えの文。JS も同じ文を組み立てて書き換える（page.js の foldedAnswer）。"""
+        L = self.L
+        label = next((o["label"] for o in c["options"] if o["key"] == choice), L["text.unanswered"])
+        text = fill(L["text.folded_answer"], label=label)
+        if self.pick and self.pick["card"] == c["key"]:
+            chosen = self.chosen_rows()
+            text += "（%s）" % fill(L["text.reply_rows"], rows="、".join(chosen) if chosen else L["text.select_none"])
+        return text
 
     def select_rule(self):
         p, L = self.pick, self.L
