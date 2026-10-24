@@ -425,9 +425,10 @@ BROKEN = [
     ("k3_board_table_before_cards", "board", lambda d: d["sections"].insert(0, d["sections"].pop(3)), [("E-K3", "sections[0]")], False),
     ("k2_board_body", "board", lambda d: None, [("E-K2", "--body")], True),
     ("k2_board_findings", "board", append(["sections"], FINDINGS_SEC), [("E-K2", "sections[5]")], False),
-    # 判定カードが無ければ、番号の列を持つ表（決まったこと）が要る
-    ("k1_board_without_cards_or_decided_table", "board", lambda d: d["sections"].__delitem__(slice(0, 4)),
-     [("E-K1", "sections")], False),
+    # 判定カードが無いときは、表が1つ以上要る（番号の列の無い表だけでもよい）
+    ("k1_board_without_cards_or_tables", "board", put(["sections"], [FINDINGS_SEC]),
+     [("E-K2", "sections[0]"), ("E-K1", "sections")], False),
+    ("s1_board_without_parts_is_only_s1", "board", put(["sections"], []), [("E-S1", "sections")], False),
     # レビューのページの依頼したレビュー（request）。レビューでは必須、ほかの種別では置けない
     ("k1_review_without_request", "review", drop(["request"]), [("E-K1", "request")], False),
     ("k2_request_on_approve", "decide", put(["request"], REQUEST), [("E-K2", "request")], False),
@@ -737,6 +738,82 @@ class SelectOnAnyKind(unittest.TestCase):
         with_two_picks(d)
         d["sections"][0]["cards"][0]["blocks"][0]["points"][0] = "候補4・5・6 を比べる"
         self.assertEqual([(c, p) for c, p, _ in build.validate(d)], [("E-I3", "sections[0].cards[0].blocks[0].points[0]")])
+
+
+class EmptyBoard(unittest.TestCase):
+    """開いた問いが0枚の判断ボードは、番号の列の無い表だけで置ける（保存のコードを持たない）。"""
+
+    def test_board_with_only_a_plain_table(self):
+        drop_all_but_values = lambda d: d["sections"].__delitem__(slice(0, 4))
+        d = copy.deepcopy(example("board"))
+        drop_all_but_values(d)
+        self.assertEqual([s.get("type") for s in d["sections"]], ["table"])
+        self.assertFalse(any(c.get("type") == "no" for c in d["sections"][0]["columns"]))
+        self.assertEqual(build.validate(d), [])
+        self.assertNotIn("<script", render_page("board", drop_all_but_values))
+
+
+class CollectedAnswers(unittest.TestCase):
+    """check --answers: 回収した答え（保存先の文書を answers の形に写したもの）をページに当てる。判断ボードでも働く。"""
+
+    AT = "2026-10-24T10:00:00Z"
+
+    def ans(self, **choices):
+        return {k: {"choice": v, "note": "", "at": self.AT} for k, v in choices.items()}
+
+    def check(self, name, collected, mutate=None):
+        d = copy.deepcopy(example(name))
+        if mutate:
+            mutate(d)
+        errors, ignored = build.check_collected(d, collected)
+        return [(c, p) for c, p, _ in errors], ignored
+
+    def picks(self, *nums):
+        return {"trial_shops_pick--%d" % n: "pick" for n in nums}
+
+    def test_rows_over_the_limit_are_stopped_on_a_live_board(self):
+        self.assertEqual(self.check("board", self.ans(**self.picks(1, 2, 3))), ([("E-A1", "--answers")], 0))
+        self.assertEqual(self.check("board", self.ans(trial_shops_pick="chosen", **self.picks(1, 3))), ([], 0))
+
+    def test_second_collection_ignores_keys_not_on_the_page(self):
+        # 前の回収で表へ移したカードの答え・除いた表の行の答えが保存先に残っていても止めず、数だけを数える
+        collected = self.ans(old_card="go", **dict(self.picks(1), **{"old_pick--9": "pick"}))
+        self.assertEqual(self.check("board", collected), ([], 2))
+
+    def test_answers_of_collected_cards_are_only_counted_after_removing_them(self):
+        # 回収するカードと選ぶ表を除いたあとのデータに当てると、そのカードの答えは数えるだけになる（除く前に当てる）
+        def remove_q7(d):
+            d["sections"][1]["cards"].pop()
+            d["sections"].pop(2)
+        self.assertEqual(self.check("board", self.ans(**self.picks(1, 2, 3)), remove_q7), ([], 3))
+
+    def test_choice_not_an_option(self):
+        self.assertEqual(self.check("board", self.ans(rollback_window="year")), ([("E-A1", "--answers.rollback_window.choice")], 0))
+
+    def test_not_an_object(self):
+        self.assertEqual(self.check("board", ["x"]), ([("E-F3", "--answers")], 0))
+
+    def test_embedded_answers_and_collected_answers_are_checked_separately(self):
+        answered = both(put(["status"], "answered"), put(["answers"], self.ans(retry_policy="go")))
+        self.assertEqual(self.check("decide", self.ans(alert_rule="sometimes"), answered), ([("E-A1", "--answers.alert_rule.choice")], 0))
+
+    def test_cli(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        path = os.path.join(tmp, "a.json")
+        board = os.path.join(EXAMPLES, "board.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self.ans(**dict(self.picks(1, 2, 3), old_card="go")), fh, ensure_ascii=False)
+        rc, _, err = run_cli("check", board, "--answers", path)
+        self.assertEqual(rc, 1)
+        self.assertIn("E-A1 --answers: カード trial_shops_pick の選んだ行が 3 つで、選べる数（max 2）を超える", err)
+        self.assertIn("ページに無い key 1 件は見なかった", err)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self.ans(**self.picks(1, 3)), fh, ensure_ascii=False)
+        self.assertEqual(run_cli("check", board, "--answers", path)[0], 0)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{")
+        self.assertEqual(run_cli("check", board, "--answers", path)[0], 2)
 
 
 class PickRows(unittest.TestCase):

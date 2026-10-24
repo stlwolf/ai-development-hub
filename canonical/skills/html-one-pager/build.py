@@ -931,15 +931,16 @@ class Validator:
         return out
 
     def kind_board(self, types, paths, secs):
-        """判断ボード: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無ければ
-        （決まったカードをすべて表へ移したページ）、番号の列を持つ表（決まったこと）が1つ以上要る。"""
+        """判断ボード: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無いページ
+        （開いた問いが0枚・決まったカードをすべて表へ移したページ）は、表が1つ以上あればよい。"""
         allowed = self.kind_allowed("board", types, paths, ("decisions", "table"))
         dec = [i for i in allowed if types[i] == "decisions"]
         tab = [i for i in allowed if types[i] == "table"]
         self.unnamed_tables_after_cards(types, paths, allowed, dec, "表は判定カードの節のあとに置く（いま決めることを上に置く）")
         self.select_runs(types, paths, secs, dec)
-        if not dec and self.has_number_table(tab, paths) is False:
-            self.add("E-K1", "sections", "判断ボードのページには、判定カードの節か、番号の列を持つ表（決まったこと）が1つ以上要る")
+        # 開いた問いが0枚の判断ボードは、表だけで置ける（番号の列の無い作業の表だけでもよい）。
+        if not dec and not tab:
+            self.add("E-K1", "sections", "判断ボードのページには、判定カードの節か表が1つ以上要る")
 
     def request(self, path, req):
         if not self.obj(path, req, REQUEST_FIELDS):
@@ -1532,6 +1533,21 @@ def display_texts(data):
                         if isinstance(k, str):
                             add("%s.rows[%d].%s" % (sp, j, k), row.get(k))
     return out
+
+
+def check_collected(data, collected, has_body=False, words=None):
+    """回収した答え（保存先から読んだ文書を、answers と同じ形に写したもの）を、ページに当てる（check --answers）。
+    ページにある key（カードと行の答え）は answers の検査（E-A1・選び方のカードごとの上限）で見て、
+    ページに無い key（前の回収で表へ移したカードの答え・除いた表の行の答え）は見ずに数える。
+    ページの状態に関係なく見る。返すのは (ページの誤りと渡した答えの誤りの並び, 見なかった key の数)。"""
+    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY))
+    v.page(data)
+    if not isinstance(collected, dict):
+        v.add("E-F3", "--answers", "回収した答えはオブジェクトであるべき所が%sである" % type_name(collected))
+        return v.errors, 0
+    known = {k: a for k, a in collected.items() if k in v.card_options}
+    v.answers("--answers", known)
+    return v.errors, len(collected) - len(known)
 
 
 def validate(data, has_body=False, words=None):
@@ -2311,7 +2327,13 @@ def cmd_check(args):
     data = load_data(args.data)
     if args.body:
         read_text(args.body, "--body の本文")
-    errors = validate(data, has_body=bool(args.body), words=words)
+    if args.answers:
+        collected = parse_json(read_text(args.answers, "回収した答え"), "回収した答え（%s）" % args.answers)
+        errors, ignored = check_collected(data, collected, has_body=bool(args.body), words=words)
+        if ignored:
+            print("ページに無い key %d 件は見なかった（前の回収で表へ移したカードの答えなど）" % ignored, file=sys.stderr)
+    else:
+        errors = validate(data, has_body=bool(args.body), words=words)
     if errors:
         report(errors)
         return 1
@@ -2365,6 +2387,7 @@ def make_parser():
     pc = sub.add_parser("check", help="データを検証するだけで、HTML は書かない")
     pc.add_argument("data", help="ページのデータ（JSON）")
     pc.add_argument("--body", help="読み物の本文の HTML の断片（sections が空でよくなる）")
+    pc.add_argument("--answers", help="回収した答えの JSON（保存先の文書を answers と同じ形に写したもの）。ページにある key を見て、ページに無い key は数だけを出す")
     pc.add_argument("--glossary", default=DEFAULT_GLOSSARY, help=argparse.SUPPRESS)
     pb = sub.add_parser("build", help="データを検証し、通ったときだけ HTML を書く")
     pb.add_argument("data", help="ページのデータ（JSON）")
