@@ -156,3 +156,35 @@ plan の DJ-1〜DJ-16 に書いた。ここには、初稿を書くときに迷�
 - 用語集の `prefix.candidate` の説明を、選ぶ表の接頭辞に直した。
 - CATALOG の html-one-pager の行に、問いのカードの書き方・一覧から選ぶ問いを承認と束と判断ボードに置けること・畳む表示・`check --answers` を足した（`git diff 4d5bf68 -- canonical/CATALOG.md` は1行の差し替えだけ）。
 - A15 の3つの `grep` は当たり無し。404件・2つの Python で失敗0件。
+
+### I1-7: 受入の確かめ（2026-10-24・`ca5071a`）
+
+- **A1**: 404件・3.13.5 と 3.9.6 で失敗0件。変更ごとの検査の対応は下の表。
+- **A2**: 新しい規則（E-Q1〜E-Q3・E-C7）を `EveryRuleIsCovered` に足し、壊したデータの検査で、期待した規則と場所の1件だけ（「隠さない」検査は2件とも）出ることを確かめた。I1-1・I1-3・I1-4・I1-5 の節の件数のとおり。
+- **A3**: `4d5bf68` のスキルのフォルダに新しい検査と見本を入れて走らせた。新しい検査の項目 88件のうち 77件が落ち、11件が通った。通った11件は、どれも今の振る舞いを保つことを確かめる比べの元である（重ねない検査3件・部品が0の判断ボードは E-S1 だけ・指摘の一覧だけの判断ボードは E-K2 と E-K1・認識合わせとレビューのカードの `select` は E-K2・通る名前と通る題・認識合わせの題は見ない・全体の承認のカードは塊が要らない）。
+- **A4**: 9つの見本がすべて `check` と `build` を通る（終了コード 0）。
+- **A5**: (a)(b) は `SkillMdExamples` と `QuestionCardWriting.test_examples_and_skill_md_follow_the_writing` で確かめた。(c) の「推奨どおり」の `grep` の当たりは8件で、用語集の `text.all_recommended`（会話で言う一言・1件）、SKILL.md の「答えを受け取る」節の同じ一言（1件・#538 の範囲なので触らない）、SKILL.md の限界の行（止まらない書き方を挙げる行・1件）、検査の壊したデータ（4件）、検査の通る例（`実施する（推奨どおり）`・1件）だった。plan の A5 が挙げた3つの分類に、「会話で言う同じ一言」と「検査の通る例」を足して読む（補正。下の「ゲート3 のあとの変更」の H1）。
+- **A6〜A8**: 検査で確かめた（`FoldedCards`・`PageScript` の畳む検査3件・`SelectOnAnyKind`・`CollectedAnswers`・`EmptyBoard`）。
+- **A9**: `page.js` の差分は、先頭の説明・`foldedAnswer`・`foldAnswered`・`paint` の1行・`onSnapshot` の1行（最初の答えのときに `foldAnswered` を呼ぶ）だけで、保存の処理（`write`・`queue`・`onSnapshot` の答えの取り込み）の行の変更は無い。今の `PageScript` の7件は通る。混ぜたカードと行が別の doc id に書かれることも確かめた。`build.py` の差分に E-B1 の関数とその補助の行は無く、`ExternalLoads` の class の中身は `4d5bf68` と同じ。`template.html` の差分は空。
+- **A10**: 作り・埋め込みデータ・JS・CSS に分けて比べた。`review.json`・`table.json`・`grasp.json` は CSS のほかは同じ。`confirm.json` は、作りでは2枚のカードの開閉の要素と答えの行だけ、埋め込みデータでは `labels` の新しい key（`text.fold`・`text.folded_answer`・`text.unfold`）だけ、JS では畳む処理だけが違う。データを直した5つの見本は、カードの文・選ぶ表・`labels` が違い、`pick.json` の埋め込みの `picks` は変わらない。
+- **A11**: 統括の作業層の版2 の承認のページ（26問）と判断ボードのデータは、最後のコミットの `check` を通った。版2 の前の判定ページ（3問）は前の版の形（`purpose`）なので E-F3 と E-F2 で止まり、`kind` を足した写しでは E-Q1 3件・E-Q3 6件（と #478 からの札の形の E-I1 3件）で止まった。実物のデータとその写しはコミットに入れていない（写しは worktree の `tmp/` の下）。
+- **A12**: 手元の HTTP サーバーと Playwright で確かめた。(a) 偽の保存先で答えのある Q1・Q2 が開いたときに畳まれ、Q3・全体の承認は開いたまま。開閉の行を押すと開き、もう一度押すと畳まれる。関連リンクの最後から Tab 1回で Q1 の開閉の行に移り、Enter と Space で開け閉めできた。(b) 幅 900px で目的の文の `Q2` から畳んだ Q2 へ飛ぶと、頭の上端 121px・帯の下端 81px で、頭の中の点を `elementFromPoint` で当てると頭が返った。そこで開いても上端は 121px のまま。幅 400px・保存できない表示（帯がいちばん高い 128px）で手で畳んだ Q2 へ飛ぶと、頭の上端 163px で帯の下端 128px より下だった（knowledge item `01M5JEBC72EH20XR8E8M3M5VKX`）。(c) 題はすべて `summary` の外にあり、`summary` の中に見出しは無い。(d) 判断ボードで候補1 と 候補3 を選ぶと候補2 が押せなくなり、「選んだ行（2）: 候補1、候補3」が出て、畳むと「答え: 選んだ店舗で試す（選んだ行: 候補1、候補3）」が出た。(e) 回答済みのページから script を除いた写しでも、答えのある Q1 は畳まれて描かれ、押すと開いた。(f) 幅 400px で5つのページとも `scrollWidth` が `clientWidth`（400）を超えない。見た目は画面の写しで1回確かめた（worktree の `tmp/` の下）。
+- **A14**: `git diff 4d5bf68 -- canonical/CATALOG.md` は html-one-pager の行1つだけ。
+- **A15**: 3つの `grep` は当たり無し（終了コード 1）。
+
+#### 変更ごとの検査の対応（A1）
+
+| DJ | 検査 |
+|---|---|
+| DJ-1〜DJ-3 問いのカードの書き方・E-Q1〜E-Q3 | `BrokenData` の `q1_*`・`q2_*`・`q3_*`・`q_*`、`QuestionCardWriting`、`LoadStage.test_block_words_broken_exit_2`・`test_changed_block_words_and_recommend_word_change_check` |
+| DJ-4 長い文書の節へのリンク | 検査なし（SKILL.md の決まり。限界に書いた） |
+| DJ-5・DJ-6 畳む表示・いつ畳むか | `FoldedCards`、`PageScript.test_first_answer_folds_answered_cards_only`・`test_cards_touched_before_the_first_answer_stay_open`・`test_unavailable_display_folds_nothing` |
+| DJ-7 置ける種別とカードと表の結び付き | `BrokenData` の `k2_select_on_*`・`c7_*`・`f3_tables_not_array`、`SelectOnAnyKind.test_two_pairs_on_an_approve_page`・`test_pick_page_forms_still_pass` |
+| DJ-8 番号の列・接頭辞・アンカー | `BrokenData` の `i1_select_*`・`i2_candidate_numbers_overlap_across_pairs`・`i1_select_number_missing_on_board`、`Identifiers.test_board_keeps_written_numbers_and_links_to_decided_rows`、`SelectOnAnyKind.test_board_example_has_a_pair_right_after_its_section`・`test_listed_candidate_numbers_are_stopped_on_an_approve_page` |
+| DJ-9 並び | `BrokenData` の `k3_select_table_not_right_after_its_section`・`k3_select_tables_out_of_card_order` |
+| DJ-10 束の選ぶ表 | `BrokenData` の `c7_table_of_another_group`・`k2_group_table_not_named`・`s1_group_table_not_a_table`・`f3_group_table*`・`i1_group_*`・`i2_group_*`・`k3_group_*`・`i3_group_*`、`SelectOnAnyKind.test_group_pair_renders_inside_its_group` |
+| DJ-11 描画と埋め込み | `SelectOnAnyKind`、`PageScript.test_two_pairs_have_their_own_limits_and_reply_lines`・`test_cards_and_rows_are_saved_to_their_own_documents` |
+| DJ-12 回収と止め方・`check --answers` | `CollectedAnswers`、`Identifiers.test_board_with_every_card_moved_has_no_save_code` |
+| DJ-13 検査の規則（E-C1・E-C6・E-S3・E-A1） | `BrokenData` の `c1_card_key_is_a_row_answer_key`・`c6_select_min_over_its_rows`・`s3_table_key_*`・`a1_rows_over_max_per_pair`・`c7_and_*` |
+| DJ-14 空の判断ボード | `EmptyBoard`、`BrokenData` の `k1_board_without_cards_or_tables`・`s1_board_without_parts_is_only_s1` |
+| DJ-15 見本・SKILL.md・用語集 | `ExamplesPass`、`SkillMdExamples`（例ごとの対応）、`QuestionCardWriting.test_examples_and_skill_md_follow_the_writing`、`PrefixWordsAcrossTheFolder` |

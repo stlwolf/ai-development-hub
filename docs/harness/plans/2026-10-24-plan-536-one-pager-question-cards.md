@@ -425,12 +425,12 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 - Q3: 開いた問いが0枚の判断ボードに、番号の列の無い表だけを置けるようにする。
 - Q4: 判断ボードで選び方のカードを回収するとき、選んだ行の数の上限を `check --answers` で確かめる。
 
-### I1-0: baseline の確認
+### I1-0: baseline の確認（完了）
 
 - `git fetch` のあとの `origin/master` が `4d5bf68` のままかを確かめる。進んでいたら、スキルのフォルダに変更が入っていないかを見て、入っていれば止まって統括へ照会する。
 - A3 と A10 の比べる元として、`git archive 4d5bf68 canonical/skills/html-one-pager` を worktree の `tmp/536-one-pager-question-cards/base/` に取り出し、今の見本を `--now 2026-10-19T09:05:00+00:00 --tmux off` で作って `tmp/536-one-pager-question-cards/baseline/` に置く。
 
-### I1-1: 問いのカードの書き方（DJ-1〜DJ-4・DJ-15 の書き方の部分・1コミット）
+### I1-1: 問いのカードの書き方（DJ-1〜DJ-4・DJ-15 の書き方の部分・1コミット）（完了・`37b9f9d`）
 
 - 用語集に「問いのカードの塊の題」の節を足し、`build.py` が読む。E-Q1〜E-Q3 を足す。
 - 見本5つのカードと、検査の中で作るカードを書き直す（書き直さないと、今の検査が E-Q で落ちる）。
@@ -439,7 +439,7 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 
 ### GATE I1-1: 検査が2つの Python で通り、すべての見本が `check` と `build` を通る
 
-### I1-2: 答えたカードを畳む（DJ-5・DJ-6・1コミット）
+### I1-2: 答えたカードを畳む（DJ-5・DJ-6・1コミット）（完了・`638f151`）
 
 - `build.py` のカードの描画を、頭を外に、残りを開閉の中に置く形（DJ-5 の作り）にし、回答済みのページでは答えのあるカードを畳んで描く。用語集に `text.folded_answer`・`text.unfold`・`text.fold` を足す。
 - `page.js` に、最初に答えを読んだときに答えたカードを畳むことと、答えの行の文字を書き換えることを足す。`page.css` に開閉の見た目を足す。
@@ -447,14 +447,14 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 
 ### GATE I1-2: 検査が2つの Python で通り、すべての見本が `check` と `build` を通る
 
-### I1-3: 一覧から選ぶ問いを承認と判断ボードに置く（DJ-7〜DJ-9・DJ-11・DJ-13 の承認と判断ボードの部分・1コミット）
+### I1-3: 一覧から選ぶ問いを承認と判断ボードに置く（DJ-7〜DJ-9・DJ-11・DJ-13 の承認と判断ボードの部分・1コミット）（完了・`639c2cb`）
 
 - 表の `key`・選び方の `tables`・選ぶ表の接頭辞と番号・並びの例外・組ごとの描画と埋め込み・E-C7 と変わった規則。
 - 行の答えの key とカードの key の重なり（E-C1）。
 - `board.json` に組を1つ足す。
 - 検査: A2 の E-C1・E-C7・E-K2・E-K3・E-I1・E-I2・E-S3 の項目と今の一覧から選ぶページの5つの書き方、A7 の (a) の承認と判断ボード・(b)・(d)、A9 の混ぜたカードと行の保存。
 
-### I1-4: 束の group の選ぶ表（DJ-10・1コミット）
+### I1-4: 束の group の選ぶ表（DJ-10・1コミット）（完了・`a230a65`）
 
 - group の `tables`・group の送り元でのリンク・group の行のアンカー・行の id・名指しの検査・group の文への E-I3。
 - `bundle.json` に組を1つ足す。
@@ -462,18 +462,18 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 
 ### GATE I1-4: 検査が2つの Python で通り、すべての見本が `check` と `build` を通る
 
-### I1-5: 回収の確かめと空の判断ボード（DJ-12・DJ-14・1コミット）
+### I1-5: 回収の確かめと空の判断ボード（DJ-12・DJ-14・1コミット）（完了・`e6658ca`）
 
 - `check --answers`・判定カードの無い判断ボードの許可。
 - 検査: A7 の (e)、A8。
 
-### I1-6: SKILL.md を仕上げ、CATALOG の行を直す（DJ-15・1コミット）
+### I1-6: SKILL.md を仕上げ、CATALOG の行を直す（DJ-15・1コミット）（完了・`ca5071a`）
 
 - 種別と部品の表・札と番号の表・データの書き方の表・一覧から選ぶ行の選択の節・判断ボードの更新のしかた・コマンド・検証の規則の表・限界。CATALOG の行。
 
 ### GATE I1-6: 検査が2つの Python で通り、すべての見本が `check` と `build` を通る
 
-### I1-7: 確かめ（A3・A5・A9〜A12・A14・A15）
+### I1-7: 確かめ（A3・A5・A9〜A12・A14・A15）（完了・結果は episode の I1-7）
 
 ### GATE I1: A1〜A12・A14・A15 がすべて満たされている（A13 と A16 は I2 で確かめる）
 
@@ -490,3 +490,12 @@ git -C '<worktree>' push -u origin 'feature/#536_one_pager_question_cards'
 
 - `episode-retrospective` で閉じる。注入した knowledge item 4件すべてに観測を書き戻す。この単位から出る decision（DJ-2・DJ-6・DJ-7・DJ-8・DJ-12・DJ-14 と、変えた決定の一覧）を `docs/harness/decisions/` に昇格し、この枝の PR に入れる。
 - `.oe/report-536.md` に報告を書き（`implementer-contract` の形）、「報告の宛先」へ `oe-send` で1行送り、exit code を確かめて止まる。マージ・worktree の掃除・issue の close はしない。
+
+## ゲート3 のあとの変更
+
+承認時点の plan は `9e16a57`。級は「記録・補正・変更」の3つで、記録（済み印・結果）はここに書かない。
+
+| # | 対象 | 出どころ | 級 | 直し | 確かめた項目 |
+|---|---|---|---|---|---|
+| H1 | A5 の (c)（「推奨どおり」の `grep` の当たりの分類） | 照合（I1-7 で当たりを1件ずつ分けたとき） | 補正 | 分類に「会話で言う同じ一言（SKILL.md の「答えを受け取る」節の「全部推奨どおり」）」と「検査の通る例（`実施する（推奨どおり）`）」を足して読む。前者は用語集の `text.all_recommended` と同じ一言で、後者は DJ-3 の受入の例の通る形である | (1) step の見出しは消えていない (2) 要件は弱めていない。分類を足すのは、承認した決まりから直接出る当たりだけで、それ以外の当たりは今も直す対象 (3) ゲートは不変 (4) 終端は I3 のまま (5) 受入の数は不変 (6) owner が決めたことは変えていない (7) 範囲は不変（「答えを受け取る」節は触らない） (8) 新しい義務・判断は無い |
+
