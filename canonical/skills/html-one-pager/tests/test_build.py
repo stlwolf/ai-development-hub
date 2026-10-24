@@ -508,6 +508,26 @@ BROKEN = [
           put(["answers"], {"pick_tool--1": {"choice": "pick", "note": "", "at": "2026-10-24T09:00:00Z"},
                             "pick_tool--2": {"choice": "pick", "note": "", "at": "2026-10-24T09:00:00Z"}})),
      [("E-A1", "answers")], False),
+    # 束の group の中の選ぶ表（同じ group の選び方のカードだけが名指せる・key は必須・名指されていない表は置けない）
+    ("c7_table_of_another_group", "bundle", put(GROUP1 + ["cards", 0, "select"], {"max": 1, "tables": ["pdf_fonts"]}),
+     [("E-C7", "sections[0].groups[1].cards[0].select.tables[0]")], False),
+    ("k2_group_table_not_named", "bundle", put(GROUP1 + ["tables"], [dict(TABLE_SEC, key="extra")]),
+     [("E-K2", "sections[0].groups[1].tables[0]")], False),
+    ("s1_group_table_not_a_table", "bundle", put(GROUP1 + ["tables"], [CONFIRM_SEC]), [("E-S1", "sections[0].groups[1].tables[0].type")], False),
+    ("f3_group_table_without_key", "bundle", put(GROUP1 + ["tables"], [TABLE_SEC]), [("E-F3", "sections[0].groups[1].tables[0].key")], False),
+    ("f3_group_tables_not_array", "bundle", put(GROUP1 + ["tables"], {}), [("E-F3", "sections[0].groups[1].tables")], False),
+    ("i1_group_select_number_missing", "bundle", drop(GROUP0 + ["tables", 0, "rows", 0, "no"]),
+     [("E-I1", "sections[0].groups[0].tables[0].rows[0].no")], False),
+    ("i2_group_numbers_overlap", "bundle",
+     both(put(GROUP1 + ["cards", 0, "select"], {"max": 1, "tables": ["more_fonts"]}),
+          put(GROUP1 + ["tables"], [select_table("more_fonts", ["候補1"])])),
+     [("E-I2", "sections[0].groups[1].tables[0].rows[0].no")], False),
+    ("k3_group_tables_out_of_card_order", "bundle",
+     both(append(GROUP0 + ["cards"], select_card("pdf_other", ["other"])),
+          lambda d: at(d, GROUP0 + ["tables"]).insert(0, select_table("other", ["候補7"]))),
+     [("E-K3", "sections[0].groups[0].tables[1]")], False),
+    ("i3_group_listed_numbers", "bundle", put(GROUP0 + ["cards", 1, "blocks", 0, "points", 0], "候補1・2・3 を比べる"),
+     [("E-I3", "sections[0].groups[0].cards[1].blocks[0].points[0]")], False),
     # 名指しの誤りは、名指しに頼らない誤りを隠さない（2件とも出る）
     ("c7_and_c6_on_one_card", "decide",
      both(with_pick, put(PICK_CARD + ["select"], {"max": 1, "min": 2, "tables": ["tools", "nope"]})),
@@ -697,6 +717,20 @@ class SelectOnAnyKind(unittest.TestCase):
                 mutate(d)
                 self.assertEqual(build.validate(d), [])
                 render_page("pick", mutate)
+
+    def test_group_pair_renders_inside_its_group(self):
+        f = render_page("bundle")
+        self.assertEqual(self.boxes(f), ["pdf_font--1", "pdf_font--2", "pdf_font--3"])
+        self.assertIn('id="hp-select-chosen-pdf_font"', f)
+        group0 = f[f.index('id="hp-group-0"'):f.index('id="hp-group-1"')]
+        self.assertIn('<h4 class="hp-sec-title">書体の候補</h4>', group0)
+        # 表の識別子は group の送り元でリンクになり、カードの文の候補2 はその行へ飛ぶ
+        self.assertIn(a_tag("https://github.com/example-org/billing/issues/29", "#29"), group0)
+        self.assertIn(anchor("hp-row-0-g0-t0-1", "候補2") + " を使う", group0)
+        self.assertIn('<tr id="hp-row-0-g0-t0-1">', group0)
+        picks = json.loads(html.unescape(embedded(f)))["picks"]
+        self.assertEqual([(p["card"], [r["key"] for r in p["rows"]]) for p in picks],
+                         [("pdf_font", ["pdf_font--1", "pdf_font--2", "pdf_font--3"])])
 
     def test_listed_candidate_numbers_are_stopped_on_an_approve_page(self):
         d = copy.deepcopy(example("decide"))
@@ -1148,7 +1182,7 @@ class Header(unittest.TestCase):
     def test_bundle_groups_use_the_same_table(self):
         f = render_page("bundle")
         self.assertEqual(meta_of(f, 1), [("リポジトリ", "billing"), ("tmux", "3.2（CC:billing）"), ("issue", "#31"),
-                                         ("ブランチ", "feature/#31_invoice_pdf"), ("状態", "回答待ち 1 件")])
+                                         ("ブランチ", "feature/#31_invoice_pdf"), ("状態", "回答待ち 2 件")])
         self.assertEqual(meta_of(f, 2), [("リポジトリ", "mobile"), ("issue", "#7"), ("ブランチ", "fix/#7_login_loop"),
                                          ("状態", "回答待ち 1 件")])
 

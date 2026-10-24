@@ -621,6 +621,31 @@ class Validator:
         if not b:
             self.add("E-K1", "sections", "束のページには判断待ちの束の部品（bundle）が1つ要る")
         self.only_one(b, paths, "判断待ちの束の部品")
+        # group の表は選ぶ表だけを置け、group の中の選び方のカードの順・tables の順に並べる。key の無い表は E-F3 だけを出す
+        for i in b:
+            groups = secs[i].get("groups") if isinstance(secs[i].get("groups"), list) else []
+            for g, grp in enumerate(groups):
+                if not isinstance(grp, dict) or not isinstance(grp.get("tables"), list):
+                    continue
+                gp = "%s.groups[%d]" % (paths[i], g)
+                tables = ["%s.tables[%d]" % (gp, t) for t, tb in enumerate(grp["tables"]) if isinstance(tb, dict) and "key" in tb]
+                cards = grp.get("cards") if isinstance(grp.get("cards"), list) else []
+                for t in tables:
+                    # カードが無い group（E-S1）では、表を名指せるカードが無いので、名指されていないことを重ねて出さない
+                    if t not in self.named and cards:
+                        self.add("E-K2", t, "束の group には、同じ group の選び方のカードが tables で名指した表（選ぶ表）だけを置ける")
+                    cols = self.tables.get(t) or []
+                    nos = [j for j, (_, ct) in enumerate(cols) if ct == "no"]
+                    if len(nos) > 1:
+                        self.add("E-K2", "%s.columns[%d]" % (t, nos[1]), "番号の列（type no）は1つの表に1列までにする")
+                expected = []
+                for j in range(len(cards)):
+                    expected.extend(self.select_tables.get("%s.cards[%d]" % (gp, j)) or [])
+                got = [t for t in tables if t in self.named]
+                for want, have in zip(expected, got + [None] * (len(expected) - len(got))):
+                    if want != have:
+                        self.add("E-K3", want, "group の選ぶ表は、group の中の選び方のカードの順・tables の順に並べる")
+                        break
 
     def kind_review(self, types, paths, secs):
         allowed = self.kind_allowed("review", types, paths, ("findings", "table", "decisions"))
@@ -1131,8 +1156,10 @@ class Validator:
             self.add("E-L1", path, '"%s" の接頭辞 "%s" が送り元の trackers に無い' % (r, tracker.group(1)))
 
     def group(self, path, g):
-        if not self.obj(path, g, ("source", "title", "cards"), ("why",)):
+        if not self.obj(path, g, ("source", "title", "cards"), ("why", "tables")):
             return
+        if "tables" in g:
+            self.group_tables(join(path, "tables"), g["tables"])
         if "source" in g:
             self.source(join(path, "source"), g["source"])
         if "title" in g:
@@ -1141,6 +1168,20 @@ class Validator:
             self.text(join(path, "why"), g["why"], "E-H1")
         if "cards" in g:
             self.cards(join(path, "cards"), g["cards"])
+
+    def group_tables(self, path, tables):
+        """束の group の表。表の部品と同じ形で、key を必ず持つ（選ぶ表として同じ group の選び方のカードが名指すため）。"""
+        if not isinstance(tables, list):
+            self.add("E-F3", path, "配列であるべき所が%sである" % type_name(tables))
+            return
+        for i, tb in enumerate(tables):
+            tp = "%s[%d]" % (path, i)
+            if isinstance(tb, dict) and "type" in tb and tb["type"] != "table":
+                self.add("E-S1", join(tp, "type"), 'group の tables に置ける部品の type は table であるべき所が %s'
+                         % json.dumps(tb["type"], ensure_ascii=False))
+                continue
+            if self.section(tp, tb) == "table" and "key" not in tb:
+                self.add("E-F3", join(tp, "key"), "group の表は key を持つ（同じ group の選び方のカードが tables で名指す）")
 
     def cards(self, path, cards):
         if self.array(path, cards, "E-S1", "カードが1枚も無い"):
@@ -1375,8 +1416,9 @@ LIST_SEPARATORS = "・、,，"
 
 
 def display_texts(data):
-    """ページの送り元で書式を変換する表示の文を、[(場所, 文字列)] で返す（Renderer が inline に渡すものと同じ）。
-    束の group の中は group の送り元で変換し、識別子も定義しないので含めない。形の崩れた所は飛ばす。"""
+    """表示の文を、[(場所, 文字列)] で返す（Renderer が inline に渡すものと同じ）。番号を並べる書き方（E-I3）の検査に使う。
+    束の group の中の文も含める（リンクは group の送り元で作るが、group の選ぶ表の候補の番号はページの識別子である）。
+    形の崩れた所は飛ばす。"""
     out = []
 
     def add(path, v):
@@ -1390,8 +1432,67 @@ def display_texts(data):
             for k, pt in enumerate(points):
                 add("%s[%d]" % (path, k), pt)
 
+    def add_cards(path, cards):
+        for j, c in enumerate(cards if isinstance(cards, list) else []):
+            if not isinstance(c, dict):
+                continue
+            cp = "%s[%d]" % (path, j)
+            for f in ("title", "reason"):
+                add(join(cp, f), c.get(f))
+            add_points(join(cp, "points"), c.get("points"))
+            for k, b in enumerate(c.get("blocks") if isinstance(c.get("blocks"), list) else []):
+                if isinstance(b, dict):
+                    add("%s.blocks[%d].title" % (cp, k), b.get("title"))
+                    add_points("%s.blocks[%d].points" % (cp, k), b.get("points"))
+            # 推奨の選択肢の文は、カードの推奨の行で変換される（選択肢のボタンは変換しない）。
+            for k, o in enumerate(c.get("options") if isinstance(c.get("options"), list) else []):
+                if isinstance(o, dict) and o.get("key") == c.get("recommend"):
+                    add("%s.options[%d].label" % (cp, k), o.get("label"))
+
+    def add_table(path, sec):
+        add(join(path, "title"), sec.get("title"))
+        if isinstance(sec.get("columns"), list) and isinstance(sec.get("rows"), list):
+            text_keys = [c.get("key") for c in sec["columns"] if isinstance(c, dict) and c.get("type", "text") == "text"]
+            for j, row in enumerate(sec["rows"]):
+                if isinstance(row, dict):
+                    for k in text_keys:
+                        if isinstance(k, str):
+                            add("%s.rows[%d].%s" % (path, j, k), row.get(k))
+
     if not isinstance(data, dict):
         return out
+    add("why", data.get("why"))
+    if isinstance(data.get("request"), dict):
+        for f in REQUEST_FIELDS:
+            add(join("request", f), data["request"].get(f))
+    secs = data.get("sections")
+    for i, sec in enumerate(secs if isinstance(secs, list) else []):
+        if not isinstance(sec, dict):
+            continue
+        sp = "sections[%d]" % i
+        if sec.get("type") == "table":
+            add_table(sp, sec)
+            continue
+        add(join(sp, "title"), sec.get("title"))
+        if sec.get("type") == "decisions":
+            add_cards(join(sp, "cards"), sec.get("cards"))
+        elif sec.get("type") == "bundle" and isinstance(sec.get("groups"), list):
+            for g, grp in enumerate(sec["groups"]):
+                if not isinstance(grp, dict):
+                    continue
+                gp = "%s.groups[%d]" % (sp, g)
+                add(join(gp, "title"), grp.get("title"))
+                add(join(gp, "why"), grp.get("why"))
+                add_cards(join(gp, "cards"), grp.get("cards"))
+                for t, tb in enumerate(grp.get("tables") if isinstance(grp.get("tables"), list) else []):
+                    if isinstance(tb, dict):
+                        add_table("%s.tables[%d]" % (gp, t), tb)
+        elif sec.get("type") == "findings" and isinstance(sec.get("items"), list):
+            for j, it in enumerate(sec["items"]):
+                if isinstance(it, dict):
+                    for f in ("text", "reason"):
+                        add("%s.items[%d].%s" % (sp, j, f), it.get(f))
+    return out
     add("why", data.get("why"))
     if isinstance(data.get("request"), dict):
         for f in REQUEST_FIELDS:
@@ -1838,7 +1939,7 @@ class Renderer:
             if sec["type"] == "decisions":
                 out.append(self.decisions(sec))
             elif sec["type"] == "bundle":
-                out.append(self.bundle(sec))
+                out.append(self.bundle(sec, si))
             elif sec["type"] == "table":
                 out.append(self.table(sec, (si,)))
             else:
@@ -1850,13 +1951,14 @@ class Renderer:
         return ('<section class="hp-sec hp-decisions"><h2 class="hp-sec-title">%s</h2><div class="hp-cards">\n%s\n</div></section>'
                 % (inline(sec["title"], self.page_refs), cards))
 
-    def bundle(self, sec):
+    def bundle(self, sec, si):
         out = ['<section class="hp-sec hp-bundle"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], self.page_refs)]
-        for g in sec["groups"]:
+        for gi, g in enumerate(sec["groups"]):
             gid = len(self.groups)
             src = g["source"]
             # group の中の #N と ID は group の送り元だけを使う。無ければページの送り元へは戻らない。
-            refs = Refs(src)
+            # ページの中の識別子（group の選ぶ表の候補の番号）へのアンカーは、送り元に頼らないのでページのものを使う。
+            refs = Refs(src, self.anchors)
             self.groups.append({"id": gid, "keys": [c["key"] for c in g["cards"]]})
             out.append('<section class="hp-group" id="hp-group-%d">' % gid)
             gs = self.L["status.answered"] if self.answered else fill(self.L["status.awaiting"], n=self.open_count(g["cards"]))
@@ -1866,8 +1968,10 @@ class Renderer:
             out.append(meta_table(rows))
             if "why" in g:
                 out.append('<p class="hp-group-why">%s</p>' % inline(g["why"], refs))
-            out.append('<div class="hp-cards">\n%s\n</div></section>'
-                       % "\n".join(self.card(c, 4, refs) for c in g["cards"]))
+            out.append('<div class="hp-cards">\n%s\n</div>' % "\n".join(self.card(c, 4, refs) for c in g["cards"]))
+            for ti, tb in enumerate(g.get("tables", [])):
+                out.append(self.table(tb, (si, gi, ti), refs, "h4"))
+            out.append("</section>")
         out.append("</section>")
         return "\n".join(out)
 

@@ -46,6 +46,42 @@
                 {"key": "browser", "label": "ブラウザで作る", "kind": "go"},
                 {"key": "library", "label": "専用のライブラリで作る", "kind": "warn"}
               ]
+            },
+            {
+              "key": "pdf_font",
+              "title": "請求書の PDF に埋め込む書体を、どれにするか",
+              "recommend": "chosen",
+              "select": {"max": 1, "tables": ["pdf_fonts"], "recommend": ["候補2"]},
+              "blocks": [
+                {"title": "何を決めるか", "points": [
+                  "PDF に埋め込む書体を、下の表の3つから1つ選ぶ。書体によって PDF の大きさと、古い端末での見え方が変わる。"
+                ]},
+                {"title": "推奨の中身", "points": [
+                  "候補2 を使う。PDF が小さく、#29 で確かめた古い端末でも崩れない。"
+                ]}
+              ],
+              "options": [
+                {"key": "chosen", "label": "選んだ書体を使う", "kind": "go"},
+                {"key": "later", "label": "PDF の作り方が決まってから選ぶ", "kind": "warn"}
+              ]
+            }
+          ],
+          "tables": [
+            {
+              "type": "table",
+              "key": "pdf_fonts",
+              "title": "書体の候補",
+              "columns": [
+                {"key": "no", "label": "番号", "type": "no"},
+                {"key": "name", "label": "書体"},
+                {"key": "size", "label": "PDF の大きさ"},
+                {"key": "refs", "label": "issue", "type": "ref"}
+              ],
+              "rows": [
+                {"no": "候補1", "name": "明朝体", "size": "1枚あたり約900KB", "refs": []},
+                {"no": "候補2", "name": "ゴシック体（使う文字だけを埋め込む）", "size": "1枚あたり約120KB", "refs": ["#29"]},
+                {"no": "候補3", "name": "端末の書体を使う（埋め込まない）", "size": "1枚あたり約40KB", "refs": ["#30"]}
+              ]
             }
           ]
         },
