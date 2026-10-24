@@ -529,6 +529,29 @@ BROKEN = [
      [("E-K3", "sections[0].groups[0].tables[1]")], False),
     ("i3_group_listed_numbers", "bundle", put(GROUP0 + ["cards", 1, "blocks", 0, "points", 0], "候補1・2・3 を比べる"),
      [("E-I3", "sections[0].groups[0].cards[1].blocks[0].points[0]")], False),
+    # 実装SO の指摘から: 束の group の表の識別子は group の送り元で見る。名指しの誤りのある節は並びを見ない。
+    # 番号を読めない行（型の誤り）で、推奨の行と行の数を重ねて止めない。行の答えの key の重なりは選ぶ数の誤りに隠れない
+    ("l1_group_table_ref_needs_group_repo_url", "bundle", drop(GROUP0 + ["source", "repo_url"]),
+     [("E-L1", "sections[0].groups[0].tables[0].rows[1].refs[0]"), ("E-L1", "sections[0].groups[0].tables[0].rows[2].refs[0]")], False),
+    ("h2_broken_group_source_is_only_h2", "bundle", put(GROUP0 + ["source", "repo_url"], "not a url"),
+     [("E-H2", "sections[0].groups[0].source.repo_url")], False),
+    ("c7_does_not_shift_another_pairs_order", "decide",
+     both(with_pick, append(["sections", 0, "cards"], select_card("pick_more", ["more"])),
+          lambda d: d["sections"].insert(2, select_table("more", ["候補7"])),
+          put(PICK_CARD + ["select", "tables"], ["tools", "nope"])),
+     [("E-C7", "sections[0].cards[3].select.tables[1]")], False),
+    ("c7_does_not_shift_another_pairs_order_in_a_group", "bundle",
+     both(append(GROUP0 + ["cards"], select_card("pdf_other", ["other"])),
+          append(GROUP0 + ["tables"], select_table("other", ["候補7"])),
+          put(GROUP0 + ["cards", 1, "select", "tables"], ["pdf_fonts", "nope"])),
+     [("E-C7", "sections[0].groups[0].cards[1].select.tables[1]")], False),
+    ("f3_number_type_is_not_a_missing_row", "decide",
+     both(with_pick, put(PICK_CARD + ["select"], {"max": 3, "min": 3, "tables": ["tools"], "recommend": ["候補1"]}),
+          put(["sections", 1, "rows", 0, "no"], 1)),
+     [("E-F3", "sections[1].rows[0].no")], False),
+    ("c1_row_key_is_not_hidden_by_a_bad_max", "decide",
+     both(with_pick, put(CARD0 + ["key"], "pick_tool--2"), put(PICK_CARD + ["select", "max"], 0)),
+     [("E-F3", "sections[0].cards[3].select.max"), ("E-C1", "sections[0].cards[0].key")], False),
     # 名指しの誤りは、名指しに頼らない誤りを隠さない（2件とも出る）
     ("c7_and_c6_on_one_card", "decide",
      both(with_pick, put(PICK_CARD + ["select"], {"max": 1, "min": 2, "tables": ["tools", "nope"]})),
@@ -732,6 +755,18 @@ class SelectOnAnyKind(unittest.TestCase):
         picks = json.loads(html.unescape(embedded(f)))["picks"]
         self.assertEqual([(p["card"], [r["key"] for r in p["rows"]]) for p in picks],
                          [("pdf_font", ["pdf_font--1", "pdf_font--2", "pdf_font--3"])])
+
+    def test_two_groups_each_with_a_pair(self):
+        def second_pair(d):
+            at(d, GROUP1 + ["cards"]).append(select_card("login_way", ["ways"], 1, ["候補5"]))
+            at(d, GROUP1).update(tables=[select_table("ways", ["候補4", "候補5"])])
+        f = render_page("bundle", second_pair)
+        self.assertEqual(self.boxes(f), ["pdf_font--1", "pdf_font--2", "pdf_font--3", "login_way--4", "login_way--5"])
+        picks = json.loads(html.unescape(embedded(f)))["picks"]
+        self.assertEqual([p["card"] for p in picks], ["pdf_font", "login_way"])
+        group1 = f[f.index('id="hp-group-1"'):]
+        self.assertIn('<tr id="hp-row-0-g1-t0-1">', group1)
+        self.assertIn('id="hp-select-chosen-login_way"', group1)
 
     def test_listed_candidate_numbers_are_stopped_on_an_approve_page(self):
         d = copy.deepcopy(example("decide"))
@@ -1851,6 +1886,14 @@ class ElementIds(unittest.TestCase):
         self.assertIn('id="hp-opt-a-b.c"', f)
         self.assertIn('id="hp-opt-a.b-c"', f)
 
+    def test_fold_ids_do_not_collide(self):
+        # 開閉の要素（hp-fold-<key>）と答えの行（hp-fold-<key>.ans）は、key が ans- で始まっても重ならない
+        for first, second in (("ans-x", "x"), ("x", "ans-x")):
+            with self.subTest(order=(first, second)):
+                f = render_page("decide", both(put(CARD0 + ["key"], first), put(CARD1 + ["key"], second)))
+                ids = self.ids(f)
+                self.assertEqual(len(ids), len(set(ids)), [i for i in ids if ids.count(i) > 1])
+
 
 class AnsweredPage(unittest.TestCase):
     def render(self):
@@ -2102,7 +2145,7 @@ class PageScript(unittest.TestCase):
     # 畳む表示: 保存先の最初の答えで、答えのあるカードだけを1回畳む
     FOLD_STATE = """
       return { retry: els["hp-fold-retry_policy"].open, alert: els["hp-fold-alert_rule"].open, rollout: els["hp-fold-rollout"].open,
-               ans: els["hp-fold-ans-retry_policy"].textContent, ans_alert: els["hp-fold-ans-alert_rule"].textContent };
+               ans: els["hp-fold-retry_policy.ans"].textContent, ans_alert: els["hp-fold-alert_rule.ans"].textContent };
     """
 
     @staticmethod
@@ -2132,6 +2175,14 @@ class PageScript(unittest.TestCase):
         self.assertEqual((out["retry"], out["rollout"], out["alert"]), (True, True, False))
         self.assertEqual(out["ans"], "答え: 直してほしい（補足欄に）")
 
+    def test_card_with_a_focused_note_stays_open(self):
+        # 補足欄を選んでいる（まだ書いていない）カードは、最初の答えで畳まない
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); document.activeElement = els['hp-note-retry_policy'];"
+                            "deliver({docs: [%s, %s]}); await tick();" % (self.doc("retry_policy", "go"), self.doc("alert_rule", "go"))
+                            + self.FOLD_STATE, name="decide")
+        self.assertEqual((out["retry"], out["alert"]), (True, False))
+
     def test_unavailable_display_folds_nothing(self):
         out = self.run_page("", "els['hp-opt-retry_policy.go'].fire('click'); await tick();" + self.FOLD_STATE, name="decide")
         self.assertEqual((out["retry"], out["alert"], out["rollout"]), (True, True, True))
@@ -2144,7 +2195,7 @@ class PageScript(unittest.TestCase):
         out = self.run_page("", check + "c('pick_tool--1'); c('pick_shop--4'); c('pick_shop--6'); await tick();"
                             "return { tool2: els['hp-pick-pick_tool--2'].disabled, shop5: els['hp-pick-pick_shop--5'].disabled,"
                             " tool: els['hp-select-chosen-pick_tool'].textContent, shop: els['hp-select-chosen-pick_shop'].textContent,"
-                            " reply: els['hp-reply-text'].value, fold: els['hp-fold-ans-pick_shop'].textContent };",
+                            " reply: els['hp-reply-text'].value, fold: els['hp-fold-pick_shop.ans'].textContent };",
                             name="decide", mutate=with_two_picks)
         # pick_tool は1つまでなので残りが押せず、pick_shop は2つまでなので候補5 が押せない
         self.assertEqual((out["tool2"], out["shop5"]), (True, True))
@@ -2169,7 +2220,7 @@ class FoldedCards(unittest.TestCase):
 
     def fold(self, f, key):
         m = re.search(r'<details class="hp-fold" id="hp-fold-%s"( open)?><summary class="hp-fold-toggle">'
-                      r'<span class="hp-fold-ans" id="hp-fold-ans-%s">(.*?)</span>' % (key, key), f)
+                      r'<span class="hp-fold-ans" id="hp-fold-%s\.ans">(.*?)</span>' % (key, key), f)
         return bool(m.group(1)), html.unescape(m.group(2))
 
     def test_awaiting_cards_are_open_with_the_toggle_line(self):

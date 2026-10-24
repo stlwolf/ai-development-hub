@@ -359,6 +359,9 @@ class Validator:
         # ページの送り元からリンクにできるもの（repo_url があるか・登録した接頭辞）。
         # 送り元に誤りがあれば None にし、表の識別子をリンクにできるかの判定（E-L1）を重ねて出さない。
         self.page_links = None
+        # 束の group の表を見ているあいだは、その group の送り元からリンクにできるもの（描画と同じ送り元で見る）。
+        self.in_group = False
+        self.group_links = None
         # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
         self.tables = {}
         # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None, 書いた select)]
@@ -535,9 +538,12 @@ class Validator:
         名指しに誤りのあるカードの表は並びを見ない（E-C7 だけ）。"""
         for i in dec:
             cards = secs[i].get("cards") if isinstance(secs[i].get("cards"), list) else []
+            cps = ["%s.cards[%d]" % (paths[i], j) for j in range(len(cards))]
+            # 名指しに誤りのあるカードがある節は、どの表がどのカードのものかが決まらないので、並びを見ない
+            if any(cp in self.select_tables and self.select_tables[cp] is None for cp in cps):
+                continue
             expected = []
-            for j in range(len(cards)):
-                cp = "%s.cards[%d]" % (paths[i], j)
+            for cp in cps:
                 expected.extend(self.select_tables.get(cp) or [])
             got = paths[i + 1:i + 1 + len(expected)]
             for want, have in zip(expected, got + [None] * (len(expected) - len(got))):
@@ -638,9 +644,12 @@ class Validator:
                     nos = [j for j, (_, ct) in enumerate(cols) if ct == "no"]
                     if len(nos) > 1:
                         self.add("E-K2", "%s.columns[%d]" % (t, nos[1]), "番号の列（type no）は1つの表に1列までにする")
+                cps = ["%s.cards[%d]" % (gp, j) for j in range(len(cards))]
+                if any(cp in self.select_tables and self.select_tables[cp] is None for cp in cps):
+                    continue
                 expected = []
-                for j in range(len(cards)):
-                    expected.extend(self.select_tables.get("%s.cards[%d]" % (gp, j)) or [])
+                for cp in cps:
+                    expected.extend(self.select_tables.get(cp) or [])
                 got = [t for t in tables if t in self.named]
                 for want, have in zip(expected, got + [None] * (len(expected) - len(got))):
                     if want != have:
@@ -795,30 +804,45 @@ class Validator:
         """選び方のカードごとに、選ぶ表の行の番号から、推奨の行（E-I1）と選べる行の数（E-C6）を見て、
         行の答えの key（<カードの key>--<番号の数字>）を回収した答え（answers）の検査に登録する。
         行の答えの key がほかのカードの key と重なれば止める（E-C1・同じ保存先になるため）。
-        選ぶ表が決まらないか、その表の番号に誤りがあるか、行が無いときは見ない（同じ原因の誤りを重ねない）。"""
+        選ぶ表が決まらないか、その表の番号を読めない（形・重なり・型の誤り）か、行が無いときは見ない（同じ原因の誤りを重ねない）。
+        行の答えの key の重なりは選ぶ数に頼らないので、選ぶ数（select の数）に誤りがあっても見る（隠さない）。"""
         cand = self.words["prefix.candidate"]
         for path, key, sel, _ in self.selects:
             tables = self.select_tables.get(path)
-            if sel is None or key is None or not tables:
+            if key is None or not tables:
                 continue
-            if any(code in ("E-I1", "E-I2") and any(p.startswith(t + ".rows[") for t in tables) for code, p, _ in self.errors):
+            if any(self.number_unreadable(t, code, p) for t in tables for code, p, _ in self.errors):
                 continue
             rows = [ident for ident, p in defined.items()
                     if ident.startswith(cand) and ident[len(cand):].isdigit() and any(p.startswith(t + ".rows[") for t in tables)]
             if not rows:
                 continue
-            for i, r in enumerate(sel.get("recommend", [])):
-                if r not in rows:
-                    self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" が選ぶ表の番号の列で定義されていない' % r)
-            if sel.get("min", 0) > len(rows):
-                self.add("E-C6", join(path, "select"), "min（%d）が選べる行の数（%d）を超える" % (sel["min"], len(rows)))
             row_keys = [key + PICK_KEY_SEP + ident[len(cand):] for ident in rows]
             for rk in row_keys:
                 if rk in self.card_paths:
                     self.add("E-C1", join(self.card_paths[rk], "key"),
                              'key "%s" が、選び方のカード %s の行の答えの key と重なる（同じ保存先になる）' % (rk, path))
                 self.card_options[rk] = [PICK_CHOICE]
+            if sel is None:
+                continue
+            for i, r in enumerate(sel.get("recommend", [])):
+                if r not in rows:
+                    self.add("E-I1", "%s.select.recommend[%d]" % (path, i), '推奨の行 "%s" が選ぶ表の番号の列で定義されていない' % r)
+            if sel.get("min", 0) > len(rows):
+                self.add("E-C6", join(path, "select"), "min（%d）が選べる行の数（%d）を超える" % (sel["min"], len(rows)))
             self.pick_limits[key] = (sel["max"], row_keys)
+
+    def number_unreadable(self, table, code, path):
+        """誤り (code, path) が、選ぶ表 table の番号を読めなくする誤りか（番号の形・重なり・型の誤りと、行がオブジェクトでない）。"""
+        if not path.startswith(table + ".rows["):
+            return False
+        cols = self.tables.get(table) or []
+        no = [k for k, ct in cols if ct == "no"]
+        rest = path[len(table):]
+        if code in ("E-I1", "E-I2"):
+            return True
+        return code == "E-F3" and (re.fullmatch(r"\.rows\[\d+\]", rest) is not None
+                                   or bool(no) and re.fullmatch(r"\.rows\[\d+\]\.%s" % re.escape(no[0]), rest) is not None)
 
     def listed_numbers(self, kind, data, defined):
         """1つの接頭辞のあとに番号を3つ以上並べた書き方（候補43・41・49）を止める（E-I3）。
@@ -1148,9 +1172,10 @@ class Validator:
         if not issue and not tracker:
             self.add("E-L1", path, '"%s" は識別子の形（#N・PR #N・owner/repo#N・<接頭辞>-<数字>）でない' % r)
             return
-        if self.page_links is None:
+        links = self.group_links if self.in_group else self.page_links
+        if links is None:
             return
-        has_repo_url, prefixes = self.page_links
+        has_repo_url, prefixes = links
         if issue and not has_repo_url:
             self.add("E-L1", path, '"%s" をリンクにする repo_url が送り元に無い' % r)
         elif tracker and tracker.group(1) not in prefixes:
@@ -1159,10 +1184,17 @@ class Validator:
     def group(self, path, g):
         if not self.obj(path, g, ("source", "title", "cards"), ("why", "tables")):
             return
-        if "tables" in g:
-            self.group_tables(join(path, "tables"), g["tables"])
+        links = None
         if "source" in g:
+            before = len(self.errors)
             self.source(join(path, "source"), g["source"])
+            if len(self.errors) == before:
+                links = ("repo_url" in g["source"], {t["prefix"] for t in g["source"].get("trackers", [])})
+        if "tables" in g:
+            # group の表の識別子は、group の送り元でリンクにする（描画と同じ）。送り元に誤りがあれば、その group だけ省く
+            self.in_group, self.group_links = True, links
+            self.group_tables(join(path, "tables"), g["tables"])
+            self.in_group, self.group_links = False, None
         if "title" in g:
             self.text(join(path, "title"), g["title"], "E-S1")
         if "why" in g:
@@ -2011,7 +2043,7 @@ class Renderer:
         # 回答済みのページでは、答えのあるカードを畳んで描く。開閉の行には、畳んだときだけ答えが見える。
         folded = self.answered and bool(choice)
         h.append('<details class="hp-fold" id="hp-fold-%s"%s><summary class="hp-fold-toggle">'
-                 '<span class="hp-fold-ans" id="hp-fold-ans-%s">%s</span>'
+                 '<span class="hp-fold-ans" id="hp-fold-%s.ans">%s</span>'
                  '<span class="hp-fold-open">%s</span><span class="hp-fold-close">%s</span></summary>'
                  '<div class="hp-fold-body">'
                  % (esc(key), "" if folded else " open", esc(key), esc(self.folded_answer(c, choice)),

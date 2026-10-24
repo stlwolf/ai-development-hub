@@ -152,7 +152,7 @@
         var b = $("hp-opt-" + c.key + "." + o.key);
         if (b) { b.setAttribute("aria-pressed", s.choice === o.key ? "true" : "false"); }
       });
-      var fa = $("hp-fold-ans-" + c.key);
+      var fa = $("hp-fold-" + c.key + ".ans");
       if (fa) { fa.textContent = foldedAnswer(c); }
       var ta = $("hp-note-" + c.key);
       if (ta && document.activeElement !== ta && !isDirty(c.key, "note") && ta.value !== s.note) {
