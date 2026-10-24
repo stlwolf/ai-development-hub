@@ -3,7 +3,7 @@ id: "01M5P86SSR00DQ5WEE1FCQCM86"
 title: "#466 判断のページ・SO のまとめ・見取り図を、オーケストレーションの流れで作り・更新し・止める（判定の材料）"
 date: 2026-10-24
 type: discussion
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/466"
@@ -35,6 +35,9 @@ related:
   - type: relates_to
     ref: "https://github.com/stlwolf/ai-development-hub/issues/537"
     reason: "engine を独立したパッケージにしていく issue。Q23 の規則の置き場を決めるときに見越す"
+  - type: relates_to
+    ref: "projects/orchestration-engine/docs/decisions/2026-10-24-decision-466-page-lifecycle-in-flow.md"
+    reason: "owner の判定（2回）を記録した decision"
   - type: relates_to
     ref: "projects/orchestration-engine/docs/episodes/2026-10-24-episode-466-page-lifecycle-in-flow.md"
     reason: "作業記録。数え方・SO の採否の経緯はこちら"
@@ -947,7 +950,7 @@ flowchart TB
 | 決まった答え・決定 | 案3' を採ったときの変わり方 |
 |---|---|
 | Q2 開いているページは1枚 | ページそのものが1枚になるので、自然に満たされる |
-| Q8 閾値 | 「ページを開く」条件ではなく、「いま決めること」にカードを足して案内を送る条件になる。いま決めることに未回答のカードがあるときは、閾値に関係なく足す（Q8 の「開いていれば足す」）。未回答のカードが無いときは、2件か止まる問いで足す。閾値に届かない保留の問いは、依頼の表に「保留」として出す |
+| Q8 閾値 | 「ページを開く」条件ではなく、「いま決めること」にカードを足して案内を送る条件になる。いま決めることに未回答のカードがあるときは、閾値に関係なく足す（Q8 の「開いていれば足す」）。未回答のカードが無いときは、2件か止まる問いで足す。閾値に届かない保留の問いは、依頼の表に「保留」として出す。答えを待つあいだは、足すのはデータまでで、出し直しは「回答待ちの版を止める」の決まりに従う（decision の決定2） |
 | Q12 見取り図からのリンク | 同じページなので要らない（SO のまとめと、一覧から選ぶ問いの別のページへのリンクは残る） |
 | Q13 未回答の引き継ぎ | 同じページに残るので、ふだんは要らない。新しく作り直す場面では使う |
 | Q14 回収の手順 | 段3 の「`answers` に写す」が「表の行に書き、台帳に足す」に、段4 の「`answered` で作り直して止める」が「カードを表へ移して出し直す」に変わる。段1 の「回収済みのページへの発話は訂正」は、「表へ移したカードへの発話は訂正」になる |
@@ -989,6 +992,8 @@ flowchart TB
   - 案1 なら `board` を使わないので、申し送りは当たらない。
 
 ### 13.7 owner に詰めてもらう問い
+
+注（2026-10-24・2回目の判定のあと）: この9問は Q27〜Q35 として判定され、Q32（#536 に入れる）のほかは推奨どおりだった。Q28 は Q27 で推奨を選んだので答えていない。判定と理由は decision（`projects/orchestration-engine/docs/decisions/2026-10-24-decision-466-page-lifecycle-in-flow.md`）にある。
 
 1つの問いで1つのことを決める。問い2〜5 は、問い1 の答えによって要るかが決まる。
 
