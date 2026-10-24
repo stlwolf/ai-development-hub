@@ -144,6 +144,10 @@ GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # ここの語を混ぜると既存のページの出力が変わり、JS が使わない語をページに持ち込むためである。
 WORD_KEYS = ("prefix.question", "prefix.candidate", "prefix.item", "tag.approval")
 WORDS_SECTION = "## 識別子の接頭辞"
+# 用語集の「問いのカードの塊の題」の表に要る key。問いのカードの1つ目・2つ目・（置くなら）3つ目の塊の題の語（E-Q3）。
+# 札の言葉と同じ理由で、「札の言葉と固定の文」の表とは分けて持つ（ページの埋め込みデータに入れない）。
+BLOCK_KEYS = ("block.ask", "block.recommend", "block.alternatives")
+BLOCKS_SECTION = "## 問いのカードの塊の題"
 GLOSSARY_ROW_RE = re.compile(r"^\|\s*`([a-z][a-z0-9_.]*)`\s*\|\s*(.*?)\s*\|\s*$")
 PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
 
@@ -242,8 +246,9 @@ def _braces(names):
 
 
 def load_words(path):
-    """用語集の「識別子の接頭辞」の表を読み、key から語への辞書を返す。
-    語は文字（英字・漢字・かな）だけからなり（末尾にだけ「:」を1つ置ける・ID:1 の形）、互いに重ならず、どれもほかの語の頭に当たらない。
+    """検証が使う語を読み、key から語への辞書を返す。「識別子の接頭辞」の表の語と、
+    「問いのカードの塊の題」の表の語と、推奨の札の言葉（key recommend）を合わせて持つ。
+    接頭辞の語は文字（英字・漢字・かな）だけからなり（末尾にだけ「:」を1つ置ける・ID:1 の形）、互いに重ならず、どれもほかの語の頭に当たらない。
     ほかの記号と数字を許さないので、ページの中の識別子（Q2・ID:1）は外部の課題管理の ID（OPS-41）・#N・PR #N と同じ文字列にならない。"""
     words, problems = _glossary_table(path, WORDS_SECTION)
     for key in words:
@@ -261,7 +266,34 @@ def load_words(path):
                 problems.append('key "%s" の語 "%s" と key "%s" の語 "%s" が重なるか、片方がもう片方の頭に当たる' % (ka, a, kb, b))
     if problems:
         raise LoadError("用語集（%s）の識別子の接頭辞が壊れている: %s" % (path, "; ".join(problems)))
+    words.update(_block_words(path))
+    # 選択肢の名前の検査（E-Q2）は、推奨の札の言葉を使う。札の表そのものの検証は load_glossary が持つ。
+    labels, _ = _glossary_table(path, GLOSSARY_SECTION)
+    if not labels.get("recommend", "").strip():
+        raise LoadError("用語集（%s）の「札の言葉と固定の文」に key \"recommend\" の言葉が無い" % path)
+    words["recommend"] = labels["recommend"]
     return words
+
+
+def _block_words(path):
+    """用語集の「問いのカードの塊の題」の表を読む。語は空でなく、差し込みを持たず、互いに重ならない。"""
+    blocks, problems = _glossary_table(path, BLOCKS_SECTION)
+    for key in blocks:
+        if key not in BLOCK_KEYS:
+            problems.append('知らない key "%s" がある' % key)
+    for key in BLOCK_KEYS:
+        if key not in blocks:
+            problems.append('key "%s" が無い' % key)
+        elif not blocks[key].strip():
+            problems.append('key "%s" の語が空' % key)
+        elif "{" in blocks[key] or "}" in blocks[key]:
+            problems.append('key "%s" の語に波括弧がある（差し込みを持たない）' % key)
+    found = [blocks[k] for k in BLOCK_KEYS if blocks.get(k)]
+    if len(set(found)) != len(found):
+        problems.append("塊の題の語が重なる")
+    if problems:
+        raise LoadError("用語集（%s）の問いのカードの塊の題が壊れている: %s" % (path, "; ".join(problems)))
+    return {k: blocks[k] for k in BLOCK_KEYS}
 
 
 # ---------------------------------------------------------------- 検証
@@ -290,6 +322,24 @@ def is_int(v):
 
 def join(path, key):
     return key if path == "$" else "%s.%s" % (path, key)
+
+
+# 括弧書き（全角の（…）と半角の (…)）。入れ子は内側から順に外す。対になっていない括弧は外さない。
+_PAREN_RE = re.compile(r"（[^（）()]*）|\([^（）()]*\)")
+
+
+def strip_parens(text):
+    """文字列から括弧書きを除いた残りを返す（題の形と選択肢の名前の検査に使う）。"""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _PAREN_RE.sub("", text)
+    return text
+
+
+def is_question(title):
+    """題が問いの形か: 括弧書きと末尾の空白を除いて、「か」「？」「?」で終わる（E-Q1・表記の規則）。"""
+    return strip_parens(title).rstrip().endswith(("か", "？", "?"))
 
 
 class Validator:
@@ -432,6 +482,7 @@ class Validator:
                     defined = self.identifiers(kind, secs)
                     if defined:
                         self.listed_numbers(kind, data, defined)
+                    self.card_writing(kind, secs)
         status = data.get("status")
         # 部品も本文も無いときは E-S1 だけを出し、状態の誤りを重ねない。
         no_parts = sections_readable and not data["sections"] and not self.has_body
@@ -673,6 +724,62 @@ class Validator:
                 self.add("E-I2", path, '識別子 "%s" が %s と重なる' % (v, defined[v]))
             else:
                 defined[v] = path
+
+    # 問いのカードの書き方（E-Q1・E-Q3。E-Q2 は種別に頼らないので選択肢の検査で見る）---------
+
+    def card_writing(self, kind, secs):
+        """題が問いの形か（E-Q1）と、問いのカードの塊（E-Q3）を見る。どちらも表記の規則で、中身の質は見ない。
+        認識合わせのカードは見ない。全体の承認のカード（承認のページの札が承認の語のカード）は題だけを見る。
+        抑止は親の値に頼る判定だけにする: 題が空でない文字列のときだけ題を、blocks が空でない配列のときだけ塊の題を、
+        塊の題は位置ごとに、その位置の塊がオブジェクトで題が文字列のときだけ比べる。"""
+        if kind == "confirm":
+            return
+        approval = self.words["tag.approval"] if kind == "approve" else None
+        ask, rec, alt = (self.words[k] for k in BLOCK_KEYS)
+        for path, c in self.all_cards(secs):
+            t = c.get("title")
+            if isinstance(t, str) and t.strip() and not is_question(t):
+                self.add("E-Q1", join(path, "title"), '題 "%s" が問いの形でない（括弧書きを除いて「か」「？」で終わる形にする）' % t)
+            if approval and c.get("tag") == approval:
+                continue
+            if "points" in c:
+                self.add("E-Q3", join(path, "points"), "問いのカードには平らな要点（points）を置かない。中身は塊（blocks）に書く")
+            if "blocks" not in c:
+                self.add("E-Q3", path, "問いのカードは塊（blocks）を持つ。1つ目の題は「%s」、2つ目は「%s」にする" % (ask, rec))
+                continue
+            blocks = c["blocks"]
+            if not isinstance(blocks, list) or not blocks:
+                continue
+
+            def title_at(i):
+                b = blocks[i] if i < len(blocks) else None
+                return b["title"] if isinstance(b, dict) and isinstance(b.get("title"), str) else None
+
+            bp = join(path, "blocks")
+            for i, want in ((0, ask), (1, rec)):
+                if i >= len(blocks):
+                    self.add("E-Q3", bp, "塊が %d つしかない。%d つ目の塊の題を「%s」にする" % (len(blocks), i + 1, want))
+                elif title_at(i) is not None and title_at(i) != want:
+                    self.add("E-Q3", "%s[%d].title" % (bp, i), '%d つ目の塊の題 "%s" が「%s」でない' % (i + 1, title_at(i), want))
+            for i in range(3, len(blocks)):
+                if title_at(i) == alt:
+                    self.add("E-Q3", "%s[%d].title" % (bp, i), "「%s」の塊は3つ目に置く" % alt)
+                    break
+
+    def all_cards(self, secs):
+        """判定カードの節と束の group のカードを、[(場所, カード)] で返す。形の崩れた所は飛ばす。"""
+        out = []
+        for i, sec in enumerate(secs):
+            if not isinstance(sec, dict):
+                continue
+            sp = "sections[%d]" % i
+            if sec.get("type") == "decisions" and isinstance(sec.get("cards"), list):
+                out.extend(("%s.cards[%d]" % (sp, j), c) for j, c in enumerate(sec["cards"]) if isinstance(c, dict))
+            elif sec.get("type") == "bundle" and isinstance(sec.get("groups"), list):
+                for g, grp in enumerate(sec["groups"]):
+                    if isinstance(grp, dict) and isinstance(grp.get("cards"), list):
+                        out.extend(("%s.groups[%d].cards[%d]" % (sp, g, j), c) for j, c in enumerate(grp["cards"]) if isinstance(c, dict))
+        return out
 
     def kind_board(self, types, paths, secs):
         """判断ボード: 判定カードの節（0以上）を先に、表（0以上）をあとに置く。判定カードが無ければ
@@ -1044,8 +1151,15 @@ class Validator:
                     self.add("E-C2", kp, '選択肢の key "%s" が重なる' % k)
                 else:
                     keys.append(k)
-            if "label" in o:
-                self.text(join(op, "label"), o["label"], "E-C5")
+            if "label" in o and self.text(join(op, "label"), o["label"], "E-C5"):
+                # 選択肢の名前は中身を書く（E-Q2・表記の規則）。推奨のボタンには推奨の札が付くので、推奨の語で始めない。
+                # 括弧書きの中は見ない（別のカードの推奨を指す書き方があるため）。
+                rest = strip_parens(o["label"]).strip()
+                if not rest:
+                    self.add("E-Q2", join(op, "label"), '選択肢の名前 "%s" が括弧書きだけである。選んだら何をするかを書く' % o["label"])
+                elif rest.startswith(self.words["recommend"]):
+                    self.add("E-Q2", join(op, "label"), '選択肢の名前 "%s" が「%s」で始まる。選んだら何をするかを書く'
+                             % (o["label"], self.words["recommend"]))
             if "kind" in o:
                 self.enum(join(op, "kind"), o["kind"], KINDS, "E-T1")
         return keys
