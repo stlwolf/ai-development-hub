@@ -93,3 +93,10 @@ knowledge_observations:
 昇格の印: 「受け渡し先の出口」は、答えを使う先ごとに数える。子への送信だけでなく、承認の記録・issue への投稿のような別の出口がある
 
 - 直した discussion に衛生の検査（ペインの番号・別のリポジトリの名前・個人の情報・制御文字）を当て、何も出なかった。これで D2 を閉じ、D3 に進む。
+
+### D3: commit して push し、報告して止まった（2026-10-24）
+
+- discussion と episode を `59f79c5` としてコミットし、枝 `docs/#466_page_lifecycle_in_flow` を push した。PR はまだ作っていない。
+- 置き場の木は engine のままにした。discussion の中身が engine の verb（`oe-send`・`oe-handoff`・`oe-tree`）と作業層（問いのファイル・引き継ぎ文書）に依っていて、統括の手順だけに閉じていないためである（discussion の12節）。ただし推奨 8-2a の一般の決まりは html-one-pager（harness の側）に入るので、U1 の文書の木は U1 の中身で決める必要がある、と書いた。
+- 報告は、送る直前に `oe-tree` で宛先の統括が root `cockpit` として生きていることを確かめ、engine の `bin/oe-send` で discussion のパスを1行で送る。exit code はこの下に書く（0 は配送の成功を意味しない）。
+- ここで止まり、owner の判定が統括から届くまで D4（decision）に進まない。
