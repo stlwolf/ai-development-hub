@@ -403,6 +403,59 @@ class CheckTest(Base):
         self.assertEqual(code, 2)
 
 
+class RobustnessTest(Base):
+    def write_raw(self, objs):
+        with open(self.path, "w", encoding="utf-8") as f:
+            for o in objs:
+                f.write(json.dumps(o, ensure_ascii=False) + "\n")
+
+    def test_bad_types_report_rules_without_crash(self):
+        self.write_raw([
+            {"id": "01M5QPYJ0RXFEAS3FJCYF4S6NB", "at": "2026-10-26T00:00:00Z", "type": "announced", "url": URL, "bulk": ["i900_lib", 1], "added": []},
+            {"id": "01M5QPYJ0RXFEAS3FJCYF4S6NC", "at": "2026-10-26T00:00:01Z", "type": []},
+        ])
+        code, out, err = self.run_main("check", self.path)
+        self.assertEqual(code, 1)
+        self.assertIn("E-K1 1行目", err)
+        self.assertIn("E-T1 2行目", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_invalid_line_is_not_a_reference(self):
+        bad = {"id": "01M5QPYJ0RXFEAS3FJCYF4S6NB", "at": "2026-10-26T00:00:00Z", "type": "answered", "where": "page"}
+        read = {"id": "01M5QPYJ0RXFEAS3FJCYF4S6NC", "at": "2026-10-26T00:00:01Z", "type": "read",
+                "round": "01M5QPYJ0RXFEAS3FJCYF4S6NB", "url": URL, "count": 1}
+        self.write_raw([bad, read])
+        code, out, err = self.run_main("check", self.path)
+        self.assertEqual(code, 1)
+        self.assertIn("E-F2 1行目", err)
+        self.assertIn("E-R1 2行目", err)
+
+    def test_pick_page_with_omitted_numbers(self):
+        page = {"format": 1, "title": "候補から選ぶ", "kind": "pick", "status": "awaiting", "why": "量が多い一覧",
+                "source": {"repo": "example"}, "sections": [
+                    {"type": "decisions", "title": "選び方", "cards": [
+                        {"key": "pick_tools", "title": "どの候補を試すか", "recommend": "chosen", "select": {"max": 2},
+                         "blocks": [{"title": "何を決めるか", "points": ["選ぶ。"]}, {"title": "推奨の中身", "points": ["候補2 を試す。"]}],
+                         "options": [{"key": "chosen", "label": "選んだ候補を試す"}, {"key": "none", "label": "試さない"}]}]},
+                    {"type": "table", "title": "表1", "columns": [{"key": "no", "label": "番号", "type": "no"}, {"key": "name", "label": "名前"}],
+                     "rows": [{"name": "A"}, {"name": "B"}]},
+                    {"type": "table", "title": "表2", "columns": [{"key": "no", "label": "番号", "type": "no"}, {"key": "name", "label": "名前"}],
+                     "rows": [{"name": "C"}]}]}
+        p = os.path.join(self.tmp.name, "pick.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(page, f, ensure_ascii=False)
+        rid = self.answered()
+        code, out, err = self.run_main("collect", self.path, "--board", p, "--key", "pick_tools", "--choice", "chosen",
+                                       "--via", "page", "--round", rid, "--no", "Q47", "--rows", "候補2,候補3")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["rows"], [{"no": "候補2", "content": {"名前": "B"}}, {"no": "候補3", "content": {"名前": "C"}}])
+
+    def test_corrected_may_carry_rows(self):
+        rid = self.answered("Q43 は候補3 にして")
+        self.add("corrected", {"round": rid, "key": "i900_pick", "choice": {"key": "chosen", "label": "選んだ店で試す"},
+                               "words": "Q43 は候補3 にして", "rows": [{"no": "候補3", "content": {"店": "本店"}}]})
+
+
 class TraceTest(Base):
     def test_trace_lists_one_key(self):
         a = {"keys": ["i900_lib"], "from": "子 #900", "file": ".oe/question-900-1.json", "stops": True, "route": "board"}

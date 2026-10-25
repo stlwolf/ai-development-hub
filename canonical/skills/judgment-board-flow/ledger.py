@@ -87,7 +87,7 @@ SCHEMA = {
     },
     "corrected": {
         "required": {"round": "ref", "key": "key", "choice": "pick", "words": "text"},
-        "optional": {},
+        "optional": {"rows": "rows"},
     },
 }
 # 出来事の中で、カードの key を持つ項目（trace がこれらを見る）。
@@ -214,14 +214,15 @@ def check_value(kind, value, where, errors):
 
 
 def check_event(ev, where, known, errors):
-    """1件の出来事を確かめる。known は、それより前の行の {id: 出来事}。"""
+    """1件の出来事を確かめ、誤りが無ければ True を返す。known は、それより前の正しい行の {id: 出来事}。"""
     if not isinstance(ev, dict):
         errors.append("E-J1 %s: 行が JSON のオブジェクトでない" % where)
-        return
+        return False
+    start = len(errors)
     t = ev.get("type")
-    if t not in SCHEMA:
+    if not isinstance(t, str) or t not in SCHEMA:
         errors.append("E-T1 %s.type: %r は知らない種類（%s）" % (where, t, "・".join(SCHEMA)))
-        return
+        return False
     eid = ev.get("id")
     if not isinstance(eid, str) or not ID_RE.match(eid):
         errors.append("E-I1 %s.id: 26文字の id でない" % where)
@@ -243,7 +244,10 @@ def check_event(ev, where, known, errors):
     for name, kind in spec["optional"].items():
         if name in ev:
             check_value(kind, ev[name], "%s.%s" % (where, name), errors)
+    if len(errors) > start:
+        return False  # 項目の型が崩れた出来事には、型に頼る規則を当てない
     check_rules(ev, where, known, errors)
+    return len(errors) == start
 
 
 def check_rules(ev, where, known, errors):
@@ -318,9 +322,8 @@ def check_ledger(entries):
         if obj is None:
             errors.append("E-J1 %s: JSON として読めない" % where)
             continue
-        check_event(obj, where, known, errors)
-        if isinstance(obj, dict) and isinstance(obj.get("id"), str) and obj["id"] not in known:
-            known[obj["id"]] = obj
+        if check_event(obj, where, known, errors):
+            known[obj["id"]] = obj  # 誤りのある行は、あとの行の参照先にしない
     return errors, known
 
 
@@ -401,7 +404,8 @@ def select_rows(card, tables, page_kind, wanted, errors):
         errors.append("E-B2 --rows: 選び方のカードが選ぶ表を名指していない（select.tables）")
         return []
     index = {}
-    for t in chosen:
+    position = 0  # 一覧から選ぶページで番号を省いたとき、html-one-pager が振る番号（表をまたいで続く）
+    for t in tables:
         cols = t.get("columns") or []
         no_cols = [c.get("key") for c in cols if isinstance(c, dict) and c.get("type") == "no"]
         if not no_cols:
@@ -410,8 +414,13 @@ def select_rows(card, tables, page_kind, wanted, errors):
         for row in t.get("rows") or []:
             if not isinstance(row, dict):
                 continue
+            position += 1
             no = row.get(no_key)
-            if isinstance(no, str) and no:
+            if not (isinstance(no, str) and no):
+                if page_kind != "pick":
+                    continue
+                no = "候補%d" % position
+            if t in chosen:
                 index[no] = {c.get("label") or c.get("key"): text_of(row.get(c.get("key")))
                              for c in cols if isinstance(c, dict) and c.get("key") != no_key}
     rows = []
