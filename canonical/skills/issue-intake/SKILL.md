@@ -341,7 +341,7 @@ issue: <issue の URL>
 
 - **フローの中の位置**: hub のフローでは、issue を起点にする作業はゲート0 でこのスキルを必ず通す（`document-format.md`「遷移規則」節の判定順0 と「ゲート配置」節の (0)）。統括は、作業に入る前と子へ渡す前に通す。issue の無い作業では、ゲート0 は今のまま必要なときだけである。
 - **依頼の書面**: 統括が組む委譲の brief の可変節に「認識合わせ: [確定版コメントの URL ／ 省略（owner の指示）／ 対象外（issue の無い作業）]」の欄がある（`doc-flow-guardrail` の「② 委譲固定節テンプレ」）。子はこの欄を 1-2 の照合に使う。「対象外（issue の無い作業）」は、このスキルの適用範囲の外であることを示す値で、省く条件（「いつ使わないか」の2つ）を増やすものではない。issue を名指しした brief に「対象外」が書かれていれば、子は 1-2 のとおり止まって知らせる。
-- **委譲された子から依頼元へ渡す手段**: 3つの出力と issue の URL を `.oe/question-<issue>-<n>.md` に書き、そのパスを `oe-send` で依頼元のペインへ1行で送って待つ。`oe-*` の呼び方は `doc-flow-guardrail` の「verb 解決規約」節に従う。
+- **委譲された子から依頼元へ渡す手段**: 3つの出力と issue の URL を、`judgment-board-flow` の「子の問いの書き方」節のとおり、html-one-pager のページのデータ（問いのカード1枚・3つの出力は「何を決めるか」「推奨の中身」のあとの塊）で `.oe/question-<issue>-<n>.json` に書き、そのパスを `oe-send` で依頼元のペインへ1行で送って待つ。依頼元の統括は、それを判断ボードに載せて owner の答えを受け、確定版を投稿してから URL を返す。`oe-*` の呼び方は `doc-flow-guardrail` の「verb 解決規約」節に従う。
 - **issue の URL の位置**: 統括が owner に3つの出力を見せる応答と、投稿を報告する応答では、関連リンク（`output-format-rule` の §5）の先頭に issue の URL を置く。
 - **下書きの置き場**: `.oe/`（git の対象外の作業層）。
 - **文脈の置き場**: hub の `CLAUDE.md` の案内に従う。蒸留の木（discussion / plan / episode / decision）は `docs/{name}/` と `projects/{name}/docs/` の下にある。
