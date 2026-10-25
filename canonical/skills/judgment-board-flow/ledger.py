@@ -271,6 +271,16 @@ def check_rules(ev, where, known, errors):
             if both:
                 errors.append("E-F2 %s.bulk: 「追加」の問いを一括の答えの範囲に入れている: %s"
                               % (where, ", ".join(map(str, both))))
+    if t == "announced":
+        pub = next((e for e in reversed(list(known.values())) if e.get("type") == "published"), None)
+        bulk, added = ev.get("bulk"), ev.get("added")
+        if pub is not None and pub.get("url") == ev.get("url") and isinstance(bulk, list) and isinstance(added, list):
+            expect_bulk = [k for k in pub.get("open", []) if k not in pub.get("added", [])]
+            if sorted(bulk) != sorted(expect_bulk):
+                errors.append("E-R2 %s.bulk: 直前の published の open から added を除いた key（%s）と合わない"
+                              % (where, ", ".join(expect_bulk) or "なし"))
+            if sorted(added) != sorted(pub.get("added", [])):
+                errors.append("E-R2 %s.added: 直前の published の added（%s）と合わない" % (where, ", ".join(pub.get("added", [])) or "なし"))
     if t in ("read", "collected", "corrected") or (t == "sent" and "round" in ev):
         ref = ev.get("round")
         if isinstance(ref, str) and ID_RE.match(ref):
@@ -438,9 +448,11 @@ def build_collected(page, args, entries):
         errors.append("E-B1 --choice: %r は %s の選択肢（%s）に無い" % (args.choice, args.key, "・".join(map(str, options))))
     rec = card.get("recommend")
     blocks = [b for b in card.get("blocks") or [] if isinstance(b, dict)]
-    rec_block = next((b for b in blocks if b.get("title") == RECOMMEND_BLOCK), blocks[1] if len(blocks) > 1 else None)
+    rec_block = next((b for b in blocks if b.get("title") == RECOMMEND_BLOCK), None)
     content = [text_of(p) for p in (rec_block or {}).get("points") or []]
     no = args.no or card.get("tag")
+    if args.no and card.get("tag") and args.no != card.get("tag"):
+        errors.append("E-B1 --no: %s は、カードの札 %s と違う" % (args.no, card.get("tag")))
     if not no:
         errors.append("E-B1 --key: %s のカードに札（Q<数字>）が無い。--no で番号を渡す" % args.key)
     if args.via == "bulk":

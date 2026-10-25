@@ -170,6 +170,14 @@ class AddTest(Base):
         d["bulk"] = ["i900_lib"]
         self.add("announced", d)
 
+    def test_announced_matches_last_published(self):
+        self.add("published", {"url": URL, "version": "v1", "open": ["i900_lib", "i900_add"], "added": ["i900_add"], "held": []})
+        before = self.lines()
+        self.assert_rejected(self.add("announced", {"url": URL, "bulk": ["i900_lib", "i900_pick"], "added": ["i900_add"]}, expect=1),
+                             "E-R2", before)
+        self.assert_rejected(self.add("announced", {"url": URL, "bulk": ["i900_lib"], "added": []}, expect=1), "E-R2", before)
+        self.add("announced", {"url": URL, "bulk": ["i900_lib"], "added": ["i900_add"]})
+
     def test_round_must_point_to_answered(self):
         other = self.add("asked", self.asked())["id"]
         before = self.lines()
@@ -328,6 +336,23 @@ class CollectTest(Base):
         self.assertIn("E-B1", err)
         code, out, err = self.collect("--key", "i900_lib", "--choice", "a", "--via", "page", "--round", rid, "--no", "Q41")
         self.assertEqual(code, 0, err)
+
+    def test_no_must_match_tag(self):
+        rid = self.answered()
+        code, out, err = self.collect("--key", "i900_lib", "--choice", "a", "--via", "page", "--round", rid, "--no", "Q99")
+        self.assertEqual(code, 1)
+        self.assertIn("E-B1", err)
+
+    def test_recommend_content_only_from_its_block(self):
+        data = board()
+        blocks = data["sections"][0]["cards"][0]["blocks"]
+        blocks[1]["title"] = "前提"  # 「推奨の中身」の塊が無いカード
+        with open(self.board_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        rid = self.answered()
+        code, out, err = self.collect("--key", "i900_lib", "--choice", "a", "--via", "page", "--round", rid)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["recommend"]["content"], [])
 
     def test_round_must_be_answered(self):
         code, out, err = self.collect("--key", "i900_lib", "--choice", "a", "--via", "page", "--round",
