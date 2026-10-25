@@ -3,7 +3,7 @@ id: "01M5QPYJ0RXFEAS3FJCYF4S6NB"
 title: "#538 統括ごとに1枚の判断ボードで、owner への問いを受け付けて答えを回収する手順をスキルにする"
 date: 2026-10-25
 type: plan
-status: in-development   # ゲート3 承認（2026-10-25T18:16Z・owner が判断ボードで問い1〜7 をすべて推奨どおりに答えた・承認時点の plan は 158c434）
+status: stable   # 実装完了（2026-10-26・PR #544）。ゲート3 承認は 158c434 の版（2026-10-25T18:16Z・owner が問い1〜7 をすべて推奨どおり）。承認のあとの直しは「ゲート3 のあとの変更」節（H1 は変更で owner の再承認待ち・H2 と H3 は補正）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/538"
@@ -620,13 +620,13 @@ owner に聞く問いは次の7つである。統括がそのまま判断ボー�
 
 - A1 の照合を経緯を渡さない subagent に当て、A2・A6〜A8 を diff で見る。
 
-### I2: 実装SO・PR・Copilot
+### I2: 実装SO・PR・Copilot（完了・結果は episode の I2-1〜I2-3）
 
 - 実装SO（弱・Codex 1レーン）を当て、採否を episode に書く。PR を作り（`pr-conventions`・本文は `Refs #538`）、Copilot に1ラウンド依頼し、未返信を0件にする。
 
-### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である（通過・実装SO は Cursor に1回切り替えて6件を直した・Copilot は6件すべてに返信）
 
-### I3: episode を閉じ、報告して止まる
+### I3: episode を閉じ、報告して止まる（完了・episode の closure・`.oe/report-538.md`）
 
 - episode を閉じる（注入した knowledge item 4件すべてに観測を書き戻す）。`.oe/report-538.md` に報告を書き（`implementer-contract` の形）、報告の宛先へ `oe-send` で送って exit code を確かめ、止まる。
 
