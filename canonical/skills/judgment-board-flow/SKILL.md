@@ -250,7 +250,7 @@ owner が答えたと言ったら（会話の一言・子のペインへの直�
 | `announced`（版を伝えた） | 案内の1行を送ったとき | `url`・`bulk`（一括の答えを当ててよい key）・`added`（追加の key・`bulk` と重ねない） |
 | `answered`（答えた） | owner が答えたと言ったとき | `where`（`page`・`conversation`・`child_pane`）・`words`（owner の言葉のまま。無ければ空）・`keys`（名指した key。無ければ空） |
 | `read`（保存先を読んだ） | 回収の段2 | `round`・`url`・`count`（読んだ文書の数） |
-| `collected`（回収した） | 回収の段3（`collect` で書く） | `round`・`key`・`no`・`title`・`recommend`（key・名前・推奨の中身）・`choice`（key・名前）・`note`・`via`（`page`・`conversation`・`bulk`・`child_pane`）。一覧から選ぶ問いでは `rows`（選んだ行の番号と中身）。任意で `words` |
+| `collected`（回収した） | 回収の段3（`collect` で書く） | `round`・`key`・`no`・`title`・`recommend`（key・名前・推奨の中身）・`choice`（key・名前）・`note`・`via`（`page`・`conversation`・`bulk`・`child_pane`）。一覧から選ぶ問いでは `rows`（選んだ行の番号と中身。行を選ばなかったときは空の並び）。任意で `words` |
 | `sent`（渡した） | 子・承認の記録・issue へ渡したとき | `keys`・`kind`（`answer`・`correction`・`value`）・`to`（渡した先）・`ref`（送った1行の識別子・コメントの URL・記録のパス）。任意で `issue`・`step`・`round` |
 | `received`（受け取った） | 子の返事か受領印を確かめたとき | `keys`・`sent`（受け取った送信の `id`。`how` が `direct` なら空でよい）・`how`（`reply`・`receipt`・`direct`） |
 | `recorded`（記録を書いた） | 承認の記録か認識合わせの確定版を書いたとき | `keys`・`kind`（`approval`・`intake`）・`ref`（記録のパスかコメントの URL） |
@@ -267,7 +267,7 @@ python3 '<このスキルのフォルダ>/ledger.py' add .oe/board-ledger.jsonl 
 JSON
 ```
 
-回収した答えを書く。判断ボードのデータからカードの番号・題・推奨の名前と「推奨の中身」・選んだ選択肢の名前を引くので、手で写さない。一覧から選ぶ問いでは `--rows` が要り、選ぶ表から行の中身を引く。`--via bulk` は、最後の `announced` の `bulk` に無い問いと、推奨と違う選択肢を拒む。
+回収した答えを書く。判断ボードのデータからカードの番号・題・推奨の名前と「推奨の中身」・選んだ選択肢の名前を引くので、手で写さない。一覧から選ぶ問いでは `--rows` が要り（行を選ばなかったときは `--rows ''`）、選ぶ表から行の中身を引く。`--via bulk` は、最後の `announced` の `bulk` に無い問いと、推奨と違う選択肢を拒む。
 
 ```bash
 python3 '<このスキルのフォルダ>/ledger.py' collect .oe/board-ledger.jsonl --board .oe/board.json --key i900_retry_limit --choice five --via conversation --round <answered の id> --note 'Q41 は別案（会話）' --words 'Q41 は5回で'

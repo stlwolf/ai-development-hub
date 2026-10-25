@@ -194,8 +194,8 @@ def check_value(kind, value, where, errors):
         if not isinstance(content, list) or any(not isinstance(c, str) for c in content):
             bad("content を文字列の並びにする")
     elif kind == "rows":
-        if not isinstance(value, list) or not value:
-            bad("選んだ行を1つ以上の {no, content} の並びにする")
+        if not isinstance(value, list):
+            bad("選んだ行を {no, content} の並びにする（行を選ばなかったときは空の並び）")
             return
         for j, row in enumerate(value):
             if not isinstance(row, dict) or set(row) != {"no", "content"}:
@@ -415,7 +415,7 @@ def select_rows(card, tables, page_kind, wanted, errors):
     mx, mn = sel.get("max"), sel.get("min")
     if isinstance(mx, int) and len(wanted) > mx:
         errors.append("E-B2 --rows: 選んだ行が %d つで、選べる数（%d）を超える" % (len(wanted), mx))
-    if isinstance(mn, int) and len(wanted) < mn:
+    if isinstance(mn, int) and wanted and len(wanted) < mn:
         errors.append("E-B2 --rows: 選んだ行が %d つで、選ぶ数の下限（%d）に届かない" % (len(wanted), mn))
     return rows
 
@@ -454,11 +454,12 @@ def build_collected(page, args, entries):
     rows = None
     wanted = [r.strip() for r in args.rows.split(",") if r.strip()] if args.rows else []
     if card.get("select"):
-        if not wanted:
-            errors.append("E-B2 --rows: 一覧から選ぶカード（select がある）では、選んだ行を --rows で書く")
+        if args.rows is None:
+            errors.append("E-B2 --rows: 一覧から選ぶカード（select がある）では、選んだ行を --rows で書く"
+                          "（行を選ばなかったときは --rows ''）")
         else:
             rows = select_rows(card, tables, page.get("kind"), wanted, errors)
-    elif wanted:
+    elif args.rows is not None:
         errors.append("E-B2 --rows: %s は一覧から選ぶカードでない（select が無い）" % args.key)
     if errors:
         return None, errors
@@ -596,7 +597,7 @@ def parser():
     c.add_argument("--round", required=True, help="この回収のきっかけの answered の id")
     c.add_argument("--note", default="", help="補足（owner の言葉を含む）")
     c.add_argument("--words", help="会話の答えなら owner の言葉のまま")
-    c.add_argument("--rows", help="一覧から選ぶカードの選んだ行（候補2,候補5 のようにカンマで区切る）")
+    c.add_argument("--rows", help="一覧から選ぶカードの選んだ行（候補2,候補5 のようにカンマで区切る。選ばなかったときは空の文字列）")
     c.add_argument("--no", help="カードに札が無いときの問いの番号（Q<数字>）")
     k = sub.add_parser("check", help="台帳のすべての行を検証する")
     k.add_argument("ledger")

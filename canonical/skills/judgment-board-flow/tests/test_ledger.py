@@ -273,6 +273,13 @@ class CollectTest(Base):
         self.assertEqual(rows, [{"no": "候補1", "content": {"店": "駅前店", "issue": "#900"}},
                                 {"no": "候補2", "content": {"店": "アウトレット", "issue": ""}}])
 
+    def test_select_card_with_no_rows(self):
+        rid = self.answered("Q43 はどれも試さない")
+        code, out, err = self.collect("--key", "i900_pick", "--choice", "none", "--via", "conversation", "--round", rid,
+                                      "--rows", "")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["rows"], [])
+
     def test_rows_errors(self):
         rid = self.answered()
         before = self.lines()
