@@ -592,29 +592,29 @@ owner に聞く問いは次の7つである。統括がそのまま判断ボー�
 
 - 承認された plan の commit と、brief の digest が統括の承認の記録と一致することを確かめる（統括が送る承認の1行に従う）。html-one-pager の検査を 3.13 と 3.9 で回し、415件・失敗0件を確かめる。
 
-### I1-1: 台帳の道具（DJ-9・DJ-10・1コミット）
+### I1-1: 台帳の道具（DJ-9・DJ-10・1コミット）（完了・`134726d`。行を選ばなかった答えの直しは `3c82253`）
 
 - `canonical/skills/judgment-board-flow/ledger.py` と `tests/test_ledger.py` を書く。11種類の検証・`add`・`collect`・`check`・`trace`・`id` の自動の振り方と重なり・壊れた行・知らない種類・知らない項目・必須の欠け（`asked` の `file`・`held` の `hold`・一覧から選ぶカードの `rows`・`read`・`collected`・`corrected` の `round`・`received` の `sent`・`recorded` の `keys`）・`round` と `sent` が台帳に無い `id` を指すこと・判断ボードのデータに無い key・選択肢に無い choice・`--via bulk` で最後の `announced` の `bulk` に無い key・`trace` が別の key の出来事を混ぜないこと、を検査する。
 
-### GATE I1-1: `ledger.py` の検査が 3.13 と 3.9 で通る
+### GATE I1-1: `ledger.py` の検査が 3.13 と 3.9 で通る（通過・39件が 3.13.5 と 3.9.6 で失敗0件）
 
-### I1-2: 新しいスキルの SKILL.md（DJ-1〜DJ-15・1コミット）
+### I1-2: 新しいスキルの SKILL.md（DJ-1〜DJ-15・1コミット）（完了・`73f5140`。一巡の確かめと A1 で見つけた直しは `01549e6`・`824c8b4`・`256d75a`）
 
 - DJ-3 の節の順で書く。「#466 の決定との対応」節の表の「スキル」の列を埋める。
 
-### I1-3: html-one-pager の直し（DJ-16・1コミット）
+### I1-3: html-one-pager の直し（DJ-16・1コミット）（完了・`3a486a3`。H1 は owner の再承認待ち）
 
 - SKILL.md の「作り方の流れ」・「判断ボードの更新のしかた」・「答えを受け取る」と、用語集の `text.all_recommended` を直す。用語集の文に頼る検査があれば直す。
 
-### GATE I1-3: html-one-pager の検査が 3.13 と 3.9 で通り、すべての見本が `check` と `build` を通る
+### GATE I1-3: html-one-pager の検査が 3.13 と 3.9 で通り、すべての見本が `check` と `build` を通る（通過・415件・見本9つ）
 
-### I1-4: 出力の型・doc-flow-guardrail・issue-intake の直し（DJ-17〜DJ-19・1コミット）
+### I1-4: 出力の型・doc-flow-guardrail・issue-intake の直し（DJ-17〜DJ-19・1コミット）（完了・`ffa2d0d`）
 
-### I1-5: CATALOG・decision・#466 の追補（DJ-21・1コミット）
+### I1-5: CATALOG・decision・#466 の追補（DJ-21・1コミット）（完了・`109473f`）
 
-### I1-6: 一巡の確かめ（A3）
+### I1-6: 一巡の確かめ（A3）（完了・1回目 102/104・C2 と C4 の回し直し 33/33・いまの版 `256d75a` での3回目 104/104。結果は episode の I1-6）
 
-### I1-7: 発火の測定（A4）
+### I1-7: 発火の測定（A4）（完了・F1〜F10 と F13 で読み込み、F11・F12 で読み込まない。description は直していない）
 
 ### GATE I1: A1〜A9 がすべて満たされている
 
