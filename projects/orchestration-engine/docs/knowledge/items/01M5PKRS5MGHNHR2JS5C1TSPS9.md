@@ -8,7 +8,11 @@ prediction: "規則の文は正しく、置き場のスキルを読み直して�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-10-24-episode-466-page-lifecycle-in-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-26
+    ref: "#538"
+    state: followed
+    note: "教訓に従い、「いつ判断ボードに載せるか」の規則を、ページを作るスキル（html-one-pager）でなく、出来事の名前で発火する新しいスキル judgment-board-flow に置き、description に html-one-pager より先に読み込むと書いた。発火を測ると、子の問い・ゲートの停止・SO・回収・依頼・交代の言い方11件で最初に読み込まれ、判定ページを作る言い方でも html-one-pager より先に読み込まれた"
 exclusions:
   - "規則を、その出来事の場面で必ず読まれる入口（いつも読まれるルール・出来事ごとに走る hook・その出来事の名前で発火するスキル）に置く場合"
 ---

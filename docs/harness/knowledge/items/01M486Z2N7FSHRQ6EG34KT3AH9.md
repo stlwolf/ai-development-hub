@@ -15,6 +15,10 @@ observations:
     ref: "#428"
     state: followed
     note: "発火の表に、隣の artifact-design と引き金が重なる言い方（artifact を作って）を2行入れ、description に、artifact の組み込みの指示と一緒に読み込まれたときはページの形をこのスキルが決める、と順序を書いた。ただし claude -p では Artifact の道具と artifact-design が候補に出ず、並んだときの順は測れなかった。別に、題材の欠けた言い方で読み込みが後回しになる形を見つけ、item 01M5A1ZMJXGB2TQBVJEA9T4Q9Q に収穫した"
+  - date: 2026-10-26
+    ref: "#538"
+    state: followed
+    note: "教訓に従い、発火の表に統括（渡す側）・子（問いを書く側）・隣の html-one-pager と delegate-task と引き金が重なる言い方・交代の言い方を行として入れ、description にどちらを先に通すかを書いた。陽性11件で最初の呼び出しに読み込まれ、陰性2件で読み込まれなかった。print モードでは artifact-design が候補に出ず、並んだときの順は測れていない"
 ---
 
 **入口のスキルの発火は、渡す側と受け取る側の両方の言い方、それに引き金が重なる隣のスキルの言い方で測る。重なるなら、description にどちらを先に通すかを書く。**
