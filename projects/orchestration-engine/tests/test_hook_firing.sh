@@ -246,5 +246,54 @@ E2="$_TMP_DIR/empty-contract"; mkdir -p "$E2"
 ck "oe-hookfire 記録なし（indeterminate）は 2 のまま" "2" \
    "$(HOOK_FIRING_DIR="$E2" bash "$OE_HOOKFIRE" >/dev/null 2>&1 && printf '0' || printf '%s' "$?")"
 
+echo "[19] oe-hookfire: diag.jsonl・deny.jsonl を読めないときに「0 件」で ok にしない（#530）"
+# 中身は今日の ts の失敗と internal-error を1行ずつ。読めれば broken になる内容なので、
+# ok が出たら「読めなかった」が 0 件に化けている。期待は ok でも broken でもなく indeterminate。
+# 起動は $HB で行う（外側を /bin/bash で回したときに対象も 3.2 で試すため）。
+hf_row() { # hf_row <dir> <name> — その検査の判定（ok / broken / indeterminate）を返す
+  HOOK_FIRING_DIR="$1" "$HB" "$OE_HOOKFIRE" --json 2>/dev/null \
+    | jq -r --arg n "$2" '.[] | select(.name == $n) | .verdict'
+}
+UR="$_TMP_DIR/unreadable"; mkdir -p "$UR/tally/claude"; printf 'x' > "$UR/tally/claude/cc-lint.allow"
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ts":"%s","err":"x"}\n' "$now" > "$UR/diag.jsonl"
+printf '{"ts":"%s","rule":"internal-error"}\n' "$now" > "$UR/deny.jsonl"
+ck "読めれば record-health は broken（fixture の確認）" "broken" "$(hf_row "$UR" record-health)"
+ck "読めれば internal-error は broken（fixture の確認）" "broken" "$(hf_row "$UR" internal-error)"
+if [ "$(id -u)" = "0" ]; then
+  echo "  SKIP: root では chmod 000 でも読めるので権限の場合を作れない"
+else
+  chmod 000 "$UR/diag.jsonl" "$UR/deny.jsonl"
+  ck "chmod 000 の diag.jsonl で record-health は indeterminate" "indeterminate" "$(hf_row "$UR" record-health)"
+  ck "chmod 000 の deny.jsonl で internal-error は indeterminate" "indeterminate" "$(hf_row "$UR" internal-error)"
+  chmod 600 "$UR/diag.jsonl" "$UR/deny.jsonl"
+fi
+DL="$_TMP_DIR/dangling"; mkdir -p "$DL/tally/claude"; printf 'x' > "$DL/tally/claude/cc-lint.allow"
+ln -s "$_TMP_DIR/no-such-file" "$DL/diag.jsonl"; ln -s "$_TMP_DIR/no-such-file" "$DL/deny.jsonl"
+ck "壊れた symlink の diag.jsonl で record-health は indeterminate" "indeterminate" "$(hf_row "$DL" record-health)"
+ck "壊れた symlink の deny.jsonl で internal-error は indeterminate" "indeterminate" "$(hf_row "$DL" internal-error)"
+ck "壊れた symlink を「無い」と書かない" "0" \
+  "$(HOOK_FIRING_DIR="$DL" "$HB" "$OE_HOOKFIRE" 2>/dev/null | grep -c 'deny.jsonl が無い\|記録されていない' || true)"
+# 置き場のディレクトリに検索権限が無いと -e が偽になり、「無い」に落ちる（実装SO の指摘）。
+if [ "$(id -u)" != "0" ]; then
+  NX="$_TMP_DIR/noexec"; mkdir -p "$NX/tally/claude"; printf 'x' > "$NX/tally/claude/cc-lint.allow"
+  printf '{"ts":"%s","err":"x"}\n' "$now" > "$NX/diag.jsonl"
+  chmod 0600 "$NX"
+  ck "置き場を辿れないとき record-health は indeterminate" "indeterminate" "$(hf_row "$NX" record-health)"
+  chmod 0700 "$NX"
+  # 直上でなく祖先を辿れないときも同じ（Copilot の指摘）。
+  NA="$_TMP_DIR/noexec-ancestor"; mkdir -p "$NA/fire/tally/claude"
+  printf '{"ts":"%s","err":"x"}\n' "$now" > "$NA/fire/diag.jsonl"
+  chmod 0600 "$NA"
+  ck "祖先を辿れないとき record-health は indeterminate" "indeterminate" "$(hf_row "$NA/fire" record-health)"
+  chmod 0700 "$NA"
+fi
+# 置き場そのものが無いときは「無い」のまま（record-health は ok）。
+ck "置き場が無いときの record-health は ok のまま" "ok" "$(hf_row "$_TMP_DIR/no-such-fire-dir" record-health)"
+# ファイルが無いときの判定は変えていない（record-health は ok・internal-error は indeterminate）。
+NL="$_TMP_DIR/nologs"; mkdir -p "$NL/tally/claude"; printf 'x' > "$NL/tally/claude/cc-lint.allow"
+ck "diag.jsonl が無いときの record-health は ok のまま" "ok" "$(hf_row "$NL" record-health)"
+ck "deny.jsonl が無いときの internal-error は indeterminate のまま" "indeterminate" "$(hf_row "$NL" internal-error)"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

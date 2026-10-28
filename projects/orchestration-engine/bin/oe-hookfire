@@ -136,6 +136,51 @@ size_of() {
   printf '%s' "${v// /}"
 }
 
+# jsonl を行ごとに読み、filter に当たる行の件数を返す。
+# **jq の失敗を 0 件に潰さない。** `jq ... | wc -l` の形だと、権限・IO エラーで jq が
+# 落ちても wc が 0 を返し、ok「0 件」に化ける（#530）。件数は jq 自身に数えさせて
+# 終了コードを拾い、失敗したら空文字を返す（size_of と同じ決まり）。
+# fromjson? で壊れた行は黙って飛ばす（1行の破損で以降が読めなくなるのを避ける）。
+count_jsonl() { # count_jsonl <log> <jq の select 式> [jq の追加引数...]
+  local log="$1" sel="$2" v
+  shift 2
+  v="$(jq -nR "$@" "[inputs | fromjson? | ${sel}] | length" "$log" 2>/dev/null)" \
+    || { printf ''; return 1; }
+  case "$v" in ''|*[!0-9]*) printf ''; return 1 ;; esac
+  printf '%s' "$v"
+}
+
+# ログの置かれ方を分ける。unreachable（置き場のディレクトリを辿れない）/ absent /
+# dangling（壊れた symlink）/ notfile（ディレクトリ・FIFO など。FIFO を jq で読むと
+# 書き手が来るまで止まる）/ file。
+# **壊れた symlink を「無い」と読まない。** -f も -e も解決先で判定するので、
+# 壊れた symlink は「ファイルが無い」の分岐に落ちて ok を出していた（#530）。
+# 途中のディレクトリに検索権限が無いときも -e は偽になるので、先に分けておく。直上だけでなく
+# 祖先も見る: 在ると確かめられる最も近い祖先まで遡り、そこを辿れなければ unreachable である。
+log_state() {
+  local d up
+  d="$(dirname "$1")"
+  while [ ! -e "$d" ] && [ ! -L "$d" ]; do
+    up="$(dirname "$d")"
+    [ "$up" = "$d" ] && break
+    d="$up"
+  done
+  if [ -d "$d" ] && [ ! -x "$d" ]; then printf 'unreachable'
+  elif [ -L "$1" ] && [ ! -e "$1" ]; then printf 'dangling'
+  elif [ ! -e "$1" ]; then printf 'absent'
+  elif [ ! -f "$1" ]; then printf 'notfile'
+  else printf 'file'
+  fi
+}
+# log_state の結果を判定表に書く言葉にする。
+log_state_label() {
+  case "$1" in
+    dangling)    printf '壊れた symlink' ;;
+    unreachable) printf '在るかどうか分からない（置き場までのディレクトリを辿れない）' ;;
+    *)           printf '通常のファイルでない（ディレクトリ・FIFO など）' ;;
+  esac
+}
+
 # mtime が直近 $DAYS 日の中か。find -newermt は GNU 依存なので使わない。
 fresh() { [ -n "$(find "$1" -type f -mtime "-${DAYS}" 2>/dev/null)" ]; }
 
@@ -227,13 +272,18 @@ else
 fi
 
 # --- 4. 記録そのものが失敗していないか ---
-if [ ! -f "$DIAG_LOG" ]; then
+st="$(log_state "$DIAG_LOG")"
+# shellcheck disable=SC2016  # $cut は jq の変数（--arg で渡す）なので展開させない
+if [ "$st" = "absent" ]; then
   add "record-health" "ok" "記録の失敗は記録されていない"
+elif [ "$st" != "file" ]; then
+  add "record-health" "indeterminate" \
+    "diag.jsonl が$(log_state_label "$st")。記録の失敗が 0 件かどうか分からない"
 elif ! command -v jq >/dev/null 2>&1; then
   add "record-health" "indeterminate" "jq が無いので ts で窓を切れない"
+elif ! n="$(count_jsonl "$DIAG_LOG" 'select((.ts? // "") >= $cut)' --arg cut "$CUTOFF")"; then
+  add "record-health" "indeterminate" "diag.jsonl を読めなかった（権限・IO）。0 件と区別できない"
 else
-  n="$(jq -rR --arg cut "$CUTOFF" 'fromjson? | select((.ts? // "") >= $cut) | .ts' "$DIAG_LOG" 2>/dev/null | wc -l | tr -d ' ')"
-  [ -n "$n" ] || n=0
   if [ "$n" -gt 0 ]; then
     add "record-health" "broken" \
       "直近 ${DAYS} 日に記録の失敗が ${n} 件ある。この間の tally は過小なので ok の根拠に使えない"
@@ -245,18 +295,20 @@ fi
 # --- 5. 内部エラーが deny へ収束していないか（trap の発火率）---
 # **窓は行の ts で切る。** ファイルの mtime + 累計件数で判定すると、大昔の1件が
 # 残ったまま今日の通常 deny で mtime が新しくなるだけで broken を出し続ける（実測で踏んだ）。
-if [ ! -f "$DENY_LOG" ]; then
+st="$(log_state "$DENY_LOG")"
+# shellcheck disable=SC2016  # $cut は jq の変数（--arg で渡す）なので展開させない
+if [ "$st" = "absent" ]; then
   add "internal-error" "indeterminate" "deny.jsonl が無い。deny が一度も起きていないだけかもしれない"
+elif [ "$st" != "file" ]; then
+  add "internal-error" "indeterminate" \
+    "deny.jsonl が$(log_state_label "$st")。内部エラーが 0 件かどうか分からない"
 elif ! command -v jq >/dev/null 2>&1; then
   add "internal-error" "indeterminate" "jq が無いので ts で窓を切れない"
+elif ! n="$(count_jsonl "$DENY_LOG" \
+              'select((.rule? == "internal-error") and (.ts? // "") >= $cut)' --arg cut "$CUTOFF")" \
+     || ! tot="$(count_jsonl "$DENY_LOG" 'select(.rule? == "internal-error")')"; then
+  add "internal-error" "indeterminate" "deny.jsonl を読めなかった（権限・IO）。0 件と区別できない"
 else
-  # fromjson? で壊れた行は黙って飛ばす（1行の破損で以降が読めなくなるのを避ける）。
-  n="$(jq -rR --arg cut "$CUTOFF" \
-        'fromjson? | select((.rule? == "internal-error") and (.ts? // "") >= $cut) | .ts' \
-        "$DENY_LOG" 2>/dev/null | wc -l | tr -d ' ')"
-  [ -n "$n" ] || n=0
-  tot="$(jq -rR 'fromjson? | select(.rule? == "internal-error") | .ts' "$DENY_LOG" 2>/dev/null | wc -l | tr -d ' ')"
-  [ -n "$tot" ] || tot=0
   if [ "$n" -gt 0 ]; then
     add "internal-error" "broken" \
       "直近 ${DAYS} 日に内部エラーで deny へ収束した記録が ${n} 件ある（累計 ${tot} 件）。フックが壊れている疑い"
