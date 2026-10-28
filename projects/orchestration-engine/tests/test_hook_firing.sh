@@ -281,7 +281,15 @@ if [ "$(id -u)" != "0" ]; then
   chmod 0600 "$NX"
   ck "置き場を辿れないとき record-health は indeterminate" "indeterminate" "$(hf_row "$NX" record-health)"
   chmod 0700 "$NX"
+  # 直上でなく祖先を辿れないときも同じ（Copilot の指摘）。
+  NA="$_TMP_DIR/noexec-ancestor"; mkdir -p "$NA/fire/tally/claude"
+  printf '{"ts":"%s","err":"x"}\n' "$now" > "$NA/fire/diag.jsonl"
+  chmod 0600 "$NA"
+  ck "祖先を辿れないとき record-health は indeterminate" "indeterminate" "$(hf_row "$NA/fire" record-health)"
+  chmod 0700 "$NA"
 fi
+# 置き場そのものが無いときは「無い」のまま（record-health は ok）。
+ck "置き場が無いときの record-health は ok のまま" "ok" "$(hf_row "$_TMP_DIR/no-such-fire-dir" record-health)"
 # ファイルが無いときの判定は変えていない（record-health は ok・internal-error は indeterminate）。
 NL="$_TMP_DIR/nologs"; mkdir -p "$NL/tally/claude"; printf 'x' > "$NL/tally/claude/cc-lint.allow"
 ck "diag.jsonl が無いときの record-health は ok のまま" "ok" "$(hf_row "$NL" record-health)"

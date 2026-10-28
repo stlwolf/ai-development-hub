@@ -155,11 +155,17 @@ count_jsonl() { # count_jsonl <log> <jq の select 式> [jq の追加引数...]
 # 書き手が来るまで止まる）/ file。
 # **壊れた symlink を「無い」と読まない。** -f も -e も解決先で判定するので、
 # 壊れた symlink は「ファイルが無い」の分岐に落ちて ok を出していた（#530）。
-# 置き場のディレクトリに検索権限が無いときも -e は偽になるので、先に分けておく。
+# 途中のディレクトリに検索権限が無いときも -e は偽になるので、先に分けておく。直上だけでなく
+# 祖先も見る: 在ると確かめられる最も近い祖先まで遡り、そこを辿れなければ unreachable である。
 log_state() {
-  local dir
-  dir="$(dirname "$1")"
-  if [ -d "$dir" ] && [ ! -x "$dir" ]; then printf 'unreachable'
+  local d up
+  d="$(dirname "$1")"
+  while [ ! -e "$d" ] && [ ! -L "$d" ]; do
+    up="$(dirname "$d")"
+    [ "$up" = "$d" ] && break
+    d="$up"
+  done
+  if [ -d "$d" ] && [ ! -x "$d" ]; then printf 'unreachable'
   elif [ -L "$1" ] && [ ! -e "$1" ]; then printf 'dangling'
   elif [ ! -e "$1" ]; then printf 'absent'
   elif [ ! -f "$1" ]; then printf 'notfile'
@@ -170,7 +176,7 @@ log_state() {
 log_state_label() {
   case "$1" in
     dangling)    printf '壊れた symlink' ;;
-    unreachable) printf '在るかどうか分からない（置き場のディレクトリを辿れない）' ;;
+    unreachable) printf '在るかどうか分からない（置き場までのディレクトリを辿れない）' ;;
     *)           printf '通常のファイルでない（ディレクトリ・FIFO など）' ;;
   esac
 }
