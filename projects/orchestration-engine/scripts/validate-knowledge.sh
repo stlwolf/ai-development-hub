@@ -44,6 +44,7 @@ set -euo pipefail
 
 VERBOSE=0
 TARGET=""
+HAVE_TARGET=0
 for arg in "$@"; do
   case "$arg" in
     --verbose) VERBOSE=1 ;;
@@ -55,13 +56,14 @@ for arg in "$@"; do
       # **2つ目の対象を黙って捨てない。** 捨てると `validate-knowledge items/*.md` が先頭の1件だけを
       # 検証して OK を出し、2件目以降の壊れた item を見逃す（#531）。対象は1つ（ファイルか
       # ディレクトリ）なので、2つ目が来たら呼び方の誤りとして弾く（oe-hookfire・oe-selfcheck と同じ扱い）。
-      # 複数の item を見たいときは directory mode を使う。
-      if [[ -n "$TARGET" ]]; then
+      # 複数の item を見たいときは directory mode を使う。受け取ったかを TARGET の非空で見ると、
+      # 先頭の空文字が「未受領」に見えて黙って捨てられるので、別の印で持つ（実装SO の指摘）。
+      if [[ "$HAVE_TARGET" -eq 1 ]]; then
         echo "ERROR: unexpected extra argument: $arg (one target only; pass the items directory to check all items)" >&2
         echo "Usage: $0 <item.md | items-dir> [--verbose]" >&2
         exit 2
       fi
-      TARGET="$arg"
+      TARGET="$arg"; HAVE_TARGET=1
       ;;
   esac
 done

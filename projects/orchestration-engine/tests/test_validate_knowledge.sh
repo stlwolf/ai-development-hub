@@ -850,6 +850,10 @@ ck  "2つとも valid でも exit 2" "2" "$RUN_RC"
 # --verbose を挟んでも2つ目は2つ目。
 run "$F52" --verbose "$D52/bad.md"
 ck  "--verbose を挟んでも exit 2" "2" "$RUN_RC"
+# 先頭の空文字も対象の1つに数える（空文字を捨てて後ろだけ検証しない・実装SO の指摘）。
+run "" "$F52"
+ck  "先頭が空文字でも2つ目は exit 2" "2" "$RUN_RC"
+ncc "先頭が空文字でも OK を出さない" "$RUN_OUT" "OK:"
 # 対象1つ + --verbose は今までどおり通る。
 run "$F52" --verbose
 ck  "対象1つ + --verbose は exit 0" "0" "$RUN_RC"
