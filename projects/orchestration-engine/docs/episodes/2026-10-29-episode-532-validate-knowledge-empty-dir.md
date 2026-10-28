@@ -42,3 +42,10 @@ master `fcb9329` で、空のディレクトリを渡すと bash 5.2.37 で `OK:
 - **直し方**: directory mode で `*.md` を集めたあと、0件なら `ERROR: no items: …` を出して exit 2 で終える。exit 2 は「見つからない」と同じ帯で、ヘッダの exit の説明にも書き足した。空の配列を展開する前に終えるので、bash 3.2 の `set -u` で落ちる経路も無くなる。
 - **呼び出し元**: validate-knowledge を directory mode で呼ぶのは README の例と `tests/test_knowledge_list.sh` で、どちらも item のあるディレクトリを渡す。リポジトリにある3つの `knowledge/items/` には 66・21・7 件の item がある。
 - **確かめた結果**: `tests/test_validate_knowledge.sh` に [53] を足した（7項目）。`/bin/bash` 3.2.57 と bash 5.2.37 の両方で PASS=276 FAIL=0。`tests/test_knowledge_list.sh` も両方で PASS=214 FAIL=0。validate-knowledge.sh を変更前に戻すと [53] は両方の bash で5項目ずつ落ちる（3.2 は unbound variable で exit 1、5 は OK で exit 0）。`shellcheck` は2つのファイルで通る。
+
+### S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）
+
+Codex の1レーンが返った（`timeout_status=success`・103秒）。出力は作業層の `tmp/so-532-impl/` にある。この差分に起因する不具合は無いという答えで、0件を exit 2 にする判断、ヘッダと呼び出し元との整合、[53] が修正を外すと落ちることは問題なしだった。
+
+- **採らない（範囲外として報告する・中）: 読めないファイルが「item の不備」（exit 1）になる。** `*.md` に当たるディレクトリ・壊れた symlink・読めないファイルは、frontmatter を読む `sed` が失敗すると frontmatter 欠落と同じ WARN になり、exit 1 で終わる。ヘッダの契約では、読めないのは環境エラー（exit 2）である。OK にはならないので #532 の「0件を OK にする」とは別の不具合で、変更前からある。brief の scope は0件の扱いだけなので直さず、統括への報告に範囲外として書く。
+- 修正が無くても通る [53] の項目（3.2 の「OK を出さない」、5 の「unbound variable で落ちない」、両方の「1件あれば exit 0」）は、異常な出力が無いことと正常系の維持を確かめる項目で、そのままにした。
