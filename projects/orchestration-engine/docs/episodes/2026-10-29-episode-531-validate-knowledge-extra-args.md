@@ -3,12 +3,22 @@ id: "01M61WAP4QWCVT700TR1KXNHH8"
 title: "#531 validate-knowledge が2つ目以降のファイル引数を黙って捨て、1つ目だけ見て OK を出す"
 date: 2026-10-29
 type: episode
-status: draft
+status: stable   # closure 2026-10-29（PR #553 の Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/531"
     reason: "本 episode の作業対象"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/553"
+    reason: "この単位の PR"
 tags: [orchestration, knowledge, validator]
+promotion:
+  - subject: "2つ目の対象は全件検証でなく exit 2 で拒む"
+    verdict: not-required
+    ref: "本文: S1: 再現と呼び出し元の確かめ（2026-10-29）"
+  - subject: "対象を受け取ったかを値の非空でなく別の印で持つ"
+    verdict: not-required
+    ref: "本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）"
 knowledge_observations:
   - "01KZ21M0N0FZ4YMR2R6DPHTWQ4"
 ---
@@ -43,3 +53,19 @@ Codex の1レーンが返った（`timeout_status=success`・100秒）。出力�
 
 - **採用（中）: 先頭の空文字の引数が黙って捨てられる。** 対象を受け取ったかを `TARGET` の非空で見ていたので、`validate-knowledge "" valid.md` は空文字を「未受領」と見て、後ろの1件だけを検証して OK を出していた。受け取ったかを `HAVE_TARGET` で別に持つ形に直した。空文字だけを渡したときは今までどおり「見つからない」で exit 2 になる。[52] に2項目足し、最初の修正のコミットに対して落ちることを確かめた。テストは両方の bash で PASS=269 FAIL=0。
 - 判定の記録: 最初の修正は、issue の文面（2つ目以降を捨てる）に合わせて「2つ目が来たか」を `TARGET` の値で判定していた。値で数えると、値が空の引数が数から漏れる。
+
+### S2: Copilot の1ラウンド（2026-10-29）
+
+Copilot のレビューは指摘0件（概要は「Approval recommended」）。返信の要る行の指摘は無い。
+
+## closure（2026-10-29）
+
+- **tier**: heavy。実装SO を意図して起動し、その指摘で修正を足したため。
+- **次の消費者**: validate-knowledge を呼ぶ人とスキル（episode-retrospective の Step 5・6）。#532（同じファイルの directory mode）が U4 として続く。
+- **事実・失敗**: 最初の修正は「2つ目が来たか」を `TARGET` の値で判定していて、先頭の空文字が数から漏れた。実装SO が拾った。`本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`
+- **決定と根拠**: 全件検証にせず拒む判断は brief の scope が決めたもので、呼び出し元が無いことを確かめた。`本文: S1: 再現と呼び出し元の確かめ（2026-10-29）`
+- **昇格の判定**: 2件とも `not-required`。1件目は brief（統括）が決めた範囲の判断で、コードのコメントに理由がある。覆すには確認（2つ以上を渡す呼び出し元が現れるか）で足りる。2件目はコードのコメントとテストが正本である。昇格の印は置いていない。
+- **蒸留シグナル**: なし。「値で数えると空の値が数から漏れる」は自明な実装の注意で、収穫基準の非自明を満たさない。
+- **follow-up**: 無い。#532 は brief で U4 として予定されている。
+- **観測の書き戻し**: 注入された item は `01KZ21M0N0FZ4YMR2R6DPHTWQ4` の1件で、`no_opportunity` を書き戻した（合格条件を書く場面ではなかった）。
+- Step4 辞退: 実装SO と Copilot が差分を見ており、指摘1件は本文に節を立てて記録済み / 既存チェックで覆った観点: 省略チェック（指摘1件が本文と事実・失敗に在る）・routing（follow-up 無し）・evidence anchor（SO の出力は `tmp/` だが要点を本文に転記済み）/ 未実施観点と判断: back-propagation は、他文書の欠陥を見つけていないので該当なし
