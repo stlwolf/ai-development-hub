@@ -161,6 +161,8 @@ class AddTest(Base):
         self.assert_rejected(self.add("asked", self.asked(moved_from="page"), expect=1), "E-V1", [])
         self.assert_rejected(self.add("asked", self.asked(route="self", moved_from="conversation"), expect=1),
                              "E-F2", [])
+        self.assert_rejected(self.add("asked", self.asked(route="request", moved_from="conversation"), expect=1),
+                             "E-F2", [])
         self.assert_rejected(self.add("asked", self.asked(route="held", hold="next_publish",
                                                           moved_from="conversation"), expect=1), "E-F2", [])
 
