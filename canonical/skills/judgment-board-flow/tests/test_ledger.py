@@ -108,6 +108,8 @@ class Base(unittest.TestCase):
 class AddTest(Base):
     def asked(self, **over):
         d = {"keys": ["i900_lib"], "from": "子 #900", "file": ".oe/question-900-1.json", "stops": True, "route": "board"}
+        if "from_" in over:
+            over["from"] = over.pop("from_")
         d.update(over)
         return d
 
@@ -147,6 +149,20 @@ class AddTest(Base):
         self.assert_rejected(self.add("asked", self.asked(route="later"), expect=1), "E-V1", [])
         self.assert_rejected(self.add("asked", self.asked(keys=["Bad Key"]), expect=1), "E-K1", [])
         self.assert_rejected(self.add("asked", self.asked(keys=[]), expect=1), "E-F2", [])
+
+    def test_moved_from_conversation(self):
+        ev = self.add("asked", self.asked(file=".oe/question-cockpit-3.json", from_="統括", stops=False,
+                                          moved_from="conversation"))
+        self.assertEqual(ev["moved_from"], "conversation")
+        code, out, err = self.run_main("check", self.path)
+        self.assertEqual(code, 0, err)
+
+    def test_moved_from_value_and_route(self):
+        self.assert_rejected(self.add("asked", self.asked(moved_from="page"), expect=1), "E-V1", [])
+        self.assert_rejected(self.add("asked", self.asked(route="self", moved_from="conversation"), expect=1),
+                             "E-F2", [])
+        self.assert_rejected(self.add("asked", self.asked(route="held", hold="next_publish",
+                                                          moved_from="conversation"), expect=1), "E-F2", [])
 
     def test_gate_range(self):
         self.assert_rejected(self.add("asked", self.asked(gate=9), expect=1), "E-F2", [])

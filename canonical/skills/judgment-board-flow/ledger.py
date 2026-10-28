@@ -46,7 +46,8 @@ SCHEMA = {
     "asked": {
         "required": {"keys": "keys+", "from": "str", "file": "str", "stops": "bool",
                      "route": "enum:board|held|self|request"},
-        "optional": {"hold": "enum:next_publish|threshold", "issue": "int", "step": "str", "gate": "int"},
+        "optional": {"hold": "enum:next_publish|threshold", "issue": "int", "step": "str", "gate": "int",
+                     "moved_from": "enum:conversation"},
     },
     "published": {
         "required": {"url": "url", "version": "str", "open": "keys", "added": "keys", "held": "keys"},
@@ -260,6 +261,8 @@ def check_rules(ev, where, known, errors):
                           % where)
         if route != "held" and hold is not None:
             errors.append("E-F1 %s.hold: route が held でない問いに、待たせる理由は書かない" % where)
+        if "moved_from" in ev and route != "board":
+            errors.append("E-F2 %s.moved_from: 会話から移す問いは、判断ボードに載せる（route は board）" % where)
         if "gate" in ev and isinstance(ev["gate"], int) and not 1 <= ev["gate"] <= 8:
             errors.append("E-F2 %s.gate: 判断の順の段は 1〜8" % where)
     if t == "published":
