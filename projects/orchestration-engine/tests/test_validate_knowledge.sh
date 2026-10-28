@@ -834,6 +834,30 @@ ncc "本文が不正なバイトだけ → 空扱いしない" "$RUN_OUT" "body 
 
 # --- サマリ ---
 echo ""
+echo "[52] 対象を2つ渡したら exit 2（2つ目を黙って捨てて OK を出さない・#531）"
+# 1つ目が valid・2つ目が壊れた item。2つ目を捨てると 1つ目だけ見て OK / exit 0 になる。
+D52="$_TMP_DIR/two-targets"; mkdir -p "$D52"
+F52="$D52/$ULID.md"; write_valid_item "$F52"
+printf -- '---\nid: bad\n---\n' > "$D52/bad.md"
+run "$F52" "$D52/bad.md"
+ck  "exit 2"                    "2" "$RUN_RC"
+ncc "OK を出さない"             "$RUN_OUT" "OK:"
+ckc "余分な引数を名指しする"    "$RUN_OUT" "unexpected extra argument: $D52/bad.md"
+ckc "使い方の行を出す"          "$RUN_OUT" "Usage:"
+# 2つ目が valid でも同じ（中身でなく呼び方で弾く）。
+run "$F52" "$F52"
+ck  "2つとも valid でも exit 2" "2" "$RUN_RC"
+# --verbose を挟んでも2つ目は2つ目。
+run "$F52" --verbose "$D52/bad.md"
+ck  "--verbose を挟んでも exit 2" "2" "$RUN_RC"
+# 先頭の空文字も対象の1つに数える（空文字を捨てて後ろだけ検証しない・実装SO の指摘）。
+run "" "$F52"
+ck  "先頭が空文字でも2つ目は exit 2" "2" "$RUN_RC"
+ncc "先頭が空文字でも OK を出さない" "$RUN_OUT" "OK:"
+# 対象1つ + --verbose は今までどおり通る。
+run "$F52" --verbose
+ck  "対象1つ + --verbose は exit 0" "0" "$RUN_RC"
+
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then
   exit 1
