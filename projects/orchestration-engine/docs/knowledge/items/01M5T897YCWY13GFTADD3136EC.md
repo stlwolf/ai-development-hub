@@ -8,7 +8,11 @@ prediction: "偽物を PATH の先頭に置いて差し替えたつもりにな�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-10-25-episode-538-judgment-board-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-29
+    ref: "#545"
+    state: followed
+    note: "経緯を渡さない場面の当てを、道具をすべて外した claude -p --tools '' で動かし、本物の oe-send や Artifact の道具に届く経路を起点ごと無くした。場面のペインの番号も存在しない番号にした"
 exclusions:
   - "差し替える道具を、手順が名前で直接呼ぶだけで、間接の引き方を持たない場合"
   - "確かめの場面を、本物の道具が入っていない隔離された環境（別のコンテナなど）で動かす場合"
