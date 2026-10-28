@@ -221,6 +221,8 @@ if [ -d "$TALLY_DIR" ]; then
   for tool_dir in "$TALLY_DIR"/*; do
     [ -d "$tool_dir" ] || continue
     tool="$(basename "$tool_dir")"
+    # unknown はツールではない。3節（tool-attribution）が窓で見るので、ここで行を足さない。
+    [ "$tool" = "unknown" ] && continue
     for hook in $HOOKS; do
       a="${tool_dir}/${hook}.allow"
       d="${tool_dir}/${hook}.deny"
@@ -255,18 +257,42 @@ fi
 # --- 3. unknown へ落ちていないか ---
 # $0 によるツール判別は、ホストが解決済みの絶対パスで起動する形に変われば静かに
 # unknown へ落ちる。**静かに消えるのが本 issue の敵**なので、件数を必ず表に出す。
-if [ -d "${TALLY_DIR}/unknown" ]; then
-  n="$(find "${TALLY_DIR}/unknown" -type f 2>/dev/null | wc -l | tr -d ' ')"
-  tot=0
-  # プロセス置換で読む。パイプにすると while が subshell に入って tot が戻らない。
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    sz="$(size_of "$f")" || sz=0
-    [ -n "$sz" ] || sz=0
-    tot=$(( tot + sz ))
-  done < <(find "${TALLY_DIR}/unknown" -type f 2>/dev/null)
-  add "tool-attribution" "broken" \
-    "ツール不明の記録が ${n} ファイル・計 ${tot} 件ある。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
+# **broken は窓で切る（#529）。** 累計で判定すると、手でのプローブ1回で unknown に落ちた記録が
+# 残るかぎり、判別が正しく動いていても broken を出し続ける（internal-error で踏んだのと同じ形）。
+# 窓の中に1バイト以上ある unknown の tally があるときだけ broken にし、窓の外だけなら累計を
+# 表に出したうえで ok にする。**読めないときは 0 件に潰さない**（find が失敗したら indeterminate）。
+UNKNOWN_DIR="${TALLY_DIR}/unknown"
+if [ -d "$UNKNOWN_DIR" ]; then
+  if ! ufiles="$(find "$UNKNOWN_DIR" -type f 2>/dev/null)"; then
+    add "tool-attribution" "indeterminate" "unknown の記録を読めなかった（権限・IO）。窓の中に在るかどうか分からない"
+  else
+    n=0; tot=0; nfresh=0; nzero=0
+    # プロセス置換で読む。パイプにすると while が subshell に入って tot が戻らない。
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      n=$(( n + 1 ))
+      sz="$(size_of "$f")" || sz=0
+      [ -n "$sz" ] || sz=0
+      tot=$(( tot + sz ))
+      # サイズ 0 は記録ではない（2節と同じ）。ただし窓の中で 0 なら truncate か書き込みの
+      # 失敗で、unknown に落ちたことを消している可能性があるので ok にもしない。
+      if fresh "$f"; then
+        if [ -s "$f" ]; then nfresh=$(( nfresh + 1 )); else nzero=$(( nzero + 1 )); fi
+      fi
+    done < <(printf '%s\n' "$ufiles")
+    if [ "$n" -eq 0 ]; then
+      add "tool-attribution" "ok" "unknown へ落ちた記録は無い（unknown のディレクトリは在るが空）"
+    elif [ "$nfresh" -gt 0 ]; then
+      add "tool-attribution" "broken" \
+        "直近 ${DAYS} 日にツール不明の記録がある（${nfresh} ファイル。累計 ${n} ファイル・計 ${tot} 件）。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
+    elif [ "$nzero" -gt 0 ]; then
+      add "tool-attribution" "indeterminate" \
+        "直近 ${DAYS} 日に更新された unknown の tally が在るが中身が 0 件（${nzero} ファイル）。truncate されたか、書き込みに失敗している"
+    else
+      add "tool-attribution" "ok" \
+        "直近 ${DAYS} 日に unknown へ落ちた記録は無い（窓の外に累計 ${n} ファイル・計 ${tot} 件）"
+    fi
+  fi
 else
   add "tool-attribution" "ok" "unknown へ落ちた記録は無い"
 fi
@@ -324,6 +350,7 @@ if [ -d "$TALLY_DIR" ]; then
   for tool_dir in "$TALLY_DIR"/*; do
     [ -d "$tool_dir" ] || continue
     tool="$(basename "$tool_dir")"
+    [ "$tool" = "unknown" ] && continue
     counts=""; min=""; max=""
     for hook in $HOOKS; do
       f="${tool_dir}/${hook}.allow"

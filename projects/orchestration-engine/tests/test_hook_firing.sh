@@ -295,5 +295,29 @@ NL="$_TMP_DIR/nologs"; mkdir -p "$NL/tally/claude"; printf 'x' > "$NL/tally/clau
 ck "diag.jsonl が無いときの record-health は ok のまま" "ok" "$(hf_row "$NL" record-health)"
 ck "deny.jsonl が無いときの internal-error は indeterminate のまま" "indeterminate" "$(hf_row "$NL" internal-error)"
 
+echo "[20] oe-hookfire: unknown の記録は窓で切る（古い1件で永久に broken にしない・#529）"
+UK="$_TMP_DIR/unknown-window"; mkdir -p "$UK/tally/claude" "$UK/tally/unknown"
+for h in block-destructive block-force-push cc-lint; do printf 'x' > "$UK/tally/claude/$h.allow"; done
+printf 'x' > "$UK/tally/unknown/block-destructive.allow"
+touch -t 202601010000 "$UK/tally/unknown/block-destructive.allow"
+ck "窓の外の unknown だけなら tool-attribution は ok" "ok" "$(hf_row "$UK" tool-attribution)"
+out="$(HOOK_FIRING_DIR="$UK" "$HB" "$OE_HOOKFIRE" 2>/dev/null || true)"
+ck "窓の外でも累計の件数を表に出す" "1" \
+  "$(printf '%s\n' "$out" | grep -c 'tool-attribution.*累計 1 ファイル・計 1 件' || true)"
+ck "fire/unknown/* の行を出さない" "0" "$(printf '%s\n' "$out" | grep -c 'fire/unknown' || true)"
+ck "cross-check/unknown の行を出さない" "0" "$(printf '%s\n' "$out" | grep -c 'cross-check/unknown' || true)"
+touch "$UK/tally/unknown/block-destructive.allow"
+ck "窓の中の unknown があれば broken" "broken" "$(hf_row "$UK" tool-attribution)"
+# サイズ 0 は記録ではない（2節と同じ）。窓の中で 0 なら truncate か書き込みの失敗なので、
+# broken にも ok にもしない。
+: > "$UK/tally/unknown/block-destructive.allow"
+ck "窓の中でサイズ 0 だけなら indeterminate" "indeterminate" "$(hf_row "$UK" tool-attribution)"
+if [ "$(id -u)" != "0" ]; then
+  printf 'x' > "$UK/tally/unknown/block-destructive.allow"
+  chmod 000 "$UK/tally/unknown"
+  ck "unknown を読めないときは indeterminate（0 件に潰さない）" "indeterminate" "$(hf_row "$UK" tool-attribution)"
+  chmod 700 "$UK/tally/unknown"
+fi
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
