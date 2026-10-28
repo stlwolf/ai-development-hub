@@ -858,6 +858,26 @@ ncc "先頭が空文字でも OK を出さない" "$RUN_OUT" "OK:"
 run "$F52" --verbose
 ck  "対象1つ + --verbose は exit 0" "0" "$RUN_RC"
 
+echo "[53] directory mode で item が0件 → exit 2 / ERROR: no items（0件を OK にしない・#532）"
+# 起動は $BASH（run の中）なので、外側を /bin/bash で回せば 3.2 の set -u の経路も通る。
+D53="$_TMP_DIR/empty-items"; mkdir -p "$D53"
+run "$D53"
+ck  "空のディレクトリは exit 2"      "2" "$RUN_RC"
+ckc "ERROR: no items を出す"         "$RUN_OUT" "ERROR: no items"
+ncc "OK を出さない"                  "$RUN_OUT" "OK:"
+ncc "unbound variable で落ちない"    "$RUN_OUT" "unbound variable"
+# items/ でなく親を渡す取り違え（親の直下には .md が無く、items/ の下にだけある）。
+mkdir -p "$D53/knowledge/items"; write_valid_item "$D53/knowledge/items/$ULID.md"
+run "$D53/knowledge"
+ck  "親の knowledge/ を渡すと exit 2" "2" "$RUN_RC"
+# .md 以外しか無いときも0件である。
+printf 'x\n' > "$D53/README.txt"
+run "$D53"
+ck  ".md 以外しか無いときも exit 2"  "2" "$RUN_RC"
+# 1件あれば今までどおり検証して OK。
+run "$D53/knowledge/items"
+ck  "item が1件あれば exit 0"        "0" "$RUN_RC"
+
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then
   exit 1

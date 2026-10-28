@@ -13,7 +13,7 @@ set -euo pipefail
 #   0 = valid（全 item が全 check を満たす）
 #   1 = invalid（1件以上の schema 違反。frontmatter/本文が knowledge item スキーマに反する。
 #       malformed YAML もここ＝item の不備であり環境障害ではない）
-#   2 = 環境エラー（file/dir not found / jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
+#   2 = 環境エラー（file/dir not found / directory mode で item が0件 / jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
 #       item を読むすべての jq の呼び出しで ERROR を出して止まる（item の不備や OK に丸めない・
 #       #274 / #283 / #424）
 #
@@ -439,6 +439,14 @@ if [[ -d "$TARGET" ]]; then
   log "directory mode: $TARGET/*.md (non-recursive)"
   shopt -s nullglob
   files=("$TARGET"/*.md)
+  # **0件を OK と読まない（#532）。** 1件も検証しないまま TOTAL_WARN=0 で OK を出すと、items/ でなく
+  # 親の knowledge/ を渡す取り違えや書き間違いが「全部合格」と区別できない。検証する対象が無いのは
+  # 「見つからない」と同じ帯（exit 2）である。あわせて、bash 3.2 が空の配列の展開を set -u で
+  # unbound variable として落とし exit 1（INVALID と同じ番号）になる経路もここで無くなる。
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    echo "ERROR: no items: no *.md directly under $TARGET (pass the knowledge/items directory)" >&2
+    exit 2
+  fi
   for f in "${files[@]}"; do
     validate_item "$f"
   done
