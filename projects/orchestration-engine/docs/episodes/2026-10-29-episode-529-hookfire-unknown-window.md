@@ -3,15 +3,28 @@ id: "01M61XWE4PE5N8GFVKT57615XC"
 title: "#529 oe-hookfire の tool-attribution が累計で判定し、unknown の記録が1件でも残ると永久に broken になる"
 date: 2026-10-29
 type: episode
-status: draft
+status: stable   # closure 2026-10-29（PR #554 の Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/529"
     reason: "本 episode の作業対象"
   - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/554"
+    reason: "この単位の PR"
+  - type: reference
     ref: "projects/orchestration-engine/docs/episodes/2026-10-29-episode-530-hookfire-unreadable-logs.md"
     reason: "同じスクリプトの直前の単位（#530）。読めないときを indeterminate にする決まりをこの単位も守る"
 tags: [orchestration, hook, health-check]
+promotion:
+  - subject: "unknown の記録を窓で切り、窓の外だけなら累計を出して ok にする"
+    verdict: not-required
+    ref: "本文: S1: 直し方と確かめた結果（2026-10-29）"
+  - subject: "窓の中でサイズ 0 の unknown の tally だけなら indeterminate にする"
+    verdict: not-required
+    ref: "本文: S1: 直し方と確かめた結果（2026-10-29）"
+  - subject: "窓で切ると数え方の取りこぼしが ok に化けるので、find の述語・-L・失敗の拾いで数える"
+    verdict: not-required
+    ref: "本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）"
 knowledge_observations:
   - "01KZ21M0N0FZ4YMR2R6DPHTWQ4"
 ---
@@ -59,3 +72,16 @@ Codex の1レーンが返った（`timeout_status=success`・125秒）。出力�
 ### S2: Copilot の1ラウンド（2026-10-29）
 
 Copilot のレビューは行への指摘が0件で、概要に「unknown の下の tally が壊れた symlink だと黙って飛ばされ、ok になる」と1件あった。**採用した。** S2 の実装SO で symlink を `-L` で辿る形にしたが、辿れない symlink は `-L` の下でも型が `l` のまま残り、`-type f` で数えられない。窓の中の記録が1つも無く辿れない symlink があるときは indeterminate にする。テストに1項目足し、前のコミットに対して落ちることを確かめた。テストは `/bin/bash` 3.2.57 で pass=76 fail=0、bash 5.2.37 で pass=80 fail=0。#530 で入口の壊れた symlink を扱ったのに、中身の壊れた symlink を同じ単位で見なかった。
+
+## closure（2026-10-29）
+
+- **tier**: heavy。実装SO を意図して起動し、方針を書き直した（3節の数え方を作り直した）ため。
+- **次の消費者**: oe-hookfire の判定を読む統括と、定期実行に配線する #301（tool-attribution が常に broken を出す問題はこの単位で消える）。
+- **事実・失敗**: 2つある。(1) 窓の中のサイズ 0 を最初は ok にする形で書き、テストもそう書いた。2節との不一致に自分で気づいて indeterminate に直した。`本文: S1: 直し方と確かめた結果（2026-10-29）` (2) 窓で切ったことで取りこぼしが ok に化ける経路を、実装SO が4つ、Copilot が1つ拾った。自分で塞いだのは「読めないとき」だけだった。`本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`・`本文: S2: Copilot の1ラウンド（2026-10-29）`
+- **決定と根拠**: 窓の形は brief と internal-error の先例に合わせた。サイズ 0 と空のディレクトリの扱いは `本文: S1: 直し方と確かめた結果（2026-10-29）`。数え方を find の述語に変えた理由は `本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`。
+- **わかったこと**: 「在るだけで broken」から窓へ切り替えると、数え方の取りこぼしの向きが「誤った broken」から「誤った ok」へ変わる。変更前に表に出なかった取りこぼしは、変更後に見落としとして出る。`本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`
+- **昇格の判定**: 3件とも `not-required`。1件目は brief（統括）が決めた範囲で、ヘッダの「累計で ok を出さない」と internal-error の先例の当てはめである。2件目と3件目はコードのコメントとテストが正本で、読めば正しく使える（1段目で外れる）。昇格の印は置いていない。
+- **蒸留シグナル**: なし。上の「わかったこと」は、注入された item `01KZ21M0N0FZ4YMR2R6DPHTWQ4` の観測として書き戻した。数え落としを「無い」と読む型は既存の item `01KYMRE1N7N0J8VP3CBZZEZ8Q3`（ヒット0件を不在と解釈するとき）に着地済みなので、新しく収穫しない。
+- **follow-up**: 無い。
+- **観測の書き戻し**: 注入された item は `01KZ21M0N0FZ4YMR2R6DPHTWQ4` の1件で、`followed` を書き戻した（窓で切った差分が証拠。取りこぼしは外部指摘を待ったことも書いた）。
+- Step4 辞退: 実装SO と Copilot が差分を見ており、指摘はすべて本文に節を立てて記録済み / 既存チェックで覆った観点: 省略チェック（自分で直した1件と外部の指摘5件が本文と事実・失敗に在る）・routing（follow-up 無し）・evidence anchor（SO の出力は `tmp/` だが要点を本文に転記済み）/ 未実施観点と判断: back-propagation は、他文書の欠陥を見つけていないので該当なし
