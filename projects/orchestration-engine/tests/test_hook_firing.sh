@@ -274,6 +274,14 @@ ck "壊れた symlink の diag.jsonl で record-health は indeterminate" "indet
 ck "壊れた symlink の deny.jsonl で internal-error は indeterminate" "indeterminate" "$(hf_row "$DL" internal-error)"
 ck "壊れた symlink を「無い」と書かない" "0" \
   "$(HOOK_FIRING_DIR="$DL" "$HB" "$OE_HOOKFIRE" 2>/dev/null | grep -c 'deny.jsonl が無い\|記録されていない' || true)"
+# 置き場のディレクトリに検索権限が無いと -e が偽になり、「無い」に落ちる（実装SO の指摘）。
+if [ "$(id -u)" != "0" ]; then
+  NX="$_TMP_DIR/noexec"; mkdir -p "$NX/tally/claude"; printf 'x' > "$NX/tally/claude/cc-lint.allow"
+  printf '{"ts":"%s","err":"x"}\n' "$now" > "$NX/diag.jsonl"
+  chmod 0600 "$NX"
+  ck "置き場を辿れないとき record-health は indeterminate" "indeterminate" "$(hf_row "$NX" record-health)"
+  chmod 0700 "$NX"
+fi
 # ファイルが無いときの判定は変えていない（record-health は ok・internal-error は indeterminate）。
 NL="$_TMP_DIR/nologs"; mkdir -p "$NL/tally/claude"; printf 'x' > "$NL/tally/claude/cc-lint.allow"
 ck "diag.jsonl が無いときの record-health は ok のまま" "ok" "$(hf_row "$NL" record-health)"

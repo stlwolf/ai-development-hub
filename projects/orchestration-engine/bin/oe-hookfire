@@ -150,12 +150,17 @@ count_jsonl() { # count_jsonl <log> <jq の select 式> [jq の追加引数...]
   printf '%s' "$v"
 }
 
-# ログの置かれ方を分ける。absent / dangling（壊れた symlink）/ notfile（ディレクトリ・
-# FIFO など。FIFO を jq で読むと書き手が来るまで止まる）/ file。
+# ログの置かれ方を分ける。unreachable（置き場のディレクトリを辿れない）/ absent /
+# dangling（壊れた symlink）/ notfile（ディレクトリ・FIFO など。FIFO を jq で読むと
+# 書き手が来るまで止まる）/ file。
 # **壊れた symlink を「無い」と読まない。** -f も -e も解決先で判定するので、
 # 壊れた symlink は「ファイルが無い」の分岐に落ちて ok を出していた（#530）。
+# 置き場のディレクトリに検索権限が無いときも -e は偽になるので、先に分けておく。
 log_state() {
-  if [ -L "$1" ] && [ ! -e "$1" ]; then printf 'dangling'
+  local dir
+  dir="$(dirname "$1")"
+  if [ -d "$dir" ] && [ ! -x "$dir" ]; then printf 'unreachable'
+  elif [ -L "$1" ] && [ ! -e "$1" ]; then printf 'dangling'
   elif [ ! -e "$1" ]; then printf 'absent'
   elif [ ! -f "$1" ]; then printf 'notfile'
   else printf 'file'
@@ -164,8 +169,9 @@ log_state() {
 # log_state の結果を判定表に書く言葉にする。
 log_state_label() {
   case "$1" in
-    dangling) printf '壊れた symlink' ;;
-    *)        printf '通常のファイルでない（ディレクトリ・FIFO など）' ;;
+    dangling)    printf '壊れた symlink' ;;
+    unreachable) printf '在るかどうか分からない（置き場のディレクトリを辿れない）' ;;
+    *)           printf '通常のファイルでない（ディレクトリ・FIFO など）' ;;
   esac
 }
 
