@@ -3,15 +3,22 @@ id: "01M61YJTDN4SRZH7FWZG8NJD1G"
 title: "#532 validate-knowledge の directory mode が、item が0件のディレクトリを OK にする"
 date: 2026-10-29
 type: episode
-status: draft
+status: stable   # closure 2026-10-29（PR #556 の Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/532"
     reason: "本 episode の作業対象"
   - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/556"
+    reason: "この単位の PR"
+  - type: reference
     ref: "projects/orchestration-engine/docs/episodes/2026-10-29-episode-531-validate-knowledge-extra-args.md"
     reason: "同じスクリプトの直前の単位（#531）"
 tags: [orchestration, knowledge, validator]
+promotion:
+  - subject: "directory mode で item が0件なら exit 2（見つからないと同じ帯）にする"
+    verdict: not-required
+    ref: "本文: S1: 直し方と確かめた結果（2026-10-29）"
 knowledge_observations:
   - "01KZ21M0N0FZ4YMR2R6DPHTWQ4"
 ---
@@ -49,3 +56,19 @@ Codex の1レーンが返った（`timeout_status=success`・103秒）。出力�
 
 - **採らない（範囲外として報告する・中）: 読めないファイルが「item の不備」（exit 1）になる。** `*.md` に当たるディレクトリ・壊れた symlink・読めないファイルは、frontmatter を読む `sed` が失敗すると frontmatter 欠落と同じ WARN になり、exit 1 で終わる。ヘッダの契約では、読めないのは環境エラー（exit 2）である。OK にはならないので #532 の「0件を OK にする」とは別の不具合で、変更前からある。brief の scope は0件の扱いだけなので直さず、統括への報告に範囲外として書く。
 - 修正が無くても通る [53] の項目（3.2 の「OK を出さない」、5 の「unbound variable で落ちない」、両方の「1件あれば exit 0」）は、異常な出力が無いことと正常系の維持を確かめる項目で、そのままにした。
+
+### S2: Copilot の1ラウンド（2026-10-29）
+
+Copilot のレビューは指摘0件（概要は「Approval recommended」）。返信の要る行の指摘は無い。PR を作った直後、Copilot への依頼を番号を取り違えて #555 に送った。#555 は issue だったので `gh pr edit` は失敗し、#555 の timeline に記録は増えていないことを確かめてから、#556 に送り直した。PR の番号は `gh pr create` の出力から取り、手で数えて決めない。
+
+## closure（2026-10-29）
+
+- **tier**: heavy。実装SO を意図して起動したため（指摘で直した箇所は無い）。
+- **次の消費者**: validate-knowledge を directory mode で呼ぶ人とスキル（`knowledge/README.md` の二段チェック）。
+- **事実・失敗**: Copilot への依頼を一度違う番号に送った。何も変わっていないことを確かめた。`本文: S2: Copilot の1ラウンド（2026-10-29）`
+- **決定と根拠**: exit 2 にしたのは brief の scope で、「見つからない」と同じ帯である。`本文: S1: 直し方と確かめた結果（2026-10-29）`
+- **昇格の判定**: 1件で `not-required`。brief（統括）が決めた範囲の判断で、コードのコメントとヘッダの exit の説明が正本である（1段目で外れる）。昇格の印は置いていない。
+- **蒸留シグナル**: なし。
+- **follow-up**: 2件。どちらも統括への報告に範囲外として書き、行き先は統括の判断に預ける。(1) #532 本文の knowledge-list の explicit mode が0件で exit 0 を返す件（brief が範囲外とした）。(2) 実装SO が出した「読めないファイルが item の不備（exit 1）になる」件。`本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`
+- **観測の書き戻し**: 注入された item は `01KZ21M0N0FZ4YMR2R6DPHTWQ4` の1件で、`outcome_unknown` を書き戻した（差分は教訓どおりだが、直し方は issue と brief が決めていた）。
+- Step4 辞退: 実装SO と Copilot が差分を見ており、指摘と自分の失敗1件は本文に節を立てて記録済み / 既存チェックで覆った観点: 省略チェック（範囲外1件・取り違え1件が本文と事実・失敗に在る）・routing（follow-up 2件とも行き先を書いた）・evidence anchor（SO の出力は `tmp/` だが要点を本文に転記済み）/ 未実施観点と判断: back-propagation は、#532 本文の knowledge-list の件を報告で統括へ返すのでそれで足りる

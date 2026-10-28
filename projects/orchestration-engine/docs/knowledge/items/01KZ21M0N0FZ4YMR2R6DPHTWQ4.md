@@ -45,6 +45,10 @@ observations:
     ref: "#529"
     state: followed
     note: "字義どおりの適用機会があり、本 item の鏡像（累計で broken を出し続ける）を直した — tool-attribution を窓で切り、窓の外の古い unknown は累計を表に出して ok、読めないときは indeterminate にした。ただし窓で切ると、それまで「在るだけで broken」に隠れていた数え方の取りこぼし（ファイル名の改行・symlink・途中の find の失敗）が、そのまま ok の側へ出ることを自分では見ていなかった。実装SO が4経路、Copilot が中身の壊れた symlink を拾った。窓へ切り替えるときは、取りこぼしの向きが「誤った broken」から「誤った ok」へ変わる"
+  - date: 2026-10-29
+    ref: "#532"
+    state: outcome_unknown
+    note: "trigger の場面（directory mode の合格条件を書く）には当たり、差分は教訓どおり（検証が0件のときを OK にせず exit 2）になった。ただし直し方は issue と brief がすでに決めていて、この item を読んで自分の判断を変えたとは言えない。この単位で自分が決めたことは無いので followed にしない"
 ---
 
 検査の陽性判定を「全期間の累計で1件でもあれば ok」にしてはならない。**直近の窓で見る。**
