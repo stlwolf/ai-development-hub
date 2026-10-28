@@ -318,6 +318,32 @@ if [ "$(id -u)" != "0" ]; then
   ck "unknown を読めないときは indeterminate（0 件に潰さない）" "indeterminate" "$(hf_row "$UK" tool-attribution)"
   chmod 700 "$UK/tally/unknown"
 fi
+# 窓で切ると、数え方の取りこぼしが ok に化ける（変更前は在るだけで broken だった）。実装SO の指摘。
+UK2="$_TMP_DIR/unknown-paths"; mkdir -p "$UK2/tally/claude"
+for h in block-destructive block-force-push cc-lint; do printf 'x' > "$UK2/tally/claude/$h.allow"; done
+mkdir -p "$UK2/tally/unknown"
+ck "空の unknown ディレクトリは ok" "ok" "$(hf_row "$UK2" tool-attribution)"
+# ファイル名に改行を含む最近の記録
+printf 'x' > "$UK2/tally/unknown/a
+b.allow"
+ck "改行を含むファイル名の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown/a
+b.allow"
+# symlink の先へ追記された最近の記録（ファイルの symlink・ディレクトリの symlink）
+mkdir -p "$UK2/real"; printf 'x' > "$UK2/real/cc-lint.allow"
+ln -s "$UK2/real/cc-lint.allow" "$UK2/tally/unknown/cc-lint.allow"
+ck "ファイルの symlink の先の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -rf "$UK2/tally/unknown"; ln -s "$UK2/real" "$UK2/tally/unknown"
+ck "ディレクトリの symlink の先の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown"; ln -s "$UK2/no-such-dir" "$UK2/tally/unknown"
+ck "壊れた symlink の unknown は indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown"
+if [ "$(id -u)" != "0" ]; then
+  mkdir -p "$UK2/tally/unknown"; printf 'x' > "$UK2/tally/unknown/cc-lint.allow"
+  chmod 600 "$UK2/tally"
+  ck "unknown の祖先を辿れないときは indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+  chmod 700 "$UK2/tally"
+fi
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
