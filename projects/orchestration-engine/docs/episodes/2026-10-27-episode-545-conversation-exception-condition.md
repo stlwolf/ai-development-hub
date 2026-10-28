@@ -3,7 +3,7 @@ id: "01M5YKPV0M0YNAA0Z8MWVGN9XZ"
 title: "#545 判断ボードの「会話で聞いてよい」例外を、見える条件で決める形にする"
 date: 2026-10-27
 type: episode
-status: draft   # 着手時に枠を作った（2026-10-27）。closure はマージ前
+status: stable   # closure 2026-10-29（PR #548 の Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/545"
@@ -20,7 +20,32 @@ related:
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-10-24-decision-466-page-lifecycle-in-flow.md"
     reason: "判断ボードの流れの決定（決定1・5・7・10・24）。例外はこの上に立っている"
+  - type: relates_to
+    ref: "projects/orchestration-engine/docs/decisions/2026-10-29-decision-545-conversation-exception-condition.md"
+    reason: "この単位の owner の判定（Q49〜Q52）を記録した decision。昇格先"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/548"
+    reason: "この単位の PR"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/knowledge/items/01M61PCV5J2DTWR8JCWFDMAVJB.md"
+    reason: "この単位から収穫した negative knowledge（見立ての例外は、始まりを相手の言葉と残る印で決める）"
 tags: [orchestration, human-page, supervisor, delegation, skill]
+promotion:
+  - subject: "owner の判定（Q49〜Q52）: 入口と出口・1問だけ移す・moved_from・plan の承認"
+    verdict: required
+    ref: "本文: GATE 3 と I1-0: 承認と baseline の確認（2026-10-29）"
+  - subject: "例外の条件を手順の分類で書くと、書き手の見立てに戻る"
+    verdict: required
+    ref: "本文: ゲート1: ゼロベースの代替探索の結果と採否（2026-10-27）"
+  - subject: "打ち消す側を探すとき、直す節の隣で同じ判断を担う節も表に載せる"
+    verdict: not-required
+    ref: "本文: ゲート2: 設計SO（弱・Codex 1レーン）の結果と採否（2026-10-27）"
+  - subject: "止める規則を足したら、同じ問いに答えを当てる別の経路も止めているかを見る"
+    verdict: not-required
+    ref: "本文: I2-1: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）"
+  - subject: "見える条件の元にする道具の出力は、失敗したときの見え方を確かめ、当たらない側に倒す"
+    verdict: not-required
+    ref: "本文: I2-2: PR と Copilot の1ラウンド（2026-10-29）"
 knowledge_observations:
   - "01M486Z2ND07GQWV1GHS1SVB0J"
   - "01M5PKRS6WECYZTYFC4WXANW50"
@@ -123,3 +148,75 @@ knowledge_observations:
 - 直しは `fdacad2`。どれも承認した決まりの範囲で検査や文を強めたもので、step・要件・ゲート・終端は変えていない。級は補正として plan の「ゲート3 のあとの変更」の H2 に書いた。
 
 昇格の印: 「確かめが済むまで外へ向けた操作をしない」と書いても、次の回収の一括の答えが確かめを飛び越す。止める規則を足したら、同じ問いに答えを当てる別の経路（一括の答え・ページの答え）も同じ規則で止めているかを見る
+
+### I2-2: PR と Copilot の1ラウンド（2026-10-29）
+
+- PR #548 を作り、Copilot のレビューを依頼した。指摘は3件で、どれも採って `5b3c763` で直し、3件すべてに返信した（未返信0件）。
+  - 確かめを待つ問いを、会話のほかに引き継げる場所に残す手順が無い。統括が交代すると、ページの答えや一括の答えを当ててしまう。→ 判断ボードの「owner への依頼」の表に「確かめを待つ」の行を出し、これを正本にした。7節の段6（途中から続けるとき）でもこの行を見る。
+  - `oe-tree` は `tmux list-panes` が失敗すると子の状態を `?` と出すので、`alive` が0件でも子がいないとは限らない（`projects/orchestration-engine/bin/oe-tree` の `liveness_of`）。→ (a) は「`oe-tree` が成功し、子が無いか、すべて `gone`」に限った。
+  - 確かめを待つ問いにも「追加: 」を付けるが、案内は追加の問いを「ページで選ぶか番号を挙げる」と伝えるので、ページで選び直しても回収されない。→ 確かめの1行と案内に「会話で番号を挙げて答えてほしい」と分けて書くようにした。
+- 2つ目は、見える条件にしたつもりの「`alive` の子の数」が、道具の失敗のときに0件に見えるという穴だった。見える条件の元になる道具の出力が、失敗したときどう見えるかまでは確かめていなかった。
+
+昇格の印: 見える条件の元にする道具の出力は、道具が失敗したとき・状態が分からないときにどう見えるかを確かめ、その場合は条件に当たらない側に倒す
+
+## closure（2026-10-29）
+
+tier は heavy である（意図的に起動した外部レビュー〔ゲート1・ゲート2・実装SO〕・棄却した選択肢・昇格の候補がある）。
+
+### 事実・失敗
+
+- 初稿の入口の例外が、統括の見立てに戻っていた。`本文: ゲート1: ゼロベースの代替探索の結果と採否（2026-10-27）`
+- 打ち消す側の表に、直す節の隣で同じ判断を担う2.2〜2.4 節・4節・7節の確かめが無かった。`本文: ゲート2: 設計SO（弱・Codex 1レーン）の結果と採否（2026-10-27）`
+- 確かめを止める規則を、次の回収の一括の答えが飛び越せた。`本文: I2-1: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`
+- `oe-tree` の状態が分からないとき、子がいないように見えた。確かめを待つ問いを交代のあとに引けなかった。`本文: I2-2: PR と Copilot の1ラウンド（2026-10-29）`
+
+### 決定と根拠
+
+- 入口と出口の両方・深掘りの途中は1問だけ移す・`moved_from`・decision を新しく書いて前の決定7 に追補する。棄却した案と理由は plan の DJ-1・DJ-2・DJ-7・DJ-8 と、decision の根拠の節にある。`本文: GATE 3 と I1-0: 承認と baseline の確認（2026-10-29）`
+- 移し方を2.6 節として1か所に置いた（補正 H1）。実装SO の指摘での強め（補正 H2）。どちらも plan の「ゲート3 のあとの変更」節にある。`本文: I1-1〜I1-3: 台帳の道具・スキルの文・decision（2026-10-29）`
+
+### わかったこと
+
+- `oe-send` の1行には既定で `[oe:<26文字>]` の印が付き、子の報告の出どころを見分ける手がかりになる。`本文: P2: plan の初稿（2026-10-27）`
+- 道具を外したセッションに12の場面を当てると、すべて期待どおりで、書き直しは0回か1回だった。2026-10-27 の出来事は0回。`本文: I1-4: 経緯を渡さない場面の当て（A2）（2026-10-29）`
+
+### 蒸留シグナル
+
+- decision: owner の判定（Q49〜Q52）は #545 の decision に書いた（この PR に入っている）。
+- knowledge store: 「見立ての例外を見える条件に直すときは、始まりを相手の言葉と残る印で決める」を `projects/orchestration-engine/docs/knowledge/items/01M61PCV5J2DTWR8JCWFDMAVJB.md` に収穫した。`本文: ゲート1: ゼロベースの代替探索の結果と採否（2026-10-27）`
+
+### 昇格の判定
+
+- 「owner の判定（Q49〜Q52）: 入口と出口・1問だけ移す・moved_from・plan の承認」: `required`。実行済み（#545 の decision・この PR）。複数の案が live で、覆すには owner の議論が要る。`本文: GATE 3 と I1-0: 承認と baseline の確認（2026-10-29）`
+- 「例外の条件を手順の分類で書くと、書き手の見立てに戻る」: `required`。negative knowledge として収穫した（`01M61PCV5J2DTWR8JCWFDMAVJB`）。`本文: ゲート1: ゼロベースの代替探索の結果と採否（2026-10-27）`
+- 「打ち消す側を探すとき、直す節の隣で同じ判断を担う節も表に載せる」: `not-required`。knowledge item `01M486Z2ND07GQWV1GHS1SVB0J` の (1)(3) にすでに着地している（「文書全体で探す」）。この単位の観測として同じ item に書き戻した。`本文: ゲート2: 設計SO（弱・Codex 1レーン）の結果と採否（2026-10-27）`
+- 「止める規則を足したら、同じ問いに答えを当てる別の経路も止めているかを見る」: `not-required`。同じく `01M486Z2ND07GQWV1GHS1SVB0J` の (1)「同じ判断が別の分岐で起きる箇所」に当たる。`本文: I2-1: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`
+- 「見える条件の元にする道具の出力は、失敗したときの見え方を確かめ、当たらない側に倒す」: `not-required`。この単位ではスキルの (a) の文に直接書いた（実装アーティファクトに併設）。再発しうるが、1回の観測で収穫基準の「非自明」を満たすかが割れるので、もう1度起きたら収穫する。`本文: I2-2: PR と Copilot の1ラウンド（2026-10-29）`
+- 印「`oe-send` の `[oe:]` の印を出どころの見分けにも使う決まりを engine に持たせるか」は、この枝と関係ない仕組み（`oe-send` の契約）についての判断なので判定せず、follow-up に回した。
+
+### 次の消費者
+
+- 統括: 報告（`.oe/report-545.md`）と follow-up を受けて、マージ・sync・issue の close を決める。
+- #540（出し忘れを知らせる道具）の担当: 台帳の `moved_from` を読む。
+- #539・#541 の担当: 判断ボードの決まりがこの PR で変わった（2.6 節・依頼の表の「確かめを待つ」の行）。
+
+### follow-up
+
+申し送りの正本はこの節である（この PR で commit される）。統括への報告（作業層）は、この節を指すだけにする。起票するかは統括と owner が決め、起票しないなら統括がこの issue か次の作業の文書に「追わない」と残す。
+
+- 問答だけを受け持つ別のセッションに分ける案・子の報告や知らせを受信箱に集めて統括が取りに行く案（ゲート1 の代替案）: 報告の届け方を変える engine の仕組みの話。統括へ申し送る（起票するかは統括と owner が決める）。
+- `oe-send` の `[oe:<26文字>]` の印を、入力の出どころの見分けに使う決まりとして engine の側に書くか: `oe-send` の契約の話。統括へ申し送る。
+- 統括の引き継ぎ文書（作業層）の運用の記述: 例外の記述は無かった。統括が sync のあとに運用を合わせる。
+- 認識合わせの抜け: 確定版に無かった要件は、ゲート2 と Copilot が見つけた手順の穴（2.2〜2.4・7節の確かめ・`oe-tree` の失敗）で、どれもこの PR で直した。`issue-intake` の固定の問いに足すほどの一般の観点ではないので、追わない。
+
+### 注入された knowledge と観測
+
+- 注入された item: `01M486Z2ND07GQWV1GHS1SVB0J`・`01M5PKRS6WECYZTYFC4WXANW50`・`01M5PKRS5MGHNHR2JS5C1TSPS9`・`01M5T897YCWY13GFTADD3136EC`（4件）。4件すべてに `#545` の観測を書き戻した（1件は `externally_verified`、3件は `followed`）。
+
+### status
+
+- stable。達成（受入 A1〜A4 を満たした）。
+
+### 外部チェック（Step 4）
+
+- Codex（`gpt-6.1-sol`）に、失敗の選択的省略・follow-up の行き先・揮発パス・書き戻し漏れの4点だけを当てた（26秒・初回）。出力は worktree の `tmp/545-conversation-exception/so-step4/`。省略・揮発パス・書き戻し漏れは無いと返った。follow-up の申し送りは受け先が統括止まりだと指摘され、この節（commit される）を申し送りの正本とし、起票か「追わない」かを統括と owner が決めると書いた。
