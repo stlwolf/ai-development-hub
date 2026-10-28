@@ -55,3 +55,7 @@ Codex の1レーンが返った（`timeout_status=success`・125秒）。出力�
 - **直し方**: 3節を書き直した。件数は find 自身の述語（`-size +0 -mtime -N` など）で数え、`-print0` の NUL を数える。`-L` で symlink を辿る。find と cat が1つでも失敗したら indeterminate にする。入口は #530 で足した `log_state` で分ける。ファイルを1つずつ読み直すループをやめたので、各ファイルの `fresh()` の失敗という筋自体が無くなった。
 - **採用（低）: `size_of` の失敗を累計 0 に潰していた。** 累計を `find -L … -exec cat {} + | wc -c` で数え、失敗したら indeterminate にする形に含めた。
 - テストに6項目足した（空のディレクトリ・改行を含むファイル名・ファイルの symlink・ディレクトリの symlink・壊れた symlink・祖先を辿れない）。前のコミットに対しては5項目が落ちる（空のディレクトリはもともと ok）。master に対しては [20] の13項目のうち9項目が落ちる。落ちない4項目は、master が「在るだけで broken」なので通るもの（窓の中の記録・改行・2つの symlink）で、窓で切った後の非回帰を確かめる項目である。テストは `/bin/bash` 3.2.57 で pass=75 fail=0、bash 5.2.37 で pass=79 fail=0。
+
+### S2: Copilot の1ラウンド（2026-10-29）
+
+Copilot のレビューは行への指摘が0件で、概要に「unknown の下の tally が壊れた symlink だと黙って飛ばされ、ok になる」と1件あった。**採用した。** S2 の実装SO で symlink を `-L` で辿る形にしたが、辿れない symlink は `-L` の下でも型が `l` のまま残り、`-type f` で数えられない。窓の中の記録が1つも無く辿れない symlink があるときは indeterminate にする。テストに1項目足し、前のコミットに対して落ちることを確かめた。テストは `/bin/bash` 3.2.57 で pass=76 fail=0、bash 5.2.37 で pass=80 fail=0。#530 で入口の壊れた symlink を扱ったのに、中身の壊れた symlink を同じ単位で見なかった。

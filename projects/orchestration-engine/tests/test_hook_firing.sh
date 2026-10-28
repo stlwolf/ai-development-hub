@@ -338,6 +338,10 @@ ck "ディレクトリの symlink の先の最近の記録で broken" "broken" "
 rm -f "$UK2/tally/unknown"; ln -s "$UK2/no-such-dir" "$UK2/tally/unknown"
 ck "壊れた symlink の unknown は indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
 rm -f "$UK2/tally/unknown"
+# unknown の下の tally が壊れた symlink（Copilot の指摘）。-L でも辿れず数えられない。
+mkdir -p "$UK2/tally/unknown"; ln -s "$UK2/no-such-file" "$UK2/tally/unknown/cc-lint.allow"
+ck "unknown の下の壊れた symlink は indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+rm -rf "$UK2/tally/unknown"
 if [ "$(id -u)" != "0" ]; then
   mkdir -p "$UK2/tally/unknown"; printf 'x' > "$UK2/tally/unknown/cc-lint.allow"
   chmod 600 "$UK2/tally"
