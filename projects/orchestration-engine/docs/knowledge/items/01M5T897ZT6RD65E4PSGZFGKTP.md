@@ -8,7 +8,11 @@ prediction: "規則の文は正しく、読み直しても欠けは見えない�
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-10-25-episode-538-judgment-board-flow.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-29
+    ref: "#550"
+    state: followed
+    note: "教訓に従い、「前のページで答えていたら一言」を「答えが無いように見えても、保存先を読めないので無いとは言えない。必ず頼む」と、4節の1を「直すものが無いように見えても、番号ごとに確かめる」と、読み手の思い込みの側から書いた。経緯を渡さない場面の当てでは、どちらも期待どおりに読まれた"
 exclusions:
   - "規則が、確かめる条件を記録の有無だけで書いていて、読み手の判断（やった・やっていない）に頼らない場合"
 ---
