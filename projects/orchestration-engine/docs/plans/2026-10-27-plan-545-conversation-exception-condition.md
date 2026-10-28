@@ -3,7 +3,7 @@ id: "01M5YKPV1DNCE41MWM3RG1GSFK"
 title: "#545 判断ボードの「会話で聞いてよい」例外を、見える条件で決める形にする"
 date: 2026-10-27
 type: plan
-status: draft   # GATE 3 待ち
+status: stable   # 実装完了（2026-10-29・PR #548）。ゲート3 承認は 965b161 の版（2026-10-27・owner が Q49〜Q52 をすべて推奨どおり）。承認のあとの直しは「ゲート3 のあとの変更」節（H1・H2 とも補正）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/545"
@@ -293,13 +293,13 @@ brief と確定版が前提にしていることを、2026-10-27 の `origin/mas
 
 ### GATE I1: A1〜A4 がすべて満たされている（通過。A1 は `一緒に考えている|流れそう` が SKILL.md に0件・A2 は上・A3 は I1-1・A4 は打ち消す側の表の R1〜R21）
 
-### I2: 実装SO（弱・Codex 1レーン）・PR・Copilot 1ラウンド
+### I2: 実装SO（弱・Codex 1レーン）・PR・Copilot 1ラウンド（完了・PR #548・結果は episode の I2-1・I2-2）
 
 - 実装SO の採否を episode に書く。PR を作る（`pr-conventions`・本文は `Refs #545`）。Copilot の指摘に返信し、未返信を0件にする。
 
-### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である（通過・実装SO は6件・Copilot は3件すべてに返信）
 
-### I3: episode を閉じ、報告して止まる
+### I3: episode を閉じ、報告して止まる（完了・episode の closure）
 
 - 注入した knowledge item 4件すべてに観測を書き戻す。`.oe/report-545.md` に報告を書き、報告の宛先へ `oe-send` で送って exit code を確かめ、止まる。
 
