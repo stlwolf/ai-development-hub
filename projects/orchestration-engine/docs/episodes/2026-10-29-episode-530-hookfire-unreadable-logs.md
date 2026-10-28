@@ -3,17 +3,34 @@ id: "01M61VMCX7PVH3N1CBQ7993RH4"
 title: "#530 oe-hookfire が diag.jsonl・deny.jsonl を読めないときに「0 件」として ok を出す"
 date: 2026-10-29
 type: episode
-status: draft
+status: stable   # closure 2026-10-29（PR #552 の Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/530"
     reason: "本 episode の作業対象"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/552"
+    reason: "この単位の PR"
 tags: [orchestration, hook, health-check]
+promotion:
+  - subject: "読めないときは jq の終了コードで拾い indeterminate にする（-r の事前確認は採らない）"
+    verdict: not-required
+    ref: "本文: S1: 直し方と確かめた結果（2026-10-29）"
+  - subject: "通常のファイルでないログ（ディレクトリ・FIFO）も読まずに indeterminate にする"
+    verdict: not-required
+    ref: "本文: S1: 直し方と確かめた結果（2026-10-29）"
+  - subject: "置き場までのディレクトリを辿れないときは、最も近い在る祖先まで遡って indeterminate にする"
+    verdict: not-required
+    ref: "本文: S2: Copilot の1ラウンド（2026-10-29）"
 knowledge_observations:
   - "01KZ21M0N0FZ4YMR2R6DPHTWQ4"
 ---
 
 # #530 oe-hookfire が diag.jsonl・deny.jsonl を読めないときに「0 件」として ok を出す
+
+## なぜこの作業が始まったか
+
+2026-10-23 の orchestration-engine の実装の監査（#484）で、`oe-hookfire` の record-health と internal-error が、ログを読めないときに jq の失敗を `wc -l` の 0 に潰し、ok「0 件」を出すことが見つかった。健全性の検査が、壊れているときほど緑を出す形になっていた。
 
 **この episode は着手時に枠を作り、作業しながら追記している。** 後追いで再構成した節があれば、その節の冒頭にその旨を書く。
 
@@ -47,4 +64,16 @@ Codex の1レーンが返った（`timeout_status=success`・145秒・meta の `
 
 ### S2: Copilot の1ラウンド（2026-10-29）
 
-Copilot のレビューは行への指摘が0件で、概要に「辿れない祖先のディレクトリがあると『無い』と分類され、record-health が ok になる」と1件あった。**採用した。** 実装SO の指摘で足した分は直上のディレクトリしか見ておらず、置き場の祖先に検索権限が無いと直上が `-d` を通らずに「無い」へ落ちていた。同じ指摘を2回目の外部の目で拾われた形で、直上だけを直して閉じたのは、指摘の文面（親ディレクトリ）に合わせて範囲を決めたためである。`log_state` は、在ると確かめられる最も近い祖先まで遡り、そこを辿れなければ indeterminate にする。置き場そのものが無いときは今までどおり「無い」（record-health は ok）にする。[19] に2項目足した（祖先を辿れないとき・置き場が無いとき）。祖先の項目は前のコミットに対して落ちることを確かめた。テストは `/bin/bash` 3.2 で pass=62 fail=0、bash 5 で pass=64+2=66 fail=0。
+Copilot のレビューは行への指摘が0件で、概要に「辿れない祖先のディレクトリがあると『無い』と分類され、record-health が ok になる」と1件あった。**採用した。** 実装SO の指摘で足した分は直上のディレクトリしか見ておらず、置き場の祖先に検索権限が無いと直上が `-d` を通らずに「無い」へ落ちていた。同じ指摘を2回目の外部の目で拾われた形で、直上だけを直して閉じたのは、指摘の文面（親ディレクトリ）に合わせて範囲を決めたためである。`log_state` は、在ると確かめられる最も近い祖先まで遡り、そこを辿れなければ indeterminate にする。置き場そのものが無いときは今までどおり「無い」（record-health は ok）にする。[19] に2項目足した（祖先を辿れないとき・置き場が無いとき）。祖先の項目は前のコミットに対して落ちることを確かめた。テストは `/bin/bash` 3.2 で pass=62 fail=0、bash 5 で pass=66 fail=0。
+
+## closure（2026-10-29）
+
+- **tier**: heavy。実装SO を意図して起動し、外部の指摘で修正を2回足したため。
+- **次の消費者**: oe-hookfire の判定を読む統括と、同じ検査の合格条件を書く次の作業（#529 は同じファイルの3節を直す）。
+- **事実・失敗**: 読めない経路を自分で列挙したのはファイル自体（権限・壊れた symlink・FIFO）までで、そこへ届くまでのディレクトリの経路は実装SO（直上）と Copilot（祖先）が順に拾った。2回目は、1回目の指摘の文面に合わせて直上だけを直したのが原因である。`本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`・`本文: S2: Copilot の1ラウンド（2026-10-29）`
+- **決定と根拠**: `本文: S1: 直し方と確かめた結果（2026-10-29）`（`-r` の事前確認を棄却した理由と、FIFO を同じ単位で扱った理由）。件数の数え方が変わる入力（ts に改行を含む行）を戻さない判断は `本文: S2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-10-29）`。
+- **昇格の判定**: 3件とも `not-required`。どれもコードのコメント（`count_jsonl`・`log_state` の上）とテストが正本で、読めば正しく使える（1段目で外れる）。棄却した `-r` の事前確認も、覆すのに議論でなく確認（IO エラーを作れば決まる）が要るだけである。昇格の印は置いていない。
+- **蒸留シグナル**: なし。「指摘の文面に合わせて範囲を決めると隣が残る」は、既存の item `01KZ3MHMEQN5XEJGV9809QPH2A`（外部レビューが欠陥を1件名指しし、その箇所を直して単位を閉じようとするとき）に着地済みなので収穫しない。この単位はその item を注入されておらず、踏んだ実例になった。
+- **follow-up**: 無い。#529（同じファイルの tool-attribution の窓）は統括の brief で U2 として予定されている。
+- **観測の書き戻し**: 注入された item は `01KZ21M0N0FZ4YMR2R6DPHTWQ4` の1件で、`followed` を書き戻した（読めないときを indeterminate にした差分が証拠。ディレクトリの経路は外部指摘を待ったことも書いた）。
+- Step4 辞退: 実装SO と Copilot が差分を見ており、失敗はその2つの指摘として本文に節を立てて記録済み / 既存チェックで覆った観点: 省略チェック（指摘2件とも本文と事実・失敗に在る）・routing（follow-up 無し・#529 は brief に在る）・evidence anchor（SO の出力は `tmp/` だが要点を本文に転記済み）/ 未実施観点と判断: back-propagation は、他文書の欠陥を見つけていないので該当なし
