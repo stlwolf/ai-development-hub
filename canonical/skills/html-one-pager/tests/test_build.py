@@ -165,7 +165,56 @@ def with_two_picks(d):
                              "cards": [select_card("pick_shop", ["shops"], 2, ["候補4", "候補6"])]})
     d["sections"].insert(3, select_table("shops", ["候補4", "候補5", "候補6"]))
 
-# (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
+
+# タブ（#558）。判断ボードの見本を3つのタブに分ける。選び方のカード（2つ目の節）と選ぶ表は同じタブに置く
+BOARD_TABS = [{"key": "now", "label": "いま決めること", "row": "判断"},
+              {"key": "done", "label": "決まったこと", "row": "記録"},
+              {"key": "values", "label": "もらう値", "row": "記録"}]
+
+
+def board_tabs(d):
+    d["tabs"] = copy.deepcopy(BOARD_TABS)
+    for sec, key in zip(d["sections"], ("now", "now", "now", "done", "values")):
+        sec["tab"] = key
+
+
+def decide_tabs(d):
+    """承認の見本（decide）を、問いのタブと補足の表のタブに分ける。"""
+    d["tabs"] = [{"key": "ask", "label": "問い"}, {"key": "notes", "label": "補足"}]
+    d["sections"][0]["tab"] = "ask"
+    d["sections"].append(dict(copy.deepcopy(TABLE_SEC), tab="notes"))
+
+
+def bundle_tabs(d):
+    """束の見本の2つの group を、タブごとの束の部品に分ける。"""
+    sec = d["sections"][0]
+    d["tabs"] = [{"key": "pdf", "label": "請求書の PDF"}, {"key": "login", "label": "ログイン"}]
+    d["sections"] = [dict(sec, groups=[sec["groups"][0]], tab="pdf"),
+                     dict(sec, title="判断待ち（ログイン）", groups=[sec["groups"][1]], tab="login")]
+
+
+def many_tabs(n, row=None):
+    """見取り図（table の見本）を、表を1つずつ持つ n 個のタブにする。row を渡せば、その段の名前を全部に書く。"""
+    def f(d):
+        d["tabs"] = [dict({"key": "t%d" % i, "label": "タブ %d" % i}, **({"row": row} if row else {})) for i in range(n)]
+        d["sections"] = [dict(copy.deepcopy(TABLE_SEC), tab="t%d" % i) for i in range(n)]
+    return f
+
+
+# 見取り図（grasp の見本）の本文のタブ。本文のパネル2つと、データの表のタブ1つを混ぜる
+MAP_TABS = [{"key": "flow", "label": "流れ"}, {"key": "notes", "label": "メモ"}, {"key": "ops", "label": "対応"}]
+MAP_BODY = ('<style>.x { color: red; }</style>\n'
+            '<!-- 本文のタブ -->\n'
+            '<section class="hp-tabpanel" id="flow"><h2 class="hp-sec-title hp-tab-same">流れ</h2><p>本文<br>改行</p></section>\n'
+            '<div class="hp-tabpanel" id="notes"><p>閉じ忘れた段落<p id="memo">2つ目</div>\n')
+
+
+def map_tabs(d):
+    d["tabs"] = copy.deepcopy(MAP_TABS)
+    d["sections"] = [dict(copy.deepcopy(TABLE_SEC), tab="ops")]
+
+
+# (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか。文字列なら、その本文を渡す)
 BROKEN = [
     # E-F1 format
     ("f1_format_2", "decide", put(["format"], 2), [("E-F1", "format")], False),
@@ -605,6 +654,64 @@ BROKEN = [
     ("q3_broken_fourth_title_and_wrong_first_title", "decide",
      both(lambda d: at(d, CARD1 + ["blocks"]).append({"title": 4, "points": ["4つ目"]}), put(CARD1 + ["blocks", 0, "title"], "前提")),
      [("E-F3", "sections[0].cards[1].blocks[3].title"), ("E-Q3", "sections[0].cards[1].blocks[0].title")], False),
+    # タブ（#558）。E-N1 タブの定義
+    ("n1_one_tab", "board", both(board_tabs, put(["tabs"], [BOARD_TABS[0]]),
+                                 lambda d: [sec.__setitem__("tab", "now") for sec in d["sections"]]),
+     [("E-N1", "tabs")], False),
+    ("n1_key_with_hyphen", "board", both(board_tabs, put(["tabs", 0, "key"], "now-1"),
+                                         lambda d: [sec.__setitem__("tab", "now-1") for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_upper", "board", both(board_tabs, put(["tabs", 0, "key"], "Now"),
+                                   lambda d: [sec.__setitem__("tab", "Now") for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_too_long", "board", both(board_tabs, put(["tabs", 0, "key"], "n" * 21),
+                                      lambda d: [sec.__setitem__("tab", "n" * 21) for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_duplicate", "board", both(board_tabs, put(["tabs", 1, "key"], "now"), put(["sections", 3, "tab"], "now")),
+     [("E-N1", "tabs[1].key")], False),
+    ("n1_label_empty", "board", both(board_tabs, put(["tabs", 0, "label"], "")), [("E-N1", "tabs[0].label")], False),
+    ("n1_row_blank", "board", both(board_tabs, put(["tabs", 0, "row"], " ")), [("E-N1", "tabs[0].row")], False),
+    ("f3_tabs_object", "board", both(board_tabs, put(["tabs"], {})), [("E-F3", "tabs")], False),
+    ("f2_tab_unknown_field", "board", both(board_tabs, put(["tabs", 0, "name"], "x")), [("E-F2", "tabs[0].name")], False),
+    ("f3_tab_missing_label", "board", both(board_tabs, drop(["tabs", 0, "label"])), [("E-F3", "tabs[0].label")], False),
+    ("f3_section_tab_number", "board", both(board_tabs, put(["sections", 3, "tab"], 3)),
+     [("E-F3", "sections[3].tab"), ("E-N3", "tabs[1]")], False),
+    ("f2_group_table_tab", "bundle", put(GROUP0 + ["tables", 0, "tab"], "x"), [("E-F2", "sections[0].groups[0].tables[0].tab")], False),
+    # E-N2 段
+    ("n2_row_mixed", "board", both(board_tabs, drop(["tabs", 1, "row"])), [("E-N2", "tabs[1].row")], False),
+    ("n2_row_apart", "board", both(board_tabs, put(["tabs", 2, "row"], "判断")), [("E-N2", "tabs[2].row")], False),
+    ("n2_seven_in_a_row", "table", many_tabs(7, "段"), [("E-N2", "tabs[6].row")], False),
+    ("n2_seven_without_rows", "table", many_tabs(7), [("E-N2", "tabs")], False),
+    # E-N3 タブと中身の対応（データの側）
+    ("n3_section_without_tab", "board", both(board_tabs, drop(["sections", 4, "tab"])),
+     [("E-N3", "sections[4]"), ("E-N3", "tabs[2]")], False),
+    ("n3_tab_not_defined", "board", both(board_tabs, put(["sections", 4, "tab"], "other")),
+     [("E-N3", "sections[4].tab"), ("E-N3", "tabs[2]")], False),
+    ("n3_tab_without_tabs", "decide", put(["sections", 0, "tab"], "ask"), [("E-N3", "sections[0].tab")], False),
+    ("n3_sections_apart", "board", both(board_tabs, put(["sections", 4, "tab"], "now"), lambda d: d["tabs"].pop()),
+     [("E-N3", "sections[4].tab")], False),
+    ("n3_order_differs", "board", both(board_tabs, put(["sections", 3, "tab"], "values"), put(["sections", 4, "tab"], "done")),
+     [("E-N3", "sections[4].tab")], False),
+    ("n3_select_table_in_another_tab", "board", both(board_tabs, put(["sections", 2, "tab"], "done")),
+     [("E-N3", "sections[2].tab")], False),
+    ("n3_body_panels_need_body", "grasp", map_tabs, [("E-N3", "tabs[0]"), ("E-N3", "tabs[1]")], True),
+    # E-N3 本文の側と、E-N4 本文の id
+    ("n3_body_panel_is_p", "grasp", map_tabs, [("E-N3", "--body")],
+     MAP_BODY.replace('<div class="hp-tabpanel" id="notes"><p>閉じ忘れた段落<p id="memo">2つ目</div>',
+                      '<p class="hp-tabpanel" id="notes">段落</p>')),
+    ("n3_body_panel_without_tabs", "grasp", lambda d: None, [("E-N3", "--body")], MAP_BODY),
+    ("n4_body_id_starts_with_hp", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="hp-tab-flow"')),
+    ("n4_body_id_is_a_tab_key", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="flow"')),
+    ("n4_body_id_twice", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace("<br>", '<br id="memo">')),
+    # E-K2 タブを置けない種別・束の部品はタブごとに1つまで
+    ("k2_tabs_on_confirm", "confirm", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_tabs_on_pick", "pick", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_tabs_on_review", "review", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_two_bundles_in_one_tab", "bundle", both(bundle_tabs, put(["sections", 1, "tab"], "pdf")),
+     [("E-K2", "sections[1]"), ("E-N3", "tabs[1]")], False),
+    ("k1_bundle_without_tabs_still_one_part", "bundle", both(bundle_tabs, drop(["tabs"]), drop(["sections", 0, "tab"]),
+                                                            drop(["sections", 1, "tab"])),
+     [("E-K2", "sections[1]")], False),
 ]
 
 
@@ -669,7 +776,8 @@ def _make_broken_test(base, mutate, expected, has_body):
     def test(self):
         d = copy.deepcopy(example(base))
         mutate(d)
-        got = sorted((code, path) for code, path, _ in build.validate(d, has_body=has_body))
+        body = has_body if isinstance(has_body, str) else None
+        got = sorted((code, path) for code, path, _ in build.validate(d, has_body=bool(has_body), body=body))
         self.assertEqual(got, sorted(expected))
     return test
 
@@ -682,7 +790,7 @@ class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
                  "E-C5", "E-C6", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
-                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7"}
+                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7", "E-N1", "E-N2", "E-N3", "E-N4"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
 
@@ -786,6 +894,110 @@ class EmptyBoard(unittest.TestCase):
         self.assertFalse(any(c.get("type") == "no" for c in d["sections"][0]["columns"]))
         self.assertEqual(build.validate(d), [])
         self.assertNotIn("<script", render_page("board", drop_all_but_values))
+
+
+class TabsCheck(unittest.TestCase):
+    """タブ（#558）の検証。正しい形が通ることと、同じ原因の誤りを重ねて出さないこと。
+    1か所を壊したときの誤りは BROKEN の n1_〜n4_・k2_tabs_ にある。"""
+
+    def errors(self, base, mutate, body=None, has_body=False):
+        d = copy.deepcopy(example(base))
+        mutate(d)
+        return build.validate(d, has_body=has_body, body=body)
+
+    def codes(self, base, mutate, body=None, has_body=False):
+        return sorted((code, path) for code, path, _ in self.errors(base, mutate, body, has_body))
+
+    def test_correct_forms_pass(self):
+        cases = [
+            ("判断ボードを段のある3つのタブに分ける", "board", board_tabs, None),
+            ("承認を2つのタブに分ける", "decide", decide_tabs, None),
+            ("束の部品をタブごとに1つ置く", "bundle", bundle_tabs, None),
+            ("本文のパネル2つとデータの表のタブ1つを混ぜる", "grasp", map_tabs, MAP_BODY),
+            ("段に分けずに6つ", "table", many_tabs(6), None),
+            ("段1つに6つと、次の段に1つ", "table", both(many_tabs(7, "段"), put(["tabs", 6, "row"], "次")), None),
+            ("本文だけのタブ（部品は空）", "grasp", both(map_tabs, lambda d: d["tabs"].pop(), put(["sections"], [])), MAP_BODY),
+            ("閉じ忘れた p・余分な終わりの印・空の要素の />・コメント", "grasp", map_tabs,
+             MAP_BODY.replace("</section>", "<br/><img alt=\"\"></section></div></span><!-- x -->")),
+        ]
+        for name, base, mutate, body in cases:
+            with self.subTest(case=name):
+                self.assertEqual(self.errors(base, mutate, body, body is not None), [])
+
+    def test_empty_tabs_is_reported_once(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs"], []))), [("E-N1", "tabs")])
+
+    def test_label_error_keeps_the_tab_resolvable(self):
+        # label や row の誤りではタブを引けなくしない（部品の tab に「定義に無い」を重ねない）
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs", 1, "label"], ""), put(["tabs", 2, "row"], ""))),
+                         [("E-N1", "tabs[1].label"), ("E-N1", "tabs[2].row")])
+
+    def test_kind_without_tabs_reports_only_k2(self):
+        # 置けない種別では E-K2 だけを出し、部品の tab や中身の対応は見ない
+        mutate = both(put(["tabs"], copy.deepcopy(BOARD_TABS)), put(["sections", 0, "tab"], "zzz"))
+        self.assertEqual(self.codes("confirm", mutate), [("E-K2", "tabs")])
+
+    def test_unreadable_tabs_reports_only_the_type(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs"], "now"))), [("E-F3", "tabs")])
+
+    def test_unknown_kind_still_checks_tabs(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["kind"], "decide"), put(["tabs", 0, "label"], ""))),
+                         [("E-H3", "kind"), ("E-N1", "tabs[0].label")])
+
+    def test_body_problems_are_reported_once_per_cause(self):
+        cases = [
+            ("/> で閉じたパネル（後ろの中身はブラウザと同じくパネルの中）", MAP_BODY.replace(
+                '<section class="hp-tabpanel" id="flow">', '<section class="hp-tabpanel" id="flow"/>'), 1, []),
+            ("閉じ忘れたパネル（次のパネルが中に入る）", MAP_BODY.replace("</section>", ""), 1, []),
+            ("パネルの外の文字", MAP_BODY + "はみ出た文", 1, []),
+            ("パネルの外の要素", MAP_BODY + "<p>外</p>", 1, []),
+            ("同じ属性が2回（その要素はパネルとして数えない）", MAP_BODY.replace(
+                '<section class="hp-tabpanel" id="flow">', '<section class="x" class="hp-tabpanel" id="flow">'), 1,
+             [("E-N3", "tabs[0]")]),
+            ("id の無いパネル", MAP_BODY.replace('<div class="hp-tabpanel" id="notes">', '<div class="hp-tabpanel">'), 1,
+             [("E-N3", "tabs[1]")]),
+            ("定義に無いパネル", MAP_BODY.replace('id="notes"', 'id="other"'), 1, [("E-N3", "tabs[1]")]),
+            ("同じパネルが2つ", MAP_BODY + '<section class="hp-tabpanel" id="flow">2つ目</section>', 1, []),
+        ]
+        for name, body, n_body, more in cases:
+            with self.subTest(case=name):
+                got = self.codes("grasp", map_tabs, body, True)
+                self.assertEqual(got, sorted([("E-N3", "--body")] * n_body + more))
+
+    def test_body_and_data_in_one_tab_and_order(self):
+        both_in_one = both(map_tabs, lambda d: d["sections"][0].__setitem__("tab", "flow"), lambda d: d["tabs"].pop())
+        self.assertEqual(self.codes("grasp", both_in_one, MAP_BODY, True), [("E-N3", "tabs[0]")])
+        data_first = both(map_tabs, lambda d: d.__setitem__("tabs", [d["tabs"][2], d["tabs"][0], d["tabs"][1]]))
+        self.assertEqual(self.codes("grasp", data_first, MAP_BODY, True), [("E-N3", "sections[0].tab")])
+
+    def test_bundle_without_tabs_keeps_one_part(self):
+        # タブの無い束のページは、今までどおり束の部品を1つにする
+        self.assertEqual(self.codes("bundle", lambda d: d["sections"].append(copy.deepcopy(BUNDLE_SEC))),
+                         [("E-K2", "sections[1]")])
+
+    def test_check_answers_and_build_stop_on_the_same_body(self):
+        # 同じ崩れた本文が、check・check --answers・build で同じ誤りで止まる（本文は3つの経路のすべてで渡る）
+        tmp = tempfile.mkdtemp()
+        d = copy.deepcopy(example("grasp"))
+        map_tabs(d)
+        data, body, answers = (os.path.join(tmp, n) for n in ("page.json", "body.html", "answers.json"))
+        with open(data, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        with open(body, "w", encoding="utf-8") as f:
+            f.write(MAP_BODY.replace('id="memo"', 'id="hp-store"'))
+        with open(answers, "w", encoding="utf-8") as f:
+            f.write("{}")
+        outs = []
+        for args in (("check", data, "--body", body), ("check", data, "--body", body, "--answers", answers),
+                     ("build", data, "--body", body, "-o", os.path.join(tmp, "out.html"), "--tmux", "off")):
+            code, _, err = run_cli(*args)
+            outs.append((code, [line for line in err.splitlines() if line.startswith("E-")]))
+        self.assertEqual(outs[0][0], 1)
+        self.assertEqual(len(outs[0][1]), 1)
+        self.assertIn("E-N4 --body:", outs[0][1][0])
+        self.assertEqual(outs[1], outs[0])
+        self.assertEqual(outs[2], outs[0])
+        self.assertFalse(os.path.exists(os.path.join(tmp, "out.html")))
 
 
 class CollectedAnswers(unittest.TestCase):

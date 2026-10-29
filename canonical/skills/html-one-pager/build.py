@@ -12,6 +12,7 @@
 
 import argparse
 import html
+import html.parser
 import json
 import os
 import re
@@ -35,6 +36,18 @@ ROW_NUMBER_KINDS = ("pick", "map", "board")
 SELECT_KINDS = ("pick", "approve", "bundle", "board")
 # --body の本文を置ける種別。本文は型の上でいつも部品の上に出るので、部品の上にあっても読む順を壊さない種別だけにする。
 BODY_KINDS = ("approve", "map", "bundle", "review")
+# ページの中の切り替え（タブ）を置ける種別。タブの key は URL の # の名前とパネルの id になるので、英小文字と数字だけにする。
+# 描く要素の id はどれも hp- で始まり - を含むので、- を含まない key から作るパネルの id は、それらと重ならない。
+TAB_KINDS = ("map", "board", "approve", "bundle")
+TAB_KEY_RE = re.compile(r"[a-z][a-z0-9]{0,19}\Z")
+TAB_ROW_MAX = 6
+# 本文のタブのパネル。class で見分け、ブラウザが暗黙に閉じない要素（section・div）だけを使わせる。
+TAB_PANEL_CLASS = "hp-tabpanel"
+TAB_PANEL_TAGS = ("section", "div")
+# 本文の一番外に、パネルのほかに置ける要素（中身を出さないもの）。
+TAB_BODY_TOP_TAGS = ("style", "script")
+# 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
+VOID_TAGS = ("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
 # 判断ボード（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
@@ -347,13 +360,88 @@ def is_question(title):
     return strip_parens(title).rstrip().endswith(("か", "？", "?"))
 
 
+class _BodyScan(html.parser.HTMLParser):
+    """--body の本文から、タブのパネル（class hp-tabpanel の要素）と id を集め、パネルの判定がブラウザとずれる書き方を拾う。
+    終わりの印は、同じ名前の開いた要素まで戻る形で読む（閉じ忘れた p のような正しい HTML を誤りにしない）。
+    対応する開いた要素の無い終わりの印は、ブラウザと同じく無視する。属性が2回あるときは、ブラウザと同じく前の値を使う。"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []     # 開いている要素の (名前, パネルか)
+        self.panels = []    # 本文に書かれたパネルの (id か None, 要素の名前)。本文の並び
+        self.ids = []       # 本文の要素の id（並び・重なりを含む）
+        self.problems = []  # 誤りの文（タブのあるページでだけ使う）
+
+    def _open(self, tag, attrs, closed):
+        names = [k for k, _ in attrs]
+        twice = sorted({k for k in names if names.count(k) > 1})
+        if twice:
+            # この要素はパネルか・id は何かが書き手の意図とずれうるので、ほかの判定には使わない（同じ原因の誤りを重ねない）
+            self.problems.append("本文の要素 <%s> に同じ属性（%s）が2回ある（build.py とブラウザで、使う値が違う）" % (tag, "・".join(twice)))
+            if tag not in VOID_TAGS:
+                self.stack.append((tag, False))
+            return
+        a = {}
+        for k, v in attrs:
+            a.setdefault(k, v)
+        if a.get("id") is not None:
+            self.ids.append(a["id"])
+        panel = TAB_PANEL_CLASS in (a.get("class") or "").split()
+        if panel:
+            label = '<%s id="%s">' % (tag, a.get("id") or "")
+            if any(p for _, p in self.stack):
+                self.problems.append("本文のパネル %s が、ほかのパネルの中にある（パネルを入れ子にしない）" % label)
+            elif self.stack:
+                self.problems.append("本文のパネル %s が、本文の一番外に無い（<%s> の中にある）" % (label, self.stack[-1][0]))
+            if tag not in TAB_PANEL_TAGS:
+                self.problems.append("本文のパネル %s は %s の要素にする（ほかの要素は、ブラウザが暗黙に閉じて中身がパネルの外に出うる）"
+                                     % (label, "・".join(TAB_PANEL_TAGS)))
+            self.panels.append((a.get("id"), tag))
+        elif not self.stack and tag not in TAB_BODY_TOP_TAGS:
+            self.problems.append("本文の一番外に、パネルでない要素 <%s> がある（タブのあるページでは、中身はパネルの中に書く）" % tag)
+        if closed and tag not in VOID_TAGS:
+            self.problems.append("本文の要素 <%s/> を /> で閉じている（空の要素でないので、ブラウザは閉じずに開いたままにする）" % tag)
+        # ブラウザと同じく、空の要素でなければ /> で閉じても開いたままとして読む
+        if tag not in VOID_TAGS:
+            self.stack.append((tag, panel))
+
+    def handle_starttag(self, tag, attrs):
+        self._open(tag, attrs, False)
+
+    def handle_startendtag(self, tag, attrs):
+        self._open(tag, attrs, True)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+
+    def handle_data(self, data):
+        if not self.stack and data.strip():
+            self.problems.append("本文の一番外に、パネルの外の文字（%s）がある（タブのあるページでは、中身はパネルの中に書く）"
+                                 % json.dumps(data.strip()[:20], ensure_ascii=False))
+
+
+def scan_body(body):
+    """本文を読み、パネル・id・ずれる書き方を集めたもの（_BodyScan）を返す。"""
+    s = _BodyScan()
+    s.feed(body)
+    s.close()
+    return s
+
+
 class Validator:
     """データの誤りを全部集める。1つの誤りから同じ原因の誤りを重ねて出さない。"""
 
-    def __init__(self, has_body, words):
-        self.has_body = has_body
+    def __init__(self, has_body, words, body=None):
+        # body は --body の本文の文字列（タブのパネルの検査に使う）。has_body だけを渡す呼び方も今のまま受け付ける。
+        self.has_body = has_body or body is not None
+        self.body = body
         self.words = words
         self.errors = []
+        # タブを置いたページか（tabs があり、種別がタブを置ける）。束の部品の数の決まりが変わる。
+        self.has_tabs = False
         self.card_paths = {}   # カードの key -> 最初に現れた場所
         self.card_options = {}  # カードの key -> 選択肢の key の並び
         # ページの送り元からリンクにできるもの（repo_url があるか・登録した接頭辞）。
@@ -444,7 +532,7 @@ class Validator:
             self.add("E-F1", "format", "format は %d であるべき所が %s" % (FORMAT_VERSION, shown))
             return
         self.obj("$", data, ("format", "title", "kind", "status", "why", "source", "sections"),
-                 ("links", "answers", "request"), replaced=REPLACED_FIELDS)
+                 ("links", "answers", "request", "tabs"), replaced=REPLACED_FIELDS)
         if "title" in data:
             self.text("title", data["title"], "E-H1")
         if "why" in data:
@@ -470,6 +558,16 @@ class Validator:
                 self.page_links = ("repo_url" in src, {t["prefix"] for t in src.get("trackers", [])})
         if "links" in data:
             self.links("links", data["links"])
+        # タブ。置けない種別では E-K2 だけを出し、中身は見ない（同じ原因の誤りを重ねない）。
+        tab_keys = None  # 引けるタブの key -> tabs の中の位置（tabs が無い・配列でないときは None）
+        tabs_checked = "tabs" not in data
+        if "tabs" in data:
+            if kind is not None and kind not in TAB_KINDS:
+                self.add("E-K2", "tabs", "種別 %s のページにはタブ（tabs）を置かない（置けるのは %s）" % (kind, "・".join(TAB_KINDS)))
+            else:
+                tab_keys = self.tabs("tabs", data["tabs"])
+                tabs_checked = tab_keys is not None
+                self.has_tabs = tab_keys is not None
         has_answer_part = False
         # 部品を読めなかったとき（配列でない・知らない type）は、答える部品の有無を決められないので、
         # 同じ原因の誤りを重ねないよう「回答待ちなのに答える部品が無い」を出さない。
@@ -500,6 +598,8 @@ class Validator:
                     if defined:
                         self.listed_numbers(kind, data, defined)
                     self.card_writing(kind, secs)
+                if tabs_checked:
+                    self.tab_contents(data.get("tabs"), tab_keys, secs)
         status = data.get("status")
         # 部品も本文も無いときは E-S1 だけを出し、状態の誤りを重ねない。
         no_parts = sections_readable and not data["sections"] and not self.has_body
@@ -626,7 +726,19 @@ class Validator:
         b = self.kind_allowed("bundle", types, paths, ("bundle",))
         if not b:
             self.add("E-K1", "sections", "束のページには判断待ちの束の部品（bundle）が1つ要る")
-        self.only_one(b, paths, "判断待ちの束の部品")
+        if self.has_tabs:
+            # タブで分けた束のページは、束の部品をタブごとに1つまで置ける（タブの単位を部品にそろえる）。
+            # tab の無い部品・定義に無い tab は E-N3 で止めるので、ここでは文字列の tab だけを数える。
+            seen = set()
+            for i in b:
+                t = secs[i].get("tab")
+                if not isinstance(t, str):
+                    continue
+                if t in seen:
+                    self.add("E-K2", paths[i], "タブ %s に判断待ちの束の部品が2つある（タブごとに1つまでにする）" % t)
+                seen.add(t)
+        else:
+            self.only_one(b, paths, "判断待ちの束の部品")
         # group の表は選ぶ表だけを置け、group の中の選び方のカードの順・tables の順に並べる。key の無い表は E-F3 だけを出す
         for i in b:
             groups = secs[i].get("groups") if isinstance(secs[i].get("groups"), list) else []
@@ -966,6 +1078,163 @@ class Validator:
         if not dec and not tab:
             self.add("E-K1", "sections", "判断ボードのページには、判定カードの節か表が1つ以上要る")
 
+    # タブ（E-N1〜E-N4）------------------------------------------------------
+
+    def tabs(self, path, tabs):
+        """タブの定義を見て（E-N1）、段を見て（E-N2）、引けるタブの key -> tabs の中の位置を返す。配列でなければ None を返す。
+        引けるタブは、key が形に合い重ならないもの。label や row の誤りでは引けなくしない（部品の割り当ての誤りを重ねない）。
+        key の形の誤りで引けないタブの key の文字列は self.tab_unresolved に残し、それを指す割り当てに「定義に無い」を重ねない。"""
+        self.tab_unresolved = set()
+        if not isinstance(tabs, list):
+            self.add("E-F3", path, "配列であるべき所が%sである" % type_name(tabs))
+            return None
+        if not tabs:
+            # 空の tabs は中身との対応を見ない（部品の tab をすべて「定義に無い」と重ねて出さない）
+            self.add("E-N1", path, "tabs が空である（タブを2つ以上書くか、tabs を消す）")
+            return None
+        if len(tabs) < 2:
+            self.add("E-N1", path, "タブが1つしかない（2つ以上にする。1つだけのタブは何も分けない）")
+        keys = {}
+        rows = []  # 段の判定に使う (タブの場所, 段の名前・書いていなければ None・読めなければ False)
+        for i, t in enumerate(tabs):
+            tp = "%s[%d]" % (path, i)
+            if not self.obj(tp, t, ("key", "label"), ("row",)):
+                continue
+            if "key" in t:
+                k = t["key"]
+                kp = join(tp, "key")
+                if not isinstance(k, str):
+                    self.add("E-F3", kp, "文字列であるべき所が%sである" % type_name(k))
+                elif not TAB_KEY_RE.match(k):
+                    self.add("E-N1", kp, 'タブの key "%s" が形に合わない（英小文字で始まり、英小文字と数字だけが続く20文字まで。- と _ は使えない）' % k)
+                    self.tab_unresolved.add(k)
+                elif k in keys:
+                    self.add("E-N1", kp, 'タブの key "%s" が tabs[%d] と重なる' % (k, keys[k]))
+                else:
+                    keys[k] = i
+            if "label" in t:
+                self.text(join(tp, "label"), t["label"], "E-N1")
+            row = None
+            if "row" in t:
+                row = t["row"] if self.text(join(tp, "row"), t["row"], "E-N1") else False
+            rows.append((tp, row))
+        self.tab_rows(path, rows)
+        return keys
+
+    def tab_rows(self, path, rows):
+        """段の決まり（E-N2）。段の名前は全部のタブに書くか、どれにも書かない。書かなければ全体を1つの段として数える。
+        同じ段の名前は続けて並べ、1つの段のタブは TAB_ROW_MAX まで。読めない段の名前（False）は、書いたものとして数えるが段には入れない。"""
+        written = [(tp, r) for tp, r in rows if r is not None]
+        if written and len(written) != len(rows):
+            first = next(tp for tp, r in rows if (r is None) != (rows[0][1] is None))
+            self.add("E-N2", join(first, "row"), "段の名前（row）を書いたタブと書かないタブが混ざっている（書くなら全部に書く）")
+            return
+        if not written:
+            if len(rows) > TAB_ROW_MAX:
+                self.add("E-N2", path, "段に分けずにタブが %d つある。1つの段は %d つまでにし、row で段に分ける" % (len(rows), TAB_ROW_MAX))
+            return
+        counts, order = {}, []
+        for tp, r in written:
+            if r is False:
+                continue
+            if order and order[-1] != r and r in counts:
+                self.add("E-N2", join(tp, "row"), '段 "%s" が離れて現れる（同じ段のタブは続けて並べる）' % r)
+                return
+            if not order or order[-1] != r:
+                order.append(r)
+            counts[r] = counts.get(r, 0) + 1
+            if counts[r] == TAB_ROW_MAX + 1:
+                self.add("E-N2", join(tp, "row"), '段 "%s" のタブが %d つを超える（段を分ける）' % (r, TAB_ROW_MAX))
+
+    def tab_contents(self, tabs, tab_keys, secs):
+        """タブと中身の対応（E-N3）と、本文の id（E-N4）を見る。tab_keys が None なら、ページに tabs が無い。"""
+        body = scan_body(self.body) if self.body is not None else None
+        if tab_keys is None:
+            for i, sec in enumerate(secs):
+                if isinstance(sec, dict) and "tab" in sec:
+                    self.add("E-N3", "sections[%d].tab" % i, "tabs の無いページの部品に tab がある（タブで分けるなら、ページに tabs を書く）")
+            if body is not None and body.panels:
+                self.add("E-N3", "--body", "本文に %s があるのに、ページに tabs が無い（タブで分けるなら、ページに tabs を書く）" % TAB_PANEL_CLASS)
+            return
+        # データの部品の側: 割り当てと、同じタブの部品を続けて並べること
+        section_tab = {}  # 部品の位置 -> 引けるタブの key
+        runs = []         # [(タブの key, 最初の部品の tab の場所)]（データの並びで、続いた部品をまとめたもの）
+        for i, sec in enumerate(secs):
+            if not isinstance(sec, dict):
+                continue
+            sp = "sections[%d]" % i
+            if "tab" not in sec:
+                self.add("E-N3", sp, "tabs のあるページでは、部品に tab（タブの key）を書く")
+                continue
+            t = sec["tab"]
+            if not isinstance(t, str) or t in self.tab_unresolved:
+                continue
+            if t not in tab_keys:
+                self.add("E-N3", join(sp, "tab"), 'タブ "%s" が tabs に無い' % t)
+                continue
+            section_tab[i] = t
+            if runs and runs[-1][0] == t:
+                continue
+            if any(k == t for k, _ in runs):
+                self.add("E-N3", join(sp, "tab"), "タブ %s の部品が離れている（同じタブの部品は続けて並べる）" % t)
+                continue
+            runs.append((t, join(sp, "tab")))
+        # 選び方のカードと、名指した選ぶ表は同じタブに置く（問いと候補の一覧を別のタブに分けない）。
+        # 束の group の選ぶ表は group の中にあるので、いつも同じ部品（同じタブ）にある。
+        for card_path, tables in self.select_tables.items():
+            a = section_tab.get(int(re.match(r"sections\[(\d+)\]", card_path).group(1)))
+            for tp in tables or []:
+                b = section_tab.get(int(re.match(r"sections\[(\d+)\]", tp).group(1)))
+                if a is not None and b is not None and a != b:
+                    self.add("E-N3", join(tp, "tab"), "選び方のカード %s と、名指した選ぶ表が別のタブにある（同じタブに置く）" % card_path)
+        # 本文の側: パネルの形と、id
+        panels = []  # [(タブの key, 場所)]（本文の並び）
+        if body is not None:
+            for msg in body.problems:
+                self.add("E-N3", "--body", msg)
+            seen = set()
+            for pid, tag in body.panels:
+                if pid is None:
+                    self.add("E-N3", "--body", '本文のパネル <%s class="%s"> に id（タブの key）が無い' % (tag, TAB_PANEL_CLASS))
+                elif pid in self.tab_unresolved:
+                    continue
+                elif pid not in tab_keys:
+                    self.add("E-N3", "--body", '本文のパネルの id "%s" が tabs に無い' % pid)
+                elif pid in seen:
+                    self.add("E-N3", "--body", '本文のパネル "%s" が2つある（1つのタブのパネルは1つにする）' % pid)
+                else:
+                    seen.add(pid)
+                    panels.append((pid, "--body"))
+            counts = {}
+            for v in body.ids:
+                counts[v] = counts.get(v, 0) + 1
+            for v in sorted(counts):
+                # パネルの id の2回目はパネルの重なり（E-N3）で出しているので、id の重なりには数えない
+                panel_n = sum(1 for pid, _ in body.panels if pid == v)
+                if v.startswith("hp-"):
+                    self.add("E-N4", "--body", '本文の id "%s" が hp- で始まる（hp- は build.py が描く要素の id の頭なので、本文には使わない）' % v)
+                elif v in tab_keys and counts[v] > panel_n:
+                    self.add("E-N4", "--body", '本文の id "%s" がタブの key と重なる（その名前は、タブのパネルの id と URL の # に使う）' % v)
+                elif counts[v] > 1 and panel_n < 2:
+                    self.add("E-N4", "--body", '本文の id "%s" が %d 回現れる' % (v, counts[v]))
+        # 両方にまたがる決まり: 中身の無いタブ・本文とデータの両方を持つタブ・並び（本文のパネルが先で、tabs の順）
+        data_keys = {k for k, _ in runs}
+        body_keys = {k for k, _ in panels}
+        for k, i in sorted(tab_keys.items(), key=lambda x: x[1]):
+            tp = "tabs[%d]" % i
+            if k in data_keys and k in body_keys:
+                self.add("E-N3", tp, "タブ %s に、本文のパネルとデータの部品の両方がある（どちらか片方にする）" % k)
+            elif k not in data_keys and k not in body_keys:
+                hint = "" if self.body is not None else "。本文のパネルに置くなら、check に --body を付ける"
+                self.add("E-N3", tp, "タブ %s の中身が無い（本文のパネルも、tab が %s の部品も無い%s）" % (k, k, hint))
+        order = panels + [r for r in runs if r[0] not in body_keys]
+        last = -1
+        for k, where in order:
+            if tab_keys[k] < last:
+                self.add("E-N3", where, "タブ %s の中身の並びが tabs の順と違う（本文のパネルのタブを先に、データの部品のタブをあとに、tabs の順に並べる）" % k)
+                break
+            last = tab_keys[k]
+
     def request(self, path, req):
         if not self.obj(path, req, REQUEST_FIELDS):
             return
@@ -1041,8 +1310,10 @@ class Validator:
             if "url" in ln:
                 self.url(join(lp, "url"), ln["url"])
 
-    def section(self, path, sec):
-        """部品を1つ見て、その type を返す。読めなかった（オブジェクトでない・知らない type）なら None を返す。"""
+    def section(self, path, sec, in_group=False):
+        """部品を1つ見て、その type を返す。読めなかった（オブジェクトでない・知らない type）なら None を返す。
+        ページの部品はタブの割り当て（tab）を持てる。束の group の表（in_group）は持てない（group は部品の中にある）。"""
+        tab = () if in_group else ("tab",)
         if not isinstance(sec, dict):
             self.add("E-F3", path, "オブジェクトであるべき所が%sである" % type_name(sec))
             return None
@@ -1053,13 +1324,13 @@ class Validator:
                      % ("・".join(SECTION_TYPES), shown))
             return None
         if t == "decisions":
-            if self.obj(path, sec, ("type", "title", "cards")):
+            if self.obj(path, sec, ("type", "title", "cards"), tab):
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
                 if "cards" in sec:
                     self.cards(join(path, "cards"), sec["cards"])
         elif t == "bundle":
-            if self.obj(path, sec, ("type", "title", "groups")):
+            if self.obj(path, sec, ("type", "title", "groups"), tab):
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
                 if "groups" in sec:
@@ -1068,7 +1339,7 @@ class Validator:
                         for i, g in enumerate(sec["groups"]):
                             self.group("%s[%d]" % (gp, i), g)
         elif t == "table":
-            if self.obj(path, sec, ("type", "title", "columns", "rows"), ("key",)):
+            if self.obj(path, sec, ("type", "title", "columns", "rows"), ("key",) + tab):
                 self.table_key(path, sec)
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
@@ -1077,7 +1348,7 @@ class Validator:
                 if "rows" in sec:
                     self.rows(join(path, "rows"), sec["rows"], cols)
         else:
-            if self.obj(path, sec, ("type", "title", "items"), ("lane",)):
+            if self.obj(path, sec, ("type", "title", "items"), ("lane",) + tab):
                 if "title" in sec:
                     self.text(join(path, "title"), sec["title"], "E-S1")
                 if "lane" in sec:
@@ -1087,6 +1358,8 @@ class Validator:
                     if self.array(ip, sec["items"], "E-S1", "指摘が1件も無い"):
                         for i, it in enumerate(sec["items"]):
                             self.finding("%s[%d]" % (ip, i), it)
+        if not in_group and "tab" in sec and not isinstance(sec["tab"], str):
+            self.add("E-F3", join(path, "tab"), "文字列であるべき所が%sである" % type_name(sec["tab"]))
         return t
 
     def columns(self, path, cols):
@@ -1213,7 +1486,7 @@ class Validator:
                 self.add("E-S1", join(tp, "type"), 'group の tables に置ける部品の type は table であるべき所が %s'
                          % json.dumps(tb["type"], ensure_ascii=False))
                 continue
-            if self.section(tp, tb) == "table" and "key" not in tb:
+            if self.section(tp, tb, in_group=True) == "table" and "key" not in tb:
                 self.add("E-F3", join(tp, "key"), "group の表は key を持つ（同じ group の選び方のカードが tables で名指す）")
 
     def cards(self, path, cards):
@@ -1567,12 +1840,13 @@ def display_texts(data):
     return out
 
 
-def check_collected(data, collected, has_body=False, words=None):
+def check_collected(data, collected, has_body=False, words=None, body=None):
     """回収した答え（保存先から読んだ文書を、answers と同じ形に写したもの）を、ページに当てる（check --answers）。
     ページにある key（カードと行の答え）は answers の検査（E-A1・選び方のカードごとの上限）で見て、
     ページに無い key（前の回収で表へ移したカードの答え・除いた表の行の答え）は見ずに数える。
-    ページの状態に関係なく見る。返すのは (ページの誤りと渡した答えの誤りの並び, 見なかった key の数)。"""
-    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY))
+    ページの状態に関係なく見る。返すのは (ページの誤りと渡した答えの誤りの並び, 見なかった key の数)。
+    body は --body の本文の文字列で、validate と同じくタブのパネルの検査に使う。"""
+    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY), body)
     v.page(data)
     if not isinstance(collected, dict):
         v.add("E-F3", "--answers", "回収した答えはオブジェクトであるべき所が%sである" % type_name(collected))
@@ -1582,10 +1856,11 @@ def check_collected(data, collected, has_body=False, words=None):
     return v.errors, len(collected) - len(known)
 
 
-def validate(data, has_body=False, words=None):
+def validate(data, has_body=False, words=None, body=None):
     """データを検証し、誤りの並び [(規則の番号, 場所, 理由)] を返す。空なら誤りは無い。
-    words は用語集の識別子の接頭辞（load_words の結果）。省けば既定の用語集から読む。"""
-    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY))
+    words は用語集の識別子の接頭辞（load_words の結果）。省けば既定の用語集から読む。
+    body は --body の本文の文字列で、タブのパネルの検査に使う（渡せば has_body も真とみなす）。"""
+    v = Validator(has_body, words if words is not None else load_words(DEFAULT_GLOSSARY), body)
     v.page(data)
     return v.errors
 
@@ -2357,15 +2632,14 @@ def cmd_check(args):
     load_glossary(args.glossary)
     words = load_words(args.glossary)
     data = load_data(args.data)
-    if args.body:
-        read_text(args.body, "--body の本文")
+    body = read_text(args.body, "--body の本文") if args.body else None
     if args.answers:
         collected = parse_json(read_text(args.answers, "回収した答え"), "回収した答え（%s）" % args.answers)
-        errors, ignored = check_collected(data, collected, has_body=bool(args.body), words=words)
+        errors, ignored = check_collected(data, collected, words=words, body=body)
         if ignored:
             print("ページに無い key %d 件は見なかった（前の回収で表へ移したカードの答えなど）" % ignored, file=sys.stderr)
     else:
-        errors = validate(data, has_body=bool(args.body), words=words)
+        errors = validate(data, words=words, body=body)
     if errors:
         report(errors)
         return 1
@@ -2379,7 +2653,7 @@ def cmd_build(args):
     data = load_data(args.data)
     body = read_text(args.body, "--body の本文") if args.body else None
     now = parse_now(args.now)
-    errors = validate(data, has_body=body is not None, words=words)
+    errors = validate(data, words=words, body=body)
     if errors:
         report(errors)
         return 1
