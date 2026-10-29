@@ -3,7 +3,7 @@ id: "01M633STP5HZZ82QDW833YXKF3"
 title: "#558 html-one-pager に、1枚のページを長さや中身で分けるタブの部品を足す"
 date: 2026-10-29
 type: plan
-status: in-development   # ゲート3 は統括が確定版と照らして代えた（2026-10-29・承認した版は 97c5d74）。承認のあとの補正は末尾の「ゲート3 のあとの変更」節
+status: stable   # 実装完了（PR #559・マージ待ち）。ゲート3 は統括が確定版と照らして代えた（2026-10-29・承認した版は 97c5d74）。承認のあとの補正は末尾の「ゲート3 のあとの変更」節
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/558"
@@ -368,23 +368,23 @@ DJ-12 既存のページの確かめ
 | A10 | タブの見本で要素の id が重ならず、タブの `key` と本文の id の重なりが止まる | 検査の `ElementIds` をタブの見本に当て、E-N4 の壊したデータの検査を置く |
 | A11 | タブの無いページの見た目が変わらない | `decide` と `grasp` を変更前と変更後で同じ幅・同じ表示で撮って比べる |
 
-### 確定版の項目と、満たした場所（I3 で埋める）
+### 確定版の項目と、満たした場所（I3 で埋めた・`8279a09` の時点）
 
 | 確定版の項目 | 満たす設計 | 満たした場所（ファイル・検査・確かめ） |
 |---|---|---|
-| 置き場と種別 | DJ-1・DJ-2・DJ-3 | |
-| 見出し | DJ-6 | |
-| 余白（28px・36px） | DJ-6 | |
-| 段と上限（目安6・check で止める） | DJ-4・DJ-13 | |
-| URL の `#`（英数字の短い名前） | DJ-5・DJ-7 | |
-| 隠れたタブを指すリンク | DJ-8 | |
-| 隠れたタブの未回答 | DJ-9 | |
-| JS と、JS が動かないときの形 | DJ-7・DJ-10 | |
-| 見た目の確かめ | DJ-15 | |
-| 幅の狭い画面でのタブの並び | DJ-11 | |
-| タブを使わない既存のページの見た目が変わらない | DJ-12 | |
-| キーボードとスクリーンリーダー | DJ-7 | |
-| 切り替えても答えが失われない | DJ-6・DJ-9（パネルは `hidden` で隠すだけで、要素と入力は残る） | |
+| 置き場と種別 | DJ-1・DJ-2・DJ-3 | `build.py` の `Validator.tabs`・`tab_contents`・`kind_bundle`（`TAB_KINDS`）。検査は壊したデータの n1_〜n4_・k2_tabs_ と `TabsCheck.test_correct_forms_pass`（データだけ・本文だけ・混ぜたタブ・束の部品2つ）。見本は `examples/map-tabs.json`＋`examples/map-tabs-body.html`（本文とデータを混ぜた見取り図）と `examples/board-tabs.json` |
+| 見出し | DJ-6 | `build.py` の `Renderer.sections`（`hp-tab-same`）と `page.css`（帯に `data-on` があるときだけ隠す）。検査は `TabsRender.test_same_title_is_marked_only_for_the_first_section`。ブラウザで、概要のタブの最初の題が隠れ、JS を止めた表示では残ることを確かめた（episode の I1-5） |
+| 余白（28px・36px） | DJ-6 | `page.css` の `.hp:has(.hp-tabbar) .hp-main { margin-top: 10px }` と `.hp-tabpanel { gap: 36px }`。ブラウザで、帯の下の線から最初の部品まで 28px・部品どうし 36px を測った（episode の I1-5 の A6） |
+| 段と上限（目安6・check で止める） | DJ-4・DJ-13 | `build.py` の `Validator.tab_rows`（`TAB_ROW_MAX = 6`・E-N2）と `Renderer.tab_bar`（段ごとに1行）。検査は n2_seven_in_a_row・n2_seven_without_rows・n2_row_mixed・n2_row_apart。ブラウザで、3つの段が幅 1200px と 400px で1行のままであることを確かめた |
+| URL の `#`（英数字の短い名前） | DJ-5・DJ-7 | `build.py` の `TAB_KEY_RE`（E-N1）とパネルの id、`tabs.js` の `setHash`（`replaceState`）・`fromHash`。検査は `TabsScript`（開いたときの `#`・押したときの書き換え・`replaceState` が投げる場合）。外側の URL の `#` は、統括が公開するサンプルで確かめる（episode の残課題） |
+| 隠れたタブを指すリンク | DJ-8 | `tabs.js` の取り込みの段階の `click`・`hashchange`・`panelOf`・`goTo`、`page.css` の飛ぶ先の余白。検査は `TabsScript` のリンクの検査（同じ `#` をもう一度押す・別の画面で開くリンク・本文の中のリンクのフォーカス・空の `#` に戻る）。ブラウザで、貼り付く箱の5つの状態で移った先が帯に隠れないことを確かめた（episode の I1-5） |
+| 隠れたタブの未回答 | DJ-9 | `build.py` の `Renderer.tab_bar`（最初の値）と埋め込みのデータの `tabs`、`page.js` の `paint`（9行）。検査は `TabsRender.test_counts_are_shown_on_tabs_with_cards_until_answered`・`test_zero_count_is_hidden`・`PageScript.test_tab_counts_follow_the_answers`。言葉（N5）は owner がサンプルで見る |
+| JS と、JS が動かないときの形 | DJ-7・DJ-10 | `tabs.js`（新規・タブのあるページにだけ入る）と `build.py` の `render`。検査は `TabsRender.test_reading_page_gets_only_the_tab_script` と `TabsScript`。ブラウザで JS を止めると、すべてのパネルが縦に並び、帯のリンクで移れることを確かめた |
+| 見た目の確かめ | DJ-15 | 幅 1200px と 400px・明暗の画面写真8枚（worktree の作業層 `tmp/558-one-pager-tabs/shots/`）と、測った値を episode の I1-5 に書いた。owner に見せるサンプルは `tmp/558-samples/` の2つで、公開は統括がする |
+| 幅の狭い画面でのタブの並び | DJ-11 | `page.css` の `.hp-tabrow-tabs`（段の中だけ横に送る）と幅 560px 以下の規則、`tabs.js` の `reveal`。ブラウザで、幅 400px で段が1行のまま・ページが横に揺れないことを確かめた |
+| タブを使わない既存のページの見た目が変わらない | DJ-12 | A4（9つの見本で style と script を除いた HTML が一致・CSS は足した行だけで、足した選ぶ要素がタブの要素だけ）と A11（`decide`・`grasp` の画面写真が画素まで同じ）。episode の I1-5 |
+| キーボードとスクリーンリーダー | DJ-7 | `tabs.js` の ARIA の印（1つのタブの並び・段の名前を説明に）とキー（左右・Home・End・Space）、パネルの `tabindex`。検査は `TabsScript.test_marks_and_first_tab`・`test_keys_move_across_rows_and_wrap`。ブラウザで、キー操作・Tab と Shift+Tab・読み上げの木を確かめた |
+| 切り替えても答えが失われない | DJ-6・DJ-9（パネルは `hidden` で隠すだけで、要素と入力は残る） | `tabs.js` はパネルの `hidden` と印だけを変え、入力に触れない。ブラウザで、2つのタブで選んで補足を書き、切り替えて戻っても残ること、返答の文に隠れたタブのカードが入ることを確かめた（episode の I1-5） |
 
 ## ステップ
 
@@ -446,7 +446,7 @@ DJ-12 既存のページの確かめ
 
 ### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件（通過・`bd6d552`）
 
-### I3: episode を閉じ、報告して止まる
+### I3: episode を閉じ、報告して止まる（完了・締めは episode の「フィードバック」節）
 
 - episode を閉じる（注入した knowledge item 2件に観測を書き戻す）。昇格の判定と、昇格したものをこの枝の PR に入れる。A9 の表を埋める。
 - `.oe/report-558.md` に報告を書き、brief の「報告の宛先」へ `oe-send` で送り、終了コードを確かめて止まる。
