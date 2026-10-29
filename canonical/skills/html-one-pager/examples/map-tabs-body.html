@@ -1,0 +1,101 @@
+<style>
+  .switch-step { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .switch-step li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 0; }
+  .switch-step .at { font-family: var(--font-mono); font-weight: 500; color: var(--accent); margin-right: 8px; }
+</style>
+<section class="hp-tabpanel" id="overview">
+  <section>
+    <h2 class="hp-sec-title hp-tab-same">概要</h2>
+    <p>決済の会社を A から B へ切り替える。当日は、注文を受けたまま設定を1つ変え、30分のあいだ請求の記録を見比べる。問題が出たら、<a href="#stop">止める・戻す</a> のタブの条件で A へ戻す。</p>
+    <ul>
+      <li>切り替えるのは決済の会社だけで、注文の画面と請求の記録の形は変えない。</li>
+      <li>当日に人が手を動かすのは、設定を変える1回と、戻すときの1回だけである。</li>
+    </ul>
+  </section>
+</section>
+<section class="hp-tabpanel" id="premise">
+  <section>
+    <h2>前提</h2>
+    <ul>
+      <li>会社 B の本番の鍵は、前の週に受け取っている。</li>
+      <li>会社 A の契約は、切り替えの日から30日は残す。</li>
+    </ul>
+  </section>
+  <section>
+    <h2>知っておくこと</h2>
+    <p>会社 B は、決済の結果を数秒遅れて通知する。通知が届くまでは、請求の記録が「確かめ中」のまま残る。これは誤りではない（<a href="#word-pending">確かめ中</a>）。</p>
+  </section>
+</section>
+<section class="hp-tabpanel" id="steps">
+  <section>
+    <h2>切り替えの前（9:00〜9:30）</h2>
+    <ol class="switch-step">
+      <li><span class="at">9:00</span>注文の数が少ない時間であることを、前の日の同じ時刻の数と比べて確かめる。</li>
+      <li><span class="at">9:10</span>会社 B の管理画面で、通知を受ける URL が本番を指していることを確かめる。</li>
+      <li><span class="at">9:20</span>請求の記録の件数を数え、控えておく。</li>
+    </ol>
+  </section>
+  <section>
+    <h2>切り替え（9:30）</h2>
+    <p>設定 <code>payment.provider</code> を <code>b</code> にする。変えたら、試しの注文を1件入れ、会社 B の管理画面に出ることを見る。</p>
+    <pre>payment.provider: b</pre>
+  </section>
+  <section>
+    <h2>切り替えのあと（9:30〜10:00）</h2>
+    <ol class="switch-step">
+      <li><span class="at">9:35</span>新しい注文が会社 B の管理画面に出ることを、5件ほど見る。</li>
+      <li><span class="at">9:45</span>請求の記録の件数を数え、9:20 の控えと注文の数の差が合うかを見る。</li>
+      <li><span class="at">10:00</span>合っていれば、店舗へ切り替えが終わったことを知らせる。合わなければ、<a href="#stop-rules">止める条件</a> を見る。</li>
+    </ol>
+  </section>
+</section>
+<section class="hp-tabpanel" id="stop">
+  <section>
+    <h2 id="stop-rules">止める条件</h2>
+    <table>
+      <thead><tr><th>見えたこと</th><th>すること</th></tr></thead>
+      <tbody>
+        <tr><td>試しの注文が会社 B の管理画面に出ない</td><td>すぐに設定を <code>a</code> に戻す</td></tr>
+        <tr><td>請求の記録の件数が、注文の数と5件以上ずれる</td><td>設定を <code>a</code> に戻し、ずれた注文を一覧にする</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section>
+    <h2>戻し方</h2>
+    <p>設定 <code>payment.provider</code> を <code>a</code> にする。戻したあとの注文は会社 A に流れる。戻すまでに会社 B で受けた注文は、会社 B の管理画面で返金できる。</p>
+  </section>
+</section>
+<section class="hp-tabpanel" id="timing">
+  <section>
+    <h2>時間の目安</h2>
+    <table>
+      <thead><tr><th>時刻</th><th>すること</th><th>かかる時間</th></tr></thead>
+      <tbody>
+        <tr><td>9:00</td><td>前の確かめ</td><td>30分</td></tr>
+        <tr><td>9:30</td><td>切り替え</td><td>5分</td></tr>
+        <tr><td>9:35</td><td>あとの確かめ</td><td>25分</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+<section class="hp-tabpanel" id="words">
+  <section>
+    <h2>このページの言葉</h2>
+    <table>
+      <thead><tr><th>言葉</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>切り替え</td><td>設定 <code>payment.provider</code> を変え、新しい注文を別の決済の会社に流すこと</td></tr>
+        <tr id="word-pending"><td>確かめ中</td><td>決済の会社の通知がまだ届いていない請求の記録の状態</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+<section class="hp-tabpanel" id="open">
+  <section>
+    <h2>まだ決めていないこと</h2>
+    <ul>
+      <li>店舗へ知らせる文の言い回し（当日の朝までに決める）。</li>
+      <li>会社 A の契約を30日より早く止めるか（切り替えの1週間後に決める）。</li>
+    </ul>
+  </section>
+</section>

@@ -1,0 +1,47 @@
+{
+  "format": 1,
+  "title": "決済の会社を切り替える当日の見取り図",
+  "kind": "map",
+  "status": "live",
+  "why": "決済の会社の切り替え（#230）の当日の手順が長くなったので、はじめに読むこと・当日に見ること・調べるときに見ることのタブに分け、1枚で読めるようにする。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "issue": 230,
+    "trackers": [
+      {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
+    ]
+  },
+  "links": [
+    {"label": "issue #230", "url": "https://github.com/example-org/shop/issues/230"}
+  ],
+  "tabs": [
+    {"key": "overview", "label": "概要", "row": "はじめに"},
+    {"key": "premise", "label": "前提と知っておくこと", "row": "はじめに"},
+    {"key": "steps", "label": "当日の進み方", "row": "当日"},
+    {"key": "stop", "label": "止める・戻す", "row": "当日"},
+    {"key": "timing", "label": "時間の目安", "row": "当日"},
+    {"key": "words", "label": "言葉", "row": "参考"},
+    {"key": "open", "label": "まだ決めていないこと", "row": "参考"},
+    {"key": "ops", "label": "対応の一覧", "row": "参考"}
+  ],
+  "sections": [
+    {
+      "type": "table",
+      "tab": "ops",
+      "title": "対応の一覧",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "refs", "label": "issue / PR", "type": "ref"},
+        {"key": "tracker", "label": "外部の課題", "type": "ref"},
+        {"key": "what", "label": "中身"},
+        {"key": "result", "label": "結果"}
+      ],
+      "rows": [
+        {"no": "ID:1", "refs": ["#230", "PR #231"], "tracker": "OPS-51", "what": {"text": "会社 B の決済を、設定を1つ変えるだけで切り替えられるようにする。", "evidence": "verified"}, "result": "マージ済み"},
+        {"no": "ID:2", "refs": ["#232"], "tracker": [], "what": "切り替えの前後で、請求の記録の件数が合うかを数える手順を書く。", "result": "レビュー中"},
+        {"no": "ID:3", "refs": [], "tracker": ["OPS-52"], "what": "当日の連絡の窓口を、店舗に知らせる。", "result": ""}
+      ]
+    }
+  ]
+}

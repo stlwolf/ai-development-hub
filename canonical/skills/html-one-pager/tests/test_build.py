@@ -35,6 +35,12 @@ def example(name):
         return json.load(f)
 
 
+def example_body(name):
+    """見本の本文（--body に渡す HTML の断片）を読む。"""
+    with open(os.path.join(EXAMPLES, name), encoding="utf-8") as f:
+        return f.read()
+
+
 def at(d, path):
     for p in path:
         d = d[p]
@@ -718,9 +724,11 @@ BROKEN = [
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
         for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False),
-                               ("confirm", False), ("pick", False), ("board", False), ("approve", False)):
+                               ("confirm", False), ("pick", False), ("board", False), ("approve", False), ("board-tabs", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
+        # 本文のタブの見本は、本文の文字列を渡して見る（本文のパネルがタブの中身になる）
+        self.assertEqual(build.validate(example("map-tabs"), body=example_body("map-tabs-body.html")), [])
 
     def test_every_kind_has_an_example(self):
         kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board", "approve")}
@@ -1851,7 +1859,7 @@ class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
     PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None),
-             ("pick", None), ("board", None), ("approve", None))
+             ("pick", None), ("board", None), ("approve", None), ("map-tabs", "map-tabs-body.html"), ("board-tabs", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -1940,7 +1948,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board", "approve")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board", "approve", "board-tabs")
 
 
 class BodyLooks(unittest.TestCase):
@@ -1997,6 +2005,10 @@ class SkillMdExamples(unittest.TestCase):
                 if "via" in obj:
                     d = example("review")
                     d["request"] = obj
+                elif "tabs" in obj:
+                    # タブの定義の例は、タブで分けた判断ボードの見本の tabs に入れる（部品の tab は見本のとおり）
+                    d = example("board-tabs")
+                    d["tabs"] = obj["tabs"]
                 elif "type" in obj:
                     d = example("table")
                     d["sections"] = [obj]
@@ -2203,7 +2215,7 @@ class ElementIds(unittest.TestCase):
 
     def test_ids_are_unique_in_every_example(self):
         for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None),
-                           ("board", None), ("approve", None)):
+                           ("board", None), ("approve", None), ("board-tabs", None), ("map-tabs", example_body("map-tabs-body.html"))):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
