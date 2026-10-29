@@ -96,3 +96,9 @@ plan の初稿を `docs/harness/plans/2026-10-29-plan-558-one-pager-tabs.md` に
 follow-up（この単位では決めない）:
 
 - タブの無いページの本文でも、`id="hp-store"` のような id は JS の操作する要素と取り違えられる。今の単位では、タブのあるページにだけ `hp-` の頭を止める。タブの無いページに当てるかは、`html-one-pager` の本文の検査を扱う単位で決める。行き先は PR の報告と、I3 の closure の follow-up の欄である。
+
+### P3: commit・push・報告（2026-10-29）
+
+- plan と episode を `97c5d74` で commit し、`feature/#558_one_pager_tabs` を push した。PR はまだ作っていない。
+- 報告の宛先は brief の「報告の宛先」の統括（21代目）で、`oe-tree` に生きた root の `cockpit` として出ていて、このセッション（`#558 one-pager-tabs`）がその子であることを確かめてから送った。`projects/orchestration-engine/bin/oe-send` は終了コード 0 で、送った旨が出た（取り込まれたかは受領印の層で、ここでは確かめていない）。
+- 送った1行には、plan のパスと、確定版に無い判断のうち owner に見せたほうがよいと見る3つ（N1・N3・N5）を書いた。ゲート3（統括が確定版と照らして代える）を待つ。
