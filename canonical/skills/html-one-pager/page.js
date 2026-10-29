@@ -202,6 +202,15 @@
         g.keys.forEach(function (k) { if (!state[k].choice) { n += 1; } });
         el.textContent = fill(L["status.awaiting"], { n: n });
       });
+      // タブの名前の横の未回答の件数（タブのあるページだけ・#558）。0件なら隠す。
+      (D.tabs || []).forEach(function (t) {
+        var el = $("hp-tab-" + t.key + ".n");
+        if (!el) { return; }
+        var n = 0;
+        t.keys.forEach(function (k) { if (!state[k].choice) { n += 1; } });
+        el.textContent = fill(L["status.awaiting"], { n: n });
+        el.hidden = n === 0;
+      });
     }
     paintReply();
   }

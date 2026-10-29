@@ -35,6 +35,12 @@ def example(name):
         return json.load(f)
 
 
+def example_body(name):
+    """見本の本文（--body に渡す HTML の断片）を読む。"""
+    with open(os.path.join(EXAMPLES, name), encoding="utf-8") as f:
+        return f.read()
+
+
 def at(d, path):
     for p in path:
         d = d[p]
@@ -74,7 +80,7 @@ def render_page(name, mutate=None, body=None, glossary=None, now=NOW):
     d = copy.deepcopy(example(name))
     if mutate:
         mutate(d)
-    errors = build.validate(d, has_body=body is not None)
+    errors = build.validate(d, has_body=body is not None, body=body)
     assert errors == [], errors
     labels = build.load_glossary(glossary or build.DEFAULT_GLOSSARY)
     return build.render(d, labels, build.parse_now(now), d["source"].get("tmux"), body)
@@ -165,7 +171,56 @@ def with_two_picks(d):
                              "cards": [select_card("pick_shop", ["shops"], 2, ["候補4", "候補6"])]})
     d["sections"].insert(3, select_table("shops", ["候補4", "候補5", "候補6"]))
 
-# (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか)
+
+# タブ（#558）。判断ボードの見本を3つのタブに分ける。選び方のカード（2つ目の節）と選ぶ表は同じタブに置く
+BOARD_TABS = [{"key": "now", "label": "いま決めること", "row": "判断"},
+              {"key": "done", "label": "決まったこと", "row": "記録"},
+              {"key": "values", "label": "もらう値", "row": "記録"}]
+
+
+def board_tabs(d):
+    d["tabs"] = copy.deepcopy(BOARD_TABS)
+    for sec, key in zip(d["sections"], ("now", "now", "now", "done", "values")):
+        sec["tab"] = key
+
+
+def decide_tabs(d):
+    """承認の見本（decide）を、問いのタブと補足の表のタブに分ける。"""
+    d["tabs"] = [{"key": "ask", "label": "問い"}, {"key": "notes", "label": "補足"}]
+    d["sections"][0]["tab"] = "ask"
+    d["sections"].append(dict(copy.deepcopy(TABLE_SEC), tab="notes"))
+
+
+def bundle_tabs(d):
+    """束の見本の2つの group を、タブごとの束の部品に分ける。"""
+    sec = d["sections"][0]
+    d["tabs"] = [{"key": "pdf", "label": "請求書の PDF"}, {"key": "login", "label": "ログイン"}]
+    d["sections"] = [dict(sec, groups=[sec["groups"][0]], tab="pdf"),
+                     dict(sec, title="判断待ち（ログイン）", groups=[sec["groups"][1]], tab="login")]
+
+
+def many_tabs(n, row=None):
+    """見取り図（table の見本）を、表を1つずつ持つ n 個のタブにする。row を渡せば、その段の名前を全部に書く。"""
+    def f(d):
+        d["tabs"] = [dict({"key": "t%d" % i, "label": "タブ %d" % i}, **({"row": row} if row else {})) for i in range(n)]
+        d["sections"] = [dict(copy.deepcopy(TABLE_SEC), tab="t%d" % i) for i in range(n)]
+    return f
+
+
+# 見取り図（grasp の見本）の本文のタブ。本文のパネル2つと、データの表のタブ1つを混ぜる
+MAP_TABS = [{"key": "flow", "label": "流れ"}, {"key": "notes", "label": "メモ"}, {"key": "ops", "label": "対応"}]
+MAP_BODY = ('<style>.x { color: red; }</style>\n'
+            '<!-- 本文のタブ -->\n'
+            '<section class="hp-tabpanel" id="flow"><h2 class="hp-sec-title hp-tab-same">流れ</h2><p>本文<br>改行</p></section>\n'
+            '<div class="hp-tabpanel" id="notes"><p>閉じ忘れた段落<p id="memo">2つ目</div>\n')
+
+
+def map_tabs(d):
+    d["tabs"] = copy.deepcopy(MAP_TABS)
+    d["sections"] = [dict(copy.deepcopy(TABLE_SEC), tab="ops")]
+
+
+# (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか。文字列なら、その本文を渡す)
 BROKEN = [
     # E-F1 format
     ("f1_format_2", "decide", put(["format"], 2), [("E-F1", "format")], False),
@@ -605,15 +660,75 @@ BROKEN = [
     ("q3_broken_fourth_title_and_wrong_first_title", "decide",
      both(lambda d: at(d, CARD1 + ["blocks"]).append({"title": 4, "points": ["4つ目"]}), put(CARD1 + ["blocks", 0, "title"], "前提")),
      [("E-F3", "sections[0].cards[1].blocks[3].title"), ("E-Q3", "sections[0].cards[1].blocks[0].title")], False),
+    # タブ（#558）。E-N1 タブの定義
+    ("n1_one_tab", "board", both(board_tabs, put(["tabs"], [BOARD_TABS[0]]),
+                                 lambda d: [sec.__setitem__("tab", "now") for sec in d["sections"]]),
+     [("E-N1", "tabs")], False),
+    ("n1_key_with_hyphen", "board", both(board_tabs, put(["tabs", 0, "key"], "now-1"),
+                                         lambda d: [sec.__setitem__("tab", "now-1") for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_upper", "board", both(board_tabs, put(["tabs", 0, "key"], "Now"),
+                                   lambda d: [sec.__setitem__("tab", "Now") for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_too_long", "board", both(board_tabs, put(["tabs", 0, "key"], "n" * 21),
+                                      lambda d: [sec.__setitem__("tab", "n" * 21) for sec in d["sections"][:3]]),
+     [("E-N1", "tabs[0].key")], False),
+    ("n1_key_duplicate", "board", both(board_tabs, put(["tabs", 1, "key"], "now"), put(["sections", 3, "tab"], "now")),
+     [("E-N1", "tabs[1].key")], False),
+    ("n1_label_empty", "board", both(board_tabs, put(["tabs", 0, "label"], "")), [("E-N1", "tabs[0].label")], False),
+    ("n1_row_blank", "board", both(board_tabs, put(["tabs", 0, "row"], " ")), [("E-N1", "tabs[0].row")], False),
+    ("f3_tabs_object", "board", both(board_tabs, put(["tabs"], {})), [("E-F3", "tabs")], False),
+    ("f2_tab_unknown_field", "board", both(board_tabs, put(["tabs", 0, "name"], "x")), [("E-F2", "tabs[0].name")], False),
+    ("f3_tab_missing_label", "board", both(board_tabs, drop(["tabs", 0, "label"])), [("E-F3", "tabs[0].label")], False),
+    ("f3_section_tab_number", "board", both(board_tabs, put(["sections", 3, "tab"], 3)),
+     [("E-F3", "sections[3].tab"), ("E-N3", "tabs[1]")], False),
+    ("f2_group_table_tab", "bundle", put(GROUP0 + ["tables", 0, "tab"], "x"), [("E-F2", "sections[0].groups[0].tables[0].tab")], False),
+    # E-N2 段
+    ("n2_row_mixed", "board", both(board_tabs, drop(["tabs", 1, "row"])), [("E-N2", "tabs[1].row")], False),
+    ("n2_row_apart", "board", both(board_tabs, put(["tabs", 2, "row"], "判断")), [("E-N2", "tabs[2].row")], False),
+    ("n2_seven_in_a_row", "table", many_tabs(7, "段"), [("E-N2", "tabs[6].row")], False),
+    ("n2_seven_without_rows", "table", many_tabs(7), [("E-N2", "tabs")], False),
+    # E-N3 タブと中身の対応（データの側）
+    ("n3_section_without_tab", "board", both(board_tabs, drop(["sections", 4, "tab"])),
+     [("E-N3", "sections[4]"), ("E-N3", "tabs[2]")], False),
+    ("n3_tab_not_defined", "board", both(board_tabs, put(["sections", 4, "tab"], "other")),
+     [("E-N3", "sections[4].tab"), ("E-N3", "tabs[2]")], False),
+    ("n3_tab_without_tabs", "decide", put(["sections", 0, "tab"], "ask"), [("E-N3", "sections[0].tab")], False),
+    ("n3_sections_apart", "board", both(board_tabs, put(["sections", 4, "tab"], "now"), lambda d: d["tabs"].pop()),
+     [("E-N3", "sections[4].tab")], False),
+    ("n3_order_differs", "board", both(board_tabs, put(["sections", 3, "tab"], "values"), put(["sections", 4, "tab"], "done")),
+     [("E-N3", "sections[4].tab")], False),
+    ("n3_select_table_in_another_tab", "board", both(board_tabs, put(["sections", 2, "tab"], "done")),
+     [("E-N3", "sections[2].tab")], False),
+    ("n3_body_panels_need_body", "grasp", map_tabs, [("E-N3", "tabs[0]"), ("E-N3", "tabs[1]")], True),
+    # E-N3 本文の側と、E-N4 本文の id
+    ("n3_body_panel_is_p", "grasp", map_tabs, [("E-N3", "--body")],
+     MAP_BODY.replace('<div class="hp-tabpanel" id="notes"><p>閉じ忘れた段落<p id="memo">2つ目</div>',
+                      '<p class="hp-tabpanel" id="notes">段落</p>')),
+    ("n3_body_panel_without_tabs", "grasp", lambda d: None, [("E-N3", "--body")], MAP_BODY),
+    ("n4_body_id_starts_with_hp", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="hp-tab-flow"')),
+    ("n4_body_id_is_a_tab_key", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="flow"')),
+    ("n4_body_id_twice", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace("<br>", '<br id="memo">')),
+    # E-K2 タブを置けない種別・束の部品はタブごとに1つまで
+    ("k2_tabs_on_confirm", "confirm", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_tabs_on_pick", "pick", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_tabs_on_review", "review", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
+    ("k2_two_bundles_in_one_tab", "bundle", both(bundle_tabs, put(["sections", 1, "tab"], "pdf")),
+     [("E-K2", "sections[1]"), ("E-N3", "tabs[1]")], False),
+    ("k1_bundle_without_tabs_still_one_part", "bundle", both(bundle_tabs, drop(["tabs"]), drop(["sections", 0, "tab"]),
+                                                            drop(["sections", 1, "tab"])),
+     [("E-K2", "sections[1]")], False),
 ]
 
 
 class ExamplesPass(unittest.TestCase):
     def test_examples_have_no_errors(self):
         for name, has_body in (("decide", False), ("bundle", False), ("review", False), ("grasp", True), ("table", False),
-                               ("confirm", False), ("pick", False), ("board", False), ("approve", False)):
+                               ("confirm", False), ("pick", False), ("board", False), ("approve", False), ("board-tabs", False)):
             with self.subTest(example=name):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
+        # 本文のタブの見本は、本文の文字列を渡して見る（本文のパネルがタブの中身になる）
+        self.assertEqual(build.validate(example("map-tabs"), body=example_body("map-tabs-body.html")), [])
 
     def test_every_kind_has_an_example(self):
         kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board", "approve")}
@@ -669,7 +784,8 @@ def _make_broken_test(base, mutate, expected, has_body):
     def test(self):
         d = copy.deepcopy(example(base))
         mutate(d)
-        got = sorted((code, path) for code, path, _ in build.validate(d, has_body=has_body))
+        body = has_body if isinstance(has_body, str) else None
+        got = sorted((code, path) for code, path, _ in build.validate(d, has_body=bool(has_body), body=body))
         self.assertEqual(got, sorted(expected))
     return test
 
@@ -682,7 +798,7 @@ class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
                  "E-C5", "E-C6", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
-                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7"}
+                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7", "E-N1", "E-N2", "E-N3", "E-N4"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
 
@@ -786,6 +902,252 @@ class EmptyBoard(unittest.TestCase):
         self.assertFalse(any(c.get("type") == "no" for c in d["sections"][0]["columns"]))
         self.assertEqual(build.validate(d), [])
         self.assertNotIn("<script", render_page("board", drop_all_but_values))
+
+
+class TabsCheck(unittest.TestCase):
+    """タブ（#558）の検証。正しい形が通ることと、同じ原因の誤りを重ねて出さないこと。
+    1か所を壊したときの誤りは BROKEN の n1_〜n4_・k2_tabs_ にある。"""
+
+    def errors(self, base, mutate, body=None, has_body=False):
+        d = copy.deepcopy(example(base))
+        mutate(d)
+        return build.validate(d, has_body=has_body, body=body)
+
+    def codes(self, base, mutate, body=None, has_body=False):
+        return sorted((code, path) for code, path, _ in self.errors(base, mutate, body, has_body))
+
+    def test_correct_forms_pass(self):
+        cases = [
+            ("判断ボードを段のある3つのタブに分ける", "board", board_tabs, None),
+            ("承認を2つのタブに分ける", "decide", decide_tabs, None),
+            ("束の部品をタブごとに1つ置く", "bundle", bundle_tabs, None),
+            ("本文のパネル2つとデータの表のタブ1つを混ぜる", "grasp", map_tabs, MAP_BODY),
+            ("段に分けずに6つ", "table", many_tabs(6), None),
+            ("段1つに6つと、次の段に1つ", "table", both(many_tabs(7, "段"), put(["tabs", 6, "row"], "次")), None),
+            ("本文だけのタブ（部品は空）", "grasp", both(map_tabs, lambda d: d["tabs"].pop(), put(["sections"], [])), MAP_BODY),
+            ("閉じ忘れた p・余分な終わりの印・空の要素の />・コメント", "grasp", map_tabs,
+             MAP_BODY.replace("</section>", "<br/><img alt=\"\"></section></div></span><!-- x -->")),
+            ("textarea と title の中の文字（要素の形でも、パネルにも id にも数えない）", "grasp", map_tabs,
+             MAP_BODY.replace("<p>本文<br>改行</p>", '<textarea><section class="hp-tabpanel" id="x"><b id="hp-store">例</b></section></textarea>'
+                                                 '<p><b>題</b></p>')),
+            ("template の中（文書に入らない）", "grasp", map_tabs,
+             MAP_BODY.replace("<p>本文<br>改行</p>", '<template><section class="hp-tabpanel" id="x"><p id="hp-y">雛形</p></section></template>')),
+        ]
+        for name, base, mutate, body in cases:
+            with self.subTest(case=name):
+                self.assertEqual(self.errors(base, mutate, body, body is not None), [])
+
+    def test_empty_tabs_is_reported_once(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs"], []))), [("E-N1", "tabs")])
+
+    def test_label_error_keeps_the_tab_resolvable(self):
+        # label や row の誤りではタブを引けなくしない（部品の tab に「定義に無い」を重ねない）
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs", 1, "label"], ""), put(["tabs", 2, "row"], ""))),
+                         [("E-N1", "tabs[1].label"), ("E-N1", "tabs[2].row")])
+
+    def test_kind_without_tabs_reports_only_k2(self):
+        # 置けない種別では E-K2 だけを出し、部品の tab や中身の対応は見ない
+        mutate = both(put(["tabs"], copy.deepcopy(BOARD_TABS)), put(["sections", 0, "tab"], "zzz"))
+        self.assertEqual(self.codes("confirm", mutate), [("E-K2", "tabs")])
+
+    def test_unreadable_tabs_reports_only_the_type(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["tabs"], "now"))), [("E-F3", "tabs")])
+
+    def test_unknown_kind_still_checks_tabs(self):
+        self.assertEqual(self.codes("board", both(board_tabs, put(["kind"], "decide"), put(["tabs", 0, "label"], ""))),
+                         [("E-H3", "kind"), ("E-N1", "tabs[0].label")])
+
+    def test_body_problems_are_reported_once_per_cause(self):
+        cases = [
+            ("/> で閉じたパネル（後ろの中身はブラウザと同じくパネルの中）", MAP_BODY.replace(
+                '<section class="hp-tabpanel" id="flow">', '<section class="hp-tabpanel" id="flow"/>'), 1, []),
+            ("閉じ忘れたパネル（次のパネルが中に入る）", MAP_BODY.replace("</section>", ""), 1, []),
+            ("パネルの外の文字", MAP_BODY + "はみ出た文", 1, []),
+            ("パネルの外の要素", MAP_BODY + "<p>外</p>", 1, []),
+            ("同じ属性が2回（その要素はパネルとして数えない）", MAP_BODY.replace(
+                '<section class="hp-tabpanel" id="flow">', '<section class="x" class="hp-tabpanel" id="flow">'), 1,
+             [("E-N3", "tabs[0]")]),
+            ("id の無いパネル", MAP_BODY.replace('<div class="hp-tabpanel" id="notes">', '<div class="hp-tabpanel">'), 1,
+             [("E-N3", "tabs[1]")]),
+            ("定義に無いパネル", MAP_BODY.replace('id="notes"', 'id="other"'), 1, [("E-N3", "tabs[1]")]),
+            ("同じパネルが2つ", MAP_BODY + '<section class="hp-tabpanel" id="flow">2つ目</section>', 1, []),
+        ]
+        # textarea の中はブラウザでは文字なので、パネルにも id にも数えない（実装SO の指摘2）。flow のパネルの中の textarea が
+        # notes のパネルを文字として飲み込む形では、notes のパネルはブラウザの文書に無いので、中身の無いタブとして止まる
+        swallowed = MAP_BODY.replace('</section>\n<div class="hp-tabpanel" id="notes">', '<textarea></section>\n<div class="hp-tabpanel" id="notes">')
+        swallowed = swallowed.replace("2つ目</div>\n", "2つ目</div></textarea></section>\n")
+        self.assertEqual(self.codes("grasp", map_tabs, swallowed, True), [("E-N3", "tabs[1]")])
+        cases += [
+            # SVG の中の title は文字の要素ではないので、中の p#flow は実在する id として数える（Copilot の指摘）
+            ("SVG の中の title の中の id", MAP_BODY.replace("<p>本文<br>改行</p>", '<svg><title><p id="flow">名前</p></title></svg>'), 0,
+             [("E-N4", "--body")]),
+            # 本文の終わりで閉じていないパネルは、本文のあとに描くデータの部品のパネルを中に入れてしまう（Copilot の指摘）
+            ("閉じていない最後のパネル", MAP_BODY.replace("2つ目</div>\n", "2つ目\n"), 1, []),
+            ("閉じていない style（本文の残りがすべて CSS になる）", MAP_BODY.replace("</style>", ""), 1,
+             [("E-N3", "tabs[0]"), ("E-N3", "tabs[1]")]),
+        ]
+        for name, body, n_body, more in cases:
+            with self.subTest(case=name):
+                got = self.codes("grasp", map_tabs, body, True)
+                self.assertEqual(got, sorted([("E-N3", "--body")] * n_body + more))
+
+    def test_body_and_data_in_one_tab_and_order(self):
+        both_in_one = both(map_tabs, lambda d: d["sections"][0].__setitem__("tab", "flow"), lambda d: d["tabs"].pop())
+        self.assertEqual(self.codes("grasp", both_in_one, MAP_BODY, True), [("E-N3", "tabs[0]")])
+        data_first = both(map_tabs, lambda d: d.__setitem__("tabs", [d["tabs"][2], d["tabs"][0], d["tabs"][1]]))
+        self.assertEqual(self.codes("grasp", data_first, MAP_BODY, True), [("E-N3", "sections[0].tab")])
+
+    def test_bundle_without_tabs_keeps_one_part(self):
+        # タブの無い束のページは、今までどおり束の部品を1つにする
+        self.assertEqual(self.codes("bundle", lambda d: d["sections"].append(copy.deepcopy(BUNDLE_SEC))),
+                         [("E-K2", "sections[1]")])
+
+    def test_check_answers_and_build_stop_on_the_same_body(self):
+        # 同じ崩れた本文が、check・check --answers・build で同じ誤りで止まる（本文は3つの経路のすべてで渡る）
+        tmp = tempfile.mkdtemp()
+        d = copy.deepcopy(example("grasp"))
+        map_tabs(d)
+        data, body, answers = (os.path.join(tmp, n) for n in ("page.json", "body.html", "answers.json"))
+        with open(data, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        with open(body, "w", encoding="utf-8") as f:
+            f.write(MAP_BODY.replace('id="memo"', 'id="hp-store"'))
+        with open(answers, "w", encoding="utf-8") as f:
+            f.write("{}")
+        outs = []
+        for args in (("check", data, "--body", body), ("check", data, "--body", body, "--answers", answers),
+                     ("build", data, "--body", body, "-o", os.path.join(tmp, "out.html"), "--tmux", "off")):
+            code, _, err = run_cli(*args)
+            outs.append((code, [line for line in err.splitlines() if line.startswith("E-")]))
+        self.assertEqual(outs[0][0], 1)
+        self.assertEqual(len(outs[0][1]), 1)
+        self.assertIn("E-N4 --body:", outs[0][1][0])
+        self.assertEqual(outs[1], outs[0])
+        self.assertEqual(outs[2], outs[0])
+        self.assertFalse(os.path.exists(os.path.join(tmp, "out.html")))
+
+
+def tabs_data(fragment):
+    m = re.search(r'<script type="application/json" id="hp-tabs-data">(.*?)</script>', fragment, re.S)
+    return json.loads(html.unescape(m.group(1))) if m else None
+
+
+class TabsRender(unittest.TestCase):
+    """タブ（#558）の描画。帯は上に貼り付く箱の中・パネルは部品を包む・件数・埋め込みのデータ・JS の入れ方。"""
+
+    def labels(self):
+        return build.load_glossary(build.DEFAULT_GLOSSARY)
+
+    def test_bar_has_rows_and_links(self):
+        f = render_page("board", board_tabs)
+        nav = re.search(r'<nav class="hp-tabbar" id="hp-tabbar" aria-label="([^"]*)">(.*?)</nav>', f, re.S)
+        self.assertEqual(html.unescape(nav.group(1)), self.labels()["text.tabs"])
+        self.assertEqual(re.findall(r'<span class="hp-tabrow-name" id="(hp-tabrow-\d+)">([^<]*)</span>', nav.group(2)),
+                         [("hp-tabrow-0", "判断"), ("hp-tabrow-1", "記録")])
+        self.assertEqual(re.findall(r'<a class="hp-tab" id="hp-tab-(\w+)" href="#(\w+)">', nav.group(2)),
+                         [("now", "now"), ("done", "done"), ("values", "values")])
+        # 帯は、答える部品の帯（全部推奨どおりの案内と保存の状態）と同じ貼り付く箱の中にある
+        bar = re.search(r'<div class="hp-bar">(.*?)</div>\n<main', f, re.S).group(1)
+        self.assertIn('class="hp-allrec"', bar)
+        self.assertIn('id="hp-store"', bar)
+        self.assertIn('id="hp-tabbar"', bar)
+
+    def test_rows_are_omitted_when_tabs_have_no_row(self):
+        f = render_page("decide", decide_tabs)
+        self.assertNotIn('class="hp-tabrow-name"', f)
+        self.assertEqual(f.count('<div class="hp-tabrow">'), 1)
+        self.assertEqual(tabs_data(f), {"tabs": [{"key": "ask", "row": None}, {"key": "notes", "row": None}]})
+
+    def test_panels_wrap_the_sections_of_each_tab_in_order(self):
+        main = main_of(render_page("board", board_tabs))
+        found = re.findall(r'<section class="hp-tabpanel" id="(\w+)">|<section class="hp-sec (hp-\w+)"|(</section>\n?)', main)
+        opened = [k for k, _, _ in found if k]
+        self.assertEqual(opened, ["now", "done", "values"])
+        # パネルの中の部品の数（判定カードの節2つ・選ぶ表）・（決まったこと）・（もらう値）
+        panels = re.split(r'<section class="hp-tabpanel" id="\w+">', main)[1:]
+        self.assertEqual([p.count('<section class="hp-sec ') for p in panels], [3, 1, 1])
+
+    def test_same_title_is_marked_only_for_the_first_section(self):
+        d = copy.deepcopy(example("board"))
+        board_tabs(d)
+        d["tabs"][0]["label"] = d["sections"][0]["title"]
+        d["tabs"][1]["label"] = " " + d["sections"][3]["title"] + " "
+        f = render_page("board", lambda x: x.update(copy.deepcopy(d)))
+        same = re.findall(r'<h2 class="hp-sec-title hp-tab-same">([^<]*)</h2>', f)
+        self.assertEqual(same, [d["sections"][0]["title"], d["sections"][3]["title"]])
+        # 2つ目の部品の題は、タブの名前と同じでも印を付けない（印はタブの中の最初の部品だけ）
+        d["sections"][1]["title"] = d["tabs"][0]["label"]
+        f = render_page("board", lambda x: x.update(copy.deepcopy(d)))
+        self.assertEqual(f.count('class="hp-sec-title hp-tab-same"'), 2)
+
+    def test_counts_are_shown_on_tabs_with_cards_until_answered(self):
+        awaiting = self.labels()["status.awaiting"]
+        f = render_page("board", board_tabs)
+        self.assertEqual(re.findall(r'<span class="hp-tab-n" id="hp-tab-(\w+)\.n">([^<]*)</span>', f),
+                         [("now", awaiting.replace("{n}", "4"))])
+        f = render_page("decide", decide_tabs)
+        self.assertEqual(re.findall(r'id="hp-tab-(\w+)\.n"', f), ["ask"])
+        answered = both(decide_tabs, put(["status"], "answered"), put(["answers"], {
+            "retry_policy": {"choice": "go", "note": "", "at": "2026-10-19T09:00:00Z"}}))
+        f = render_page("decide", answered)
+        self.assertNotIn('class="hp-tab-n"', f)
+        # 回答済みのページは、貼り付かない知らせのあとに、帯だけを入れた貼り付く箱を置く
+        self.assertRegex(f, r'<p class="hp-notice">[^<]*</p>\n<div class="hp-bar"><nav class="hp-tabbar"')
+
+    def test_zero_count_is_hidden(self):
+        d = copy.deepcopy(example("decide"))
+        decide_tabs(d)
+        d["status"] = "answered"
+        d["answers"] = {k: {"choice": None, "note": "", "at": "2026-10-19T09:00:00Z"} for k in ("retry_policy",)}
+        bar = build.Renderer(d, self.labels(), build.parse_now(NOW), None, build.load_words(build.DEFAULT_GLOSSARY))
+        self.assertNotIn('class="hp-tab-n"', bar.tab_bar())
+        d["status"] = "live"
+        del d["answers"]
+        r = build.Renderer(d, self.labels(), build.parse_now(NOW), None, build.load_words(build.DEFAULT_GLOSSARY))
+        r.answers = {k: {"choice": "go"} for k in ("retry_policy", "alert_rule", "rollout")}
+        self.assertIn('id="hp-tab-ask.n" hidden>', r.tab_bar())
+
+    def test_reading_page_gets_only_the_tab_script(self):
+        f = render_page("grasp", map_tabs, body=MAP_BODY)
+        with open(build.TABS_JS, encoding="utf-8") as fh:
+            js = fh.read().rstrip("\n")
+        self.assertEqual(f.count("<script"), 2)
+        self.assertIn("<script>\n%s\n</script>" % js, f)
+        self.assertNotIn('id="hp-data"', f)
+        self.assertNotIn("claude.use", f)
+        # 答える部品の無いページでも、帯だけを入れた貼り付く箱を置く
+        self.assertRegex(f, r'</header>\n<div class="hp-bar"><nav class="hp-tabbar"')
+        self.assertEqual(tabs_data(f), {"tabs": [{"key": k, "row": None} for k in ("flow", "notes", "ops")]})
+
+    def test_body_is_kept_as_written_and_data_panels_follow(self):
+        main = main_of(render_page("grasp", map_tabs, body=MAP_BODY))
+        self.assertTrue(main.startswith("\n" + MAP_BODY.rstrip("\n")))
+        self.assertIn('<section class="hp-tabpanel" id="ops">', main[len(MAP_BODY):])
+
+    def test_answer_pages_pass_tab_cards_to_the_save_code(self):
+        f = render_page("board", board_tabs)
+        self.assertEqual(f.count("<script"), 4)
+        self.assertEqual(json.loads(html.unescape(embedded(f)))["tabs"],
+                         [{"key": "now", "keys": ["rollback_window", "notify_users", "on_call", "trial_shops_pick"]}])
+        self.assertEqual(tabs_data(f)["tabs"], [{"key": "now", "row": 0}, {"key": "done", "row": 1}, {"key": "values", "row": 1}])
+        # タブの無いページの埋め込みのデータには tabs を足さない
+        self.assertNotIn("tabs", json.loads(html.unescape(embedded(render_page("board")))))
+        self.assertIsNone(tabs_data(render_page("board")))
+
+    def test_bundle_parts_in_tabs(self):
+        f = render_page("bundle", bundle_tabs)
+        main = main_of(f)
+        self.assertEqual(re.findall(r'<section class="hp-tabpanel" id="(\w+)">', main), ["pdf", "login"])
+        self.assertEqual(re.findall(r'id="hp-group-(\d+)"', main), ["0", "1"])
+        self.assertEqual(json.loads(html.unescape(embedded(f)))["tabs"],
+                         [{"key": "pdf", "keys": ["pdf_engine", "pdf_font"]}, {"key": "login", "keys": ["login_fix"]}])
+
+    def test_ids_are_unique_on_tab_pages(self):
+        for name, mutate, body in (("board", board_tabs, None), ("decide", decide_tabs, None), ("bundle", bundle_tabs, None),
+                                   ("grasp", map_tabs, MAP_BODY)):
+            with self.subTest(page=name):
+                ids = re.findall(r'\bid="([^"]*)"', render_page(name, mutate, body=body))
+                self.assertEqual(len(ids), len(set(ids)), [i for i in ids if ids.count(i) > 1])
 
 
 class CollectedAnswers(unittest.TestCase):
@@ -1516,7 +1878,7 @@ class Contract(unittest.TestCase):
     """artifact の決まり（page contract）と、2つの出力の形。"""
 
     PAGES = (("decide", None), ("bundle", None), ("review", None), ("grasp", "grasp-body.html"), ("table", None), ("confirm", None),
-             ("pick", None), ("board", None), ("approve", None))
+             ("pick", None), ("board", None), ("approve", None), ("map-tabs", "map-tabs-body.html"), ("board-tabs", None))
 
     def pages(self):
         for name, body_file in self.PAGES:
@@ -1605,7 +1967,7 @@ def main_of(fragment):
 
 # 部品が描く要素のうち、本文の素の要素の規則に当たりうるもの
 BARE_TAGS = ("section", "h2", "h3", "p", "ul", "ol", "table", "pre")
-GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board", "approve")
+GENERATED_PAGES = ("decide", "bundle", "review", "table", "confirm", "pick", "board", "approve", "board-tabs")
 
 
 class BodyLooks(unittest.TestCase):
@@ -1662,6 +2024,10 @@ class SkillMdExamples(unittest.TestCase):
                 if "via" in obj:
                     d = example("review")
                     d["request"] = obj
+                elif "tabs" in obj:
+                    # タブの定義の例は、タブで分けた判断ボードの見本の tabs に入れる（部品の tab は見本のとおり）
+                    d = example("board-tabs")
+                    d["tabs"] = obj["tabs"]
                 elif "type" in obj:
                     d = example("table")
                     d["sections"] = [obj]
@@ -1868,7 +2234,7 @@ class ElementIds(unittest.TestCase):
 
     def test_ids_are_unique_in_every_example(self):
         for name, body in (("decide", None), ("bundle", None), ("review", None), ("table", None), ("confirm", None), ("pick", None),
-                           ("board", None), ("approve", None)):
+                           ("board", None), ("approve", None), ("board-tabs", None), ("map-tabs", example_body("map-tabs-body.html"))):
             with self.subTest(page=name):
                 ids = self.ids(render_page(name, body=body))
                 self.assertEqual(len(ids), len(set(ids)))
@@ -2176,6 +2542,24 @@ class PageScript(unittest.TestCase):
         self.assertEqual(out["ans"], "答え: 冪等キーを付けて3回までにする")
         self.assertEqual(out["ans_alert"], "答え: 毎回通知する")
 
+    def test_tab_counts_follow_the_answers(self):
+        # タブの名前の横の件数（#558）。隠れたタブのカードに保存先から答えが届く・choice が null に戻る・0件で隠れる
+        state = """
+          const n = els["hp-tab-now.n"];
+          return [n.textContent, n.hidden];
+        """
+        keys = ("rollback_window", "notify_users", "on_call", "trial_shops_pick")
+        opts = ("week", "three", "two", "chosen")
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); const a = (function () {" + state + "})();"
+                            "deliver({docs: [%s]}); await tick(); const b = (function () {" % ", ".join(
+                                self.doc(k, o) for k, o in zip(keys, opts)) + state + "})();"
+                            "deliver({docs: [%s]}); await tick(); const c = (function () {" % self.doc(keys[0], "x").replace('"x"', "null") + state + "})();"
+                            "return [a, b, c];", name="board", mutate=board_tabs)
+        awaiting = self.labels()["status.awaiting"]
+        self.assertEqual(out, [[awaiting.replace("{n}", "4"), False], [awaiting.replace("{n}", "0"), True],
+                               [awaiting.replace("{n}", "1"), False]])
+
     def test_cards_touched_before_the_first_answer_stay_open(self):
         out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
                             "els['hp-opt-retry_policy.fix'].fire('click');"
@@ -2248,6 +2632,332 @@ class PageScript(unittest.TestCase):
                             "const b = els['hp-pick-pick_tool--2']; b.checked = true; b.fire('change'); await tick();"
                             "return { writes: log.writes };", name="decide", mutate=with_pick)
         self.assertEqual(sorted(set(out["writes"])), ['pick_tool "ok"', 'pick_tool--2 "pick"', 'retry_policy "go"'])
+
+
+class _Tree(html.parser.HTMLParser):
+    """描いた断片の要素を、id の有無にかかわらずすべて集め、親の位置と属性を残す（tabs.js の台に渡す）。
+    終わりの印は、同じ名前の開いた要素まで戻る形で読む。"""
+
+    VOID = _Elements.VOID
+
+    def __init__(self):
+        super().__init__()
+        self.nodes = []
+        self.stack = []
+
+    def handle_starttag(self, tag, attrs):
+        self.nodes.append({"tag": tag, "attrs": {k: (v if v is not None else "") for k, v in attrs},
+                           "parent": self.stack[-1] if self.stack else -1})
+        if tag not in self.VOID:
+            self.stack.append(len(self.nodes) - 1)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.stack.pop()
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.nodes[self.stack[i]]["tag"] == tag:
+                del self.stack[i:]
+                break
+
+
+# tabs.js を node で走らせる台。document は getElementById と click の取り込みだけを持つ偽物で、要素は描いた断片の
+# すべての要素から作り、親（parentNode）をつなぐ。window は location・history・hashchange・scrollBy を持つ。
+# 要素の位置（getBoundingClientRect）は、既定では帯が上（下端 120）・ほかは帯の下（上端 200）で、検査ごとに rects で変えられる。
+TABS_DRIVER = r"""
+const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const log = { replace: [], scrolled: [], focused: [], blurred: [], prevented: 0, navigated: [], scrollBy: [] };
+global.rects = {};
+const nodes = input.nodes.map(function (n, i) {
+  return { _i: i, tagName: n.tag.toUpperCase(), attrs: Object.assign({}, n.attrs), parentNode: null, hidden: "hidden" in n.attrs,
+    handlers: {}, scrollLeft: 0, offsetHeight: 0, textContent: "",
+    style: { props: {}, setProperty(k, v) { this.props[k] = v; } },
+    get id() { return this.attrs.id || ""; },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
+    focus() { log.focused.push(this.id); },
+    blur() { log.blurred.push(this.id); if (document.activeElement === this) { document.activeElement = null; } },
+    scrollIntoView() { log.scrolled.push(this.id); },
+    getBoundingClientRect() {
+      const key = this.id || ("#" + this._i);
+      return rects[key] || (this === box ? { top: 0, bottom: 120, left: 0, right: 1000 } : { top: 200, bottom: 300, left: 0, right: 10 });
+    } };
+});
+input.nodes.forEach(function (n, i) { if (n.parent >= 0) { nodes[i].parentNode = nodes[n.parent]; } });
+const byId = {};
+nodes.forEach(function (n) { if (n.id && !byId[n.id]) { byId[n.id] = n; } });
+byId["hp-tabs-data"].textContent = input.data;
+const box = byId["hp-tabbar"].parentNode;
+box.offsetHeight = 150;
+const docHandlers = {};
+const winHandlers = {};
+global.window = global;
+global.document = { getElementById: function (id) { return byId[id] || null; }, activeElement: null,
+  addEventListener: function (t, f, capture) { (docHandlers[t] = docHandlers[t] || []).push([f, !!capture]); } };
+global.location = { hash: input.hash || "" };
+global.failReplace = false;
+global.history = { replaceState: function (s, t, u) { if (failReplace) { throw new Error("no"); } log.replace.push(u); location.hash = u; } };
+global.addEventListener = function (t, f) { (winHandlers[t] = winHandlers[t] || []).push(f); };
+global.scrollBy = function (x, y) { log.scrollBy.push(y); };
+function fireHash() { (winHandlers.hashchange || []).forEach(function (f) { f({}); }); }
+function fireLoad() { (winHandlers.load || []).forEach(function (f) { f({}); }); }
+// 押す: 取り込みの段階の処理を回し、止められていなければ、ブラウザの既定の移動（# の書き換えと hashchange）をまねる。
+// 修飾キー付きの押し方・別の画面で開くリンク（target）・保存のリンク（download）は、いまのページを動かさない（別の画面へ行く）。
+function click(id, more) {
+  const el = byId[id];
+  const e = Object.assign({ target: el, button: 0, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; log.prevented += 1; } }, more || {});
+  (docHandlers.click || []).forEach(function (h) { if (h[1]) { h[0](e); } });
+  const href = el.getAttribute("href");
+  const t = el.getAttribute("target");
+  const elsewhere = e.metaKey || e.ctrlKey || e.shiftKey || (t && t !== "_self") || el.getAttribute("download") !== null;
+  if (!e.defaultPrevented && href && href.charAt(0) === "#") {
+    if (elsewhere) { log.navigated.push("elsewhere " + href); return; }
+    log.navigated.push(href);
+    if (location.hash !== href) { location.hash = href; fireHash(); }
+  }
+}
+function key(id, k) {
+  const e = { key: k, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; log.prevented += 1; } };
+  (byId[id].handlers.keydown || []).forEach(function (f) { f(e); });
+  return e.defaultPrevented;
+}
+function hashTo(h) { location.hash = h; fireHash(); }
+function state() {
+  const out = { selected: [], visible: [] };
+  input.keys.forEach(function (k) {
+    if (byId["hp-tab-" + k].getAttribute("aria-selected") === "true") { out.selected.push(k); }
+    if (!byId[k].hidden) { out.visible.push(k); }
+  });
+  out.hash = location.hash;
+  return out;
+}
+(async function () {
+  eval(input.setup);
+  eval(input.js);
+  const out = await (new (Object.getPrototypeOf(async function () {}).constructor)(
+    "byId", "log", "click", "key", "hashTo", "state", "box", "fireLoad", input.after))(byId, log, click, key, hashTo, state, box, fireLoad);
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+})().catch(function (e) { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node が無い環境では tabs.js の振る舞いを確かめない")
+class TabsScript(unittest.TestCase):
+    """tabs.js の振る舞い（#558）。判断ボードの見本を3つのタブ（now・done・values）に分けたページで、
+    now のタブの本文の Q2 が、隠れた done のタブの表の行（hp-row-3-1）を指す。"""
+
+    def run_tabs(self, after, setup="", hash="", name="board", mutate=board_tabs, body=None):
+        f = render_page(name, mutate, body=body)
+        tree = _Tree()
+        tree.feed(f)
+        with open(build.TABS_JS, encoding="utf-8") as fh:
+            js = fh.read()
+        data = tabs_data(f)
+        payload = {"nodes": tree.nodes, "data": json.dumps(data), "js": js, "setup": setup, "after": after, "hash": hash,
+                   "keys": [t["key"] for t in data["tabs"]]}
+        p = subprocess.run(["node", "-e", TABS_DRIVER], input=json.dumps(payload), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, encoding="utf-8", timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_marks_and_first_tab(self):
+        out = self.run_tabs("""
+          const a = byId["hp-tab-now"], p = byId["now"];
+          return { s: state(), on: byId["hp-tabbar"].getAttribute("data-on"), role: byId["hp-tabset"].getAttribute("role"),
+                   label: byId["hp-tabset"].getAttribute("aria-label"),
+                   tab: [a.getAttribute("role"), a.getAttribute("aria-controls"), a.getAttribute("aria-describedby"), a.getAttribute("tabindex")],
+                   other: byId["hp-tab-done"].getAttribute("tabindex"), described: byId["hp-tab-values"].getAttribute("aria-describedby"),
+                   rowName: byId["hp-tabrow-0"].getAttribute("aria-hidden"), rowRole: a.parentNode.parentNode.getAttribute("role"),
+                   panel: [p.getAttribute("role"), p.getAttribute("aria-labelledby"), p.getAttribute("tabindex")],
+                   barH: box.parentNode.style.props["--hp-bar-h"], replaced: log.replace };
+        """)
+        self.assertEqual(out["s"], {"selected": ["now"], "visible": ["now"], "hash": ""})
+        self.assertEqual((out["on"], out["role"], out["label"]), ("", "tablist", build.load_glossary(build.DEFAULT_GLOSSARY)["text.tabs"]))
+        self.assertEqual(out["tab"], ["tab", "now", "hp-tabrow-0", "0"])
+        self.assertEqual((out["other"], out["described"], out["rowName"], out["rowRole"]), ("-1", "hp-tabrow-1", "true", "none"))
+        self.assertEqual(out["panel"], ["tabpanel", "hp-tab-now", "0"])
+        self.assertEqual(out["barH"], "150px")
+        self.assertEqual(out["replaced"], [])
+
+    def test_opening_with_a_tab_key_or_an_element_in_a_hidden_tab(self):
+        # タブの key でも、切り替えてからそのパネルへ移る（隠れていたパネルへはブラウザが移れないため・実装SO の指摘3）
+        out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#values")
+        self.assertEqual(out, {"s": {"selected": ["values"], "visible": ["values"], "hash": "#values"}, "scrolled": ["values"]})
+        out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#hp-row-3-1")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"}, "scrolled": ["hp-row-3-1"]})
+        out = self.run_tabs("return state();", hash="#no-such-id")
+        self.assertEqual(out["selected"], ["now"])
+
+    def test_clicking_a_tab_selects_it_and_replaces_the_hash(self):
+        out = self.run_tabs("""
+          click("hp-tab-done");
+          return { s: state(), replaced: log.replace, prevented: log.prevented, navigated: log.navigated, scrolled: log.scrolled };
+        """)
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#done"}, "replaced": ["#done"],
+                               "prevented": 1, "navigated": [], "scrolled": []})
+
+    def test_clicking_a_tab_while_the_bar_is_stuck_brings_the_panel_under_the_bar(self):
+        out = self.run_tabs("""
+          rects["done"] = { top: -500, bottom: 300, left: 0, right: 10 };
+          click("hp-tab-done");
+          return log.scrolled;
+        """)
+        self.assertEqual(out, ["done"])
+
+    def test_link_to_a_hidden_tab_switches_before_the_browser_moves(self):
+        out = self.run_tabs("""
+          // now のタブの中の Q2 のリンク（href="#hp-row-3-1"）を押す
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          click("__link");
+          return { s: state(), prevented: log.prevented, navigated: log.navigated, replaced: log.replace };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"}, "prevented": 0,
+                               "navigated": ["#hp-row-3-1"], "replaced": []})
+
+    def test_same_hash_again_after_replace_fails(self):
+        # replaceState が投げて # がカードを指したまま残り、別のタブを選んだあとに同じリンクを押す（hashchange が出ない）
+        out = self.run_tabs("""
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          const first = state().selected;
+          click("hp-tab-now");
+          const mid = state();
+          click("__link");
+          return { first: first, mid: mid, last: state(), navigated: log.navigated };
+        """, setup="global.allNodes = nodes; global.failReplace = true;", hash="#hp-row-3-1")
+        self.assertEqual(out["first"], ["done"])
+        self.assertEqual(out["mid"], {"selected": ["now"], "visible": ["now"], "hash": "#hp-row-3-1"})
+        self.assertEqual(out["last"], {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"})
+        self.assertEqual(out["navigated"], ["#hp-row-3-1"])
+
+    def test_content_links_move_focus_to_the_destination_panel(self):
+        # 本文の中のリンクで別のタブへ切り替えると、押したリンクは隠れる。フォーカスを移った先のパネルへ移す（Copilot の指摘）
+        find = """
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+        """
+        out = self.run_tabs(find + """
+          el.setAttribute("href", "#done");
+          click("__link");
+          return { s: state(), focused: log.focused, prevented: log.prevented, replaced: log.replace };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#done"}, "focused": ["done"], "prevented": 1,
+                               "replaced": ["#done"]})
+        out = self.run_tabs(find + """
+          click("__link");
+          return { s: state().selected, focused: log.focused, navigated: log.navigated };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": ["done"], "focused": ["done"], "navigated": ["#hp-row-3-1"]})
+        # 帯のタブを押したときは、フォーカスはタブのまま（パネルへ移さない）
+        out = self.run_tabs('click("hp-tab-done"); return log.focused;')
+        self.assertEqual(out, [])
+
+    def test_back_to_an_empty_hash_selects_the_first_tab(self):
+        # # の無いページで隠れたタブの行へのリンクを押し、戻るボタンで # の無い履歴へ戻ると、最初のタブに戻る（Copilot の指摘）
+        out = self.run_tabs("""
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          click("__link");
+          const moved = state();
+          hashTo("");
+          return { moved: moved.selected, back: state() };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"moved": ["done"], "back": {"selected": ["now"], "visible": ["now"], "hash": ""}})
+
+    def test_keys_move_across_rows_and_wrap(self):
+        out = self.run_tabs("""
+          const r = [];
+          key("hp-tab-now", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-done", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-values", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-now", "ArrowLeft"); r.push(state().selected[0]);
+          key("hp-tab-values", "Home"); r.push(state().selected[0]);
+          key("hp-tab-now", "End"); r.push(state().selected[0]);
+          key("hp-tab-done", " "); r.push(state().selected[0]);
+          const ignored = key("hp-tab-done", "ArrowDown");
+          return { r: r, focused: log.focused, replaced: log.replace, ignored: ignored };
+        """)
+        self.assertEqual(out["r"], ["done", "values", "now", "values", "now", "values", "done"])
+        self.assertEqual(out["focused"], ["hp-tab-done", "hp-tab-values", "hp-tab-now", "hp-tab-values", "hp-tab-now", "hp-tab-values", "hp-tab-done"])
+        self.assertEqual(out["replaced"][-1], "#done")
+        self.assertFalse(out["ignored"])
+
+    def test_hashchange_selects_the_tab(self):
+        out = self.run_tabs("""
+          hashTo("#values"); const a = state();
+          hashTo("#hp-row-2-1"); const b = state();
+          return { a: a.selected, b: b.selected, scrolled: log.scrolled };
+        """)
+        self.assertEqual(out, {"a": ["values"], "b": ["now"], "scrolled": ["values", "hp-row-2-1"]})
+
+    def test_modified_clicks_are_left_to_the_browser(self):
+        # 修飾キー付きの押し方は別の画面で開くので、いまのページのタブも # も変えない（実装SO の指摘5）
+        out = self.run_tabs("""
+          click("hp-tab-done", { metaKey: true });
+          return { s: state(), prevented: log.prevented, navigated: log.navigated };
+        """)
+        self.assertEqual(out, {"s": {"selected": ["now"], "visible": ["now"], "hash": ""}, "prevented": 0, "navigated": ["elsewhere #done"]})
+
+    def test_links_opening_elsewhere_are_left_to_the_browser(self):
+        # target で別の画面に開くリンクと download のリンクは、隠れたタブを指していても、いまのページを切り替えない（実装SO の指摘1）
+        for attr in ('setAttribute("target", "_blank")', 'setAttribute("download", "")'):
+            with self.subTest(attr=attr):
+                out = self.run_tabs("""
+                  let el = null;
+                  for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+                  el.%s;
+                  byId["__link"] = el;
+                  click("__link");
+                  return { s: state(), prevented: log.prevented, navigated: log.navigated };
+                """ % attr, setup="global.allNodes = nodes;")
+                self.assertEqual(out, {"s": {"selected": ["now"], "visible": ["now"], "hash": ""}, "prevented": 0,
+                                       "navigated": ["elsewhere #hp-row-3-1"]})
+
+    def test_focus_given_by_the_opening_hash_is_dropped(self):
+        # ページを開いたときの # がタブの key だと、ブラウザがそのパネルにフォーカスを当てる。そのフォーカスだけを外す（実装SO の指摘4）
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); });
+          fireLoad();
+          return { blurred: log.blurred, active: document.activeElement };
+        """, setup='document.activeElement = byId["values"];', hash="#values")
+        self.assertEqual(out, {"blurred": ["values"], "active": None})
+        # 要素を指す # では外さない。パネルにフォーカスが無ければ何もしない
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); }); fireLoad(); return log.blurred;
+        """, setup='document.activeElement = byId["done"];', hash="#hp-row-3-1")
+        self.assertEqual(out, [])
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); }); fireLoad(); return log.blurred;
+        """, hash="#values")
+        self.assertEqual(out, [])
+
+    def test_bar_growing_soon_after_a_jump_realigns_the_target(self):
+        out = self.run_tabs("""
+          rects["hp-row-3-1"] = { top: 100, bottom: 140, left: 0, right: 10 };
+          (global.resizeHandlers || []).forEach(function (f) { f(); });
+          return log.scrollBy;
+        """, setup="""
+          global.ResizeObserver = function (f) { (global.resizeHandlers = global.resizeHandlers || []).push(f); };
+          global.ResizeObserver.prototype.observe = function () {};
+        """, hash="#hp-row-3-1")
+        self.assertEqual(out, [100 - 120 - 16])
+
+    def test_reading_page_with_body_panels(self):
+        out = self.run_tabs("""
+          hashTo("#memo");
+          return { s: state(), role: byId["notes"].getAttribute("role") };
+        """, name="grasp", mutate=map_tabs, body=MAP_BODY)
+        self.assertEqual(out, {"s": {"selected": ["notes"], "visible": ["notes"], "hash": "#memo"}, "role": "tabpanel"})
 
 
 class FoldedCards(unittest.TestCase):

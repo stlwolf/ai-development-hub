@@ -11,7 +11,11 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-10-24-episode-536-one-pager-question-cards.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-10-29
+    ref: "#558"
+    state: followed
+    note: "教訓どおり、タブの key（パネルの id と URL の # になる）を英小文字と数字だけにして、- を含む描く id と重ならない形にし、hp-tab-<key>.n の区切りを key に使えない . にした。本文の自由な id と描く id の重なりは、設計SO の指摘で、タブのあるページの本文の id の hp- の頭を止める検査（E-N4）にした"
 ---
 
 **利用者の key をつないで別の識別子を作るときは、key に使えない文字で区切るか、作ったすべての識別子とほかの key の重なりを検査する。** 「今は1種類しか作らない」「1ページに1つしか置かない」ことに頼った作り方は、2種類目を足したときや部品を混ぜたときに、黙って衝突する。
