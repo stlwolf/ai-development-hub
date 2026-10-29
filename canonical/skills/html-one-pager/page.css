@@ -438,3 +438,63 @@ code {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* タブ（#558）。ここから下の規則は、タブのあるページの要素（hp-tab で始まる class・帯を持つページ）にだけ当たる。
+   帯（.hp-tabbar）は上に貼り付く箱（.hp-bar）の中にあり、段ごとに1行で、左に段の名前、段の中だけを横に送る。 */
+.hp-bar:has(.hp-tabbar) { padding-bottom: 0; }
+.hp-tabbar, .hp-tabset { display: grid; min-width: 0; }
+.hp-tabrow { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.hp-tabrow:has(> .hp-tabrow-name) { grid-template-columns: auto minmax(0, 1fr); }
+.hp-tabrow + .hp-tabrow { border-top: 1px solid var(--line); }
+.hp-tabrow-name {
+  align-self: center;
+  min-width: 6em;
+  padding-right: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.hp-tabrow-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.hp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.hp-tab:hover { color: var(--ink); }
+.hp-tab[aria-selected="true"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+.hp-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* タブの名前の横の未回答の件数（回答待ち N 件） */
+.hp-tab-n {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--c-fix);
+  color: var(--c-fix);
+  background: var(--c-fix-bg);
+}
+/* パネル。パネルの中の部品どうしは 36px、帯の下の線から最初の部品の上端までは 28px（.hp の間隔 18px に 10px を足す） */
+.hp-tabpanel { display: grid; gap: 36px; min-width: 0; }
+.hp-tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.hp:has(.hp-tabbar) .hp-main { margin-top: 10px; }
+/* JS が動いているあいだだけ（帯に data-on）、タブの名前と同じ最初の題を隠す。JS が動かない表示では、縦に並んだパネルの区切りになる */
+.hp:has(.hp-tabbar[data-on]) .hp-tab-same { display: none; }
+/* JS が動かない表示では、すべてのパネルを縦に並べ、あいだに区切りの線を引く */
+.hp-main:has(> .hp-tabpanel) { gap: 36px; }
+.hp:not(:has(.hp-tabbar[data-on])) .hp-tabpanel + .hp-tabpanel { border-top: 1px solid var(--line); padding-top: 36px; }
+/* ページの中のリンクで飛ぶ先（パネル・カード・表の行・本文の id）が、貼り付く箱に隠れないようにする。
+   --hp-bar-h は tabs.js が測った箱の高さで、JS が動かない表示では見込みの値を使う。上の :target の規則より後ろに置いて勝たせる */
+.hp:has(.hp-tabbar) .hp-main [id] { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--hp-bar-h, 160px) + 16px); }
+@media (max-width: 560px) {
+  .hp-tabrow-name { min-width: 0; padding-right: 8px; font-size: 11px; }
+  .hp-tab { padding: 6px 10px; }
+}

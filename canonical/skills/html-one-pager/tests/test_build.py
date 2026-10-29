@@ -74,7 +74,7 @@ def render_page(name, mutate=None, body=None, glossary=None, now=NOW):
     d = copy.deepcopy(example(name))
     if mutate:
         mutate(d)
-    errors = build.validate(d, has_body=body is not None)
+    errors = build.validate(d, has_body=body is not None, body=body)
     assert errors == [], errors
     labels = build.load_glossary(glossary or build.DEFAULT_GLOSSARY)
     return build.render(d, labels, build.parse_now(now), d["source"].get("tmux"), body)
@@ -998,6 +998,129 @@ class TabsCheck(unittest.TestCase):
         self.assertEqual(outs[1], outs[0])
         self.assertEqual(outs[2], outs[0])
         self.assertFalse(os.path.exists(os.path.join(tmp, "out.html")))
+
+
+def tabs_data(fragment):
+    m = re.search(r'<script type="application/json" id="hp-tabs-data">(.*?)</script>', fragment, re.S)
+    return json.loads(html.unescape(m.group(1))) if m else None
+
+
+class TabsRender(unittest.TestCase):
+    """タブ（#558）の描画。帯は上に貼り付く箱の中・パネルは部品を包む・件数・埋め込みのデータ・JS の入れ方。"""
+
+    def labels(self):
+        return build.load_glossary(build.DEFAULT_GLOSSARY)
+
+    def test_bar_has_rows_and_links(self):
+        f = render_page("board", board_tabs)
+        nav = re.search(r'<nav class="hp-tabbar" id="hp-tabbar" aria-label="([^"]*)">(.*?)</nav>', f, re.S)
+        self.assertEqual(html.unescape(nav.group(1)), self.labels()["text.tabs"])
+        self.assertEqual(re.findall(r'<span class="hp-tabrow-name" id="(hp-tabrow-\d+)">([^<]*)</span>', nav.group(2)),
+                         [("hp-tabrow-0", "判断"), ("hp-tabrow-1", "記録")])
+        self.assertEqual(re.findall(r'<a class="hp-tab" id="hp-tab-(\w+)" href="#(\w+)">', nav.group(2)),
+                         [("now", "now"), ("done", "done"), ("values", "values")])
+        # 帯は、答える部品の帯（全部推奨どおりの案内と保存の状態）と同じ貼り付く箱の中にある
+        bar = re.search(r'<div class="hp-bar">(.*?)</div>\n<main', f, re.S).group(1)
+        self.assertIn('class="hp-allrec"', bar)
+        self.assertIn('id="hp-store"', bar)
+        self.assertIn('id="hp-tabbar"', bar)
+
+    def test_rows_are_omitted_when_tabs_have_no_row(self):
+        f = render_page("decide", decide_tabs)
+        self.assertNotIn('class="hp-tabrow-name"', f)
+        self.assertEqual(f.count('<div class="hp-tabrow">'), 1)
+        self.assertEqual(tabs_data(f), {"tabs": [{"key": "ask", "row": None}, {"key": "notes", "row": None}]})
+
+    def test_panels_wrap_the_sections_of_each_tab_in_order(self):
+        main = main_of(render_page("board", board_tabs))
+        found = re.findall(r'<section class="hp-tabpanel" id="(\w+)">|<section class="hp-sec (hp-\w+)"|(</section>\n?)', main)
+        opened = [k for k, _, _ in found if k]
+        self.assertEqual(opened, ["now", "done", "values"])
+        # パネルの中の部品の数（判定カードの節2つ・選ぶ表）・（決まったこと）・（もらう値）
+        panels = re.split(r'<section class="hp-tabpanel" id="\w+">', main)[1:]
+        self.assertEqual([p.count('<section class="hp-sec ') for p in panels], [3, 1, 1])
+
+    def test_same_title_is_marked_only_for_the_first_section(self):
+        d = copy.deepcopy(example("board"))
+        board_tabs(d)
+        d["tabs"][0]["label"] = d["sections"][0]["title"]
+        d["tabs"][1]["label"] = " " + d["sections"][3]["title"] + " "
+        f = render_page("board", lambda x: x.update(copy.deepcopy(d)))
+        same = re.findall(r'<h2 class="hp-sec-title hp-tab-same">([^<]*)</h2>', f)
+        self.assertEqual(same, [d["sections"][0]["title"], d["sections"][3]["title"]])
+        # 2つ目の部品の題は、タブの名前と同じでも印を付けない（印はタブの中の最初の部品だけ）
+        d["sections"][1]["title"] = d["tabs"][0]["label"]
+        f = render_page("board", lambda x: x.update(copy.deepcopy(d)))
+        self.assertEqual(f.count('class="hp-sec-title hp-tab-same"'), 2)
+
+    def test_counts_are_shown_on_tabs_with_cards_until_answered(self):
+        awaiting = self.labels()["status.awaiting"]
+        f = render_page("board", board_tabs)
+        self.assertEqual(re.findall(r'<span class="hp-tab-n" id="hp-tab-(\w+)\.n">([^<]*)</span>', f),
+                         [("now", awaiting.replace("{n}", "4"))])
+        f = render_page("decide", decide_tabs)
+        self.assertEqual(re.findall(r'id="hp-tab-(\w+)\.n"', f), ["ask"])
+        answered = both(decide_tabs, put(["status"], "answered"), put(["answers"], {
+            "retry_policy": {"choice": "go", "note": "", "at": "2026-10-19T09:00:00Z"}}))
+        f = render_page("decide", answered)
+        self.assertNotIn('class="hp-tab-n"', f)
+        # 回答済みのページは、貼り付かない知らせのあとに、帯だけを入れた貼り付く箱を置く
+        self.assertRegex(f, r'<p class="hp-notice">[^<]*</p>\n<div class="hp-bar"><nav class="hp-tabbar"')
+
+    def test_zero_count_is_hidden(self):
+        d = copy.deepcopy(example("decide"))
+        decide_tabs(d)
+        d["status"] = "answered"
+        d["answers"] = {k: {"choice": None, "note": "", "at": "2026-10-19T09:00:00Z"} for k in ("retry_policy",)}
+        bar = build.Renderer(d, self.labels(), build.parse_now(NOW), None, build.load_words(build.DEFAULT_GLOSSARY))
+        self.assertNotIn('class="hp-tab-n"', bar.tab_bar())
+        d["status"] = "live"
+        del d["answers"]
+        r = build.Renderer(d, self.labels(), build.parse_now(NOW), None, build.load_words(build.DEFAULT_GLOSSARY))
+        r.answers = {k: {"choice": "go"} for k in ("retry_policy", "alert_rule", "rollout")}
+        self.assertIn('id="hp-tab-ask.n" hidden>', r.tab_bar())
+
+    def test_reading_page_gets_only_the_tab_script(self):
+        f = render_page("grasp", map_tabs, body=MAP_BODY)
+        with open(build.TABS_JS, encoding="utf-8") as fh:
+            js = fh.read().rstrip("\n")
+        self.assertEqual(f.count("<script"), 2)
+        self.assertIn("<script>\n%s\n</script>" % js, f)
+        self.assertNotIn('id="hp-data"', f)
+        self.assertNotIn("claude.use", f)
+        # 答える部品の無いページでも、帯だけを入れた貼り付く箱を置く
+        self.assertRegex(f, r'</header>\n<div class="hp-bar"><nav class="hp-tabbar"')
+        self.assertEqual(tabs_data(f), {"tabs": [{"key": k, "row": None} for k in ("flow", "notes", "ops")]})
+
+    def test_body_is_kept_as_written_and_data_panels_follow(self):
+        main = main_of(render_page("grasp", map_tabs, body=MAP_BODY))
+        self.assertTrue(main.startswith("\n" + MAP_BODY.rstrip("\n")))
+        self.assertIn('<section class="hp-tabpanel" id="ops">', main[len(MAP_BODY):])
+
+    def test_answer_pages_pass_tab_cards_to_the_save_code(self):
+        f = render_page("board", board_tabs)
+        self.assertEqual(f.count("<script"), 4)
+        self.assertEqual(json.loads(html.unescape(embedded(f)))["tabs"],
+                         [{"key": "now", "keys": ["rollback_window", "notify_users", "on_call", "trial_shops_pick"]}])
+        self.assertEqual(tabs_data(f)["tabs"], [{"key": "now", "row": 0}, {"key": "done", "row": 1}, {"key": "values", "row": 1}])
+        # タブの無いページの埋め込みのデータには tabs を足さない
+        self.assertNotIn("tabs", json.loads(html.unescape(embedded(render_page("board")))))
+        self.assertIsNone(tabs_data(render_page("board")))
+
+    def test_bundle_parts_in_tabs(self):
+        f = render_page("bundle", bundle_tabs)
+        main = main_of(f)
+        self.assertEqual(re.findall(r'<section class="hp-tabpanel" id="(\w+)">', main), ["pdf", "login"])
+        self.assertEqual(re.findall(r'id="hp-group-(\d+)"', main), ["0", "1"])
+        self.assertEqual(json.loads(html.unescape(embedded(f)))["tabs"],
+                         [{"key": "pdf", "keys": ["pdf_engine", "pdf_font"]}, {"key": "login", "keys": ["login_fix"]}])
+
+    def test_ids_are_unique_on_tab_pages(self):
+        for name, mutate, body in (("board", board_tabs, None), ("decide", decide_tabs, None), ("bundle", bundle_tabs, None),
+                                   ("grasp", map_tabs, MAP_BODY)):
+            with self.subTest(page=name):
+                ids = re.findall(r'\bid="([^"]*)"', render_page(name, mutate, body=body))
+                self.assertEqual(len(ids), len(set(ids)), [i for i in ids if ids.count(i) > 1])
 
 
 class CollectedAnswers(unittest.TestCase):

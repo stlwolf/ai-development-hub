@@ -155,6 +155,7 @@ GLOSSARY_KEYS = {
     "text.folded_answer": ("label",),
     "text.unfold": (),
     "text.fold": (),
+    "text.tabs": (),
 }
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
@@ -1874,6 +1875,7 @@ def format_errors(errors):
 TEMPLATE = os.path.join(HERE, "template.html")
 CSS = os.path.join(HERE, "page.css")
 JS = os.path.join(HERE, "page.js")
+TABS_JS = os.path.join(HERE, "tabs.js")
 TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "scripts")
 SLOT_RE = re.compile(r"\{\{([a-z]+)\}\}")
 
@@ -2173,6 +2175,16 @@ class Renderer:
         self.time = format_time(now)
         self.tmux = tmux
         self.page_refs = Refs(data["source"], anchors)
+        # タブ（検証を通ったもの）。tab_cards はタブの key -> そのタブの判定カード（束の group のカードを含む）の並び。
+        self.tabs = data.get("tabs") or []
+        self.tab_label = {t["key"]: t["label"] for t in self.tabs}
+        self.tab_cards = {t["key"]: [] for t in self.tabs}
+        for sec in data["sections"]:
+            if "tab" in sec:
+                if sec["type"] == "decisions":
+                    self.tab_cards[sec["tab"]].extend(sec["cards"])
+                elif sec["type"] == "bundle":
+                    self.tab_cards[sec["tab"]].extend(c for g in sec["groups"] for c in g["cards"])
         self.answered = data["status"] == "answered"
         self.answers = data.get("answers") or {}
         self.cards = []   # JS に渡すカード
@@ -2236,12 +2248,56 @@ class Renderer:
         return "\n".join(h)
 
     def bar(self):
+        """上に貼り付く箱。タブの帯は、答える部品の帯と同じ箱に入れる（2つの貼り付く帯を重ねない）。
+        回答済みのページの知らせは貼り付かないので、帯は知らせのあとの別の箱に入れる。"""
+        tabbar = self.tab_bar()
         if not self.has_answer_part():
-            return ""
+            return '<div class="hp-bar">%s</div>' % tabbar if tabbar else ""
         if self.answered:
-            return '<p class="hp-notice">%s</p>' % esc(self.L["text.answered_notice"])
-        return ('<div class="hp-bar"><p class="hp-allrec">%s</p><p class="hp-store" id="hp-store" aria-live="polite">%s</p></div>'
-                % (esc(self.L["text.all_recommended"]), esc(self.L["text.store_connecting"])))
+            notice = '<p class="hp-notice">%s</p>' % esc(self.L["text.answered_notice"])
+            return notice + ('\n<div class="hp-bar">%s</div>' % tabbar if tabbar else "")
+        return ('<div class="hp-bar"><p class="hp-allrec">%s</p><p class="hp-store" id="hp-store" aria-live="polite">%s</p>%s</div>'
+                % (esc(self.L["text.all_recommended"]), esc(self.L["text.store_connecting"]), tabbar))
+
+    def tab_bar(self):
+        """タブの帯。段ごとに1行で、段の名前（あれば）を左に置く。タブは #<key> へのふつうのリンクで、JS が動かない表示では目次になる。
+        回答待ち・随時更新のページでは、判定カードのあるタブの名前の横に未回答の件数を出す（0件なら隠す。page.js が書き換える）。"""
+        if not self.tabs:
+            return ""
+        L = self.L
+        counts = self.has_answer_part() and not self.answered
+        rows = []  # [(段の名前か None, [タブ])]
+        for t in self.tabs:
+            if rows and rows[-1][0] == t.get("row"):
+                rows[-1][1].append(t)
+            else:
+                rows.append((t.get("row"), [t]))
+        out = ['<nav class="hp-tabbar" id="hp-tabbar" aria-label="%s"><div class="hp-tabset" id="hp-tabset">' % esc(L["text.tabs"])]
+        for ri, (name, tabs) in enumerate(rows):
+            out.append('<div class="hp-tabrow">')
+            if name is not None:
+                out.append('<span class="hp-tabrow-name" id="hp-tabrow-%d">%s</span>' % (ri, esc(name)))
+            out.append('<div class="hp-tabrow-tabs">')
+            for t in tabs:
+                k = t["key"]
+                n = ""
+                if counts and self.tab_cards[k]:
+                    c = self.open_count(self.tab_cards[k])
+                    n = '<span class="hp-tab-n" id="hp-tab-%s.n"%s>%s</span>' % (esc(k), "" if c else " hidden",
+                                                                              esc(fill(L["status.awaiting"], n=c)))
+                out.append('<a class="hp-tab" id="hp-tab-%s" href="#%s">%s%s</a>' % (esc(k), esc(k), esc(t["label"]), n))
+            out.append("</div></div>")
+        out.append("</div></nav>")
+        return "".join(out)
+
+    def tab_rows(self):
+        """tabs.js に渡す、タブの key と段の順（段の名前の無いページは null）の並び。"""
+        out, ri, last = [], -1, object()
+        for t in self.tabs:
+            if t.get("row") != last:
+                ri, last = ri + 1, t.get("row")
+            out.append({"key": t["key"], "row": ri if t.get("row") is not None else None})
+        return out
 
     def reply(self):
         if not self.has_answer_part() or self.answered:
@@ -2257,25 +2313,39 @@ class Renderer:
     # 部品 ------------------------------------------------------------------
 
     def sections(self):
+        """部品を並べる。タブのあるページでは、同じタブの部品（続けて並んでいる）をパネル（id がタブの key）で包む。
+        タブの中の最初の部品の題がタブの名前と同じなら、題に hp-tab-same を足す（JS が動いているあいだだけ隠す）。"""
         out = []
+        current = None
         for si, sec in enumerate(self.data["sections"]):
+            tab = sec.get("tab")
+            title_class = "hp-sec-title"
+            if tab != current:
+                if current is not None:
+                    out.append("</section>")
+                out.append('<section class="hp-tabpanel" id="%s">' % esc(tab))
+                current = tab
+                if sec["title"].strip() == self.tab_label[tab].strip():
+                    title_class = "hp-sec-title hp-tab-same"
             if sec["type"] == "decisions":
-                out.append(self.decisions(sec))
+                out.append(self.decisions(sec, title_class))
             elif sec["type"] == "bundle":
-                out.append(self.bundle(sec, si))
+                out.append(self.bundle(sec, si, title_class))
             elif sec["type"] == "table":
-                out.append(self.table(sec, (si,)))
+                out.append(self.table(sec, (si,), title_class=title_class))
             else:
-                out.append(self.findings(sec))
+                out.append(self.findings(sec, title_class))
+        if current is not None:
+            out.append("</section>")
         return "\n".join(out)
 
-    def decisions(self, sec):
+    def decisions(self, sec, title_class="hp-sec-title"):
         cards = "\n".join(self.card(c, 3, self.page_refs) for c in sec["cards"])
-        return ('<section class="hp-sec hp-decisions"><h2 class="hp-sec-title">%s</h2><div class="hp-cards">\n%s\n</div></section>'
-                % (inline(sec["title"], self.page_refs), cards))
+        return ('<section class="hp-sec hp-decisions"><h2 class="%s">%s</h2><div class="hp-cards">\n%s\n</div></section>'
+                % (title_class, inline(sec["title"], self.page_refs), cards))
 
-    def bundle(self, sec, si):
-        out = ['<section class="hp-sec hp-bundle"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], self.page_refs)]
+    def bundle(self, sec, si, title_class="hp-sec-title"):
+        out = ['<section class="hp-sec hp-bundle"><h2 class="%s">%s</h2>' % (title_class, inline(sec["title"], self.page_refs))]
         for gi, g in enumerate(sec["groups"]):
             gid = len(self.groups)
             src = g["source"]
@@ -2412,10 +2482,10 @@ class Renderer:
                 items.append("<li>%s%s</li>" % (inline(p["text"], refs), self.evidence(p.get("evidence"))))
         return '<ul class="hp-points">%s</ul>' % "".join(items)
 
-    def findings(self, sec):
+    def findings(self, sec, title_class="hp-sec-title"):
         L = self.L
         refs = self.page_refs
-        out = ['<section class="hp-sec hp-findings"><h2 class="hp-sec-title">%s</h2>' % inline(sec["title"], refs)]
+        out = ['<section class="hp-sec hp-findings"><h2 class="%s">%s</h2>' % (title_class, inline(sec["title"], refs))]
         if "lane" in sec:
             out.append('<p class="hp-lane">%s</p>' % esc(fill(L["text.lane"], lane=sec["lane"])))
         cols = (L["text.col_text"], L["text.col_severity"], L["text.col_adopted"], L["text.col_reason"])
@@ -2430,12 +2500,12 @@ class Renderer:
         out.append("</tbody></table></div></section>")
         return "\n".join(out)
 
-    def table(self, sec, tpos, refs=None, heading="h2"):
+    def table(self, sec, tpos, refs=None, heading="h2", title_class="hp-sec-title"):
         """列と行をデータで書く表。指摘の一覧と同じ hp-table で描き、幅の狭い画面では行を積む。
         tpos は表の位置（ページの表は (部品の順,)、束の group の表は (部品の順, group の順, 表の順)）。"""
         refs = refs or self.page_refs
         cols = [(c["key"], c["label"], c.get("type", "text")) for c in sec["columns"]]
-        out = ['<section class="hp-sec hp-tablesec"><%s class="hp-sec-title">%s</%s>' % (heading, inline(sec["title"], refs), heading)]
+        out = ['<section class="hp-sec hp-tablesec"><%s class="%s">%s</%s>' % (heading, title_class, inline(sec["title"], refs), heading)]
         out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
                    % "".join("<th>%s</th>" % esc(label) for _, label, _ in cols))
         for ri, row in enumerate(sec["rows"]):
@@ -2486,8 +2556,16 @@ def render(data, labels, now, tmux, body=None, words=None):
                        "rows": [{"key": rk, "id": num} for _, (rk, num) in sorted(p["rows"].items())]} for p in r.picks],
             "answers": data.get("answers") if r.answered else None,
         }
+        # タブのあるページでだけ、タブごとの判定カードの key を渡す（page.js がタブの名前の横の件数を書き換える）。
+        if r.tabs:
+            page_data["tabs"] = [{"key": t["key"], "keys": [c["key"] for c in r.tab_cards[t["key"]]]}
+                                 for t in r.tabs if r.tab_cards[t["key"]]]
         scripts = ('<script type="application/json" id="hp-data">%s</script>\n<script>\n%s\n</script>'
                    % (embed_json(page_data), read_text(JS, "JS（page.js）").rstrip("\n")))
+    # タブの切り替えの JS（tabs.js）は、タブのあるページにだけ入れる。答える部品の無いページでも入るが、保存のコードは入らない。
+    if r.tabs:
+        scripts += ("\n" if scripts else "") + ('<script type="application/json" id="hp-tabs-data">%s</script>\n<script>\n%s\n</script>'
+                                               % (embed_json({"tabs": r.tab_rows()}), read_text(TABS_JS, "JS（tabs.js）").rstrip("\n")))
     values = {
         "title": esc(data["title"]),
         "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
