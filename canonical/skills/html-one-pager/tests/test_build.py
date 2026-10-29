@@ -927,6 +927,11 @@ class TabsCheck(unittest.TestCase):
             ("本文だけのタブ（部品は空）", "grasp", both(map_tabs, lambda d: d["tabs"].pop(), put(["sections"], [])), MAP_BODY),
             ("閉じ忘れた p・余分な終わりの印・空の要素の />・コメント", "grasp", map_tabs,
              MAP_BODY.replace("</section>", "<br/><img alt=\"\"></section></div></span><!-- x -->")),
+            ("textarea と title の中の文字（要素の形でも、パネルにも id にも数えない）", "grasp", map_tabs,
+             MAP_BODY.replace("<p>本文<br>改行</p>", '<textarea><section class="hp-tabpanel" id="x"><b id="hp-store">例</b></section></textarea>'
+                                                 '<svg><title><p id="flow">名前</p></title></svg>')),
+            ("template の中（文書に入らない）", "grasp", map_tabs,
+             MAP_BODY.replace("<p>本文<br>改行</p>", '<template><section class="hp-tabpanel" id="x"><p id="hp-y">雛形</p></section></template>')),
         ]
         for name, base, mutate, body in cases:
             with self.subTest(case=name):
@@ -967,6 +972,11 @@ class TabsCheck(unittest.TestCase):
             ("定義に無いパネル", MAP_BODY.replace('id="notes"', 'id="other"'), 1, [("E-N3", "tabs[1]")]),
             ("同じパネルが2つ", MAP_BODY + '<section class="hp-tabpanel" id="flow">2つ目</section>', 1, []),
         ]
+        # textarea の中はブラウザでは文字なので、パネルにも id にも数えない（実装SO の指摘2）。flow のパネルの中の textarea が
+        # notes のパネルを文字として飲み込む形では、notes のパネルはブラウザの文書に無いので、中身の無いタブとして止まる
+        swallowed = MAP_BODY.replace('</section>\n<div class="hp-tabpanel" id="notes">', '<textarea></section>\n<div class="hp-tabpanel" id="notes">')
+        swallowed = swallowed.replace("2つ目</div>\n", "2つ目</div></textarea></section>\n")
+        self.assertEqual(self.codes("grasp", map_tabs, swallowed, True), [("E-N3", "tabs[1]")])
         for name, body, n_body, more in cases:
             with self.subTest(case=name):
                 got = self.codes("grasp", map_tabs, body, True)
@@ -2649,7 +2659,7 @@ class _Tree(html.parser.HTMLParser):
 # 要素の位置（getBoundingClientRect）は、既定では帯が上（下端 120）・ほかは帯の下（上端 200）で、検査ごとに rects で変えられる。
 TABS_DRIVER = r"""
 const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
-const log = { replace: [], scrolled: [], focused: [], prevented: 0, navigated: [], scrollBy: [] };
+const log = { replace: [], scrolled: [], focused: [], blurred: [], prevented: 0, navigated: [], scrollBy: [] };
 global.rects = {};
 const nodes = input.nodes.map(function (n, i) {
   return { _i: i, tagName: n.tag.toUpperCase(), attrs: Object.assign({}, n.attrs), parentNode: null, hidden: "hidden" in n.attrs,
@@ -2660,6 +2670,7 @@ const nodes = input.nodes.map(function (n, i) {
     setAttribute(k, v) { this.attrs[k] = String(v); },
     addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
     focus() { log.focused.push(this.id); },
+    blur() { log.blurred.push(this.id); if (document.activeElement === this) { document.activeElement = null; } },
     scrollIntoView() { log.scrolled.push(this.id); },
     getBoundingClientRect() {
       const key = this.id || ("#" + this._i);
@@ -2675,7 +2686,7 @@ box.offsetHeight = 150;
 const docHandlers = {};
 const winHandlers = {};
 global.window = global;
-global.document = { getElementById: function (id) { return byId[id] || null; },
+global.document = { getElementById: function (id) { return byId[id] || null; }, activeElement: null,
   addEventListener: function (t, f, capture) { (docHandlers[t] = docHandlers[t] || []).push([f, !!capture]); } };
 global.location = { hash: input.hash || "" };
 global.failReplace = false;
@@ -2683,14 +2694,19 @@ global.history = { replaceState: function (s, t, u) { if (failReplace) { throw n
 global.addEventListener = function (t, f) { (winHandlers[t] = winHandlers[t] || []).push(f); };
 global.scrollBy = function (x, y) { log.scrollBy.push(y); };
 function fireHash() { (winHandlers.hashchange || []).forEach(function (f) { f({}); }); }
-// 押す: 取り込みの段階の処理を回し、止められていなければ、ブラウザの既定の移動（# の書き換えと hashchange）をまねる
+function fireLoad() { (winHandlers.load || []).forEach(function (f) { f({}); }); }
+// 押す: 取り込みの段階の処理を回し、止められていなければ、ブラウザの既定の移動（# の書き換えと hashchange）をまねる。
+// 修飾キー付きの押し方・別の画面で開くリンク（target）・保存のリンク（download）は、いまのページを動かさない（別の画面へ行く）。
 function click(id, more) {
   const el = byId[id];
   const e = Object.assign({ target: el, button: 0, defaultPrevented: false,
     preventDefault() { this.defaultPrevented = true; log.prevented += 1; } }, more || {});
   (docHandlers.click || []).forEach(function (h) { if (h[1]) { h[0](e); } });
   const href = el.getAttribute("href");
+  const t = el.getAttribute("target");
+  const elsewhere = e.metaKey || e.ctrlKey || e.shiftKey || (t && t !== "_self") || el.getAttribute("download") !== null;
   if (!e.defaultPrevented && href && href.charAt(0) === "#") {
+    if (elsewhere) { log.navigated.push("elsewhere " + href); return; }
     log.navigated.push(href);
     if (location.hash !== href) { location.hash = href; fireHash(); }
   }
@@ -2714,7 +2730,7 @@ function state() {
   eval(input.setup);
   eval(input.js);
   const out = await (new (Object.getPrototypeOf(async function () {}).constructor)(
-    "byId", "log", "click", "key", "hashTo", "state", "box", input.after))(byId, log, click, key, hashTo, state, box);
+    "byId", "log", "click", "key", "hashTo", "state", "box", "fireLoad", input.after))(byId, log, click, key, hashTo, state, box, fireLoad);
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 })().catch(function (e) { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
@@ -2760,8 +2776,9 @@ class TabsScript(unittest.TestCase):
         self.assertEqual(out["replaced"], [])
 
     def test_opening_with_a_tab_key_or_an_element_in_a_hidden_tab(self):
+        # タブの key でも、切り替えてからそのパネルへ移る（隠れていたパネルへはブラウザが移れないため・実装SO の指摘3）
         out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#values")
-        self.assertEqual(out, {"s": {"selected": ["values"], "visible": ["values"], "hash": "#values"}, "scrolled": []})
+        self.assertEqual(out, {"s": {"selected": ["values"], "visible": ["values"], "hash": "#values"}, "scrolled": ["values"]})
         out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#hp-row-3-1")
         self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"}, "scrolled": ["hp-row-3-1"]})
         out = self.run_tabs("return state();", hash="#no-such-id")
@@ -2836,15 +2853,48 @@ class TabsScript(unittest.TestCase):
           hashTo("#hp-row-2-1"); const b = state();
           return { a: a.selected, b: b.selected, scrolled: log.scrolled };
         """)
-        self.assertEqual(out, {"a": ["values"], "b": ["now"], "scrolled": ["hp-row-2-1"]})
+        self.assertEqual(out, {"a": ["values"], "b": ["now"], "scrolled": ["values", "hp-row-2-1"]})
 
     def test_modified_clicks_are_left_to_the_browser(self):
+        # 修飾キー付きの押し方は別の画面で開くので、いまのページのタブも # も変えない（実装SO の指摘5）
         out = self.run_tabs("""
           click("hp-tab-done", { metaKey: true });
-          return { s: state().selected, prevented: log.prevented };
+          return { s: state(), prevented: log.prevented, navigated: log.navigated };
         """)
-        self.assertEqual(out["s"], ["done"])  # 既定の移動（hashchange）で選ばれる。取り込みの段階では止めない
-        self.assertEqual(out["prevented"], 0)
+        self.assertEqual(out, {"s": {"selected": ["now"], "visible": ["now"], "hash": ""}, "prevented": 0, "navigated": ["elsewhere #done"]})
+
+    def test_links_opening_elsewhere_are_left_to_the_browser(self):
+        # target で別の画面に開くリンクと download のリンクは、隠れたタブを指していても、いまのページを切り替えない（実装SO の指摘1）
+        for attr in ('setAttribute("target", "_blank")', 'setAttribute("download", "")'):
+            with self.subTest(attr=attr):
+                out = self.run_tabs("""
+                  let el = null;
+                  for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+                  el.%s;
+                  byId["__link"] = el;
+                  click("__link");
+                  return { s: state(), prevented: log.prevented, navigated: log.navigated };
+                """ % attr, setup="global.allNodes = nodes;")
+                self.assertEqual(out, {"s": {"selected": ["now"], "visible": ["now"], "hash": ""}, "prevented": 0,
+                                       "navigated": ["elsewhere #hp-row-3-1"]})
+
+    def test_focus_given_by_the_opening_hash_is_dropped(self):
+        # ページを開いたときの # がタブの key だと、ブラウザがそのパネルにフォーカスを当てる。そのフォーカスだけを外す（実装SO の指摘4）
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); });
+          fireLoad();
+          return { blurred: log.blurred, active: document.activeElement };
+        """, setup='document.activeElement = byId["values"];', hash="#values")
+        self.assertEqual(out, {"blurred": ["values"], "active": None})
+        # 要素を指す # では外さない。パネルにフォーカスが無ければ何もしない
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); }); fireLoad(); return log.blurred;
+        """, setup='document.activeElement = byId["done"];', hash="#hp-row-3-1")
+        self.assertEqual(out, [])
+        out = self.run_tabs("""
+          await new Promise(function (r) { setTimeout(r, 5); }); fireLoad(); return log.blurred;
+        """, hash="#values")
+        self.assertEqual(out, [])
 
     def test_bar_growing_soon_after_a_jump_realigns_the_target(self):
         out = self.run_tabs("""

@@ -48,6 +48,8 @@ TAB_PANEL_TAGS = ("section", "div")
 TAB_BODY_TOP_TAGS = ("style", "script")
 # 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
 VOID_TAGS = ("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
+# 中身を文字として読む要素。ブラウザは中の <…> を要素にしないので、本文の読み取りでも文字として読む（script と style は html.parser が受け持つ）。
+RCDATA_TAGS = ("textarea", "title")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
 # 判断ボード（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
@@ -364,7 +366,8 @@ def is_question(title):
 class _BodyScan(html.parser.HTMLParser):
     """--body の本文から、タブのパネル（class hp-tabpanel の要素）と id を集め、パネルの判定がブラウザとずれる書き方を拾う。
     終わりの印は、同じ名前の開いた要素まで戻る形で読む（閉じ忘れた p のような正しい HTML を誤りにしない）。
-    対応する開いた要素の無い終わりの印は、ブラウザと同じく無視する。属性が2回あるときは、ブラウザと同じく前の値を使う。"""
+    対応する開いた要素の無い終わりの印は、ブラウザと同じく無視する。属性が2回あるときは、ブラウザと同じく前の値を使う。
+    textarea と title の中は文字として読み、template の中（文書に入らない中身）はパネルと id に数えない。"""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -374,6 +377,11 @@ class _BodyScan(html.parser.HTMLParser):
         self.problems = []  # 誤りの文（タブのあるページでだけ使う）
 
     def _open(self, tag, attrs, closed):
+        if any(t == "template" for t, _ in self.stack):
+            # template の中身はブラウザの文書に入らないので、パネルにも id にも数えない（閉じ方の対応だけを追う）
+            if tag not in VOID_TAGS:
+                self.stack.append((tag, False))
+            return
         names = [k for k, _ in attrs]
         twice = sorted({k for k in names if names.count(k) > 1})
         if twice:
@@ -405,6 +413,8 @@ class _BodyScan(html.parser.HTMLParser):
         # ブラウザと同じく、空の要素でなければ /> で閉じても開いたままとして読む
         if tag not in VOID_TAGS:
             self.stack.append((tag, panel))
+        if tag in RCDATA_TAGS:
+            self.set_cdata_mode(tag)
 
     def handle_starttag(self, tag, attrs):
         self._open(tag, attrs, False)

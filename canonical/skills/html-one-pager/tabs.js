@@ -130,14 +130,16 @@
   function fromHash() {
     var h = window.location && window.location.hash ? decode(window.location.hash.slice(1)) : "";
     if (!h) { return null; }
-    if (isKey[h]) { return { key: h, el: null }; }
+    // タブの key ならそのパネルを見せる先にする（隠れたパネルへはブラウザが移れないので、切り替えてから移る）
+    if (isKey[h]) { return { key: h, el: $(h) }; }
     var el = $(h);
     var k = el ? panelOf(el) : null;
     return k ? { key: k, el: el } : null;
   }
 
   // ページの中のリンク（タブのリンクを含む）は、取り込みの段階で1か所で受ける。同じ # をもう一度押したとき
-  // （hashchange が出ない）も、ここで切り替わる。修飾キー付きや左以外の押し方は、ブラウザに任せる。
+  // （hashchange が出ない）も、ここで切り替わる。修飾キー付きや左以外の押し方、別の画面で開くリンク（target）と
+  // 保存のリンク（download）は、いまのページを動かさないので、ブラウザに任せる。
   document.addEventListener("click", function (e) {
     if (e.defaultPrevented || (e.button !== undefined && e.button !== 0) || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
     var a = e.target;
@@ -145,6 +147,8 @@
       a = a.parentNode;
     }
     if (!a) { return; }
+    var target = a.getAttribute("target");
+    if ((target && target !== "_self") || a.getAttribute("download") !== null) { return; }
     var id = decode(a.getAttribute("href").slice(1));
     if (isKey[id]) {
       e.preventDefault();
@@ -191,4 +195,15 @@
   measure();
   var start = fromHash();
   if (start) { select(start.key, "init", start.el); } else { show(keys[0]); }
+  // ページを開いたときの # がタブの key だと、ブラウザがそのパネル（Tab キーで入れるよう tabindex を持つ）にフォーカスを当て、
+  // パネル全体にフォーカスの枠が出る。開いたときのこのフォーカスだけを外す（あとで Tab キーで入ったときの枠は出る）。
+  if (start && start.el === $(start.key)) {
+    var dropped = false;
+    var drop = function () {
+      var p = $(start.key);
+      if (!dropped && p && document.activeElement === p && typeof p.blur === "function") { dropped = true; p.blur(); }
+    };
+    setTimeout(drop, 0);
+    window.addEventListener("load", drop);
+  }
 })();

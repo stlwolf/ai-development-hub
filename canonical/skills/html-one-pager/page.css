@@ -484,10 +484,9 @@ code {
 }
 /* パネル。パネルの中の部品どうしは 36px、帯の下の線から最初の部品の上端までは 28px（.hp の間隔 18px に 10px を足す） */
 .hp-tabpanel { display: grid; gap: 36px; min-width: 0; }
-/* パネルは Tab キーで入れるよう tabindex を持つので、ページを開いたときの #（タブの key）でブラウザがフォーカスを当てる。
-   そのときはパネル全体を枠で囲まず、キーボードで入ったときだけ枠を出す */
+/* パネルは Tab キーで入れるよう tabindex を持つ。ページを開いたときの #（タブの key）でブラウザが当てたフォーカスは、
+   tabs.js が外す（ここで :target を条件に枠を消すと、あとでキーボードで入ったときの枠まで消える） */
 .hp-tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.hp-tabpanel:target:focus-visible { outline: none; }
 .hp:has(.hp-tabbar) .hp-main { margin-top: 10px; }
 /* JS が動いているあいだだけ（帯に data-on）、タブの名前と同じ最初の題を隠す。JS が動かない表示では、縦に並んだパネルの区切りになる */
 .hp:has(.hp-tabbar[data-on]) .hp-tab-same { display: none; }
