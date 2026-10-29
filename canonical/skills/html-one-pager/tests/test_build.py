@@ -2511,6 +2511,24 @@ class PageScript(unittest.TestCase):
         self.assertEqual(out["ans"], "答え: 冪等キーを付けて3回までにする")
         self.assertEqual(out["ans_alert"], "答え: 毎回通知する")
 
+    def test_tab_counts_follow_the_answers(self):
+        # タブの名前の横の件数（#558）。隠れたタブのカードに保存先から答えが届く・choice が null に戻る・0件で隠れる
+        state = """
+          const n = els["hp-tab-now.n"];
+          return [n.textContent, n.hidden];
+        """
+        keys = ("rollback_window", "notify_users", "on_call", "trial_shops_pick")
+        opts = ("week", "three", "two", "chosen")
+        out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
+                            "openDb(); await tick(); const a = (function () {" + state + "})();"
+                            "deliver({docs: [%s]}); await tick(); const b = (function () {" % ", ".join(
+                                self.doc(k, o) for k, o in zip(keys, opts)) + state + "})();"
+                            "deliver({docs: [%s]}); await tick(); const c = (function () {" % self.doc(keys[0], "x").replace('"x"', "null") + state + "})();"
+                            "return [a, b, c];", name="board", mutate=board_tabs)
+        awaiting = self.labels()["status.awaiting"]
+        self.assertEqual(out, [[awaiting.replace("{n}", "4"), False], [awaiting.replace("{n}", "0"), True],
+                               [awaiting.replace("{n}", "1"), False]])
+
     def test_cards_touched_before_the_first_answer_stay_open(self):
         out = self.run_page("useDb(function (onSnap) { global.deliver = onSnap; });",
                             "els['hp-opt-retry_policy.fix'].fire('click');"
@@ -2583,6 +2601,256 @@ class PageScript(unittest.TestCase):
                             "const b = els['hp-pick-pick_tool--2']; b.checked = true; b.fire('change'); await tick();"
                             "return { writes: log.writes };", name="decide", mutate=with_pick)
         self.assertEqual(sorted(set(out["writes"])), ['pick_tool "ok"', 'pick_tool--2 "pick"', 'retry_policy "go"'])
+
+
+class _Tree(html.parser.HTMLParser):
+    """描いた断片の要素を、id の有無にかかわらずすべて集め、親の位置と属性を残す（tabs.js の台に渡す）。
+    終わりの印は、同じ名前の開いた要素まで戻る形で読む。"""
+
+    VOID = _Elements.VOID
+
+    def __init__(self):
+        super().__init__()
+        self.nodes = []
+        self.stack = []
+
+    def handle_starttag(self, tag, attrs):
+        self.nodes.append({"tag": tag, "attrs": {k: (v if v is not None else "") for k, v in attrs},
+                           "parent": self.stack[-1] if self.stack else -1})
+        if tag not in self.VOID:
+            self.stack.append(len(self.nodes) - 1)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.stack.pop()
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.nodes[self.stack[i]]["tag"] == tag:
+                del self.stack[i:]
+                break
+
+
+# tabs.js を node で走らせる台。document は getElementById と click の取り込みだけを持つ偽物で、要素は描いた断片の
+# すべての要素から作り、親（parentNode）をつなぐ。window は location・history・hashchange・scrollBy を持つ。
+# 要素の位置（getBoundingClientRect）は、既定では帯が上（下端 120）・ほかは帯の下（上端 200）で、検査ごとに rects で変えられる。
+TABS_DRIVER = r"""
+const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const log = { replace: [], scrolled: [], focused: [], prevented: 0, navigated: [], scrollBy: [] };
+global.rects = {};
+const nodes = input.nodes.map(function (n, i) {
+  return { _i: i, tagName: n.tag.toUpperCase(), attrs: Object.assign({}, n.attrs), parentNode: null, hidden: "hidden" in n.attrs,
+    handlers: {}, scrollLeft: 0, offsetHeight: 0, textContent: "",
+    style: { props: {}, setProperty(k, v) { this.props[k] = v; } },
+    get id() { return this.attrs.id || ""; },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
+    focus() { log.focused.push(this.id); },
+    scrollIntoView() { log.scrolled.push(this.id); },
+    getBoundingClientRect() {
+      const key = this.id || ("#" + this._i);
+      return rects[key] || (this === box ? { top: 0, bottom: 120, left: 0, right: 1000 } : { top: 200, bottom: 300, left: 0, right: 10 });
+    } };
+});
+input.nodes.forEach(function (n, i) { if (n.parent >= 0) { nodes[i].parentNode = nodes[n.parent]; } });
+const byId = {};
+nodes.forEach(function (n) { if (n.id && !byId[n.id]) { byId[n.id] = n; } });
+byId["hp-tabs-data"].textContent = input.data;
+const box = byId["hp-tabbar"].parentNode;
+box.offsetHeight = 150;
+const docHandlers = {};
+const winHandlers = {};
+global.window = global;
+global.document = { getElementById: function (id) { return byId[id] || null; },
+  addEventListener: function (t, f, capture) { (docHandlers[t] = docHandlers[t] || []).push([f, !!capture]); } };
+global.location = { hash: input.hash || "" };
+global.failReplace = false;
+global.history = { replaceState: function (s, t, u) { if (failReplace) { throw new Error("no"); } log.replace.push(u); location.hash = u; } };
+global.addEventListener = function (t, f) { (winHandlers[t] = winHandlers[t] || []).push(f); };
+global.scrollBy = function (x, y) { log.scrollBy.push(y); };
+function fireHash() { (winHandlers.hashchange || []).forEach(function (f) { f({}); }); }
+// 押す: 取り込みの段階の処理を回し、止められていなければ、ブラウザの既定の移動（# の書き換えと hashchange）をまねる
+function click(id, more) {
+  const el = byId[id];
+  const e = Object.assign({ target: el, button: 0, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; log.prevented += 1; } }, more || {});
+  (docHandlers.click || []).forEach(function (h) { if (h[1]) { h[0](e); } });
+  const href = el.getAttribute("href");
+  if (!e.defaultPrevented && href && href.charAt(0) === "#") {
+    log.navigated.push(href);
+    if (location.hash !== href) { location.hash = href; fireHash(); }
+  }
+}
+function key(id, k) {
+  const e = { key: k, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; log.prevented += 1; } };
+  (byId[id].handlers.keydown || []).forEach(function (f) { f(e); });
+  return e.defaultPrevented;
+}
+function hashTo(h) { location.hash = h; fireHash(); }
+function state() {
+  const out = { selected: [], visible: [] };
+  input.keys.forEach(function (k) {
+    if (byId["hp-tab-" + k].getAttribute("aria-selected") === "true") { out.selected.push(k); }
+    if (!byId[k].hidden) { out.visible.push(k); }
+  });
+  out.hash = location.hash;
+  return out;
+}
+(async function () {
+  eval(input.setup);
+  eval(input.js);
+  const out = await (new (Object.getPrototypeOf(async function () {}).constructor)(
+    "byId", "log", "click", "key", "hashTo", "state", "box", input.after))(byId, log, click, key, hashTo, state, box);
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+})().catch(function (e) { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node が無い環境では tabs.js の振る舞いを確かめない")
+class TabsScript(unittest.TestCase):
+    """tabs.js の振る舞い（#558）。判断ボードの見本を3つのタブ（now・done・values）に分けたページで、
+    now のタブの本文の Q2 が、隠れた done のタブの表の行（hp-row-3-1）を指す。"""
+
+    def run_tabs(self, after, setup="", hash="", name="board", mutate=board_tabs, body=None):
+        f = render_page(name, mutate, body=body)
+        tree = _Tree()
+        tree.feed(f)
+        with open(build.TABS_JS, encoding="utf-8") as fh:
+            js = fh.read()
+        data = tabs_data(f)
+        payload = {"nodes": tree.nodes, "data": json.dumps(data), "js": js, "setup": setup, "after": after, "hash": hash,
+                   "keys": [t["key"] for t in data["tabs"]]}
+        p = subprocess.run(["node", "-e", TABS_DRIVER], input=json.dumps(payload), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, encoding="utf-8", timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_marks_and_first_tab(self):
+        out = self.run_tabs("""
+          const a = byId["hp-tab-now"], p = byId["now"];
+          return { s: state(), on: byId["hp-tabbar"].getAttribute("data-on"), role: byId["hp-tabset"].getAttribute("role"),
+                   label: byId["hp-tabset"].getAttribute("aria-label"),
+                   tab: [a.getAttribute("role"), a.getAttribute("aria-controls"), a.getAttribute("aria-describedby"), a.getAttribute("tabindex")],
+                   other: byId["hp-tab-done"].getAttribute("tabindex"), described: byId["hp-tab-values"].getAttribute("aria-describedby"),
+                   rowName: byId["hp-tabrow-0"].getAttribute("aria-hidden"), rowRole: a.parentNode.parentNode.getAttribute("role"),
+                   panel: [p.getAttribute("role"), p.getAttribute("aria-labelledby"), p.getAttribute("tabindex")],
+                   barH: box.parentNode.style.props["--hp-bar-h"], replaced: log.replace };
+        """)
+        self.assertEqual(out["s"], {"selected": ["now"], "visible": ["now"], "hash": ""})
+        self.assertEqual((out["on"], out["role"], out["label"]), ("", "tablist", build.load_glossary(build.DEFAULT_GLOSSARY)["text.tabs"]))
+        self.assertEqual(out["tab"], ["tab", "now", "hp-tabrow-0", "0"])
+        self.assertEqual((out["other"], out["described"], out["rowName"], out["rowRole"]), ("-1", "hp-tabrow-1", "true", "none"))
+        self.assertEqual(out["panel"], ["tabpanel", "hp-tab-now", "0"])
+        self.assertEqual(out["barH"], "150px")
+        self.assertEqual(out["replaced"], [])
+
+    def test_opening_with_a_tab_key_or_an_element_in_a_hidden_tab(self):
+        out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#values")
+        self.assertEqual(out, {"s": {"selected": ["values"], "visible": ["values"], "hash": "#values"}, "scrolled": []})
+        out = self.run_tabs("return { s: state(), scrolled: log.scrolled };", hash="#hp-row-3-1")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"}, "scrolled": ["hp-row-3-1"]})
+        out = self.run_tabs("return state();", hash="#no-such-id")
+        self.assertEqual(out["selected"], ["now"])
+
+    def test_clicking_a_tab_selects_it_and_replaces_the_hash(self):
+        out = self.run_tabs("""
+          click("hp-tab-done");
+          return { s: state(), replaced: log.replace, prevented: log.prevented, navigated: log.navigated, scrolled: log.scrolled };
+        """)
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#done"}, "replaced": ["#done"],
+                               "prevented": 1, "navigated": [], "scrolled": []})
+
+    def test_clicking_a_tab_while_the_bar_is_stuck_brings_the_panel_under_the_bar(self):
+        out = self.run_tabs("""
+          rects["done"] = { top: -500, bottom: 300, left: 0, right: 10 };
+          click("hp-tab-done");
+          return log.scrolled;
+        """)
+        self.assertEqual(out, ["done"])
+
+    def test_link_to_a_hidden_tab_switches_before_the_browser_moves(self):
+        out = self.run_tabs("""
+          // now のタブの中の Q2 のリンク（href="#hp-row-3-1"）を押す
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          click("__link");
+          return { s: state(), prevented: log.prevented, navigated: log.navigated, replaced: log.replace };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"}, "prevented": 0,
+                               "navigated": ["#hp-row-3-1"], "replaced": []})
+
+    def test_same_hash_again_after_replace_fails(self):
+        # replaceState が投げて # がカードを指したまま残り、別のタブを選んだあとに同じリンクを押す（hashchange が出ない）
+        out = self.run_tabs("""
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          const first = state().selected;
+          click("hp-tab-now");
+          const mid = state();
+          click("__link");
+          return { first: first, mid: mid, last: state(), navigated: log.navigated };
+        """, setup="global.allNodes = nodes; global.failReplace = true;", hash="#hp-row-3-1")
+        self.assertEqual(out["first"], ["done"])
+        self.assertEqual(out["mid"], {"selected": ["now"], "visible": ["now"], "hash": "#hp-row-3-1"})
+        self.assertEqual(out["last"], {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"})
+        self.assertEqual(out["navigated"], ["#hp-row-3-1"])
+
+    def test_keys_move_across_rows_and_wrap(self):
+        out = self.run_tabs("""
+          const r = [];
+          key("hp-tab-now", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-done", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-values", "ArrowRight"); r.push(state().selected[0]);
+          key("hp-tab-now", "ArrowLeft"); r.push(state().selected[0]);
+          key("hp-tab-values", "Home"); r.push(state().selected[0]);
+          key("hp-tab-now", "End"); r.push(state().selected[0]);
+          key("hp-tab-done", " "); r.push(state().selected[0]);
+          const ignored = key("hp-tab-done", "ArrowDown");
+          return { r: r, focused: log.focused, replaced: log.replace, ignored: ignored };
+        """)
+        self.assertEqual(out["r"], ["done", "values", "now", "values", "now", "values", "done"])
+        self.assertEqual(out["focused"], ["hp-tab-done", "hp-tab-values", "hp-tab-now", "hp-tab-values", "hp-tab-now", "hp-tab-values", "hp-tab-done"])
+        self.assertEqual(out["replaced"][-1], "#done")
+        self.assertFalse(out["ignored"])
+
+    def test_hashchange_selects_the_tab(self):
+        out = self.run_tabs("""
+          hashTo("#values"); const a = state();
+          hashTo("#hp-row-2-1"); const b = state();
+          return { a: a.selected, b: b.selected, scrolled: log.scrolled };
+        """)
+        self.assertEqual(out, {"a": ["values"], "b": ["now"], "scrolled": ["hp-row-2-1"]})
+
+    def test_modified_clicks_are_left_to_the_browser(self):
+        out = self.run_tabs("""
+          click("hp-tab-done", { metaKey: true });
+          return { s: state().selected, prevented: log.prevented };
+        """)
+        self.assertEqual(out["s"], ["done"])  # 既定の移動（hashchange）で選ばれる。取り込みの段階では止めない
+        self.assertEqual(out["prevented"], 0)
+
+    def test_bar_growing_soon_after_a_jump_realigns_the_target(self):
+        out = self.run_tabs("""
+          rects["hp-row-3-1"] = { top: 100, bottom: 140, left: 0, right: 10 };
+          (global.resizeHandlers || []).forEach(function (f) { f(); });
+          return log.scrollBy;
+        """, setup="""
+          global.ResizeObserver = function (f) { (global.resizeHandlers = global.resizeHandlers || []).push(f); };
+          global.ResizeObserver.prototype.observe = function () {};
+        """, hash="#hp-row-3-1")
+        self.assertEqual(out, [100 - 120 - 16])
+
+    def test_reading_page_with_body_panels(self):
+        out = self.run_tabs("""
+          hashTo("#memo");
+          return { s: state(), role: byId["notes"].getAttribute("role") };
+        """, name="grasp", mutate=map_tabs, body=MAP_BODY)
+        self.assertEqual(out, {"s": {"selected": ["notes"], "visible": ["notes"], "hash": "#memo"}, "role": "tabpanel"})
 
 
 class FoldedCards(unittest.TestCase):
