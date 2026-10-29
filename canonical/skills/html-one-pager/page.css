@@ -484,7 +484,10 @@ code {
 }
 /* パネル。パネルの中の部品どうしは 36px、帯の下の線から最初の部品の上端までは 28px（.hp の間隔 18px に 10px を足す） */
 .hp-tabpanel { display: grid; gap: 36px; min-width: 0; }
+/* パネルは Tab キーで入れるよう tabindex を持つので、ページを開いたときの #（タブの key）でブラウザがフォーカスを当てる。
+   そのときはパネル全体を枠で囲まず、キーボードで入ったときだけ枠を出す */
 .hp-tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.hp-tabpanel:target:focus-visible { outline: none; }
 .hp:has(.hp-tabbar) .hp-main { margin-top: 10px; }
 /* JS が動いているあいだだけ（帯に data-on）、タブの名前と同じ最初の題を隠す。JS が動かない表示では、縦に並んだパネルの区切りになる */
 .hp:has(.hp-tabbar[data-on]) .hp-tab-same { display: none; }
@@ -492,8 +495,11 @@ code {
 .hp-main:has(> .hp-tabpanel) { gap: 36px; }
 .hp:not(:has(.hp-tabbar[data-on])) .hp-tabpanel + .hp-tabpanel { border-top: 1px solid var(--line); padding-top: 36px; }
 /* ページの中のリンクで飛ぶ先（パネル・カード・表の行・本文の id）が、貼り付く箱に隠れないようにする。
-   --hp-bar-h は tabs.js が測った箱の高さで、JS が動かない表示では見込みの値を使う。上の :target の規則より後ろに置いて勝たせる */
-.hp:has(.hp-tabbar) .hp-main [id] { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--hp-bar-h, 160px) + 16px); }
+   --hp-bar-h は tabs.js が測った箱の高さで、JS が動かない表示では見込みの値を使う。上の :target の規則に勝たせるため、
+   カードと表の行は、上の規則（.hp:has(.hp-bar) .hp-table tr:target は詳細度 0,4,1）より詳細度の高い選び方を足す */
+.hp:has(.hp-tabbar) .hp-main [id],
+.hp:has(.hp-tabbar) .hp-main .hp-card[id]:target,
+.hp:has(.hp-tabbar) .hp-main .hp-table tr[id]:target { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--hp-bar-h, 160px) + 16px); }
 @media (max-width: 560px) {
   .hp-tabrow-name { min-width: 0; padding-right: 8px; font-size: 11px; }
   .hp-tab { padding: 6px 10px; }
