@@ -929,7 +929,7 @@ class TabsCheck(unittest.TestCase):
              MAP_BODY.replace("</section>", "<br/><img alt=\"\"></section></div></span><!-- x -->")),
             ("textarea と title の中の文字（要素の形でも、パネルにも id にも数えない）", "grasp", map_tabs,
              MAP_BODY.replace("<p>本文<br>改行</p>", '<textarea><section class="hp-tabpanel" id="x"><b id="hp-store">例</b></section></textarea>'
-                                                 '<svg><title><p id="flow">名前</p></title></svg>')),
+                                                 '<p><b>題</b></p>')),
             ("template の中（文書に入らない）", "grasp", map_tabs,
              MAP_BODY.replace("<p>本文<br>改行</p>", '<template><section class="hp-tabpanel" id="x"><p id="hp-y">雛形</p></section></template>')),
         ]
@@ -977,6 +977,15 @@ class TabsCheck(unittest.TestCase):
         swallowed = MAP_BODY.replace('</section>\n<div class="hp-tabpanel" id="notes">', '<textarea></section>\n<div class="hp-tabpanel" id="notes">')
         swallowed = swallowed.replace("2つ目</div>\n", "2つ目</div></textarea></section>\n")
         self.assertEqual(self.codes("grasp", map_tabs, swallowed, True), [("E-N3", "tabs[1]")])
+        cases += [
+            # SVG の中の title は文字の要素ではないので、中の p#flow は実在する id として数える（Copilot の指摘）
+            ("SVG の中の title の中の id", MAP_BODY.replace("<p>本文<br>改行</p>", '<svg><title><p id="flow">名前</p></title></svg>'), 0,
+             [("E-N4", "--body")]),
+            # 本文の終わりで閉じていないパネルは、本文のあとに描くデータの部品のパネルを中に入れてしまう（Copilot の指摘）
+            ("閉じていない最後のパネル", MAP_BODY.replace("2つ目</div>\n", "2つ目\n"), 1, []),
+            ("閉じていない style（本文の残りがすべて CSS になる）", MAP_BODY.replace("</style>", ""), 1,
+             [("E-N3", "tabs[0]"), ("E-N3", "tabs[1]")]),
+        ]
         for name, body, n_body, more in cases:
             with self.subTest(case=name):
                 got = self.codes("grasp", map_tabs, body, True)
@@ -2828,6 +2837,42 @@ class TabsScript(unittest.TestCase):
         self.assertEqual(out["mid"], {"selected": ["now"], "visible": ["now"], "hash": "#hp-row-3-1"})
         self.assertEqual(out["last"], {"selected": ["done"], "visible": ["done"], "hash": "#hp-row-3-1"})
         self.assertEqual(out["navigated"], ["#hp-row-3-1"])
+
+    def test_content_links_move_focus_to_the_destination_panel(self):
+        # 本文の中のリンクで別のタブへ切り替えると、押したリンクは隠れる。フォーカスを移った先のパネルへ移す（Copilot の指摘）
+        find = """
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+        """
+        out = self.run_tabs(find + """
+          el.setAttribute("href", "#done");
+          click("__link");
+          return { s: state(), focused: log.focused, prevented: log.prevented, replaced: log.replace };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": {"selected": ["done"], "visible": ["done"], "hash": "#done"}, "focused": ["done"], "prevented": 1,
+                               "replaced": ["#done"]})
+        out = self.run_tabs(find + """
+          click("__link");
+          return { s: state().selected, focused: log.focused, navigated: log.navigated };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"s": ["done"], "focused": ["done"], "navigated": ["#hp-row-3-1"]})
+        # 帯のタブを押したときは、フォーカスはタブのまま（パネルへ移さない）
+        out = self.run_tabs('click("hp-tab-done"); return log.focused;')
+        self.assertEqual(out, [])
+
+    def test_back_to_an_empty_hash_selects_the_first_tab(self):
+        # # の無いページで隠れたタブの行へのリンクを押し、戻るボタンで # の無い履歴へ戻ると、最初のタブに戻る（Copilot の指摘）
+        out = self.run_tabs("""
+          let el = null;
+          for (const n of allNodes) { if (n.getAttribute("href") === "#hp-row-3-1") { el = n; break; } }
+          byId["__link"] = el;
+          click("__link");
+          const moved = state();
+          hashTo("");
+          return { moved: moved.selected, back: state() };
+        """, setup="global.allNodes = nodes;")
+        self.assertEqual(out, {"moved": ["done"], "back": {"selected": ["now"], "visible": ["now"], "hash": ""}})
 
     def test_keys_move_across_rows_and_wrap(self):
         out = self.run_tabs("""

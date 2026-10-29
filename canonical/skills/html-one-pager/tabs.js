@@ -86,6 +86,12 @@
   function decode(h) {
     try { return decodeURIComponent(h); } catch (e) { return h; }
   }
+  // パネルへフォーカスを移す。ページは送らない（送るのは select とブラウザの既定の移動が受け持つ）。
+  function focusPanel(key) {
+    var p = $(key);
+    if (!p || typeof p.focus !== "function") { return; }
+    try { p.focus({ preventScroll: true }); } catch (e) { p.focus(); }
+  }
   function setHash(key) {
     // 履歴を積まずに書き換える（戻るボタンでタブを1つずつ戻らない・ページも飛ばない）。使えない表示では書き換えない。
     try {
@@ -150,17 +156,29 @@
     var target = a.getAttribute("target");
     if ((target && target !== "_self") || a.getAttribute("download") !== null) { return; }
     var id = decode(a.getAttribute("href").slice(1));
+    // 本文の中のリンク（帯のタブでないもの）で別のタブへ切り替えると、押したリンクは隠れたパネルに残る。
+    // そのときはフォーカスを移った先のパネルへ移す（キーボードで押した人が、隠れた要素の上に取り残されない）
+    var from = panelOf(a);
     if (isKey[id]) {
       e.preventDefault();
       select(id, "click");
+      if (from && from !== id) { focusPanel(id); }
       return;
     }
     var k = id ? panelOf($(id)) : null;
-    if (k && k !== current) { select(k, "link"); }
+    if (k && k !== current) {
+      select(k, "link");
+      if (from && from !== k) { focusPanel(k); }
+    }
   }, true);
   window.addEventListener("hashchange", function () {
     var t = fromHash();
-    if (t) { select(t.key, "hash", t.el); }
+    if (t) {
+      select(t.key, "hash", t.el);
+    } else if (!window.location.hash || window.location.hash === "#") {
+      // # が空に戻った（戻るボタンで # の無い履歴へ戻ったなど）ときは、開いたときと同じく最初のタブを選ぶ
+      select(keys[0], "hash", null);
+    }
   });
   tabs.forEach(function (t, i) {
     var a = $("hp-tab-" + t.key);

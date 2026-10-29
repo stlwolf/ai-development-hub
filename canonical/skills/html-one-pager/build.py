@@ -49,7 +49,9 @@ TAB_BODY_TOP_TAGS = ("style", "script")
 # 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
 VOID_TAGS = ("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
 # 中身を文字として読む要素。ブラウザは中の <…> を要素にしないので、本文の読み取りでも文字として読む（script と style は html.parser が受け持つ）。
+# SVG と MathML の中（外来の要素）の title は文字の要素ではないので、そこでは文字として読まない。
 RCDATA_TAGS = ("textarea", "title")
+FOREIGN_TAGS = ("svg", "math")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
 # 判断ボード（board）は、決まったカードをその番号のまま「決まったこと」の表へ移すので、カードと行が同じ接頭辞を使い、
@@ -367,7 +369,8 @@ class _BodyScan(html.parser.HTMLParser):
     """--body の本文から、タブのパネル（class hp-tabpanel の要素）と id を集め、パネルの判定がブラウザとずれる書き方を拾う。
     終わりの印は、同じ名前の開いた要素まで戻る形で読む（閉じ忘れた p のような正しい HTML を誤りにしない）。
     対応する開いた要素の無い終わりの印は、ブラウザと同じく無視する。属性が2回あるときは、ブラウザと同じく前の値を使う。
-    textarea と title の中は文字として読み、template の中（文書に入らない中身）はパネルと id に数えない。"""
+    textarea と title の中は文字として読み（SVG・MathML の中の title は除く）、template の中（文書に入らない中身）はパネルと id に数えない。
+    本文の終わりで閉じていない要素は、本文のあとに描く部品を中に入れてしまうので、誤りとして拾う（close のあと）。"""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -375,6 +378,7 @@ class _BodyScan(html.parser.HTMLParser):
         self.panels = []    # 本文に書かれたパネルの (id か None, 要素の名前)。本文の並び
         self.ids = []       # 本文の要素の id（並び・重なりを含む）
         self.problems = []  # 誤りの文（タブのあるページでだけ使う）
+        self.nested = False  # パネルの入れ子を知らせたか（外のパネルの閉じ忘れを、終わりで重ねて知らせない）
 
     def _open(self, tag, attrs, closed):
         if any(t == "template" for t, _ in self.stack):
@@ -400,6 +404,7 @@ class _BodyScan(html.parser.HTMLParser):
             label = '<%s id="%s">' % (tag, a.get("id") or "")
             if any(p for _, p in self.stack):
                 self.problems.append("本文のパネル %s が、ほかのパネルの中にある（パネルを入れ子にしない）" % label)
+                self.nested = True
             elif self.stack:
                 self.problems.append("本文のパネル %s が、本文の一番外に無い（<%s> の中にある）" % (label, self.stack[-1][0]))
             if tag not in TAB_PANEL_TAGS:
@@ -413,7 +418,7 @@ class _BodyScan(html.parser.HTMLParser):
         # ブラウザと同じく、空の要素でなければ /> で閉じても開いたままとして読む
         if tag not in VOID_TAGS:
             self.stack.append((tag, panel))
-        if tag in RCDATA_TAGS:
+        if tag in RCDATA_TAGS and not any(t in FOREIGN_TAGS for t, _ in self.stack):
             self.set_cdata_mode(tag)
 
     def handle_starttag(self, tag, attrs):
@@ -439,6 +444,10 @@ def scan_body(body):
     s = _BodyScan()
     s.feed(body)
     s.close()
+    # 本文の終わりで開いたままの要素（閉じ忘れたパネル・style・script など）は、ブラウザでは本文のあとに描く部品
+    # （データの部品のパネル）を中に入れてしまう。一番外のものだけを挙げる（中のものは同じ原因である）
+    if s.stack and not (s.stack[0][1] and s.nested):
+        s.problems.append("本文の終わりで、<%s> が閉じていない（本文のあとに描く部品が、その中に入る）" % s.stack[0][0])
     return s
 
 
