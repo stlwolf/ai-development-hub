@@ -221,6 +221,8 @@ if [ -d "$TALLY_DIR" ]; then
   for tool_dir in "$TALLY_DIR"/*; do
     [ -d "$tool_dir" ] || continue
     tool="$(basename "$tool_dir")"
+    # unknown はツールではない。3節（tool-attribution）が窓で見るので、ここで行を足さない。
+    [ "$tool" = "unknown" ] && continue
     for hook in $HOOKS; do
       a="${tool_dir}/${hook}.allow"
       d="${tool_dir}/${hook}.deny"
@@ -255,20 +257,57 @@ fi
 # --- 3. unknown へ落ちていないか ---
 # $0 によるツール判別は、ホストが解決済みの絶対パスで起動する形に変われば静かに
 # unknown へ落ちる。**静かに消えるのが本 issue の敵**なので、件数を必ず表に出す。
-if [ -d "${TALLY_DIR}/unknown" ]; then
-  n="$(find "${TALLY_DIR}/unknown" -type f 2>/dev/null | wc -l | tr -d ' ')"
-  tot=0
-  # プロセス置換で読む。パイプにすると while が subshell に入って tot が戻らない。
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    sz="$(size_of "$f")" || sz=0
-    [ -n "$sz" ] || sz=0
-    tot=$(( tot + sz ))
-  done < <(find "${TALLY_DIR}/unknown" -type f 2>/dev/null)
-  add "tool-attribution" "broken" \
-    "ツール不明の記録が ${n} ファイル・計 ${tot} 件ある。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
-else
+# **broken は窓で切る（#529）。** 累計で判定すると、手でのプローブ1回で unknown に落ちた記録が
+# 残るかぎり、判別が正しく動いていても broken を出し続ける（internal-error で踏んだのと同じ形）。
+# 窓の中に1バイト以上ある unknown の tally があるときだけ broken にし、窓の外だけなら累計を
+# 表に出したうえで ok にする。サイズ 0 は記録ではない（2節と同じ）が、窓の中で 0 なら truncate か
+# 書き込みの失敗で、unknown に落ちたことを消している可能性があるので ok にもしない。
+# **窓で切ると、見落としが ok に化ける。** 変更前は unknown が在るだけで broken だったので、
+# 数え方の取りこぼしは表に出なかった。そこで次の形で数える（実装SO の指摘）。
+#   - 件数は find 自身の述語で数え、-print0 の NUL を数える（ファイル名の改行で割れない）
+#   - -L で symlink を辿る（フックの >> は symlink の先へ追記できる）。-L の下でも型が l のまま
+#     残るのは辿れない symlink なので、1つでもあれば indeterminate（Copilot の指摘）
+#   - find・cat が1つでも失敗したら indeterminate（読めないときは 0 件に潰さない・#530）
+#   - 入口は log_state で分ける（祖先を辿れない・壊れた symlink を「無い」と読まない）
+UNKNOWN_DIR="${TALLY_DIR}/unknown"
+# count_files <型> [find の述語...] — UNKNOWN_DIR の下で型（f / l）と述語に当たるものの数。
+# 失敗したら空文字。
+count_files() {
+  local v t="$1"
+  shift
+  v="$(find -L "$UNKNOWN_DIR" -type "$t" "$@" -print0 2>/dev/null | tr -cd '\000' | wc -c)" \
+    || { printf ''; return 1; }
+  printf '%s' "${v// /}"
+}
+st="$(log_state "$UNKNOWN_DIR")"
+if [ "$st" = "absent" ]; then
   add "tool-attribution" "ok" "unknown へ落ちた記録は無い"
+elif [ "$st" = "unreachable" ] || [ "$st" = "dangling" ] || [ ! -d "$UNKNOWN_DIR" ]; then
+  add "tool-attribution" "indeterminate" \
+    "unknown が$(log_state_label "$st")。ツール不明の記録が在るかどうか分からない"
+elif ! n="$(count_files f)" \
+     || ! ndang="$(count_files l)" \
+     || ! nfresh="$(count_files f -size +0 -mtime "-${DAYS}")" \
+     || ! nzero="$(count_files f -size 0 -mtime "-${DAYS}")" \
+     || ! tot="$(find -L "$UNKNOWN_DIR" -type f -exec cat {} + 2>/dev/null | wc -c)"; then
+  add "tool-attribution" "indeterminate" "unknown の記録を読めなかった（権限・IO）。窓の中に在るかどうか分からない"
+else
+  tot="${tot// /}"
+  if [ "$nfresh" -eq 0 ] && [ "$ndang" -gt 0 ]; then
+    add "tool-attribution" "indeterminate" \
+      "unknown の下に辿れない symlink が ${ndang} 個ある。その先に記録が在るかどうか分からない"
+  elif [ "$n" -eq 0 ]; then
+    add "tool-attribution" "ok" "unknown へ落ちた記録は無い（unknown のディレクトリは在るが空）"
+  elif [ "$nfresh" -gt 0 ]; then
+    add "tool-attribution" "broken" \
+      "直近 ${DAYS} 日にツール不明の記録がある（${nfresh} ファイル。累計 ${n} ファイル・計 ${tot} 件）。\$0 による判別が効いていない（ホストの起動パスが変わった疑い）"
+  elif [ "$nzero" -gt 0 ]; then
+    add "tool-attribution" "indeterminate" \
+      "直近 ${DAYS} 日に更新された unknown の tally が在るが中身が 0 件（${nzero} ファイル）。truncate されたか、書き込みに失敗している"
+  else
+    add "tool-attribution" "ok" \
+      "直近 ${DAYS} 日に unknown へ落ちた記録は無い（窓の外に累計 ${n} ファイル・計 ${tot} 件）"
+  fi
 fi
 
 # --- 4. 記録そのものが失敗していないか ---
@@ -324,6 +363,7 @@ if [ -d "$TALLY_DIR" ]; then
   for tool_dir in "$TALLY_DIR"/*; do
     [ -d "$tool_dir" ] || continue
     tool="$(basename "$tool_dir")"
+    [ "$tool" = "unknown" ] && continue
     counts=""; min=""; max=""
     for hook in $HOOKS; do
       f="${tool_dir}/${hook}.allow"

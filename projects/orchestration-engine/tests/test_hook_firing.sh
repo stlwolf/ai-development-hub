@@ -295,5 +295,59 @@ NL="$_TMP_DIR/nologs"; mkdir -p "$NL/tally/claude"; printf 'x' > "$NL/tally/clau
 ck "diag.jsonl が無いときの record-health は ok のまま" "ok" "$(hf_row "$NL" record-health)"
 ck "deny.jsonl が無いときの internal-error は indeterminate のまま" "indeterminate" "$(hf_row "$NL" internal-error)"
 
+echo "[20] oe-hookfire: unknown の記録は窓で切る（古い1件で永久に broken にしない・#529）"
+UK="$_TMP_DIR/unknown-window"; mkdir -p "$UK/tally/claude" "$UK/tally/unknown"
+for h in block-destructive block-force-push cc-lint; do printf 'x' > "$UK/tally/claude/$h.allow"; done
+printf 'x' > "$UK/tally/unknown/block-destructive.allow"
+touch -t 202601010000 "$UK/tally/unknown/block-destructive.allow"
+ck "窓の外の unknown だけなら tool-attribution は ok" "ok" "$(hf_row "$UK" tool-attribution)"
+out="$(HOOK_FIRING_DIR="$UK" "$HB" "$OE_HOOKFIRE" 2>/dev/null || true)"
+ck "窓の外でも累計の件数を表に出す" "1" \
+  "$(printf '%s\n' "$out" | grep -c 'tool-attribution.*累計 1 ファイル・計 1 件' || true)"
+ck "fire/unknown/* の行を出さない" "0" "$(printf '%s\n' "$out" | grep -c 'fire/unknown' || true)"
+ck "cross-check/unknown の行を出さない" "0" "$(printf '%s\n' "$out" | grep -c 'cross-check/unknown' || true)"
+touch "$UK/tally/unknown/block-destructive.allow"
+ck "窓の中の unknown があれば broken" "broken" "$(hf_row "$UK" tool-attribution)"
+# サイズ 0 は記録ではない（2節と同じ）。窓の中で 0 なら truncate か書き込みの失敗なので、
+# broken にも ok にもしない。
+: > "$UK/tally/unknown/block-destructive.allow"
+ck "窓の中でサイズ 0 だけなら indeterminate" "indeterminate" "$(hf_row "$UK" tool-attribution)"
+if [ "$(id -u)" != "0" ]; then
+  printf 'x' > "$UK/tally/unknown/block-destructive.allow"
+  chmod 000 "$UK/tally/unknown"
+  ck "unknown を読めないときは indeterminate（0 件に潰さない）" "indeterminate" "$(hf_row "$UK" tool-attribution)"
+  chmod 700 "$UK/tally/unknown"
+fi
+# 窓で切ると、数え方の取りこぼしが ok に化ける（変更前は在るだけで broken だった）。実装SO の指摘。
+UK2="$_TMP_DIR/unknown-paths"; mkdir -p "$UK2/tally/claude"
+for h in block-destructive block-force-push cc-lint; do printf 'x' > "$UK2/tally/claude/$h.allow"; done
+mkdir -p "$UK2/tally/unknown"
+ck "空の unknown ディレクトリは ok" "ok" "$(hf_row "$UK2" tool-attribution)"
+# ファイル名に改行を含む最近の記録
+printf 'x' > "$UK2/tally/unknown/a
+b.allow"
+ck "改行を含むファイル名の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown/a
+b.allow"
+# symlink の先へ追記された最近の記録（ファイルの symlink・ディレクトリの symlink）
+mkdir -p "$UK2/real"; printf 'x' > "$UK2/real/cc-lint.allow"
+ln -s "$UK2/real/cc-lint.allow" "$UK2/tally/unknown/cc-lint.allow"
+ck "ファイルの symlink の先の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -rf "$UK2/tally/unknown"; ln -s "$UK2/real" "$UK2/tally/unknown"
+ck "ディレクトリの symlink の先の最近の記録で broken" "broken" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown"; ln -s "$UK2/no-such-dir" "$UK2/tally/unknown"
+ck "壊れた symlink の unknown は indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+rm -f "$UK2/tally/unknown"
+# unknown の下の tally が壊れた symlink（Copilot の指摘）。-L でも辿れず数えられない。
+mkdir -p "$UK2/tally/unknown"; ln -s "$UK2/no-such-file" "$UK2/tally/unknown/cc-lint.allow"
+ck "unknown の下の壊れた symlink は indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+rm -rf "$UK2/tally/unknown"
+if [ "$(id -u)" != "0" ]; then
+  mkdir -p "$UK2/tally/unknown"; printf 'x' > "$UK2/tally/unknown/cc-lint.allow"
+  chmod 600 "$UK2/tally"
+  ck "unknown の祖先を辿れないときは indeterminate" "indeterminate" "$(hf_row "$UK2" tool-attribution)"
+  chmod 700 "$UK2/tally"
+fi
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
