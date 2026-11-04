@@ -7,7 +7,7 @@
 - **Rules**: English — ルール/原則はモデルの学習分布（CS 概念体系が英語ベース）と一致させるため英語で記述。断定的・厳格・端的な表現を使う
 - **Skills**: Japanese — スキルはドメイン知識・コンテキストを含むため、ユーザーの思考言語（日本語）で記述。description（frontmatter）も日本語
 
-## Skills (32)
+## Skills (33)
 
 | 名前 | 説明 | パス | depends |
 |------|------|------|---------|
@@ -23,6 +23,7 @@
 | doc-flow-guardrail | ドキュメントフロー全体の地図・委譲固定節テンプレ・cold-start を注入する薄い枠（DJ-11 二層＝大原則1行 + routing 表のみ・中身は個別スキルへ routing） | `skills/doc-flow-guardrail/SKILL.md` | skill: spec-card, skill: delegate-task, skill: episode-retrospective, skill: predecision-exploration |
 | episode-retrospective | Episode closure 時の構造化振り返り（closure gate checklist・出力型×消費チャネル〔構造化 FB セクション向け〕・tier 判定・本文と closure の read/write 契約＝pointer 許容で二重執筆を止める） | `skills/episode-retrospective/SKILL.md` | skill: spec-card, skill: so-compare |
 | html-one-pager | 人に見せて読んでもらう・答えてもらうページ（判定・確認・回答を集めるページ、判断待ちの束、レビューの指摘の一覧、読み物）の形と部品。データ（JSON）を build.py で検証してから1枚の HTML を描く。ページの種別（認識合わせ・承認・一覧から選ぶ・見取り図・束・レビュー・判断ボード）ごとに要る部品と並び・札と番号の接頭辞を決めて検証する。問いのカードの書き方（題は問いの形・何を決めるか・推奨の中身・ほかの案・中身を書いた選択肢の名前）を検証する。一覧から選ぶ問い（表の行ごとに選ぶ）を承認・束・判断ボードにも置け、答えたカードは畳んで題と答えだけを出す。回収した答えの上限を check --answers で確かめる。長いページや中身の区分を、URL 1つのままタブで分ける（定義はデータの tabs・部品か本文のパネルを入れる・1段6つまで・URL の #・隠れたタブへのリンクで切り替える・タブごとの未回答の件数・JS が動かない表示では縦に並ぶ）。ヘッダー（送り元・版・状態）・判定カード・列と行をデータで書く表（識別子の列は issue・PR・別のリポジトリ・外部の課題管理へのリンク、番号の列は本文から飛べるページの中のアンカー）・確かめた度合いの札・答えの保存（db の decisions）と保存できないときの返答の文。持ち運べる形（フォルダの外を参照しない・Python 3.9+） | `skills/html-one-pager/SKILL.md` | — |
+| humanize-ja | 公開されている推敲の規則（いもす研の humanizer）を使うたびに URL から読んで AI が書いた日本語（英語も可）の下書きに当て、説明の重複・予告と言い直し・あいまいな評価を直し、変えた箇所と理由の一覧を添えて返す。規則の本文と要約は持たず、読めないときは直さずに返す。名前で呼んだときだけ使う。Web 版の Claude や ChatGPT に貼る1段落の文を同梱 | `skills/humanize-ja/SKILL.md` | — |
 | implementer-contract | サブエージェントへの実装委譲時の返却契約（ステータスenum・報告フォーマット・スコープ外報告） | `skills/implementer-contract/SKILL.md` | — |
 | issue-conventions | Issue作成の規約を適用する | `skills/issue-conventions/SKILL.md` | — |
 | issue-intake | issue 着手時の認識合わせ（やること・書いていないが要ること・見た観点の3つを出し、owner の応答1回で確定版を issue コメントに残す。深掘りの合図で question-driven-design へ受け渡す） | `skills/issue-intake/SKILL.md` | skill: question-driven-design, skill: so-compare |
