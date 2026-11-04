@@ -3,7 +3,7 @@ id: "01M6JG4A2WZA09BMR7TNDHRYFV"
 title: "#565 humanizer の規則を URL で読んで当てる推敲のスキルを canonical に足す"
 date: 2026-11-04
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/565"
@@ -14,11 +14,35 @@ related:
   - type: reference
     ref: "docs/research/2026-11-04-ja-readability-skills.md"
     reason: "前段の調査ノート（PR #566）"
+  - type: reference
+    ref: "docs/harness/decisions/2026-11-04-decision-565-external-rules-by-url.md"
+    reason: "この単位から昇格した decision（決定1〜3）"
+  - type: reference
+    ref: "docs/harness/knowledge/items/01M6JR5E2G6TBZ3MZT45T4KCHN.md"
+    reason: "この単位から収穫した negative knowledge（ゲート3 の答えを写すときに写した先まで突き合わせる）"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/568"
+    reason: "この単位の PR"
 tags: [skill, readability, japanese, harness]
 promotion:
-  - subject: "（closure が埋める）"
-    verdict: unknown
-    ref: "本文: （closure が埋める）"
+  - subject: "ライセンスの明示が無い外部の規則の文は、本文も要約も配らず、使うたびに URL で読んで当てる"
+    verdict: required
+    ref: "本文: GATE 3: 統括が確定版と照らして承認に代えた（2026-11-04）"
+  - subject: "URL を読んだ結果を全文・途中・読めなかったの3つに分け、全文のときだけ当て、ほかは直さずに返す"
+    verdict: required
+    ref: "本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-04）"
+  - subject: "規則の更新の検知は本文の形（見出しの並び）だけを控えて比べる"
+    verdict: required
+    ref: "本文: I1-3: 確かめの結果（2026-11-04）"
+  - subject: "ゲート3 の答えを plan に写すときは、答えの語で plan と実装を横断して当たりを直してから実装に入る"
+    verdict: required
+    ref: "本文: I2-1: 実装SO の結果と採否（2026-11-04）"
+  - subject: "試用のあいだは名前で呼んだときだけ発火する"
+    verdict: not-required
+    ref: "本文: GATE 3: 統括が確定版と照らして承認に代えた（2026-11-04）"
+  - subject: "yomiyasu との分担はこのスキルが先で、最後に最初の原文と最終稿を照合する"
+    verdict: not-required
+    ref: "本文: P2: plan の初稿と、そこで下した判断の理由（2026-11-04）"
 ---
 
 # #565 humanizer の規則を URL で読んで当てる推敲のスキルを canonical に足す
@@ -118,3 +142,97 @@ owner は AI が書いた日本語を読みやすくしたい（#565）。調査
 - 確かめに使った `~/.claude/skills/humanize-ja` の一時リンクは外した。
 
 昇格の印: ゲート3 の答えを plan に写すとき、答えが変える「設計判断の文」だけでなく、その判断を写した「description・受入の条件・CATALOG の行」まで突き合わせないと、旧条件が実装に残る。実装SO が拾ったが、写すときの確認の項目にしてよいかもしれない。
+
+### I2-2: PR を作った（2026-11-04）
+
+- PR #568（https://github.com/stlwolf/ai-development-hub/pull/568 ）。plan・episode・スキル・CATALOG を同じ PR に載せた。`--reviewer @copilot` で依頼し、timeline に `review_requested Copilot` が出た（依頼から約5分で返った）。
+
+### I2-3: Copilot の1ラウンド（2026-11-04・b071373）
+
+- 指摘は1件（中）。「見出しの数を常に保つ」が、同じ役割の節の統合や要らない見出しの削除を妨げ、構成を直す役目と DJ-2（構成を固定しない）に反する。採った。保つのは機能を持つ記法と雛形の見出し（PR や issue のテンプレートが決めている節）だけにし、それ以外は依頼の範囲で統合や削除も含めて変えてよいと書き直した。返信した。
+- 雛形の見出しを残したのは、PR 本文のテンプレートの節を消すと受け手の規約を壊すためで、yomiyasu の pr 種別が「見出しの数と順は変えない」としているのと同じ線である。A3 で issue 本文の見出し 8 が保たれていたのは雛形の見出しだったからで、この直しで結果は変わらない。
+
+## 振り返り（closure・2026-11-04）
+
+### tier と closure gate
+
+- tier は **heavy**。意図的に起動した外部レビュー（設計SO と実装SO・どちらも so-compare の Codex 1レーン）を使い、補正 H2 の撤回（方針の転回）があり、棄却した案（案A〜H）のある設計判断と、decision と knowledge への昇格候補がある。
+- Context は冒頭の「なぜこの作業が始まったか」にある。
+- brief の negative knowledge は「採用なし」だったので、観測の書き戻し（Step 6）の対象は無い。
+- 認識合わせの抜け: この単位は追補の brief から始まり、着手時の認識合わせは #565 本体のもの（確定版は issue のコメント）を統括が照らして代えた。後から見つかった要件は無い。
+
+### 昇格の判定
+
+frontmatter の `promotion` と同じ6件。本文の印は3つで、印の無い判断を3つ足した。
+
+- **required（決定1）**: 外部の規則の文は本文も要約も配らず URL で読む。複数の解釈が live だった（本文を写す・要約を同梱する・URL だけ）。覆すには著者の許諾という事実のほかに「配ってよいか」の議論が要る。前提（著者の許諾が無い）は将来偽になりうる。次に外部の規則の文を使う人が同じ分岐に立つ。→ decision（決定1）。材料は plan の DJ-3 と GATE 3 の節、設計SO の指摘8。
+- **required（決定2）**: 読めたの3状態。先頭と末尾だけで全文とみなす案と競合し、実装SO で線を引き直した。URL を読んで当てるほかのスキルでも再訪される。→ decision（決定2）。材料は plan の DJ-3 と実装SO の指摘4。
+- **required（決定3）**: 更新の検知は形だけ。紹介ページの日付・ハッシュ・行数と大きさを退けた。道具で表示が違うという前提は、道具が変われば偽になりうる。→ decision（決定3）。材料は A5 の結果と H1。
+- **required（knowledge）**: ゲート3 の答えを写すときの突き合わせ。非自明（写した本人は写したと思う）・再発しうる（承認で答えが変わる単位は多い）・行動を変える（写す前に grep する）。既存の rule・skill・item に同旨は無い（`implementer-contract` の「承認のあとに plan が変わるとき」は級の分け方で、写す範囲は扱っていない）。→ knowledge item `01M6JR5E2G6TBZ3MZT45T4KCHN`（Step 5・in-PR）。
+- **not-required**: 試用のあいだは名前で呼んだときだけ。試用の期間の決めで、owner の答え（Q58）がそのまま正本であり、覆すのは試用の記録を見た owner の1行で足りる（議論でなく確認）。decision の「結果」に記した。
+- **not-required**: yomiyasu との分担の順と照合。SKILL.md の本文が正本で、実装アーティファクトに併設されている。棄却した案は「yomiyasu を先にする」だけで、覆すには実物（手戻りの量）を見れば決まる。
+
+### 事実・失敗
+
+- 発火の条件が owner の答えとずれたまま実装し、受入 A1 が旧条件で合格した。実装SO が拾った。`本文: I2-1: 実装SO の結果と採否（2026-11-04）`
+- 補正 H2（一時ファイルに取って消す）は要件の緩和で「変更」に当たり、取り下げた。`本文: I2-1: 実装SO の結果と採否（2026-11-04）`
+- エージェントが規則を /tmp に取り、消すときに許可待ちで止まって残った。`本文: I1-3: 確かめの結果（2026-11-04）`
+- `rm -rf /tmp/<フォルダ>` が破壊コマンドの hook に止められ、名指しの削除に替えた。`本文: I1-3: 確かめの結果（2026-11-04）`
+- 試し入れした yomiyasu の description が、入れた5分後に書き換わっていた（この単位の作業ではない）。`本文: 観察: 試し入れした yomiyasu の description が変わっていた（2026-11-04）`
+- yomiyasu の lint は、前段の調査の単位からハーネスの許可で実行できないままである。`本文: P1: worktree・調査ノートと brief の照合（2026-11-04）`
+
+### 決定と根拠
+
+- 決定1〜3 と棄却した案は decision に蒸留した。`本文: GATE 3: 統括が確定版と照らして承認に代えた（2026-11-04）`・`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-04）`
+- 補正の級の見直し（H2 を変更と判定して取り下げ）。`本文: I2-1: 実装SO の結果と採否（2026-11-04）`
+- 雛形の見出しだけを保つ（Copilot の指摘）。`本文: I2-3: Copilot の1ラウンド（2026-11-04・b071373）`
+
+### わかったこと
+
+- 同じ URL の本文でも、道具が整形して返すと行数と大きさが違って見える（Codex 444・Cursor 511・curl 510）。`本文: I1-3: 確かめの結果（2026-11-04）`
+- Codex の sandbox では curl がホスト名を解決できず、Web 閲覧の道具なら読める。`本文: I1-3: 確かめの結果（2026-11-04）`
+- description を「名前で呼んだときだけ」にすると、名前なしの推敲の依頼ではエージェントが「名前が出ていないので使わない」と自分で書く。`本文: I2-1: 実装SO の結果と採否（2026-11-04）`
+
+### 原則
+
+- NG: 承認の答えを設計判断の文にだけ写す。OK: 答えの語で plan と実装を横断して当たりを全部直す。`本文: I2-1: 実装SO の結果と採否（2026-11-04）`（knowledge item に収穫）
+- NG: 外部の規則の文を「読めた」とみなす条件を先頭と末尾だけにする。OK: 省略と切断の兆候で3状態に分け、全文のときだけ当てる。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-04）`
+
+### 行動変更
+
+- トリガ: ゲート3 の答えを plan に写すとき。機構: negative knowledge の注入（brief の slot）。着地先: `docs/harness/knowledge/items/01M6JR5E2G6TBZ3MZT45T4KCHN.md`（この PR で収穫）。
+
+### 蒸留シグナル
+
+- decision: `docs/harness/decisions/2026-11-04-decision-565-external-rules-by-url.md`（決定1〜3・この PR）
+- knowledge: `01M6JR5E2G6TBZ3MZT45T4KCHN`（この PR）
+- skill / rule: 追加なし（スキル本体がこの単位の成果物）
+
+### 残課題と行き先
+
+- yomiyasu の lint を hub の文に当てる試行: owner が子のペインでコマンドを打ったときに、PR #566 のノートの節と試用の記録の初回の節を更新する。行き先は試用の記録（hub の外）と PR #566。owner が打たなければ追わない（Q56 で「待たずに決める」と答えている）。
+- 規則の要約や本文を配ることの著者への確認: 追わない。配らない形（決定1）にしたので要らない。配る形に戻すときに再訪する（decision の前提）。
+- Web 版に貼る文の効果: 試用の記録（hub の外）で見る。hub では追わない。
+- 常時にするか（CLAUDE.md の1行）: 試用の記録を見た owner の判断。行き先は #565（issue を閉じるときの判断と一緒に）。
+- hub の規則に P-2 の観点（無生物主語と比喩動詞・述語の脱落・否定対比）を足すか: 試用のあとに owner が決める。行き先は #565。
+- yomiyasu の description の書き換え: owner の手元の変更で、試用の記録に書いた。hub では追わない。
+
+### 次の消費者
+
+- `humanize-ja` を使う人と、持ち出す先のリポジトリ（SKILL.md が正本）。
+- yomiyasu の試用の記録を書く人（humanize-ja との分担の順）。
+- #565 の正式採用の判定（owner・統括）。
+- 次に外部の規則の文を hub で使うスキルの作者（decision）。
+
+### 外部チェック（Step 4）
+
+（so-compare の focused check の結果をここに書く。）
+
+### 形式メモ
+
+- 骨格で拾えたもの: 事実・失敗の6件（うち2件は実装SO が拾い、自分では見落としていた）、決定の3件、残課題の6件の行き先。
+- 拾えなかったもの: 「写した」と思い込む失敗は、本文の印には出ておらず、実装SO の指摘から遡って印にした。印は起きたその場より、指摘を受けた場で付くことが多い。
+- 皮（KPT/YWT）は使わなかった。摩擦は、昇格の判定6件を1件ずつ書くことと、Step 4 の SO の待ち時間。
+
+status: stable（達成）。
+

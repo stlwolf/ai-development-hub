@@ -3,7 +3,7 @@ id: "01M6JG4A24B0DRA7R42P8APSD7"
 title: "#565 humanizer の規則を URL で読んで当てる推敲のスキルを canonical に足す"
 date: 2026-11-04
 type: plan
-status: in-development   # ゲート3 承認（2026-11-04・51f9ae7 の版）。承認の時点の owner の答え（Q57・Q58）を DJ-3・DJ-5 に写した（級は記録）
+status: stable   # 実装完了（2026-11-04・PR #568）。受入 A1〜A8 を満たした。ゲート3 の承認は 51f9ae7 の版で、owner の答え（Q57・Q58）を 7df28e3 で写し、承認のあとの補正は末尾の「ゲート3 のあとの変更」節（H1・H3〜H5。H2 は取り下げ）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/565"
