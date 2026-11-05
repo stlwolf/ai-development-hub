@@ -80,7 +80,7 @@ def main():
         for r in responses(p, 400):
             req = (r.get('request') or '').strip()
             # 長さの上限は題として現実的な範囲に置く。全文を送るので、
-            # 200 字で切られた版より上限を上げる（#348 R-6 の欠陥への対処）。
+            # 200 字で切っていた実装より上限を上げる（#348 R-6 の欠陥への対処）。
             if not req or UNUSABLE.search(req[:200]) or not (15 <= len(req) <= 2000):
                 continue
             ctx = '中継' if RELAY.search(req[:300]) else 'owner 発話'

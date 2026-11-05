@@ -67,7 +67,7 @@ oe-review [--lanes N] [--base <ref>] [--context <doc>]
 - `--base <ref>` … diff の base ref（`base...HEAD` をレビュー対象に）。省略時は自動解決: `OE_REVIEW_BASE` > `origin/HEAD` > `master` > `main`。解決不能/不在/差分ゼロは exit 2
 - `--context <doc>` … 追加コンテキスト（issue 要件等）を反証プロンプトに inline するファイル
 - 出力（stdout JSON）: `{verdict, reason, lens:"impl", lanes, dissent:[{lane,verdict,note}], reviewed_sha, diff_base, diff_hash, changed_files_count, output_dir, audit_id}`
-- **diff バインド**: `reviewed_sha`(HEAD) / `diff_base` / `diff_hash`(=`base...HEAD` 内容の `git hash-object`) を JSON と audit に記録。将来ゲートが「**現 HEAD diff に対する**実装SO が在るか」を機械判定でき、stale-SO false-pass（古い版に実行済→その後コード変更）を防ぐ
+- **diff バインド**: `reviewed_sha`(HEAD) / `diff_base` / `diff_hash`(=`base...HEAD` 内容の `git hash-object`) を JSON と audit に記録。将来ゲートが「**現 HEAD diff に対する**実装SO が在るか」を機械判定でき、stale-SO false-pass（変更前のコードに実行済→その後コード変更）を防ぐ
 - **設計SO との識別**: 別 verb・別 audit stream（`oe-review.jsonl`）・`event_type=oe_review`・`lens=impl`・diff バインドの有無で構造的に識別可能（`oe-refute` の `oe_refute` / rubric とは別物）
 - **diff 注入**: reviewed diff を反証プロンプトに注入（`OE_REVIEW_DIFF_MAX_BYTES`=既定 30000 以内なら inline、超過時は changed-files＋base ref＋「`git diff <base>...HEAD` をレビューせよ」指示で workspace フォールバック）
 - 集約は **conservative**（`oe-refute` と同様）: 1 レーンでも material な欠陥検出→全体 refuted。verdict を取れないレーンは `error` とし survived 確定を阻む
@@ -525,8 +525,8 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
   件数を note で開示する（黙って捨てない）。
 - **拍動のために起こす jq を sidecar 件数に比例させない**（dir 全体を 1 回の jq で舐める）。`--watch` は
   tick ごとに自分を再 exec するため。**フレーム全体の jq は 20 回前後**で、そのうち拍動が増やすのは
-  2 回である（拍動なしの版は 18 回。残りは登記とラベルの解決など既存の経路）。実測は sidecar 176 件・
-  フレーム 313ms（拍動なしの版は 283ms）。
+  2 回である（拍動を足す前の実装は 18 回。残りは登記とラベルの解決など既存の経路）。実測は sidecar 176 件・
+  フレーム 313ms（拍動を足す前の実装は 283ms）。
 - **read-set の再裁定**: 本 verb の読む集合は (1) registry / pane-issue (2) tmux query に閉じており
   「DJ-223-9・hg-1 裁定済み」と明記されていた。2026-08-30 に owner が再裁定し、(3) statusLine 拍動
   sidecar を加えた。書き込みと非検出の境界は動かしていない。

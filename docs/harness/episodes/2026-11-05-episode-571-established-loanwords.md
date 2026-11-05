@@ -92,7 +92,7 @@ owner は別のリポジトリの統括のセッションで「PHP の版なん�
   - `canonical/skills/html-one-pager/glossary.md:158`（表の書かない形）
   - `canonical/skills/question-driven-design/SKILL.md:42`（枝分かれ）
   - `canonical/skills/runbook-authoring/glossary.md:41`（表の書かない形）
-- 「版」の残りは222回で、すべて残す種類に当たった。文書の改訂が107回、接尾と定着した語（Web 版・確定版・初版・最新版など）が103回、決まりの文の中の例が5回（§8 の「版 for a software version」「確定版 / 前の版」と、出力の型の「枝・版・打つ」「確定版」）、目で読んだ7回（ページのヘッダーの「版」・artifact の内部の版の番号・承認の記録の版・`event-bus.sh` の「TAB 版」・「自動更新版」）。全件は作業層の `tmp/571-loanwords/ban-after.txt` にある。plan の DJ-5 は決まりの中の例を2回と書いていたが、残す和語の例の「確定版 / 前の版」を数えていなかった。5回が正しい。
+- 「版」の残りは、I1 の直後には222回で、すべて残す種類に当たったと書いた。実装SO の指摘1で、前の実装やコードの状態を指す6回（engine の `bin/README.md` の 70・528・529行目、`oe-tree` の 458行目、`register-metrics` の2回）を取りこぼしていたと分かり、直した（I2 の節）。直したあとの残りの全件と種類は、この節の末尾の表にある。
 - 凍結した置き場（`docs/`・`projects/*/docs/`・`ideas/`・`projects/_archived/`・`projects/orchestration-research/`・`projects/poc/`）は、この plan と episode のほかに1行も変わっていない（`git diff --stat 600f666~1..HEAD`）。新しい検査のファイルも足していない。
 - 変数の直後の全角（`rg --pcre2`）: 直した bash のファイルで、新しい該当は0件。`oe-handoff` の 73行目に既存の1件があるが、引用付きの heredoc の中のヘルプの文で展開されない（`--help` の出力で `$OE_BOARD_FILE` が文字のまま出ることを確かめた）。
 - `shellcheck`: 直したシェルスクリプト21本で、直す前と後の警告の中身が同じだった。
@@ -102,3 +102,72 @@ owner は別のリポジトリの統括のセッションで「PHP の版なん�
 - テストが比べていない表示の文は、実際に走らせて読んだ。`oe-selfcheck --help` の1行目と見出しの行、`screen-marker` の detail、`oe-lane-explain --help` の `--summary` の行が、新しい語で出た。
 - 書き直した決まりを、書き直したファイルと2つのスキルのフォルダ全体に当てた（knowledge item `01M5F0CNEKA9ED9AMQ3YWGGF8W`）。残ったのは、表の書かない形、シェルの「展開」（分野の語）、`html-one-pager/SKILL.md` の 393行目の「置き換えて打つ」（キーで入力する意味で、外来語の言い換えではない）だけだった。
 - 同じ語の意味の対比（設計SO の選択肢拡張）: git の枝はブランチ（§8 の1つ目の項目）、条件の分岐は分岐のまま（§8 の残す和語の例）、PHP の版はバージョン（1つ目の項目）、文書の確定版は確定版のまま（残す和語の例）、behavioral には振る舞いとして（性質を表す語の項目）。書き直した §8 の文だけで、3組とも同じ基準で説明できる。出力の型でも、1つ目の項目の「別のものを指す和語はそのまま書く」と2つ目の項目で同じ3組を説明できる。
+
+### I2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-11-05）
+
+- `so-compare --codex-only`（`SO_TIMEOUT=600`）。初回で返った（`model_resolved=gpt-6.1-sol`・`timeout_status=success`・4,940 バイト）。依頼文と出力は作業層の `tmp/571-loanwords/so-impl/` にある。結論は「直してから PR にしてよい」で、高の指摘は無かった。
+- 指摘1（中）: 前の実装やコードの状態を指す「版」が残っていた。採った。DJ-5 の「残す（文書の改訂）」に「拍動なしの版」「切っていた版」を入れていたのは、何が変わったか（プログラム）で分けるという設計SO の指摘3の考えを、自分の分類に当て直していなかったためである。SO の選択肢拡張に従い、「バージョン」ではなく指すものを直接書いた（「変更前のコード」「拍動を足す前の実装」「200 字で切っていた実装」）。同じ種類を `register-metrics` で2回見つけて一緒に直した。`select-firing-prompts.py` の 146行目「切り詰めた版を書く」と `verify-style-injection.py` の「古い版」は、文の中身の改訂を指すので残した。
+- 指摘2（中）: 残った「版」を1件ずつ分類した一覧が episode に無かった。採った。下の表を足した。
+- 指摘3（低）: `runbook-authoring/glossary.md` の冒頭が、使わない語の表の語まで使うように読めた。採った。「「使う語と、その1つの意味」の表の語を使い、「使わない語」の表の語は代わりの語に替える。」に直した。
+- 直したあとに、`test_oe_tree.sh`（bash 5・3.2 とも 88 で失敗0）・`runbook-authoring` のテスト（95・OK）・`oe-tree` の `shellcheck`（前後とも警告0）・2つの Python の構文の確かめを回した。
+
+### 直したあとに残った「版」の全件（2026-11-05）
+
+種類は「改訂」（文書・ページ・記録・文の中身の改訂）、「接尾・定着」（Web 版・確定版・初版・最新版のような接尾と定着した語）、「例」（§8 と出力の型の中の言い換えの例）である。行の番号は直したあとのファイルのもの。
+
+合計 216 回（改訂 106・接尾・定着 105・例 5）
+
+| ファイル | 種類と行（同じ行に複数あれば重ねて書く） |
+|---|---|
+| `canonical/CATALOG.md` | 改訂: 25／接尾・定着: 26,29,39 |
+| `canonical/claude/statusline/statusline-oe-heartbeat.sh` | 接尾・定着: 27 |
+| `canonical/commands/review/pr-review-checklist.md` | 接尾・定着: 114 |
+| `canonical/hooks/scripts/oe-prompt-receipt.sh` | 接尾・定着: 142 |
+| `canonical/orchestration-spec/document-format.md` | 改訂: 211／接尾・定着: 614,636,742 |
+| `canonical/output-styles/readable-conversation.md` | 例: 24,24 |
+| `canonical/rules/output-format-rule.md` | 例: 21,26,26 |
+| `canonical/skills/branch-naming/SKILL.md` | 接尾・定着: 17,19 |
+| `canonical/skills/code-path-exhaustion/SKILL.md` | 接尾・定着: 75 |
+| `canonical/skills/doc-flow-guardrail/SKILL.md` | 接尾・定着: 94,124,195／改訂: 207,207,208,209,209,209,209,209,209,209,209,210,210 |
+| `canonical/skills/episode-retrospective/SKILL.md` | 接尾・定着: 82 |
+| `canonical/skills/html-one-pager/SKILL.md` | 改訂: 3,40,87,87,87,338,339,447 |
+| `canonical/skills/html-one-pager/build.py` | 改訂: 1901,2802 |
+| `canonical/skills/html-one-pager/glossary.md` | 改訂: 42,58,93,95／接尾・定着: 166 |
+| `canonical/skills/html-one-pager/page.css` | 改訂: 1 |
+| `canonical/skills/html-one-pager/tests/test_build.py` | 改訂: 1600,1608,1644,2214 |
+| `canonical/skills/humanize-ja/SKILL.md` | 接尾・定着: 93 |
+| `canonical/skills/humanize-ja/paste-prompt.md` | 接尾・定着: 1,3 |
+| `canonical/skills/implementer-contract/SKILL.md` | 改訂: 164,170,170 |
+| `canonical/skills/issue-intake/SKILL.md` | 接尾・定着: 3,16,17,26,26,26,68,75,77,84,85,90,258,260,265,267,268,270,270,274,294,294,302,303,303,303,303,305,308,309,325,343,344／改訂: 75,88,264,266,268,268,268,294,308 |
+| `canonical/skills/judgment-board-flow/SKILL.md` | 接尾・定着: 32,44,56,74,275,275,275,275,275,275,275,294,296／改訂: 44,121,223,266,274,275,289,289,290,355 |
+| `canonical/skills/judgment-board-flow/ledger.py` | 改訂: 473 |
+| `canonical/skills/kickoff-to-plan/SKILL.md` | 接尾・定着: 223,230 |
+| `canonical/skills/predecision-exploration/SKILL.md` | 接尾・定着: 17,57,80 |
+| `canonical/skills/question-driven-design/SKILL.md` | 改訂: 12,62／接尾・定着: 62,62 |
+| `canonical/skills/runbook-authoring/glossary.md` | 接尾・定着: 49 |
+| `canonical/skills/unmet-gate-check/SKILL.md` | 改訂: 43,43,43,44,45,47,47,146,152,152,153,153,153,153,153,157,157,157,159,159,159,159,159,159,159,166,166,166,187,188,194,194,194,194,195,197,197,197,197,197 |
+| `canonical/skills/worktrunk-worktrees/SKILL.md` | 接尾・定着: 35 |
+| `projects/claude-safe/README.md` | 接尾・定着: 61 |
+| `projects/orchestration-engine/README.md` | 接尾・定着: 120 |
+| `projects/orchestration-engine/bin/README.md` | 接尾・定着: 471,553 |
+| `projects/orchestration-engine/bin/oe-confirm` | 接尾・定着: 17 |
+| `projects/orchestration-engine/bin/oe-selfcheck` | 接尾・定着: 107,174,234,260 |
+| `projects/orchestration-engine/bin/oe-threads` | 接尾・定着: 40 |
+| `projects/orchestration-engine/bin/oe-tree` | 接尾・定着: 14 |
+| `projects/orchestration-engine/bin/oe-undelivered` | 接尾・定着: 339,400 |
+| `projects/orchestration-engine/bin/oe-vitals` | 接尾・定着: 21 |
+| `projects/orchestration-engine/lib/attach.sh` | 接尾・定着: 8 |
+| `projects/orchestration-engine/lib/event-bus.sh` | 接尾・定着: 104 |
+| `projects/orchestration-engine/scripts/knowledge-list.sh` | 接尾・定着: 25 |
+| `projects/orchestration-engine/scripts/measure-delivery-arrival.py` | 接尾・定着: 220 |
+| `projects/orchestration-engine/scripts/register-metrics/select-firing-prompts.py` | 改訂: 146 |
+| `projects/orchestration-engine/scripts/register-metrics/verify-style-injection.py` | 改訂: 5,39 |
+| `projects/orchestration-engine/tests/e2e_real_agent/self_verify_attach.sh` | 接尾・定着: 46 |
+| `projects/orchestration-engine/tests/test_apply_claude_settings.sh` | 改訂: 843,855 |
+| `projects/orchestration-engine/tests/test_oe_threads.sh` | 接尾・定着: 168 |
+| `projects/orchestration-engine/tests/test_oe_undelivered.sh` | 接尾・定着: 153 |
+| `projects/orchestration-engine/tests/test_prompt_receipt.sh` | 接尾・定着: 132,140,189,289,355 |
+| `projects/orchestration-engine/tests/test_verify.sh` | 接尾・定着: 428 |
+| `projects/ruler-agent-verification/README.md` | 接尾・定着: 54,54 |
+| `projects/wezterm-ai-mode/CONVENTIONS.md` | 接尾・定着: 157 |
+| `scripts/sync/apply-claude-settings.sh` | 改訂: 425,430 |
