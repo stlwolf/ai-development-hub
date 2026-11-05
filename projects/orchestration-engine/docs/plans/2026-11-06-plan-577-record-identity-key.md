@@ -58,6 +58,7 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 | N8 | プロセスの観測（pid と開始時刻）を hook でも書けるようにする（DJ-3・任意） | 新しい。#355 の「hook を土台にしない」は守る | ゲート1 の Cursor の案H |
 | N9 | `/tmp/oe-parent-<N>`（`oe-report` の古いフォールバック）を消すかを、実装の段階で決める | 新しい | 棚卸し |
 | N10 | 新しい概念を識別子で呼ぶ（`lineage`・`generation`・`binding`・`epoch`・`delivery_held`）。持ち場の名前は owner に聞いている（DJ-17・推奨 `lineage`） | 新しい。確定版は「ID」「ラベル」とだけ書き、名前を決めていなかった | owner の指摘（2026-11-06・統括から）・#564 の決まりの案 |
+| N11 | transport を替えるときに参考が埋もれないように、transport の唯一の入口 `lib/delegate-send.sh` の冒頭の説明から DJ-10 の参考を指す1行を置く（PR-3） | 新しい | owner の指摘（2026-11-06「参考に残しても transport を替えるときに埋もれる」・統括から） |
 
 ## ゲート1（ゼロベースの代替探索）
 
@@ -80,7 +81,7 @@ discussion の §8 が正本である。
 |---|---|---|---|
 | PR-1 | `lineage` の記録の lib と verb（作る・`binding` する・名乗る・引く・閉じる・掃除する）。heartbeat からペインを引く1つの関数（N6）と、生きていないことの確かめの関数（DJ-9） | 触らない（新しいファイルだけ） | 新しいテスト（偽の tmux と ps・一時ディレクトリの state）と shellcheck |
 | PR-2 | 書く側を両方書きにする。`oe-delegate`（`lineage` を作り、`OE_LINEAGE_ID`・`OE_GENERATION`・親の `lineage` を環境に入れる）・`oe-register`・heartbeat の producer（`lineage_id` と `generation` を足す）・event の snapshot（DJ-13）・一度だけの取り込み（`oe-lineage adopt`）（DJ-11） | 触る（書く記録が増える。読む側は変えない） | 既存のテストが全部通ること・新しいテスト・実機で1回（下の「実機の確かめ」の R1） |
-| PR-3 | 送る側。`oe-send` の `lineage` あて・送る前の確かめと Enter の前の確かめ直し（DJ-6）・親の `lineage` へ送る形・`delivery_held` の event（DJ-16）・`oe-report`。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
+| PR-3 | 送る側。`oe-send` の `lineage` あて・送る前の確かめと Enter の前の確かめ直し（DJ-6）・親の `lineage` へ送る形・`delivery_held` の event（DJ-16）・`oe-report`。transport の唯一の入口 `projects/orchestration-engine/lib/delegate-send.sh` の冒頭の説明に「transport を替えるときの参考: #577 の discussion の DJ-10（Claude Code のセッション間の文を送る機能の受け取る側の制御）」の1行を置く（N11）。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
 | PR-4 | 統括の `lineage`。`oe-handoff take` と `retire` を `lineage` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`oe-vitals` が `lineage` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
 | PR-5 | 観測する側。`oe-tree` が `lineage` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・`seen` の記録のキー（N7）・計測のスクリプト。registry を「誰か」のキーとして読むのをやめる（owner の答え Q66 により、この最後の切り替えは復帰のテストの時に一度に行ってよい） | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
 
@@ -134,7 +135,7 @@ owner の答え（Q69「推測するな計測せよ」）により、resume の�
 
 ## GATE 3 の問い
 
-（持ち場の名前の答えが届いたあとに書く。この plan で実装に進むか・確定版に無い判断 N1〜N10 を承認するか・DJ-1 の答えの当て方（持ち場と `generation` を1つのファイルの中の2つの表として持つ読み）で足りるか）
+（持ち場の名前の答えが届いたあとに書く。この plan で実装に進むか・確定版に無い判断 N1〜N11 を承認するか・DJ-1 の答えの当て方（持ち場と `generation` を1つのファイルの中の2つの表として持つ読み）で足りるか）
 
 ## ゲート3 のあとの変更
 

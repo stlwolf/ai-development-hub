@@ -277,6 +277,8 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   4. 相手の状態で届け方を変える。作業中なら道具の呼び出しの合間に読み、動いている道具を止めない。待機中なら新しいターンを始める（「The receiving Claude reads the message between tool calls during an active turn, so a running tool is never interrupted. When the receiving session is idle, Claude Code starts a new turn with the message.」・「Message delivery」）。いまの transport は相手の状態に関係なく打ち込み、Enter が吸収されることがあるので、送ったあとに画面を見て Enter を送り直す（#144・`lib/delegate-send.sh` の冒頭の注記 [verified]）。比べる材料になる。
   5. 送り合いが止まらなくなるのを防ぐ上限がある。受け取る側が送り手ごとに回数を絞り、短いあいだの同じ文を捨て、渡す待ちを50件までにする（「Message loops are throttled」・「Limitations」）。hold した文は100件までで、超えると古いものから捨てる（「Control inbound messages」）。送る側も、短いあいだに送りすぎると送る前に断る（「Rapid bursts to one session are refused at the sender」）。
   6. 届いたことを送り手へ自動で知らせる仕組みは、原文に書かれていない。書かれているのは、受け手の Claude が `SendMessage` で返事をできること（「Message delivery」）と、非対話のセッションで保留が期限を過ぎて捨てられたときに、届けられる送り手へ「expired」を返すこと（「Past the deadline: Claude Code drops the message and reports it as expired to a sender it can reach.」・「Non-interactive sessions」）だけである。engine には、受け手の hook が送った1行の nonce を取り込みの印として書く受領印（receipt・#336）がすでにあり、この点では engine のほうが先にある。
+  - 統括の見立て（2026-11-06）: transport を替えるときは、届ける前の制御（accept・hold・refuse・回数の上限・重複の破棄・相手の状態を見て届ける）と、対話中のエージェントへの最後の一歩（端末に打ち込む・道具の受け口）を分けて設計する。記録の正本はテキストのまま（報告のファイル）にする。
+  - この参考が transport を替えるときに埋もれないように、transport の唯一の入口 `lib/delegate-send.sh` の冒頭の説明から、この節を指す1行を置く。engine と hook と scripts のコードで `tmux send-keys` を呼ぶのはこのファイルだけである [verified]（`grep -rn 'send-keys'`・2026-11-06。`bin/oe-send` の2行は、手でフォールバックするときの案内の文）（plan の N11・PR-3。owner の指摘「参考に残しても transport を替えるときに埋もれる」）。
   - 別の issue は起こさない（owner の答え）。
 
 ### DJ-11 移行の段取り（owner に聞いた）
