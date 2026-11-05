@@ -5,12 +5,12 @@
 #   oe-lane-explain <dir>...        指定した SO 出力ディレクトリのレーンを分類して表で出す
 #   oe-lane-explain --scan <root>   <root>/tmp 配下の SO 出力ディレクトリを全部集めて当てる
 #   oe-lane-explain --json ...      1 レーン 1 行の JSON（JSONL）で出す
-#   oe-lane-explain --summary ...   版の目印で層別した件数を出す
+#   oe-lane-explain --summary ...   バージョンの目印で層別した件数を出す
 #   oe-lane-explain -h | --help
 #
 # なぜ so-compare の外に置くか（#303 の設計SO で3レーン中2レーンが独立に出した案）:
 #   so-compare は ~/bin から repo への symlink で配布されており、触ると全セッションへ即座に
-#   反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。
+#   反映される。分類のシグネチャは CLI のバージョンで腐るので、腐るものを配布物に入れたくない。
 #   本 verb は出力ディレクトリを読むだけなので、シグネチャを直しても誰の実行にも影響しない。
 #   加えて **過去の出力へ遡って当てられる**（配布物側に入れると当てられるのは今後の実行だけ）。
 #
@@ -18,7 +18,7 @@
 #   write path を持たず、engine state（events / registry / session-state）にも触れない。
 #
 # 分類の契約（#303 の plan v2 §8 I-1）:
-#   - **「ファイルが不在」と「ファイルが空」を畳まない。** 不在は「そのファイルを作らない版が
+#   - **「ファイルが不在」と「ファイルが空」を畳まない。** 不在は「そのファイルを作らないバージョンが
 #     この記録を生成した」という証拠を運んでいる。畳むとレコードの出自を取り違える
 #     （knowledge/items/01M1VX9MH72K7G940R6WC7M218.md）。
 #   - **exit_code=0 のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を
@@ -27,11 +27,11 @@
 #   - **経過秒と上限の一致を原因の判定に使わない。** 上限で kill されたことは timeout_status が
 #     すでに表しており、その原因が時間なのか使用量上限なのかは決まらない。
 #
-# 版の目印（so_compare_version が meta に無い記録のための代替）:
+# バージョンの目印（so_compare_version が meta に無い記録のための代替）:
 #   so-compare は 2026-08-02 以降に4回変わり、うち #296 は claude の stdout の意味そのものを
 #   変えた（JSON 形式で受けるようになり、プロセス標準出力は claude-raw.json へ落ちる）。
-#   meta に so-compare 自身の版は入っていないので、**観測できる目印だけを出す**（推定した
-#   「版」を1つの値にまとめない）。目印は era_markers に列挙する。
+#   meta に so-compare 自身のバージョンは入っていないので、**観測できる目印だけを出す**（推定した
+#   「バージョン」を1つの値にまとめない）。目印は era_markers に列挙する。
 #
 # 想定する脅威の範囲（**守れる範囲と守れない範囲を分けて書く**）:
 #   本 verb が読むのは、**同じ作業ツリーで so-compare が自分で作った出力**である。したがって
@@ -71,7 +71,7 @@ usage:
 
   --scan <root>   <root>/tmp 配下の so-* / oe-refute-* / oe-review-* を集めて当てる
   --json          1 レーン 1 行の JSON（JSONL）で出す
-  --summary       版の目印で層別した件数を出す
+  --summary       バージョンの目印で層別した件数を出す
   -h, --help      このヘルプを表示
 
 出力（既定の表）: DIR / LANE / ATT / STATUS / EXIT / ELAPSED / OUT / ERR / REASON / EVIDENCE
@@ -181,7 +181,7 @@ sig_hit_small() {
   return 1
 }
 
-# claude の本文は版で落ち先が変わる（#296 以降はプロセス標準出力が raw.json へ行く）。
+# claude の本文はバージョンで落ち先が変わる（#296 以降はプロセス標準出力が raw.json へ行く）。
 # stdout・raw.json の素の中身・raw.json の .result の3つを見る。
 claude_body_hit() {
   local pat="$1" out="$2" raw="$3"
@@ -211,7 +211,7 @@ sig_hit() {
   return 1
 }
 
-# claude 専用（本文の落ち先が版で変わるため）
+# claude 専用（本文の落ち先がバージョンで変わるため）
 sig_hit_claude_body() {
   local label="$1" pat="$2" out="$3" raw="$4"
   if claude_body_hit "$pat" "$out" "$raw"; then
@@ -249,7 +249,7 @@ classify_lane() {
   R_CLI="$(meta_get "$meta" cli_version)"
   [[ -n "$R_CLI" ]] || R_CLI='-'
 
-  # so-compare 自身の版。いまの meta には入っていないので、入っていなければそう書く。
+  # so-compare 自身のバージョン。いまの meta には入っていないので、入っていなければそう書く。
   R_SOVER="$(meta_get "$meta" so_compare_version)"
   [[ -n "$R_SOVER" ]] || R_SOVER='unavailable:not-recorded'
 
@@ -259,7 +259,7 @@ classify_lane() {
   R_OUT_BYTES="$(file_bytes "$out")"
   R_ERR_BYTES="$(file_bytes "$errf")"
 
-  # 版の目印（推定した版を1つの値にまとめない）
+  # バージョンの目印（推定したバージョンを1つの値にまとめない）
   local markers=''
   if [[ "$tool" == 'claude' ]]; then
     if [[ "$R_RAW_STATE" == 'absent' ]]; then

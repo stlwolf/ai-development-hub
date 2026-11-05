@@ -493,9 +493,9 @@ echo "[23] 閉じるペインが別の session のものになっていたら閉
 # ペイン番号が再利用されていれば、そのペインに座っているのは別の session である。
 # 確かめずに閉じると、関係のないセッションを閉じたうえで「前任は resume で開き直せる」と
 # 報告することになる（実装SO の指摘・2026-09-13）。
-# **同じ時刻の拍動を2つ置くと「同じ新しさ」になり unknown へ落ちる**（[24] がその枝である）。
+# **同じ時刻の拍動を2つ置くと「同じ新しさ」になり unknown へ落ちる**（[24] がその分岐である）。
 # ここで作りたいのは「新しい別の session がそのペインに座っている」状態なので、**厳密に新しい**
-# 拍動を置く。最初にこれを間違え、tie になって [24] と同じ枝を通っていた。
+# 拍動を置く。最初にこれを間違え、tie になって [24] と同じ分岐を通っていた。
 NEWER=$((NOW_EPOCH + 60))
 jq -cn --arg p '%10' --argjson t "$NEWER" '{ts:$t, context_pct:50, pane:$p, server_pid:"900"}' > "$HB/sid-other.json"
 printf '{"type":"user"}\n' > "$TR/sid-other.jsonl"
@@ -515,7 +515,7 @@ rm -f "$HB/sid-other.json" "$TR/sid-other.jsonl"
 echo "[24] 閉じる直前に session_id を引けなくても閉じる（同一性は pid とコマンド名で見る）"
 # 同じ pane に**同じ新しさ**の拍動が2つあると oe_hs_session_for_pane は unknown を返す。
 # **「引けなかった」は「別人だと分かった」ではない**（owner 裁定 2026-09-13・2件目）。
-# 引けないことでは止めず、**食い違いが見えたときだけ**止める（[23] と [25] がその枝）。
+# 引けないことでは止めず、**食い違いが見えたときだけ**止める（[23] と [25] がその分岐）。
 mk_beat "sid-tie-a" "%10"; mk_beat "sid-tie-b" "%10"
 printf '{"type":"user"}\n' > "$TR/sid-tie-a.jsonl"
 printf '{"type":"user"}\n' > "$TR/sid-tie-b.jsonl"
@@ -742,7 +742,7 @@ UP="$_TMP_DIR/ws-unpushed"; mkdir -p "$UP/.oe"
 git -C "$UP" init -q 2>/dev/null || true
 git -C "$UP" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
 git -C "$UP" branch -q -M topic 2>/dev/null || true
-# 上流を持たない枝だと「比べる相手が無い」枝へ行くので、上流のある枝を作る
+# 上流を持たないブランチだと「比べる相手が無い」分岐へ行くので、上流のあるブランチを作る
 REMOTE="$_TMP_DIR/remote.git"; git init -q --bare "$REMOTE" 2>/dev/null || true
 git -C "$UP" remote add origin "$REMOTE" 2>/dev/null || true
 git -C "$UP" push -q -u origin topic 2>/dev/null || true

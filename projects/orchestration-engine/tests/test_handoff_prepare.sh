@@ -192,7 +192,7 @@ nck "数えられなくても交代を止めない" "$out3" "まだ交代でき�
 nck "0 件に化かさない"               "$out3" "生きた委譲子 0 件"
 ckc "文書にも数えられなかったと書く" "$(cat "$OUT3")" "数えられませんでした"
 
-echo "[13] upstream の無い枝で「未 push 0 件」と言わない"
+echo "[13] upstream の無いブランチで「未 push 0 件」と言わない"
 NOUP="$_TMP_DIR/noup"; mkdir -p "$NOUP"
 git -C "$NOUP" init -q 2>/dev/null || true
 git -C "$NOUP" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
@@ -238,7 +238,7 @@ set -e
 ck "目印が重複していたら 2 で落ちる" "2" "$rc_dup"
 ck "重複でも文書を壊さない" "$before5" "$(cat "$OUT5")"
 
-echo "[19] repo 節は枝の名前を名乗り、open PR は workspace の中で引く"
+echo "[19] repo 節はブランチの名前を名乗り、open PR は workspace の中で引く"
 ckc "branch= を出す" "$(oe_hs_repo_state "$NOUP")" "branch="
 ckc "workspace が無ければ unknown" "$(oe_hs_open_prs "$_TMP_DIR/nonexistent")" "unknown workspace-not-found"
 
@@ -296,7 +296,7 @@ ck "同率は曖昧扱い" "unknown" "$(oe_hs_session_for_pane '%13')"
 rm -f "$HB/sid-t1.json" "$HB/sid-t2.json" "$TR/sid-t1.jsonl" "$TR/sid-t2.jsonl"
 
 echo "[27b] 登記の置き場が**存在しない**ときは「子0件」にしない"
-# **「読めない」とは別の経路である。** 以前はこの枝だけ rc=0・0件を返しており、
+# **「読めない」とは別の経路である。** 以前はこの分岐だけ rc=0・0件を返しており、
 # `OE_DELEGATE_STATE_DIR=""` と `chmod 000` は 2 を返すのに、**path を取り違えただけのときは
 # 静かに0件として通っていた**（実装SO の指摘・2026-09-13）。空のディレクトリが返す正当な0件と
 # 区別できる形になっていることも、同じ節で見る。

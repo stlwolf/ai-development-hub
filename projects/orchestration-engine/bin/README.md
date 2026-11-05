@@ -7,7 +7,7 @@ scripts は役割別に次の 26 本（`bin/` 直下の実行可能エントリ�
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195） / `oe-lane-explain`（SO のレーンが返らなかった理由を読み取る・#303）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
-- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（版に固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
+- **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（バージョンに固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
 - **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
 ---
@@ -196,7 +196,7 @@ oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute
 | `take` | 後継 | 前提を全部確かめてから席を取りに行く |
 | `retire` | 後継 | 前任を閉じてよいかを判定する。**引数なしは下見。`--execute` だけが閉じる** |
 
-- `prepare` … open PR / worktree / 生きた委譲子 / 常駐の見張りの登録 / 枝と HEAD / 未 push / 前任の session_id と context% と拍動の古さ / **前任のペインの pid**（`retire` が閉じる直前に同一性を確かめる鍵）を集めて、引き継ぎ文書の**機械が書く節を毎回まるごと上書き**する。**人が書く節は触らない**（人が値を写す経路を残すと食い違いが生まれる）。目印は行全体が一致する形で検査し、1組だけ・順序が正しいことを**書き換える前に**確かめる
+- `prepare` … open PR / worktree / 生きた委譲子 / 常駐の見張りの登録 / ブランチと HEAD / 未 push / 前任の session_id と context% と拍動の古さ / **前任のペインの pid**（`retire` が閉じる直前に同一性を確かめる鍵）を集めて、引き継ぎ文書の**機械が書く節を毎回まるごと上書き**する。**人が書く節は触らない**（人が値を写す経路を残すと食い違いが生まれる）。目印は行全体が一致する形で検査し、1組だけ・順序が正しいことを**書き換える前に**確かめる
 - `start` … `oe-delegate` を**使わない**。**登記の上では前任の子にしない**（素の pane として `claude` を起こし、`PARENT_TMUX_PANE` も渡さない）。**ただしペインの位置は別の話で、前任のペインを `-t` で指して割る**（`-t` を渡さない `split-window` はフォーカスしているペインを割るので、前任が自分のペインを割るつもりで撃っても別の window に出る。実地で踏んだ・2026-09-14。`oe-delegate` は同じ理由で `-t` を渡している）。**`TMUX_PANE` が空なら割る先が決まらないので撃たずに止める**（exit 2）。理由は、後継の自発的な報告の宛先がこれから停止する前任のペインに焼き込まれるからである（以前はもう1つ「後継自身が生きた委譲子に数えられて `take` が永久に通らない」という理由があったが、**子が交代を止めなくなったので効かない**・owner 裁定 2026-09-13）。起動と kickoff を分け、**ペインが現れなければ送らない**
 - `take` … 順序は「確かめるものが先、書き換えるものが後」。前提（引き継ぎ文書の有無 / 前任の pane が board の宣言と一致 / 前任の session_id が引ける / 見張りの状態）を済ませてから、自己登記 → board 張替 → 検算 → 交代イベントの順に触る。**何度実行しても同じ結果になる**（既に席に居れば何もしない）。**生きた委譲子は数えて出すが、席を止めない**（後継が誰を引き受けたかを知るための表示である・owner 裁定 2026-09-13）
 - `retire` … 機械の検査をやり直して前任の申告と突き合わせ、食い違いを列挙する。閉じる直前に**そのペインがいまも前任のものか**を、**tmux server の世代**・pid・その pid のコマンド名で確かめる（session_id は引ければ突き合わせ、**引けないことでは止めない**）。server が再起動すると pane 番号も pid も作り直されて再利用されるので、**世代が違えば閉じない**。**閉じる相手の pane / session_id / pid は、目印の完全性を確かめた機械の節の中の値だけ**を使う（文書の散文から拾わない）。**申告の照合は「処分が付いた表の行」に対してだけ行う**（散文に番号を書いても処分にならない。PR は `#<番号>` の形で書く）。**停止の必須条件は1つで、申告の各項目に処分（`済んだ` / `引き継ぐ` / `取り消す`）が付いていること**。`--execute` は**検査をやり直してから**閉じるので、下見と実行のあいだに入った新着を拾う。**生きた委譲子と session_id は閉じない理由にしない**（下記）
@@ -226,7 +226,7 @@ oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute
 
 **確かめられないこと（正直に）**:
 
-- **`start` の待ちは「入力を受け付けられる」ことの確認ではない。** ペインの存在は作った直後から成立し、その中の TUI が初期化を終えたかは起動側から分からない。画面を読んで判定する形は採らない（版で消える目印に頼る形になる）。到達は受領印（`oe-confirm` の照合）で見る
+- **`start` の待ちは「入力を受け付けられる」ことの確認ではない。** ペインの存在は作った直後から成立し、その中の TUI が初期化を終えたかは起動側から分からない。画面を読んで判定する形は採らない（バージョンで消える目印に頼る形になる）。到達は受領印（`oe-confirm` の照合）で見る
 - **`oe-vitals` の最終走査は確かめられない。** `oe-selfcheck` の `watchdog-freshness` が見ているのは `oe-confirm` であって `oe-vitals` ではなく、`oe-vitals` には最終走査を残す記録がそもそも無い。`take` は毎回そう明示する
 - **pane がすぐ再利用され、新しいセッションがまだ拍動を書いていないあいだは、旧世代の session_id を採りうる。** セッションが自分の id を名乗る経路が無いかぎり、この逆引きの穴は閉じない。`take` と `prepare` は拍動の古さを出して、人が判断できる材料を残す
   - **`retire` が閉じる側では窓を狭めた**（2026-09-13）。`prepare` が前任のペインの pid**とその pid のコマンド名**を機械の節に記録し、`retire` は `kill-pane` の直前に両方を突き合わせる。記録に無い（古い形式の）引き継ぎ文書では閉じない（`prepare` を走らせ直す）。
@@ -603,7 +603,7 @@ oe-confirm --notify --write-latest      # 常駐用（launchd）: ping + 最終�
 
 `oe-undelivered` とは別物である。あちらは **child→parent の報告**が ack されたかを frontier で見る（kick は数えない）。本 verb は**双方向の送信が会話に着いたか**を nonce で見る。`report_received`（読んだ）の層は使わない。
 
-**検知器自身の沈黙**: `--write-latest` が書く `latest.json` の陳腐化を、**別の主体**（`oe-selfcheck` の `watchdog-freshness` 検査枝）が拾う。停止を報告する主体を停止しうる当人に置かないため。ただし「陳腐化を誰がいつ読むか」の自動化は #301（park 中）の論点で、本 verb は検査枝と陽性対照までを担う。
+**検知器自身の沈黙**: `--write-latest` が書く `latest.json` の陳腐化を、**別の主体**（`oe-selfcheck` の `watchdog-freshness` 検査）が拾う。停止を報告する主体を停止しうる当人に置かないため。ただし「陳腐化を誰がいつ読むか」の自動化は #301（park 中）の論点で、本 verb は検査と陽性対照までを担う。
 
 常駐の置き方は `projects/orchestration-engine/launchd/com.stlwolf.oe-confirm.plist.template`（**worktree のパスを焼かないこと**）。
 
@@ -645,9 +645,9 @@ oe-undelivered -h | --help
 
 ---
 
-## oe-selfcheck — 版に固定された前提の点検（#299 P3・read-only）
+## oe-selfcheck — バージョンに固定された前提の点検（#299 P3・read-only）
 
-外部の版に固定された前提が今も成り立つかを見る read-only 検査。何も書き換えない。
+外部のバージョンに固定された前提が今も成り立つかを見る read-only 検査。何も書き換えない。
 
 **なぜ要るか。** #144 は「処理中の画面に `esc to interrupt` が出る」ことを 2026-06-09 の実機 capture で確かめ `verified` として計画書に記録した。ところが claude の更新でこの文字列は消え、**判定は静かに嘘の値を出し続けた。** #299 で実測するまで約2か月、誰も気づかなかった。同じ形の依存を一覧にして、崩れたら気づけるようにする。
 
@@ -670,7 +670,7 @@ oe-selfcheck --json   # 機械可読
 | `pane-session-bridge` | heartbeat sidecar が pane を持つか | sidecar が1件以上 |
 | `retention-horizon` | 受け手側の記録をどこまで遡れるか | 値の報告のみ（良し悪しを判定しない） |
 
-**この検査は「気づく」だけで「直す」ことはしない。** また検査自体も同じ版依存を持つので、免疫があるとは言わない。
+**この検査は「気づく」だけで「直す」ことはしない。** また検査自体も同じバージョン依存を持つので、免疫があるとは言わない。
 
 関連: `canonical/hooks/scripts/oe-prompt-receipt.sh`（受領印 hook）/ `bin/oe-undelivered`（受領印を消費する側）/ `lib/delegate-send.sh`（nonce の払い出し）。
 
@@ -712,10 +712,10 @@ oe-hookfire --json       # 機械可読
 oe-lane-explain tmp/oe-refute-XXXX            # 表形式
 oe-lane-explain --scan .                      # <root>/tmp 配下を全部集めて当てる
 oe-lane-explain --json tmp/so-XXXX            # 1 レーン 1 行の JSON
-oe-lane-explain --summary --scan .            # 版の目印で層別した件数
+oe-lane-explain --summary --scan .            # バージョンの目印で層別した件数
 ```
 
-**なぜ `so-compare` の中に入れないか。** `so-compare` は `~/bin` から repo への symlink で配布されており、触ると全セッションへ即座に反映される。分類のシグネチャは CLI の版で腐るので、腐るものを配布物に入れたくない。外に置くと**過去の出力へ遡って当てられる**利点もある（配布物側に入れると当てられるのは今後の実行だけ）。#303 の設計SO で3レーン中2レーンが独立に出した案である。
+**なぜ `so-compare` の中に入れないか。** `so-compare` は `~/bin` から repo への symlink で配布されており、触ると全セッションへ即座に反映される。分類のシグネチャは CLI のバージョンで腐るので、腐るものを配布物に入れたくない。外に置くと**過去の出力へ遡って当てられる**利点もある（配布物側に入れると当てられるのは今後の実行だけ）。#303 の設計SO で3レーン中2レーンが独立に出した案である。
 
 **分類の契約**（`failure_reason`）は `none` / `usage_limit` / `auth_required` / `invalid_input` / `environment` / `unknown` の6値で、`failure_evidence` にどのシグネチャが当たったかを書く。**当たらなければ `unknown` と `none` に倒す。断定しない。**
 
@@ -723,8 +723,8 @@ oe-lane-explain --summary --scan .            # 版の目印で層別した件�
 - **`exit_code=0` のレーンにはシグネチャを当てない。** モデルの回答がプロンプト中の文言を引用しただけのものを故障と読まないためである。
 - **シグネチャは行頭に錨を打ち、末尾 200 行だけを見る。** 素の部分一致では誤検出する（実物で踏んだ）。codex のレーンは stderr に TUI の描画を流すので、ワークスペースの本文がそのままエコーされる。831KB・6964 行の stderr の 2095 行目に入っていたリポジトリの散文を、素の grep は故障のシグネチャとして拾った。窓は `OE_LANE_EXPLAIN_TAIL_LINES` で変えられる。
 - **錨が使えない文言（シェルが出す `<path>: line N: ... Operation not permitted` など）だけは、小さいファイルに限り部分一致を許す。** 上限は `OE_LANE_EXPLAIN_SMALL_BYTES`（既定 16384）。誤検出の元が数百KB の TUI 描画なので、小ささを条件にすれば経路を塞げる。
-- **「ファイルが不在」と「ファイルが空」を畳まない。** `stdout_state` / `stderr_state` / `raw_state` は `absent` / `empty` / `present` の3値である。不在は「そのファイルを作らない版がこの記録を生成した」という証拠を運んでいる。
-- **so-compare 自身の版は meta に無いので `unavailable:not-recorded` と書く。** 代わりに観測できる目印を `era_markers` に出す（`claude-raw-absent` なら #296 より前、`limit-recorded` なら #328 以降）。**推定した「版」を1つの値にまとめない。**
+- **「ファイルが不在」と「ファイルが空」を畳まない。** `stdout_state` / `stderr_state` / `raw_state` は `absent` / `empty` / `present` の3値である。不在は「そのファイルを作らないバージョンがこの記録を生成した」という証拠を運んでいる。
+- **so-compare 自身のバージョンは meta に無いので `unavailable:not-recorded` と書く。** 代わりに観測できる目印を `era_markers` に出す（`claude-raw-absent` なら #296 より前、`limit-recorded` なら #328 以降）。**推定した「バージョン」を1つの値にまとめない。**
 - **閾値の環境変数は入口で正の整数だけを通す。** 未検証のまま bash の算術式へ入れると、`(( ))` が配列添字を再展開するため任意のコマンドが走る（`OE_LANE_EXPLAIN_SMALL_BYTES='DIRS[$(command)0]'`）。read-only を名乗る verb でこれが通ると名乗り自体が嘘になる。実装SO が実際に payload を走らせて実証した。
 - **読めなかった meta を普通のレーンとして数えない。** 素通りさせると、全項目が `-` で理由が `unknown` の、見た目は正常な行が1件出る。「原因が分からないレーン」と「観測できなかったレーン」は母集団の数え上げでは別物である。1件ずつ stderr に出し、**1件でもあれば exit 2** にする（出力が census に使われるので、欠けたまま成功を返さない）。
 - **`--json` は制御文字までエスケープする。** ディレクトリ名には改行やタブを入れられるので、`\` と `"` だけを潰す実装では不正な JSON になり、改行が入れば「1 レーン 1 行」の約束も破れる。

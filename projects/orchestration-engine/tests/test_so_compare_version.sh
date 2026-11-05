@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# test_so_compare_version.sh — so-compare の宣言した版が中身と食い違っていないかを見る（#303 M-1）
+# test_so_compare_version.sh — so-compare の宣言したバージョンが中身と食い違っていないかを見る（#303 M-1）
 #
-# **なぜテストでやるか。** meta に残す版は、上げ忘れると嘘をつく。当初は so-compare 自身が
+# **なぜテストでやるか。** meta に残すバージョンは、上げ忘れると嘘をつく。当初は so-compare 自身が
 # 実行時にハッシュを計算して meta へ書く設計だったが、実装SO が4周かけて、その1行のために
 # **レーンを1本も起動しないうちに SO 全体が止まる経路**を次々と実証した（pipefail で落ちる /
 # 応答しない hasher で無期限に待つ / timeout は TERM を送るだけ / パイプ後段は上限の外）。
@@ -22,7 +22,7 @@ TARGET="$SCRIPT_DIR/../../../scripts/so-compare.sh"
 [[ -f "$TARGET" ]] || { echo "FAIL: so-compare.sh not found: $TARGET"; exit 1; }
 
 # so-compare.sh の中身が変わったらここを更新する（上のコメントを読むこと）
-EXPECTED_SHA="27a4ef945028e6e402888f691a09d48f010caf2d12cb2622da42337dcccec0bf"
+EXPECTED_SHA="3564f5d951b5f3c6e63b8cb25fb7a738adb6e020fa81ecc94351474c93e9b067"
 EXPECTED_VERSION="2026-09-14b"
 
 PASS=0; FAIL=0
@@ -38,11 +38,11 @@ elif command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_SHA="$(sha256sum "$TARGET" | awk '{print $1}')"
 fi
 
-echo "[1] 宣言した版が中身と食い違っていない"
+echo "[1] 宣言したバージョンが中身と食い違っていない"
 if [[ -z "$ACTUAL_SHA" ]]; then
   echo "  SKIP: shasum も sha256sum も無いのでハッシュを確かめられない（PASS にはしない）"
 elif [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-  echo "  FAIL: so-compare.sh の中身が変わっているのに宣言した版が据え置きかもしれない"
+  echo "  FAIL: so-compare.sh の中身が変わっているのに宣言したバージョンが据え置きかもしれない"
   echo "        期待: $EXPECTED_SHA"
   echo "        実際: $ACTUAL_SHA"
   echo "        → 振る舞いが変わったなら SO_COMPARE_VERSION を上げ、このテストの EXPECTED_SHA を上の実際の値へ更新する"
@@ -52,12 +52,12 @@ else
   PASS=$((PASS+1))
 fi
 
-echo "[2] スクリプトが宣言している版が、このテストの期待と一致する"
+echo "[2] スクリプトが宣言しているバージョンが、このテストの期待と一致する"
 DECLARED="$(grep -m1 '^SO_COMPARE_VERSION=' "$TARGET" | sed -E 's/^SO_COMPARE_VERSION="?([^"]*)"?.*/\1/')"
 ck "SO_COMPARE_VERSION" "$EXPECTED_VERSION" "$DECLARED"
 
-echo "[3] 版は開始側と完了側の両方の meta に書かれる"
-# 中断された実行（attempt_state=running のまま残る記録）でも版で層別できる必要がある。
+echo "[3] バージョンは開始側と完了側の両方の meta に書かれる"
+# 中断された実行（attempt_state=running のまま残る記録）でもバージョンで層別できる必要がある。
 # shellcheck disable=SC2016  # 展開させずに `$SO_COMPARE_VERSION` という文字列そのものを探している
 COUNT="$(grep -c 'echo "so_compare_version=\$SO_COMPARE_VERSION"' "$TARGET" || true)"
 ck "書き出し箇所は4つ（開始側1 + 3レーン）" "4" "$COUNT"

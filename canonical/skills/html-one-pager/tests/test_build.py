@@ -261,14 +261,14 @@ BROKEN = [
     ("h2_tmux_name_empty", "decide", put(["source", "tmux", "name"], ""), [("E-H2", "source.tmux.name")], False),
     ("h2_group_repo_empty", "bundle", put(GROUP1 + ["source", "repo"], ""),
      [("E-H2", "sections[0].groups[1].source.repo")], False),
-    # E-H3 決まった値。kind は前の版の purpose の値（decide）を受け付けない
+    # E-H3 決まった値。kind は前のバージョンの purpose の値（decide）を受け付けない
     ("h3_kind", "decide", put(["kind"], "decide"), [("E-H3", "kind")], False),
     ("h3_status", "decide", put(["status"], "waiting"), [("E-H3", "status")], False),
     ("h3_kind_number_is_f3", "decide", put(["kind"], 3), [("E-F3", "kind")], False),
     # kind は必須。purpose は kind に置き換えた（知らない項目として理由つきで止める）
     ("f3_kind_missing", "decide", drop(["kind"]), [("E-F3", "kind")], False),
     ("f2_purpose_is_replaced_by_kind", "decide", put(["purpose"], "decide"), [("E-F2", "purpose")], False),
-    # 前の版のデータ（kind が無く purpose がある）は、種別の検証をしないので、中身が種別に合わなくても2件だけ
+    # 前のバージョンのデータ（kind が無く purpose がある）は、種別の検証をしないので、中身が種別に合わなくても2件だけ
     ("old_data_reports_only_kind_and_purpose", "confirm",
      both(drop(["kind"]), put(["purpose"], "decide"), drop(BLOCKS)), [("E-F3", "kind"), ("E-F2", "purpose")], False),
     # E-P2 状態と部品・答え

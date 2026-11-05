@@ -54,7 +54,7 @@ projects/orchestration-engine/
 │   ├── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
 │   ├── oe-tree                # spawn トポロジ（親→子→孫）の read-only 罫線ツリー表示 + --watch live 表示 + --pick 対話ナビ（選択→jump+最大化）（registry 現 server スナップショット・#221/#223/#227）
 │   ├── oe-undelivered         # 報告未達検知 watchdog（未ack × 時間窓 × 受領印・read-only・cron 可・#239 段階0）
-│   ├── oe-selfcheck           # 版に固定された前提の点検（3値判定・read-only・#299 P3）
+│   ├── oe-selfcheck           # バージョンに固定された前提の点検（3値判定・read-only・#299 P3）
 │   ├── oe-hookfire            # 止める側のフック3本の発火記録を直近の窓で読む read-only 検査（3値判定・#309）
 │   └── oe-vitals              # 統括 vital 監視 watchdog（拍動鮮度 + context% 閾値・read-only・cron 可・#239 段階1）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）

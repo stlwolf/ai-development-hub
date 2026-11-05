@@ -3,7 +3,7 @@ set -uo pipefail
 
 # test_prompt_receipt.sh — #299 P1/P3 の検証。
 #   1) canonical/hooks/scripts/oe-prompt-receipt.sh（受け手側の取り込み印）
-#   2) bin/oe-selfcheck（版に固定された前提の点検・3値判定）
+#   2) bin/oe-selfcheck（バージョンに固定された前提の点検・3値判定）
 #
 # 実 tmux 不要。hook は stdin の payload と env（TMUX_PANE / TMUX）だけで動くので、
 # 隔離した OE_EVENT_DIR に対して直接叩く。selfcheck は env で各置き場を差し替えて
@@ -298,7 +298,7 @@ if [[ -x "$SELFCHECK" ]]; then
   mk_tmux_stub "$SD" "$_TMP_DIR/cap_idle"
   ck "目印が無く idle なら indeterminate" "indeterminate" "$(sc_run "$SD")"
 
-  # (d) 目印は無いが画面が動いている（稼働中）→ broken（この版に目印が無い）
+  # (d) 目印は無いが画面が動いている（稼働中）→ broken（このバージョンに目印が無い）
   printf '── ws ──\n❯ \n──────\n  spinner A\n' > "$_TMP_DIR/cap_act1"
   printf '── ws ──\n❯ \n──────\n  spinner B\n' > "$_TMP_DIR/cap_act2"
   mk_tmux_stub "$SD" "$_TMP_DIR/cap_act1" "$_TMP_DIR/cap_act2"

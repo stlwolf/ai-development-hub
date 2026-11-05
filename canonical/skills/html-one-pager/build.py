@@ -71,7 +71,7 @@ REQUEST_FIELDS = ("target", "type", "via", "focus", "why")
 # choice は選んだら PICK_CHOICE、外したら null（保存の形は判定カードと同じ {key, choice, note, at}）。
 PICK_CHOICE = "pick"
 PICK_KEY_SEP = "--"
-# 前の版で使っていた項目。知らない項目として止め、理由を添える。
+# 前のバージョンで使っていた項目。知らない項目として止め、理由を添える。
 REPLACED_FIELDS = {"purpose": "purpose は kind に置き換えた。kind を書く"}
 STATUSES = ("awaiting", "answered", "live")
 EVIDENCE = ("verified", "sourced", "guess")
@@ -490,7 +490,7 @@ class Validator:
 
     def obj(self, path, val, required, optional=(), replaced=None):
         """オブジェクトかを見て、知らない項目と足りない項目を出す。型が違えば下を見ない。
-        replaced は前の版で使っていた項目と、その理由の文。知らない項目として止め、理由を添える。"""
+        replaced は前のバージョンで使っていた項目と、その理由の文。知らない項目として止め、理由を添える。"""
         if not isinstance(val, dict):
             self.add("E-F3", path, "オブジェクトであるべき所が%sである" % type_name(val))
             return False
