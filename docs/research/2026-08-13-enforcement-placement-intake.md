@@ -13,7 +13,7 @@ related_research:
   - docs/research/2026-08-13-supervisor-design-intake.md（同時 intake・統括の設計軸）
   - docs/research/2026-07-27-loop-engineering-intake.md（ループ軸。停滞検知と完了条件の型）
   - docs/research/2026-06-03-code-smell-stop-hook-and-confidence-band.md（rule と gate の中間層・Stop Hook の先行事例）
-  - docs/research/2026-03-30-ai-tool-hooks-specification-survey.md（フック仕様の調査）
+  - docs/research/investigations/2026-03-30-ai-tool-hooks-specification-survey.md（フック仕様の調査）
 related_issues: [24, 130, 217, 262, 286, 289, 291, 301, 305, 307, 309, 313, 322]
 next_step:
   trigger: "#305（蒸留フローのゲートをスキルと hook でどう分けるか）着手時 / #309（フックの発火記録）と #322（黙って強制が外れる2件）着手時 / #286（episode の機械検査）と #313（sync --check の検査漏れ）着手時 / careful-operations-rule を触るとき"
