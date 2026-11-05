@@ -39,7 +39,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 ## 前提の変化（最初に書く）
 
 1. **decision #188 は、2つのペインの番号の世界が並んでいた時期の決定である。** #188（2026-06-19）は、WezTerm のペインで子を起こす道（engine の `oe`）と tmux のペインで子を起こす道（`oe-delegate`）が並び、2つの番号の世界に対応が物理的に無いことを前提に、「ペインの層で統一しない」「永続の対応表を作らず、読むときに突き合わせる」と決めた。そのあと使う道は tmux だけになった。WezTerm の道の state は 2026-06-04 のファイルが最後で、tmux で子を起こした出来事は 431 件・最新は 2026-11-05 UTC である [verified]（`projects/orchestration-engine/state/` と `~/.claude/state/oe-events.jsonl` を読むだけで数えた・2026-11-06）。
-2. **セッションは自分の session_id と pid を知っている。** #355 と確定版と `lib/handoff-state.sh` は、セッションが自分の session_id を名乗る経路は無いことを前提にしていた。公式の文書では、`CLAUDE_CODE_SESSION_ID` が Bash と hook の子プロセスに入り（`--resume <id>` では resume した id・`/clear` で更新）、`CLAUDE_PID` が Claude Code 自身の pid として入る [verified]（https://code.claude.com/docs/en/env-vars.md の該当の2行）。ただし `--continue` と id を付けない `--resume` では起動したときの id が入ることがある [verified]（同じ行）。
+2. **セッションは自分の session_id と pid を知っている。** #355 と確定版と `lib/handoff-state.sh` は、セッションが自分の session_id を名乗る経路は無いことを前提にしていた。公式の文書では、`CLAUDE_CODE_SESSION_ID` が Bash と hook の子プロセスに入り（hook の入力の `session_id` と一致・`--resume <id>` では resume した id・`/clear` で更新）、`CLAUDE_PID` が Claude Code 自身の pid として入る [verified]（https://code.claude.com/docs/en/env-vars.md の該当の2行）。「`--continue` と id を付けない `--resume` では起動したときの id が入ることがある」は、MCP server の子プロセスについての文である [verified]（同じ行）。Bash と hook で id を付けない resume のときにいまの id が入るかは、実機で確かめていない [unverified-summary]。
 3. **ペインを「誰か」の鍵に兼ねている箇所は、統括が数えた36本より多い。** 36本の走査の外に、`bin/oe-send`・`lib/seat.sh`・拍動の producer など7本があった [verified]（discussion の §4）。
 
 ## 決定
@@ -50,7 +50,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D4 席と代は、server の世代やペインの生死では消さない**（DJ-4）。閉じた席を、明示の掃除の verb で、一定の日数のあとに消す。拍動の sidecar と一時ファイルの掃除も、同じ verb で行う。
 - **D5 取り合わない決まり**（DJ-5）。束縛の張り替えと代を進めるのは、ロックの中で所有の番号（epoch）を比べる compare-and-swap で行い、1つの session_id は開いた席の1か所にしか入れない。張り替えは、前の束縛のプロセスが生きていないと機械で確かめられたときか、本人が張り替えるときだけ許す。席の記録の1回の書き込みを確定の点にし、board の行・登記の写し・出来事は、席の記録から作り直せる従の記録にする。
 - **D6 送る前の確かめ**（DJ-6）。席 → いまの代 → 拍動の候補のペイン → `tmux list-panes -a` の所属 → ペインの端末の前面のプロセスの pid と開始時刻が束縛と一致、の順で引き、どれかで外れたら送らない。Enter の前にも確かめ直す。確かめと Enter のあいだの窓は残り、受領印で後から見つける。
-- **D7 resume したセッションが自分の席と代を知る道**（DJ-7・owner に聞いている）。環境変数 → `CLAUDE_CODE_SESSION_ID` と代の session_id の並びの照合 → 会話の記録にある席の ID を名乗る verb に渡す、の順に使う。3 だけで名乗るときは workspace の一致を確かめ、統括の席なら owner の確かめを1回求める。owner の resume は、復帰の手順が出す id 付きのコマンドを写して打つことを決まりにする。
+- **D7 resume したセッションが自分の席と代を知る道**（DJ-7・owner に聞いている）。環境変数 → `CLAUDE_CODE_SESSION_ID` と代の session_id の並びの照合 → 会話の記録にある席の ID を名乗る verb に渡す、の順に使う。3 だけで名乗るときは workspace の一致を確かめ、統括の席なら owner の確かめを1回求める。owner の resume の打ち方を決まりにするかは、owner の答えを待つ（実機で確かめてから決めるかを含む）。
 - **D8 退任した統括の見分け**（DJ-8）。代の記録に状態（在任・退任）・退任した時刻・後任の代を持ち、退任した代のセッションは統括の操作に進まない。
 - **D9 生きていないことの機械の確かめ**（DJ-9）。束縛するときにそのプロセスのコマンドが claude であることを確かめる。束縛のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。拍動の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。
 - **D10 送る道は tmux の send-keys のままにする**（DJ-10・owner に聞いている）。代の記録に受け口（`CLAUDE_CODE_MESSAGING_SOCKET`）を持てる形にし、セッション間の文を送る機能は別の issue で試す。
@@ -91,7 +91,7 @@ discussion の §7 の探索木が正本である。要点だけを書く。
 - `oe-handoff retire` が、シェルで始まるペインの前任を閉じてよいかを判定できる。
 - 残る穴:
   - 送る前の確かめと Enter のあいだの窓（受領印で後から見つける）。
-  - id を付けない resume では、セッションが機械で名乗れない（会話の記録の席の ID と、生きていないことの確かめに頼る）。
+  - 復帰の手順が出すコマンドを使わずに resume すると、環境変数（1 の道）が入らない。そのときは session_id の照合（2 の道）に頼る。id を付けない resume で 2 の道が成り立つかは、実機で確かめるまで分からない。
   - 束縛の pid を持たない席（取り込みで pid を取れなかった席）は、生きているか分からないとして人の判断に回る。
 - 新しい書き込みの道（席の記録）が1つ増える。書き手は verb だけで、拍動の道には入らない。
 

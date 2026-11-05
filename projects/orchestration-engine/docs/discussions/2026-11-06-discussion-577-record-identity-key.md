@@ -54,7 +54,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 ### 2.2 セッションは自分の session_id と pid を知っている
 
 - 確定版と #355 は「いまの Claude Code には、セッションが自分の session_id を名乗る経路が無い」を前提にしていた。`lib/handoff-state.sh` の `oe_hs_session_for_pane` の注記も同じことを書いている [verified]（同ファイルの「残る穴」の注記）。
-- 公式の文書では、`CLAUDE_CODE_SESSION_ID` が Bash と hook の子プロセスに入り、hook の入力の `session_id` と一致し、`/clear` で更新され、`--resume <session-id>` では resume した id が入る。ただし `--continue` と id を付けない `--resume` では、起動したときの id が入ることがある [verified]（https://code.claude.com/docs/en/env-vars.md の `CLAUDE_CODE_SESSION_ID` の行）。
+- 公式の文書では、`CLAUDE_CODE_SESSION_ID` が Bash と hook の子プロセスに入り、hook の入力の `session_id` と一致し、`/clear` で更新され、`--resume <session-id>` では resume した id が入る。`--continue` と id を付けない `--resume` で「起動したときの id が入ることがある」と書かれているのは、stdio の MCP server の子プロセスについての文の続きで、その前の文が「`--resume <session-id>` では resume した id が入り、hook と Bash と一致する」と比べている [verified]（https://code.claude.com/docs/en/env-vars.md の `CLAUDE_CODE_SESSION_ID` の行）。つまり Bash と hook では、id を付けない resume でもいまの session_id が入ると読める。ただし id を付けない resume で実際にそうなるかは確かめていない [unverified-summary]（plan の R1 で確かめる）。この行の読みは、最初は「id を付けない resume では Bash と hook にも起動したときの id が入りうる」と取り違えていて、統括の指摘（2026-11-06）で直した（episode の「訂正」）。
 - `CLAUDE_PID` は Claude Code 自身の pid で、Bash と hook の子プロセスに入る（v2.1.214 以降）[verified]（同じ表の `CLAUDE_PID` の行）。
 - この子のセッション（2.1.318）で、`CLAUDE_CODE_SESSION_ID` の名前の拍動の sidecar の pane が自分の `TMUX_PANE` と一致し、`CLAUDE_PID` がペインの端末の前面のプロセスグループの番号と一致した [verified]（episode の「実機で確かめた2つの観測」）。
 - 同じマシンのセッションどうしが tmux を通らずに文を送る機能（cross-session messaging）がある（v2.1.224 以降）[verified]（https://code.claude.com/docs/en/cross-session-messaging.md）。この issue で送る道に採るかは owner に聞いた（§5 の DJ-10）。
@@ -232,9 +232,9 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 
 - 道は3つあり、上から順に使う。
   1. 環境変数 `OE_SEAT_ID` と `OE_SEAT_GEN`。`oe-delegate` が子を起こすときに入れる（いまの `PARENT_TMUX_PANE` と同じ入れ方 [verified]（`bin/oe-delegate` の `cmd="PARENT_TMUX_PANE=... claude"`））。resume のときは、復帰の手順が出すコマンド（`OE_SEAT_ID=<席> OE_SEAT_GEN=<代> claude --resume <session_id>`）で入る。
-  2. 自分の `CLAUDE_CODE_SESSION_ID` が、ある代の session_id の並びに入っていること。id を付けた `--resume` では resume した id が入るので、これで決まる。
+  2. 自分の `CLAUDE_CODE_SESSION_ID` が、ある代の session_id の並びに入っていること。`--resume <id>` では resume した id が入るので、これで決まる。id を付けない resume でも、公式の文書の読みでは Bash と hook にいまの session_id が入るので決まるはずだが、確かめていない（§2.2・plan の R1）。
   3. 会話の記録（brief・引き継ぎ文書）に書いてある席の ID を、セッション自身が読み、名乗る verb に渡す。verb は、2 の照合か、いまの束縛のプロセスが生きていないことの確かめ（DJ-9）が通ったときだけ束縛を張り替える。2 の照合が通らずに 3 だけで名乗るときは、席の workspace が自分の workspace と一致することを確かめ、統括の席なら owner の確かめを1回求めてから張り替える。ULID を読み違えた席の前の束縛が、たまたま生きていなければ、機械の確かめだけでは別の席を取ってしまうためである（ゲート2 の Cursor の指摘）。復帰はもともと owner が「復帰して」と頼んで始まるので、確かめはその流れの中で取れる。
-- 推奨: owner が resume するときは、復帰の手順が出す、id を付けたコマンドを写して打つことを決まりにする。id を付けない resume では 2 が使えないので、3 の確かめに頼ることになる。
+- 推奨: **この判断は確定しない。owner の答えを待つ。** 最初の推奨（id を付けた resume を決まりにする）は、公式の文書の行を取り違えた前提に立っていた（§2.2）。統括は問いを取り下げ、「実機で確かめてから決まりにするかを決める」を推奨にした問いに置き換えた（2026-11-06）。この discussion の側の見立ては、次のとおりである。1 の環境変数を入れるには、どのみち復帰の手順が出すコマンドを写して打つことになるので、そのコマンドに id を付けておく費用は小さい。id を付けない resume で 2 が成り立つかは、R1 の実機で確かめてから決めればよい。
 - 確定版は「自分のペインの拍動から session_id を引き、ID の記録に照らせば決まる見込み」と書いていた。この道は、ペインが使い回されて新しいセッションがまだ拍動を書いていないあいだに、別の代を自分と取り違えうる（DJ-6 の穴と同じ）。上の 1 と 2 は、セッションの内側の値（環境変数）なので、この穴を持たない。
 - owner の答え: （待っている）
 

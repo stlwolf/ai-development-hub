@@ -55,12 +55,12 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 
 ### 公式の文書で確かめた結果（2026-11-06・原文を curl で取って該当の行を読んだ）
 
-- `CLAUDE_CODE_SESSION_ID` は文書化されている [verified] (https://code.claude.com/docs/en/env-vars.md の表の `CLAUDE_CODE_SESSION_ID` の行)。Bash と hook の子プロセスに入り、hook の入力の `session_id` と一致し、`/clear` で更新される。`--resume <session-id>` で起こしたときは resume した id が入る。**ただし `--continue` と、id を付けない `--resume` では、起動したときの id が入ることがある**と書かれている。つまり「resume したセッションが自分の session_id を知る道」は、owner が id を指定して `claude --resume <id>` で戻したときだけ確かである。
+- `CLAUDE_CODE_SESSION_ID` は文書化されている [verified] (https://code.claude.com/docs/en/env-vars.md の表の `CLAUDE_CODE_SESSION_ID` の行)。Bash と hook の子プロセスに入り、hook の入力の `session_id` と一致し、`/clear` で更新される。`--resume <session-id>` で起こしたときは resume した id が入る。**ただし `--continue` と、id を付けない `--resume` では、起動したときの id が入ることがある**と書かれている。つまり「resume したセッションが自分の session_id を知る道」は、owner が id を指定して `claude --resume <id>` で戻したときだけ確かである。（**訂正**: この読みは誤り。下の「訂正: `--continue` の文は MCP server の子プロセスについての文だった」の節）
 - `CLAUDE_PID` は文書化されている（v2.1.214 以降）[verified]（同じ表の `CLAUDE_PID` の行）。Claude Code 自身の pid で、Bash と hook の子プロセスに入る。プロセスの生死を pid と開始時刻で確かめる材料になる。
 - `CLAUDE_CODE_MESSAGING_SOCKET` は、セッション間で文を送る機能（cross-session messaging・v2.1.224 以降）の受け口である [verified] (https://code.claude.com/docs/en/cross-session-messaging.md)。同じマシンのセッションどうしが、tmux を通らずに文を送れる。送る道を tmux の send-keys から切り離す別の道になりうるが、届き方（受領印の hook が走るか・内側の制御で止まるか）がいまの道と違う。この issue で採るかは owner に聞く（範囲の外の候補）。
 - statusLine の入力にも `session_id` がある [unverified-summary]（文書の確認に出した道具の報告による・https://code.claude.com/docs/en/statusline.md）。
 
-この結果で、確定版の「設計の要は、resume したセッションが自分の ID を知る道である。いまの Claude Code にはセッションが自分の session_id を名乗る経路が無い」は、**前提が変わった**。経路はある。残る穴は、id を付けない resume と `/clear` である。
+この結果で、確定版の「設計の要は、resume したセッションが自分の ID を知る道である。いまの Claude Code にはセッションが自分の session_id を名乗る経路が無い」は、**前提が変わった**。経路はある。残る穴は、id を付けない resume と `/clear` である。（**訂正**: id を付けない resume を穴とした根拠は、下の「訂正」の節のとおり誤読だった）
 
 ### 実機で確かめた2つの観測（2026-11-06・この子の自分のペインだけを読み取りで見た）
 
@@ -107,3 +107,12 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
   - 登記の link の原子性（中）は採らなかった。登記は移行のあいだの写しになり、正本は席の記録である。写しの原子性を直す手間は、正本を移せば要らなくなる。
   - 旧い子の報告の取り違え（中）は、旧い子に新しい環境変数を渡せないことから来る。旧い子も自分のペインは確かに知っているので、自分のペインから自分の席を引く形にした。他人のペインを引くのと違い、使い回しの穴が無い。
 - 2レーンの多様性が得られていないことを、報告で統括に伝える（やり直すかは統括が決める）。
+
+## 訂正: `--continue` の文は MCP server の子プロセスについての文だった（2026-11-06）
+
+- 何が起きたか: 統括から知らせが来た。公式の文書の env-vars の `CLAUDE_CODE_SESSION_ID` の行で、「`--continue` と id を付けない `--resume` では起動したときの id が入ることがある」は、MCP server の子プロセスについての文の続きにある、という読みである。原文を文ごとに区切って読み直すと、行は「Bash と hook では hook の session_id と一致し `/clear` で更新される」「MCP server の子プロセスは起こされたときの id を持ち続ける」「`--resume <id>` では resume した id を受け取り、hook と Bash と一致する」「`--continue` と id なしの `--resume` では起動したときの id を受け取ることがある」の順で、後ろの2文の主語は MCP server の子プロセスである。統括の読みが正しい。
+- なぜ取り違えたか: 原文を curl で取り、行を開いて `[verified]` を付けたが、確かめたのは「その行にその文がある」ことまでで、「その文の主語が Bash と hook である」ことは確かめていなかった。文書の確認に出した道具の報告も同じ文を Bash と hook の側に並べていて、そのまま受けた。`[verified]` の付け方として、文があることと、その文が主張を支える（entailment）ことを分けて見るべきだった。
+- 影響: DJ-7 の推奨（id を付けた resume を決まりにする）は、この誤読を前提にしていた。owner への問いも同じ前提で書いたので、統括が問いを取り下げ、「実機で確かめてから決まりにするかを決める」を推奨にした問いに置き換えた。ゲート1 とゲート2 のプロンプトにも誤読の文を「確認済みの事実」として渡していて、ゲート2 の Cursor の DJ-7 の表（「id なしでは 2 が使えない」）はその前提に立っている。3 の道の確かめ（workspace の一致と owner の確かめ）は、どの resume の形でも要るので残した。
+- 直したもの: discussion の §2.2 と DJ-7、decision の案の「前提の変化」2・D7・「残る穴」、plan の N2。DJ-7 は、owner の答えが届くまで確定しない。
+
+昇格の印: 一次の行を開いて `[verified]` を付けても、確かめたのが「文がある」までで「文の主語が主張の対象である」までではなかった。表の1つの行に複数の主語の文が並ぶ文書で起きる
