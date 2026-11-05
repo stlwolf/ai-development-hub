@@ -3,7 +3,7 @@ id: "01M6NHJQ0XTWT0H38MK45HGX78"
 title: "#571 定着した外来語（ブランチ・バージョン・デプロイ）を和語に言い換える癖を、決まりとスキルの側で直す"
 date: 2026-11-05
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/571"
@@ -11,7 +11,32 @@ related:
   - type: derived_from
     ref: "docs/harness/plans/2026-11-05-plan-571-established-loanwords.md"
     reason: "この episode が記録する作業の計画"
+  - type: reference
+    ref: "docs/harness/decisions/2026-11-05-decision-571-term-choice-criterion.md"
+    reason: "この単位から昇格した decision（決定1〜4）"
+  - type: reference
+    ref: "docs/harness/knowledge/items/01M6NTS9MJV4XGMCF1M1EXC8J4.md"
+    reason: "この単位から収穫した negative knowledge（perl の1行の置き換えが日本語で黙って何もしない）"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/573"
+    reason: "この単位の PR"
 tags: [rule, output-style, glossary, japanese, harness]
+promotion:
+  - subject: "確定版の列挙は統括の数えで、意味の基準で数え直すと範囲が広がる"
+    verdict: not-required
+    ref: "本文: P1: 確定版の数を当て直した結果（2026-11-05）"
+  - subject: "語を選ぶ基準は名前の側にだけ当て、性質を表す語は日本語にする"
+    verdict: required
+    ref: "本文: P2: plan の初稿と、そこで下した判断の理由（2026-11-05）"
+  - subject: "「版」の境界は番号の有無ではなく「何が変わったか」で分ける"
+    verdict: required
+    ref: "本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）"
+  - subject: "perl の1行の置き換えは use utf8 が無いと日本語で黙って何もしない"
+    verdict: required
+    ref: "本文: I1-3: 置き換えの道具の失敗と撤回（2026-11-05）"
+  - subject: "so-compare.sh のコメントだけの変更は EXPECTED_SHA だけを更新し、SO_COMPARE_VERSION は上げない"
+    verdict: not-required
+    ref: "本文: I1-5: 確かめの結果（2026-11-05）"
 ---
 
 # #571 定着した外来語（ブランチ・バージョン・デプロイ）を和語に言い換える癖を、決まりとスキルの側で直す
@@ -171,3 +196,51 @@ owner は別のリポジトリの統括のセッションで「PHP の版なん�
 | `projects/ruler-agent-verification/README.md` | 接尾・定着: 54,54 |
 | `projects/wezterm-ai-mode/CONVENTIONS.md` | 接尾・定着: 157 |
 | `scripts/sync/apply-claude-settings.sh` | 改訂: 425,430 |
+
+## closure（2026-11-05）
+
+tier は heavy である（意図して起動した設計SO と実装SO・置き換えの道具の失敗と撤回・棄却した選択肢がある）。
+
+- 次の消費者: §8・出力の型・2つの用語集を次に直す人と、語の選び方で迷うモデル（decision を読む）。日本語を perl で置き換える作業（knowledge item）。マージのあとの sync と memory の整理をする統括（ゲート6）。
+- 達成度: 達成。受入の表の行はすべて満たした（plan の受入の表）。
+- 注入された knowledge item（期待集合）: `01M5F0CNEKA9ED9AMQ3YWGGF8W`・`01M021TFBFBFZ7Z6KW2DN1RYQQ`・`01M579XZNAT7EXY4VPGRM9J8JW`。3件とも `followed` の観測を足した。
+
+### 事実・失敗
+
+- 置き換えの道具が黙って何もしなかった。`本文: I1-3: 置き換えの道具の失敗と撤回（2026-11-05）`
+- 分類の表を行の単位で作り、1行に2つの意味がある行で「確定版」を直す側に入れていた。設計SO が拾った。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）`
+- 自分が決まりの文に足す悪い例の「枝」を、残りの数に入れていなかった。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）`
+- 前の実装を指す「版」6回を残す側に入れていた。設計SO の指摘（何が変わったかで分ける）を、自分の分類に当て直していなかった。実装SO が拾った。`本文: I2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-11-05）`
+- 確かめのコマンドとして brief と plan に写した `grep -nP` は macOS の grep で動かない。knowledge item `01M579XZNAT7EXY4VPGRM9J8JW` の前の観測（#467）が同じことを書いていたのに、本文の確かめのコマンドをそのまま写していた。設計SO が拾った。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）`
+- `test_oe_confirm.sh` の2件の失敗は、変更前の master でも出る。`本文: I1-5: 確かめの結果（2026-11-05）`
+
+### 決定と根拠
+
+- 範囲（案A）・凍結した置き場・出力の型の1文・分岐と検査・例の差し替えは、owner が Q59〜Q64 で決めた。`本文: GATE 3: owner の承認（2026-11-05）`
+- 長く効く判断（基準1つ・名前の側にだけ当てる・一覧は例・境界は何が変わったか）は decision に昇格した（`docs/harness/decisions/2026-11-05-decision-571-term-choice-criterion.md`）。`本文: P2: plan の初稿と、そこで下した判断の理由（2026-11-05）`
+
+### 昇格の判定
+
+- 「確定版の列挙は統括の数えで、意味の基準で数え直すと範囲が広がる」: `not-required`。この単位の範囲の答えは plan の GATE 3 にある。一般の教訓（issue 本文の数を当て直す）は、`issue-intake` の固定の問いの4つ目がすでに持っている。`本文: P1: 確定版の数を当て直した結果（2026-11-05）`
+- 「語を選ぶ基準は名前の側にだけ当て、性質を表す語は日本語にする」: `required`（decision の決定1〜3・この PR に入れた）。棄却した案（G1・G2・G4・G5）があり、覆すには同じ議論が要り、前提（モデルが一覧を決まりとして読む）が将来偽になりうる。`本文: P2: plan の初稿と、そこで下した判断の理由（2026-11-05）`
+- 「「版」の境界は番号の有無ではなく「何が変わったか」で分ける」: `required`（decision の決定4・この PR に入れた）。番号の有無で分ける案が2回誤った。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）`
+- 「perl の1行の置き換えは use utf8 が無いと日本語で黙って何もしない」: `required`（knowledge item `01M6NTS9MJV4XGMCF1M1EXC8J4` に収穫・この PR に入れた）。非自明（終了コードが 0）・再発しうる（日本語の置き換えは繰り返す）・行動を変える（道具と確かめ方が変わる）。既存の item に同旨は無かった。`本文: I1-3: 置き換えの道具の失敗と撤回（2026-11-05）`
+- 「so-compare.sh のコメントだけの変更は EXPECTED_SHA だけを更新し、SO_COMPARE_VERSION は上げない」: `not-required`。`test_so_compare_version.sh` の冒頭の註がすでに決まりとして書いている。`本文: I1-5: 確かめの結果（2026-11-05）`
+
+### わかったこと
+
+- 「枝」「版」のように同じ字が2つの意味を持つ語は、行の単位では分けられない。出現の単位で、何を指すかで分ける。`本文: I2: 実装SO（弱・Codex 1レーン）の結果と採否（2026-11-05）`
+- 決まりの文そのものが、確かめの数を変える（悪い例として語を書くと、残りに数が足される）。`本文: P2: 設計SO（ゲート2・弱）の結果と採否（2026-11-05）`
+
+### 残課題（follow-up routing）
+
+- マージのあとに、統括や子の返答で言い換えが再び出ないかを確かめる工程が無い（owner が Q63 の補足で聞いた点）。行き先: 報告の「範囲の外の気づき」に載せ、統括が起票するかを決める。
+- `test_oe_confirm.sh` の古いロックの回収の2項目が master でも失敗する。行き先: 報告の「範囲の外の気づき」に載せ、統括が起票するかを決める。
+- knowledge item `01M579XZNAT7EXY4VPGRM9J8JW` の本文の確かめのコマンド（`grep -nP`）が macOS で動かない。item の本文や status の変更は段6 の別 PR の仕事なので、この単位では直さない。行き先: 報告に載せ、統括が段6 で扱うかを決める。
+- 2つの用語集は同じ基準の文を持つ。片方を直したらもう片方を見る（#467 と同じ扱い・スキルの中には書かない）。行き先: この episode と decision の決定3 に残した。追わない。
+- マージのあとの `./scripts/sync.sh` と、memory の「定着した用語を独自に和訳しない」を由来だけに縮めること。行き先: ゲート6 の統括の仕事（確定版の「暗黙の工程」）。
+- 認識合わせの抜け: 確定版の列挙の外に同じ言い換えがあったことは、issue 本文の数の食い違いで、`issue-intake` の固定の問いの4つ目が拾う種類である。確定版は「本文の数と状態」で canonical の数は当て直したが、コードの数は当て直していなかった。行き先: `issue-intake` の行き先1（固定の問い）にはすでに入っているので、足さない。
+
+### 形式メモ
+
+- 出力型の骨格で拾えたもの: 失敗が5つと、昇格が3つ（decision 2件の決定・knowledge 1件）。拾えなかったもの: 特になし。KPT と YWT の皮は使っていない。摩擦: 分類の全件の表が大きく、episode に載せる量が増えた。

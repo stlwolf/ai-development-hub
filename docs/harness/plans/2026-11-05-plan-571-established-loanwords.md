@@ -3,7 +3,7 @@ id: "01M6NHJQ0XABCW7SY2QZ0XZYK7"
 title: "#571 定着した外来語（ブランチ・バージョン・デプロイ）を和語に言い換える癖を、決まりとスキルの側で直す"
 date: 2026-11-05
 type: plan
-status: in-development   # ゲート3 承認（2026-11-05・600f666 の版）。I1 に入った
+status: stable   # 実装完了（2026-11-05・PR #573）。受入の表をすべて満たした。ゲート3 の承認は 600f666 の版で、承認のあとの補正は末尾の「ゲート3 のあとの変更」節（H1〜H3）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/571"
@@ -239,24 +239,24 @@ owner は別のリポジトリの統括のセッションで「PHP の版なん�
 
 | 確定版の項目 | 満たす場所 | 結果（I3 で埋める） |
 |---|---|---|
-| §8 を「その分野の人がふだん何と呼ぶか」の基準1つに書き直す（英語で） | `canonical/rules/output-format-rule.md` の §8（DJ-1） | |
-| 「名前か、性質を表す語か」の区別を残す | 同上 | |
-| 出力の型に同じ変更を入れる（§9 の末尾） | `canonical/output-styles/readable-conversation.md`（DJ-2） | |
-| 2つの表を例に下げる・行を増やさない・「表に行を足す」を直す | 2つの `glossary.md`（DJ-3） | |
-| 基準の1文を各スキルに書く（参照だけにしない・スキルどうしも参照しない） | 2つの `glossary.md`（DJ-3） | |
-| `html-one-pager/SKILL.md` の用語の行と `glossary.md` の冒頭の説明を合わせる | 同ファイル（DJ-3） | |
-| canonical の「枝」42回をブランチに・5回を残す・固定節の②も直す | DJ-4 の表 | |
-| 「CLI の版」4か所をバージョンに | `so-compare/SKILL.md`（DJ-5） | |
-| `runbook-authoring` の例の「版」をバージョンに | `examples/` とそのテスト（DJ-5） | |
-| `handoff-state.sh` の「枝」3・engine のテストの「枝」9・`so-compare.sh` の「版」 | DJ-4・DJ-5・DJ-7 | |
-| hook のスクリプトの「枝」2を意味で分けて決める | DJ-4 の表 | |
-| `docs/` と `projects/*/docs/` を書き換えない | `git diff --stat` に出ないこと | |
-| 機械の検査を作らない | 新しい検査のファイルが無いこと | |
-| 同じ語の意味の対比を、書き直した決まりで説明できる | episode（DJ-8） | |
-| 「枝」の残りの全件の一覧 | episode | |
-| テストが bash 5 と bash 3.2 で失敗0・期待値を変えたら差を書く | episode（DJ-8） | |
-| `shellcheck` | episode（DJ-8） | |
-| 書き直した文が書き直した決まりに反していない | episode（DJ-8） | |
+| §8 を「その分野の人がふだん何と呼ぶか」の基準1つに書き直す（英語で） | `canonical/rules/output-format-rule.md` の §8（DJ-1） | 満たした（8ea21a7） |
+| 「名前か、性質を表す語か」の区別を残す | 同上 | 満たした（8ea21a7・性質を表す語の項目） |
+| 出力の型に同じ変更を入れる（§9 の末尾） | `canonical/output-styles/readable-conversation.md`（DJ-2） | 満たした（8ea21a7・Q61 のとおり要点の1文） |
+| 2つの表を例に下げる・行を増やさない・「表に行を足す」を直す | 2つの `glossary.md`（DJ-3） | 満たした（8ea21a7・表の行は変えていない） |
+| 基準の1文を各スキルに書く（参照だけにしない・スキルどうしも参照しない） | 2つの `glossary.md`（DJ-3） | 満たした（8ea21a7） |
+| `html-one-pager/SKILL.md` の用語の行と `glossary.md` の冒頭の説明を合わせる | 同ファイル（DJ-3） | 満たした（8ea21a7・runbook の冒頭は 1c808c1 で補正 H2） |
+| canonical の「枝」42回をブランチに・5回を残す・固定節の②も直す | DJ-4 の表 | 満たした（e88f38d・残りの7行は episode の I1-5） |
+| 「CLI の版」4か所をバージョンに | `so-compare/SKILL.md`（DJ-5） | 満たした（e88f38d・同じ意味の2回も直した） |
+| `runbook-authoring` の例の「版」をバージョンに | `examples/` とそのテスト（DJ-5） | 満たした（aff6643・テスト 95 で失敗0） |
+| `handoff-state.sh` の「枝」3・engine のテストの「枝」9・`so-compare.sh` の「版」 | DJ-4・DJ-5・DJ-7 | 満たした（0849242・EXPECTED_SHA を更新） |
+| hook のスクリプトの「枝」2を意味で分けて決める | DJ-4 の表 | 満たした（0849242・分岐に直した） |
+| `docs/` と `projects/*/docs/` を書き換えない | `git diff --stat` に出ないこと | 満たした（この plan・episode・decision・knowledge のほかは変わっていない） |
+| 機械の検査を作らない | 新しい検査のファイルが無いこと | 満たした |
+| 同じ語の意味の対比を、書き直した決まりで説明できる | episode（DJ-8） | 満たした（episode の I1-5） |
+| 「枝」の残りの全件の一覧 | episode | 満たした（episode の I1-5・7行。「版」の残りの全件は episode の末尾の表） |
+| テストが bash 5 と bash 3.2 で失敗0・期待値を変えたら差を書く | episode（DJ-8） | 満たした（episode の I1-5。test_oe_confirm の2件は master でも失敗する既存の失敗） |
+| `shellcheck` | episode（DJ-8） | 満たした（22本で警告が前後で同じ） |
+| 書き直した文が書き直した決まりに反していない | episode（DJ-8） | 満たした（episode の I1-5・実装SO の指摘3を H2 で直した） |
 
 ## ステップ
 
