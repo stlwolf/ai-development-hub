@@ -270,6 +270,15 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - owner の答え（2026-11-06・判断ボードの Q67）: (a) を選んだ。補足は「Claude Code への依存を深めないので乗らない。issue にするまでもない」。別の issue は起こさない。機能の説明は、統括が owner にする。
 - 答えの当て方: 最初の推奨にあった「`generation` の記録に inbox socket を持てる形にしておく」も、Claude Code への依存を深める準備なので外した。この設計が Claude Code に頼るのは、文書化された環境変数（`CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID`）だけで、どちらも無いときは DJ-7 の 3 の方法と人の判断に落ちる。
 
+- 参考（owner・2026-11-06）: この機能は採らないが、受け取る側の制御の仕組みは、将来 transport を替えるときの参考になる。原文は https://code.claude.com/docs/en/cross-session-messaging.md で、2026-11-06 に取り直して当てた [verified]（節の名前を括弧に書いた）。
+  1. 宛先はペインではなく、セッションごとの inbox socket である（「The session's inbox socket」）。tmux を通らない。
+  2. 受け取る側が、届いた文を accept（渡す）・hold（渡さずに知らせを出し、あとで accept が当たれば渡す）・refuse（捨てる）のどれにするかを `crossSessionInbound` で選べる（「Control inbound messages」）。値が無いときは、両方のセッションの permission mode の組で決まる。
+  3. 届いた文は命令として実行されず、承認の代わりにもならない（「Commands don't run: a command in the message's text, such as `/compact`, arrives as plain text. Claude Code never executes it.」「It can't approve anything」・「How a session treats an incoming message」）。いまの transport（tmux の send-keys）は入力欄に文字を打つので、送った1行が `/clear` で始まれば実行されうる [speculation]（統括と owner の指摘・確かめていない）。
+  4. 相手の状態で届け方を変える。作業中なら道具の呼び出しの合間に読み、動いている道具を止めない。待機中なら新しいターンを始める（「The receiving Claude reads the message between tool calls during an active turn, so a running tool is never interrupted. When the receiving session is idle, Claude Code starts a new turn with the message.」・「Message delivery」）。いまの transport は相手の状態に関係なく打ち込み、Enter が吸収されることがあるので、送ったあとに画面を見て Enter を送り直す（#144・`lib/delegate-send.sh` の冒頭の注記 [verified]）。比べる材料になる。
+  5. 送り合いが止まらなくなるのを防ぐ上限がある。受け取る側が送り手ごとに回数を絞り、短いあいだの同じ文を捨て、渡す待ちを50件までにする（「Message loops are throttled」・「Limitations」）。hold した文は100件までで、超えると古いものから捨てる（「Control inbound messages」）。送る側も、短いあいだに送りすぎると送る前に断る（「Rapid bursts to one session are refused at the sender」）。
+  6. 届いたことを送り手へ自動で知らせる仕組みは、原文に書かれていない。書かれているのは、受け手の Claude が `SendMessage` で返事をできること（「Message delivery」）と、非対話のセッションで保留が期限を過ぎて捨てられたときに、届けられる送り手へ「expired」を返すこと（「Past the deadline: Claude Code drops the message and reports it as expired to a sender it can reach.」・「Non-interactive sessions」）だけである。engine には、受け手の hook が送った1行の nonce を取り込みの印として書く受領印（receipt・#336）がすでにあり、この点では engine のほうが先にある。
+  - 別の issue は起こさない（owner の答え）。
+
 ### DJ-11 移行の段取り（owner に聞いた）
 
 - 選択肢:
