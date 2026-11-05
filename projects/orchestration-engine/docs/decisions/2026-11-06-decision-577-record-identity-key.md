@@ -3,7 +3,7 @@ id: "01M6PD1RHBVVNJDD3FPHKKRX15"
 title: "#577 統括と委譲子の「誰か」は、こちらで作る `lease_id` と `generation` の記録で持ち、tmux のペインは観測する属性にする — decision #188 の DJ-188-3 を `oe-delegate`（tmux）の子と統括について置き換える"
 date: 2026-11-06
 type: decision
-status: proposed   # 案。epoch と plan-390 の回答1 との関係の owner の答え（判断ボードの Q72）とゲート3 の承認で accepted にする
+status: proposed   # 案。設計の問いの owner の答えはすべて入れた（Q65〜Q67・Q69・Q71・Q72）。分身レビューとゲート3 の承認で accepted にする
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/577"
@@ -48,7 +48,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D2 置き場は `~/.claude/state/oe-lease/<lease_id>.json`** で、`lease` ごとに1ファイル・`generation` はその中に並べる（DJ-2）。書くのは verb だけで、`lease` ごとのロックの中で、`epoch` を比べてから書く（DJ-5）。
 - **D3 ペインと tmux server の pid は属性で、観測は heartbeat の sidecar に残す**（DJ-3）。sidecar の書き手は statusLine の producer だけのままにし、環境に `OE_LEASE_ID` と `OE_GENERATION` があるときだけ `lease_id` と `generation` を足す。server は pid と開始時刻で区別する。heartbeat からペインを引く規則は lib の1つの関数にまとめる。
 - **D4 `lease` と `generation` は、server の世代やペインの生死では消さない**（DJ-4）。閉じた `lease` を、明示の掃除（`oe-lease gc`）で、一定の日数のあとに消す。heartbeat の sidecar と一時ファイルの掃除も、同じ verb で行う。
-- **D5 取り合わない決まり**（DJ-5・**owner の答え Q72 まで確定しない**。下の「plan-390 のゲート3 の回答1 との関係」）。`binding` の張り替えと `generation` を進めるのは、ロックの中で `epoch` を比べる compare-and-swap で行い、1つの session_id は開いた `lease` の1か所にしか入れない。張り替えは、前の `binding` のプロセスが生きていないと機械で確かめられたときか、本人が張り替えるときだけ許す。`lease` の記録の1回の書き込みを commit point にし、board の行・registry の複製・event は、`lease` の記録から作り直せる派生の記録にする。
+- **D5 取り合わない決まり**（DJ-5・owner の答え: Q72。下の「plan-390 のゲート3 の回答1 との関係」）。`binding` の張り替えと `generation` を進めるのは、ロックの中で `epoch` を比べる compare-and-swap で行い、1つの session_id は開いた `lease` の1か所にしか入れない。張り替えは、前の `binding` のプロセスが生きていないと機械で確かめられたときか、本人が張り替えるときだけ許す。`lease` の記録の1回の書き込みを commit point にし、board の行・registry の複製・event は、`lease` の記録から作り直せる派生の記録にする。
 - **D6 送る前の確かめ**（DJ-6）。`lease` → いまの `generation` → heartbeat の候補のペイン → `tmux list-panes -a` の所属 → ペインの端末のフォアグラウンドのプロセスの pid と開始時刻が `binding` と一致、の順で引き、どれかで外れたら送らない。Enter の前にも確かめ直す。確かめと Enter のあいだの窓は残り、receipt で後から見つける。
 - **D7 resume したセッションが自分の `lease` と `generation` を知る方法**（DJ-7・owner の答え: Q69「推測するな計測せよ」）。環境変数 → `CLAUDE_CODE_SESSION_ID` と `generation` の session_id の並びの照合 → 会話の記録にある `lease_id` を `oe-lease bind` に渡す、の順に使う。3 だけで名乗るときは workspace の一致を確かめ、統括の `lease` なら owner の確かめを1回求める。owner の resume の打ち方を決まりにするかは、plan の I0 で `--resume <id>`・id なしの `--resume`・`--continue` の値を計測してから決める。
 - **D8 退任した統括の見分け**（DJ-8）。`generation` の記録に状態（在任・退任）・退任した時刻・後任の `generation` を持ち、退任した `generation` のセッションは統括の操作に進まない。
@@ -72,17 +72,19 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 | DJ-188-5（read-only は観測者を縛る） | 残す。新しい write path は producer の側（verb）に足す。DJ-188-5 の「新規書込経路を一切導入しない」は #188 自身の範囲の文である。#188 の frontmatter の「DJ-188-1/2/3/5 は不変」は、この decision の確定のときに直す |
 | DJ-206-1・DJ-206-3 | 従う。#206 が後回しにした「`%N` の再利用で別の関係が混ざりうる」は、snapshot の `lease_id` で解く |
 | #238/#239 の「seat は薄い pointer として先送り」 | **先送りを始める。** 再開の条件「報告 stranding が再発したら」は、2026-10-27 に子3本の宛先が切れたことで当たっている。先送りの理由の三者同期は、`lease` の記録を正本・board の行を表示・registry を移行のあいだの複製、と分けて避ける |
+| plan-390 のゲート3 の回答1（席に lease と fencing を入れない・停止を fencing の代わりにする） | **`lease` の記録への書き込みに限って更新する**（owner の答え Q72）。`epoch` と compare-and-swap は `lease` の記録の書き込みにだけ効かせ、古い `generation` の送信やファイルの編集まで止める fencing は入れない。それ以外は回答1 のまま |
 | board schema の §9（移行後は frontmatter の `現統括` が正本になる・読み手と書き手を同時に切り替える） | **前提を上書きする。** board の `現統括` は、frontmatter に移しても表示であり、機械の正本は `lease` の記録である。「読み手と書き手を同時に切り替える」の原則は残し、正本を board の外に移す切り替えを、読み手と書き手の同じ PR で行う。`validate-board.sh` の `現統括` の検査は、表示の行があるかの検査として残す |
 
 decision #188 の本文は変えず、frontmatter の `superseded_by` に「DJ-188-3 の `oe-delegate`（tmux）の部分を、この decision で置き換える」を足す（この decision が accepted になったとき）。
 
-## plan-390 のゲート3 の回答1 との関係（owner の答え Q72 を待つ）
+## plan-390 のゲート3 の回答1 との関係
 
 - **前の裁定**: #390（計画的な交代）の plan のゲート3 で、owner は「席に排他制御（lease と fencing）を入れるか」に「(a) lean の決定を維持する。停止を fencing の代わりに使う」と答えた [verified]（`projects/orchestration-engine/docs/plans/2026-09-11-plan-390-supervisor-planned-succession.md` の「ゲート3 — owner の裁定（2026-09-11）」の表の1行目）。そのとき棄却した案は「lease と fencing token による席（compare-and-swap・世代番号・consumer が token を検査）」で、棄却の理由は「新しい正本を作るので lean の決定に正面から反する。採るなら accepted な ADR を覆す owner 判断が要る」だった（同じ plan の「棄却した案（ゲート1・ゼロベース代替探索）」の表）。採った形は「プロセスを閉じることが、この構成で使える唯一の fencing である」（同じ plan の DJ-7）。
 - **この設計で近いところ**: `lease` という新しい正本を作り、`epoch`（世代と束縛が変わるたびに増える番号）で compare-and-swap する（D2・D5）。棄却した案の「compare-and-swap・世代番号」と同じ部品を持つ。
 - **この設計で違うところ**（筆者の見立て・owner の答えで確かめる）: 新しい正本を作ること自体は、#577 の本文の方向（こちらで作る ID を鍵にし、ペインを属性にする）と、owner の答え Q65（2つのリレーションで持つ）で決まっている。棄却した案のうち「consumer が token を検査して、旧世代の操作を機械的に失効させる」は、この設計には入れていない。この設計の `epoch` が守るのは `lease` の記録への書き込みの取り合いだけで、退任した `generation` が委譲や board の更新を続けることは、名乗るとき（`oe-lease bind`・`whoami`）に退任と分かれば止まる（D8）という自己申告に頼る。前任のプロセスを閉じることを fencing の代わりにする #390 の DJ-7 は、そのまま残す。
 - **owner に確かめていること**（判断ボードの Q72・統括が載せた）: この設計の `epoch` と compare-and-swap を、#390 の回答1 の範囲（lean の決定を維持・停止を fencing の代わり）の中のものとして入れてよいか。答えによって、D5 と、decision #238/#239 との関係の表の扱いを直す。
-- owner の答え: （待っている）
+- owner の答え（2026-11-06・判断ボードの Q72）: 「`epoch` と compare-and-swap は入れるが、効かせるのは `lease` の記録への書き込みだけ。古い `generation` の送信やファイルの編集まで止める本格的な fencing は入れない」。
+- **この decision は、plan-390 の回答1 を、`lease` の記録への書き込みに限って更新する。** `lease` の記録の書き込みは `epoch` の compare-and-swap で取り合いを防ぐ。それ以外（退任した `generation` の送信・委譲・board やファイルの編集）は、回答1 のまま、前任のプロセスを閉じることを fencing の代わりにする（#390 の DJ-7）。
 
 ## 検討した選択肢
 
@@ -106,5 +108,5 @@ discussion の §7 の探索木が正本である。要点だけを書く。
 
 ## 確定するときに直すこと
 
-- D1・D10・D11・D16 は owner の答え（Q65〜Q67・Q71）を入れた。D7 の resume の打ち方は、I0 の計測のあとに決める。D5 の epoch と compare-and-swap は、下の「plan-390 のゲート3 の回答1 との関係」の owner の答え（Q72）で確定する。
+- D1・D10・D11・D16 は owner の答え（Q65〜Q67・Q71）を入れた。D7 の resume の打ち方は、I0 の計測のあとに決める。D5 の epoch と compare-and-swap は、owner の答え（Q72）で、`lease` の記録への書き込みだけに効かせると決まった。
 - status を accepted にし、decision #188 の frontmatter に置き換えの行を足す。

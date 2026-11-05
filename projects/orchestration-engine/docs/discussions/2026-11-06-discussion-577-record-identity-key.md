@@ -208,7 +208,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 
 ### DJ-5 ID を取り合わない決まり
 
-- **この判断は、owner の答え（判断ボードの Q72）まで確定しない。** #390 の plan のゲート3 の回答1 で、owner は「席に排他制御（lease と fencing）を入れない。停止を fencing の代わりに使う」と答えていて、そのとき棄却した案が「compare-and-swap・世代番号・consumer が token を検査」を持っていた [verified]（`projects/orchestration-engine/docs/plans/2026-09-11-plan-390-supervisor-planned-succession.md` の「ゲート3 — owner の裁定」と「棄却した案（ゲート1・ゼロベース代替探索）」の表）。下の `epoch` と compare-and-swap はそれに近い。関係は decision の案の「plan-390 のゲート3 の回答1 との関係」に書いた。
+- **owner の答え（2026-11-06・判断ボードの Q72）**: `epoch` と compare-and-swap は入れるが、効かせるのは `lease` の記録への書き込みだけにする。古い `generation` の送信やファイルの編集まで止める本格的な fencing は入れない。#390 の plan のゲート3 の回答1（「席に排他制御（lease と fencing）を入れない。停止を fencing の代わりに使う」）は、`lease` の記録への書き込みに限って更新する [verified]（`projects/orchestration-engine/docs/plans/2026-09-11-plan-390-supervisor-planned-succession.md` の「ゲート3 — owner の裁定」）。関係は decision の案の「plan-390 のゲート3 の回答1 との関係」にある。
 
 - 決まり:
   - `generation` の `binding` を張り替える（resume したプロセスが `lease` に戻る）・`generation` を進める（交代）は、どちらも `lease` のファイルのロックの中で、期待する値と比べてから書く（compare-and-swap）。期待する値は、下の `epoch` 1つである。`binding` か `generation` が変わるたびに番号が増えるので、番号が同じなら `generation` も `binding` も読んだときのままである（ゲート2 の指摘で、`generation` と `binding` と番号の3つを比べる形から番号1つに寄せた）。
