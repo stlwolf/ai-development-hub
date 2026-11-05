@@ -3,7 +3,7 @@ id: "01M6PD1RJJS6YXNRKB9ZYNV5X8"
 title: "#577 engine の記録のキーを tmux のペインから切り離し、こちらで作る ID にする"
 date: 2026-11-06
 type: plan
-status: draft   # 設計まで（P3 で停止）。owner の答え5件と、分身レビュー（#404）と、ゲート3 の承認を待つ
+status: draft   # 設計まで（P3 で停止）。持ち場の識別子の名前の答えと、分身レビュー（#404）と、ゲート3 の承認を待つ
 so:
   design: weak
   impl: weak   # 仮。実装SO のモードとレーンは、ゲート3 のあとに統括が送る実装の追補の書面で決める
@@ -40,7 +40,7 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 
 ## 設計判断
 
-設計の判断の正本は discussion の §5（DJ-1〜DJ-17）で、決まったことの要約は decision の案の「決定」（D1〜D16）である。ここでは繰り返さない。owner に聞いているのは DJ-1・DJ-7・DJ-10・DJ-11・DJ-17 の5件で、問いは統括のワークスペースの根の作業層の `.oe/question-577-1.json`（4件・DJ-7 の問いは統括が置き換えた）と `.oe/question-577-2.json`（DJ-17）にある。新しい概念の名前は、#564 の決まりの案に合わせて識別子で書く（discussion の §5.0）。
+設計の判断の正本は discussion の §5（DJ-1〜DJ-17）で、決まったことの要約は decision の案の「決定」（D1〜D16）である。ここでは繰り返さない。owner に聞いたのは DJ-1・DJ-7・DJ-10・DJ-11・DJ-17 の5件で、DJ-1・DJ-7・DJ-10・DJ-11 は答えを回収した（2026-11-06・判断ボードの Q65〜Q67・Q69）。DJ-17（持ち場の名前）は、1回目（`lineage`）が取り下げになり、2回目を統括のワークスペースの根の作業層の `.oe/question-577-3.json` で聞いている（推奨 `lease`）。新しい概念の名前は、#564 の決まりの案に合わせて識別子で書く（discussion の §5.0）。
 
 ## 確定版に無い判断
 
@@ -49,8 +49,8 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 | # | 判断 | 確定版との関係 | 出どころ |
 |---|---|---|---|
 | N1 | resume したセッションが自分の ID を知る方法を、環境変数と `CLAUDE_CODE_SESSION_ID` を主にし、「自分のペインの heartbeat から引く」を使わない（DJ-7） | **外れる。** 確定版は「自分のペインの heartbeat から session_id を引き、ID の記録に照らせば決まる見込み」と書いていた | P1 の発見（公式の文書と実機） |
-| N2 | owner が resume するときの打ち方を決まりにするか（DJ-7・owner の答えを待つ。統括の問いの推奨は「実機で確かめてから決まりにするかを決める」） | 新しい。owner の手の打ち方を変えうる | 最初は公式の文書の MCP server の文を Bash と hook の文と取り違えて出した（discussion の §2.2・episode の「訂正」） |
-| N3 | transport を Claude Code のセッション間の文を送る機能へ替えるかを owner に聞く（DJ-10） | 新しい | P1 の発見・ゲート1 の2レーン |
+| N2 | owner が resume するときの打ち方を決まりにするかは、I0 で計測してから決める（DJ-7・owner の答え: Q69「推測するな計測せよ」） | 新しい。owner の手の打ち方を変えうる | 最初は公式の文書の MCP server の文を Bash と hook の文と取り違えて出した（discussion の §2.2・episode の「訂正」） |
+| N3 | transport は tmux の send-keys のままにし、セッション間の文を送る機能には乗らない。別の issue も起こさない（DJ-10・owner の答え: Q67） | 新しい（確定版には無い問いだった） | P1 の発見・ゲート1 の2レーン |
 | N4 | 送れないときは `delivery_held` の event を残し、`lineage` の次の `generation` が拾う（DJ-16） | 新しい | ゲート1 の Codex の案E |
 | N5 | heartbeat の sidecar と一時ファイルの掃除を、`lineage` の掃除と同じ verb で行う（DJ-4） | 新しい。確定版の「掃除の決まり」は `lineage` の記録の掃除を指していた | 棚卸し（一時ファイルが約1,075件残っている） |
 | N6 | heartbeat からペインを引く規則を lib の1つの関数にまとめ、読む側の絞り方の違い（`oe-vitals` はペインだけ）をなくす（DJ-3） | 新しい | ゲート1 の Codex・棚卸し |
@@ -82,7 +82,7 @@ discussion の §8 が正本である。
 | PR-2 | 書く側を両方書きにする。`oe-delegate`（`lineage` を作り、`OE_LINEAGE_ID`・`OE_GENERATION`・親の `lineage` を環境に入れる）・`oe-register`・heartbeat の producer（`lineage_id` と `generation` を足す）・event の snapshot（DJ-13）・一度だけの取り込み（`oe-lineage adopt`）（DJ-11） | 触る（書く記録が増える。読む側は変えない） | 既存のテストが全部通ること・新しいテスト・実機で1回（下の「実機の確かめ」の R1） |
 | PR-3 | 送る側。`oe-send` の `lineage` あて・送る前の確かめと Enter の前の確かめ直し（DJ-6）・親の `lineage` へ送る形・`delivery_held` の event（DJ-16）・`oe-report`。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
 | PR-4 | 統括の `lineage`。`oe-handoff take` と `retire` を `lineage` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`oe-vitals` が `lineage` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
-| PR-5 | 観測する側。`oe-tree` が `lineage` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・ `seen` の記録のキー（N7）・計測のスクリプト。registry を「誰か」のキーとして読むのをやめる | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
+| PR-5 | 観測する側。`oe-tree` が `lineage` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・`seen` の記録のキー（N7）・計測のスクリプト。registry を「誰か」のキーとして読むのをやめる（owner の答え Q66 により、この最後の切り替えは復帰のテストの時に一度に行ってよい） | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
 
 - 配る順: hook と statusLine の producer を変える PR（PR-2）と、送る側を変える PR（PR-3）は、sync で全リポジトリの統括に効く。sync の前に、ほかのリポジトリの統括へ知らせる（DJ-11）。知らせる文と、sync をいつ打つかは owner が決める（gate 6 と同じく、子は sync しない）。
 - 並べ方: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の直列である。PR-3 と PR-4 はどちらも `bin/oe-handoff` と配布しているスキルの文に触りうるので、並列にしない。
@@ -102,7 +102,7 @@ discussion の §8 が正本である。
 
 - **R2（statusLine が環境を受け継ぐか）**: PR-2 で、`OE_LINEAGE_ID` を入れて起こしたセッションの heartbeat の sidecar に、`lineage_id` が載ることを見る。R1 と同じ使い捨てのセッションで見る。載らなければ、DJ-3 の「session_id の並びで絞る」だけで動くことを、PR-2 のテストで固定する。
 - **R3（フォアグラウンドのプロセスグループが claude を指すか）**: PR-3 で、子が自分のペインについて、入力待ちのときと、Bash の道具で長いコマンドを動かしているときの2つで、ペインの端末のフォアグラウンドのプロセスグループの番号と `CLAUDE_PID` を読んで比べる（自分のペインだけを読む）。道具の実行中に外れるなら、送る側は「確かめられない」で止まり、少し待って確かめ直す形にする。
-- **R1（issue の「resume したセッションが自分の ID を知る方法を決め、実機で確かめる」）**: PR-2 のあとに、使い捨ての claude のセッションを1つ、`OE_LINEAGE_ID` と一時ディレクトリの state を入れて起こし、終了し、`claude --resume <id>`（id を付けて）と、id を付けない `claude --resume` の両方で戻して、環境の `CLAUDE_CODE_SESSION_ID` と `oe-lineage bind` の結果を見る。claude を起こすのは owner の手を1回借りる（子は自分でセッションを起こさない）。生きている統括と子には触れない。
+- **R1（issue の「resume したセッションが自分の ID を知る方法を決め、実機で確かめる」）**: I0（PR-1 の前）に、使い捨ての claude のセッションを1つ、`OE_LINEAGE_ID` と一時ディレクトリの state を入れて起こし、終了し、`claude --resume <id>`（id を付けて）と、id を付けない `claude --resume` の両方で戻して、環境の `CLAUDE_CODE_SESSION_ID` と `oe-lineage bind` の結果を見る。claude を起こすのは owner の手を1回借りる（子は自分でセッションを起こさない）。生きている統括と子には触れない。
 
 ## 受入
 
@@ -124,13 +124,17 @@ discussion の §8 が正本である。
 
 ### GATE 3: owner の plan 承認
 
+### I0: resume の値の計測（R1・実装の追補の書面で始める）
+
+owner の答え（Q69「推測するな計測せよ」）により、resume の打ち方の決まりを作る前に計測する。`--resume <id>`・id を付けない `--resume`・`--continue` のそれぞれで、Bash の `CLAUDE_CODE_SESSION_ID` を読み、resume した会話の id と比べる。生きている `~/.claude/state/` と、ほかの統括と子のペインに触れない形（使い捨てのディレクトリ・hook が書く置き場の切り離し）を、実装の追補の書面で統括と決める。結果で DJ-7 の決まりを決め、plan の「ゲート3 のあとの変更」に書く。
+
 ### I1〜I5: PR-1〜PR-5（実装の追補の書面で始める）
 
 各 I のあとに、テストと shellcheck のゲート・実装SO・Copilot の1ラウンドを、別の項目として置く（実装の追補の書面で確定する）。
 
 ## GATE 3 の問い
 
-（owner の答え5件が届いたあとに書く。この plan で実装に進むか・確定版に無い判断 N1〜N10 を承認するか）
+（持ち場の名前の答えが届いたあとに書く。この plan で実装に進むか・確定版に無い判断 N1〜N10 を承認するか・DJ-1 の答えの当て方（持ち場と `generation` を1つのファイルの中の2つの表として持つ読み）で足りるか）
 
 ## ゲート3 のあとの変更
 

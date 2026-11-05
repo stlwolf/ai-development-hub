@@ -108,7 +108,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 | `bin/oe-report` | `/tmp/oe-parent-<N>` | 親へ送る | — | — | 入る |
 | `bin/oe-tree` | registry の親子の辺・heartbeat の束ね方 | `oe-jump` | ペインの生死・観測側の server の pid | 木 | 入る |
 | `bin/oe-vitals` | board の current_supervisor・heartbeat（ペインだけで絞る） | 知らせる | current_supervisor のペインの生死で「死」を決める | 知らせの文 | 入る |
-| `bin/oe-confirm`・`bin/oe-undelivered`・`bin/oe-ack`・`bin/oe-activity` | event の from と to のペインで照らす・ `seen` の記録 | 知らせる | ペインの生死 | 一覧 | 入る |
+| `bin/oe-confirm`・`bin/oe-undelivered`・`bin/oe-ack`・`bin/oe-activity` | event の from と to のペインで照らす・`seen` の記録 | 知らせる | ペインの生死 | 一覧 | 入る |
 | `bin/oe-threads`・`bin/oe-ident`・`bin/oe-jump`・`bin/oe-select`・`bin/oe-selfcheck`・`bin/oe-kick` | heartbeat・pane-issue・registry | 選ぶ・画面を読む・送る | ペインの生死 | 表示 | 入る |
 | `canonical/claude/statusline/statusline-oe-heartbeat.sh` | heartbeat の sidecar を書く | — | — | — | **入らない**（36本の走査の外のディレクトリ） |
 | `canonical/hooks/scripts/oe-prompt-receipt.sh` | 受領の event と診断を書く | — | — | — | 入る |
@@ -166,7 +166,8 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   - (c) `lineage` だけに ID を作り、`generation` を区別しない。
 - 推奨: (a)。
 - 理由: 子の報告を `lineage` に宛てれば、統括が交代しても子の宛先を付け替えずに済む。いまは交代と復帰のたびに子を1本ずつ `oe-register link` で付け替えている（#355 の見取り図の実例の 09-09 と 10-27）[verified]（統括のワークスペースの根の `.oe/map-355-recovery-body.html` の「実例」の表を読むだけで確かめた）。(b) は子の宛先が前任の `generation` を指したまま残り、つなぎを1つでもたどれないと届かない。(c) は退任した前任と現任を見分けられず、owner が答えた「退任した統括を誤って resume する件は、記録に持たせる情報を足せば済む」（#577 の本文）を記録で満たせない。
-- owner の答え: （待っている）
+- owner の答え（2026-11-06・判断ボードの Q65）: (a) を選んだ。補足は「一意に決まるものを区別して2つのリレーションで持つ。1つの ID に2つの意味を持たせない」。
+- 答えの当て方: `lineage_id` は持ち場だけを指し、1つの `generation` は (`lineage_id`, `generation`) の組で一意に決まる。持ち場と `generation` は、それぞれ自分のキーを持つ2つのリレーションとして扱う。置き場（DJ-2）は、ロックを持ち場ごとに取るために1つのファイルに並べるが、その中でも2つを別の表として持ち、1つの項目に2つの意味を持たせない。ファイルを2つに分けるかは、この読みで足りるかをゲート3 で owner に確かめる。
 
 ### DJ-2 ID の形と置き場
 
@@ -239,9 +240,10 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   1. 環境変数 `OE_LINEAGE_ID` と `OE_GENERATION`。`oe-delegate` が子を起こすときに入れる（いまの `PARENT_TMUX_PANE` と同じ入れ方 [verified]（`bin/oe-delegate` の `cmd="PARENT_TMUX_PANE=... claude"`））。resume のときは、復帰の手順が出すコマンド（`OE_LINEAGE_ID=<lineage_id> OE_GENERATION=<generation> claude --resume <session_id>`）で入る。
   2. 自分の `CLAUDE_CODE_SESSION_ID` が、ある `generation` の session_id の並びに入っていること。`--resume <id>` では resume した id が入るので、これで決まる。id を付けない resume でも、公式の文書の読みでは Bash と hook にいまの session_id が入るので決まるはずだが、確かめていない（§2.2・plan の R1）。
   3. 会話の記録（brief・引き継ぎ文書）に書いてある `lineage_id` を、セッション自身が読み、`oe-lineage bind` に渡す。verb は、2 の照合か、いまの `binding` のプロセスが生きていないことの確かめ（DJ-9）が通ったときだけ `binding` を張り替える。2 の照合が通らずに 3 だけで名乗るときは、`lineage` の workspace が自分の workspace と一致することを確かめ、統括の `lineage` なら owner の確かめを1回求めてから張り替える。ULID を読み違えた `lineage` の前の `binding` が、たまたま生きていなければ、機械の確かめだけでは別の `lineage` を取ってしまうためである（ゲート2 の Cursor の指摘）。復帰はもともと owner が「復帰して」と頼んで始まるので、確かめはその流れの中で取れる。
-- 推奨: **この判断は確定しない。owner の答えを待つ。** 最初の推奨（id を付けた resume を決まりにする）は、公式の文書の行を取り違えた前提に立っていた（§2.2）。統括は問いを取り下げ、「実機で確かめてから決まりにするかを決める」を推奨にした問いに置き換えた（2026-11-06）。この discussion の側の見立ては、次のとおりである。1 の環境変数を入れるには、どのみち復帰の手順が出すコマンドを写して打つことになるので、そのコマンドに id を付けておく費用は小さい。id を付けない resume で 2 が成り立つかは、R1 の実機で確かめてから決めればよい。
+- 推奨: **resume の打ち方の決まりは、この設計では確定しない（owner の答えで、計測のあとに決める）。** 最初の推奨（id を付けた resume を決まりにする）は、公式の文書の行を取り違えた前提に立っていた（§2.2）。統括は問いを取り下げ、「実機で確かめてから決まりにするかを決める」を推奨にした問いに置き換えた（2026-11-06）。この discussion の側の見立ては、次のとおりである。1 の環境変数を入れるには、どのみち復帰の手順が出すコマンドを写して打つことになるので、そのコマンドに id を付けておく費用は小さい。id を付けない resume で 2 が成り立つかは、R1 の実機で確かめてから決めればよい。
 - 確定版は「自分のペインの heartbeat から session_id を引き、ID の記録に照らせば決まる見込み」と書いていた。この方法は、ペインが使い回されて新しいセッションがまだ heartbeat を書いていないあいだに、別の `generation` を自分と取り違えうる（DJ-6 の穴と同じ）。上の 1 と 2 は、セッションの内側の値（環境変数）なので、この穴を持たない。
-- owner の答え: （待っている）
+- owner の答え（2026-11-06・判断ボードの Q69）: 「実機で確かめてから決まりにするかを決める」を選んだ。補足は「一次情報に当たろう。推測するな計測せよ」。
+- 答えの当て方: resume の打ち方の決まりは、この設計では決めない。plan の I0（実装の最初の段階）で、id を付けた `--resume`・id を付けない `--resume`・`--continue` のそれぞれで、Bash の `CLAUDE_CODE_SESSION_ID` が何になるかを計測し、その結果で決まりにするかを決める。1〜3 の方法の順は、計測の結果に依らずに残す。
 
 ### DJ-8 退任した統括の見分け
 
@@ -261,11 +263,12 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 ### DJ-10 transport を何にするか（owner に聞いた）
 
 - 選択肢:
-  - (a) この issue では tmux の send-keys のままにする。`generation` の記録に、inbox socket（`CLAUDE_CODE_MESSAGING_SOCKET` の値）を持てる形にしておく。セッション間の文を送る機能は、別の issue で試す。
+  - (a) この issue では tmux の send-keys のままにする。
   - (b) この issue で、transport もセッション間の文を送る機能に替える。
 - 推奨: (a)。
 - 理由: セッション間の文を送る機能は、届いた文が受け手の側の制御（`crossSessionInbound`）を通り、受け手の会話に「ほかのセッションからの文」として入る [verified]（https://code.claude.com/docs/en/cross-session-messaging.md の「How a session treats an incoming message」と「Control inbound messages」）。いまの receipt は、UserPromptSubmit の hook（`oe-prompt-receipt.sh`）が、送った1行の末尾の印を読んで書く。その hook がこの transport で走るかは確かめていない [speculation]。記録のキーの変更と混ぜると、どちらが効いたかを切り分けられない。
-- owner の答え: （待っている）
+- owner の答え（2026-11-06・判断ボードの Q67）: (a) を選んだ。補足は「Claude Code への依存を深めないので乗らない。issue にするまでもない」。別の issue は起こさない。機能の説明は、統括が owner にする。
+- 答えの当て方: 最初の推奨にあった「`generation` の記録に inbox socket を持てる形にしておく」も、Claude Code への依存を深める準備なので外した。この設計が Claude Code に頼るのは、文書化された環境変数（`CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID`）だけで、どちらも無いときは DJ-7 の 3 の方法と人の判断に落ちる。
 
 ### DJ-11 移行の段取り（owner に聞いた）
 
@@ -276,7 +279,8 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 推奨: (a)。
 - 理由: registry と heartbeat の hook は、hub のほかに3つのリポジトリの統括と、その子が使っている（2026-11-06 の `oe-tree` で、hub を含む4つの root が生きていた [verified]（`oe-tree` の出力を読んだ））。(b) は全員の手を止める。(c) は2つの仕組みが長く混ざる。
 - `oe-lineage adopt` は、いま生きている registry と heartbeat から `lineage` と `generation` を作る。`binding` の pid は、そのペインの端末のフォアグラウンドのプロセスから取る（DJ-6 の 4 と同じ取り方）。取り込んだ `lineage` の `generation` の session_id は、heartbeat から引けたときだけ入れ、引けなければ空にする（推し量って入れない）。
-- owner の答え: （待っている）
+- owner の答え（2026-11-06・判断ボードの Q66）: (a) を選んだ。補足は「復帰のテストのときに一気に切り替えてもよい。それまでは両方書く。ローカルなのでどちらでもよいが本番ならこの方式」。
+- 答えの当て方: 両方書く期間は、復帰のテスト（#355 の drill）までとする。読む側を1つずつ切り替える PR の並びは残し、registry を「誰か」のキーとして読むのをやめる最後の切り替えは、復帰のテストの時に一度に行ってよい（plan の PR-5）。
 
 ### DJ-12 current_supervisor（統括の `lineage` のいまの `generation`）の正本
 
@@ -294,7 +298,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - engine の `oe`（WezTerm）。DJ-188-1 と DJ-188-2 はそのまま残る。
 - 復帰のスキル（#355）・統括のセッション名（#576）・全統括をまとめて戻す形。
 - board の frontmatter への移行（board schema の §9 のまま）。
-- transport をセッション間の文を送る機能（cross-session messaging）に替えること（DJ-10 の owner の答えによる）。
+- transport をセッション間の文を送る機能（cross-session messaging）に替えること（DJ-10・owner は採らなかった）。
 - pane-issue（セッション名の表示に使う、ペインをキーにした記録）は、表示の用途では残す。`oe-send "#N"` のラベルの引き方は `lineage` の記録へ移すので、宛先を決める用途からは外す（DJ-15）。
 
 ### DJ-15 送る側の引き方
@@ -314,14 +318,13 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 
 ### DJ-17 持ち場の識別子の名前（owner に聞いた）
 
-- 選択肢:
-  - (a) `lineage`。ID の項目は `lineage_id`、置き場は `~/.claude/state/oe-lineage/<lineage_id>.json`、環境変数は `OE_LINEAGE_ID` と `OE_GENERATION`、verb は `oe-lineage`（create・bind・whoami・resolve・close・gc・adopt）。
-  - (b) `post`（持ち場）。
-  - (c) `identity`。
-- 推奨: (a)。
-- 理由: `generation` と対になる（`lineage` の中の `generation`）。交代の文脈で使われてきた語で、decision #238/#239 は「engine には succession/lineage/seat … の機構が無い」と、まだ無い概念の名前として挙げていた [verified]（`projects/orchestration-engine/docs/decisions/2026-07-09-decision-238-239-succession-watchdog-lean-arch.md` の「コンテキスト」節）。engine の `bin/`・`lib/`・`schemas/` と配っている hook と statusLine に、`lineage` という識別子は無い [verified]（`grep -rwi` で0件・2026-11-06）。(b) は HTTP の POST や投稿と紛らわしく、engine の文書とスキルを検索すると別の意味の語が63件出る。(c) は decision #188 が pane と session の「identity」を論じた語と重なる。
-- 外した候補: `slot` はコードに識別子として24件ある。`actor` は `oe-ack` を「actor verb」と呼ぶ文書がある [verified]（`bin/oe-activity` の冒頭の注記）。`seat` は #564 が current_supervisor の意味から外す方向にしている。
-- 問いは統括のワークスペースの根の作業層の `.oe/question-577-2.json` に置いた。
+- 1回目（統括のワークスペースの根の作業層 `.oe/question-577-2.json`・判断ボードの Q70）: 候補を `lineage`（推奨）・`post`・`identity` として聞いた。owner はどれも選ばず、問いは取り下げになった。補足は「lineage は日本人には馴染みが無く一般的でない。一般的か・デファクトかが大きい」。1回目は、既存のコードの識別子とぶつからないかだけで候補を絞っていて、分野で一般に使われているかを調べていなかった。
+- 2回目（`.oe/question-577-3.json`）: 分野で一般に使われる呼び方を、各プロジェクトの公式の文書で調べ、出現の根拠つきで出し直した。引用はどれも原文を取って当てた [verified]（下の URL・2026-11-06）。
+  - (a) `lease`（推奨）。Kubernetes の Lease の API は「holderIdentity contains the identity of the holder of a current lease.」「leaseTransitions is the number of transitions of a lease between holders.」と書く（https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/lease-v1/）。持ち主が入れ替わっても Lease は1つで、入れ替わった回数を数える。この設計の `generation` が leaseTransitions に当たる。Leases の説明は「New instances of kube-apiserver that use the same hostname will take over existing Leases using a new holder identity, as opposed to instantiating new Lease objects.」と書き（https://kubernetes.io/docs/concepts/architecture/leases/）、日本語版も「既存のLeaseを新しいインスタンスのアイデンティティーを利用して引き継ぎます」と書く（https://kubernetes.io/ja/docs/concepts/architecture/leases/）。用途は「component-level leader election」と「to ensure only one instance of a component is running at any given time」である。弱いところは、Kubernetes の Lease は更新が止まると期限で切れるが、この設計は時間で切らず、持ち主のプロセスの生死で決めること（DJ-9）である。
+  - (b) `agent`。AutoGen は「Agent ID uniquely identifies an agent instance within an agent runtime」「It is the “address” of the agent instance for receiving messages」と書き、届けるときに実体が無ければ作る（「it either fetches the instance, or creates it if it does not exist」）（https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/core-concepts/agent-identity-and-lifecycle.html）。宛先が残り実体が替わる形は同じである。弱いところは、Claude Code がセッション間の文を送る機能で1つのセッションを agent と呼び（`ListAgents`）、hub にも `canonical/agents/` があることで、同じ語が3つの意味になる。
+  - (c) `actor`。Orleans は「Actors are purely logical entities that always exist, virtually」と、持ち場の側を actor と呼ぶ（https://learn.microsoft.com/en-us/dotnet/orleans/overview）。Akka は名前の側を actor path と呼び（「the path itself does not have a life-cycle, it never becomes invalid」）、作り直したものを「The newly created actor is a new incarnation of the actor」と、実体の側を actor と呼ぶ（https://doc.akka.io/libraries/akka-core/current/general/addressing.html）。実装によって指すものが逆になる。
+- 推奨: (a) `lease`。ID の項目は `lease_id`、verb は `oe-lease` になる。
+- 答えが届くまで、この文書の `lineage` は仮の名前のままにする。
 - owner の答え: （待っている）
 
 ## 6. decision #188・#206・#238/#239 との関係
@@ -349,7 +352,7 @@ DJ 全体: 記録の「誰か」のキーをどう持つか
 ├── 案A（初期・`lineage` と `generation` の2段） → 採用。ゲート1 の指摘で、`epoch`・ commit point を `lineage` の記録1つにすること・server の開始時刻・heartbeat の引き方の一本化・/clear の定義・Enter の前の確かめ直しを足した
 ├── 案B（初期・`generation` ごとの ID） → 不採用。子の宛先が前任の `generation` を指して残る（DJ-1）
 ├── 案C（初期・掃除を直して張り替えの verb を足す） → 不採用。下の「案C の境目」
-├── 案D（Codex・Cursor の両方: 配送を Claude Code のセッション間の文を送る機能へ移す） → owner に聞いた（DJ-10）。Codex の「この機能は `lineage` や後継を決めない」により、案D を採っても `lineage` の記録は要る
+├── 案D（Codex・Cursor の両方: 配送を Claude Code のセッション間の文を送る機能へ移す） → owner に聞き、採らなかった（DJ-10・Claude Code への依存を深めない）。Codex の「この機能は `lineage` や後継を決めない」により、案D を採っても `lineage` の記録は要る
 ├── 案E（Codex: 仕事ごとの郵便受け・取りに来る形） → 一部を採用（DJ-16 の保留）。郵便受けは新しく作らない
 ├── 案F（Codex: 会話より長く生きる管理のプロセスが `lineage` を持つ） → 不採用。常駐の配備と見張りが増え、#238/#239 の lean の線（新しい常駐を増やさない）に反する。Codex 自身も「今回の規模では過剰になりうる」と書いた
 ├── 案E'（Cursor: events を再生して、いまの統括を決める） → 不採用。event の書き込みは best-effort で（decision #206）、1件落ちると「いま」が狂う。`lineage` の記録の compare-and-swap のほうが単純である。event は派生の記録として残す（DJ-13）
