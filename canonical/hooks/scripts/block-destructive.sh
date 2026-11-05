@@ -660,7 +660,7 @@ cmd_scan() {
     # ここから引用符の外
     case "$c" in
       ' '|$'\t')
-        # _cmd_tok_end と同じ（いちばん多く通る枝なので関数呼び出しを省く）
+        # _cmd_tok_end と同じ（いちばん多く通る分岐なので関数呼び出しを省く）
         if [[ "$_C_DROP" == 1 ]]; then
           if [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then _C_DROP=0; fi
         elif [[ -n "$_C_TOK" || "$_C_TOKQ" == 1 ]]; then

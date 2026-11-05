@@ -348,7 +348,7 @@ echo "[22] sync の結果に check を当て、宣言の外のキーが変わら
 #   apply の基準になれる。この成立条件は M6 と構造の確かめで毎回見る。
 # 起動: sync-claude.sh を shebang に任せて起動する（"$BASH" を付けない）。本番と同じく
 #   sync は /bin/bash、apply は env bash で動く。これは本番の組み合わせを走らせる
-#   主張で、bash の版ごとの主張ではない（版ごとはこのファイルの他の項目が見ている）。
+#   主張で、bash のバージョンごとの主張ではない（バージョンごとはこのファイルの他の項目が見ている）。
 # 隔離: HOME は $_TMP_DIR の下の使い捨てで、本物の ~/.claude には触れない。
 #   本物の木で走らせるので、配る .sh に実行権が無いと sync がリポジトリへ chmod を
 #   当てる。その場合は走らせずに落とす。
@@ -611,7 +611,7 @@ chmod +x "$T5/scripts/sync/sync-claude.sh" "$T5/scripts/sync/apply-claude-settin
 ck  "M5: sync に記録の行を挿せた" "1" "$(grep -cF '.sync-bash-major' "$T5/scripts/sync/sync-claude.sh" | tr -d ' ')"
 ck  "M5: apply に記録の行を挿せた" "1" "$(grep -cF '.apply-bash-major' "$T5/scripts/sync/apply-claude-settings.sh" | tr -d ' ')"
 eq_run "$T5" m5 missing NONE
-# shebang の interpreter が名乗る主版番号。"/usr/bin/env bash" は語に分けて起動する。
+# shebang の interpreter が名乗るメジャーバージョン。"/usr/bin/env bash" は語に分けて起動する。
 eq_major_of() {
   local interp
   interp="$(head -1 "$1" | sed 's|^#![[:space:]]*||')"
@@ -620,13 +620,13 @@ eq_major_of() {
 }
 eq_sync_want="$(eq_major_of "$REPO_ROOT/scripts/sync/sync-claude.sh")"
 eq_apply_want="$(eq_major_of "$APPLY")"
-ck  "M5: sync は shebang の interpreter（主版 ${eq_sync_want}）で動く" "$eq_sync_want" "$(cat "$EQ_DIR/home/.sync-bash-major" 2>/dev/null)"
-ck  "M5: apply は shebang の interpreter（主版 ${eq_apply_want}）で動く" "$eq_apply_want" "$(cat "$EQ_DIR/home/.apply-bash-major" 2>/dev/null)"
+ck  "M5: sync は shebang の interpreter（メジャーバージョン ${eq_sync_want}）で動く" "$eq_sync_want" "$(cat "$EQ_DIR/home/.sync-bash-major" 2>/dev/null)"
+ck  "M5: apply は shebang の interpreter（メジャーバージョン ${eq_apply_want}）で動く" "$eq_apply_want" "$(cat "$EQ_DIR/home/.apply-bash-major" 2>/dev/null)"
 if [[ "$eq_sync_want" == "$eq_apply_want" ]]; then
-  echo "  NOTE: sync と apply の interpreter の主版番号が同じ（${eq_sync_want}）なので、この環境では組み合わせの違いを区別できない"
+  echo "  NOTE: sync と apply の interpreter のメジャーバージョンが同じ（${eq_sync_want}）なので、この環境では組み合わせの違いを区別できない"
 fi
 if [[ "$eq_sync_want" == "${BASH_VERSINFO[0]}" ]]; then
-  echo "  NOTE: テストを走らせた bash と sync の interpreter の主版番号が同じ（${eq_sync_want}）なので、この実行では \"\$BASH\" での起動と区別できない"
+  echo "  NOTE: テストを走らせた bash と sync の interpreter のメジャーバージョンが同じ（${eq_sync_want}）なので、この実行では \"\$BASH\" での起動と区別できない"
 fi
 
 # --- M6: check は期待値を apply から作っていない（成立条件の守り） ---
@@ -966,7 +966,7 @@ ckc "置き場が違うと言う" "$OUT" "statusline-wrap は /statusLine にし
 ck  "何も書かない" "false" "$(jq -r 'has("somewhereElse")' "$ST")"
 ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
 
-echo "[48] 包んだ元コマンドのチルダ展開が壊れない（実装SO 指摘の回帰・bash 版差）"
+echo "[48] 包んだ元コマンドのチルダ展開が壊れない（実装SO 指摘の回帰・bash のバージョンの違い）"
 fresh c48
 printf '%s' '{"statusLine":{"type":"command","command":"~/mybar.sh --fancy","padding":2}}' > "$ST"
 run

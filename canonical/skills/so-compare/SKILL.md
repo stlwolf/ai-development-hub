@@ -152,7 +152,7 @@ tmp/so-YYYYMMDD-HHMMSS/
 | `attempt_state` | `finished` = 確定値 / `running` = **未確定**（実行中に読めばこの値。so-compare が終わった後も残っていれば、その試行の途中で中断されたということ） |
 | `timeout_limit_seconds` | **その試行に実際に効いた上限（秒）** |
 | `model_requested` / `model_resolved` / `model_resolved_source` | 下記「解決後モデルの記録」 |
-| `cli_version` / `cli_version_source` | 下記「CLI の版の記録」 |
+| `cli_version` / `cli_version_source` | 下記「CLI のバージョンの記録」 |
 | `exit_code` / `timeout_status` | 終了コードと分類 |
 | `elapsed_seconds` | その試行の所要秒数 |
 | `stdout_lines` / `stdout_bytes` / `stderr_bytes` | 出力量 |
@@ -180,19 +180,19 @@ tmp/so-YYYYMMDD-HHMMSS/
 
 空返しの原因を meta から断定しないこと（原因の分類は #303 が持つ）。
 
-## CLI の版の記録
+## CLI のバージョンの記録
 
-各レーンの meta には、そのレーンが起動する CLI の版が入る。**同じプロンプト・同じモデル指定でも、CLI の版が変われば挙動が変わりうる**ため、証跡として残す。
+各レーンの meta には、そのレーンが起動する CLI のバージョンが入る。**同じプロンプト・同じモデル指定でも、CLI のバージョンが変われば挙動が変わりうる**ため、証跡として残す。
 
 | キー | 意味 |
 |---|---|
-| `cli_version` | 版文字列、または `unavailable:<種別>` |
+| `cli_version` | バージョン文字列、または `unavailable:<種別>` |
 | `cli_version_source` | 常に `preflight-cli-flag`。レーン本体の実行**前**に、別プロセスで `--version` を叩いて採った値であることを示す |
 
 - `model_resolved_source` と同じく、**出所が書いてあること自体は取得成功を意味しない**。成否は `cli_version` 側の `unavailable:*` で見る。
 - `preflight` と付けているのは、これが**実行後の観測ではない**ためである。実行中に CLI が差し替わった場合までは追えない。
 - 取得できなかった場合（コマンドが失敗した・出力が空・空白だけ）は `unavailable:query-failed`、行を壊す値だった場合は `unavailable:schema-unexpected` になる。**空欄にはしない**（記録漏れと取得不能を区別するため）。
-- 検査は**行を壊すバイトだけを拒否する**形にしている（制御文字・DEL・`=`）。それ以外の印字可能文字は通す。モデル ID 用の文字集合を流用したり、許可リストを列挙したりすると、`codex-cli 0.147.0` や `v1.2.3 [arm64]` のような**実在する版を落とす**（一度やっている）。
+- 検査は**行を壊すバイトだけを拒否する**形にしている（制御文字・DEL・`=`）。それ以外の印字可能文字は通す。モデル ID 用の文字集合を流用したり、許可リストを列挙したりすると、`codex-cli 0.147.0` や `v1.2.3 [arm64]` のような**実在するバージョンを落とす**（一度やっている）。
 
 ## 解決後モデルの記録（どのモデルが答えたかを後から言うために）
 

@@ -348,7 +348,7 @@ while :; do
     marker="statusline-oe-heartbeat.sh"
     wrap_prefix=""
     if [[ -n "${existing_cmd}" && "${existing_cmd}" != *"${marker}"* ]]; then
-        # 引用の仕方が bash の版で違う。5 は先頭の ~ を escape するが 3.2 はしない。
+        # 引用の仕方が bash のバージョンで違う。5 は先頭の ~ を escape するが 3.2 はしない。
         # escape すると、包んだ元コマンドを実行するときにチルダ展開が効かなくなり、
         # 運用者の statusLine が動かなくなる。旧実装（3.2 で走っていた）に合わせて
         # 先頭の 1 つだけ外す。この差は、テストが両方を同じ bash で起動していると

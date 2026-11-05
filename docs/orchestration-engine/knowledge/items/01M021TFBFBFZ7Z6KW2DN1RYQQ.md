@@ -8,7 +8,11 @@ prediction: "置換パターンが、直したい対象と同じ形をした無�
 source:
   ref: "docs/orchestration-engine/episodes/2026-08-14-episode-313-sync-check-bin-coverage.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-11-05
+    ref: "#571"
+    state: followed
+    note: "教訓に従い、「枝」70回と「版」約410回を出現ごとに意味で分け、コードの分岐は分岐・前の実装は直接書く形に分けて直し、直したあとの残りを全件読んで一覧にした（episode の I1-5 と残りの表）。ただし分類の表を行の単位で作り、1行に2つの意味がある行で取り違えた。設計SO と実装SO が拾った"
 exclusions:
   - "置換対象が一意な識別子（ULID・ハッシュ・完全な URL）で、同形の別物が存在しえないケース"
   - "移動前の時点で全参照の解決可能性が検査済みで、壊れた参照がゼロだと分かっているケース"

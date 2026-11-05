@@ -653,7 +653,7 @@ class Examples(unittest.TestCase):
         self.expect(["R9"])
 
     def test_full_width_after_variable_in_script(self):
-        old = "printf '今の版: %s\\n'"
+        old = "printf '今のバージョン: %s\\n'"
         self.mutate(old, 'echo "$STATE（反映先）"\n  ' + old, rel=os.path.join("scripts", "shop-config.sh"))
         self.expect(["R9"])
 
@@ -682,9 +682,9 @@ class ExampleScript(unittest.TestCase):
         outs = self.run_steps()
         self.assertIn("前提はすべて満たした", outs[0])
         self.assertIn("変わるキー:", outs[1])
-        self.assertIn("反映した: 版", outs[2])
+        self.assertIn("反映した: バージョン", outs[2])
         self.assertIn("確かめた: すべて期待どおり", outs[3])
-        self.assertRegex(outs[3], r"記録: shop の設定を反映した・版 [0-9a-f]{12}・.*・時刻 \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+        self.assertRegex(outs[3], r"記録: shop の設定を反映した・バージョン [0-9a-f]{12}・.*・時刻 \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
         first = self.ex.current()
         # 設定ファイルを直した2回目の反映
         self.ex.write("config/shop.conf", self.ex.read("config/shop.conf") + "price.cake=500\n")
@@ -692,16 +692,16 @@ class ExampleScript(unittest.TestCase):
         self.assertIn("変わるキー: price.cake", outs[1])
         second = self.ex.current()
         self.assertNotEqual(first, second)
-        # 止まったときに読む表（今の版を見る）
+        # 止まったときに読む表（今のバージョンを見る）
         for block in blocks_of(self.text, "止まったときに読む表"):
             rc, out = self.ex.run_tty(block)
             self.assertEqual(rc, 0, block + "\n" + out)
-            self.assertIn("今の版: " + os.path.basename(second), out)
-        # 失敗や中断のとき（前の版に戻す）
+            self.assertIn("今のバージョン: " + os.path.basename(second), out)
+        # 失敗や中断のとき（前のバージョンに戻す）
         for block in blocks_of(self.text, "失敗や中断のとき"):
             rc, out = self.ex.run_tty(block)
             self.assertEqual(rc, 0, block + "\n" + out)
-        self.assertIn("戻した: 版", out)
+        self.assertIn("戻した: バージョン", out)
         self.assertEqual(self.ex.current(), first)
         # AI が実行するとき（反映の dry-run と --yes、戻すの dry-run と --yes）
         expected = [first, second, second, first]
@@ -711,7 +711,7 @@ class ExampleScript(unittest.TestCase):
             rc, out = self.ex.run_tty(block, answer=None)
             self.assertEqual(rc, 0, block + "\n" + out)
             self.assertEqual(self.ex.current(), want, block)
-        # 手順の3と4をやり直して、新しい版に戻す
+        # 手順の3と4をやり直して、新しいバージョンに戻す
         titles = step_titles(self.text)
         for title in titles[2:]:
             rc, out = self.ex.run_tty(blocks_of(self.text, "手順", title)[0])
@@ -889,7 +889,7 @@ class ExampleScript(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
     def test_each_bash(self):
-        """/bin/bash と PATH の bash のそれぞれで、名前を明示して動かす（macOS では 3.2 と新しい版）。"""
+        """/bin/bash と PATH の bash のそれぞれで、名前を明示して動かす（macOS では 3.2 と新しいバージョン）。"""
         shells = []
         for b in ["/bin/bash", shutil.which("bash")]:
             if b and os.path.exists(b) and os.path.realpath(b) not in [os.path.realpath(x) for x in shells]:

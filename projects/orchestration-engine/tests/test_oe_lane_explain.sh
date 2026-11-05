@@ -4,7 +4,7 @@
 # 固定する事象（すべて実物で踏んだ・または設計SO が指摘した）:
 #   - N1: 故障の文言が散文の中にエコーされているだけのものを故障と読まない（実物で誤検出した）
 #   - N2: exit 0 のレーンにはシグネチャを当てない（回答が文言を引用しただけのもの）
-#   - D1: 「ファイルが不在」と「ファイルが空」を畳まない（版の証拠を落とさないため）
+#   - D1: 「ファイルが不在」と「ファイルが空」を畳まない（バージョンの証拠を落とさないため）
 #   - U1: 分けられない形（claude の無言の空返し）に usage_limit と書かない
 #   - E1: レーンの記録が1件も無いときに exit 0 で成功に化かさない
 set -uo pipefail
@@ -60,10 +60,10 @@ ck "証拠も none"                     "none" "$(val_of success-quoting-limit-p
 echo "[6] D1: 「不在」と「空」を畳まない"
 ck "旧経路は raw.json が不在"   "absent"  "$(val_of claude-session-limit-legacy raw_state)"
 ck "新経路は raw.json が空で実在" "empty" "$(val_of claude-timeout-silent raw_state)"
-ck "版の目印（旧）" "claude-raw-absent,limit-not-recorded"  "$(val_of claude-session-limit-legacy era_markers)"
-ck "版の目印（新）" "claude-raw-present,limit-not-recorded" "$(val_of claude-timeout-silent era_markers)"
+ck "バージョンの目印（旧）" "claude-raw-absent,limit-not-recorded"  "$(val_of claude-session-limit-legacy era_markers)"
+ck "バージョンの目印（新）" "claude-raw-present,limit-not-recorded" "$(val_of claude-timeout-silent era_markers)"
 
-echo "[7] so-compare 自身の版は meta に無いので、無いと書く"
+echo "[7] so-compare 自身のバージョンは meta に無いので、無いと書く"
 ck "so_compare_version" "unavailable:not-recorded" "$(val_of codex-usage-limit so_compare_version)"
 
 echo "[8] E1: レーンの記録が無いときに成功に化かさない"

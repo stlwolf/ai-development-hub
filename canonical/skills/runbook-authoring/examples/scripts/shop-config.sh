@@ -3,11 +3,11 @@
 #
 # 使い方: scripts/shop-config.sh <名前> [--dry-run] [--yes]
 #   check     前提を確かめる（何も変えない）
-#   diff      反映先の今の版と、設定ファイルの差分を出す（何も変えない）
+#   diff      反映先の今のバージョンと、設定ファイルの差分を出す（何も変えない）
 #   apply     反映先を設定ファイルに合わせる（変える。--dry-run と --yes を受ける）
 #   verify    反映のあとを確かめ、記録の行を出す（何も変えない）
-#   status    反映先の今の版と前の版を出す（何も変えない）
-#   rollback  今の版を前の版に合わせる（変える。--dry-run と --yes を受ける）
+#   status    反映先の今のバージョンと前のバージョンを出す（何も変えない）
+#   rollback  今のバージョンを前のバージョンに合わせる（変える。--dry-run と --yes を受ける）
 #
 # 変える名前は、何度実行しても同じ結果になる。要る操作だけを実行し、要る操作が無ければ何もしない。
 #
@@ -88,7 +88,7 @@ require_basics() {
   fi
 }
 
-# 設定ファイルの中身から作る12桁の版。作れなければ終了コード 2 で止まる
+# 設定ファイルの中身から作る12桁のバージョン。作れなければ終了コード 2 で止まる
 version_of_file() {
   local v
   if command -v sha256sum >/dev/null 2>&1; then
@@ -97,13 +97,13 @@ version_of_file() {
     v=$(shasum -a 256 "$1" | cut -c1-12) || v=''
   fi
   if ! printf '%s\n' "${v}" | grep -Eq "${VERSION_RE}"; then
-    printf '版を計算できない: %s\n' "$1" >&2
+    printf 'バージョンを計算できない: %s\n' "$1" >&2
     exit 2
   fi
   printf '%s' "${v}"
 }
 
-# 反映先のリンクが指す版。リンクが無ければ空
+# 反映先のリンクが指すバージョン。リンクが無ければ空
 version_of_link() {
   if [ -L "$1" ]; then
     basename "$(readlink "$1")"
@@ -226,7 +226,7 @@ op() {
   printf '\n'
 }
 
-# 反映先を版 new に合わせる操作のうち、要るものだけ
+# 反映先をバージョン new に合わせる操作のうち、要るものだけ
 apply_ops() {
   local mode="$1" new="$2" cur="$3" prev="$4"
   if [ ! -d "${STATE}/releases/${new}" ]; then
@@ -258,13 +258,13 @@ cmd_diff() {
   cur=$(version_of_link "${STATE}/current")
   old="${STATE}/current/shop.conf"
   if [ -z "${cur}" ]; then
-    printf '反映先にまだ版が無い。設定ファイルのすべての行が足される\n'
+    printf '反映先にまだバージョンが無い。設定ファイルのすべての行が足される\n'
     old=/dev/null
   elif [ ! -f "${old}" ]; then
-    printf '反映先の今の版 %s の中身が無い。設定ファイルのすべての行が足される\n' "${cur}"
+    printf '反映先の今のバージョン %s の中身が無い。設定ファイルのすべての行が足される\n' "${cur}"
     old=/dev/null
   else
-    printf '反映先の今の版: %s\n' "${cur}"
+    printf '反映先の今のバージョン: %s\n' "${cur}"
   fi
   diff -u "${old}" "${CONFIG}" || rc=$?
   if [ "${rc}" -gt 1 ]; then
@@ -290,10 +290,10 @@ cmd_apply() {
   prev=$(version_of_link "${STATE}/previous")
   plan=$(apply_ops show "${new}" "${cur}" "${prev}")
   if [ -z "${plan}" ]; then
-    printf '変わっていない: 版 %s はすでに反映先にある（何もしない）\n' "${new}"
+    printf '変わっていない: バージョン %s はすでに反映先にある（何もしない）\n' "${new}"
     exit 0
   fi
-  # 今の版が無いか、その中身が消えていれば、空と比べる
+  # 今のバージョンが無いか、その中身が消えていれば、空と比べる
   old="${STATE}/current/shop.conf"
   if [ -z "${cur}" ] || [ ! -f "${old}" ]; then
     old=/dev/null
@@ -304,11 +304,11 @@ cmd_apply() {
   }
   printf '変わるキー: %s\n' "${keys}"
   if [ -n "${cur}" ] && [ "${cur}" != "${new}" ]; then
-    printf '戻し方: scripts/shop-config.sh rollback（今の版 %s に戻る）\n' "${cur}"
+    printf '戻し方: scripts/shop-config.sh rollback（今のバージョン %s に戻る）\n' "${cur}"
   elif [ -z "${cur}" ]; then
-    printf '戻し方: はじめての反映なので、戻す先の版は無い\n'
+    printf '戻し方: はじめての反映なので、戻す先のバージョンは無い\n'
   else
-    printf '戻し方: 版は変わらない。反映先の中身を設定ファイルに合わせ直すだけである\n'
+    printf '戻し方: バージョンは変わらない。反映先の中身を設定ファイルに合わせ直すだけである\n'
   fi
   printf '%s\n' "${plan}"
   if [ "${DRY}" -eq 1 ]; then
@@ -322,13 +322,13 @@ cmd_apply() {
   fi
   apply_ops run "${new}" "${cur}" "${prev}"
   if [ "$(version_of_file "${STATE}/releases/${new}/shop.conf")" != "${new}" ]; then
-    printf '写した中身の版が %s でない。反映先が変わったかもしれない。手順書の「失敗や中断のとき」を読む\n' "${new}"
+    printf '写した中身のバージョンが %s でない。反映先が変わったかもしれない。手順書の「失敗や中断のとき」を読む\n' "${new}"
     exit 3
   fi
   if [ "${cur}" = "${new}" ]; then
-    printf '反映した: 版 %s（版は変わらず、中身を合わせ直した）\n' "${new}"
+    printf '反映した: バージョン %s（バージョンは変わらず、中身を合わせ直した）\n' "${new}"
   else
-    printf '反映した: 版 %s（前の版 %s）\n' "${new}" "${cur:-無し}"
+    printf '反映した: バージョン %s（前のバージョン %s）\n' "${new}" "${cur:-無し}"
   fi
 }
 
@@ -338,9 +338,9 @@ cmd_verify() {
   new=$(version_of_file "${CONFIG}")
   cur=$(version_of_link "${STATE}/current")
   if [ "${cur}" = "${new}" ]; then
-    ok V1 "反映先の版が設定ファイルと同じ: ${new}"
+    ok V1 "反映先のバージョンが設定ファイルと同じ: ${new}"
   else
-    ng V1 "反映先の版 ${cur:-無し} が設定ファイルの版 ${new} と違う"
+    ng V1 "反映先のバージョン ${cur:-無し} が設定ファイルのバージョン ${new} と違う"
     fails=1
   fi
   if [ -n "${cur}" ] && cmp -s "${STATE}/current/shop.conf" "${CONFIG}"; then
@@ -353,7 +353,7 @@ cmd_verify() {
     exit 1
   fi
   printf '確かめた: すべて期待どおり\n'
-  printf '記録: shop の設定を反映した・版 %s・反映先 %s・時刻 %s\n' "${new}" "${STATE}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '記録: shop の設定を反映した・バージョン %s・反映先 %s・時刻 %s\n' "${new}" "${STATE}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
 cmd_status() {
@@ -361,8 +361,8 @@ cmd_status() {
   require_basics
   cur=$(version_of_link "${STATE}/current")
   prev=$(version_of_link "${STATE}/previous")
-  printf '今の版: %s\n' "${cur:-無し}"
-  printf '前の版: %s\n' "${prev:-無し}"
+  printf '今のバージョン: %s\n' "${cur:-無し}"
+  printf '前のバージョン: %s\n' "${prev:-無し}"
 }
 
 cmd_rollback() {
@@ -371,15 +371,15 @@ cmd_rollback() {
   cur=$(version_of_link "${STATE}/current")
   prev=$(version_of_link "${STATE}/previous")
   if [ -z "${prev}" ] || [ ! -f "${STATE}/releases/${prev}/shop.conf" ]; then
-    ng B1 '戻す先の版が無い'
+    ng B1 '戻す先のバージョンが無い'
     exit 1
   fi
-  ok B1 "戻す先の版がある: ${prev}"
+  ok B1 "戻す先のバージョンがある: ${prev}"
   if [ "${cur}" = "${prev}" ]; then
-    printf '変わっていない: すでに前の版 %s を使っている（何もしない）\n' "${prev}"
+    printf '変わっていない: すでに前のバージョン %s を使っている（何もしない）\n' "${prev}"
     exit 0
   fi
-  printf '戻すと、今の版は %s になる。元に戻すときは、設定ファイルの版を apply する\n' "${prev}"
+  printf '戻すと、今のバージョンは %s になる。元に戻すときは、設定ファイルのバージョンを apply する\n' "${prev}"
   op show ln -sfn "releases/${prev}" "${STATE}/current"
   if [ "${DRY}" -eq 1 ]; then
     printf '%s\n' '--dry-run なので何も変えていない'
@@ -387,7 +387,7 @@ cmd_rollback() {
   fi
   confirm '戻すなら yes と入力する: '
   op run ln -sfn "releases/${prev}" "${STATE}/current"
-  printf '戻した: 版 %s（戻す前の版 %s）\n' "${prev}" "${cur:-無し}"
+  printf '戻した: バージョン %s（戻す前のバージョン %s）\n' "${prev}" "${cur:-無し}"
 }
 
 if [ "$#" -lt 1 ]; then

@@ -58,7 +58,7 @@ SCRATCH_SYNC="$SCRATCH/scripts/sync/sync-claude.sh"
 fresh() { HOMEDIR="$_TMP_DIR/$1"; mkdir -p "$HOMEDIR/.claude"; rm -f "$SCRATCH/canonical/output-styles"/*.md; }
 # shebang 任せにせず、いま走っているシェルで起動する。そうしないと
 # テストを bash 3.2 で回してもスクリプトは PATH の bash 5 で動き、
-# 版差の主張が空になる。
+# バージョンの違いの主張が空になる。
 run()   { OUT="$(env HOME="$HOMEDIR" "$BASH" "$SCRATCH_SYNC" 2>&1)"; RC=$?; }
 
 # ============================================================================

@@ -16,7 +16,7 @@
 #   oe_hs_session_for_pane <pane>     — pane から session_id を逆引き（安全側・曖昧なら unknown）
 #   oe_hs_context_for_session <sid>   — session_id の拍動から context%（取れなければ unknown）
 #   oe_hs_watchdogs                   — 常駐の見張りの登録状態を1行1件
-#   oe_hs_repo_state <workspace>      — その workspace の枝 / HEAD / 未 push / worktree の数
+#   oe_hs_repo_state <workspace>      — その workspace のブランチ / HEAD / 未 push / worktree の数
 #   oe_hs_open_prs <workspace>        — open PR を1行1件（gh が無ければ unknown）
 #
 # 置き場の env（既存の verb と同じノブを共有する）:
@@ -303,7 +303,7 @@ oe_hs_watchdogs() {
   fi
 }
 
-# いまの枝の HEAD / 未 push の数 / worktree の数。workspace は git 作業ディレクトリ。
+# いまのブランチの HEAD / 未 push の数 / worktree の数。workspace は git 作業ディレクトリ。
 # **`master` の HEAD ではなく、その workspace が指している HEAD である**（名乗りと中身を揃える）。
 oe_hs_repo_state() {
   local ws="${1:-.}" head_sha unpushed wt branch
@@ -311,7 +311,7 @@ oe_hs_repo_state() {
   branch="$(git -C "$ws" rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch="unknown"
   [ -n "$branch" ] || branch="unknown"
   head_sha="$(git -C "$ws" rev-parse --short HEAD 2>/dev/null)" || head_sha="unknown"
-  # upstream が無い枝で「未 push 0 件」と言わない（0 は「無い」で unknown は「分からない」）。
+  # upstream が無いブランチで「未 push 0 件」と言わない（0 は「無い」で unknown は「分からない」）。
   # **パイプで数えない。** `git | wc -l` はパイプライン全体の成否が `wc` のものになるので、
   # git が失敗しても 0 が入る（`pipefail` を敷いている呼び出し側では正しく動くが、この lib の
   # 正しさを呼び出し側のシェルオプションに依存させない）。出力を受けてから rc を見る。

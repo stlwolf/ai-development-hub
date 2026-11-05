@@ -42,8 +42,8 @@ oe_sanitize_conversation() {
   # （event-bus.sh の OE_EVENT_PREVIEW_MAX ガードと同方針・fail-open でなく fail-safe）。
   case "$max" in ''|*[!0-9]*) max=4000 ;; esac
   # 先頭ゼロ（例 05・007）は数字のみガードを通るが、RFC 8259 が JSON 数値の先頭ゼロを禁じるため
-  # `jq --argjson max 05` は jq 版によっては parse 失敗し jq 経路ごと tr fallback へ縮退＝主防御が
-  # bypass されうる（Copilot 指摘）。10 進正規化して jq 版に依らず確実に数値を渡す（fail-safe 貫徹）。
+  # `jq --argjson max 05` は jq のバージョンによっては parse 失敗し jq 経路ごと tr fallback へ縮退＝主防御が
+  # bypass されうる（Copilot 指摘）。10 進正規化して jq のバージョンに依らず確実に数値を渡す（fail-safe 貫徹）。
   max=$((10#$max))
   if command -v jq >/dev/null 2>&1; then
     if printf '%s' "$1" | jq -Rrs --argjson max "$max" '

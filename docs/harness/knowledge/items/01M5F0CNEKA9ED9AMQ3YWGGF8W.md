@@ -20,6 +20,10 @@ observations:
     ref: "#536"
     state: followed
     note: "教訓に従い、問いのカードの書き方を見本だけでなく SKILL.md の JSON の例と用語集にも当てる検査（SkillMdExamples の例ごとの対応と QuestionCardWriting.test_examples_and_skill_md_follow_the_writing）と「推奨どおり」の grep を受入 A5 に置き、SKILL.md の例3つを問いのカードの形に書き直した"
+  - date: 2026-11-05
+    ref: "#571"
+    state: followed
+    note: "教訓に従い、書き直した §8・出力の型・2つの用語集の決まりを、書き直したファイルと2つのスキルのフォルダ全体に当てた（episode の I1-5）。残ったのは使わない語の表の行・シェルの「展開」・キー入力の「打つ」だけだった。実装SO が runbook の用語集の冒頭の文が使わない語まで使うように読めると指摘し、直した（H2）"
 ---
 
 **書き方の決まりを持つスキルは、その決まりをスキル自身のフォルダ全体にも当てる受入を置く。** 例外は、使わない語を挙げる表の行だけにする。

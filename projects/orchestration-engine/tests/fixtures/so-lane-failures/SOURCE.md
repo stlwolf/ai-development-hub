@@ -4,7 +4,7 @@
 
 `tmp/` は gitignore 対象で消えるので、判定に要る部分だけを切り出して置いてある。切り出したのは meta と、stdout / stderr である。**プロンプト本文は入れていない。**
 
-| fixture | 出所（`tmp/` 配下・消える） | 日付 | 再現するもの | 生成した版の目印 |
+| fixture | 出所（`tmp/` 配下・消える） | 日付 | 再現するもの | 生成したバージョンの目印 |
 |---|---|---|---|---|
 | `codex-usage-limit` | `so-359-design/`（attempt2） | 2026-09-05 | 使用量上限。exit 1・4秒・stderr に文言 | `limit-recorded` |
 | `codex-timeout-busy` | `so-359-design/`（attempt1） | 2026-09-05 | 時間切れ。stderr が育つ型 | `limit-recorded` |
