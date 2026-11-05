@@ -49,7 +49,7 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 - `CLAUDE_CODE_MESSAGING_SOCKET`（`/tmp/cc-socks/<pid>.sock`）と、その token。
 - `TMUX_PANE` と `PARENT_TMUX_PANE`（`oe-delegate` が渡したもの）。
 
-これが本当なら、設計の要（resume したセッションが自分の ID を知る道）は「自分のペインの拍動から引く」という間接の道でなく、直接の道を持てる。ただし、文書化されているか、`/clear` や `/resume` で値が変わるか、`claude --resume <id>` で起こしたときに resume した id になるかは、この時点では確かめていない（公式の文書を確かめに出した）。確かめるまでは、この道を設計の土台に置かない。
+これが本当なら、設計の要（resume したセッションが自分の ID を知る道）は「自分のペインの heartbeat から引く」という間接の道でなく、直接の道を持てる。ただし、文書化されているか、`/clear` や `/resume` で値が変わるか、`claude --resume <id>` で起こしたときに resume した id になるかは、この時点では確かめていない（公式の文書を確かめに出した）。確かめるまでは、この道を設計の土台に置かない。
 
 昇格の印: セッションの環境の `CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID` が、#355 と handoff-state.sh の「名乗る経路が無い」の前提を崩す（確かめた範囲は 2.1.318 の1セッション）
 
@@ -57,34 +57,34 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 
 - `CLAUDE_CODE_SESSION_ID` は文書化されている [verified] (https://code.claude.com/docs/en/env-vars.md の表の `CLAUDE_CODE_SESSION_ID` の行)。Bash と hook の子プロセスに入り、hook の入力の `session_id` と一致し、`/clear` で更新される。`--resume <session-id>` で起こしたときは resume した id が入る。**ただし `--continue` と、id を付けない `--resume` では、起動したときの id が入ることがある**と書かれている。つまり「resume したセッションが自分の session_id を知る道」は、owner が id を指定して `claude --resume <id>` で戻したときだけ確かである。（**訂正**: この読みは誤り。下の「訂正: `--continue` の文は MCP server の子プロセスについての文だった」の節）
 - `CLAUDE_PID` は文書化されている（v2.1.214 以降）[verified]（同じ表の `CLAUDE_PID` の行）。Claude Code 自身の pid で、Bash と hook の子プロセスに入る。プロセスの生死を pid と開始時刻で確かめる材料になる。
-- `CLAUDE_CODE_MESSAGING_SOCKET` は、セッション間で文を送る機能（cross-session messaging・v2.1.224 以降）の受け口である [verified] (https://code.claude.com/docs/en/cross-session-messaging.md)。同じマシンのセッションどうしが、tmux を通らずに文を送れる。送る道を tmux の send-keys から切り離す別の道になりうるが、届き方（受領印の hook が走るか・内側の制御で止まるか）がいまの道と違う。この issue で採るかは owner に聞く（範囲の外の候補）。
+- `CLAUDE_CODE_MESSAGING_SOCKET` は、セッション間で文を送る機能（cross-session messaging・v2.1.224 以降）の受け口である [verified] (https://code.claude.com/docs/en/cross-session-messaging.md)。同じマシンのセッションどうしが、tmux を通らずに文を送れる。送る道を tmux の send-keys から切り離す別の道になりうるが、届き方（receipt の hook が走るか・内側の制御で止まるか）がいまの道と違う。この issue で採るかは owner に聞く（範囲の外の候補）。
 - statusLine の入力にも `session_id` がある [unverified-summary]（文書の確認に出した道具の報告による・https://code.claude.com/docs/en/statusline.md）。
 
 この結果で、確定版の「設計の要は、resume したセッションが自分の ID を知る道である。いまの Claude Code にはセッションが自分の session_id を名乗る経路が無い」は、**前提が変わった**。経路はある。残る穴は、id を付けない resume と `/clear` である。（**訂正**: id を付けない resume を穴とした根拠は、下の「訂正」の節のとおり誤読だった）
 
 ### 実機で確かめた2つの観測（2026-11-06・この子の自分のペインだけを読み取りで見た）
 
-- `CLAUDE_CODE_SESSION_ID` の値の名前の拍動の sidecar があり、その中の pane は自分の `TMUX_PANE`、server_pid は `$TMUX` の2番目の値と一致した [verified]（`~/.claude/state/oe-heartbeat/<session_id>.json` を cat した）。つまり「自分の session_id → 拍動 → いまのペイン」は、セッションの内側から1手で引ける。
+- `CLAUDE_CODE_SESSION_ID` の値の名前の heartbeat の sidecar があり、その中の pane は自分の `TMUX_PANE`、server_pid は `$TMUX` の2番目の値と一致した [verified]（`~/.claude/state/oe-heartbeat/<session_id>.json` を cat した）。つまり「自分の session_id → heartbeat → いまのペイン」は、セッションの内側から1手で引ける。
 - `CLAUDE_PID` は、ペインの端末の前面のプロセスグループの番号（`ps -t <tty> -o pid,tpgid` の tpgid）と一致した [verified]。このペインは `oe-delegate` が claude をペインのコマンドとして起こしたので、`#{pane_pid}` も同じ値だった。シェルで始まるペインでは `#{pane_pid}` はシェルになるが、tpgid は claude を指す（#355 の 2026-11-05 のコメントの実測）。前面のプロセスグループには claude の子（MCP のサーバなど）も同じ tpgid で並ぶので、claude 本人は「pid が tpgid と一致する行」で取る。
 - `ps -o lstart` の出力はロケールで形が変わる（この環境では日本語の曜日が出た）。開始時刻を記録して比べるなら `LC_ALL=C` で固定する。
 
 ## P2: owner への問い（2026-11-06）
 
-owner が決める判断4件を、問いのファイル（統括のワークスペースの根の作業層 `.oe/question-577-1.json`・`build.py check` 済み）で統括へ送った（`oe-send` の exit 0。宛先は `oe-tree` に生きた root として出ることを確かめた）。4件は、ID が席を指すか代を指すか・移行の段取り・送る道を Claude Code のセッション間の文を送る機能へ替えるか・resume のときに session_id を指定して打つことを決まりにするか、である。3件目と4件目は、確定版に無い問いで、上の「発見」から出た。答えを待つあいだは、答えに依らない棚卸しと設計を進める。
+owner が決める判断4件を、問いのファイル（統括のワークスペースの根の作業層 `.oe/question-577-1.json`・`build.py check` 済み）で統括へ送った（`oe-send` の exit 0。宛先は `oe-tree` に生きた root として出ることを確かめた）。4件は、ID が `lineage` を指すか `generation` を指すか・移行の段取り・送る道を Claude Code のセッション間の文を送る機能へ替えるか・resume のときに session_id を指定して打つことを決まりにするか、である。3件目と4件目は、確定版に無い問いで、上の「発見」から出た。答えを待つあいだは、答えに依らない棚卸しと設計を進める。
 
 ## P2: 棚卸しと網羅の確かめ（2026-11-06）
 
 ### 進め方
 
 - 棚卸しは、読むだけの調査の道具を2つ並べて回した。1つは engine の `bin/` と `lib/` の全ファイル（36本に入るかどうかに関係なく）、もう1つはそれ以外（hook・statusLine・scripts・schema・配布しているスキルの文）である。どちらにも、ペインの使い方を鍵・宛先・本人確認・表示に分け、行番号を付けるよう頼んだ。結果は discussion の §3 に表として写した。
-- 調査の報告のうち、影響の大きい4つを行に当てて確かめた。`oe-vitals` が拍動をペインだけで絞ること、`oe-confirm` の既知の印が `pane|%N` で server の pid を持たないこと、`oe-report` の `/tmp/oe-parent-<N>` がペインの数字だけであること、出来事の schema で `server_pid` を持つのが `supervisor_succession` だけであること、である。4つとも報告どおりだった。表の残りの行は `[unverified-summary]` のままにした。
+- 調査の報告のうち、影響の大きい4つを行に当てて確かめた。`oe-vitals` が heartbeat をペインだけで絞ること、`oe-confirm` の既知の印が `pane|%N` で server の pid を持たないこと、`oe-report` の `/tmp/oe-parent-<N>` がペインの数字だけであること、event の schema で `server_pid` を持つのが `supervisor_succession` だけであること、である。4つとも報告どおりだった。表の残りの行は `[unverified-summary]` のままにした。
 
 ### 網羅の確かめ（パターンの外からの対照）
 
 negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は `TMUX_PANE|pane_id|#\{pane` の1つのパターンから出していて、そのパターンで選んだ対照は同じ盲点を持つ。対照は2つ、パターンの外から選んだ。
 
-- **記録の置き場から逆にたどった。** `~/.claude/state/` の置き場の名前12個（`oe-delegate`・`pane-issue`・`oe-heartbeat`・`oe-events`・`oe-confirm`・`oe-vitals`・`oe-view`・`hook-firing`・`session-branch`・`session-named`・`oe-receipt-diag`・`mcp-discover`）と、board と引き継ぎ文書の目印（`START-HERE`・`現統括`・`handoff.md`）で、`canonical`・`projects`・`scripts` のコードのファイルを `grep -rlF` で引いた。36本に入らないのに記録を読み書きするファイルが7本出た。`bin/oe-send`・`bin/oe-list`・`bin/oe-status`・`lib/seat.sh`・`canonical/claude/statusline/statusline-oe-heartbeat.sh`・`scripts/measure-delivery-arrival.py`・`scripts/validate-board.sh` である。拍動を書く producer は、36本の走査が見たディレクトリ（`canonical/hooks/scripts`）の外にあった。`oe-send` と `lib/seat.sh` は、どちらもペインを主の鍵か宛先に使う中心のファイルなのに、パターンの語（`TMUX_PANE` など）を1つも含まない。
-- **出来事の型の一覧から逆にたどった。** `oe-events.jsonl` の型を数えると5つ（`message_sent` 4,691件・`prompt_received` 3,562件・`child_spawned` 430件・`report_received` 195件・`supervisor_succession` 33件・2026-11-06 の時点）だった。各型の書く側と読む側を、2つ目の調査で洗った。
+- **記録の置き場から逆にたどった。** `~/.claude/state/` の置き場の名前12個（`oe-delegate`・`pane-issue`・`oe-heartbeat`・`oe-events`・`oe-confirm`・`oe-vitals`・`oe-view`・`hook-firing`・`session-branch`・`session-named`・`oe-receipt-diag`・`mcp-discover`）と、board と引き継ぎ文書の目印（`START-HERE`・`現統括`・`handoff.md`）で、`canonical`・`projects`・`scripts` のコードのファイルを `grep -rlF` で引いた。36本に入らないのに記録を読み書きするファイルが7本出た。`bin/oe-send`・`bin/oe-list`・`bin/oe-status`・`lib/seat.sh`・`canonical/claude/statusline/statusline-oe-heartbeat.sh`・`scripts/measure-delivery-arrival.py`・`scripts/validate-board.sh` である。heartbeat を書く producer は、36本の走査が見たディレクトリ（`canonical/hooks/scripts`）の外にあった。`oe-send` と `lib/seat.sh` は、どちらもペインを主の鍵か宛先に使う中心のファイルなのに、パターンの語（`TMUX_PANE` など）を1つも含まない。
+- **event の型の一覧から逆にたどった。** `oe-events.jsonl` の型を数えると5つ（`message_sent` 4,691件・`prompt_received` 3,562件・`child_spawned` 430件・`report_received` 195件・`supervisor_succession` 33件・2026-11-06 の時点）だった。各型の書く側と読む側を、2つ目の調査で洗った。
 
 網羅の主張は「上の2つの対照と、36本の走査と、2つの調査が使った語で走査した範囲では、表の外は見つかっていない」に限る。
 
@@ -93,8 +93,8 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 ## P2: ゲート1（ゼロベースの代替探索・2026-11-06）
 
 - `so-compare --with codex,cursor` に、初期案A・B・C と暗黙の前提5つと選択肢拡張の節を渡した。プロンプトと出力は統括のワークスペースの根の `tmp/577-record-identity/` にある。Codex は `gpt-6.1-sol`（設定から解決）で170秒、Cursor は `composer-2.5`（指定）で86秒、どちらも初回で返った。
-- 新しいカテゴリの案が、2つのレーンで合わせて7つ出た（重なる1つを数えると8件）。採否は discussion の §7 の探索木に書いた。全部を採らなかったのは、案F（常駐の管理プロセス）・案E'（出来事の再生）・案F'（ワークスペースへの置き場）・案G（長寿の中継）、一部を採ったのは案E（保留）と案H（hook の観測）、owner に聞いたのは案D（送る道）である。
-- 案A への指摘のうち、設計の判断を足したもの: 所有の番号（epoch）・確定の点を席の記録1つにして交代の途中で止まっても再実行で直る形・server を pid と開始時刻で区別・拍動の引き方を1つの関数に・`/clear` の定義・Enter の前の確かめ直しと残る穴の明記・`oe-register link` の原子性。
+- 新しいカテゴリの案が、2つのレーンで合わせて7つ出た（重なる1つを数えると8件）。採否は discussion の §7 の探索木に書いた。全部を採らなかったのは、案F（常駐の管理プロセス）・案E'（event の再生）・案F'（ワークスペースへの置き場）・案G（長寿の中継）、一部を採ったのは案E（保留）と案H（hook の観測）、owner に聞いたのは案D（送る道）である。
+- 案A への指摘のうち、設計の判断を足したもの: `epoch`・確定の点を `lineage` の記録1つにして交代の途中で止まっても再実行で直る形・server を pid と開始時刻で区別・heartbeat の引き方を1つの関数に・`/clear` の定義・Enter の前の確かめ直しと残る穴の明記・`oe-register link` の原子性。
 - 判断の分かれ目: Codex は「人が管理する復帰を1コマンドにするのか、重複の resume や交代中の報告まで自動で扱うのか」で案C と案A が分かれる、と書いた。確定版の「望む結果」と owner の答え（生きていないことを機械で確かめる）は後者を求めているので、案A を残した。この判断の理由は discussion の §7「案C の境目」にある。
 - 新しいカテゴリの案が出たので、暫定の停止条件（「新しいカテゴリが出なければ確定に進んでよい」）には当たらない。出た案はそれぞれ採否を決めた。2周目のゼロベースの探索は回さず、ゲート2（設計SO）で、採った形がさらに崩れるかを見る。
 
@@ -104,8 +104,8 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - 指摘は11件（高2・中7・低2）で、9件を採った。採否の表は discussion の §8 にある。
 - 判断の理由として残しておくもの:
   - 高の2件（#188 の frontmatter・board schema の §9）は、どちらも「前の決定の文が、この設計と食い違ったまま残る」という指摘だった。設計の中身ではなく、置き換えの範囲の書き方の抜けである。decision の案の関係の表に、置き換えるものと上書きするものを1行ずつ足した。
-  - 登記の link の原子性（中）は採らなかった。登記は移行のあいだの写しになり、正本は席の記録である。写しの原子性を直す手間は、正本を移せば要らなくなる。
-  - 旧い子の報告の取り違え（中）は、旧い子に新しい環境変数を渡せないことから来る。旧い子も自分のペインは確かに知っているので、自分のペインから自分の席を引く形にした。他人のペインを引くのと違い、使い回しの穴が無い。
+  - registry の link の原子性（中）は採らなかった。registry は移行のあいだの写しになり、正本は `lineage` の記録である。写しの原子性を直す手間は、正本を移せば要らなくなる。
+  - 旧い子の報告の取り違え（中）は、旧い子に新しい環境変数を渡せないことから来る。旧い子も自分のペインは確かに知っているので、自分のペインから自分の `lineage` を引く形にした。他人のペインを引くのと違い、使い回しの穴が無い。
 - 2レーンの多様性が得られていないことを、報告で統括に伝える（やり直すかは統括が決める）。
 
 ## 訂正: `--continue` の文は MCP server の子プロセスについての文だった（2026-11-06）
@@ -116,3 +116,10 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - 直したもの: discussion の §2.2 と DJ-7、decision の案の「前提の変化」2・D7・「残る穴」、plan の N2。DJ-7 は、owner の答えが届くまで確定しない。
 
 昇格の印: 一次の行を開いて `[verified]` を付けても、確かめたのが「文がある」までで「文の主語が主張の対象である」までではなかった。表の1つの行に複数の主語の文が並ぶ文書で起きる
+
+## P2: 新しい概念の名前を識別子にそろえた（2026-11-06）
+
+- 何が起きたか: 統括から、owner の指摘として追加の指示が来た。新しい概念の名前に日本語の言い換え（席・代）を使わず、#564 の決まりの案（用語はそのままプログラムの識別子として書ける名前にし、日本語は説明にだけ使う）に合わせること、代は既存の識別子 `generation` を使うこと、持ち場の識別子は候補と推奨を問いにすること、である。`seat` は current_supervisor の意味から外す方向なので使わない。
+- 判断: 持ち場の名前の候補を、既存のコードと文書の識別子とぶつからないかで絞った。`slot` はコードに24件、`actor` は `oe-ack` の「actor verb」の呼び方があり外した。残った `lineage`・`post`・`identity` を問いにし、`lineage` を推奨にした（discussion の DJ-17・統括のワークスペースの根の作業層 `.oe/question-577-2.json`）。ほかの新しい概念（`binding`・`epoch`・`delivery_held`）は、問いにせず discussion の §5.0 に置いた。既存の言い換え（登記・拍動・出来事・受領印）も、#564 の表の識別子（`registry`・`heartbeat`・`events`・`receipt`）にそろえた。
+- 失敗と撤回: 4つの文書の語を一度に置き換える小さなスクリプトの後始末で、続く空白を1つに詰める正規表現が行頭の字下げまで詰め、frontmatter の YAML と入れ子の箇条書きを壊した。変わった行を読み直して気づき、置き換えの前に退避していた写しへ戻した（戻した結果は commit `23ce1ab` と同じだった）。2回目は、語の前後の文字を見て空白を足すか決める形にし、行頭を触らないようにした。「交代」「世代」の中の「代」は置き換えから除いた。
+- 判断ボードの Q65〜Q67 と Q69 は owner が答えている途中なので、文は変えていない。答えは、席を `lineage`、代を `generation` に読み替えて入れる（discussion の §5.0 に書いた）。
