@@ -108,7 +108,7 @@ claude.ai の artifact に公開するときは、Artifact の道具の説明と
 |---|---|---|---|
 | ページ | `format` | 必須 | `1` |
 | ページ | `title` | 必須 | ページの名前。`<title>` と見出しになる |
-| ページ | `kind` | 必須 | 種別。`confirm`・`approve`・`pick`・`map`・`bundle`・`review`・`board` のどれか（「種別と部品」の表）。前の版の `purpose` は `kind` に置き換えたので、書くと誤りになる |
+| ページ | `kind` | 必須 | 種別。`confirm`・`approve`・`pick`・`map`・`bundle`・`review`・`board` のどれか（「種別と部品」の表）。前のバージョンの `purpose` は `kind` に置き換えたので、書くと誤りになる |
 | ページ | `status` | 必須 | `awaiting`（回答待ち）・`answered`（回答済み）・`live`（随時更新）のどれか |
 | ページ | `why` | 必須 | ページの目的の1文（「目的」の札で出る） |
 | ページ | `source` | 必須 | 送り元。下の行 |
@@ -457,7 +457,7 @@ E-C3 sections[0].cards[0].recommend: 推奨 "ok" が選択肢（go, fix）に無
 | 番号 | 何を弾くか |
 |---|---|
 | E-F1 | `format` が 1 でない（この誤りがあると、ほかは見ない） |
-| E-F2 | 知らない項目がある（前の版の `purpose` は、`kind` に置き換えたことを理由に添えて止める） |
+| E-F2 | 知らない項目がある（前のバージョンの `purpose` は、`kind` に置き換えたことを理由に添えて止める） |
 | E-F3 | 必須の項目が無いか、型が違う（型が違う項目の下は見ない） |
 | E-H1 | `title`・`why`・リンクの `label`・group の `why`・`request` の項目が空 |
 | E-H2 | 送り元の値（repo・issue・branch・tmux・trackers）か URL の誤り |
