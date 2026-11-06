@@ -152,11 +152,13 @@ discussion の §8 が正本である。
 
 ### GATE 3: owner の plan 承認
 
-### I0: resume の値の計測（R1・実装の追補の書面で始める）
+### I0: resume の値の計測（R1・実装の追補の書面で始める）（完了・`b4d3c51`・G0 で統括が H1 を補正として受け付けた）
 
 owner の答え（Q69「推測するな計測せよ」）により、resume の打ち方の決まりを作る前に計測する。`--resume <id>`・id を付けない `--resume`・`--continue` のそれぞれで、Bash の `CLAUDE_CODE_SESSION_ID` を読み、resume した会話の id と比べる。生きている `~/.claude/state/` と、ほかの統括と子のペインに触れない形（使い捨てのディレクトリ・hook が書く置き場の切り離し）を、実装の追補の書面で統括と決める。結果で DJ-7 の決まりを決め、plan の「ゲート3 のあとの変更」に書く。
 
 ### I1〜I6: PR-1〜PR-6（実装の追補の書面で始める）
+
+- I1（PR-1）: draft の PR #580 を作った。テスト・shellcheck・実装SO・Copilot の1ラウンドを終え、owner のマージを待つ。
 
 各 I のあとに、テストと shellcheck のゲート・実装SO・Copilot の1ラウンドを、別の項目として置く（実装の追補の書面で確定する）。
 
