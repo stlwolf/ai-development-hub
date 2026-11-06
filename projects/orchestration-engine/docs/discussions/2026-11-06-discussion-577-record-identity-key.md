@@ -154,7 +154,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - **`generation`**（その `lease` に座った1つの会話）: 既存の識別子である（`oe-handoff --generation` と、events の `supervisor_succession` の `generation`）[verified]（`schemas/oe-events.schema.json` の `generation`）。同じ会話を別のプロセスで resume しても、同じ `generation` のままである。別の会話が `lease` を引き継ぐと（交代）、`generation` が1つ進む。hub の統括の「22代目」が `generation` の 22 である。
 - **`binding`**（`generation` と、いまその会話を動かしているプロセスの結び付き）: 項目は claude の pid と開始時刻である。resume でプロセスが替わると、`binding` を張り替える。
 - **`epoch`**（`binding` か `generation` が変わるたびに1つ増える番号）: compare-and-swap で比べる値である（DJ-5）。
-- **`delivery_held`**（送れなかったことを残す events の型）: DJ-16。
+- **`delivery_held`**（送れなかったことを残す events の型）: DJ-16。owner の答え（Q80）で、この issue から外した（#355 へ回す）。
 - **`current_supervisor`**: いまの統括を指す既存の概念で、いまは succession board の `現統括:` の行と `lib/seat.sh` が持つ。この設計では、統括の `lease` のいまの `generation` が current_supervisor の機械の正本になる（DJ-12）。#564 は `lib/seat.sh` を `lib/current-supervisor.sh` に直す案を持っていて、`seat` を current_supervisor の意味から外す方向なので、新しい概念に `seat` を使わない。
 - owner が答えている途中の問い（判断ボードの Q65〜Q67 と Q69）は、「席」と「代」の言葉で書いてある。答えは、席を `lease`、代を `generation` に読み替えて入れる。
 
@@ -170,6 +170,8 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 答えの当て方: `lease_id` は持ち場だけを指し、1つの `generation` は (`lease_id`, `generation`) の組で一意に決まる。持ち場と `generation` は、それぞれ自分のキーを持つ2つのリレーションとして扱う。置き場（DJ-2）は、ロックを持ち場ごとに取るために1つのファイルに並べるが、その中でも2つを別の表として持ち、1つの項目に2つの意味を持たせない。ファイルを2つに分けるかは、この読みで足りるかをゲート3 で owner に確かめる。
 
 ### DJ-2 ID の形と置き場
+
+- **owner の答え（判断ボードの Q73・2026-11-06 22:00 回収）**: 1つのファイルの中の2つの表にする。補足は「意味的に結合して使っているので1つでよい。役割分化が進んだら分けることも考える」。下の (a) で確定した。
 
 - 選択肢:
   - (a) `lease_id` は ULID。記録は `~/.claude/state/oe-lease/<lease_id>.json` に `lease` ごとに1ファイルで置き、`generation` はその中に並べる。
@@ -189,14 +191,16 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 観測の決まり:
   - ペインと server の pid は、sidecar の `ts` を見た時刻として持つ。読むときは、いまの tmux server の pid と一致し、鮮度の窓の中のものだけを候補にする（いまの `oe_hs_session_for_pane` と同じ絞り方）。
   - 候補のペインは、使う直前に本人確認をしてから使う（DJ-6）。sidecar に書かれていることだけでは使わない。
-  - tmux server は、pid だけでなく、その pid のプロセスの開始時刻でも区別する。マシンを起こし直すと、同じ pid の別の server がありうるためである（ゲート1 の Codex の指摘）。
+  - （**owner の答え Q76 で外した**・2026-11-06 22:00 回収）tmux server を、pid だけでなく開始時刻でも区別する案。マシンを起こし直すと同じ pid の別の server がありうる、というゲート1 の Codex の指摘から足したものだった。owner の補足は「復元情報が揃っていればリスクは下がっている。安定性を重視する段階になったら検討する」。server は、いままでどおり pid で区別する。
   - heartbeat からペインを引く規則を、いまは読む側がそれぞれに持っていて、絞り方が違う（`lib/handoff-state.sh` はペインと server の両方、`oe-tree` と `oe-threads` は server が空でも受け、`oe-vitals` はペインだけ）。これを lib の1つの関数にまとめ、読む側は全部それを使う（ゲート1 の Codex の指摘）。
   - `/clear` は、同じプロセスの中で会話を替える。この設計では、`/clear` は `generation` を進めず、`generation` の session_id の並びに新しい id を足すだけにする。宛先は `lease` なので、`/clear` のあとの会話がそのまま `lease` の持ち主として受け取る。統括が `/clear` を使うことはふつう無いが、子では起こりうる。
-  - プロセスの観測（pid と開始時刻）は、hook でも書ける。公式の文書では `CLAUDE_PID` は hook の子プロセスに入り、SessionStart の hook は `source`（startup・resume・clear・compact・fork）を受け取る [unverified-summary]（文書の確認に出した道具の報告・https://code.claude.com/docs/en/hooks.md）。`lease` の記録を書くのは verb だけのままにし、hook は session_id を名前にした観測のファイルに pid と開始時刻を書くだけにする（ゲート1 の Cursor の案H を一部採った）。hook を土台にしないという #355 の線（「後の砂糖」）は守り、hook が無くても verb だけで `binding` できる形にする。
+  - （**owner の答え Q76 で外した**・2026-11-06 22:00 回収。DJ-18 で verb だけで `binding` を書けるようにしたので要らない）プロセスの観測（pid と開始時刻）は、hook でも書ける。公式の文書では `CLAUDE_PID` は hook の子プロセスに入り、SessionStart の hook は `source`（startup・resume・clear・compact・fork）を受け取る [unverified-summary]（文書の確認に出した道具の報告・https://code.claude.com/docs/en/hooks.md）。`lease` の記録を書くのは verb だけのままにし、hook は session_id を名前にした観測のファイルに pid と開始時刻を書くだけにする（ゲート1 の Cursor の案H を一部採った）。hook を土台にしないという #355 の線（「後の砂糖」）は守り、hook が無くても verb だけで `binding` できる形にする。
   - heartbeat の sidecar の候補にするのは、sidecar の session_id が `generation` の session_id の並びにあるか、sidecar の `lease_id` と `generation` がいまの `generation` と一致するものである。どちらも候補を選ぶための手がかりで、使う前には必ず DJ-6 の 4（フォアグラウンドのプロセス）で確かめる。`lease_id` が sidecar に載らない環境（statusLine が環境を受け継がない場合）でも、session_id の並びで絞れる（ゲート2 の Cursor の指摘。statusLine が `OE_LEASE_ID` を受け継ぐことは未検証で、plan の R2 で確かめる）。
   - heartbeat の sidecar に `lease_id` と `generation` を書くのは、producer の環境に `OE_LEASE_ID` と `OE_GENERATION` があるときだけである。環境変数は claude のプロセスごとに持つので、同じプロセスの中の `/clear` で session_id が変わっても、`lease` との結び付きは切れない。statusLine のスクリプトが claude の環境を受け継ぐことは、いまの producer が `TMUX_PANE` を環境から読んでいることから分かる [verified]（`canonical/claude/statusline/statusline-oe-heartbeat.sh` の `pane="${TMUX_PANE:-}"`）。
 
 ### DJ-4 掃除の決まり
+
+- **owner の答え（判断ボードの Q78・2026-11-06 22:00 回収）**: 分ける。`oe-lease gc` が消すのは、閉じた `lease` と、heartbeat の sidecar だけにする。書き込みの途中の一時ファイル（`.hb.*`）が残る漏れは、heartbeat を書く側（statusLine の producer）の直しとして別 issue にする（統括が起票）。gc を走らせる契機は、`oe-handoff take` のついでとする。補足は「不要ファイルのクリーンアップ全般は考える必要があるが、今のタイミングでなくてよい」。下の「一時ファイル」の部分は、この答えで外れる。
 
 - 選択肢:
   - (a) `lease` と `generation` は、tmux server の世代やペインの生死では消さない。消すのは、閉じた `lease`（委譲が終わった・統括が `lease` を畳んだ）を、閉じてから一定の日数が過ぎたあとに、明示の掃除（`oe-lease gc`）で消すときだけにする。write path では掃除しない。
@@ -233,7 +237,8 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 外れたときの終了コードは、宛先が無い（1）と分け、「宛先の本人を確かめられない」として返す。番号は実装の段階で、`oe-send` のいまの割り当て（0・1・2・4）とぶつからないものを選ぶ。
 - `binding` の pid が記録に無い `lease`（移行の前に作られた `lease` など）は、4 を飛ばさず、確かめられないとして外れにする。外れたときの案内には、生のペインの番号で送るフォールバック（いまの `oe-send %N`）を出す。
 - 確定版の［別モデル］の「ID から引いたペインに、操作する時点でも同じ相手がいるかの確かめ。対応を確かめられないときに止める決まり」はこれで満たす。
-- 残る穴: いまの送り方は、文字を入れる・待つ・Enter を送る・場合によって Enter を送り直す、の複数の操作である [verified]（`lib/delegate-send.sh` の `oe_send_line`）。確かめたあと、Enter を送るまでのあいだにペインの中身が替わる窓は閉じられない（ゲート1 の Codex の指摘）。Enter の前にも 4 の確かめをもう一度行って窓を狭め、それでも残る取り違えは、receipt（送った1行の nonce と、受け取ったペインの組）で後から見つける。完全に防ぐとは書かない。
+- （**owner の答え Q76 で外した**・2026-11-06 22:00 回収）Enter の前に 4 の確かめをもう一度行う案。外したので、確かめと Enter のあいだの窓は receipt で後から見つけるだけになる。
+- 残る穴: いまの送り方は、文字を入れる・待つ・Enter を送る・場合によって Enter を送り直す、の複数の操作である [verified]（`lib/delegate-send.sh` の `oe_send_line`）。確かめたあと、Enter を送るまでのあいだにペインの中身が替わる窓は閉じられない（ゲート1 の Codex の指摘）。（Enter の前の確かめ直しは owner の答え Q76 で外した。）残る取り違えは、receipt（送った1行の nonce と、受け取ったペインの組）で後から見つける。完全に防ぐとは書かない。
 - background への fork（#338）でプロセスが替わると、フォアグラウンドのプロセスが `binding` と合わなくなるので、送らずに外れる。fork 先を自動で `lease` の持ち主にはしない（ゲート1 の2つのレーンの指摘）。hub の設定はすでに background への行き来を止めている [unverified-summary]（`canonical/claude/settings.harness.json` の `disableAgentView` の注記・棚卸しの調査の報告による）。
 
 ### DJ-7 resume したセッションが自分の ID を知る方法（owner に聞いた）
@@ -316,15 +321,20 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 
 ### DJ-15 送る側の引き方
 
+- **owner の答え（判断ボードの Q77・2026-11-06 22:00 回収）**: 移行のあいだは、`#N` のラベルを `lease` の記録で引けなければ、古い引き方（pane-issue と registry）に落とす。補足は「移行期や互換性を保つときは可能な限りフォールバックを準備する」。
+- **owner の答え（判断ボードの Q76・2026-11-06 22:00 回収）**: 下の「古い子も親の `lease` へ送れるようにする」項目は外した。DJ-11 の「`PARENT_TMUX_PANE` しか持たない古い子は、古い宛先のまま終わらせる」を正とする。
+
 - 決まり:
-  - `oe-send` の宛先に、`lease_id` と、`lease` の label（`#577` など）を受け付ける。label は `lease` の記録から引き、pane-issue からは引かない（いまの `oe_reg_resolve` は pane-issue を先に見る [verified]（`lib/delegate-registry.sh` の `oe_reg_resolve`））。生のペインの番号（`%N`）は、いままでどおり受け付ける（移行とフォールバックのため）。
+  - `oe-send` の宛先に、`lease_id` と、`lease` の label（`#577` など）を受け付ける。label は `lease` の記録から引き、引けたときは pane-issue を見ない（引けないときは、移行のあいだだけ古い引き方に落とす・Q77）（いまの `oe_reg_resolve` は pane-issue を先に見る [verified]（`lib/delegate-registry.sh` の `oe_reg_resolve`））。生のペインの番号（`%N`）は、いままでどおり受け付ける（移行とフォールバックのため）。
   - 子の報告は、`oe-send --to-parent`（名前は実装の段階で決める）で、自分の `lease`（`OE_LEASE_ID`）の親の `lease` の、いまの `generation` のペインへ送る。統括が交代していても、親の `lease` が同じなら届く。
-  - **この項目は、判断ボードの Q76（守りを削るか）の答えで決める。** それまでは DJ-11 の「`PARENT_TMUX_PANE` しか持たない古い子は、古い宛先のまま終わらせる」を正とする（P4・分身レビューの指摘で、DJ-11 とこの項目の食い違いが分かった）。
-  - （Q76 で決める）`OE_LEASE_ID` を持たない子（移行の前に起きた子）でも、親の `lease` へ送る形を使えるようにする。一度だけの取り込み（DJ-11）が子の `lease` に親の `lease` を入れておけば、子は自分の `TMUX_PANE` と server の pid から自分の `lease` を引き、`CLAUDE_PID` が `lease` の `binding` と一致することを確かめてから、親の `lease` へ送れる。自分のペインはその子にとって確かな値なので、他人のペインを引くのとは違って使い回しの穴が無い。これで、移行のあいだに旧い子が交代した統括の前任のペインへ報告を送る取り違えを減らせる（ゲート2 の Cursor の指摘）。
+  - （**owner の答え Q76 で外した**）`OE_LEASE_ID` を持たない子（移行の前に起きた子）でも、親の `lease` へ送る形を使えるようにする。一度だけの取り込み（DJ-11）が子の `lease` に親の `lease` を入れておけば、子は自分の `TMUX_PANE` と server の pid から自分の `lease` を引き、`CLAUDE_PID` が `lease` の `binding` と一致することを確かめてから、親の `lease` へ送れる。自分のペインはその子にとって確かな値なので、他人のペインを引くのとは違って使い回しの穴が無い。これで、移行のあいだに旧い子が交代した統括の前任のペインへ報告を送る取り違えを減らせる（ゲート2 の Cursor の指摘）。
   - `doc-flow-guardrail` の委譲固定節「報告の宛先」の規則（明示の宛先 → `$PARENT_TMUX_PANE`・交代のあとは `oe-report` を使わない）は、`OE_LEASE_ID` がある子では「親の `lease` へ送る」に置き換える。`OE_LEASE_ID` の無い子（移行の前に起きた子）には今の規則を残す。
 - ペインを使う操作は、送る・画面を読む・閉じる・選ぶ（`oe-jump`・`oe-select`）の宛先だけになる。どれも、`lease` から引いたペインを使う直前に DJ-6 の確かめを通す。
 
-### DJ-16 送れないときは保留して、`lease` の次の `generation` が拾う
+### DJ-16 送れないときは保留して、`lease` の次の `generation` が拾う（owner の答え Q80 で #355 へ回した）
+
+- **owner の答え（判断ボードの Q80・2026-11-06 22:00 回収）**: この DJ は、`delivery_held` の event と、送れないときに止めて保留する動きの両方ごと、#355（復帰）へ回す。この issue では決めず、実装もしない。補足は「どう拾うかを決めないと後戻りが起きうる。いま必要なくリスクも低いならここで決めない」。DJ-6 の確かめで外れたときは、いまの `oe-send` と同じく、送らずに失敗の終了コードで返すだけにする。
+- #355 への申し送り: 送れなかった報告のポインタを残す形（下の案）と、それを誰がどう拾うかを、#355 で一緒に決める。
 
 - 決まり: 子が親の `lease` へ送ろうとして DJ-6 の確かめで外れたとき（親の統括が落ちている・交代の途中）は、送らずに保留の event（型は `delivery_held`）を残して、子は「親の `lease` へ届けられなかった。報告のファイルは置いた」と返す。報告の本体はいままでどおりファイル（`.oe/report-<issue>.md`）に置くので、失われない。`lease` に新しい `generation` が `binding` されたら（復帰か交代）、その `generation` は自分の `lease` あての保留を一覧で拾う。
 - 理由: いまの報告は「ファイルが正本、`oe-send` の1行はポインタ」の2段構えで、ファイルは残っている。失われるのはポインタだけである。ゲート1 の Codex の案E（報告を仕事ごとの郵便受けにして、担当が取りに来る）の、「報告を成立させるのに、いまの統括の所在を知らなくてよい」という点だけを採った。郵便受けを新しく作るのではなく、`delivery_held` の event と既存の報告のファイルで足りる。
@@ -415,7 +425,7 @@ DJ 全体: 記録の「誰か」のキーをどう持つか
 ├── 案E'（Cursor: events を再生して、いまの統括を決める） → 不採用。event の書き込みは best-effort で（decision #206）、1件落ちると「いま」が狂う。`lease` の記録の compare-and-swap のほうが単純である。event は派生の記録として残す（DJ-13）
 ├── 案F'（Cursor: `lease` の記録をワークスペースの `.oe/` に置く） → 不採用。ワークスペースをまたぐ委譲（子が別のリポジトリの worktree で動く）と、全リポジトリの木を1つで見る `oe-tree` が成り立たない（DJ-2）
 ├── 案G（Cursor: resume しない長寿の中継のセッションを1つ置く） → 不採用。統括は context を使い切って交代する前提（#238 の故障の型1）で、長寿の中継も同じく使い切る
-└── 案H（Cursor: hook が session_id を名前にした `binding` の観測を書き、engine は読むだけ） → 一部を採用（DJ-3 の hook の観測）。`lease` の記録を書くのは verb だけのままにする
+└── 案H（Cursor: hook が session_id を名前にした `binding` の観測を書き、engine は読むだけ） → 一部を採用（DJ-3 の hook の観測）したが、owner の答え Q76 で外した。`lease` の記録を書くのは verb だけのままにする
 ```
 
 ### 案C の境目（案A が過剰でないか）
