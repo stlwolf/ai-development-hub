@@ -17,7 +17,7 @@ related:
     reason: "着手時の認識合わせの確定版（深掘りなし）。やることと、達成を見る数の候補3つはここから来た"
   - type: derived_from
     ref: "projects/orchestration-engine/docs/discussions/2026-11-06-discussion-577-record-identity-key.md"
-    reason: "棚卸しの表・設計の判断 DJ-1〜DJ-17・ゲート1 の探索木"
+    reason: "棚卸しの表・設計の判断 DJ-1〜DJ-20・ゲート1 の探索木"
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
     reason: "この plan が実装する decision の案（proposed）"
@@ -40,7 +40,7 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 
 ## 設計判断
 
-設計の判断の正本は discussion の §5（DJ-1〜DJ-17）で、決まったことの要約は decision の案の「決定」（D1〜D16）である。ここでは繰り返さない。owner に聞いたのは DJ-1・DJ-7・DJ-10・DJ-11・DJ-17 の5件で、答えはすべて回収した（2026-11-06・判断ボードの Q65〜Q67・Q69・Q71。DJ-17 の1回目の Q70 は取り下げ）。もう1件、統括が判断ボードに載せた Q72（#390 の plan のゲート3 の回答1 と、この設計の `epoch` と compare-and-swap との関係）は、「`epoch` と compare-and-swap は入れるが、効かせるのは `lease` の記録への書き込みだけ。本格的な fencing は入れない」と答えがあった。設計の問いは、これですべて答えが出た。新しい概念の名前は、#564 の決まりの案に合わせて識別子で書く（discussion の §5.0）。
+設計の判断の正本は discussion の §5（DJ-1〜DJ-20）で、決まったことの要約は decision の案の「決定」（D1〜D19）である。ここでは繰り返さない。owner に聞いたのは DJ-1・DJ-7・DJ-10・DJ-11・DJ-17 の5件で、答えはすべて回収した（2026-11-06・判断ボードの Q65〜Q67・Q69・Q71。DJ-17 の1回目の Q70 は取り下げ）。もう1件、統括が判断ボードに載せた Q72（#390 の plan のゲート3 の回答1 と、この設計の `epoch` と compare-and-swap との関係）は、「`epoch` と compare-and-swap は入れるが、効かせるのは `lease` の記録への書き込みだけ。本格的な fencing は入れない」と答えがあった。設計の問いは、これですべて答えが出た。新しい概念の名前は、#564 の決まりの案に合わせて識別子で書く（discussion の §5.0）。
 
 ## 確定版に無い判断
 
@@ -59,6 +59,11 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 | N9 | `/tmp/oe-parent-<N>`（`oe-report` の古いフォールバック）を消すかを、実装の段階で決める | 新しい | 棚卸し |
 | N10 | 新しい概念を識別子で呼ぶ（`lease`・`generation`・`binding`・`epoch`・`delivery_held`）。持ち場の名前は `lease`（DJ-17・owner の答え Q71） | 新しい。確定版は「ID」「ラベル」とだけ書き、名前を決めていなかった | owner の指摘（2026-11-06・統括から）・#564 の決まりの案 |
 | N11 | transport を替えるときに参考が埋もれないように、transport の唯一の入口 `lib/delegate-send.sh` の冒頭の説明から DJ-10 の参考を指す1行を置く（PR-3） | 新しい | owner の指摘（2026-11-06「参考に残しても transport を替えるときに埋もれる」・統括から） |
+| N12 | 最初の `binding` は、起こした側の verb（`oe-delegate`・`oe-handoff start`）がペインの生存を確かめる時点で書き、手で立てた統括は本人が `oe-lease create --root` を打つ。session_id は `oe-lease` の verb が読むときに足す（DJ-18） | 新しい（確定版にも初めの設計にも無かった） | 分身レビューの指摘（P4） |
+| N13 | ペインの本人確認を、tmux に固有の確かめを集めた小さな lib の1つの関数にする（DJ-19・PR-1） | 新しい | 分身レビューの指摘（P4） |
+| N14 | `oe-report` と `/tmp/oe-parent-<N>` を廃止し、子から親への報告を `oe-send --to-parent` の1本にする（DJ-20・PR-3） | 新しい | 分身レビューの指摘（P4） |
+| N15 | 移行のために抱える負債を、外す条件と置き場つきで並べ、最後の片付けを PR-6 にする（「移行の終わり方」の節） | 新しい | 分身レビューの指摘（P4） |
+| N16 | `lease` の記録の型（schema）と検査のスクリプトを PR-1 に入れ、events の schema の型の一覧に新しい型を足す | 新しい | 分身レビューの指摘（P4） |
 
 ## ゲート1（ゼロベースの代替探索）
 
@@ -79,15 +84,33 @@ discussion の §8 が正本である。
 
 | PR | 中身 | 既存の振る舞いに触るか | 確かめ方 |
 |---|---|---|---|
-| PR-1 | `lease` の記録の lib と verb（作る・`binding` する・名乗る・引く・閉じる・掃除する）。heartbeat からペインを引く1つの関数（N6）と、生きていないことの確かめの関数（DJ-9） | 触らない（新しいファイルだけ） | 新しいテスト（偽の tmux と ps・一時ディレクトリの state）と shellcheck |
-| PR-2 | 書く側を両方書きにする。`oe-delegate`（`lease` を作り、`OE_LEASE_ID`・`OE_GENERATION`・親の `lease` を環境に入れる）・`oe-register`・heartbeat の producer（`lease_id` と `generation` を足す）・event の snapshot（DJ-13）・一度だけの取り込み（`oe-lease adopt`）（DJ-11） | 触る（書く記録が増える。読む側は変えない） | 既存のテストが全部通ること・新しいテスト・実機で1回（下の「実機の確かめ」の R1） |
-| PR-3 | 送る側。`oe-send` の `lease` あて・送る前の確かめと Enter の前の確かめ直し（DJ-6）・親の `lease` へ送る形・`delivery_held` の event（DJ-16）・`oe-report`。transport の唯一の入口 `projects/orchestration-engine/lib/delegate-send.sh` の冒頭の説明に「transport を替えるときの参考: #577 の discussion の DJ-10（Claude Code のセッション間の文を送る機能の受け取る側の制御）」の1行を置く（N11）。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
-| PR-4 | 統括の `lease`。`oe-handoff take` と `retire` を `lease` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`oe-vitals` が `lease` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
-| PR-5 | 観測する側。`oe-tree` が `lease` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・`seen` の記録のキー（N7）・計測のスクリプト。registry を「誰か」のキーとして読むのをやめる（owner の答え Q66 により、この最後の切り替えは復帰のテストの時に一度に行ってよい） | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
+| PR-1 | `lease` の記録の lib と verb（作る・`binding` する・名乗る・引く・閉じる・掃除する）。heartbeat からペインを引く1つの関数（N6）と、生きていないことの確かめの関数（DJ-9）と、ペインの本人確認の関数（DJ-19・N13・tmux に固有の確かめを集めた小さな lib）。`lease` の記録の schema（`schemas/` に足す）と検査のスクリプト（`scripts/validate-*.sh` の形）（N16） | 触らない（新しいファイルだけ） | 新しいテスト（偽の tmux と ps・一時ディレクトリの state）と shellcheck |
+| PR-2 | 書く側を両方書きにする。`oe-delegate`（`lease` を作り、`OE_LEASE_ID`・`OE_GENERATION`・親の `lease` を環境に入れる）・`oe-register`・heartbeat の producer（`lease_id` と `generation` を足す）・最初の `binding` を起こした側の verb が書く形と、手で立てた統括の `oe-lease create --root`（DJ-18・N12）・event の snapshot（DJ-13）と `oe-events.schema.json` の型の一覧への `binding` の張り替えの型の追加・一度だけの取り込み（`oe-lease adopt`）（DJ-11） | 触る（書く記録が増える。読む側は変えない） | 既存のテストが全部通ること・新しいテスト・実機で1回（下の「実機の確かめ」の R1） |
+| PR-3 | 送る側。`oe-send` の `lease` あて・送る前の確かめと Enter の前の確かめ直し（DJ-6）・親の `lease` へ送る形・`delivery_held` の event（DJ-16）と `oe-events.schema.json` の型の一覧への追加（判断ボードの Q80 の答えで `delivery_held` を外すなら、ここも外す）・`oe-report` と `/tmp/oe-parent-<N>` の廃止（DJ-20・N9・N14）・`oe-jump` と `oe-select` を `lease` から引いて本人確認を通す形（DJ-15）。transport の唯一の入口 `projects/orchestration-engine/lib/delegate-send.sh` の冒頭の説明に「transport を替えるときの参考: #577 の discussion の DJ-10（Claude Code のセッション間の文を送る機能の受け取る側の制御）」の1行を置く（N11）。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
+| PR-4 | 統括の `lease`。`oe-handoff take` と `retire` を `lease` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`lib/handoff-state.sh` の heartbeat の引き方を N6 の関数に替える・`oe-vitals` が `lease` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
+| PR-5 | 観測する側。`oe-tree` が `lease` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・`seen` の記録のキー（N7）・計測のスクリプト・`oe-threads` と `oe-selfcheck` の heartbeat の引き方を N6 の関数に替える。registry を「誰か」のキーとして読むのをやめる（owner の答え Q66 により、この最後の切り替えは復帰のテストの時に一度に行ってよい） | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
+| PR-6 | 移行の片付け。下の「移行の終わり方」の表のうち、条件を満たしたものを外す（registry の両方書き・adopt・`PARENT_TMUX_PANE` の注入・スキルの古い規則） | 触る | 外す前に条件を `oe-tree` と `lease` の記録で確かめる。#355 の復帰のテストのあとに置く |
 
 - 配る順: hook と statusLine の producer を変える PR（PR-2）と、送る側を変える PR（PR-3）は、sync で全リポジトリの統括に効く。sync の前に、ほかのリポジトリの統括へ知らせる（DJ-11）。知らせる文と、sync をいつ打つかは owner が決める（gate 6 と同じく、子は sync しない）。
-- 並べ方: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の直列である。PR-3 と PR-4 はどちらも `bin/oe-handoff` と配布しているスキルの文に触りうるので、並列にしない。
+- 並べ方: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 → PR-6 の直列である。PR-3 と PR-4 はどちらも `bin/oe-handoff` と配布しているスキルの文に触りうるので、並列にしない。
 - 偽の道具での確かめの注意（negative knowledge `01M5T897YCWY13GFTADD3136EC`）: transport 具を偽物に差し替えて確かめるときは、偽の `bin/` に足がかりの `oe-tree` ごと置き、`~/bin` を PATH から外し、存在しないペインの番号を使い、state の置き場（`OE_DELEGATE_STATE_DIR`・`OE_HEARTBEAT_DIR`・`lease` の置き場）を一時ディレクトリに向ける。偽物の側に自分のパスを記録させ、「記録されたのは偽物だけ」と「本物の呼び出しが無い」の両方を見る。生きている `~/.claude/state/` には書かない。ほかのリポジトリの統括と子のペインへは送らない。
+
+- この plan の PR に入れないもの: N8（プロセスの観測を hook でも書く）は入れない。hook を土台にしないという #355 の線と、Claude Code への依存を深めないという owner の答え（Q67）に合わせ、DJ-18 で verb だけで `binding` が書けるようにしたので要らない。
+
+## 移行の終わり方（意図して抱える負債）
+
+移行のあいだは、古い仕組みを残したまま新しい仕組みを足す。残すものは負債として、外す条件と置き場を先に決めておく。
+
+| 残すもの | なぜ残すか | 外す条件 | 置き場 |
+|---|---|---|---|
+| registry（`oe-delegate/`）への両方書き | 読む側を1つずつ切り替えるあいだ、古い読む側が動くように | 読む側がすべて `lease` の記録を読むようになり（PR-5）、#355 の復帰のテストを通したとき（owner の答え Q66） | PR-6 |
+| 一度だけの取り込み（`oe-lease adopt`） | 移行の前に起きた委譲と統括を引き取るため | `oe-tree` に、`lease` を持たない生きた統括と子が1つも出なくなったとき | PR-6 で verb ごと消す |
+| `PARENT_TMUX_PANE` の注入 | `OE_LEASE_ID` を読まない古いスキルの文と、古い子のため | 配っているスキルの文が `oe-send --to-parent` だけになり、`PARENT_TMUX_PANE` しか持たない生きた子が1つも無くなったとき | PR-6 |
+| 配っているスキルの古い規則（`doc-flow-guardrail` の「報告の宛先」の `$PARENT_TMUX_PANE` の段） | 古い子のため | 上と同じ | PR-6 |
+| `oe-send` の生の `%N` の宛先 | 手でフォールバックするため | 外さない（負債でなく、残す機能） | — |
+| `handoff.md` の機械の節の前任のペイン・pid・コマンド名 | 人が読む引き継ぎ文書の一部として | retire が `lease` の記録だけで判定するようになったとき（PR-4）、機械の節は人が読む複製に下げる。項目を消すかは PR-4 で決める | PR-4 |
+
+- 一度だけの取り込みは、2回走らせても何も増えない形にする。取り込むときのキーは、ペインの端末のフォアグラウンドのプロセスの pid と開始時刻（と server の pid と開始時刻）にし、同じ `binding` を持つ `lease` がすでにあれば作らない。session_id が取れない `lease` を空のまま作ると、session_id でしか同じものと見分けられず、2回目に二重になるためである。
 
 ## 達成を見る数の確かめ方
 
@@ -102,6 +125,7 @@ discussion の §8 が正本である。
 ### 実機の確かめ
 
 - **R2（statusLine が環境を受け継ぐか）**: PR-2 で、`OE_LEASE_ID` を入れて起こしたセッションの heartbeat の sidecar に、`lease_id` が載ることを見る。R1 と同じ使い捨てのセッションで見る。載らなければ、DJ-3 の「session_id の並びで絞る」だけで動くことを、PR-2 のテストで固定する。
+- **R4（起こした直後のペインのフォアグラウンドのプロセスが claude か）**: PR-2 で、`oe-delegate` がペインの生存を確かめる時点（いまは起動から4秒後）のペインの端末のフォアグラウンドのプロセスが claude で、その pid が子の Bash の `CLAUDE_PID` と一致することを確かめる。使い捨ての委譲を1つ起こして見る（ほかの統括と子のペインには触れない）。一致しなければ、DJ-18 の書く時点を、子の最初の receipt のあとにずらす。
 - **R3（フォアグラウンドのプロセスグループが claude を指すか）**: PR-3 で、子が自分のペインについて、入力待ちのときと、Bash の道具で長いコマンドを動かしているときの2つで、ペインの端末のフォアグラウンドのプロセスグループの番号と `CLAUDE_PID` を読んで比べる（自分のペインだけを読む）。道具の実行中に外れるなら、送る側は「確かめられない」で止まり、少し待って確かめ直す形にする。
 - **R1（issue の「resume したセッションが自分の ID を知る方法を決め、実機で確かめる」）**: I0（PR-1 の前）に、使い捨ての claude のセッションを1つ、`OE_LEASE_ID` と一時ディレクトリの state を入れて起こし、終了し、`claude --resume <id>`（id を付けて）と、id を付けない `claude --resume` の両方で戻して、環境の `CLAUDE_CODE_SESSION_ID` と `oe-lease bind` の結果を見る。claude を起こすのは owner の手を1回借りる（子は自分でセッションを起こさない）。生きている統括と子には触れない。
 
@@ -129,7 +153,7 @@ discussion の §8 が正本である。
 
 owner の答え（Q69「推測するな計測せよ」）により、resume の打ち方の決まりを作る前に計測する。`--resume <id>`・id を付けない `--resume`・`--continue` のそれぞれで、Bash の `CLAUDE_CODE_SESSION_ID` を読み、resume した会話の id と比べる。生きている `~/.claude/state/` と、ほかの統括と子のペインに触れない形（使い捨てのディレクトリ・hook が書く置き場の切り離し）を、実装の追補の書面で統括と決める。結果で DJ-7 の決まりを決め、plan の「ゲート3 のあとの変更」に書く。
 
-### I1〜I5: PR-1〜PR-5（実装の追補の書面で始める）
+### I1〜I6: PR-1〜PR-6（実装の追補の書面で始める）
 
 各 I のあとに、テストと shellcheck のゲート・実装SO・Copilot の1ラウンドを、別の項目として置く（実装の追補の書面で確定する）。
 
