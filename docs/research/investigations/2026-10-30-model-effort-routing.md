@@ -293,6 +293,7 @@ env -u CLAUDE_EFFORT CLAUDE_CONFIG_DIR="$TMP/config" \
   - `five_hour` / `seven_day` / `seven_day_opus` / `seven_day_sonnet` / `seven_day_oauth_apps`
   - `model_scoped[]`: `{display_name（例 'Fable'）, utilization, resets_at}` — **モデル別の週次枠**
   - `extra_usage`: `{is_enabled, monthly_limit, used_credits, utilization, currency}` — usage credits
+- 応答のトップレベル（`rate_limits` と同じ階層）にあるもの `[verified-binary]`（階層はローカル検証 A の実測でも確認）
   - `subscription_type`、`rate_limits_available`
   - `session.total_cost_usd` / `session.model_usage`（モデル別のセッション消費）
 - `/usage` 画面の「Current week (Fable)」はこの `model_scoped` から描画されている `[verified-binary]`
@@ -612,7 +613,7 @@ claude -p "Reply with exactly: OK" --model fable --effort low \
 - §8.1「Fable は別枠なので λ を別に持つ」→ Fable は λ の対象外にする。Fable の消費は共通の 7d 枠にも入る
 - §8.4「降格は #390 の計画的引き継ぎに『Fable 消費ペースが目標線超過』の条件を足す」→ エンジンの自動条件にはしない。人間が 85〜90% を目安に、作業の区切りで引き継ぐ
 - §8.5「`spawn.sh` に `ai_effort` を追加」→ 子の起動経路は 2 つあり、両方を対象にする
-  - `bin/oe-delegate`: tmux のペインで対話型の claude を起動する。いま主に使っている経路で、モデルは `--claude-arg` で渡し、effort を渡す道はない
+  - `bin/oe-delegate`: tmux のペインで対話型の claude を起動する。いま主に使っている経路。`--claude-arg` の値はそのまま子の起動引数に足されるので、effort も `--claude-arg --effort --claude-arg high` で渡せる。足りないのは、作業分類から effort を決める経路と専用の引数
   - `lib/spawn.sh`: `oe` の自律サイクルで `claude -p` を起動する。§7 で見たのはこちらだけだった
 - §8.6 の記録のうち、`effort.level` を heartbeat に足して cockpit に出すのは既存の [#570](https://github.com/stlwolf/ai-development-hub/issues/570) で扱う。#579 では扱わない
 - §11.6「Fable 用 λ の入力は `model_scoped` の Fable 行」→ λ には使わない。`model_scoped` は、Fable の残量を cockpit に出すかを決める材料にする（#578）
