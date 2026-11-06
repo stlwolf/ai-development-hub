@@ -25,6 +25,8 @@
 
 OE_TPI_PS="${OE_TPI_PS:-ps}"
 OE_TPI_TMUX="${OE_TPI_TMUX:-tmux}"
+# kill -0 の差し替え（テスト用）。既定は shell の組み込みの kill。
+OE_TPI_KILL="${OE_TPI_KILL:-kill}"
 _OE_TPI_TAB="$(printf '\t')"
 
 # lstart は「Fri Nov  6 02:44:37 2026」の形。空白の数の揺れで比べ間違えないように、連続した空白を1つに詰める。
@@ -50,13 +52,26 @@ oe_tpi_proc_comm() {
   printf '%s' "${out##*/}"
 }
 
-# ps -p は「そのプロセスが無い」ときに rc=1 と空を返す。それ以外の失敗（ps が無い・権限など）は unknown にする。
+# ps -p は「そのプロセスが無い」ときに rc=1 と空を返すが、問い合わせ自体の失敗（メモリの確保・プロセスの取得）
+# でも rc=1 を返しうる（実装SO の指摘・Apple の adv_cmds と procps-ng のソース）。rc=1 と空のときは、kill -0 で
+# もう一度確かめ、「No such process」と分かったときだけ dead にする。ほかは unknown にする。
+_oe_tpi_absent() {
+  local pid="$1" out
+  if out="$(LC_ALL=C "$OE_TPI_KILL" -0 "$pid" 2>&1)"; then return 1; fi
+  case "$out" in *"No such process"*|*"no such process"*) return 0 ;; esac
+  return 1
+}
+_oe_tpi_kill_says_exists() { LC_ALL=C "$OE_TPI_KILL" -0 "$1" >/dev/null 2>&1; }
+
 oe_tpi_proc_state() {
   local pid="${1:-}" want="${2:-}" got rc
   case "$pid" in ''|*[!0-9]*) printf 'unknown'; return 0 ;; esac
   [ -n "$want" ] || { printf 'unknown'; return 0; }
   got="$(LC_ALL=C "$OE_TPI_PS" -o lstart= -p "$pid" 2>/dev/null)"; rc=$?
-  if [ "$rc" -eq 1 ] && [ -z "$got" ]; then printf 'dead'; return 0; fi
+  if [ "$rc" -eq 1 ] && [ -z "$got" ]; then
+    if _oe_tpi_absent "$pid"; then printf 'dead'; else printf 'unknown'; fi
+    return 0
+  fi
   if [ "$rc" -ne 0 ]; then printf 'unknown'; return 0; fi
   got="$(_oe_tpi_norm "$got")"
   [ -n "$got" ] || { printf 'unknown'; return 0; }

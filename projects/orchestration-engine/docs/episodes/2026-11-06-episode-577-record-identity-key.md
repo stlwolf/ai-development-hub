@@ -230,3 +230,27 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - 結果は discussion の DJ-7 にある。新しいセッション・`--resume <id>`・`--continue` の3つで、Bash の値は会話の id と一致した（会話の記録の道具の出力で確かめた）。id を付けない `--resume` は `-p` で使えない。`oe-delegate` が起こした子には親の id は引き継がれない。
 - DJ-7 は「resume の打ち方を決まりにしない」と決めた。plan の「ゲート3 のあとの変更」に H1（補正）として書いた。
 - 生きている state に書かれていないことを、試した id で heartbeat・events・受領の診断を走査して確かめた。試したセッションの会話の記録は `~/.claude/projects/` の一時ディレクトリの名前の下に残っている（3件・消していない）。
+
+## I1: PR-1（lease の記録の lib と verb）（2026-11-06）
+
+- G0 で、統括が H1 を補正として受け付けた（対話の一覧から選ぶ resume は計測しない）。
+- 足したもの（既存の verb は変えていない）: `lib/lease.sh`・`lib/tmux-pane-identity.sh`・`lib/heartbeat-resolve.sh`・`bin/oe-lease`・`schemas/oe-lease.schema.json`・`scripts/validate-lease.sh`・`tests/test_lease.sh`。
+- 書いている途中の失敗: タブ文字をそのまま書いたところが3つあり、記憶にある「Write で制御文字が化ける」罠を避けるため変数に替えた。heartbeat の sidecar を `read` で読む区切りにタブを使うと、空の項目（lease_id の無い sidecar）で列がずれるので、空を `-` で埋めて投影する形にした。bash 3.2 では `$( )` の中の `case` の `)` を読み違えるので、テストの1か所を `if` に替えた。
+- テストの効き目は、壊した写しで確かめた（ps の失敗を「死んでいる」に畳むと3件、ほかの lease の session_id の確かめを外すと1件落ちる）。
+
+### I1: 実装SO（Codex の1レーン・2026-11-06）
+
+- `so-compare --codex-only`（`gpt-6.1-sol`・224秒・初回で返った）。プロンプトと出力は統括のワークスペースの根の `tmp/577-record-identity/impl-pr1-prompt.md` と `tmp/577-record-identity/so-impl-pr1/`。
+- 採ったもの:
+  - 高: `bind` の verb は binding を書いてから session_id を登録していたので、session_id がほかの lease にあると binding だけが変わって残った。binding と session_id の登録を、共通のロックの中で1回の書き込みにする `oe_lease_claim` を足し、`bind` と `create --root` はそれを使う形にした。
+  - 高: `ps -p` の終了コード1を「そのプロセスが無い」だけと扱っていたが、問い合わせの失敗でも1が返る（Codex が Apple の adv_cmds と procps-ng のソースを挙げた）。終了コード1で空のときは `kill -0` でもう一度確かめ、「No such process」のときだけ死んでいるとする形にした。
+  - 中: 同じ lease の別の generation（退任した代など）にある session_id を、いまの generation に登録できた。どの generation にあっても重ねない形にした。
+  - 中（確実さは低・被害は高）: 置き去りのロックを2つのプロセスが同時に引き取ると、生きたロックを持ち去りうる。持ち去ったロックの持ち主が読んだ持ち主と同じかを確かめ、違えば戻す形にした。直しが小さいので採った。
+  - 中（設計との照合）: 名乗る方法3（会話の記録の lease_id を渡す）の workspace の一致と、統括の lease の owner の確かめが verb に無かった。`bind` で自分の session_id が記録に無いときは workspace の一致を確かめ、統括の lease なら `--owner-confirmed` を求める形にした（exit 10）。直している途中で、workspace のどちらかのディレクトリが無いと、どちらの値も空になって一致と読む穴も見つけて直した。
+  - 低: 検査のスクリプトが `started_at`・`retired_at` の型と、`successor` が整数かを見ていなかった。schema に合わせた。
+- 採らなかったもの: gc の並行の更新（参照の一覧を作ったあとに登録された session_id の sidecar を消しうる。重さ・確実さ・被害すべて低で、次の heartbeat で戻る。Codex も必須の直しにしないと書いた）。テストの最後の確かめが本物の置き場を読むこと（読むだけで書かない）。
+- テストは119件になり、bash 5 と bash 3.2 の両方で通った。
+
+### I1: 既存のテストで前から落ちているもの（範囲の外・直していない）
+
+- 既存のテストを bash 5 と bash 3.2 で全部回したところ、`tests/test_home_unset.sh`（2件）と `tests/test_oe_confirm.sh`（2件）が落ちた。master（`0662dab`）でも同じ4件が落ちるので、PR-1 の前からある失敗である。`test_home_unset.sh` の1件は、`_oe_home_usable` の定義が1種類であることを見る検査で、`lib/handoff-state.sh` だけが複数行の定義になっている。PR-1 の新しい2つの lib の定義は、ほかの12か所と同じである。報告で統括に知らせる。

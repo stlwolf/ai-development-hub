@@ -42,6 +42,7 @@ cat > "$FAKE/ps" <<'EOF'
 #!/usr/bin/env bash
 echo "fake-ps $*" >> "$CALLS"
 [ -z "${FAKE_PS_FAIL:-}" ] || exit 2
+if [ -n "${FAKE_PS_RC1:-}" ]; then echo "ps: cannot allocate memory" >&2; exit 1; fi
 mode=""; pid=""; tty=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -69,9 +70,17 @@ echo "fake-tmux $*" >> "$CALLS"
 if [ "${1:-}" = "list-panes" ]; then cat "$PANES"; exit 0; fi
 exit 0
 EOF
-chmod +x "$FAKE/ps" "$FAKE/tmux"
+cat > "$FAKE/kill" <<'EOF'
+#!/usr/bin/env bash
+# 偽の kill -0: ps の表に pid があれば生きている。FAKE_KILL_EXISTS=1 なら表に無くても生きている（ps だけが失敗した場面）。
+echo "fake-kill $*" >> "$CALLS"
+pid="${2:-}"
+if [ -n "${FAKE_KILL_EXISTS:-}" ] || awk -F '|' -v p="$pid" '$1==p {f=1} END {exit f?0:1}' "$PS_TABLE"; then exit 0; fi
+echo "kill: ($pid) - No such process" >&2; exit 1
+EOF
+chmod +x "$FAKE/ps" "$FAKE/tmux" "$FAKE/kill"
 export PATH="$FAKE:$PATH"
-export OE_TPI_PS="$FAKE/ps" OE_TPI_TMUX="$FAKE/tmux"
+export OE_TPI_PS="$FAKE/ps" OE_TPI_TMUX="$FAKE/tmux" OE_TPI_KILL="$FAKE/kill"
 
 export OE_LEASE_DIR="$_TMP_DIR/lease"
 export OE_HEARTBEAT_DIR="$_TMP_DIR/heartbeat"; mkdir -p "$OE_HEARTBEAT_DIR"
@@ -99,6 +108,8 @@ ck "空白の数が違っても同じ開始時刻なら生きている" "alive" 
 ck "pid が無ければ死んでいる" "dead" "$(oe_tpi_proc_state 999 "$S1")"
 ck "同じ pid で開始時刻が違えば別のプロセス（死んでいる）" "dead" "$(oe_tpi_proc_state 101 "$S2")"
 ck "ps が失敗したら分からない" "unknown" "$(FAKE_PS_FAIL=1 oe_tpi_proc_state 101 "$S1")"
+ck "ps が rc 1 とエラーを返しても、プロセスがあれば分からない（無いに畳まない）" "unknown" "$(FAKE_PS_RC1=1 FAKE_KILL_EXISTS=1 oe_tpi_proc_state 999 "$S1")"
+ck "ps が rc 1 で kill -0 も No such process なら死んでいる" "dead" "$(FAKE_PS_RC1=1 oe_tpi_proc_state 999 "$S1")"
 ck "開始時刻が無ければ分からない" "unknown" "$(oe_tpi_proc_state 101 "")"
 ck "コマンド名" "claude" "$(oe_tpi_proc_comm 101)"
 
@@ -163,6 +174,12 @@ L2="$(oe_lease_create delegation '#578' /ws "")"
 oe_lease_bind "$L2" 0 302 "$S3" claude
 ck "ほかの開いた lease にある session_id は入れない" "8" "$(rc_of oe_lease_register_session "$L2" sid-1 302 "$S3")"
 ck "/clear のあとの session_id も本人なら足せる" "0" "$(rc_of oe_lease_register_session "$L1" sid-2 201 "$S2")"
+L6="$(oe_lease_create delegation '#580' /ws "")"
+ck "claim: ほかの lease にある session_id なら 8" "8" "$(rc_of oe_lease_claim "$L6" 0 201 "$S2" claude sid-1)"
+ck "claim: 8 で止まったときは binding も epoch も変えない" "null:0" "$(oe_lease_get "$L6" | jq -r '"\(.generations[0].binding):\(.epoch)"')"
+ck "claim: binding と session_id を一緒に書く" "0" "$(rc_of oe_lease_claim "$L6" 0 302 "$S3" claude sid-6)"
+ck "claim のあと" "302:sid-6:1" "$(oe_lease_get "$L6" | jq -r '"\(.generations[0].binding.pid):\(.generations[0].session_ids[0]):\(.epoch)"')"
+oe_lease_close "$L6"
 ck "session_id で探す" "${L1}${TAB}1" "$(oe_lease_find_by_session sid-2)"
 
 echo "=== (6) generation を進める・親・閉じる ==="
@@ -171,6 +188,7 @@ ck "前の generation は退任" "retired" "$(oe_lease_get "$L1" | jq -r '.gener
 ck "前の generation の後任" "2" "$(oe_lease_get "$L1" | jq -r '.generations[0].successor')"
 ck "いまの generation" "2" "$(oe_lease_get "$L1" | jq -r '.current_generation')"
 ck "進めたあとも検査を通る" "0" "$(rc_of "$VALIDATE" "$OE_LEASE_DIR/$L1.json")"
+ck "同じ lease の退任した generation の session_id は、いまの generation に登録しない" "8" "$(rc_of oe_lease_register_session "$L1" sid-1 302 "$S3")"
 ck "recover は前の binding が生きていれば断る" "5" "$(rc_of oe_lease_advance "$L1" 3 recover 201 "$S2" claude)"
 sed -i.bak "s/^302|/312|/" "$PS_TABLE"
 ck "recover は前の binding が死んでいれば進める" "3" "$(oe_lease_advance "$L1" 3 recover 201 "$S2" claude)"
@@ -204,7 +222,8 @@ ck "resolve: binding が無ければ rc 9" "9" "$(OE_LEASE_SERVER_PID=900 rc_of 
 rm -f "$OE_HEARTBEAT_DIR"/*.json
 
 echo "=== verb: oe-lease ==="
-out="$(CLAUDE_PID=302 CLAUDE_CODE_SESSION_ID=sid-root "$OE_LEASE_BIN" create --root --label cockpit -w /ws --generation 22)"
+mkdir -p "$_TMP_DIR/wsx"
+out="$(CLAUDE_PID=302 CLAUDE_CODE_SESSION_ID=sid-root "$OE_LEASE_BIN" create --root --label cockpit -w "$_TMP_DIR/wsx" --generation 22)"
 ck "create --root は lease_id を出す" "26" "${#out}"
 ck "create --root は自分を binding に書く" "302" "$(oe_lease_get "$out" | jq -r '.generations[0].binding.pid')"
 ck "create --root は自分の session_id を登録する" "sid-root" "$(oe_lease_get "$out" | jq -r '.generations[0].session_ids[0]')"
@@ -212,11 +231,18 @@ ck "create --root は generation を渡した番号から始める" "22" "$(oe_l
 ck "create --root は CLAUDE_PID が無ければ止まる" "2" "$(rc_of "$OE_LEASE_BIN" create --root --label cockpit2)"
 ck "whoami（session_id）" "$out" "$(CLAUDE_CODE_SESSION_ID=sid-root "$OE_LEASE_BIN" whoami | jq -r '.lease_id')"
 ck "whoami: 退任した generation は exit 7" "7" "$(CLAUDE_CODE_SESSION_ID=sid-1 rc_of "$OE_LEASE_BIN" whoami)"
-ck "bind: 前が生きていれば exit 5" "5" "$(CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-new rc_of "$OE_LEASE_BIN" bind "$out")"
+ck "bind: 前が生きていれば exit 5" "5" "$(CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-new rc_of "$OE_LEASE_BIN" bind "$out" -w "$_TMP_DIR/wsx" --owner-confirmed)"
 sed -i.bak "s/^302|/322|/" "$PS_TABLE"
-ck "bind: 前が死んでいれば張り替えて session_id を登録する" "0" "$(CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-new rc_of "$OE_LEASE_BIN" bind "$out")"
+ck "bind: 前が死んでいれば張り替えて session_id を登録する" "0" "$(CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-new rc_of "$OE_LEASE_BIN" bind "$out" -w "$_TMP_DIR/wsx" --owner-confirmed)"
+ck "bind（方法2）: もう記録にある session_id なら確かめを求めない" "0" "$(CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-new rc_of "$OE_LEASE_BIN" bind "$out" -w /nonexistent)"
 ck "bind のあとの session_id" "sid-root,sid-new" "$(oe_lease_get "$out" | jq -r '.generations[0].session_ids | join(",")')"
 mv "$PS_TABLE.bak" "$PS_TABLE"
+RL="$(oe_lease_find_by_session sid-root | cut -f1)"
+ck "bind（方法3）: workspace が違えば exit 10" "10" "$(CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-m3 rc_of "$OE_LEASE_BIN" bind "$RL" -w "$_TMP_DIR")"
+ck "bind（方法3）: workspace のディレクトリが無いときに一致と読まない" "10" "$(CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-m3 rc_of "$OE_LEASE_BIN" bind "$RL" -w /nonexistent-a)"
+ck "bind（方法3）: 統括の lease は --owner-confirmed が無ければ exit 10" "10" "$(CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-m3 rc_of "$OE_LEASE_BIN" bind "$RL" -w "$_TMP_DIR/wsx")"
+ck "bind（方法3）: 確かめを付けても、前の binding が生きていれば exit 5" "5" "$(CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-m3 rc_of "$OE_LEASE_BIN" bind "$RL" -w "$_TMP_DIR/wsx" --owner-confirmed)"
+ck "create --root: もう開いた lease にある session_id なら exit 8" "8" "$(CLAUDE_PID=302 CLAUDE_CODE_SESSION_ID=sid-root rc_of "$OE_LEASE_BIN" create --root --label cockpit3)"
 ck "resolve: label が無ければ exit 1" "1" "$(rc_of "$OE_LEASE_BIN" resolve '#nothing')"
 ck "show" "cockpit" "$("$OE_LEASE_BIN" show "$out" | jq -r '.label')"
 ck "unknown subcommand は exit 2" "2" "$(rc_of "$OE_LEASE_BIN" frobnicate)"
@@ -252,6 +278,8 @@ ck "active が2つ" "1" "$(bad '.generations |= map(.state="active" | .retired_a
 ck "binding のコマンドが claude でない" "1" "$(bad '.generations[-1].binding.comm="bash"')"
 ck "session_id が2つの generation に重なる" "1" "$(bad '.generations[1].session_ids = .generations[0].session_ids')"
 ck "閉じていないのに closed_at がある" "1" "$(bad '.closed_at="2026-11-06T00:00:00Z"')"
+ck "started_at が文字列でない" "1" "$(bad '.generations[0].started_at=123')"
+ck "successor が整数でない" "1" "$(bad '.generations[0].successor=1.5')"
 ck "ファイルが無ければ exit 2" "2" "$(rc_of "$VALIDATE" "$_TMP_DIR/none.json")"
 
 echo "=== (10) 本物に届く経路が無い ==="

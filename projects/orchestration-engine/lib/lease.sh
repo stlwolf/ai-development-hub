@@ -70,7 +70,15 @@ _oe_lease_lock() {
     owner="$(cat "${lock}/pid" 2>/dev/null)" || owner=""
     if { [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; } \
        || { [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_LEASE_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; }; then
-      if mv "$lock" "${lock}.stale.$$" 2>/dev/null; then rm -rf "${lock}.stale.$$" 2>/dev/null; fi
+      if mv "$lock" "${lock}.stale.$$" 2>/dev/null; then
+        # 持ち去ったロックの持ち主が、読んだ持ち主と同じかを確かめる。違えば、別のプロセスが先に引き取って
+        # 取り直した生きたロックを持ち去っている（実装SO の指摘）。そのときは元に戻す。
+        if [ "$(cat "${lock}.stale.$$/pid" 2>/dev/null)" = "$owner" ]; then
+          rm -rf "${lock}.stale.$$" 2>/dev/null
+        else
+          mv "${lock}.stale.$$" "$lock" 2>/dev/null || rm -rf "${lock}.stale.$$" 2>/dev/null
+        fi
+      fi
       continue
     fi
     i=$((i + 1))
@@ -203,12 +211,73 @@ oe_lease_register_session() {
       if [ "$rc" -eq 0 ]; then
         if printf '%s' "$cur" | jq -e --argjson g "$gen" --arg s "$sid" 'any(.generations[]; .generation==$g and ((.session_ids // []) | index($s)))' >/dev/null; then
           rc=0  # もう入っている
+        elif printf '%s' "$cur" | jq -e --arg s "$sid" 'any(.generations[]; (.session_ids // []) | index($s))' >/dev/null; then
+          rc=8  # 同じ lease の別の generation（退任した代など）に入っている。2か所に入れない
         else
           _oe_lease_write "$file" "$(printf '%s' "$cur" | jq -c --argjson g "$gen" --arg s "$sid" '
             .generations |= map(if .generation == $g then .session_ids += [$s] else . end)')" || rc=2
         fi
       fi
     fi
+  fi
+  _oe_lease_unlock "$lock"; _oe_lease_unlock "$glock"
+  return "$rc"
+}
+
+# --- 本人が binding と session_id を一緒に取る（bind の verb と create --root が使う） ---
+# oe_lease_claim <lease_id> <expect_epoch> <pid> <started> <comm> <session_id>
+#   binding の張り替え（oe_lease_bind と同じ決まり）と session_id の登録（oe_lease_register_session と同じ決まり）を、
+#   すべての lease に共通のロック → lease のロックの中で確かめてから、1回の書き込みで行う。session_id がほかの
+#   開いた lease か、同じ lease の別の generation にあれば、binding も変えずに 8 で止まる（実装SO の指摘）。
+oe_lease_claim() {
+  local id="${1:-}" expect="${2:-}" pid="${3:-}" started="${4:-}" comm="${5:-}" sid="${6:-}" file glock lock rc=0 cur gen old_pid old_started f other self=0 now
+  _oe_lease_valid_id "$id" || return 2
+  case "$expect" in ''|*[!0-9]*) return 2 ;; esac
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  case "$sid" in ''|*[!A-Za-z0-9._-]*) return 2 ;; esac
+  [ -n "$started" ] || return 2
+  case "$comm" in *claude*) ;; *) return 6 ;; esac
+  _oe_lease_ready || return 2
+  file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
+  glock="${OE_LEASE_DIR}/.sessions.lock"; lock="${file}.lock"
+  _oe_lease_lock "$glock" || return 4
+  if ! _oe_lease_lock "$lock"; then _oe_lease_unlock "$glock"; return 4; fi
+  cur="$(cat "$file")" || rc=2
+  started="$(_oe_tpi_norm "$started")"
+  if [ "$rc" -eq 0 ]; then
+    gen="$(printf '%s' "$cur" | jq -r '.current_generation')"
+    if [ "$(printf '%s' "$cur" | jq -r '.state')" != "open" ]; then rc=7
+    elif [ "$(printf '%s' "$cur" | jq -r '.epoch')" != "$expect" ]; then rc=3
+    elif [ "$(printf '%s' "$cur" | jq -r --argjson g "$gen" '.generations[] | select(.generation==$g) | .state')" != "active" ]; then rc=7
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    for f in "$OE_LEASE_DIR"/*.json; do
+      [ -f "$f" ] || continue
+      [ "$f" != "$file" ] || continue
+      other="$(jq -r --arg s "$sid" 'select(.state=="open") | select(any(.generations[]; (.session_ids // []) | index($s))) | .lease_id' "$f" 2>/dev/null)"
+      if [ -n "$other" ]; then rc=8; break; fi
+    done
+  fi
+  if [ "$rc" -eq 0 ] && printf '%s' "$cur" | jq -e --argjson g "$gen" --arg s "$sid" 'any(.generations[]; .generation != $g and ((.session_ids // []) | index($s)))' >/dev/null; then
+    rc=8
+  fi
+  if [ "$rc" -eq 0 ]; then
+    old_pid="$(printf '%s' "$cur" | jq -r --argjson g "$gen" '.generations[] | select(.generation==$g) | (.binding.pid // "") | tostring')"
+    old_started="$(printf '%s' "$cur" | jq -r --argjson g "$gen" '.generations[] | select(.generation==$g) | (.binding.started // "")')"
+    if [ -n "$old_pid" ] && [ "$old_pid" = "$pid" ] && [ "$(_oe_tpi_norm "$old_started")" = "$started" ]; then self=1
+    elif [ -n "$old_pid" ] && [ "$(oe_tpi_proc_state "$old_pid" "$old_started")" != "dead" ]; then rc=5
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    now="$(_oe_lease_now_iso)"
+    _oe_lease_write "$file" "$(printf '%s' "$cur" | jq -c --argjson g "$gen" --argjson pid "$pid" --arg st "$started" \
+        --arg comm "$comm" --arg now "$now" --arg s "$sid" --argjson self "$self" '
+      (if $self == 1 then . else .epoch += 1 end)
+      | .generations |= map(if .generation == $g then
+          (if $self == 1 then . else .binding = { pid: $pid, started: $st, comm: $comm, bound_at: $now } end)
+          | (if ((.session_ids // []) | index($s)) then . else .session_ids += [$s] end)
+        else . end)')" || rc=2
   fi
   _oe_lease_unlock "$lock"; _oe_lease_unlock "$glock"
   return "$rc"
