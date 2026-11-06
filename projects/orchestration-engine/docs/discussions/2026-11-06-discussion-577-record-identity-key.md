@@ -219,11 +219,14 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   - `binding` を張り替えてよいのは、いまの `binding` のプロセスが生きていないと機械で確かめられたとき（DJ-9）か、張り替えるプロセスがいまの `binding` のプロセスそのものであるときだけである。生きているか分からないときは張り替えず、人の判断に回す。
   - `generation` を進めてよいのは、前の `generation` が退任を申告したとき（計画的な交代の `oe-handoff take`）か、前の `generation` の `binding` のプロセスが生きていないと機械で確かめられたとき（復帰）だけである。
 - 2つの resume が同時に同じ `lease` を取ろうとしたときは、ロックの中で先に書いた側が `binding` を変えるので、あとの側は期待する値と合わずに失敗する。
+- この決まりが保証するのは「正本の `binding` が1つになる」までである。復帰のコマンドは先に `claude --resume` を起こし、その会話があとで `oe-lease bind` を打つので、2つ起こせば、compare-and-swap の勝ち負けが決まる前に同じ会話のプロセスが2つ動く。負けた側は bind で失敗して統括の操作に進まない、までを保証の範囲とする（ゲート2 の Codex のやり直しの指摘）。
 - 遅れて届いた前任の heartbeat は、`lease` のファイルを書かない（DJ-3）。読む側は、sidecar の `lease` と `generation` と session_id が、いまの `generation` と `binding` に合うものだけを使う。古い `generation` の sidecar は候補から外れる。
 - 確定版の［別モデル］の「取ったことを1つに確定し、古い `generation` からの書き換えを拒む決まり」はこれで満たす。
 - `lease` の記録には、`binding` か `generation` が変わるたびに1つ増える番号（`epoch`）を持つ。verb が `lease` の記録を書くときも、読んだときの番号と書く直前の番号が同じであることを確かめる（ゲート1 の Codex の指摘）。
 - 交代（`oe-handoff take`）は、いまは自己の registry・board の張り替え・交代の event の3つを順に書き、全体は原子的でない [verified]（`bin/oe-handoff` の take の節）。この設計では、`lease` の記録の1回の書き込みを commit point にし、board の行・registry の複製・event は、`lease` の記録から作り直せる派生の記録にする。途中で止まったら、同じ verb をもう一度走らせると、`lease` の記録に合わせて派生の記録を直す（ゲート1 の Codex の指摘）。
 - 1つの session_id は、開いた `lease` の `generation` の session_id の並びのうち、1か所にしか入らない。`binding` の verb は、自分の session_id がほかの開いた `lease` にすでに入っていれば、`binding` せずに止まる（ゲート2 の Cursor の指摘。この並びが2か所に入ると、DJ-7 の 2 の照合がどちらの `lease` か決められない）。
+- この一意性は、`lease` ごとのロックだけでは守れない。別々の `lease` に同時に bind する2つが、互いの書きかけを見ずに両方成功しうる。session_id を登録する操作（bind と、DJ-18 の登録）は、すべての `lease` に共通の1つのロックの中で、ほかの開いた `lease` の並びを確かめてから書く（ゲート2 の Codex のやり直しの指摘）。
+- 親の `lease` を書き換える（子を自分の下に付ける）ときも `epoch` を増やす。増やさないと、2つの付け替えが同じ `epoch` を読み、順に両方成功する（ゲート2 の Codex のやり直しの指摘）。
 - 子を自分の下に付ける registry（`oe-register link`）は、いまは読む・確かめる・書くが原子的でない [verified]（`bin/oe-register` の冒頭の注記「限界（TOCTOU）」）。`lease` の記録では、子の `lease` の親を書き換えるときも、子の `lease` のファイルのロックの中で比べてから書く（ゲート1 の Cursor の指摘）。
 
 ### DJ-6 送る前の確かめ
@@ -239,6 +242,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 確定版の［別モデル］の「ID から引いたペインに、操作する時点でも同じ相手がいるかの確かめ。対応を確かめられないときに止める決まり」はこれで満たす。
 - （**owner の答え Q76 で外した**・2026-11-06 22:00 回収）Enter の前に 4 の確かめをもう一度行う案。外したので、確かめと Enter のあいだの窓は receipt で後から見つけるだけになる。
 - 残る穴: いまの送り方は、文字を入れる・待つ・Enter を送る・場合によって Enter を送り直す、の複数の操作である [verified]（`lib/delegate-send.sh` の `oe_send_line`）。確かめたあと、Enter を送るまでのあいだにペインの中身が替わる窓は閉じられない（ゲート1 の Codex の指摘）。（Enter の前の確かめ直しは owner の答え Q76 で外した。）残る取り違えは、receipt（送った1行の nonce と、受け取ったペインの組）で後から見つける。完全に防ぐとは書かない。
+- この窓の取り違えのうち、確かめたあとに同じペインの中で会話が替わった場合（`/clear` や、同じペインでの claude の起こし直し）は、受け取ったペインと nonce が一致するので、いまの receipt では見つけられない。receipt で見つけられるのは、別のペインに届いた場合までである（ゲート2 の Codex のやり直しの指摘）。
 - background への fork（#338）でプロセスが替わると、フォアグラウンドのプロセスが `binding` と合わなくなるので、送らずに外れる。fork 先を自動で `lease` の持ち主にはしない（ゲート1 の2つのレーンの指摘）。hub の設定はすでに background への行き来を止めている [unverified-summary]（`canonical/claude/settings.harness.json` の `disableAgentView` の注記・棚卸しの調査の報告による）。
 
 ### DJ-7 resume したセッションが自分の ID を知る方法（owner に聞いた）
@@ -247,6 +251,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   1. 環境変数 `OE_LEASE_ID` と `OE_GENERATION`。`oe-delegate` が子を起こすときに入れる（いまの `PARENT_TMUX_PANE` と同じ入れ方 [verified]（`bin/oe-delegate` の `cmd="PARENT_TMUX_PANE=... claude"`））。resume のときは、復帰の手順が出すコマンド（`OE_LEASE_ID=<lease_id> OE_GENERATION=<generation> claude --resume <session_id>`）で入る。
   2. 自分の `CLAUDE_CODE_SESSION_ID` が、ある `generation` の session_id の並びに入っていること。`--resume <id>` では resume した id が入るので、これで決まる。id を付けない resume でも、公式の文書の読みでは Bash と hook にいまの session_id が入るので決まるはずだが、確かめていない（§2.2・plan の R1）。
   3. 会話の記録（brief・引き継ぎ文書）に書いてある `lease_id` を、セッション自身が読み、`oe-lease bind` に渡す。verb は、2 の照合か、いまの `binding` のプロセスが生きていないことの確かめ（DJ-9）が通ったときだけ `binding` を張り替える。2 の照合が通らずに 3 だけで名乗るときは、`lease` の workspace が自分の workspace と一致することを確かめ、統括の `lease` なら owner の確かめを1回求めてから張り替える。ULID を読み違えた `lease` の前の `binding` が、たまたま生きていなければ、機械の確かめだけでは別の `lease` を取ってしまうためである（ゲート2 の Cursor の指摘）。復帰はもともと owner が「復帰して」と頼んで始まるので、確かめはその流れの中で取れる。
+  - 1〜3 の方法は「どの `lease` と `generation` か」を決めるだけで、`binding` を張り替えてよいかは、どの方法でも必ず DJ-5 の決まり（前の `binding` のプロセスが生きていないと機械で確かめられたか、本人か）を通す。session_id が一致しても、同じ会話を2つ resume した別のプロセスは本人の `binding` ではないためである（ゲート2 の Codex のやり直しの指摘）。
 - 推奨: **resume の打ち方の決まりは、この設計では確定しない（owner の答えで、計測のあとに決める）。** 最初の推奨（id を付けた resume を決まりにする）は、公式の文書の行を取り違えた前提に立っていた（§2.2）。統括は問いを取り下げ、「実機で確かめてから決まりにするかを決める」を推奨にした問いに置き換えた（2026-11-06）。この discussion の側の見立ては、次のとおりである。1 の環境変数を入れるには、どのみち復帰の手順が出すコマンドを写して打つことになるので、そのコマンドに id を付けておく費用は小さい。id を付けない resume で 2 が成り立つかは、R1 の実機で確かめてから決めればよい。
 - 確定版は「自分のペインの heartbeat から session_id を引き、ID の記録に照らせば決まる見込み」と書いていた。この方法は、ペインが使い回されて新しいセッションがまだ heartbeat を書いていないあいだに、別の `generation` を自分と取り違えうる（DJ-6 の穴と同じ）。上の 1 と 2 は、セッションの内側の値（環境変数）なので、この穴を持たない。
 - owner の答え（2026-11-06・判断ボードの Q69）: 「実機で確かめてから決まりにするかを決める」を選んだ。補足は「一次情報に当たろう。推測するな計測せよ」。
@@ -265,6 +270,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - negative knowledge `01KZKWJM1KTAFN22XK0WP0F96J` の外れ方を当てた。1つ目（累積 CPU 時間の変化量）と2つ目（1枚の画面）は使っていない。3つ目（`capture-pane` の既定が属性を落とし、補完の薄い文字を実入力と取り違える）も、画面を読まないので当たらない。この決まりが言えるのは「プロセスが生きているか」までで、「入力を待っている」「止まっている」は言えない。owner の答え（#577 の本文）の「同じセッションを2か所で開く件は、生きていないことを機械で確かめてから走らせればよい」は、この確かめを DJ-5 の張り替えの前提に置くことで満たす。
 - `binding` するときに、その pid のプロセスのコマンドが claude であることを確かめ、そうでなければ `binding` しない。シェルの pid を誤って `binding` すると、シェルが残るかぎり「生きている」と判定し続け、張り替えられなくなるためである（ゲート2 の Cursor の指摘。いまの `oe-handoff retire` もコマンド名で claude を求めている [verified]（`bin/oe-handoff` の retire の `oe_hs_pid_command` の照合））。`binding` したあとの生死は pid と開始時刻で見る（同じ pid と開始時刻のプロセスのコマンドは変わらない）。
 - `binding` の pid が記録に無い `generation` は、生きているか分からないとして扱い、張り替えない（人の判断に回す）。
+- プロセスの問い合わせ（`ps`）が失敗したときや出力が取れなかったときは、「生きていない」に畳まず「分からない」として張り替えない。判定は、ある・無い・分からない、の3つで返す（ゲート2 の Codex のやり直しの指摘）。
 - この決まりは、`oe-handoff retire` の「シェルで始まるペインの前任を閉じられない」も解く。閉じる直前に、ペインの端末のフォアグラウンドのプロセスが前任の `generation` の `binding` の pid と開始時刻に一致すれば、そのペインにいまいるのは前任本人である。`#{pane_pid}` がシェルでも判定できる。#355 の 2026-11-05 のコメントの「判定の案」の 2 と同じ形で、記録する場所が引き継ぎ文書の機械の節でなく `lease` の記録になる。
 
 ### DJ-10 transport を何にするか（owner に聞いた）
@@ -304,6 +310,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 
 - 決まり: 統括の `lease` の「いまの `generation`」と `binding` を、`lease` の記録が機械の正本として持つ。succession board の `現統括:` の行は、`oe-handoff take` が `lease` の記録を書いたあとに、人が読むための表示として書き続ける。`oe-vitals` は `lease` の記録を読む側に切り替える。
 - 理由: decision #238 の board schema の §9 は、board の `現統括` を正本にするなら「読み手（`oe-vitals`）と書き手（#390 の verb）を同時に切り替える」作業として切れ、と書いている [verified]（`projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md` の §9「移行するときに何が起きるか」）。この設計は正本を board の外に移すので、読み手と書き手を同じ PR で切り替える（plan の PR 分け）。board の散文の形は変えない（§9 の「当面は legacy の自由記述を続ける」を守る）。
+- 三者同期を避ける、とは、三者が常に一致することではなく、一致していなくても機械の判断が1つに決まることである。board の行の書き換えに失敗しても、確定した `lease` の記録を巻き戻したり取り直したりしない（ゲート2 の Codex のやり直しの指摘）。
 - decision #238/#239 は seat を「新正本にすると board/seat/registry の三者同期が生じる」として先送りした [verified]（同 decision の「lean を選び seat-keystone を却下した理由」）。この設計では、board の行は表示、registry は移行のあいだの複製、`lease` の記録が正本、と役割を分けるので、三者のどれが正しいかを読み手が選ぶことはない。先送りの再開の条件「報告 stranding が再発したら」は、10-27 の「別のリポジトリはペインが消えて子3本の宛先が切れた」で当たっている [verified]（#355 の見取り図の「実例」の表）。
 
 ### DJ-13 events
@@ -358,13 +365,14 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   - (a) 起こした側の verb が書く。`oe-delegate`（と `oe-handoff start`）は、子のペインの生存を確かめる時点で、そのペインの端末のフォアグラウンドのプロセスの pid と開始時刻を読み、コマンドが claude であることを確かめて `binding` に書く。
   - (b) 子が brief を読んで、自分で `oe-lease bind` を打つ。
   - (c) SessionStart の hook が書く。
-- 推奨: 起こした子と後継は (a)、手で立てた統括は本人が `oe-lease create --root`（いまの `oe-register root` に当たる）を Bash で打つ形にする。session_id は、最初の1つも `/clear` のあとのものも、`oe-lease` の verb が読むときに足す。足してよいのは、heartbeat の sidecar の `lease_id` と `generation`（環境変数から書かれたもの）が一致し、`binding` のプロセスが生きているときだけで、ロックの中で足す。session_id を足しても所有は変わらないので、`epoch` は増やさない。
+- 推奨: 起こした子と後継の `binding` は (a)、手で立てた統括は本人が `oe-lease create --root`（いまの `oe-register root` に当たる）を Bash で打つ形にする。session_id を正本に登録するのは、本人が動かす `oe-lease` の verb（create・bind・送信）だけにする。その verb は、自分の `CLAUDE_PID` が `binding` の pid と一致するときに、自分の `CLAUDE_CODE_SESSION_ID` を登録する。最初の1つも `/clear` のあとのものも同じである。heartbeat の sidecar の `lease_id` と `generation` は、候補のペインを探す手がかりにだけ使い、session_id の登録の根拠にはしない。session_id を足しても所有は変わらないので、`epoch` は増やさない（P4 では sidecar から足す形にしていたが、ゲート2 の Codex のやり直しで2つの穴が分かって直した。手で立てた統括は環境に `OE_LEASE_ID` を持たないので sidecar に `lease_id` が載らず、最初の session_id が登録されない。sidecar にはプロセスの識別子が無いので、遅れて届いた古いプロセスの sidecar からも足してしまう）。
 - 理由:
   - (a) は、機械が決まった時点で書く。`oe-delegate` は claude をペインのコマンドとして起こし、4秒待ってからペインの生存を確かめている [verified]（`bin/oe-delegate` の `build_child_command` と「子ペインの生存確認」の節）。そのため、その時点のペインの最初のプロセスもフォアグラウンドのプロセスも claude である。この子のペイン（`oe-delegate` が起こした）でも、`#{pane_pid}` と端末のフォアグラウンドのプロセスグループの番号が `CLAUDE_PID` と一致した [verified]（episode の「実機で確かめた2つの観測」）。ただし、4秒のあいだに claude がまだ起動の途中である場合の値は確かめていない。PR-2 で確かめる（plan の R4）。
   - (b) はモデルが brief を守るかに頼る。守らなければ、`binding` の無い `lease` が残り、DJ-9 で「生きているか分からない」に倒れ続ける。
   - (c) は、hook を土台にしないという #355 の線と、Claude Code への依存を深めないという owner の答え（Q67）に反する。
   - 手で立てた統括は、起こした側がいないので本人が打つしかない。本人の Bash には `CLAUDE_PID` と `CLAUDE_CODE_SESSION_ID` が入っているので、推し量らずに書ける。
-  - session_id を読むときに足す形にすると、`/clear` のあとも、`binding` のプロセスが同じなら席との結び付きが自動で戻る。環境変数が無い（`OE_LEASE_ID` を持たない）プロセスの sidecar からは足さない。
+  - 本人の verb が自分の環境の値で登録する形なら、推し量りが入らない。子は報告のときに必ず `oe-send --to-parent` を打つので、最初の報告で session_id が登録される。`/clear` のあとも、次に本人が verb を打った時点で足される。観測者（`oe-tree` など）は登録をしないので、decision #188 の DJ-188-5（観測者は読むだけ）とも食い違わない。
+  - 起動の確かめの時点で claude を確かめられなければ（R4 で外れたとき）、`binding` を未確定のまま止める。「4秒経ったから claude だ」とは決めない。
 - 確定版に無い判断として plan の N12 にした。
 
 ### DJ-19 ペインの本人確認を1つの関数にし、どこに置くか（P4・分身レビューの指摘）
@@ -375,6 +383,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
   - (b) tmux に固有の確かめだけを集めた小さな lib（`lib/tmux-pane-identity.sh` など）に置き、`lib/delegate-send.sh` と、adopt・retire・`oe-jump`・`oe-select` がそれを読み込む。
   - (c) `lib/handoff-state.sh` に置く。`pane_pid` とそのコマンド名を引く関数が、すでにここにある。
 - 推奨: (b)。PR-1 で作る。
+- adopt の使い方は、ほかの4つと違う。ほかの4つは既にある `binding` との照合で、adopt は `binding` が無いところから最初の `binding` を見つける。同じ関数の中で、照合の成功と、発見の成功を分けて返す（ゲート2 の Codex のやり直しの指摘）。
 - 理由: 確かめ自体は tmux に固有（ペインから端末を引く）なので、transport を替えるときに一緒に替わる。その点では (a) と同じ向きである。ただし retire・`oe-jump`・adopt は文を送らないので、(a) にすると送る処理の lib ごと読み込むことになる。(c) は交代の lib で、送信や `oe-select` から読むと役割が混ざる。(b) なら、tmux に固有の部分がひとまとまりになり、`lib/delegate-send.sh` の冒頭の説明（N11 の1行）から、この lib も指せる。
 - 確定版に無い判断として plan の N13 にした。
 
@@ -384,7 +393,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - 選択肢:
   - (a) `oe-report` を、`oe-send --to-parent` を呼ぶだけの薄い入口にする。
   - (b) `oe-report` を廃止し、`oe-send --to-parent` に一本化する。
-- 推奨: (b)。`/tmp/oe-parent-<N>`（N9）と同じ PR-3 で消す。
+- 推奨: (b)。ただし消すのは、移行の片付け（PR-6）で、`oe-report` を呼びうる古い子が残っていないと確かめてからにする。PR-3 では、配っているスキルの文を `oe-send --to-parent` に替えるところまでにする。起動済みの子の会話や brief に `oe-report` の呼び出しが残っていると、PR-3 で消したとたんに失敗するためである（ゲート2 の Codex のやり直しの指摘）。`/tmp/oe-parent-<N>`（N9）も同じ PR-6 で消す。
 - 理由: 配布しているスキル（`delegate-task`）の方針はすでに `oe-send` への一本化で、委譲固定節も「交代のあとは `oe-report` を使わない」と書いている [unverified-summary]（棚卸しの §3.4）。入口が2本あると、古い入口だけが古い宛先を引く、という今の取り違えが残る。(a) にしても、呼ぶ人が `oe-report` と `oe-send --to-parent` のどちらを選ぶかの迷いは残る。
 - 確定版に無い判断として plan の N14 にした。
 
@@ -398,7 +407,7 @@ decision の案に書く内容の下書きである。
   - DJ-188-3（永続の対応表を作らず、読むときに突き合わせる）は、tmux の子と統括について置き換える。「誰か」（`lease` と `generation`）は永続の記録にする。ただし属性（ペインと server）は、いままでどおり読むときに heartbeat と突き合わせる（DJ-3）。
   - DJ-188-4（#206 で精緻化済み）は残す。event は自己完結の snapshot のままで、snapshot に `lease_id` を足す（DJ-13）。
   - DJ-188-5（read-only は観測者を縛る）は残す。この設計は producer の側（verb）に新しい write path を足す。観測者（`oe-tree` など）は読むだけのままである。DJ-188-5 の「本決定は新規書込経路を一切導入しない」は #188 自身の範囲を言った文で、のちの決定を縛るものではないが、#188 の frontmatter は「DJ-188-1/2/3/5 は不変」と書いている。この decision が確定したら、frontmatter に「DJ-188-3 の `oe-delegate`（tmux）の部分を #577 で置き換えた。DJ-188-5 の観測者の線は残る」を足す（ゲート2 の Cursor の指摘）。
-- **#206**: DJ-206-1（自己完結の snapshot）と DJ-206-3（語彙は足すだけ）に従う。#206 が後回しにした「server の pid を記録に含めない現状では、同じ server の `%N` の再利用で別の関係が混ざりうる」は、`lease_id` を写しに足すことで解く。
+- **#206**: DJ-206-1（自己完結の snapshot）と DJ-206-3（語彙は足すだけ）に従う。#206 が後回しにした「server の pid を記録に含めない現状では、同じ server の `%N` の再利用で別の関係が混ざりうる」は、`lease_id` を snapshot に足すことで、足したあとの新しい event について解く。足す前の、`%N` だけの event は、後から確実には見分けられない（ゲート2 の Codex のやり直しの指摘）。
 - **board schema の §9**: §9 は「移行後は frontmatter の `現統括` が正本になる」と、将来の board の正本を書いている [verified]（`projects/orchestration-engine/docs/decisions/2026-07-10-decision-238-board-schema.md` の §9「移行するときに何が起きるか」）。この設計は機械の正本を `lease` の記録に置くので、その将来の前提と食い違う。decision の案で、§9 の前提を「board の `現統括` は、frontmatter に移しても表示であり、機械の正本は `lease` の記録である」に上書きすると明記する。§9 の「読み手と書き手を同時に切り替える」の原則は、この設計の切り替え（PR-4）にもそのまま当てる。`scripts/validate-board.sh` が `現統括` のキーを見ることは、表示の行があるかの検査として残す（ゲート2 の Cursor の指摘）。
 - **#238/#239**: lean の決定（新しい engine state を作らない・seat は薄い pointer として先送り）を、identity（誰か）について覆す（P4 で「先送りを始める」から言い直した。`lease` は #238/#239 が退けた新しい正本そのものなので、「始める」では覆していることが見えない）。先送りの再開の条件に当たっているかは HG の判断なので、ゲート3 で owner に見せる。先送りの理由だった三者同期（board・seat・registry）は、役割を分けて避ける（DJ-12）。declared の層（board）は人が書く表示として残り、observed の層（watchdog・`oe-vitals`）は `lease` の記録を読む。statusline の heartbeat（producer）と sidecar の形は変えず、項目を足すだけにする。
 
@@ -456,3 +465,30 @@ Codex は、案C で足りる条件を「復帰中は送信を止める・同じ
 
 - 指摘が無かった点: `lease_id` あての送り方と取り合いの compare-and-swap・heartbeat の古さを死の根拠にしないこと・`/clear` で `generation` を進めないこと・engine の `oe`（WezTerm）を範囲の外に置くこと・event の snapshot に足すだけにすること。
 - Codex のレーンは、利用上限が戻る時刻（04:41）のあとに同じプロンプトでやり直せる。やり直すかは統括が決める（plan の「設計SO」の節）。
+
+### Codex でのやり直し（owner の答え Q74・2026-11-06）
+
+- 道具: `so-compare --codex-only`。プロンプトと出力は、統括のワークスペースの根の `tmp/577-record-identity/gate2-codex-prompt.md` と `tmp/577-record-identity/so-gate2-codex/` にある。前のプロンプトを、owner の答えと P4 の新しい DJ（DJ-18〜DJ-20）に合わせて直し、owner がすでに決めたことは覆さず、その中で崩れる場面を挙げるよう頼んだ。各指摘に、重さ・起きる確実さ・被害の大きさを分けて書かせた。
+- レーン: Codex（`gpt-6.1-sol`・設定から解決・322秒・初回で返った）。
+- 採否の基準: owner の補足（「些事や低リスク〈発生頻度を含む〉のところまで無理に取り入れる回し方はしない」）に従い、重さが高のものはすべて採り、起きる確実さと被害がどちらも低か、どちらかが低で直しに設計の判断を足すものは採らなかった。文の言い過ぎを直すだけで済むものは、確実さが低くても採った。
+
+| 重さ（確実さ・被害） | 指摘 | 採否 | 直したところ・採らない理由 |
+|---|---|---|---|
+| 高（高・高） | 手で立てた統括は環境に `OE_LEASE_ID` を持たないので、sidecar からだけ session_id を足す DJ-18 では、最初の session_id が登録されない | 採った | DJ-18: session_id を正本に登録するのは本人が動かす verb だけにし、自分の `CLAUDE_PID` が `binding` と一致するときに自分の `CLAUDE_CODE_SESSION_ID` を登録する |
+| 中（中・中） | sidecar にプロセスの識別子が無いので、遅れた古いプロセスの sidecar からも session_id を足してしまう | 採った | DJ-18: sidecar は候補を探す手がかりにだけ使い、登録の根拠にしない（上と同じ直しで消えた） |
+| —（指摘なし・注意） | 起動の確かめで claude を確かめられなければ、`binding` を未確定で止める | 採った | DJ-18 に1行足した |
+| —（注意） | adopt は照合でなく最初の発見なので、成功の条件を分ける | 採った | DJ-19 に1行足した |
+| 中（低・中） | `oe-report` を PR-3 で消すと、起動済みの子の呼び出しが失敗する | 採った | DJ-20: 消すのを PR-6（古い子が残っていないと確かめてから）に移した。直しが置き場の移動だけで、設計の判断を足さないので採った |
+| 高（低・高） | `ps` の失敗を「プロセスなし」に畳むと、生きた `binding` を死と誤判定する | 採った | DJ-9: ある・無い・分からない、の3つで返す。DJ-5 の「分からなければ張り替えない」をそのまま実装に当てる文にした |
+| 中（中・中） | compare-and-swap は二重の起動までは防がない（resume を先に起こすので） | 採った（言い過ぎの直し） | DJ-5: 保証の範囲を「正本の `binding` が1つ・負けた側は統括の操作に進まない」までと書いた |
+| 高（中・高） | session_id の一意性は、`lease` ごとのロックでは守れない | 採った | DJ-5: session_id を登録する操作は、すべての `lease` に共通の1つのロックの中で行う |
+| 中（中・中） | 親の書き換えで `epoch` が増えないと、2つの付け替えが両方成功する | 採った | DJ-5: 親の書き換えでも `epoch` を増やす |
+| 中（中・高） | 確かめたあとに同じペインの中で会話が替わると、receipt では見つけられない | 採った（言い過ぎの直し） | DJ-6: receipt で見つけられるのは別のペインに届いた場合まで、と限定した。窓を残す owner の答え（Q76）は変えない |
+| 低（中・低） | 新しい拍動のあとに古いプロセスの拍動が届くと、一時的に送れない | 採らない | 誤送信ではなく一時的な不達で、被害が低い。送る側は失敗で返るので、送り直せば届く |
+| 高（中・高） | 名乗る方法3は、DJ-5 の張り替えの条件を飛ばして読める | 採った | DJ-7: 1〜3 の方法は「どの `lease` か」を決めるだけで、張り替えは必ず DJ-5 を通す、と書いた |
+| 中（低・中） | 方法3で、同じワークスペースの別の子の `lease` を取り違えうる | 採らない | 起きるには、ULID を読み違え、しかも取り違えた先の前の `binding` が死んでいる必要があり、確実さが低い。防ぐには新しい仕組みが要る。Codex 自身も「追加機構を必須にするほど高いリスクとは判断しない」と書いた |
+| —（指摘なし・注意） | board の行の書き換えに失敗しても、確定した `lease` を巻き戻さない | 採った | DJ-12 に1行足した |
+| 高（中・高） | PR-3 で `lease` あての送信を始めても、交代で `generation` を進めるのは PR-4 なので、そのあいだの交代で子の報告が前任へ向く | 採った | plan の並べ方: PR-4（統括の `lease`）を PR-3（送る側）の前に入れる |
+| 中（中・高） | 古い子は、親の交代後に前任へ送るか、`%N` の使い回しで別人へ送りうる | 採らない | owner が決めた範囲（古い子は古い宛先のまま終わらせる・Q76）の残りで、新しい直しではない。discussion の DJ-11 の範囲のまま、移行のあいだの残る穴として decision の案の「帰結」に書いた |
+| 中（低・中） | 観測者が session_id の登録を起こすと、DJ-188-5（観測者は読むだけ）に食い違う | 採った（上の直しで消えた） | DJ-18 で登録を本人の verb だけにしたので、観測者は登録しない |
+| 低（高・低） | #206 の制約は、ID を足したあとの新しい event についてだけ解ける | 採った（言い過ぎの直し） | §6 の #206 の行を限定した |

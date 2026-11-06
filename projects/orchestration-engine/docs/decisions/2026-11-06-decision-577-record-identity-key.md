@@ -48,11 +48,11 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D2 置き場は `~/.claude/state/oe-lease/<lease_id>.json`** で、`lease` ごとに1ファイルの中に、`lease` の表と `generation` の表を分けて持つ（DJ-2・owner の答え Q73）。書くのは verb だけで、`lease` ごとのロックの中で、`epoch` を比べてから書く（DJ-5）。
 - **D3 ペインと tmux server の pid は属性で、観測は heartbeat の sidecar に残す**（DJ-3）。sidecar の書き手は statusLine の producer だけのままにし、環境に `OE_LEASE_ID` と `OE_GENERATION` があるときだけ `lease_id` と `generation` を足す。server は、いままでどおり pid で区別する（開始時刻でも区別する案は owner の答え Q76 で外した）。heartbeat からペインを引く規則は lib の1つの関数にまとめる。
 - **D4 `lease` と `generation` は、server の世代やペインの生死では消さない**（DJ-4）。閉じた `lease` を、明示の掃除（`oe-lease gc`）で、一定の日数のあとに消す。heartbeat の sidecar の掃除も同じ verb で行う。gc は `oe-handoff take` のついでに走らせる。書き込みの途中の一時ファイル（`.hb.*`）が残る漏れは、heartbeat を書く側の直しとして別 issue にする（owner の答え Q78）。
-- **D5 取り合わない決まり**（DJ-5・owner の答え: Q72。下の「plan-390 のゲート3 の回答1 との関係」）。`binding` の張り替えと `generation` を進めるのは、ロックの中で `epoch` を比べる compare-and-swap で行い、1つの session_id は開いた `lease` の1か所にしか入れない。張り替えは、前の `binding` のプロセスが生きていないと機械で確かめられたときか、本人が張り替えるときだけ許す。`lease` の記録の1回の書き込みを commit point にし、board の行・registry の複製・event は、`lease` の記録から作り直せる派生の記録にする。
-- **D6 送る前の確かめ**（DJ-6）。`lease` → いまの `generation` → heartbeat の候補のペイン → `tmux list-panes -a` の所属 → ペインの端末のフォアグラウンドのプロセスの pid と開始時刻が `binding` と一致、の順で引き、どれかで外れたら送らない。確かめと Enter のあいだの窓は残り、receipt で後から見つける（Enter の前の確かめ直しは owner の答え Q76 で外した）。
-- **D7 resume したセッションが自分の `lease` と `generation` を知る方法**（DJ-7・owner の答え: Q69「推測するな計測せよ」）。環境変数 → `CLAUDE_CODE_SESSION_ID` と `generation` の session_id の並びの照合 → 会話の記録にある `lease_id` を `oe-lease bind` に渡す、の順に使う。3 だけで名乗るときは workspace の一致を確かめ、統括の `lease` なら owner の確かめを1回求める。owner の resume の打ち方を決まりにするかは、plan の I0 で `--resume <id>`・id なしの `--resume`・`--continue` の値を計測してから決める。
+- **D5 取り合わない決まり**（DJ-5・owner の答え: Q72。下の「plan-390 のゲート3 の回答1 との関係」）。`binding` の張り替えと `generation` を進めるのは、ロックの中で `epoch` を比べる compare-and-swap で行い、1つの session_id は開いた `lease` の1か所にしか入れず、session_id を登録する操作はすべての `lease` に共通の1つのロックの中で行う。親の書き換えでも `epoch` を増やす。保証するのは正本の `binding` が1つになるまでで、同じ会話の2つ目のプロセスが起きること自体は防がない（負けた側は bind で失敗して統括の操作に進まない）。張り替えは、前の `binding` のプロセスが生きていないと機械で確かめられたときか、本人が張り替えるときだけ許す。`lease` の記録の1回の書き込みを commit point にし、board の行・registry の複製・event は、`lease` の記録から作り直せる派生の記録にする。
+- **D6 送る前の確かめ**（DJ-6）。`lease` → いまの `generation` → heartbeat の候補のペイン → `tmux list-panes -a` の所属 → ペインの端末のフォアグラウンドのプロセスの pid と開始時刻が `binding` と一致、の順で引き、どれかで外れたら送らない。確かめと Enter のあいだの窓は残る。別のペインに届いた取り違えは receipt で後から見つけるが、同じペインの中で会話が替わった場合は見つけられない（Enter の前の確かめ直しは owner の答え Q76 で外した）。
+- **D7 resume したセッションが自分の `lease` と `generation` を知る方法**（DJ-7・owner の答え: Q69「推測するな計測せよ」）。環境変数 → `CLAUDE_CODE_SESSION_ID` と `generation` の session_id の並びの照合 → 会話の記録にある `lease_id` を `oe-lease bind` に渡す、の順に使う。どの方法も「どの `lease` か」を決めるだけで、`binding` の張り替えは必ず D5 の条件を通す。3 だけで名乗るときは workspace の一致を確かめ、統括の `lease` なら owner の確かめを1回求める。owner の resume の打ち方を決まりにするかは、plan の I0 で `--resume <id>`・id なしの `--resume`・`--continue` の値を計測してから決める。
 - **D8 退任した統括の見分け**（DJ-8）。`generation` の記録に状態（在任・退任）・退任した時刻・後任の `generation` を持ち、退任した `generation` のセッションは統括の操作に進まない。
-- **D9 生きていないことの機械の確かめ**（DJ-9）。`binding` するときにそのプロセスのコマンドが claude であることを確かめる。`binding` のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。heartbeat の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。
+- **D9 生きていないことの機械の確かめ**（DJ-9）。`binding` するときにそのプロセスのコマンドが claude であることを確かめる。`binding` のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。問い合わせが失敗したときは「分からない」として張り替えない。heartbeat の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。
 - **D10 transport は tmux の send-keys のままにする**（DJ-10・owner の答え: Q67）。Claude Code への依存を深めないので、セッション間の文を送る機能には乗らず、別の issue も起こさない。Claude Code に頼るのは、文書化された環境変数（`CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID`）だけにする。
 - **D11 移行は両方書いて読む側を1つずつ切り替える**（DJ-11・owner の答え: Q66）。両方書く期間は復帰のテスト（#355 の drill）までとし、registry をキーとして読むのをやめる最後の切り替えは、そのとき一度に行ってよい。進行中の委譲は一度だけの取り込みで引き取り、`PARENT_TMUX_PANE` しか持たない子は古い宛先のまま終わらせる（owner の答え Q76 で D14 の古い子の経路を外したので、この D11 が正である）。ほかのリポジトリの統括には sync の前に知らせる。
 - **D12 統括の `lease` の正本は `lease` の記録にする**（DJ-12）。board の `現統括:` の行は、`oe-handoff take` が書き続ける表示である。読み手（`oe-vitals`）と書き手（`oe-handoff take`）を同じ PR で切り替える（board schema の §9）。board の散文の形は変えない。
@@ -60,9 +60,9 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D14 子の報告は親の `lease` へ送る**（DJ-15）。`OE_LEASE_ID` を持つ子は、親の `lease` のいまの `generation` へ送る。label は `lease` の記録から引き、pane-issue からは引かない。生の `%N` はフォールバックとして残す。`OE_LEASE_ID` を持たない古い子は D11 のとおり古い宛先のまま終わらせる（古い子も親の `lease` へ送れるようにする案は owner の答え Q76 で外した）。移行のあいだは、`#N` のラベルを `lease` の記録で引けなければ古い引き方に落とす（owner の答え Q77）。委譲固定節の「報告の宛先」の規則を、この形に置き換える。
 - **D15 送れないときの保留は、この decision では決めない**（DJ-16・owner の答え Q80）。`delivery_held` の event と、送れないときに止めて保留する動きは、#355（復帰）で拾い方と一緒に決める。送る前の確かめ（D6）で外れたときは、いまの `oe-send` と同じく失敗の終了コードで返す。
 - **D16 新しい概念は識別子で呼ぶ**（discussion の §5.0・DJ-17・owner の答え: Q71）。持ち場は `lease`（ID の項目は `lease_id`・verb は `oe-lease`。Kubernetes の Lease に合わせた。時間で期限切れにならない点は Kubernetes と違う）、その持ち場に座った会話は既存の `generation`、プロセスとの結び付きは `binding`、比べる番号は `epoch`、送れなかったことを残す events の型の名前の案は `delivery_held` である（使うかは #355 で決める）。`seat` は current_supervisor の意味から外す方向（#564）なので使わない。
-- **D17 最初の `binding` と、あとから増える session_id の書き手**（DJ-18）。起こした子と後継は、起こした側の verb（`oe-delegate`・`oe-handoff start`）が、ペインの生存を確かめる時点で、端末のフォアグラウンドのプロセスの pid と開始時刻を `binding` に書く（コマンドが claude であることを確かめる）。手で立てた統括は、本人が `oe-lease create --root` を打つ。session_id は、最初の1つも `/clear` のあとのものも、`oe-lease` の verb が読むときに、heartbeat の sidecar の `lease_id` と `generation` が一致し `binding` のプロセスが生きているときだけ足す（`epoch` は増やさない）。
+- **D17 最初の `binding` と、あとから増える session_id の書き手**（DJ-18）。起こした子と後継は、起こした側の verb（`oe-delegate`・`oe-handoff start`）が、ペインの生存を確かめる時点で、端末のフォアグラウンドのプロセスの pid と開始時刻を `binding` に書く（コマンドが claude であることを確かめ、確かめられなければ未確定で止める）。手で立てた統括は、本人が `oe-lease create --root` を打つ。session_id を登録するのは、本人が動かす `oe-lease` の verb だけで、自分の `CLAUDE_PID` が `binding` と一致するときに自分の `CLAUDE_CODE_SESSION_ID` を登録する。heartbeat の sidecar は登録の根拠にしない。
 - **D18 ペインの本人確認を1つの関数にする**（DJ-19）。tmux に固有の確かめを集めた小さな lib に置き、送信・adopt・retire・`oe-jump`・`oe-select` がそれを使う。
-- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。`oe-report` と `/tmp/oe-parent-<N>` は PR-3 で廃止する。
+- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。PR-3 では配っているスキルの文を替え、`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する。
 
 ## decision #188・#206・#238/#239 との関係
 
@@ -73,7 +73,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 | DJ-188-3（永続の対応表を作らず、読むときに突き合わせる） | **tmux の子と統括について置き換える。**「誰か」（`lease` と `generation`）は永続の記録にする。属性（ペインと server）は、いままでどおり読むときに heartbeat と突き合わせる |
 | DJ-188-4（#206 で精緻化・自己完結の snapshot） | 残す。snapshot に `lease_id` と `generation` を足す |
 | DJ-188-5（read-only は観測者を縛る） | 残す。新しい write path は producer の側（verb）に足す。DJ-188-5 の「新規書込経路を一切導入しない」は #188 自身の範囲の文である。#188 の frontmatter の「DJ-188-1/2/3/5 は不変」は、この decision の確定のときに直す |
-| DJ-206-1・DJ-206-3 | 従う。#206 が後回しにした「`%N` の再利用で別の関係が混ざりうる」は、snapshot の `lease_id` で解く |
+| DJ-206-1・DJ-206-3 | 従う。#206 が後回しにした「`%N` の再利用で別の関係が混ざりうる」は、snapshot の `lease_id` で、足したあとの新しい event について解く（足す前の event は見分けられない） |
 | #238/#239 の lean の決定（新しい engine state を作らない・seat は薄い pointer として先送り） | **lean の決定を、identity（誰か）について覆す。** `lease` は新しい engine state であり、#238/#239 が「新正本にすると三者同期が生じる」として退けたものに当たる。先送りの再開の条件「報告 stranding が再発したら」は、2026-10-27 に子3本の宛先が切れたことで当たっていると筆者は読むが、再開してよいかは HG の判断なので、ゲート3 で owner に見せる。三者同期は、`lease` の記録を正本・board の行を表示・registry を移行のあいだの複製、と分けて避ける。declared の層（board）・observed の層（watchdog）・statusline の producer の形は変えない |
 | plan-390 のゲート3 の回答1（席に lease と fencing を入れない・停止を fencing の代わりにする） | **`lease` の記録への書き込みに限って更新する**（owner の答え Q72）。`epoch` と compare-and-swap は `lease` の記録の書き込みにだけ効かせ、古い `generation` の送信やファイルの編集まで止める fencing は入れない。それ以外は回答1 のまま |
 | board schema の §9（移行後は frontmatter の `現統括` が正本になる・読み手と書き手を同時に切り替える） | **前提を上書きする。** board の `現統括` は、frontmatter に移しても表示であり、機械の正本は `lease` の記録である。「読み手と書き手を同時に切り替える」の原則は残し、正本を board の外に移す切り替えを、読み手と書き手の同じ PR で行う。`validate-board.sh` の `現統括` の検査は、表示の行があるかの検査として残す |
@@ -107,7 +107,8 @@ discussion の §7 の探索木が正本である。要点だけを書く。
 - tmux を起こし直しても、`lease` と `generation` の記録は残り、前の統括と子を ID で一覧できる。
 - `oe-handoff retire` が、シェルで始まるペインの前任を閉じてよいかを判定できる。
 - 残る穴:
-  - 送る前の確かめと Enter のあいだの窓（receipt で後から見つける）。
+  - 送る前の確かめと Enter のあいだの窓。別のペインに届いた取り違えは receipt で後から見つけるが、同じペインの中で会話が替わった場合は見つけられない。
+  - 移行のあいだ、`PARENT_TMUX_PANE` しか持たない古い子は、親の交代のあとに前任へ送るか、ペインの番号の使い回しで別人へ送りうる（D11 のとおり古い宛先のまま終わらせることの残り）。
   - 復帰の手順が出すコマンドを使わずに resume すると、環境変数（1 の方法）が入らない。そのときは session_id の照合（2 の方法）に頼る。id を付けない resume で 2 の方法が成り立つかは、実機で確かめるまで分からない。
   - `binding` の pid を持たない `lease`（取り込みで pid を取れなかった `lease`）は、生きているか分からないとして人の判断に回る。
 - 新しい write path（`lease` の記録）が1つ増える。書き手は verb だけで、heartbeat の write path には入らない。
