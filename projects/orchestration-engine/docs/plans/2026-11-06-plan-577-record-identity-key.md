@@ -3,7 +3,7 @@ id: "01M6PD1RJJS6YXNRKB9ZYNV5X8"
 title: "#577 engine の記録のキーを tmux のペインから切り離し、こちらで作る ID にする"
 date: 2026-11-06
 type: plan
-status: draft   # 設計まで。分身レビューの答えの残り2件（Q83・Q84）と、ゲート3 の承認を待つ
+status: draft   # 設計まで。ゲート3 の承認を待つ
 so:
   design: weak
   impl: weak   # 仮。実装SO のモードとレーンは、ゲート3 のあとに統括が送る実装の追補の書面で決める
@@ -64,6 +64,8 @@ owner と統括が #355（統括の復帰）の見取り図を読む中で、統
 | N14 | 子から親への報告を `oe-send --to-parent` の1本にする。`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する（DJ-20） | 新しい | 分身レビューの指摘（P4）・ゲート2 の Codex のやり直し |
 | N15 | 移行のために抱える負債を、外す条件と置き場つきで並べ、最後の片付けを PR-6 にする（「移行の終わり方」の節） | 新しい | 分身レビューの指摘（P4） |
 | N16 | `lease` の記録の型（schema）と検査のスクリプトを PR-1 に入れ、events の schema の型の一覧に新しい型を足す | 新しい | 分身レビューの指摘（P4） |
+| N17 | 引き継ぎ文書の機械の節を `lease` の記録から作る表示に変え、`oe-handoff retire` はそれを読まない（PR-4・owner の答え Q84・2026-11-06・補足「正しく引ける道が1本になっている方がいい」） | 新しい | 分身レビューの指摘（P4）・owner の答え Q84 |
+| N18 | 計測の道具 `scripts/measure-delivery-arrival.py` を、heartbeat の引き方の共通化（N6）から外し、古い引き方のまま残す（#299 の到達率と比べる物差しを変えない・owner の答え Q83） | 新しい | 分身レビューの指摘（P4）・owner の答え Q83 |
 
 ## ゲート1（ゼロベースの代替探索）
 
@@ -87,7 +89,7 @@ discussion の §8 が正本である。
 | PR-1 | `lease` の記録の lib と verb（作る・`binding` する・名乗る・引く・閉じる・掃除する）。heartbeat からペインを引く1つの関数（N6）と、生きていないことの確かめの関数（DJ-9）と、ペインの本人確認の関数（DJ-19・N13・tmux に固有の確かめを集めた小さな lib）。`lease` の記録の schema（`schemas/` に足す）と検査のスクリプト（`scripts/validate-*.sh` の形）（N16） | 触らない（新しいファイルだけ） | 新しいテスト（偽の tmux と ps・一時ディレクトリの state）と shellcheck |
 | PR-2 | 書く側を両方書きにする。`oe-delegate`（`lease` を作り、`OE_LEASE_ID`・`OE_GENERATION`・親の `lease` を環境に入れる）・`oe-register`・heartbeat の producer（`lease_id` と `generation` を足す）・最初の `binding` を起こした側の verb が書く形と、手で立てた統括の `oe-lease create --root`（DJ-18・N12）・event の snapshot（DJ-13）と `oe-events.schema.json` の型の一覧への `binding` の張り替えの型の追加・一度だけの取り込み（`oe-lease adopt`）（DJ-11） | 触る（書く記録が増える。読む側は変えない） | 既存のテストが全部通ること・新しいテスト・実機で1回（下の「実機の確かめ」の R1） |
 | PR-3 | 送る側。`oe-send` の `lease` あて・送る前の確かめ（DJ-6）・親の `lease` へ送る形・`#N` のラベルを `lease` の記録で引けないときに古い引き方に落とすフォールバック（owner の答え Q77）・配っているスキルの文の子から親への報告を `oe-send --to-parent` に替える（`oe-report` と `/tmp/oe-parent-<N>` の廃止は PR-6・DJ-20・N9・N14）・`oe-jump` と `oe-select` を `lease` から引いて本人確認を通す形（DJ-15）。transport の唯一の入口 `projects/orchestration-engine/lib/delegate-send.sh` の冒頭の説明に「transport を替えるときの参考: #577 の discussion の DJ-10（Claude Code のセッション間の文を送る機能の受け取る側の制御）」の1行を置く（N11）。配布しているスキルの文（`delegate-task`・`doc-flow-guardrail` の「報告の宛先」・`orchestration-toolkit`） | 触る（送る前に止まる場面が増える） | 既存のテスト・新しいテスト・偽の transport 具での確かめ（下の注意） |
-| PR-4 | 統括の `lease`。`oe-handoff take` と `retire` を `lease` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`lib/handoff-state.sh` の heartbeat の引き方を N6 の関数に替える・`oe-vitals` が `lease` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
+| PR-4 | 統括の `lease`。`oe-handoff take` と `retire` を `lease` の記録へ（`generation` の compare-and-swap・退任の状態・フォアグラウンドのプロセスで本人を確かめる）・`lib/handoff-state.sh` の heartbeat の引き方を N6 の関数に替える・引き継ぎ文書の機械の節を `lease` の記録から作る表示に変え、retire は読まない（owner の答え Q84）・`oe-vitals` が `lease` の記録を読む（読み手と書き手を同じ PR で・DJ-12）。board の行は表示として書き続ける | 触る | 既存のテスト・新しいテスト（達成を見る数の M1・M3） |
 | PR-5 | 観測する側。`oe-tree` が `lease` の記録から木を描く（tmux を起こし直したあとも前の統括と子を出す）・`seen` の記録のキー（N7）・`oe-threads` と `oe-selfcheck` の heartbeat の引き方を N6 の関数に替える。registry を「誰か」のキーとして読むのをやめる（owner の答え Q66 により、この最後の切り替えは復帰のテストの時に一度に行ってよい） | 触る | 既存のテスト・新しいテスト（達成を見る数の M2） |
 | PR-6 | 移行の片付け。下の「移行の終わり方」の表のうち、条件を満たしたものを外す（registry の両方書き・adopt・`PARENT_TMUX_PANE` の注入・スキルの古い規則） | 触る | 外す前に条件を `oe-tree` と `lease` の記録で確かめる。#355 の復帰のテストのあとに置く |
 
@@ -109,7 +111,7 @@ discussion の §8 が正本である。
 | 配っているスキルの古い規則（`doc-flow-guardrail` の「報告の宛先」の `$PARENT_TMUX_PANE` の段） | 古い子のため | 上と同じ | PR-6 |
 | `oe-report` と `/tmp/oe-parent-<N>` | 起動済みの子の会話や brief に呼び出しが残っているため | `oe-report` を呼びうる生きた古い子が1つも無くなったとき | PR-6 |
 | `oe-send` の生の `%N` の宛先 | 手でフォールバックするため | 外さない（負債でなく、残す機能） | — |
-| `handoff.md` の機械の節の前任のペイン・pid・コマンド名 | 人が読む引き継ぎ文書の一部として | retire が `lease` の記録だけで判定するようになったとき（PR-4）、機械の節は人が読む複製に下げる。項目を消すかは PR-4 で決める | PR-4 |
+| `handoff.md` の機械の節 | 人が読む引き継ぎ文書の一部として | PR-4 で、機械の節を `lease` の記録から作る表示に変え、`oe-handoff retire` は機械の節を読まずに `lease` の記録だけで判定する（owner の答え Q84・2026-11-06・補足「正しく引ける道が1本になっている方がいい」） | PR-4 |
 
 - 一度だけの取り込みは、2回走らせても何も増えない形にする。取り込むときのキーは、ペインの端末のフォアグラウンドのプロセスの pid と開始時刻（と server の pid と開始時刻）にし、同じ `binding` を持つ `lease` がすでにあれば作らない。session_id が取れない `lease` を空のまま作ると、session_id でしか同じものと見分けられず、2回目に二重になるためである。
 

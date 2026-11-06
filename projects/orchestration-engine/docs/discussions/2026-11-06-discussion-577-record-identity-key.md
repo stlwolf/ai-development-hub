@@ -87,7 +87,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 | `oe-confirm` の `seen` の記録 `~/.claude/state/oe-confirm/seen`（`pane\|%N`・`delivery\|nonce\|%to`） | キー（server の pid を持たない） [verified]（`bin/oe-confirm` の `notify_hits+=("pane\|${pane}")`） | `oe-confirm` | `oe-confirm` | キーに `lease_id` か server の pid を足す。tmux を起こし直して番号が使い回されると、別の子が消えたことを知らせない |
 | `oe-undelivered` の `seen` の記録（`%c\|%p\|ts\|idx`） | キー（server の pid を持たない） | `oe-undelivered` | `oe-undelivered` | 同上 |
 | `oe-jump` の最後の宛先 `~/.claude/state/oe-jump/last-target` | 宛先（`%N` を後で使い直す） | `oe-jump --record` | `oe-jump` | `lease_id` を書けるようにする。優先は低い |
-| 引き継ぎ文書の機械の節 `<workspace>/.oe/handoff.md` | 本人確認（前任のペイン・server の pid・`pane_pid` とコマンド名・session_id を1組で持ち、閉じる直前に照らす。全部の組を持って照らし直す唯一の記録） | `oe-handoff prepare` | `oe-handoff retire` | `lease` の記録の `generation` の `binding` を正本にし、機械の節は複製にする（DJ-9） |
+| 引き継ぎ文書の機械の節 `<workspace>/.oe/handoff.md` | 本人確認（前任のペイン・server の pid・`pane_pid` とコマンド名・session_id を1組で持ち、閉じる直前に照らす。全部の組を持って照らし直す唯一の記録） | `oe-handoff prepare` | `oe-handoff retire` | `lease` の記録から作る表示に変え、`oe-handoff retire` は読まない（owner の答え Q84・2026-11-06・補足「正しく引ける道が1本になっている方がいい」） |
 | `oe-vitals` の `seen` の記録（`kind\|session_id`） | ペインを持たない | `oe-vitals` | `oe-vitals` | 変えない |
 | engine の `oe` の記録（`audit/<sid>.jsonl`・`state/<sid>.state.json`・`/tmp/oe-<sid>-*`・`oe-view/viewer-pane-id`） | キー（WezTerm の整数のペイン。session_id の中に閉じている） | `lib/spawn.sh` ほか | `lib/verify.sh`・`oe-status` | 範囲の外（DJ-14） |
 
@@ -271,6 +271,7 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - `binding` するときに、その pid のプロセスのコマンドが claude であることを確かめ、そうでなければ `binding` しない。シェルの pid を誤って `binding` すると、シェルが残るかぎり「生きている」と判定し続け、張り替えられなくなるためである（ゲート2 の Cursor の指摘。いまの `oe-handoff retire` もコマンド名で claude を求めている [verified]（`bin/oe-handoff` の retire の `oe_hs_pid_command` の照合））。`binding` したあとの生死は pid と開始時刻で見る（同じ pid と開始時刻のプロセスのコマンドは変わらない）。
 - `binding` の pid が記録に無い `generation` は、生きているか分からないとして扱い、張り替えない（人の判断に回す）。
 - プロセスの問い合わせ（`ps`）が失敗したときや出力が取れなかったときは、「生きていない」に畳まず「分からない」として張り替えない。判定は、ある・無い・分からない、の3つで返す（ゲート2 の Codex のやり直しの指摘）。
+- `oe-handoff retire` は、閉じてよいかを `lease` の記録の `binding` だけで判定し、引き継ぎ文書の機械の節は読まない。機械の節は、`oe-handoff prepare` が `lease` の記録から作る、人が読む表示にする（owner の答え Q84・2026-11-06・補足「正しく引ける道が1本になっている方がいい」）。
 - この決まりは、`oe-handoff retire` の「シェルで始まるペインの前任を閉じられない」も解く。閉じる直前に、ペインの端末のフォアグラウンドのプロセスが前任の `generation` の `binding` の pid と開始時刻に一致すれば、そのペインにいまいるのは前任本人である。`#{pane_pid}` がシェルでも判定できる。#355 の 2026-11-05 のコメントの「判定の案」の 2 と同じ形で、記録する場所が引き継ぎ文書の機械の節でなく `lease` の記録になる。
 
 ### DJ-10 transport を何にするか（owner に聞いた）

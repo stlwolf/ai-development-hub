@@ -34,7 +34,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 
 # #577 統括と委譲子の「誰か」は、こちらで作る `lease_id` と `generation` の記録で持ち、tmux のペインは観測する属性にする
 
-**この文書は案（proposed）である。** 設計の問いの owner の答え（Q65〜Q67・Q69・Q71・Q72）は入れた。分身レビュー（#404）の指摘への owner の答え（Q73・Q74・Q76〜Q78・Q80・Q82）も入れた。残りの2件（判断ボードの Q83・Q84）と、ゲート3 の承認を受けて確定する。
+**この文書は案（proposed）である。** 設計の問いの owner の答え（Q65〜Q67・Q69・Q71・Q72）は入れた。分身レビュー（#404）の指摘への owner の答え（Q73・Q74・Q76〜Q78・Q80・Q82）も入れた。残りの2件（Q83・Q84）の答えも入れた。ゲート3 の承認を受けて確定する。
 
 ## 前提の変化（最初に書く）
 
@@ -52,7 +52,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D6 送る前の確かめ**（DJ-6）。`lease` → いまの `generation` → heartbeat の候補のペイン → `tmux list-panes -a` の所属 → ペインの端末のフォアグラウンドのプロセスの pid と開始時刻が `binding` と一致、の順で引き、どれかで外れたら送らない。確かめと Enter のあいだの窓は残る。別のペインに届いた取り違えは receipt で後から見つけるが、同じペインの中で会話が替わった場合は見つけられない（Enter の前の確かめ直しは owner の答え Q76 で外した）。
 - **D7 resume したセッションが自分の `lease` と `generation` を知る方法**（DJ-7・owner の答え: Q69「推測するな計測せよ」）。環境変数 → `CLAUDE_CODE_SESSION_ID` と `generation` の session_id の並びの照合 → 会話の記録にある `lease_id` を `oe-lease bind` に渡す、の順に使う。どの方法も「どの `lease` か」を決めるだけで、`binding` の張り替えは必ず D5 の条件を通す。3 だけで名乗るときは workspace の一致を確かめ、統括の `lease` なら owner の確かめを1回求める。owner の resume の打ち方を決まりにするかは、plan の I0 で `--resume <id>`・id なしの `--resume`・`--continue` の値を計測してから決める。
 - **D8 退任した統括の見分け**（DJ-8）。`generation` の記録に状態（在任・退任）・退任した時刻・後任の `generation` を持ち、退任した `generation` のセッションは統括の操作に進まない。
-- **D9 生きていないことの機械の確かめ**（DJ-9）。`binding` するときにそのプロセスのコマンドが claude であることを確かめる。`binding` のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。問い合わせが失敗したときは「分からない」として張り替えない。heartbeat の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。
+- **D9 生きていないことの機械の確かめ**（DJ-9）。`binding` するときにそのプロセスのコマンドが claude であることを確かめる。`binding` のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。問い合わせが失敗したときは「分からない」として張り替えない。heartbeat の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。retire は引き継ぎ文書の機械の節を読まず、`lease` の記録だけで判定する。機械の節は `lease` の記録から作る表示にする（owner の答え Q84）。
 - **D10 transport は tmux の send-keys のままにする**（DJ-10・owner の答え: Q67）。Claude Code への依存を深めないので、セッション間の文を送る機能には乗らず、別の issue も起こさない。Claude Code に頼るのは、文書化された環境変数（`CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID`）だけにする。
 - **D11 移行は両方書いて読む側を1つずつ切り替える**（DJ-11・owner の答え: Q66）。両方書く期間は復帰のテスト（#355 の drill）までとし、registry をキーとして読むのをやめる最後の切り替えは、そのとき一度に行ってよい。進行中の委譲は一度だけの取り込みで引き取り、`PARENT_TMUX_PANE` しか持たない子は古い宛先のまま終わらせる（owner の答え Q76 で D14 の古い子の経路を外したので、この D11 が正である）。ほかのリポジトリの統括には sync の前に知らせる。
 - **D12 統括の `lease` の正本は `lease` の記録にする**（DJ-12）。board の `現統括:` の行は、`oe-handoff take` が書き続ける表示である。読み手（`oe-vitals`）と書き手（`oe-handoff take`）を同じ PR で切り替える（board schema の §9）。board の散文の形は変えない。
