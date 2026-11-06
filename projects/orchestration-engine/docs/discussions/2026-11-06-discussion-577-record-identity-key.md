@@ -257,6 +257,15 @@ verification status のタグは `evidence-verification-rule` の意味で使う
 - owner の答え（2026-11-06・判断ボードの Q69）: 「実機で確かめてから決まりにするかを決める」を選んだ。補足は「一次情報に当たろう。推測するな計測せよ」。
 - 答えの当て方: resume の打ち方の決まりは、この設計では決めない。plan の I0（実装の最初の段階）で、id を付けた `--resume`・id を付けない `--resume`・`--continue` のそれぞれで、Bash の `CLAUDE_CODE_SESSION_ID` が何になるかを計測し、その結果で決まりにするかを決める。1〜3 の方法の順は、計測の結果に依らずに残す。
 
+- **I0 の計測の結果（2026-11-06・Claude Code 2.1.318）**: 使い捨ての `claude -p` のセッションを、ユーザーの設定（hook と statusLine）を読まない `--setting-sources project` で、tmux のソケットの置き場と engine の state の置き場を一時ディレクトリに向けて起こし、Bash で `printenv CLAUDE_CODE_SESSION_ID` を打たせた。値は、モデルの返事でなく会話の記録（transcript）の道具の出力で確かめた [verified]。
+  - 新しいセッション: 会話の id と同じ値だった。
+  - `claude -p --resume <id>`: resume した会話の id と同じ値だった（会話の id も変わらない）。
+  - `claude -p --continue`: 続けた会話の id と同じ値だった（会話の id も変わらない）。
+  - id を付けない `--resume`: `-p` では CLI が受け付けず（「`--resume` requires a valid session ID or session title when used with `--print`」）、対話の一覧から選ぶ形でしか使えない。計測していない。
+  - `oe-delegate` が `tmux split-window` で起こした子: 子の Bash の値は子自身の id で、親の id は引き継がれない。子の claude のプロセスの起動時の環境に `CLAUDE_CODE_SESSION_ID` は無く、tmux の全体の環境にも無い（この子のペインで読むだけで確かめた）。
+  - 生きている `~/.claude/state/` には何も書かれなかった（試した id は heartbeat・events・受領の診断のどれにも無い）。会話の記録は `~/.claude/projects/` の、一時ディレクトリの名前の下に残る。
+- **DJ-7 の確定（I0 のあと）**: resume の打ち方は決まりにしない。id を付けた `--resume` と `--continue` の両方で、方法2（自分の `CLAUDE_CODE_SESSION_ID` を `generation` の session_id の並びに照らす）が成り立つと計測で分かったためである。復帰の手順（#355）が出すコマンドは、環境変数（方法1）を入れるために `OE_LEASE_ID=<lease_id> OE_GENERATION=<generation> claude --resume <session_id>` の形にするのがよいが、owner がほかの形で戻しても名乗れる。対話の一覧から選ぶ resume は計測していないので、その形で戻したときに方法2 が成り立つかは分からないものとして扱い、成り立たなければ方法3（会話の記録の `lease_id` と、張り替えの条件）に落ちる。
+
 ### DJ-8 退任した統括の見分け
 
 - 決まり: `generation` の記録に状態（在任・退任）と、退任した時刻と、後任の `generation` を持つ。`oe-handoff take` が `generation` を進めるときに、前の `generation` を退任にする。

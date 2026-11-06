@@ -221,3 +221,12 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 
 - owner の答え（Q84）: 引き継ぎ文書の機械の節は、`lease` の記録から作る表示に変え、`oe-handoff retire` は読まない。補足は「正しく引ける道が1本になっている方がいい」。discussion の棚卸しの表と DJ-9、decision の案の D9、plan の PR-4 と「移行の終わり方」の表に入れ、確定版に無い判断に N17 として足した。Q83 も N18 として足した。
 - 分身レビューへの答えはこれで全部入った。ゲート3 の問い（この plan で実装に進むか）を、P4〜P6 で変わった点の要約つきで、統括のワークスペースの根の作業層 `.oe/question-577-5.json` に書いた。
+
+## I0: resume の値の計測（2026-11-06・ゲート3 承認のあと）
+
+- ゲート3 は owner の「このplanで進めて」で承認された（plan @ `4cec7e8`・統括の記録は作業層 `.oe/decision-577-gate3.md`）。
+- 計測の方法: 書面のとおり `CLAUDE_CONFIG_DIR` を一時ディレクトリに向けると「Not logged in」で動かなかった。`--bare` もキーチェーンを読まないので使えない。`--setting-sources project` でユーザーの設定（配っている hook と statusLine）を読まずに起こし、念のため `TMUX_TMPDIR` と engine の state の置き場を一時ディレクトリに向けた。hook が万一走っても、本物のペインと `~/.claude/state/` に届かない形である（negative knowledge `01M5T897YCWY13GFTADD3136EC` の「引き方を最後までたどる」を当てた）。
+- 失敗と直し: 1回目は `--allowedTools` が後ろの引数を全部取り込み、問いの文が渡らなかった。2回目は `Bash(echo:*)` の許可が `$` を含むコマンドに合わず止められた。問いの文を標準入力から渡し、`printenv CLAUDE_CODE_SESSION_ID` だけを許す形にした。
+- 結果は discussion の DJ-7 にある。新しいセッション・`--resume <id>`・`--continue` の3つで、Bash の値は会話の id と一致した（会話の記録の道具の出力で確かめた）。id を付けない `--resume` は `-p` で使えない。`oe-delegate` が起こした子には親の id は引き継がれない。
+- DJ-7 は「resume の打ち方を決まりにしない」と決めた。plan の「ゲート3 のあとの変更」に H1（補正）として書いた。
+- 生きている state に書かれていないことを、試した id で heartbeat・events・受領の診断を走査して確かめた。試したセッションの会話の記録は `~/.claude/projects/` の一時ディレクトリの名前の下に残っている（3件・消していない）。
