@@ -232,7 +232,7 @@ next_step: Phase 1 × Core Canonical 診断の入力として使用
 
 ## 参照
 
-- [`docs/research/2026-03-30-ai-tool-hooks-specification-survey.md`](./2026-03-30-ai-tool-hooks-specification-survey.md) — hooks 仕様の同形式調査（本ドキュメントの姉妹編）
+- [`docs/research/investigations/2026-03-30-ai-tool-hooks-specification-survey.md`](./investigations/2026-03-30-ai-tool-hooks-specification-survey.md) — hooks 仕様の同形式調査（本ドキュメントの姉妹編）
 - [`docs/research/2026-04-02-canonical-cross-agent-optimization-framework.md`](./2026-04-02-canonical-cross-agent-optimization-framework.md) — Epic #38 の基準文書
 - [Epic #38](https://github.com/stlwolf/ai-development-hub/issues/38) — canonical cross-agent optimization
 - [Issue #58](https://github.com/stlwolf/ai-development-hub/issues/58) — 本調査の Issue
