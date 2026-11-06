@@ -164,6 +164,22 @@ ck "張り替えた binding" "201" "$(oe_lease_get "$L1" | jq -r '.generations[0
 mv "$PS_TABLE.bak" "$PS_TABLE"
 ck "張り替えたあとも検査を通る" "0" "$(rc_of "$VALIDATE" "$OE_LEASE_DIR/$L1.json")"
 
+echo "=== (4b) ロックの引き取り ==="
+L7="$(oe_lease_create delegation '#lock' /ws "")"
+LK="$OE_LEASE_DIR/$L7.json.lock"
+DEADPID=$(( $$ + 900000 )); while kill -0 "$DEADPID" 2>/dev/null; do DEADPID=$((DEADPID + 1)); done
+mkdir "$LK"; printf '%s' "$DEADPID" > "$LK/pid"
+E0="$(oe_lease_epoch "$L7")"
+ck "持ち主が死んだロックは引き取って書ける" "0" "$(rc_of oe_lease_set_parent "$L7" "$E0" "")"
+mkdir "$LK"; printf '%s' "$$" > "$LK/pid"
+ck "持ち主が生きているロックは引き取らず、上限で 4 を返す" "4" "$(rc_of oe_lease_set_parent "$L7" "$((E0 + 1))" "")"
+ck "生きたロックは残っている" "$$" "$(cat "$LK/pid")"
+rm -rf "$LK"
+mkdir "$LK"; printf '%s' "$DEADPID" > "$LK/pid"; mkdir "$LK.reclaim"; touch -t 202601010000 "$LK.reclaim"
+ck "引き取りのロックが置き去りでも詰まらない" "0" "$(rc_of oe_lease_set_parent "$L7" "$((E0 + 1))" "")"
+ck "引き取りのロックも片づいている" "0" "$([ -d "$LK.reclaim" ] && echo 1 || echo 0)"
+oe_lease_close "$L7"
+
 echo "=== (5) session_id の登録 ==="
 ck "binding と一致しなければ登録しない" "5" "$(rc_of oe_lease_register_session "$L1" sid-1 101 "$S1")"
 ck "本人なら登録できる" "0" "$(rc_of oe_lease_register_session "$L1" sid-1 201 "$S2")"

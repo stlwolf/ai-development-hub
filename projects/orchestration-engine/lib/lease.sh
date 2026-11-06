@@ -63,23 +63,35 @@ _oe_lease_ready() {
   mkdir -p "$OE_LEASE_DIR" 2>/dev/null || { echo "oe-lease: cannot create ${OE_LEASE_DIR}" >&2; return 2; }
 }
 
-# --- ロック（lib/seat.sh と同じ形: mkdir は原子的・置き去りは持ち主の生死で引き取る・引き取りは rename） ---
+# --- ロック ---
+# mkdir は原子的なので、取れた1つだけが書き手になる。置き去りのロック（持ち主が死んだ・pid を書く前に落ちた）は
+# 引き取って消すが、**生きたロックを一時的にでも動かさない**（Copilot の指摘・PR #580）。引き取りは
+# 「引き取りのロック」（<lock>.reclaim）を持つ1人だけが行い、その中で持ち主が死んでいることを確かめ直してから
+# 消す。引き取る人は1人なので、確かめ直してから消すまでのあいだにロックの持ち主が替わることはない
+# （替えられるのは持ち主の unlock だけで、持ち主は死んでいる）。ループは1回ごとに必ず再試行の数を増やし、
+# 引き取りに失敗したときも上限で 4 を返す。
+_oe_lease_lock_is_stale() {
+  local lock="$1" owner
+  owner="$(cat "${lock}/pid" 2>/dev/null)" || owner=""
+  if [ -n "$owner" ]; then
+    ! kill -0 "$owner" 2>/dev/null
+  else
+    [ -d "$lock" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_LEASE_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]
+  fi
+}
+
 _oe_lease_lock() {
-  local lock="$1" owner i=0
+  local lock="$1" i=0 rl="${1}.reclaim"
   while ! mkdir "$lock" 2>/dev/null; do
-    owner="$(cat "${lock}/pid" 2>/dev/null)" || owner=""
-    if { [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; } \
-       || { [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin "+${OE_LEASE_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; }; then
-      if mv "$lock" "${lock}.stale.$$" 2>/dev/null; then
-        # 持ち去ったロックの持ち主が、読んだ持ち主と同じかを確かめる。違えば、別のプロセスが先に引き取って
-        # 取り直した生きたロックを持ち去っている（実装SO の指摘）。そのときは元に戻す。
-        if [ "$(cat "${lock}.stale.$$/pid" 2>/dev/null)" = "$owner" ]; then
-          rm -rf "${lock}.stale.$$" 2>/dev/null
-        else
-          mv "${lock}.stale.$$" "$lock" 2>/dev/null || rm -rf "${lock}.stale.$$" 2>/dev/null
-        fi
+    if _oe_lease_lock_is_stale "$lock"; then
+      # 引き取りのロック自体が置き去りなら（引き取る人が途中で落ちた）、古さで片づける。
+      if [ -d "$rl" ] && [ -n "$(find "$rl" -maxdepth 0 -mmin "+${OE_LEASE_LOCK_STALE_MIN:-10}" 2>/dev/null)" ]; then
+        rmdir "$rl" 2>/dev/null || true
       fi
-      continue
+      if mkdir "$rl" 2>/dev/null; then
+        if _oe_lease_lock_is_stale "$lock"; then rm -rf "$lock" 2>/dev/null || true; fi
+        rmdir "$rl" 2>/dev/null || true
+      fi
     fi
     i=$((i + 1))
     [ "$i" -lt "${OE_LEASE_LOCK_RETRY:-50}" ] || return 4
