@@ -35,6 +35,42 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
+# lease の記録（#577 PR-2）。registry と両方書く。どれも best-effort で、registry の登記の結果は変えない。
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh" || true
+# shellcheck source=../lib/event-bus.sh
+source "${BIN_DIR}/../lib/event-bus.sh" || true
+
+# root: 自分の lease がまだ無ければ、oe-lease create --root で作る（自分の CLAUDE_PID と session_id を使う・DJ-18）。
+lease_root_best_effort() {
+  declare -F oe_lease_whoami >/dev/null 2>&1 || return 0
+  [[ -n "${OE_LEASE_DIR:-}" && -n "${CLAUDE_PID:-}" && -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || return 0
+  if oe_lease_whoami >/dev/null 2>&1; then return 0; fi
+  local id
+  if id="$("${BIN_DIR}/oe-lease" create --root --label "${LABEL:-cockpit}" -w "${WORKSPACE:-$(pwd)}" 2>/dev/null)"; then
+    echo "oe-register: lease ${id} を自分の lease にしました（root）" >&2
+  else
+    echo "oe-register: lease を作れませんでした（registry だけで続けます）" >&2
+  fi
+}
+
+# link: 相手のペインのフォアグラウンドのプロセスから相手の lease を見つけ、親を自分の lease にする。
+lease_link_best_effort() {
+  declare -F oe_lease_whoami >/dev/null 2>&1 || return 0
+  [[ -n "${OE_LEASE_DIR:-}" ]] || return 0
+  local me mine fg tpid tst child epoch rc=0
+  me="$(oe_lease_whoami 2>/dev/null)" || return 0
+  mine="$(printf '%s' "$me" | jq -r '.lease_id' 2>/dev/null)" || return 0
+  fg="$(oe_tpi_pane_foreground "$TARGET" 2>/dev/null)" || { echo "oe-register: ${TARGET} のプロセスを確かめられないので、lease の親は書き換えません" >&2; return 0; }
+  tpid="${fg%%"$_OE_TPI_TAB"*}"; tst="${fg#*"$_OE_TPI_TAB"}"
+  child="$(oe_lease_find_by_binding "$tpid" "$tst" 2>/dev/null)" || { echo "oe-register: ${TARGET} の lease が見つからないので、lease の親は書き換えません" >&2; return 0; }
+  [[ "$(printf '%s\n' "$child" | grep -c .)" -eq 1 ]] || return 0
+  [[ "$child" != "$mine" ]] || return 0
+  epoch="$(oe_lease_epoch "$child" 2>/dev/null)" || return 0
+  oe_lease_set_parent "$child" "$epoch" "$mine" 2>/dev/null || rc=$?
+  if [[ "$rc" -eq 0 ]]; then echo "oe-register: lease ${child} の親を ${mine} にしました" >&2
+  else echo "oe-register: lease ${child} の親を書き換えられませんでした（rc=${rc}）" >&2; fi
+}
 
 usage() {
   cat >&2 <<'EOF'
@@ -174,6 +210,7 @@ if [[ "$MODE" == root ]]; then
     exit 1
   fi
   echo "oe-register: registered ${SELF} as root${LABEL:+ (label: ${LABEL})}" >&2
+  lease_root_best_effort || true
   exit 0
 fi
 
@@ -218,4 +255,5 @@ if [[ "$postparent" != "$SELF" ]]; then
   exit 1
 fi
 echo "oe-register: linked ${TARGET} under ${SELF}${LABEL:+ (label: ${LABEL})}" >&2
+lease_link_best_effort || true
 exit 0

@@ -27,6 +27,9 @@ command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
+# 本物の置き場を書き換えていないかを比べる印。テストの開始時に作り、以後は触らない（偽の道具の呼び出しの記録は
+# 呼ぶたびに更新されるので、比べる相手にすると途中で書いたものを見逃す・Copilot の指摘・PR #581）。
+START_MARK="$_TMP_DIR/.start-mark"; : > "$START_MARK"
 
 REAL_HOME="${HOME:-}"
 export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
@@ -303,7 +306,7 @@ ck "ps と tmux は偽物だけが呼ばれた（記録がある）" "1" "$([ -s
 in_tmp=0; [ "${OE_LEASE_DIR#"$_TMP_DIR"/}" != "$OE_LEASE_DIR" ] && in_tmp=1
 ck "置き場は一時ディレクトリ" "1" "$in_tmp"
 if [ -n "$REAL_HOME" ]; then
-  ck "本物の置き場は作っていない（このテストの前から無ければ無いまま）" "ok" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$CALLS" 2>/dev/null | grep -c . | sed 's/^0$/ok/')"
+  ck "本物の置き場は作っていない（このテストの前から無ければ無いまま）" "ok" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$START_MARK" 2>/dev/null | grep -c . | sed 's/^0$/ok/')"
 fi
 
 echo ""

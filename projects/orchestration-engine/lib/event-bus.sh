@@ -108,12 +108,22 @@ _oe_event_ident() {
   printf '%s\037%s\037%s\n' "$role" "$label" "$parent"
 }
 
-# oe_event_emit <type> <from_pane> <from_role> <from_label> <to_pane> <to_role> <to_label> [extra_json]
+# oe_event_emit <type> <from_pane> <from_role> <from_label> <to_pane> <to_role> <to_label> [extra_json] [from_lease] [to_lease]
 #   1 イベントを oe-events.jsonl に best-effort 追記。常に return 0。
+#   from_lease / to_lease（任意・#577 DJ-13）は "<lease_id>:<generation>" で、渡すと endpoint に lease_id と
+#   generation を足す（足すだけで既存の項目は変えない・DJ-206-3）。from_lease が空で、from のペインが自分の
+#   ペイン（$TMUX_PANE）なら、自分の環境変数（OE_LEASE_ID・OE_GENERATION）から入れる。
 oe_event_emit() {
   [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   local type="${1:-}" fp="${2:-}" frole="${3:-}" flabel="${4:-}" tp="${5:-}" trole="${6:-}" tlabel="${7:-}" extra="${8:-}"
+  local flease="${9:-}" tlease="${10:-}"
+  if [[ -z "$flease" && -n "$fp" && "$fp" == "${TMUX_PANE:-}" && -n "${OE_LEASE_ID:-}" && -n "${OE_GENERATION:-}" ]]; then
+    flease="${OE_LEASE_ID}:${OE_GENERATION}"
+  fi
+  # 形が合わない値は捨てる（偽の lease を焼き込まない）。
+  [[ "$flease" =~ ^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*$ ]] || flease=""
+  [[ "$tlease" =~ ^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*$ ]] || tlease=""
   # `${8:-{}}` は default の `}` が展開閉じ括弧と衝突して壊れるため別代入で `{}` を補う。
   [[ -n "$extra" ]] || extra='{}'
   [[ -n "$type" ]] || return 0
@@ -136,17 +146,19 @@ oe_event_emit() {
     --arg ts "$ts" --arg type "$type" \
     --arg fp "$fp" --arg frole "$frole" --arg flabel "$flabel" \
     --arg tp "$tp" --arg trole "$trole" --arg tlabel "$tlabel" \
-    --argjson extra "$extra" \
-    '{ts:$ts, type:$type,
-      from:{pane:$fp, role:$frole, label:$flabel},
-      to:{pane:$tp, role:$trole, label:$tlabel}} + $extra' 2>/dev/null)" || return 0
+    --argjson extra "$extra" --arg fl "$flease" --arg tl "$tlease" \
+    'def lease($v): if $v == "" then {} else ($v | split(":")) as $p | {lease_id: $p[0], generation: ($p[1] | tonumber)} end;
+     {ts:$ts, type:$type,
+      from:({pane:$fp, role:$frole, label:$flabel} + lease($fl)),
+      to:({pane:$tp, role:$trole, label:$tlabel} + lease($tl))} + $extra' 2>/dev/null)" || return 0
   [[ -n "$line" ]] || return 0
   # 1 行 printf（< PIPE_BUF）を O_APPEND で追記 ＝ 同時追記でも atomic。
   printf '%s\n' "$line" >> "$file" 2>/dev/null || return 0
   return 0
 }
 
-# oe_event_child_spawned <parent_pane> <child_pane> [child_label] [permission_mode] [elevated]
+# oe_event_child_spawned <parent_pane> <child_pane> [child_label] [permission_mode] [elevated] [child_lease] [parent_lease]
+#   child_lease / parent_lease（任意・#577）は "<lease_id>:<generation>"。渡すと endpoint に足す。
 #   oe-delegate が子 spawn + registry 登録の直後に呼ぶ。role は構築上 parent/child で確定。
 #   permission_mode / elevated（任意・#262）を渡すと extra に焼き込み、elevated spawn を通常
 #   spawn と事後区別できるようにする（append-only ログへの additive 追記・registry は変更しない）。
@@ -155,7 +167,7 @@ oe_event_emit() {
 oe_event_child_spawned() {
   [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  local pp="${1:-}" cp="${2:-}" clabel="${3:-}" pmode="${4:-}" elevated="${5:-}"
+  local pp="${1:-}" cp="${2:-}" clabel="${3:-}" pmode="${4:-}" elevated="${5:-}" clease="${6:-}" please="${7:-}"
   local plabel clabel_r extra="{}"
   # role/parent は構築上 parent/child で確定するため捨てる（label だけ使う）。
   IFS=$'\037' read -r _ plabel _ < <(_oe_event_ident "$pp") || true
@@ -168,7 +180,21 @@ oe_event_child_spawned() {
     extra="$(jq -cn --arg pm "$pmode" --argjson el "$([[ "$elevated" == "true" ]] && echo true || echo false)" \
       '({} + (if $pm != "" then {permission_mode:$pm} else {} end) + {elevated:$el})' 2>/dev/null)" || extra="{}"
   fi
-  oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "$extra"
+  oe_event_emit "child_spawned" "$pp" "parent" "$plabel" "$cp" "child" "$clabel" "$extra" "$please" "$clease"
+}
+
+# oe_event_lease_bound <pane> <lease_id> <generation> <bind_reason> [label]
+#   lease の binding を書いた・張り替えたことを残す（#577 DJ-13）。from は binding したプロセスのペイン、
+#   to は空。bind_reason は spawn（oe-delegate が子を起こした）・root（手で立てた統括）・rebind（本人の
+#   oe-lease bind）・adopt（一度だけの取り込み）。best-effort・常に return 0。
+oe_event_lease_bound() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local pane="${1:-}" lid="${2:-}" gen="${3:-}" why="${4:-}" label="${5:-}" extra
+  [[ "$lid" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ && "$gen" =~ ^[1-9][0-9]*$ ]] || return 0
+  case "$why" in spawn|root|rebind|adopt) ;; *) return 0 ;; esac
+  extra="$(jq -cn --arg l "$lid" --argjson g "$gen" --arg w "$why" '{lease_id:$l, generation:$g, bind_reason:$w}' 2>/dev/null)" || return 0
+  oe_event_emit "lease_bound" "$pane" "" "$label" "" "" "" "$extra" "${lid}:${gen}" ""
 }
 
 # oe_event_message_sent <from_pane> <to_pane> <preview-text> [delivery_signal] [nonce]

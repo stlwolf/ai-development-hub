@@ -17,6 +17,10 @@ OE_REGISTER="$PROJECT_DIR/bin/oe-register"
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
+# #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
+# （外さないと oe-register root などが本物の置き場に lease を作る）。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 export OE_DELEGATE_STATE_DIR="$_TMP_DIR/oe-delegate"
 export OE_PANE_ISSUE_DIR="$_TMP_DIR/pane-issue"

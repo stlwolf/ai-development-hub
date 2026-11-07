@@ -9,6 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 _TMP_DIR="$(mktemp -d)"
+# #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
+# （外さないと oe-register root などが本物の置き場に lease を作る）。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/logs" "$_TMP_DIR/state" "$_TMP_DIR/pane-issue" "$_TMP_DIR/ws/.oe"
 
@@ -84,6 +88,11 @@ ck() {
   fi
 }
 
+# 子のコマンドの頭の lease の環境変数（#577 PR-2・ID は起こすたびに違う）を外して比べる。付いていることは [L] で確かめる。
+split_cmd() {
+  sed -E "s/^OE_LEASE_ID='[0-9A-HJKMNP-TV-Z]{26}' OE_GENERATION='1' //" "$_TMP_DIR/logs/split-command.log"
+}
+
 reset_logs() {
   rm -f "$_TMP_DIR/logs/"*.log
 }
@@ -95,14 +104,14 @@ run_delegate() {
 echo "[1] default spawn command"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#152" "default task"
-ck "default child command" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "default child command" "PARENT_TMUX_PANE='%1' claude" "$(split_cmd)"
 ck "task sent to child pane" "yes" "$(grep -q -- 'send-keys -l -t %9 -- default task' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
 ck "Enter sent" "yes" "$(grep -q -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
 
 echo "[2] --claude-arg is repeatable and preserves one arg per flag"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#152" --claude-arg --permission-mode --claude-arg auto "arg task"
-ck "claude args in child command" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "claude args in child command" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(split_cmd)"
 
 echo "[3] --claude-arg combines with --brief add-dir"
 reset_logs
@@ -110,19 +119,19 @@ brief="${_TMP_DIR}/ws/.oe/brief.md"
 printf '%s\n' '# brief' > "$brief"
 run_delegate -w "$_TMP_DIR/ws" --label "#152" --claude-arg --permission-mode --claude-arg auto --brief "$brief" "brief task"
 expected_cmd="PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto' --add-dir '${_TMP_DIR}/ws/.oe'"
-ck "brief add-dir follows claude args" "$expected_cmd" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "brief add-dir follows claude args" "$expected_cmd" "$(split_cmd)"
 ck "brief path sent" "yes" "$(grep -qF -- "$brief を読んで進めて。 brief task" "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
 
 echo "[4] --claude-arg shell-quotes single quotes"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#152" --claude-arg "foo'bar" "quote task"
-ck "single quote escaped in child command" "PARENT_TMUX_PANE='%1' claude 'foo'\\''bar'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "single quote escaped in child command" "PARENT_TMUX_PANE='%1' claude 'foo'\\''bar'" "$(split_cmd)"
 
 echo "[5] --claude-arg preserves spaces and shell metacharacters"
 reset_logs
 meta_arg="a b;"'$'"(x)"
 run_delegate -w "$_TMP_DIR/ws" --label "#152" --claude-arg "$meta_arg" "meta task"
-ck "spaces/metacharacters quoted in child command" "PARENT_TMUX_PANE='%1' claude 'a b;\$(x)'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "spaces/metacharacters quoted in child command" "PARENT_TMUX_PANE='%1' claude 'a b;\$(x)'" "$(split_cmd)"
 
 echo "[6] --claude-arg requires a value"
 reset_logs
@@ -165,7 +174,7 @@ run_delegate -w "$_TMP_DIR/ws" --label "#152" "target task"
 # split-argv.log は 1 行 1 引数。-t の直後の引数が %1（親=TMUX_PANE）であることを順序込みで検証する
 # （フォーカス中ペインではなく親ペインを分割する）。子コマンド内の PARENT_TMUX_PANE='%1' と混同しない。
 ck "split-window -t targets parent pane" "%1" "$(awk '/^-t$/{getline; print; exit}' "$_TMP_DIR/logs/split-argv.log")"
-ck "split child command unchanged" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "split child command unchanged" "PARENT_TMUX_PANE='%1' claude" "$(split_cmd)"
 
 echo "[12] --kickoff は --brief の deprecated alias（回帰・#255）"
 # oe-delegate 側の alias。--brief と同一に add-dir 開示 + payload を組む。
@@ -173,7 +182,7 @@ reset_logs
 alias_brief="${_TMP_DIR}/ws/.oe/alias-brief.md"
 printf '%s\n' '# brief' > "$alias_brief"
 run_delegate -w "$_TMP_DIR/ws" --label "#152" --kickoff "$alias_brief" "alias task"
-ck "alias add-dir opens brief dir" "PARENT_TMUX_PANE='%1' claude --add-dir '${_TMP_DIR}/ws/.oe'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "alias add-dir opens brief dir" "PARENT_TMUX_PANE='%1' claude --add-dir '${_TMP_DIR}/ws/.oe'" "$(split_cmd)"
 ck "alias path sent identically" "yes" "$(grep -qF -- "$alias_brief を読んで進めて。 alias task" "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
 
 echo "[13] oe-send --brief が payload を組む"
@@ -207,7 +216,7 @@ echo "[17] --approved-digest matching -> spawns; binding holds (#262)"
 digest="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --print-approval "bind task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#262" --claude-arg --permission-mode --claude-arg auto --approved-digest "$digest" "bind task"
-ck "matching digest spawns child" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "matching digest spawns child" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(split_cmd)"
 
 echo "[18] --approved-digest mismatch -> rc=3 and no spawn (#262)"
 reset_logs
@@ -254,7 +263,7 @@ echo "[24] --elevated with matching digest spawns (#262 D3 positive)"
 edig="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --print-approval "el task" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --elevated --claude-arg --permission-mode --claude-arg auto --approved-digest "$edig" "el task"
-ck "elevated + matching digest spawns" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(cat "$_TMP_DIR/logs/split-command.log")"
+ck "elevated + matching digest spawns" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(split_cmd)"
 
 echo "[25] --workspace with control chars is rejected before spawn (#262 D4/R2)"
 reset_logs
@@ -294,6 +303,21 @@ ck "task と --brief がどちらも無いのは 2" "2" "$rc"
 rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" my task here >/dev/null 2>&1 || rc=$?
 ck "余分な位置引数は 2" "2" "$rc"
 ck "上記のいずれも spawn しない" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[L] #577 PR-2: 子のコマンドの頭に lease の環境変数が付き、lease の記録ができる"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#577" "lease task"
+_lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "lease の環境変数が付く" "26" "${#_lid}"
+ck "lease の記録がある" "#577" "$(jq -r '.label' "$OE_LEASE_DIR/${_lid}.json" 2>/dev/null)"
+ck "モックの tmux ではペインの端末が分からないので binding は未確定のまま" "null" "$(jq -r '.generations[0].binding' "$OE_LEASE_DIR/${_lid}.json" 2>/dev/null)"
+ck "binding が未確定であることを名乗る" "yes" "$(grep -q 'binding は未確定' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "lease の置き場は一時ディレクトリ" "yes" "$([[ "$OE_LEASE_DIR" == "$_TMP_DIR"/* ]] && echo yes || echo no)"
+
+echo "[L2] #577 PR-2: lease の置き場が決まらないときは、いままでどおりのコマンドで子を起こす"
+reset_logs
+OE_LEASE_DIR="" run_delegate -w "$_TMP_DIR/ws" --label "#577" "no lease task"
+ck "lease の環境変数が付かない" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
