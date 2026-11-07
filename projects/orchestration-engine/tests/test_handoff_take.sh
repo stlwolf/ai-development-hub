@@ -508,6 +508,21 @@ ck "old が pane でなければ 2"    "2" "$rc27"
 ck "expect が pane でなければ 2" "2" "$rc28"
 ck "board を書き換えない"        "$vl_before" "$(cat "$VL")"
 
+echo "[36] 末尾に改行の無い board でも席を張り替える（#496）"
+# Write の道具や手の編集では、board の最後の行が改行で終わらないことがよくある。
+# 以前は行数の検査が wc -l（改行の数）で、書き換え後が1つ多く数えられて必ず rc=2 になっていた。
+NL="$_TMP_DIR/nonl.md"; mk_board "$NL"
+printf '%s' "$(cat "$NL")" > "$NL.tmp" && mv "$NL.tmp" "$NL"
+ck "前提: 末尾に改行が無い" "0" "$(tail -c1 "$NL" | od -An -c | grep -c '\\n' | tr -d ' ')"
+nl_lines="$(awk 'END { print NR }' "$NL")"
+set +e
+oe_seat_rewrite "$NL" "%11" 15 "2026-09-12" "%10" "%10"; rc36=$?
+set -e
+ck "張替は 0 で終わる"   "0"   "$rc36"
+ck "宣言は後継を指す"     "%11" "$(oe_seat_resolve "$NL")"
+ck "行数が変わらない"     "$nl_lines" "$(awk 'END { print NR }' "$NL")"
+ckc "最後の行が残る"      "$(tail -n1 "$NL")" "本文は触られてはならない。"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

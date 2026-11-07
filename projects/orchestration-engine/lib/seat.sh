@@ -148,7 +148,10 @@ _oe_seat_rewrite_locked() {
     return 2
   fi
   # 書き換えた行が1行だけで、行数が変わっていないことを被せる前に確かめる。
-  if [ "$(wc -l <"$tmp" | tr -d ' ')" != "$(wc -l <"$bf" | tr -d ' ')" ]; then
+  # **行は awk の NR で数える（#496）。** wc -l は改行の数なので、末尾に改行の無い board
+  # （Write の道具や手の編集でよく起きる）では、awk が最後の行に改行を付けて出すぶん
+  # 書き換え後が1つ多く数えられ、張替が必ず失敗していた。NR は末尾の改行の有無によらない。
+  if [ "$(awk 'END { print NR }' "$tmp")" != "$(awk 'END { print NR }' "$bf")" ]; then
     rm -f "$tmp" 2>/dev/null
     return 2
   fi
