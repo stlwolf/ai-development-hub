@@ -48,8 +48,7 @@ lease_root_best_effort() {
   if oe_lease_whoami >/dev/null 2>&1; then return 0; fi
   local id
   if id="$("${BIN_DIR}/oe-lease" create --root --label "${LABEL:-cockpit}" -w "${WORKSPACE:-$(pwd)}" 2>/dev/null)"; then
-    echo "oe-register: lease ${id} を作りました（root）" >&2
-    if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "$SELF" "$id" 1 root "${LABEL:-}" || true; fi
+    echo "oe-register: lease ${id} を自分の lease にしました（root）" >&2
   else
     echo "oe-register: lease を作れませんでした（registry だけで続けます）" >&2
   fi

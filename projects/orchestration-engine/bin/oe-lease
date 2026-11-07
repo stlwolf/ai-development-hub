@@ -83,10 +83,23 @@ case "$cmd" in
         err "session_id ${CLAUDE_CODE_SESSION_ID} は、もう開いた lease に登録されています（oe-lease whoami で確かめてください）"; exit 8
       fi
     fi
+    if [ "$root" -eq 1 ]; then
+      # 自分のプロセスを binding に持つ lease がもうあれば（adopt で取り込まれた統括など）、新しく作らずに
+      # それを使い、自分の session_id を登録する。作ると同じプロセスに lease が2つでき、子の親が分かれる
+      # （実装SO の指摘・PR-2）。binding が自分と一致するので、名乗る方法3 の確かめは要らない。
+      if have="$(oe_lease_find_by_binding "$SELF_PID" "$SELF_STARTED" 2>/dev/null)"; then
+        [ "$(printf '%s\n' "$have" | grep -c .)" -eq 1 ] || { err "自分のプロセスを binding に持つ lease が複数あります: $(printf '%s' "$have" | tr '\n' ' ')"; exit 3; }
+        rc=0; oe_lease_claim "$have" "$(oe_lease_epoch "$have")" "$SELF_PID" "$SELF_STARTED" "$SELF_COMM" "$CLAUDE_CODE_SESSION_ID" || rc=$?
+        [ "$rc" -eq 0 ] || { err "lease ${have} に自分の session_id を登録できませんでした（rc=${rc}）"; exit "$rc"; }
+        printf '%s\n' "$have"
+        exit 0
+      fi
+    fi
     id="$(oe_lease_create "$kind" "$label" "$ws" "$parent" "$gen")" || exit $?
     if [ "$root" -eq 1 ]; then
       rc=0; oe_lease_claim "$id" 0 "$SELF_PID" "$SELF_STARTED" "$SELF_COMM" "$CLAUDE_CODE_SESSION_ID" || rc=$?
       [ "$rc" -eq 0 ] || { err "作った lease ${id} に自分を binding できませんでした（rc=${rc}）"; exit "$rc"; }
+      if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "${TMUX_PANE:-}" "$id" "$gen" root "$label" || true; fi
     fi
     printf '%s\n' "$id"
     ;;
@@ -128,6 +141,9 @@ case "$cmd" in
       8) err "session_id ${CLAUDE_CODE_SESSION_ID} は、ほかの開いた lease か、この lease の別の generation に登録されています。binding は変えていません"; exit 8 ;;
       *) err "binding を書けませんでした（rc=${rc}）"; exit "$rc" ;;
     esac
+    if declare -F oe_event_lease_bound >/dev/null 2>&1; then
+      oe_event_lease_bound "${TMUX_PANE:-}" "$id" "$(oe_lease_get "$id" | jq -r '.current_generation')" rebind "$(oe_lease_get "$id" | jq -r '.label')" || true
+    fi
     oe_lease_whoami_out="$(OE_LEASE_ID="$id" OE_GENERATION="" oe_lease_whoami)" || true
     printf '%s\n' "$oe_lease_whoami_out"
     ;;

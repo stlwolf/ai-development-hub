@@ -167,6 +167,13 @@ ck "lease_bound（adopt）が残る" "2" "$(jq -r 'select(.type=="lease_bound" a
 out2="$(bash "$BIN/oe-lease" adopt 2>&1)"
 ck "2回走らせても増えない" "2" "$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
 ck "2回目はもうあると言う" "2" "$(printf '%s\n' "$out2" | grep -c '^exists')"
+n_adopted="$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
+CLAUDE_PID=505 CLAUDE_CODE_SESSION_ID=sid-sup TMUX_PANE=%5 bash "$BIN/oe-register" root --label cockpit -w "$_TMP_DIR/ws" --force >/dev/null 2>&1 || true
+ck "adopt のあとの root は、取り込んだ lease を使い、新しく作らない" "$n_adopted" "$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
+ck "root は取り込んだ lease に自分の session_id を登録する" "sid-sup" "$(jq -r '.generations[0].session_ids[0] // ""' "$OE_LEASE_DIR/$sup.json")"
+CLAUDE_PID=909 CLAUDE_CODE_SESSION_ID=sid-chi TMUX_PANE=%9 bash "$BIN/oe-lease" bind "$chi" -w "$_TMP_DIR/ws" >/dev/null 2>&1 || true
+ck "oe-lease bind は lease_bound（rebind）を残す" "rebind" "$(jq -r --arg l "$chi" 'select(.type=="lease_bound" and .lease_id==$l) | .bind_reason' "$EVENTS" | tail -1)"
+ck "bind は本人の session_id を登録する" "sid-chi" "$(jq -r '.generations[0].session_ids[0] // ""' "$OE_LEASE_DIR/$chi.json")"
 for f in "$OE_LEASE_DIR"/*.json; do ck "取り込んだ記録が検査を通る（$(basename "$f" .json | cut -c1-8)）" "0" "$(rc_of bash "$PROJECT_DIR/scripts/validate-lease.sh" "$f")"; done
 
 echo "=== (6) 本物に届く経路が無い ==="

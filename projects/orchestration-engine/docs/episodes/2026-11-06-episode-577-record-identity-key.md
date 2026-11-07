@@ -269,3 +269,19 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - owner の指示（統括経由）で、decision の案を accepted に上げる作業と、#188・#238/#239・board schema に印を足す作業を、PR-2 ではなく PR-1（#580）に入れた。plan の表の「既存の振る舞いに触るか」は verb の動きの話で、文書の印はそれに当たらない、という理由である。統括は一度「PR-2 の branch で行う」と指示し、owner がそれを取り消した。
 - 印の文は decision の「確定するときに直すこと」のとおりにした。#188 は frontmatter の `superseded_by` に1文を足し、#238/#239 は frontmatter に `superseded_by` の行を足し、board schema は末尾に §10 の追記の節を足した。どれも本文は変えていない。
 - 訂正: 既存のテストの前からの失敗のうち `tests/test_home_unset.sh` の件数は、環境で変わる。`TMUX` があると1件（`_oe_home_usable` の定義が1種類でない）、`TMUX` を外すと `oe-register --help` の1件が加わって2件になる（master の写しで両方を確かめた）。I1 の節の「2件」は、本物のペインに触れないように `TMUX` を外して回したときの数である。
+
+## I2: PR-2（書く側を lease と registry の両方書きにする）（2026-11-07）
+
+- PR-1（#580）は master の `d2b5a99` にマージされた。書面のとおり origin/master を feature ブランチに merge してから始めた（rebase はしない）。
+- 足したもの: `oe-delegate` が子の lease を作り、子のコマンドに `OE_LEASE_ID` と `OE_GENERATION` を入れ、起動を確かめた時点でフォアグラウンドのプロセスが claude なら binding を書く。`oe-register` の root と link。heartbeat の producer の `lease_id` と `generation`。events の endpoint の lease と型 `lease_bound`。一度だけの取り込み `oe-lease adopt`。
+- 危なかった点: verb を呼ぶ既存のテストをこのセッションの中で回すと、セッションの `CLAUDE_PID` と `CLAUDE_CODE_SESSION_ID` が環境に入っているので、`oe-register root` が本物の `~/.claude/state/oe-lease/` に lease を作るところだった。書く前に気づき、verb を呼ぶ既存のテスト9本で lease の置き場を一時ディレクトリに向け、これらの変数を外した。本物の置き場は作られていない（全体のテストのあとにも確かめる）。negative knowledge `01M5T897YCWY13GFTADD3136EC`（偽物に差し替えるときは、本物に届く経路が残っていないかを最後までたどる）の当てはめである。経路は「テストの外のセッションの環境変数」で、テストの中の差し替えだけを見ていると見落とす。
+- `oe-delegate` の既存のテストは、子のコマンドの文字列を丸ごと比べていたので、lease の環境変数（起こすたびに違う ID）を外して比べる形にし、付いていることは別に確かめた。承認の digest は環境変数を含まないので、照合は変わらない。
+
+### I2: 実装SO（Codex の1レーン・2026-11-07）
+
+- `so-compare --codex-only`（`gpt-6.1-sol`・131秒・初回で返った）。プロンプトと出力は統括のワークスペースの根の `tmp/577-record-identity/impl-pr2-prompt.md` と `tmp/577-record-identity/so-impl-pr2/`。
+- 採ったもの（2件・どちらも直した）:
+  - 中: adopt で取り込んだ統括が `oe-register root` を打つと、取り込んだ lease に session_id が無いので名乗れず、同じプロセスに2つ目の lease を作っていた。`oe-lease create --root` は、自分のプロセスを binding に持つ lease がもうあれば、それを使って自分の session_id を登録する形にした。
+  - 低: `oe-lease bind` と `oe-lease create --root` を直接打ったときに `lease_bound` が残らなかった。`oe-lease` の側で残す形にし、`oe-register` の側の重複を外した。
+- 指摘が無かった点: lease の部分が失敗しても委譲・登記・送信が今までどおり進むこと・producer が遅くならないこと・別のセッションの lease を焼き込まないこと・adopt の重複と server の絞り込み・テストの隔離。
+- 残る確かめ: R2（statusLine が環境を受け継ぐか）と R4（起動から4秒後のフォアグラウンドのプロセスが claude か）は、偽物の道具のテストでは確かめられない。実機の確かめが要る（報告で統括に聞く）。
