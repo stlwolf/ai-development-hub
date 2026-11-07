@@ -290,3 +290,34 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 
 - Copilot の指摘2件をどちらも直して返信した（`06f6cf6`）。1件目は、producer のテストが lease の環境を受け継ぐと従来の出力の確かめが崩れること。I2 で verb を呼ぶテスト9本を隔離したときに、producer のテストを見落としていた。producer は verb ではなく環境変数だけを読むので、「verb を呼ぶテスト」という探し方では引っかからなかった。2件目は、本物の置き場を比べる相手が呼ぶたびに更新されるファイルだったこと。PR-1 の `tests/test_lease.sh` にも同じ形があったので一緒に直した。
 - 全体のテスト（57本・両方の bash・`TMUX` を外した環境）で落ちたのは `test_home_unset`（2件）と `test_oe_confirm`（2件）だけで、master の `d2b5a99` でも同じ4件が落ちることを、同じ環境で回して確かめた。テストのあとも本物の `~/.claude/state/oe-lease/` は作られていない。
+
+## I3: PR-4（統括の lease・交代を lease の記録で行う）（2026-11-07）
+
+- PR-2（#581）は master の `62381f1` にマージされた。origin/master を feature ブランチに merge してから始めた（`798f124`）。
+- R2 と R4 の実機の確かめは、統括が使い捨ての子で済ませ、どちらも合格だった（sidecar に lease_id と generation が載る・binding の pid はフォアグラウンドの claude と一致）。DJ-18 の書く時点の直しは要らない。統括の観測が1件あった。統括は PR-2 より前に席を取ったので自分の lease が無く、子の `parent_lease_id` が空だった。
+- この観測に対して、子の lease の親が空なら埋める関数 `oe_lease_fill_children` を足し、`oe-register root` と `oe-handoff take` の両方から呼ぶ形にした。`oe-register root` は PR-2 の時点で、もう root のペインで打ち直しても lease を作る（または使う）形になっていたが、それより前に起こした子の親は空のまま残っていた。
+- take: 統括の lease の generation を進める1回の書き込みを commit point にし、registry・board・event はそのあとに書く派生の記録にした（DJ-5）。前任は、前任のペインのフォアグラウンドのプロセスが lease のいまの generation の binding であることで確かめる。前任に lease が無いとき（#577 の前に席を取った統括）は、前任のプロセスを binding にして作る。作る lease の番号は board の代目に合わせた（後継の代目 - 1 から始める）。adopt が 1 から始めるのと揃っていないが、統括の lease は board の代目と同じ番号の方が人が読みやすいので、take の側だけ合わせた。
+- take を2回目に走らせたとき、board がもう自分を指していれば、lease の段より前の「席は既に自分」で終わる（#390 からある分岐）。lease を進めてから board を書く前に止まった場面では、2回目は lease を飛ばして board を直す。この2つをテストで分けて確かめた。
+- retire: 閉じてよいかを lease の記録だけで判定し、引き継ぎ文書の機械の節は読まない（owner の答え Q84）。以前の4つの確かめ（session_id・ペインの pid・コマンド名・tmux server の pid）は、前任のペインのフォアグラウンドのプロセスが前の generation の binding（pid と開始時刻）である、の1つにした。シェルで始まるペインの前任も閉じられるようになった（M3）。機械の節の PR と申告の照合はやめ、いまの open PR との照合だけにした。照合の規則（部分一致にしない・種別をまたがない）を見ていた既存のテストは、いまの open PR の側で同じ規則を見る形に書き直した。
+- retire の既存のテストは、機械の節に頼っていた17件を書き直した。数は 206 から 197 に減った。減ったのは、機械の節の目印・古い形式・server の pid を見ていた確かめで、いまは存在しない分岐である。
+- handoff-state の heartbeat の引き方は、N6 の関数に任せても既存のテスト（prepare 81件・take 125件・retire 206件）がそのまま通った。`oe_hs_beat_age_for_pane` は「いちばん新しい拍動の古さ」を出す別の問いなので、N6 の関数へは寄せていない（理由の文を作るために使っている）。
+- oe-vitals: 統括の lease を、`OE_VITALS_LEASE_ID` か board の置き場の workspace で探す。death は binding のプロセスが無いと確かめられたときだけにした（ペインが残っていても、プロセスが終わっていれば death になる）。lease が決まらなければ、いままでどおり board のペインで判定する。cron で走るので、tmux server の pid は `$TMUX` か `tmux display-message` で取る。
+- テストの道具: `lib/tmux-pane-identity.sh` の偽の ps・tmux・kill を `tests/fixtures/fake-proc.sh` にまとめた。PR-2 の `tests/test_lease_writers.sh` には同じ形の偽物が直に書いてあるが、そちらは触っていない。
+- `tests/test_oe_vitals.sh` は lease の置き場を一時ディレクトリに向けていなかったので、向けた。向けないと、本物の置き場の統括の lease を読み、テストの結果が手元の状態で変わる。
+
+### I3: 実装SO（Codex の1レーン・2026-11-07）
+
+- `so-compare --codex-only`（`gpt-6.1-sol`・195秒・初回で返った）。プロンプトと出力は統括のワークスペースの根の `tmp/577-record-identity/impl-pr4-prompt.md` と `tmp/577-record-identity/so-impl-pr4/`。
+- 採ったもの（4件・`7bdc972`）:
+  - 高: take が前任を確かめてから epoch を読み直していたので、そのあいだに別の後継が進めた lease を、確かめていない相手のまま進められた。確かめと epoch を同じ1回の読み取りから取る形にした。
+  - 高: 別の後継が lease を進めて board を書く前に止まった場面で、もう1つの後継が take を打つと、前任はいまの generation の binding でないので「lease が無い」と取り違え、2つ目の統括の lease を作っていた。前任のプロセスが退任した generation の binding なら止まる形にした。
+  - 高: 後継が take の前に自分の lease を作っていると「既に自分」で通り、前任の lease が在任のまま残っていた。また、board の前任のペイン番号が別のリポジトリの統括に使い回されていると、その lease を進められた。自分の lease の前の generation が前任のプロセスであることと、前任の lease の workspace がこの交代の workspace であることを確かめる形にした。
+  - 中: oe-vitals は拍動が1件も無いと、lease の binding のプロセスが無くても death を出さなかった。lease が決まっていれば拍動の数で止まらない形にした。
+- 採らなかったもの（1件）: board を書いたあとに止まったときの打ち直しで、交代イベントだけが直らない件（中・被害は低い）。#390 からの「席は既に自分」の分岐が `--predecessor` と `--generation` を案内するので、take の保証の書き方を「lease を進めたあと board を書く前に止まった場合」に限るコメントに直した。
+- 指摘が無かった点: retire の判定（機械の節を読まない・4つの確かめを1つにしたこと）・oe-vitals の workspace の一致での取り違え・テストの隔離。
+- 振り返り: 指摘の3件は、どれも「確かめた相手」と「書き換える相手」が離れる形だった。#390 の take が board の compare-and-swap で塞いだのと同じ型を、lease の側で1回作り直していた。確かめに使った値と書き換えの条件を同じ読み取りから取る、を lease の書き込みでも守る。
+
+### I3: Copilot の1ラウンド（2026-11-07）
+
+- Copilot は行のコメントを付けず（「No open issues」）、概要の見出しだけで「退任の確かめが、対象の workspace を確かめずに通る」と書いた。具体の箇所は無かったが、読み直すと retire は lease の workspace と `-w` の workspace の一致を見ていなかった（take は実装SO の指摘で見るようにした）。申告と突き合わせる open PR・worktree・未 push は `-w` の workspace で見るので、違えば別のリポジトリの記録で閉じる判断をすることになる。take と同じ確かめを retire に足した。
+- 既存のテストのうち、未 push と worktree の確かめのために `-w` を別の workspace にしていた4件は、lease もその workspace で作る形にした（retire 200件）。

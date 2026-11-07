@@ -42,6 +42,11 @@ elif _oe_home_usable; then OE_HEARTBEAT_DIR="${HOME}/.claude/state/oe-heartbeat"
 else                       OE_HEARTBEAT_DIR=""
 fi
 
+# heartbeat からペインの session_id を引く規則は lib/heartbeat-resolve.sh の1つの関数にある（#577 の N6・PR-4）。
+_OE_HS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=heartbeat-resolve.sh
+source "${_OE_HS_LIB_DIR}/heartbeat-resolve.sh"
+
 # いまの tmux server の pid。$TMUX の2番目のフィールドが server pid（registry と同じ導出）。
 # テストでは OE_HS_SERVER_PID で固定する。
 oe_hs_server_pid() {
@@ -180,7 +185,7 @@ oe_hs_children_of() {
 OE_HS_SESSION_REASON=""
 
 oe_hs_session_for_pane() {
-  local pane="${1:-}" spid best_sid="" best_ts=-1 ts f tie=0
+  local pane="${1:-}" spid sid rc age window
   OE_HS_SESSION_REASON=""
   [ -n "$pane" ] || { printf 'unknown'; return 0; }
   [ -n "$OE_HEARTBEAT_DIR" ] || { printf 'unknown'; return 0; }
@@ -188,39 +193,34 @@ oe_hs_session_for_pane() {
   command -v jq >/dev/null 2>&1 || { printf 'unknown'; return 0; }
   spid="$(oe_hs_server_pid)"
   [ -n "$spid" ] || { printf 'unknown'; return 0; }
-  for f in "$OE_HEARTBEAT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    ts="$(jq -r --arg p "$pane" --arg s "$spid" \
-      'select((.pane // "") == $p and ((.server_pid // "") | tostring) == $s) | (.ts // empty)' "$f" 2>/dev/null)" || continue
-    [ -n "$ts" ] || continue
-    case "$ts" in ''|*[!0-9]*) continue ;; esac
-    if [ "$ts" -gt "$best_ts" ]; then
-      best_ts="$ts"; best_sid="$(basename "$f" .json)"; tie=0
-    elif [ "$ts" -eq "$best_ts" ]; then
-      # epoch 秒なので同率は起こりうる。同率のときは「どの世代か決められない」ので
-      # 先に見つけたほうを黙って採らない。
-      tie=1
-    fi
-  done
-  [ -n "$best_sid" ] || {
-    OE_HS_SESSION_REASON="このペインの拍動が1件も無い（いまの tmux server の分では見つからない）"
-    printf 'unknown'; return 0; }
-  [ "${tie:-0}" -eq 0 ] || {
-    OE_HS_SESSION_REASON="いちばん新しい拍動が同じ時刻で複数あり、どの世代か決められない"
-    printf 'unknown'; return 0; }
-  # 拍動の鮮度。窓は実測（統括の拍動は2時間古くなることがある）より広く取る。
-  local now age
-  now="${OE_HS_NOW_EPOCH:-$(date +%s)}"
-  age=$(( now - best_ts ))
-  [ "$age" -le "${OE_HS_BEAT_MAX_AGE_SEC:-21600}" ] || {
-    OE_HS_SESSION_REASON="拍動が古い（${age} 秒前・窓は ${OE_HS_BEAT_MAX_AGE_SEC:-21600} 秒）"
-    printf 'unknown'; return 0; }
+  # 窓は実測（統括の拍動は2時間古くなることがある）より広く取る。
+  window="${OE_HS_BEAT_MAX_AGE_SEC:-21600}"
+  # (1)(2) の絞り方は N6 の関数に任せる（#577 PR-4）。server の pid が一致し、窓の中にあるもののうち、
+  # いちばん新しいものを採る。同じ時刻で別の session_id に分かれたら決めない（rc 3）。
+  if [ -n "${OE_HS_NOW_EPOCH:-}" ]; then
+    sid="$(OE_HB_NOW_EPOCH="$OE_HS_NOW_EPOCH" oe_hb_session_for_pane "$spid" "$window" "$pane")"; rc=$?
+  else
+    sid="$(oe_hb_session_for_pane "$spid" "$window" "$pane")"; rc=$?
+  fi
+  case "$rc" in
+    0) ;;
+    3) OE_HS_SESSION_REASON="いちばん新しい拍動が同じ時刻で複数あり、どの世代か決められない"
+       printf 'unknown'; return 0 ;;
+    *) # 窓の中に無い。窓の外にあるのか、1件も無いのかを分けて書く（人が次の手を選べるように）。
+       age="$(oe_hs_beat_age_for_pane "$pane")"
+       if [ "$age" != "unknown" ] && [ "$age" -gt "$window" ] 2>/dev/null; then
+         OE_HS_SESSION_REASON="拍動が古い（${age} 秒前・窓は ${window} 秒）"
+       else
+         OE_HS_SESSION_REASON="このペインの拍動が1件も無い（いまの tmux server の分では見つからない）"
+       fi
+       printf 'unknown'; return 0 ;;
+  esac
   # この値の用途は「停止しても claude --resume で会話を開き直せる」ことの担保なので、
   # 担保の実体（transcript が在り、最近書かれていること）も直接確かめる。
-  oe_hs_transcript_usable "$best_sid" || {
+  oe_hs_transcript_usable "$sid" || {
     OE_HS_SESSION_REASON="transcript が見つからないか古い（${OE_TRANSCRIPT_DIR:-既定の置き場} を見た）"
     printf 'unknown'; return 0; }
-  printf '%s' "$best_sid"
+  printf '%s' "$sid"
 }
 
 # pane の拍動の古さ（秒）。取れなければ unknown。文書に出して人が判断できるようにする。

@@ -3,7 +3,8 @@
 #
 # 設計の正本は projects/orchestration-engine/docs/discussions/2026-11-06-discussion-577-record-identity-key.md
 # （DJ-1〜DJ-20）と、同じ木の decision の案（D1〜D19）である。この lib はその記録の読み書きだけを持つ。
-# 既存の verb（oe-delegate・oe-send・oe-handoff・oe-tree など）はまだこの lib を使わない（PR-2 以降で切り替える）。
+# 書く側（oe-delegate・oe-register・oe-lease）は PR-2 で、統括の交代（oe-handoff）と oe-vitals は PR-4 でこの lib を使う。
+# 送る側（oe-send など）と観測する側（oe-tree など）は PR-3 と PR-5 で切り替える。
 #
 # 言葉:
 #   lease       人が入れ替わっても続く持ち場（統括の lease・委譲1件の lease）。ID は lease_id（ULID 風）。
@@ -423,6 +424,44 @@ oe_lease_find_by_binding() {
   done
   out="$(printf '%s' "$out" | grep -v '^$')" || return 1
   printf '%s\n' "$out"
+}
+
+# oe_lease_fill_children <parent_lease_id> <parent_pane> <server_pid>
+#   registry の記録のうち、いまの server の分で親のペインが <parent_pane> のものについて、子のペインの
+#   フォアグラウンドのプロセスから子の lease を見つけ、子の lease の親が空なら <parent_lease_id> を書く
+#   （#577 PR-4。統括の lease ができる前に起こした子は、親が空のまま残るため）。親がもう書いてある子は変えない。
+#   出力（1行1件）: "parented <pane> <child_lease_id>" / "kept <pane> <child_lease_id>" / "skipped <pane> <理由>"。
+#   best-effort なので、子ごとの失敗では止まらず rc 0 を返す。呼び方の誤りだけ rc 2。
+oe_lease_fill_children() {
+  local parent="${1:-}" ppane="${2:-}" spid="${3:-}" f pane fg cpid cst child cur rc
+  _oe_lease_valid_id "$parent" || return 2
+  [ -n "$ppane" ] && [ -n "$spid" ] || return 2
+  [ -n "${OE_DELEGATE_STATE_DIR:-}" ] && [ -d "$OE_DELEGATE_STATE_DIR" ] || return 0
+  for f in "$OE_DELEGATE_STATE_DIR/${spid}"_*.json; do
+    [ -f "$f" ] || continue
+    [ "$(jq -r '.parent_pane // ""' "$f" 2>/dev/null)" = "$ppane" ] || continue
+    pane="$(jq -r '.pane // ""' "$f" 2>/dev/null)" || continue
+    case "$pane" in %[0-9]*) ;; *) continue ;; esac
+    if ! fg="$(oe_tpi_pane_foreground "$pane" 2>/dev/null)"; then
+      printf 'skipped %s フォアグラウンドのプロセスを確かめられない\n' "$pane"; continue
+    fi
+    cpid="${fg%%"$_OE_TPI_TAB"*}"; cst="${fg#*"$_OE_TPI_TAB"}"
+    if ! child="$(oe_lease_find_by_binding "$cpid" "$cst" 2>/dev/null)"; then
+      printf 'skipped %s lease が無い\n' "$pane"; continue
+    fi
+    if [ "$(printf '%s\n' "$child" | grep -c .)" -ne 1 ]; then
+      printf 'skipped %s 同じプロセスを binding に持つ lease が複数ある\n' "$pane"; continue
+    fi
+    [ "$child" != "$parent" ] || continue
+    cur="$(oe_lease_get "$child")" || continue
+    if [ -n "$(printf '%s' "$cur" | jq -r '.parent_lease_id // ""')" ]; then
+      printf 'kept %s %s\n' "$pane" "$child"; continue
+    fi
+    rc=0; oe_lease_set_parent "$child" "$(printf '%s' "$cur" | jq -r '.epoch')" "$parent" || rc=$?
+    if [ "$rc" -eq 0 ]; then printf 'parented %s %s\n' "$pane" "$child"
+    else printf 'skipped %s 親を書けない（rc=%s）\n' "$pane" "$rc"; fi
+  done
+  return 0
 }
 
 # --- 名乗る ---

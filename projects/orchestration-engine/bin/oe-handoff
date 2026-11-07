@@ -4,8 +4,11 @@
 # 交代は4工程で、走るセッションが違う。
 #   prepare  前任のセッション。機械で取れる状態を引き継ぎ文書へ書く（他は何も書き換えない）
 #   start    前任のセッション。後継のペインを起こして引き継ぎ文書のパスを送る（PR-2）
-#   take     後継のセッション。席を取りに行く（PR-2）
-#   retire   後継のセッション。前任を閉じてよいかを判定し、`--execute` で閉じる
+#   take     後継のセッション。席を取りに行く（PR-2）。#577 PR-4 から、統括の lease の generation を進める
+#            1回の書き込みを commit point にし、registry・board・event はそのあとに書く派生の記録にする
+#   retire   後継のセッション。前任を閉じてよいかを判定し、`--execute` で閉じる。#577 PR-4 から、閉じてよいかは
+#            lease の記録（前の generation の binding）とペインのフォアグラウンドのプロセスで判定し、
+#            引き継ぎ文書の機械の節は読まない（owner の答え Q84）
 #
 # 応答しない前任からの復帰は本 verb の担当ではない（#355 の別 verb）。分かれ目は前任が
 # 自分の状態を申告できるかどうかの1点である。
@@ -34,6 +37,8 @@ source "${BIN_DIR}/../lib/handoff-state.sh"
 source "${BIN_DIR}/../lib/seat.sh"
 # shellcheck source=../lib/event-bus.sh
 source "${BIN_DIR}/../lib/event-bus.sh" || true
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh"
 
 # 外部 verb の実体。テストで差し替えられるようにしておく（実物の登記や席に触れないため）。
 OE_HANDOFF_REGISTER="${OE_HANDOFF_REGISTER:-${BIN_DIR}/oe-register}"
@@ -47,6 +52,41 @@ MARK_BEGIN='<!-- oe-handoff:machine:begin -->'
 MARK_END='<!-- oe-handoff:machine:end -->'
 
 err() { printf '%s\n' "oe-handoff: $*" >&2; }
+
+# そのプロセスを、退任した generation の binding に持つ開いた lease を引く（#577 PR-4・実装SO の指摘）。
+# 前任が既に退任していれば（別の後継が lease を進めたあと）、いまの generation の binding では見つからないので、
+# 「lease が無い」と取り違えて2つ目の統括の lease を作らないために使う。出力は "<lease_id>\t<generation>"。
+_lease_retired_by_proc() {
+  local pid="${1:-}" st f out=""
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  st="$(_oe_tpi_norm "${2:-}")"
+  [ -n "$st" ] && [ -n "${OE_LEASE_DIR:-}" ] && [ -d "$OE_LEASE_DIR" ] || return 1
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    out="${out}$(jq -r --argjson p "$pid" --arg st "$st" 'select(.state=="open") | .lease_id as $l
+      | .generations[] | select(.state=="retired" and .binding != null and .binding.pid==$p and .binding.started==$st)
+      | "\($l)\t\(.generation)"' "$f" 2>/dev/null)
+"
+  done
+  out="$(printf '%s' "$out" | grep -v '^$')" || return 1
+  printf '%s\n' "$out" | head -1
+}
+
+_realdir() { (cd "$1" 2>/dev/null && pwd -P); }
+
+# ペインのフォアグラウンドのプロセスから、そのプロセスを binding に持つ lease を引く（#577 PR-4）。
+# 出力は "<lease_id>\t<pid>\t<started>"（lease が無いときは lease_id が空）。
+# rc: 0 引けた / 1 lease が無い / 3 同じプロセスを binding に持つ lease が複数 / 6 プロセスを確かめられない
+_lease_of_pane() {
+  local pane="${1:-}" fg pid st hit
+  fg="$(oe_tpi_pane_foreground "$pane" 2>/dev/null)" || return 6
+  pid="${fg%%"$_OE_TPI_TAB"*}"; st="${fg#*"$_OE_TPI_TAB"}"
+  if ! hit="$(oe_lease_find_by_binding "$pid" "$st" 2>/dev/null)"; then
+    printf '%s%s%s%s' "" "$_OE_TPI_TAB" "$pid" "$_OE_TPI_TAB$st"; return 1
+  fi
+  [ "$(printf '%s\n' "$hit" | grep -c .)" -eq 1 ] || return 3
+  printf '%s%s%s%s' "$hit" "$_OE_TPI_TAB" "$pid" "$_OE_TPI_TAB$st"
+}
 
 usage() {
   cat <<'EOF'
@@ -62,9 +102,12 @@ usage:
   start   — 前任のセッションで走らせる。後継のペインを起こして引き継ぎ文書のパスを送る。
             起こすペインは**登記の子にしない**（PARENT_TMUX_PANE も渡さない）。
   take    — 後継のセッションで走らせる。前提を全部確かめてから席を取りに行く。
+            統括の lease の generation を進める書き込みが先で、登記・board・event はそのあとに書く。
             確かめるものが先、書き換えるものが後。何度実行しても同じ結果になる。
   retire  — 後継のセッションで走らせる。機械の検査をやり直して前任の申告と突き合わせ、
             停止してよいかを判定する。**引数なしは下見で、何も停止しない。**
+            前任が誰かは統括の lease の記録（前の generation の binding）で決め、前任のペインの
+            フォアグラウンドのプロセスがその binding であることを確かめる。引き継ぎ文書の機械の節は読まない。
             `--execute` は**検査をやり直してから**前任のペインだけを閉じる。
 
   -w <workspace>      作業ディレクトリ（既定: git のトップレベル、無ければ cwd）
@@ -106,8 +149,10 @@ DRY_RUN=0
 EXECUTE=0
 RETIRE_PRED=""
 RETIRE_SID=""
-# 機械の節の本体（段階2 が pid を読む。**文書全体から拾わない**）
-RETIRE_MACHINE=""
+# 前の generation の binding（閉じる直前にペインのフォアグラウンドのプロセスと照らす・#577 PR-4）
+RETIRE_LEASE=""
+RETIRE_PPID=""
+RETIRE_PST=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -w)            WORKSPACE="${2:-}"; shift 2 || { err "-w に値がありません"; exit 2; } ;;
@@ -166,16 +211,27 @@ cmd_prepare() {
   # 子を数えられなかったとき（jq 不在・登記の置き場が決まらない）を 0 件に化かさない。
   # 0 は「居ない」、unknown は「分からない」で、後段の停止の可否が逆になる。
   CHILDREN="$(oe_hs_children_of "$PREDECESSOR")"; CHILD_RC=$?
-  # ペインの pid。引けなければ空にする（**空を「一致した」に畳まないのは retire の側の責任**）。
-  PRED_PID="$(oe_hs_pane_pid "$PREDECESSOR")" || PRED_PID=""
-  # **pid だけでは同一性を示せない。** `#{pane_pid}` はペインの最初のプロセスなので、
-  # 既存のシェルの中で起動した形ではシェルの pid になり、claude が終わっても変わらない。
-  # コマンド名まで記録して、`retire` が「シェルなら確かめられない」と言えるようにする。
-  if [ -n "$PRED_PID" ]; then
-    PRED_PID_CMD="$(oe_hs_pid_command "$PRED_PID")" || PRED_PID_CMD=""
-  else
-    PRED_PID_CMD=""
-  fi
+  # 前任の lease（#577 PR-4）。機械の節は lease の記録から作る表示で、retire はこの節を読まない
+  # （owner の答え Q84「正しく引ける道が1本になっている方がいい」）。以前ここに書いていたペインの pid と
+  # コマンド名は、retire が閉じる相手を確かめる鍵だったが、その役目はフォアグラウンドのプロセスと
+  # lease の binding の照合に移った（シェルで始まるペインでも確かめられる）。
+  PRED_LEASE_LINE=""; PRED_BIND_LINE=""
+  local pl prc pcur pgen prest
+  pl="$(_lease_of_pane "$PREDECESSOR")"; prc=$?
+  case "$prc" in
+    0)
+      PRED_LEASE="${pl%%"$_OE_TPI_TAB"*}"
+      pcur="$(oe_lease_get "$PRED_LEASE")" || pcur=""
+      pgen="$(printf '%s' "$pcur" | jq -r '.current_generation // ""' 2>/dev/null)"
+      # shellcheck disable=SC2016  # backticks は Markdown のインラインコードで、展開させない
+      PRED_LEASE_LINE="$(printf -- '- 前任の lease: `%s`（generation `%s`）' "$PRED_LEASE" "${pgen:-?}")"
+      prest="${pl#*"$_OE_TPI_TAB"}"
+      # shellcheck disable=SC2016
+      PRED_BIND_LINE="$(printf -- '- 前任の binding: pid `%s`・開始 `%s`' "${prest%%"$_OE_TPI_TAB"*}" "${prest#*"$_OE_TPI_TAB"}")" ;;
+    1) PRED_LEASE_LINE='- 前任の lease: 記録が無い（take が前任のペインのフォアグラウンドのプロセスを binding にして作る）' ;;
+    3) PRED_LEASE_LINE='- 前任の lease: 同じプロセスを binding に持つ lease が複数ある（take は止まる。oe-lease show で確かめる）' ;;
+    *) PRED_LEASE_LINE='- 前任の lease: ペインのフォアグラウンドのプロセスを確かめられなかった' ;;
+  esac
   if [ "$CHILD_RC" -ne 0 ]; then
     CHILD_COUNT="unknown"
     CHILDREN=""
@@ -199,21 +255,14 @@ cmd_prepare() {
     printf '%s\n' "$MARK_BEGIN"
     printf '%s\n' '## 観測できる状態（機械が書く・毎回上書き・手で直さない）'
     printf '\n'
+    printf '%s\n' 'この節は表示である。`oe-handoff retire` はこの節を読まず、lease の記録で判定する。'
+    printf '\n'
     printf -- '- 生成時刻: %s\n' "$NOW"
     printf -- '- 前任のペイン: `%s`（tmux server pid `%s`）\n' "$PREDECESSOR" "${SPID:-unknown}"
     printf -- '- 前任の session_id: `%s`\n' "$SID"
     printf -- '- 前任の context%%: %s\n' "$CTX"
-    # **停止の直前にペインの同一性を確かめるための鍵。** 拍動に依らない（再利用直後の窓を塞ぐ）。
-    if [ -n "$PRED_PID" ]; then
-      printf -- '- 前任のペインの pid: `%s`\n' "$PRED_PID"
-      if [ -n "$PRED_PID_CMD" ]; then
-        printf -- '- 前任のペインの pid のコマンド: `%s`\n' "$PRED_PID_CMD"
-      else
-        printf -- '- 前任のペインの pid のコマンド: 取れなかった（`retire` は停止しない）\n'
-      fi
-    else
-      printf -- '- 前任のペインの pid: 取れなかった（`retire` は停止しない）\n'
-    fi
+    printf '%s\n' "$PRED_LEASE_LINE"
+    [ -z "$PRED_BIND_LINE" ] || printf '%s\n' "$PRED_BIND_LINE"
     if [ "$BEAT_AGE" = "unknown" ]; then
       printf -- '- 前任の拍動の古さ: 取れなかった\n'
     else
@@ -621,6 +670,168 @@ cmd_take() {
     if [ -n "$GENERATION" ]; then GENERATION=$((GENERATION + 1)); fi
   fi
 
+  # --- (3.5) lease の記録（#577 PR-4・commit point）---
+  # 交代の正本は統括の lease の記録である（DJ-12）。generation を進める1回の書き込みを commit point にし、
+  # registry・board・event はそのあとに書く派生の記録にする（DJ-5）。lease を進めたあと board を書く前に
+  # 止まったら、もう一度走らせると進んだ lease を見つけて飛ばし、登記と board を直す。board を書いたあとに
+  # 止まった（交代イベントだけが無い）場合は、#390 からの「席は既に自分」の分岐で終わるので、
+  # --predecessor と --generation を明示して打ち直す（その分岐が案内を出す）。前任が誰かは、前任のペインのフォアグラウンドの
+  # プロセスが lease のいまの generation の binding であることで確かめる（ペインの番号だけでは決めない）。
+  local me_pid me_st me_comm lid pl prc rest pfg_pid pfg_st pcomm startgen ep newgen lrc kind line
+  me_pid="${CLAUDE_PID:-}"
+  if [ -z "$me_pid" ]; then
+    err "CLAUDE_PID がありません（後継の Claude Code の Bash から打ってください）"
+    note_undone "自分のプロセスが分からないので、lease の記録も席も動かしていない"
+    report_and_exit 1
+  fi
+  if ! me_st="$(oe_tpi_proc_started "$me_pid")" || ! me_comm="$(oe_tpi_proc_comm "$me_pid")"; then
+    err "自分のプロセス（pid ${me_pid}）の開始時刻かコマンド名を読めません"
+    note_undone "自分のプロセスを確かめられないので、lease の記録も席も動かしていない"
+    report_and_exit 1
+  fi
+  oe_tpi_verify_pane "$self" "$me_pid" "$me_st"; lrc=$?
+  case "$lrc" in
+    0) note_done "自分のペイン（${self}）のフォアグラウンドのプロセスが自分（pid ${me_pid}）であることを確かめた" ;;
+    1) err "自分のペイン ${self} のフォアグラウンドのプロセスが自分（pid ${me_pid}）ではありません"
+       note_undone "自分のペインを確かめられないので、lease の記録も席も動かしていない"
+       report_and_exit 1 ;;
+    *) note_undone "自分のペインのフォアグラウンドのプロセスを確かめられなかった（rc=${lrc}）。lease は自分のプロセスで進める" ;;
+  esac
+  if lid="$(oe_lease_find_by_binding "$me_pid" "$me_st" 2>/dev/null)"; then
+    if [ "$(printf '%s\n' "$lid" | grep -c .)" -ne 1 ]; then
+      err "自分のプロセスを binding に持つ lease が複数あります: $(printf '%s' "$lid" | tr '\n' ' ')"
+      note_undone "lease が1つに決まらないので席を動かしていない"
+      report_and_exit 1
+    fi
+    kind="$(oe_lease_get "$lid" | jq -r '.kind')"
+    if [ "$kind" != "supervisor" ]; then
+      err "自分のプロセスは統括でなく ${kind} の lease（${lid}）の binding です"
+      note_undone "統括の lease に座っていないので席を動かしていない"
+      report_and_exit 1
+    fi
+    # 自分が座っている lease が、今回引き継ぐ前任の lease かを確かめる（実装SO の指摘）。後継が take の前に
+    # oe-register root などで自分の lease を作っていると、前任の lease は在任のまま残る。前の generation が
+    # 退任していて、その binding が前任のペインのいまのフォアグラウンドのプロセスであることを見る。
+    local lcur lprev lpp lps
+    lcur="$(oe_lease_get "$lid")"
+    lprev="$(printf '%s' "$lcur" | jq -c '.current_generation as $g | .generations[] | select(.generation == ($g - 1))' 2>/dev/null)" || lprev=""
+    if [ -z "$lprev" ] || [ "$(printf '%s' "$lprev" | jq -r '.state')" != "retired" ]; then
+      err "自分が座っている lease ${lid} は、前任から引き継いだ lease ではありません（前の generation が退任していない）"
+      note_undone "前任の lease を進めていない。oe-lease show ${lid} で確かめ、take の前に作った自分の lease なら閉じてから take をやり直す"
+      report_and_exit 1
+    fi
+    lpp="$(printf '%s' "$lprev" | jq -r '(.binding.pid // "") | tostring')"; lps="$(printf '%s' "$lprev" | jq -r '.binding.started // ""')"
+    oe_tpi_verify_pane "$pred" "$lpp" "$lps"; lrc=$?
+    case "$lrc" in
+      0) note_done "lease ${lid} のいまの generation は既に自分で、前の generation は前任（${pred}）である（進めていない）" ;;
+      1) err "lease ${lid} の前の generation（pid ${lpp}）は、前任のペイン ${pred} のプロセスではありません"
+         note_undone "引き継いだ相手が前任と一致しないので席を動かしていない"
+         report_and_exit 1 ;;
+      *) note_done "lease ${lid} のいまの generation は既に自分である（進めていない。前任のペインのプロセスは確かめられなかった・rc=${lrc}）" ;;
+    esac
+  else
+    pl="$(_lease_of_pane "$pred")"; prc=$?
+    case "$prc" in
+      0|1) ;;
+      3) err "前任のペイン ${pred} のプロセスを binding に持つ lease が複数あります（oe-lease show で確かめてください）"
+         note_undone "前任の lease が1つに決まらないので、lease の記録も席も動かしていない"
+         report_and_exit 1 ;;
+      *) err "前任のペイン ${pred} のフォアグラウンドのプロセスを確かめられません"
+         note_undone "前任を確かめられないので、lease の記録も席も動かしていない"
+         report_and_exit 1 ;;
+    esac
+    lid="${pl%%"$_OE_TPI_TAB"*}"
+    rest="${pl#*"$_OE_TPI_TAB"}"; pfg_pid="${rest%%"$_OE_TPI_TAB"*}"; pfg_st="${rest#*"$_OE_TPI_TAB"}"
+    if [ -z "$lid" ]; then
+      local retired_hit
+      if retired_hit="$(_lease_retired_by_proc "$pfg_pid" "$pfg_st")"; then
+        err "前任のペイン ${pred} のプロセスは、lease ${retired_hit%%"$_OE_TPI_TAB"*} の generation ${retired_hit#*"$_OE_TPI_TAB"} として既に退任しています（別の後継が lease を進めています）"
+        note_undone "前任は既に退任しているので、lease を作らず席も動かしていない（oe-lease show で、いまの generation を確かめる）"
+        report_and_exit 1
+      fi
+      # 前任が #577 の前に席を取ったので lease が無い。前任のプロセスを binding にして作る（adopt と同じ形）。
+      # 番号は board の代目に合わせる（後継の代目 - 1 から始める）。分からなければ 1 から始める。
+      pcomm="$(oe_tpi_proc_comm "$pfg_pid")" || pcomm=""
+      case "$pcomm" in
+        *claude*) ;;
+        *) err "前任のペイン ${pred} のフォアグラウンドのプロセスが claude ではありません（${pcomm:-不明}）"
+           note_undone "前任を確かめられないので、lease の記録も席も動かしていない"
+           report_and_exit 1 ;;
+      esac
+      startgen=1
+      if [ -n "$GENERATION" ] && [ "$GENERATION" -gt 1 ]; then startgen=$((GENERATION - 1)); fi
+      if ! lid="$(oe_lease_create supervisor cockpit "$WORKSPACE" "" "$startgen")"; then
+        err "前任の lease を作れません"
+        note_undone "lease の記録を作れないので席を動かしていない"
+        report_and_exit 1
+      fi
+      lrc=0; oe_lease_bind "$lid" 0 "$pfg_pid" "$pfg_st" "$pcomm" || lrc=$?
+      if [ "$lrc" -ne 0 ]; then
+        err "作った lease ${lid} に前任のプロセスを binding できません（rc=${lrc}）"
+        note_undone "lease の記録を作りかけたまま、席を動かしていない（oe-lease show ${lid} で確かめる）"
+        report_and_exit 1
+      fi
+      if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "$pred" "$lid" "$startgen" adopt cockpit || true; fi
+      note_done "前任の lease が無かったので、前任のプロセス（pid ${pfg_pid}）を binding にして作った（${lid}・generation ${startgen}）"
+    fi
+    # 1回読んだ記録で、kind・workspace・いまの generation の binding を確かめ、同じ記録の epoch で進める
+    # （確かめてから epoch を読み直すと、そのあいだに別の後継が進めた lease を、確かめていない相手のまま
+    # 進めてしまう・実装SO の指摘）。
+    local snap swsp
+    snap="$(oe_lease_get "$lid")"
+    kind="$(printf '%s' "$snap" | jq -r '.kind')"
+    if [ "$kind" != "supervisor" ]; then
+      err "前任のペインのプロセスは統括でなく ${kind} の lease（${lid}）の binding です"
+      note_undone "前任が統括の lease に座っていないので、lease の記録も席も動かしていない"
+      report_and_exit 1
+    fi
+    if [ "$(printf '%s' "$snap" | jq -r --argjson p "$pfg_pid" --arg st "$(_oe_tpi_norm "$pfg_st")" '.current_generation as $g
+         | any(.generations[]; .generation==$g and .binding != null and .binding.pid==$p and .binding.started==$st)')" != "true" ]; then
+      err "lease ${lid} のいまの generation の binding が、前任のペイン ${pred} のプロセスではなくなりました（確かめたあとに動いた）"
+      note_undone "lease を進めていない（もう一度 take を走らせる）"
+      report_and_exit 1
+    fi
+    # 別の workspace の統括の lease を進めない（ペイン番号は別のリポジトリの統括に使い回されうる・実装SO の指摘）。
+    swsp="$(printf '%s' "$snap" | jq -r '.workspace // ""')"
+    if [ -n "$swsp" ] && [ "$(_realdir "$swsp")" != "$(_realdir "$WORKSPACE")" ]; then
+      err "前任の lease ${lid} の workspace（${swsp}）が、この交代の workspace（${WORKSPACE}）と違います"
+      note_undone "別のリポジトリの統括かもしれないので、lease の記録も席も動かしていない（-w を確かめる）"
+      report_and_exit 1
+    fi
+    ep="$(printf '%s' "$snap" | jq -r '.epoch')"
+    lrc=0; newgen="$(oe_lease_advance "$lid" "$ep" planned "$me_pid" "$me_st" "$me_comm")" || lrc=$?
+    case "$lrc" in
+      0) note_done "lease ${lid} の generation を ${newgen} に進めた（前の generation は退任・binding は自分のプロセス）" ;;
+      3) err "lease ${lid} が、確かめてから書くまでの間に動きました"
+         note_undone "lease を進めていない（もう一度 take を走らせる）"
+         report_and_exit 1 ;;
+      4) err "いま別のプロセスが lease ${lid} を書き換えています"
+         note_undone "lease のロックを取れなかったので進めていない（少し待ってからもう一度）"
+         report_and_exit 1 ;;
+      *) err "lease ${lid} を進められません（rc=${lrc}）"
+         note_undone "lease を進めていないので席を動かしていない"
+         report_and_exit 1 ;;
+    esac
+  fi
+  # 自分の session_id を登録する（登録は本人の verb だけ・DJ-18）。登録できなくても席は動かす。
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+    lrc=0; oe_lease_register_session "$lid" "$CLAUDE_CODE_SESSION_ID" "$me_pid" "$me_st" || lrc=$?
+    case "$lrc" in
+      0) note_done "自分の session_id を lease ${lid} に登録した" ;;
+      8) note_undone "自分の session_id はほかの lease に登録されている（oe-lease whoami で確かめる）" ;;
+      *) note_undone "自分の session_id を lease に登録できなかった（rc=${lrc}）" ;;
+    esac
+  else
+    note_undone "CLAUDE_CODE_SESSION_ID が無いので、自分の session_id を lease に登録していない"
+  fi
+  # 前任の子のうち、lease の親が空のもの（統括の lease ができる前に起こした子）に、この lease を書く。
+  while IFS= read -r line; do
+    case "$line" in
+      parented\ *) note_done "子 ${line#parented } の lease の親を ${lid} にした" ;;
+      skipped\ *)  note_undone "子の lease の親を書けなかった（${line#skipped }）" ;;
+    esac
+  done < <(oe_lease_fill_children "$lid" "$pred" "$(oe_hs_server_pid)" 2>/dev/null || true)
+
   # --- (4) 登記（自分を root に）---
   # 既に自分が root として登記されているなら書かない（何度実行しても同じ結果になる）。
   local self_key already_root=0
@@ -723,68 +934,86 @@ cmd_retire() {
   [ -n "$board" ] || { err "board の場所が決まりません（--board か OE_BOARD_FILE で渡してください）"; exit 2; }
   [ -r "$board" ] || { err "board が読めません: ${board}"; exit 2; }
 
-  # --- 機械の節を切り出し、目印の完全性を確かめる ---
-  # **文書全体から拾わない。** 以前は `grep -m1 '^- 前任のペイン: '` を文書全体に当てていたので、
-  # **機械の節が欠落・破損していても、同じ形の行が散文にあれば値を信用した**（実装SO の指摘・
-  # 2026-09-13）。閉じる相手の pane・session_id・pid は、**機械が書いた節の中の値だけ**を使う。
-  # 検査の規則は `prepare` と同じ（目印は行全体が一致・1組だけ・順序が正しい）。
-  local n_begin n_end l_begin l_end machine_block
-  n_begin="$(grep -cxF -- "$MARK_BEGIN" "$handoff" | tr -d ' ')"
-  n_end="$(grep -cxF -- "$MARK_END" "$handoff" | tr -d ' ')"
-  if [ "$n_begin" != "1" ] || [ "$n_end" != "1" ]; then
-    err "引き継ぎ文書の機械の節の目印が1組になっていません（begin ${n_begin} 個 / end ${n_end} 個）。**機械が書いた記録だと言えないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
+  # --- 前任のペインは board の註から取り、閉じてよいかは lease の記録で判定する（#577 PR-4）---
+  # 以前は引き継ぎ文書の機械の節から前任のペイン・session_id・pid を読んでいた。いまは機械の節を読まない
+  # （owner の答え Q84「正しく引ける道が1本になっている方がいい」）。前任が誰かは lease の前の generation の
+  # binding が持ち、閉じる相手がその本人かは、前任のペインのフォアグラウンドのプロセスで確かめる（DJ-9）。
+  # 前任のペインの番号は board の註から取る（番号は候補で、本人かはプロセスで見る）。
+  local board_pred
+  # shellcheck disable=SC2016  # backtick は board の Markdown 記法で、展開させない
+  board_pred="$(grep -m1 -- '現統括:' "$board" | grep -oE '前任 `%[0-9]+`' | grep -oE '%[0-9]+' | head -1)" || board_pred=""
+  if [ -z "$board_pred" ]; then
+    err "board の註から前任のペインを読めません（「前任 \`%N\` は退任申告済み・停止待ち」の形が無い）。閉じる相手が決まらないので閉じません"
     exit 2
   fi
-  l_begin="$(grep -nxF -- "$MARK_BEGIN" "$handoff" | head -1 | cut -d: -f1)"
-  l_end="$(grep -nxF -- "$MARK_END" "$handoff" | head -1 | cut -d: -f1)"
-  if [ -z "$l_begin" ] || [ -z "$l_end" ] || [ "$l_begin" -ge "$l_end" ]; then
-    err "引き継ぎ文書の機械の節の目印の順序が逆です（begin ${l_begin} 行目 / end ${l_end} 行目）。**機械が書いた記録だと言えないので閉じません**"
-    exit 2
-  fi
-  machine_block="$(sed -n "${l_begin},${l_end}p" "$handoff")" || machine_block=""
-
-  # --- 前任の pane と session_id は「機械の節」から取る ---
-  # board の註からも取れるが、**2つが食い違っていたら進まない**（検査した相手と閉じる相手が
-  # ずれるのを防ぐ。PR-2 で踏んだのと同じ型）。
-  pred="$(printf '%s\n' "$machine_block" | grep -m1 -- '^- 前任のペイン: ' | grep -oE '%[0-9]+' | head -1)" || pred=""
-  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  sid_rec="$(printf '%s\n' "$machine_block" | grep -m1 -- '^- 前任の session_id: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || sid_rec=""
-  if [ -z "$pred" ]; then
-    err "機械の節から前任のペインを読めません（${handoff}）"
-    exit 2
-  fi
-  if true; then
-    local board_pred
-    # shellcheck disable=SC2016  # backtick は board の Markdown 記法で、展開させない
-    board_pred="$(grep -m1 -- '現統括:' "$board" | grep -oE '前任 `%[0-9]+`' | grep -oE '%[0-9]+' | head -1)" || board_pred=""
-    if [ -z "$board_pred" ]; then
-      # 註が読めないことを「食い違っていない」に畳まない。
-      note_fail "board の註から前任を読めない（「前任 \`%N\` は退任申告済み・停止待ち」の形が無い）。引き継ぎ記録と突き合わせられないので閉じない"
-    elif [ "$board_pred" != "$pred" ]; then
-      err "引き継ぎ記録の前任（${pred}）と board の註（${board_pred}）が食い違っています"
-      note_fail "前任が一意に決まらないので閉じない"
-      _retire_report
-    else
-      note_ok "引き継ぎ記録の前任と board の註が一致している（${pred}）"
-    fi
-    # 席が自分に移っていることも見る（移っていないなら、まだ交代が済んでいない）
-    local seat
-    seat="$(oe_seat_resolve "$board")"
-    if [ -z "$seat" ]; then
-      # **この分岐はテストで踏めていない。** 上の註の検査が先に走り、註に前任の `%N` が在れば
-      # 席の解決も同じ行の `%N` を拾うので、「註は読めるが席は読めない」を fixture で作れない。
-      # 防御として残す（読めないことを「自分の席だ」に畳まないため）。
-      note_fail "board から席を読めない。自分が後継であることを確かめられないので閉じない"
-    elif [ "$seat" != "$self" ]; then
-      note_fail "board の席が自分（${self}）でなく ${seat} を指している。先に take を通す"
-    else
-      note_ok "board の席は自分を指している"
-    fi
+  pred="$board_pred"
+  note_ok "board の註から前任のペインを読んだ（${pred}）"
+  # 席が自分に移っていることも見る（移っていないなら、まだ交代が済んでいない）
+  local seat
+  seat="$(oe_seat_resolve "$board")"
+  if [ -z "$seat" ]; then
+    note_fail "board から席を読めない。自分が後継であることを確かめられないので閉じない"
+  elif [ "$seat" != "$self" ]; then
+    note_fail "board の席が自分（${self}）でなく ${seat} を指している。先に take を通す"
+  else
+    note_ok "board の席は自分を指している"
   fi
   [ "$pred" != "$self" ] || { err "前任と自分が同じペイン（${self}）です"; exit 2; }
   RETIRE_PRED="$pred"
-  RETIRE_SID="$sid_rec"
-  RETIRE_MACHINE="$machine_block"
+
+  # --- lease の記録: いまの generation の binding が自分で、前の generation が退任していること ---
+  local me_pid me_st lid cur curgen prevgen prev pstate lrc
+  me_pid="${CLAUDE_PID:-}"
+  [ -n "$me_pid" ] || { err "CLAUDE_PID がありません（後継の Claude Code の Bash から打ってください）"; exit 2; }
+  me_st="$(oe_tpi_proc_started "$me_pid")" || { err "自分のプロセス（pid ${me_pid}）の開始時刻を読めません"; exit 2; }
+  if ! lid="$(oe_lease_find_by_binding "$me_pid" "$me_st" 2>/dev/null)"; then
+    note_fail "自分のプロセスを binding に持つ lease が無い。take が統括の lease を進めていないので閉じない（先に take を通す）"
+    _retire_report
+  fi
+  if [ "$(printf '%s\n' "$lid" | grep -c .)" -ne 1 ]; then
+    note_fail "自分のプロセスを binding に持つ lease が複数ある（oe-lease show で確かめる）"
+    _retire_report
+  fi
+  cur="$(oe_lease_get "$lid")" || cur=""
+  if [ "$(printf '%s' "$cur" | jq -r '.kind // ""')" != "supervisor" ]; then
+    note_fail "自分のプロセスは統括の lease でなく $(printf '%s' "$cur" | jq -r '.kind // "?"') の lease（${lid}）の binding である"
+    _retire_report
+  fi
+  # 申告と突き合わせる open PR・worktree・未 push は -w の workspace で見るので、lease の workspace と同じで
+  # なければ、別のリポジトリの記録で閉じる判断をすることになる（Copilot の指摘・PR #583。take と同じ確かめ）。
+  local lws
+  lws="$(printf '%s' "$cur" | jq -r '.workspace // ""')"
+  if [ -n "$lws" ] && [ "$(_realdir "$lws")" != "$(_realdir "$WORKSPACE")" ]; then
+    note_fail "lease ${lid} の workspace（${lws}）が、-w の workspace（${WORKSPACE}）と違う。別のリポジトリの記録で判定することになるので閉じない"
+    _retire_report
+  fi
+  curgen="$(printf '%s' "$cur" | jq -r '.current_generation')"
+  prevgen=$((curgen - 1))
+  prev="$(printf '%s' "$cur" | jq -c --argjson g "$prevgen" '.generations[] | select(.generation==$g)' 2>/dev/null)" || prev=""
+  if [ -z "$prev" ]; then
+    note_fail "lease ${lid} に前の generation（${prevgen}）の記録が無い。交代した記録が無いので閉じない"
+    _retire_report
+  fi
+  pstate="$(printf '%s' "$prev" | jq -r '.state')"
+  RETIRE_PPID="$(printf '%s' "$prev" | jq -r '(.binding.pid // "") | tostring')"
+  RETIRE_PST="$(printf '%s' "$prev" | jq -r '.binding.started // ""')"
+  RETIRE_SID="$(printf '%s' "$prev" | jq -r '(.session_ids // []) | last // ""')"
+  RETIRE_LEASE="$lid"
+  if [ "$pstate" != "retired" ]; then
+    note_fail "lease ${lid} の前の generation（${prevgen}）が退任になっていない（${pstate}）"
+  elif [ -z "$RETIRE_PPID" ] || [ -z "$RETIRE_PST" ]; then
+    note_fail "lease ${lid} の前の generation（${prevgen}）に binding が無い。閉じる相手のプロセスが分からないので閉じない"
+  else
+    note_ok "lease ${lid}: いまの generation ${curgen} の binding は自分、前の generation ${prevgen} は退任している"
+    # 前任のペインにいまいるのが、前の generation のプロセスか（シェルで始まるペインでも確かめられる）
+    oe_tpi_verify_pane "$pred" "$RETIRE_PPID" "$RETIRE_PST"; lrc=$?
+    case "$lrc" in
+      0) note_ok "前任のペイン ${pred} のフォアグラウンドのプロセスは、前の generation の binding（pid ${RETIRE_PPID}）である" ;;
+      1) note_fail "前任のペイン ${pred} に前の generation のプロセス（pid ${RETIRE_PPID}）がいない（ペインが無いか、別のプロセスがいる）。閉じる相手を取り違えるので閉じない" ;;
+      *) note_fail "前任のペイン ${pred} のフォアグラウンドのプロセスを確かめられない（rc=${lrc}）。閉じない" ;;
+    esac
+  fi
+  sid_rec="$RETIRE_SID"
 
   # --- session_id（**閉じない理由にはしない**・owner 裁定 2026-09-13・2件目）---
   # **必須条件は1つだけになった**（申告の各項目に処分が付いていること）。
@@ -793,9 +1022,9 @@ cmd_retire() {
   # 失うものが無い状態で閉じるか」を見ている**（性質が違う）。
   # 番号は記録との対応を保つため振り直さない。
   if [ -z "$sid_rec" ] || [ "$sid_rec" = "unknown" ]; then
-    note_info "前任の session_id が引き継ぎ記録に無い（${sid_rec:-空}）。**閉じない理由にはしない**が、復帰の ID は手元に残らない"
+    note_info "前任の session_id が lease の記録に無い（${sid_rec:-空}）。**閉じない理由にはしない**が、復帰の ID は手元に残らない"
   else
-    note_ok "前任の session_id が引き継ぎ記録にある（${sid_rec}）"
+    note_ok "前任の session_id が lease の記録にある（${sid_rec}）"
   fi
 
   # --- 生きた委譲子（**閉じない理由にはしない**・owner 裁定 2026-09-13）---
@@ -938,35 +1167,8 @@ cmd_retire() {
     fi
   fi
 
-  # --- 機械の節が挙げた項目それぞれに処分が付いているかを見る ---
-  # **表に1行あって語彙が正しいだけでは足りない。** 機械が挙げた項目が申告に出てこなければ、
-  # その項目には処分が付いていない。
-  # 上で切り出して目印を検査した block をそのまま使う（2度切り出すと規則が分かれる）。
-  local machine
-  machine="$machine_block"
-  local mnum
-  # **部分一致で照合しない。** `grep -F 501` は申告の「#3501」や「2026-09-501」にも当たるので、
-  # 別の PR を書いた申告で欠落を見逃す（fail-open）。数字の前後が数字でないことまで見る。
-  # **照合の相手は `$DISPOSED`（処分が付いた表の行の項目名）である。** 申告の節全体を見ると、
-  # 散文に番号を書いただけで通る。
-  # **番号だけの一致にしない。** 項目名の中の境界付き数字で照合していたので、
-  # `worktree topic-501` という処分済みの行が **PR #501 の処分としても一致**した
-  # （種別をまたいだ誤一致・実装SO の指摘・2026-09-13。実測で再現した）。
-  # PR は `#<番号>` の形で書かれていることを要求する（機械の節も `#` 付きで表示する）。
-  # **`#` の有無どちらも読む。** 表示に `#` を付けたのは 2026-09-13 で、それ以前の `prepare` が
-  # 書いた文書は `#` 無しである。読む側で両方受ければ、古い文書でも検査が走る。
-  for mnum in $(printf '%s' "$machine" | grep -oE '^- #?[0-9]+ draft=' | grep -oE '[0-9]+' || true); do
-    if printf '%s\n' "$DISPOSED" | grep -qE "#[ ]*${mnum}([^0-9]|\$)"; then
-      :
-    else
-      note_fail "機械の節が挙げた PR #${mnum} に処分が付いていない（処分の付いた申告の行に \`#${mnum}\` の形で出てこない）"
-    fi
-  done
-  if printf '%s' "$machine" | grep -qE 'unpushed=[1-9]'; then
-    if printf '%s\n' "$DISPOSED" | grep -qE '未 ?push|unpushed'; then :; else
-      note_fail "機械の節が未 push を挙げているのに、処分の付いた申告の行に出てこない"
-    fi
-  fi
+  # 機械の節が挙げた項目（PR・未 push）との照合はやめた（#577 PR-4・機械の節を読まない）。同じ項目は、
+  # 下で「いまの値」をとり直して申告と突き合わせている（open PR・worktree・未 push）。
 
   # --- 機械の検査をやり直して申告と突き合わせる ---
   # **下見の時点の値ではなく、いまの値で突き合わせる。**
@@ -1105,113 +1307,25 @@ _retire_report() {
     fi
   fi
 
-  # **閉じるペインが、いまも記録の session のものであることを確かめる。**
-  # transcript が使えることは「記録の session が生きている」ことしか言わない。**ペイン番号が
-  # 再利用されていれば、そのペインに座っているのは別の session である**（拍動 198 件に対して
-  # 実在する pane 番号は 171 で、再利用は既に起きている）。確かめずに閉じると、**関係のない
-  # セッションを閉じたうえで「前任は claude --resume で開き直せる」と報告する**（実装SO の指摘・
-  # 2026-09-13）。
-  # **引けないことでは止めない。食い違いが見えたときだけ止める**（owner 裁定 2026-09-13・2件目）。
-  # 引けないのは「確かめられなかった」であって「別人だと分かった」ではない。**同一性の錨は
-  # この下の pid とコマンド名の突合が持つ**ので、引けないだけで交代を止める必要はない。
-  # **ただし引けて、しかも記録と違ったときは止める**（それは取り違えを積極的に観測している）。
-  local sid_now
-  sid_now="$(oe_hs_session_for_pane "$RETIRE_PRED")"
-  if [ -z "$sid_now" ] || [ "$sid_now" = "unknown" ]; then
-    printf '閉じる直前の session_id: 引けませんでした（%s）。**同一性は pid とコマンド名で見ます**\n' "${OE_HS_SESSION_REASON:-理由を取れなかった}"
-  elif [ -z "$RETIRE_SID" ] || [ "$RETIRE_SID" = "unknown" ]; then
-    printf '閉じる直前の session_id: %s（記録に無いので突き合わせられません）\n' "$sid_now"
-  elif [ "$sid_now" != "$RETIRE_SID" ]; then
-    err "${RETIRE_PRED} に座っているのは別の session です（記録 ${RETIRE_SID} / いま ${sid_now}）。**ペイン番号が再利用されています。閉じません**"
-    exit 1
-  else
-    # **一致したことも出す。** 出さないと「引けて一致した」と「引けなかった」が
-    # 画面で区別できない（緩めた結果を記録し損ねる形になる）。
-    printf '閉じる直前の session_id: %s（記録と一致）\n' "$sid_now"
-  fi
-
-  # **同一性の検査は kill の直前に置く。** 以前はこのブロックが子の数え直しより前にあり、
-  # 検査と `kill-pane` のあいだに別の処理が入っていた。そのあいだに前任が終わってペイン番号が
-  # 再利用されると、**確かめた相手と閉じる相手がずれる**（実装SO の指摘・2026-09-13）。
-  # 窓を0にはできないが、**あいだに何も挟まない**ところまでは寄せられる。
-  # **session_id の突合だけでは足りない。** `oe_hs_session_for_pane` には「ペインが再利用され、
-  # 新しいセッションがまだ一度も拍動を書いていないあいだは旧世代の session_id を返す」穴がある
-  # （`lib/handoff-state.sh` の注記）。その窓では上の突合が通ってしまい、**無関係な新しい
-  # セッションを閉じる**（実装SO の指摘・2026-09-13）。
-  # **pid は tmux が握っているので、拍動を書く前でも変わる。** これで窓を塞ぐ。
-  local pid_rec pid_now
-  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  pid_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペインの pid: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || pid_rec=""
-  case "$pid_rec" in
-    ''|*[!0-9]*)
-      err "引き継ぎ記録に前任のペインの pid がありません（古い形式の引き継ぎ文書です）。**ペインの同一性を確かめられないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
-      exit 1 ;;
-  esac
-  if ! pid_now="$(oe_hs_pane_pid "$RETIRE_PRED")"; then
-    err "${RETIRE_PRED} の pid を引けませんでした。**そのペインが前任のものだと確かめられないので閉じません**"
-    exit 1
-  fi
-  if [ "$pid_now" != "$pid_rec" ]; then
-    err "${RETIRE_PRED} で走っているプロセスが変わっています（記録 pid ${pid_rec} / いま ${pid_now}）。**ペインが作り直されたか再利用されています。閉じません**"
-    exit 1
-  fi
-
-  # **tmux server の世代が変わっていたら閉じない。**
-  # pane 番号も OS の pid も、**server が再起動すれば作り直されて再利用される。** 世代が違えば
-  # `%N` は別のペインを指しうるし、同じ番号の pid が別のプロセスに当たることもある。
-  # `prepare` は機械の節に server pid を記録しているので、閉じる直前に突き合わせる
-  # （実装SO の指摘・2026-09-13）。**記録が無い古い形式でも閉じない。**
-  local spid_rec spid_now
-  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  spid_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペイン: ' | sed -E 's/.*tmux server pid `([^`]*)`.*/\1/')" || spid_rec=""
-  case "$spid_rec" in
-    ''|*[!0-9]*)
-      err "引き継ぎ記録に tmux server の pid がありません（古い形式の引き継ぎ文書です）。**世代が同じだと確かめられないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
-      exit 1 ;;
-  esac
-  spid_now="$(oe_hs_server_pid)"
-  if [ -z "$spid_now" ]; then
-    err "いまの tmux server の pid を引けませんでした。**世代が同じだと確かめられないので閉じません**"
-    exit 1
-  fi
-  if [ "$spid_now" != "$spid_rec" ]; then
-    err "tmux server の世代が変わっています（記録 ${spid_rec} / いま ${spid_now}）。**ペイン番号も pid も作り直されているので、${RETIRE_PRED} が前任だとは言えません。閉じません**"
-    exit 1
-  fi
-
-  # **pid の一致だけでは「前任がまだ座っている」ことを示さない。**
-  # `#{pane_pid}` は**そのペインの最初のプロセス**である。ペインのコマンドとして `claude` を
-  # 起こした形（`oe-handoff start` と engine の spawn はこれ）なら claude 自身だが、
-  # **既存のシェルの中で手で起動した形ではシェルの pid**になる。その場合、前任の claude が
-  # 終わってシェルだけが残っていても pid は変わらず、拍動も窓の中なら旧世代を返すので、
-  # **両方の検査が通って無関係なものを閉じる**（実装SO の指摘・2026-09-13。repo 自身も
-  # `canonical/skills/delegate-task/SKILL.md` にこの `pane_pid` の性質を書いている）。
-  # コマンド名を突き合わせ、**claude でなければ「確かめられない」として閉じない。**
-  local cmd_rec cmd_now
-  # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-  cmd_rec="$(printf '%s\n' "$RETIRE_MACHINE" | grep -m1 -- '^- 前任のペインの pid のコマンド: ' | sed -E 's/.*`([^`]*)`.*/\1/')" || cmd_rec=""
-  if [ -z "$cmd_rec" ]; then
-    err "引き継ぎ記録に前任のペインの pid のコマンドがありません（古い形式の引き継ぎ文書です）。**pid の一致だけではペインの同一性を示せないので閉じません。** 前任のセッションで oe-handoff prepare を走らせ直してください"
-    exit 1
-  fi
-  if ! cmd_now="$(oe_hs_pid_command "$pid_now")"; then
-    err "pid ${pid_now} のコマンド名を引けませんでした。**ペインの同一性を確かめられないので閉じません**"
-    exit 1
-  fi
-  if [ "$cmd_now" != "$cmd_rec" ]; then
-    err "${RETIRE_PRED} の pid ${pid_now} で走っているコマンドが変わっています（記録 ${cmd_rec} / いま ${cmd_now}）。**閉じません**"
-    exit 1
-  fi
-  case "$cmd_now" in
-    *claude*) : ;;
-    *)
-      err "${RETIRE_PRED} の最初のプロセスは claude ではありません（${cmd_now}）。**このペインはシェルの中で claude を起こした形なので、pid の一致は「前任がまだ座っている」ことを示しません**（前任が終わってシェルだけ残っていても pid は変わらない）。**閉じません。** 停止は人が判断してください"
-      exit 1 ;;
+  # **閉じる直前に、前任のペインのフォアグラウンドのプロセスが前の generation の binding であることを
+  # 確かめ直す**（#577 PR-4・DJ-9）。以前は機械の節の session_id・ペインの pid・コマンド名・tmux server の
+  # pid の4つを突き合わせていたが、どれも「ペイン番号が再利用されていないか」の間接の手掛かりだった。
+  # プロセスの pid と開始時刻は、server が起こし直されてもペインが再利用されても別のプロセスと区別できる。
+  # `#{pane_pid}` がシェルのペイン（シェルの中で claude を起こした形）でも、フォアグラウンドは claude なので
+  # 確かめられる（以前は閉じなかった）。検査と kill-pane のあいだに何も挟まない。
+  local vrc
+  oe_tpi_verify_pane "$RETIRE_PRED" "$RETIRE_PPID" "$RETIRE_PST"; vrc=$?
+  case "$vrc" in
+    0) printf '閉じる直前の確かめ: %s のフォアグラウンドのプロセスは前の generation の binding（pid %s）である\n' "$RETIRE_PRED" "$RETIRE_PPID" ;;
+    1) err "${RETIRE_PRED} にいま前の generation のプロセス（pid ${RETIRE_PPID}）がいません（ペインが無いか、作り直されたか、再利用されています）。**閉じません**"
+       exit 1 ;;
+    *) err "${RETIRE_PRED} のフォアグラウンドのプロセスを確かめられません（rc=${vrc}）。**閉じません**"
+       exit 1 ;;
   esac
 
   printf '\n前任のペイン %s を閉じます（board・登記・イベントログ・worktree・PR には触れません）。\n' "$RETIRE_PRED"
   if "$OE_HANDOFF_TMUX" kill-pane -t "$RETIRE_PRED" 2>/dev/null; then
-    printf '閉じました。\n'
+    printf '閉じました（lease %s の前の generation のプロセス・pid %s）。\n' "$RETIRE_LEASE" "$RETIRE_PPID"
   else
     err "閉じられませんでした（既に不在かもしれません）"
     exit 1
