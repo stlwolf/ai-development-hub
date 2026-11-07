@@ -40,10 +40,21 @@ _oe_target_say() { printf '%s: %s\n' "${OE_TARGET_CALLER:-oe-target}" "$*" >&2; 
 
 # lease の宛先を確かめて OE_TARGET_* を埋める。<lease_id> <how> <表示名>
 _oe_target_from_lease() {
-  local id="$1" how="$2" shown="$3" cur gen pane rc why
-  cur="$(oe_lease_get "$id" 2>/dev/null)" || { _oe_target_say "${shown}: lease ${id} の記録がありません"; return 1; }
-  gen="$(printf '%s' "$cur" | jq -r '.current_generation')"
-  pane="$(oe_lease_resolve_pane "$id")"; rc=$?
+  local id="$1" how="$2" shown="$3" cur gen ep ep2 pane rc why try=0
+  # 引いたペインと、記録に残す generation を同じ記録から取る。ペインを引くあいだに交代（generation を
+  # 進める書き込み）が走ったら、epoch が変わるのでもう一度引く（Copilot の指摘・PR #588）。
+  while :; do
+    cur="$(oe_lease_get "$id" 2>/dev/null)" || { _oe_target_say "${shown}: lease ${id} の記録がありません"; return 1; }
+    gen="$(printf '%s' "$cur" | jq -r '.current_generation')"; ep="$(printf '%s' "$cur" | jq -r '.epoch')"
+    pane="$(oe_lease_resolve_pane "$id")"; rc=$?
+    ep2="$(oe_lease_epoch "$id" 2>/dev/null)" || ep2=""
+    [ "$rc" -eq 0 ] && [ "$ep2" != "$ep" ] || break
+    try=$((try + 1))
+    if [ "$try" -ge 2 ]; then
+      _oe_target_say "${shown}: lease ${id} が引くあいだに2回続けて書き換わったので、送りません（少し待ってからもう一度）"
+      return 5
+    fi
+  done
   if [ "$rc" -eq 0 ]; then
     OE_TARGET_PANE="$pane"; OE_TARGET_LEASE="${id}:${gen}"; OE_TARGET_HOW="$how"
     return 0
@@ -65,21 +76,25 @@ _oe_target_from_lease() {
 # 自分の lease を親に持つものだけを見る（別の統括の子へ送らない）。binding のプロセスが「無い」と
 # 確かめられた lease（終わった子）は出さない。
 _oe_target_leases_for_label() {
-  local target="$1" f row id label pid st state me
+  local target="$1" f row id pid st state me
   [ -n "${OE_LEASE_DIR:-}" ] && [ -d "$OE_LEASE_DIR" ] || return 0
   me="$(oe_lease_whoami 2>/dev/null | jq -r '.lease_id // ""' 2>/dev/null)" || me=""
   [ -n "$me" ] || return 0
   for f in "$OE_LEASE_DIR"/*.json; do
     [ -f "$f" ] || continue
-    row="$(jq -r --arg me "$me" 'select(.state=="open" and (.parent_lease_id // "") == $me) | .current_generation as $g
-      | [ .lease_id, (.label // ""),
+    # ラベルは jq の中で JSON の値のまま比べる（@tsv はバックスラッシュとタブを書き換え、read -r は戻さない
+    # ので、bash で比べると、その文字を含むラベルを見落とす・Copilot の指摘）。比べ方は registry の
+    # _oe_label_match と同じ（#N は「#N」か「#N 」で始まるもの・名前は完全一致）。
+    row="$(jq -r --arg me "$me" --arg t "$target" '
+      def hit($l): if ($t | test("^#[0-9]+$")) then ($l == $t or ($l | startswith($t + " "))) else $l == $t end;
+      select(.state=="open" and (.parent_lease_id // "") == $me and hit(.label // "")) | .current_generation as $g
+      | [ .lease_id,
           ((.generations[] | select(.generation==$g) | .binding.pid // "") | tostring),
           (.generations[] | select(.generation==$g) | .binding.started // "") ] | @tsv' "$f" 2>/dev/null)" || continue
     [ -n "$row" ] || continue
-    IFS="$_OE_TPI_TAB" read -r id label pid st <<EOF
+    IFS="$_OE_TPI_TAB" read -r id pid st <<EOF
 $row
 EOF
-    _oe_label_match "$target" "$label" || continue
     if [ -z "$pid" ] || [ -z "$st" ]; then printf '%s\tno\n' "$id"; continue; fi
     state="$(oe_tpi_proc_state "$pid" "$st")"
     [ "$state" != "dead" ] || continue
@@ -123,16 +138,22 @@ oe_target_resolve_parent() {
   local cur parent rc
   OE_TARGET_PANE=""; OE_TARGET_LEASE=""; OE_TARGET_HOW=""
   if [ -n "${OE_LEASE_ID:-}" ]; then
-    if cur="$(oe_lease_get "$OE_LEASE_ID" 2>/dev/null)"; then
-      parent="$(printf '%s' "$cur" | jq -r '.parent_lease_id // ""')"
-      if [ -n "$parent" ]; then
-        _oe_target_from_lease "$parent" parent-lease "親の lease"; rc=$?
-        return "$rc"
-      fi
-      _oe_target_say "自分の lease ${OE_LEASE_ID} に親の lease が書かれていないので、PARENT_TMUX_PANE に送ります"
-    else
-      _oe_target_say "自分の lease ${OE_LEASE_ID} の記録を読めないので、PARENT_TMUX_PANE に送ります"
+    # 記録を読めない・読み解けないときは、PARENT_TMUX_PANE に落とさず止まる。交代のあとなら前任を指して
+    # いるので、本人を確かめないまま前任へ送ることになる（Copilot の指摘・PR #588）。落とすのは、正しく
+    # 読めた記録に親が書かれていないときだけにする。
+    if ! cur="$(oe_lease_get "$OE_LEASE_ID" 2>/dev/null)"; then
+      _oe_target_say "自分の lease ${OE_LEASE_ID} の記録を読めないので、送りません。oe-lease show ${OE_LEASE_ID} で確かめ、宛先を明示して送ってください"
+      return 2
     fi
+    if ! parent="$(printf '%s' "$cur" | jq -er '.parent_lease_id // ""' 2>/dev/null)" && [ "$(printf '%s' "$cur" | jq -r 'has("parent_lease_id")' 2>/dev/null)" != "true" ]; then
+      _oe_target_say "自分の lease ${OE_LEASE_ID} の記録を読み解けないので、送りません。宛先を明示して送ってください"
+      return 2
+    fi
+    if [ -n "$parent" ]; then
+      _oe_target_from_lease "$parent" parent-lease "親の lease"; rc=$?
+      return "$rc"
+    fi
+    _oe_target_say "自分の lease ${OE_LEASE_ID} に親の lease が書かれていないので、PARENT_TMUX_PANE に送ります"
   fi
   if [ -z "${PARENT_TMUX_PANE:-}" ]; then
     _oe_target_say "親が分かりません（OE_LEASE_ID も PARENT_TMUX_PANE もありません）。宛先を明示して送ってください"

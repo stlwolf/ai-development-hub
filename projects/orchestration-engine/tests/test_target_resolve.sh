@@ -136,6 +136,12 @@ ck  "(6) その統括からは引ける" "%3" "$(sent_to)"
 lib oe_lease_close "$O6" "$(lib oe_lease_epoch "$O6")" >/dev/null || true
 lib oe_lease_close "$OTHER" "$(lib oe_lease_epoch "$OTHER")" >/dev/null || true
 
+BS="$(mk_lease delegation 'a\b' 903 "$S3" sid-bs "$SUP")"; beat sid-bs %3
+send 'a\b' "hi"
+ck  "(7) バックスラッシュを含むラベルも lease から引く（Copilot の指摘）" "%3" "$(sent_to)"
+ckc "(7) lease を名乗る" "$OUT" "lease ${BS}"
+lib oe_lease_close "$BS" "$(lib oe_lease_epoch "$BS")" >/dev/null || true
+
 echo "=== (C) 本人を確かめられなければ送らない ==="
 fake_proc_del 902; fake_proc_add 950 'Sat Nov  7 12:00:00 2026' claude ttys002 950
 send "$C2" "hi"
@@ -173,6 +179,10 @@ ck  "(4) 自分の lease に親が無ければ PARENT_TMUX_PANE へ送る" "%1" 
 ckc "(4) そう言う" "$OUT" "親の lease が書かれていない"
 set +e; OUT="$(bash "$BIN/oe-send" --to-parent 2>&1)"; RC=$?; set -e
 ck  "(5) 送る文が無ければ 2（呼び方の誤り）" "2" "$RC"
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID=00000000000000000000000000 PARENT_TMUX_PANE=%1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+ck  "(6) 自分の lease の記録を読めなければ PARENT_TMUX_PANE に落とさず 2（Copilot の指摘）" "2" "$RC"
+ck  "(6) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+ckc "(6) そう言う" "$OUT" "記録を読めないので、送りません"
 
 echo "=== (E) oe-jump ==="
 : > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e
