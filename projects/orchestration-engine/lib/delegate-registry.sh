@@ -211,8 +211,10 @@ oe_reg_list() {
   command -v jq   >/dev/null 2>&1 || { echo "oe_reg_list: jq is required" >&2; return 2; }
   local self="${TMUX_PANE:-}"
   local live rc
-  live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; rc=$?
-  if [[ "$rc" -ne 0 ]]; then
+  if live="$(tmux list-panes -a -F '#{pane_id}' 2>&1)"; then
+    :
+  else
+    rc=$?
     echo "oe_reg_list: tmux list-panes failed (rc=${rc}): ${live}" >&2
     return 2
   fi

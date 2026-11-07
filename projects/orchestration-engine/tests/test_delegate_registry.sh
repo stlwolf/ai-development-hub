@@ -126,6 +126,18 @@ oe_reg_gc 2>/dev/null
 ck "list-panes 失敗 → gc が entry を残す(誤削除なし)" "yes" "$( [[ -e "${OE_DELEGATE_STATE_DIR}/${keyB}.json" ]] && echo yes || echo no)"
 unset MOCK_TMUX_FAIL
 
+echo "[8b] oe-list: set -e でも tmux の失敗を表示して exit 2 を返す（#505）"
+list_rc=0
+(
+  export -f tmux
+  MOCK_TMUX_FAIL=1 "$BASH" "${SCRIPT_DIR}/../bin/oe-list"
+) >"${_TMP_ROOT}/list.stdout" 2>"${_TMP_ROOT}/list.stderr" || list_rc=$?
+ck "oe-list: tmux 失敗は exit 2" "2" "$list_rc"
+ck "oe-list: 失敗時は一覧を出さない" "" "$(cat "${_TMP_ROOT}/list.stdout")"
+ck "oe-list: 原因を stderr に表示" \
+  "oe_reg_list: tmux list-panes failed (rc=1): no server running on socket" \
+  "$(cat "${_TMP_ROOT}/list.stderr")"
+
 echo "[9] oe_reg_list: 改行混入ラベルを sanitize（偽 %N 行注入を断つ・#178 hardening-2）"
 # (a) pane_title 由来（tmux の untrusted ソース）: 改行 + 偽 %99 行を仕込む
 MOCK_LIVE_PANES="%8"
