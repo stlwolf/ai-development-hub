@@ -31,7 +31,7 @@ related:
     reason: "この設計を実装に分けた plan"
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
-    reason: "この設計の decision の案（proposed）"
+    reason: "この設計の decision（2026-11-07 に accepted）"
 tags: [orchestration, registry, identity, supervisor, delegation, design, discussion]
 ---
 

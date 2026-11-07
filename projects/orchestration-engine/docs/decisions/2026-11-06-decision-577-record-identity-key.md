@@ -3,7 +3,7 @@ id: "01M6PD1RHBVVNJDD3FPHKKRX15"
 title: "#577 統括と委譲子の「誰か」は、こちらで作る `lease_id` と `generation` の記録で持ち、tmux のペインは観測する属性にする — decision #188 の DJ-188-3 を `oe-delegate`（tmux）の子と統括について置き換える"
 date: 2026-11-06
 type: decision
-status: proposed   # 案。設計の問いの owner の答えはすべて入れた（Q65〜Q67・Q69・Q71・Q72）。分身レビューとゲート3 の承認で accepted にする
+status: accepted   # 2026-11-07 に accepted（ゲート3 の承認は 2026-11-06・plan @ 4cec7e8。D7 は I0 の計測のあとに補正 H1 で確定）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/577"
@@ -34,7 +34,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 
 # #577 統括と委譲子の「誰か」は、こちらで作る `lease_id` と `generation` の記録で持ち、tmux のペインは観測する属性にする
 
-**この文書は案（proposed）である。** 設計の問いの owner の答え（Q65〜Q67・Q69・Q71・Q72）は入れた。分身レビュー（#404）の指摘への owner の答え（Q73・Q74・Q76〜Q78・Q80・Q82）も入れた。残りの2件（Q83・Q84）の答えも入れた。ゲート3 の承認を受けて確定する。
+**この decision は accepted である（2026-11-07）。** ゲート3 は 2026-11-06 に owner が承認した（plan @ `4cec7e8`）。設計の問いと分身レビューへの owner の答え（Q65〜Q84）は、すべてこの文書と discussion に入っている。
 
 ## 前提の変化（最初に書く）
 
@@ -113,10 +113,10 @@ discussion の §7 の探索木が正本である。要点だけを書く。
   - `binding` の pid を持たない `lease`（取り込みで pid を取れなかった `lease`）は、生きているか分からないとして人の判断に回る。
 - 新しい write path（`lease` の記録）が1つ増える。書き手は verb だけで、heartbeat の write path には入らない。
 
-## 確定するときに直すこと
+## 確定したときに直したこと
 
 - D1・D10・D11・D16 は owner の答え（Q65〜Q67・Q71）を入れた。D7 の resume の打ち方は、I0 の計測のあとに決める。D5 の epoch と compare-and-swap は、owner の答え（Q72）で、`lease` の記録への書き込みだけに効かせると決まった。
-- status を accepted にし、置き換えられる側の decision に印を足す。どれも本文は変えず、frontmatter の `superseded_by` か、末尾の追記の節に1つずつ書く。
+- （済み・2026-11-07・PR #580）status を accepted にし、置き換えられる側の decision に印を足した。どれも本文は変えず、frontmatter の `superseded_by` か、末尾の追記の節に1つずつ書いた。
   - decision #188: 「DJ-188-3 の `oe-delegate`（tmux）の部分を、#577 の decision で置き換えた。DJ-188-1・2・4・5 は残る」。
   - decision #238/#239: 「lean の決定（新しい engine state を作らない・seat の先送り）を、identity について #577 の decision で覆した。declared・observed・producer の形は残る」。
   - decision #238 の board schema（§9 の後ろ）: 「§9 の『移行後は frontmatter の `現統括` が正本になる』という前提を、#577 の decision で上書きした。`現統括` は表示で、機械の正本は `lease` の記録である」。

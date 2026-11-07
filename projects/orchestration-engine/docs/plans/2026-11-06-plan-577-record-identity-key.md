@@ -20,7 +20,7 @@ related:
     reason: "棚卸しの表・設計の判断 DJ-1〜DJ-20・ゲート1 の探索木"
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
-    reason: "この plan が実装する decision の案（proposed）"
+    reason: "この plan が実装する decision（2026-11-07 に accepted）"
   - type: reference
     ref: "projects/orchestration-engine/docs/episodes/2026-11-06-episode-577-record-identity-key.md"
     reason: "この plan の作業の記録"

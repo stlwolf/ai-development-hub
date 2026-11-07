@@ -22,7 +22,7 @@ related:
     reason: "この単位の plan"
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
-    reason: "この単位の decision の案（proposed）"
+    reason: "この単位の decision（2026-11-07 に accepted）"
 tags: [orchestration, registry, identity, supervisor, delegation, design]
 ---
 
@@ -263,3 +263,9 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - 振り返り: 実装SO の指摘に対して私が足した直しが、別の窓を開けていた。「直しが小さいので採った」としたが、ロックの引き取りのような並行の仕組みは、小さい直しでも新しい窓を作る。並行の直しは、直したあとの窓を数えてから採るべきだった。
 
 昇格の印: 並行の仕組み（ロック・compare-and-swap）への小さな直しは、直したあとに新しい窓を作っていないかを数えてから採る。実装SO の指摘への直しが、Copilot に別の窓を指摘された（PR #580）
+
+### I1: decision を accepted に上げ、置き換えた側に印を足した（2026-11-07）
+
+- owner の指示（統括経由）で、decision の案を accepted に上げる作業と、#188・#238/#239・board schema に印を足す作業を、PR-2 ではなく PR-1（#580）に入れた。plan の表の「既存の振る舞いに触るか」は verb の動きの話で、文書の印はそれに当たらない、という理由である。統括は一度「PR-2 の branch で行う」と指示し、owner がそれを取り消した。
+- 印の文は decision の「確定するときに直すこと」のとおりにした。#188 は frontmatter の `superseded_by` に1文を足し、#238/#239 は frontmatter に `superseded_by` の行を足し、board schema は末尾に §10 の追記の節を足した。どれも本文は変えていない。
+- 訂正: 既存のテストの前からの失敗のうち `tests/test_home_unset.sh` の件数は、環境で変わる。`TMUX` があると1件（`_oe_home_usable` の定義が1種類でない）、`TMUX` を外すと `oe-register --help` の1件が加わって2件になる（master の写しで両方を確かめた）。I1 の節の「2件」は、本物のペインに触れないように `TMUX` を外して回したときの数である。
