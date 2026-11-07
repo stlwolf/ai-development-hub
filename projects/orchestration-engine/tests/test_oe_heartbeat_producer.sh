@@ -24,6 +24,9 @@ PRODUCER="$REPO_ROOT/canonical/claude/statusline/statusline-oe-heartbeat.sh"
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
+# #577: lease の環境（OE_LEASE_ID・OE_GENERATION）を持つセッションの中で回すと、producer が sidecar に2項目を
+# 足すので、従来の出力を確かめる場面が崩れる。テストの冒頭で外す（Copilot の指摘・PR #581）。
+unset OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 
 PASS=0; FAIL=0

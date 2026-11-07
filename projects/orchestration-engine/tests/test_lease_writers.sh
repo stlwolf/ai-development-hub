@@ -23,6 +23,9 @@ command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
+# 本物の置き場を書き換えていないかを比べる印。テストの開始時に作り、以後は触らない（偽の道具の呼び出しの記録は
+# 呼ぶたびに更新されるので、比べる相手にすると途中で書いたものを見逃す・Copilot の指摘・PR #581）。
+START_MARK="$_TMP_DIR/.start-mark"; : > "$START_MARK"
 REAL_HOME="${HOME:-}"
 export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION PARENT_TMUX_PANE 2>/dev/null || true
@@ -180,7 +183,7 @@ echo "=== (6) 本物に届く経路が無い ==="
 ck "偽の道具だけが呼ばれた（記録がある）" "1" "$([ -s "$CALLS" ] && echo 1 || echo 0)"
 ck "送る文は偽の tmux にだけ届いた" "1" "$([ -s "$LOGS/send-keys.log" ] && echo 1 || echo 0)"
 if [ -n "$REAL_HOME" ]; then
-  ck "本物の lease の置き場は、このテストで書き換わっていない" "0" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$CALLS" 2>/dev/null | grep -c . || true)"
+  ck "本物の lease の置き場は、このテストで書き換わっていない" "0" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$START_MARK" 2>/dev/null | grep -c . || true)"
 fi
 
 echo ""
