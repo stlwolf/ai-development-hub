@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # oe-tree — spawn トポロジ（親→子→孫）を read-only でツリー表示する（#221 / live 化 #223 / 対話ナビ #227）
 #
-# usage: oe-tree [--watch [--interval N]] | [--pick]
+# usage: oe-tree [--watch [--interval N]] | [--pick] | [--lease]
+#
+# --lease（#577 PR-5）: spawn registry でなく lease の記録（~/.claude/state/oe-lease/）から、統括の lease →
+#   子の lease の木を描く。lease はペインでなくこちらで作る ID なので、tmux を起こし直したあとも、前の統括と
+#   子を「プロセスが無い」として出せる（registry は server の pid で絞るので、前の server の分は出ない）。
+#   各ノードの生死は lease の binding のプロセス（pid と開始時刻）で決める。ペインは、プロセスが生きていて
+#   本人を確かめられたときだけ出す。$TMUX が無くても描く（ペインの列が - になるだけ）。
+#   既定の表示（registry から描く）の切り替えは、復帰のテストのときに一度に行う（#577 の owner の答え Q66）。
 #
 # spawn registry（~/.claude/state/oe-delegate/）の現 tmux server 分を走査し、
 # parent_pane 連鎖から森林を再構成して罫線ツリーで表示する。oe-list が flat な
@@ -86,7 +93,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       cat >&2 <<'EOF'
-usage: oe-tree [--watch [--interval N]] | [--pick]
+usage: oe-tree [--watch [--interval N]] | [--pick] | [--lease]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
@@ -99,6 +106,9 @@ gone は末尾）
   --pick        対話ナビ: ノードを fzf で選び、その %N へ oe-jump で focus →
                 対象 window を resize-pane -Z で最大化（fzf 非在時は番号選択）。
                 enter=jump+zoom / ctrl-r=refresh / esc=cancel。--watch とは併用不可。
+  --lease       lease の記録から統括 → 子の木を描く（tmux を起こし直しても前の統括と子が出る）。
+                各ノード: <label> <kind> gen <N> <プロセス alive|gone|?> <ペイン|-> lease <lease_id>
+                ほかの指定とは併用不可。
 
 注: 現在の登記のスナップショット（kill は alive→gone 遷移として反映・ノードが消えるのは
 次の spawn 登記時の GC）。歴史は oe-activity を参照。--pick の jump/zoom はユーザー起点の
@@ -108,6 +118,7 @@ EOF
     --watch) WATCH=1 ;;
     --pick) PICK=1 ;;
     --pick-list) MODE=picklist ;;   # 内部用: --pick が候補（%N<TAB>表示行）を取るため自身を再帰起動する
+    --lease) MODE=lease ;;
     --interval)
       shift
       [[ $# -gt 0 ]] || usage_err "--interval requires a value"
@@ -138,6 +149,75 @@ env_fail() {
 }
 
 command -v jq >/dev/null 2>&1 || env_fail "jq is required"
+
+# --- --lease: lease の記録から木を描く（#577 PR-5・M2）---
+if [[ "$MODE" == lease ]]; then
+  [[ "$WATCH" -eq 0 && "$PICK" -eq 0 ]] || usage_err "--lease cannot be combined with --watch/--pick"
+  # shellcheck source=../lib/lease.sh
+  source "${BIN_DIR}/../lib/lease.sh"
+  [[ -n "${OE_LEASE_DIR:-}" ]] || env_fail "lease の置き場が決まりません（HOME 未設定・OE_LEASE_DIR も未指定）"
+  if [[ ! -e "$OE_LEASE_DIR" ]]; then echo "(lease の記録はまだありません: ${OE_LEASE_DIR})"; exit 0; fi
+  # 置き場が在るのに読めないときは、「記録が無い」に畳まず止まる（Copilot の指摘・PR #590）
+  [[ -d "$OE_LEASE_DIR" ]] || env_fail "lease の置き場がディレクトリではありません: ${OE_LEASE_DIR}"
+  [[ -r "$OE_LEASE_DIR" && -x "$OE_LEASE_DIR" ]] || env_fail "lease の置き場を読めません: ${OE_LEASE_DIR}"
+  L_ID=(); L_PARENT=(); L_LINE=()
+  shopt -s nullglob
+  _lfiles=("$OE_LEASE_DIR"/*.json)
+  shopt -u nullglob
+  _lrows=""
+  if [[ "${#_lfiles[@]}" -gt 0 ]]; then
+    # 開いた lease を作った順に並べる。1行1件: id US parent US kind US label US gen US pid US started
+    _lrows="$(jq -rs 'map(select(type=="object" and .state=="open")) | sort_by(.created_at // "")
+      | .[] | .current_generation as $g | (.generations[] | select(.generation==$g)) as $c
+      | [ .lease_id, (.parent_lease_id // ""), (.kind // ""), ((.label // "") | gsub("[[:cntrl:]]"; " ")),
+          ($g | tostring), (($c.binding.pid // "") | tostring), ($c.binding.started // "") ] | join("\u001f")' \
+      "${_lfiles[@]}" 2>/dev/null)" || env_fail "lease の記録を読めません（${OE_LEASE_DIR}）"
+  fi
+  if [[ -z "$_lrows" ]]; then echo "(開いた lease はありません)"; exit 0; fi
+  _lspid="${OE_LEASE_SERVER_PID:-${SERVER_PID:-}}"
+  [[ -n "$_lspid" ]] || _lspid="$(_oe_reg_server_pid 2>/dev/null || true)"
+  while IFS=$'\037' read -r _id _par _kind _label _gen _pid _st; do
+    [[ -n "$_id" ]] || continue
+    case "$(oe_tpi_proc_state "$_pid" "$_st")" in alive) _proc="alive" ;; dead) _proc="gone" ;; *) _proc="?" ;; esac
+    _pane="-"
+    if [[ "$_proc" == "alive" && -n "$_lspid" ]]; then
+      _pane="$(OE_LEASE_SERVER_PID="$_lspid" oe_lease_resolve_pane "$_id" 2>/dev/null)" || _pane="?"
+    fi
+    L_ID+=("$_id"); L_PARENT+=("$_par")
+    L_LINE+=("$(printf '%s  %s gen %s  %s  %s  lease %s' "${_label:-?}" "${_kind:-?}" "$_gen" "$_proc" "$_pane" "$_id")")
+  done <<< "$_lrows"
+  _lidx() { local i; for i in "${!L_ID[@]}"; do [[ "${L_ID[$i]}" == "$1" ]] && { printf '%s' "$i"; return 0; }; done; return 1; }
+  L_SEEN=" "
+  _ldraw() { # <index> <prefix> <is_last> <depth>
+    local i="$1" pre="$2" last="$3" depth="$4" j kids=() k n
+    case "$L_SEEN" in *" $i "*) return 0 ;; esac   # 同じノードを2度描かない（循環した親で止まらないため）
+    L_SEEN="${L_SEEN}${i} "
+    if [[ "$depth" -eq 0 ]]; then printf '%s\n' "${L_LINE[$i]}"
+    else printf '%s%s %s\n' "$pre" "$( [[ "$last" -eq 1 ]] && printf '└─' || printf '├─')" "${L_LINE[$i]}"; fi
+    for j in "${!L_ID[@]}"; do [[ "${L_PARENT[$j]}" == "${L_ID[$i]}" ]] && kids+=("$j"); done
+    n="${#kids[@]}"
+    local child_pre="$pre"
+    if [[ "$depth" -gt 0 ]]; then child_pre="${pre}$( [[ "$last" -eq 1 ]] && printf '   ' || printf '│  ')"; fi
+    for k in "${!kids[@]}"; do
+      _ldraw "${kids[$k]}" "$child_pre" "$( [[ "$k" -eq $((n - 1)) ]] && echo 1 || echo 0)" $((depth + 1))
+    done
+  }
+  for _i in "${!L_ID[@]}"; do
+    _p="${L_PARENT[$_i]}"
+    # 根: 親が無いか、親の lease が開いていない（閉じた・記録が無い）もの
+    if [[ -z "$_p" ]] || ! _lidx "$_p" >/dev/null; then
+      [[ -z "$_p" ]] || printf '(親の lease %s は開いていない)\n' "$_p"
+      _ldraw "$_i" "" 1 0
+    fi
+  done
+  # 根からたどれなかったノード（親の連鎖が循環している）も黙って落とさず、根として出す（実装SO の指摘）。
+  for _i in "${!L_ID[@]}"; do
+    case "$L_SEEN" in *" $_i "*) continue ;; esac
+    printf '(親の lease の連鎖が循環している)\n'
+    _ldraw "$_i" "" 1 0
+  done
+  exit 0
+fi
 
 SERVER_PID="$(_oe_reg_server_pid)"
 if [[ -z "$SERVER_PID" ]]; then

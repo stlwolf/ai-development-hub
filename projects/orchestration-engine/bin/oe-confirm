@@ -366,11 +366,12 @@ project_panes() {
     | map( . as $c | ts_epoch($c.ts) as $t
            | select($t != null) | select($t > $after) | select(($now - $t) <= $lookback)
            | { pane: ($c.to.pane // ""), label: (($c.to.label // "") | gsub("[[:cntrl:]]"; " ")),
-               parent: ($c.from.pane // ""), ts: $c.ts, age: ($now - $t) } )
+               parent: ($c.from.pane // ""), ts: $c.ts, age: ($now - $t),
+               lease: (($c.to.lease_id // "") | tostring | select(test("^[0-9A-HJKMNP-TV-Z]{26}$")) // "") } )
     | map(select(.pane != ""))
-    | unique_by(.pane)
+    | unique_by(if .lease != "" then "lease:" + .lease else "pane:" + .pane end)
     | sort_by(-.age)
-    | .[] | [ .pane, .label, .parent, .ts, (.age|tostring) ] | join($sep)
+    | .[] | [ .pane, .label, .parent, .ts, (.age|tostring), .lease ] | join($sep)
   '
 }
 PANE_ROWS=""
@@ -507,13 +508,16 @@ fi
 
 pane_out=""
 if [[ -n "$PANE_ROWS" ]]; then
-  while IFS="$SEP" read -r pane label parent ts age; do
+  while IFS="$SEP" read -r pane label parent ts age lease; do
     [[ -n "$pane" ]] || continue
     [[ "$(liveness_of "$pane")" == "gone" ]] || continue
     n_gone=$((n_gone+1))
     pane_out+="$(printf '%-24s %-8s %s  親=%s  %s' "pane-gone" "$(fmt_age "$age")" \
       "$( [[ -n "$label" ]] && printf '%s(%s)' "$label" "$pane" || printf '%s' "$pane" )" "$parent" "$ts")"$'\n'
-    notify_hits+=("pane|${pane}")
+    # 通知済みの記録（seen）のキー。子の lease があれば lease を足す（#577 の N7）。ペイン番号は tmux を
+    # 起こし直すと使い回されるので、番号だけのキーでは、前の server の子で通知済みのキーが残り、新しい子が
+    # 同じ番号で消えても知らせない。lease の無い古い子は、いままでのキーのまま（同じ知らせを二度出さない）。
+    if [[ -n "${lease:-}" ]]; then notify_hits+=("pane|${pane}|lease:${lease}"); else notify_hits+=("pane|${pane}"); fi
   done <<< "$PANE_ROWS"
 fi
 
