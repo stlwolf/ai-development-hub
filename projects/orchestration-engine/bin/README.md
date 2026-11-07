@@ -120,12 +120,18 @@ oe-kick [-w WORKSPACE] [--claude-arg <arg>] [--] <#N|kickoff-path> [ad-hoc...]
 
 ```bash
 oe-send [--brief <path>] [--no-enter] [--] <target> [ad-hoc...]
+oe-send --to-parent [--brief <path>] [--no-enter] [--] [ad-hoc...]
 ```
 
-- `<target>` … 生ペインID（`%N`）または ラベル（`#N` / 任意名。registry で解決）
+- `<target>` … 生ペインID（`%N`）・lease_id・ラベル（`#N` / 任意名）
+  - `%N` はいままでどおり素通しで、宛先の本人は確かめない
+  - lease_id とラベルは lease の記録（`~/.claude/state/oe-lease/`）から引き、送る前に宛先の本人を確かめる（#577 PR-3）。確かめる順は、heartbeat の候補のペイン → tmux に在る → ペインの端末のフォアグラウンドのプロセスが lease の binding（pid と開始時刻）。確かめられなければ送らずに exit 5
+  - ラベルは、自分の lease を親に持つ子の lease だけから引く。lease で引けない（自分の lease が分からない・候補が無い・binding の無い lease しか無い）ときは、移行のあいだだけ registry で解決する
+- `--to-parent` … 子が親へ送る。自分の lease（`OE_LEASE_ID`）の親の lease のいまの持ち主へ送るので、統括が交代しても後継へ届く。`OE_LEASE_ID` が無い子と、自分の lease に親が書かれていない子は `PARENT_TMUX_PANE` へ送る。自分の lease の記録を読めないときは落とさずに exit 2
 - `--brief <path>` … `"<path> を読んで進めて。"` を payload 先頭に付ける（旧 `--kickoff` は deprecated alias・#255）
 - `--no-enter` … 投入のみ（ステージ＝人間が読んで Enter）
-- 子→親の戻し: `oe-send "$PARENT_TMUX_PANE" "申し送り..."`
+- 子→親の戻し: `oe-send --to-parent "申し送り..."`（明示された宛先があればそちらが先・`doc-flow-guardrail` の委譲固定節「報告の宛先」）
+- exit: 0 送った / 1 宛先が無い / 2 呼び方・環境の誤り / 4 未着の可能性（`OE_SEND_SIGNAL_MISS=1` のときだけ）/ 5 lease から引いた宛先の本人を確かめられない（送っていない・`%N` なら送れる）
 - payload は 1 行保証（改行は fail-fast で拒否）。自動 Enter 後に観測ベース finalize（`OE_SEND_FINALIZE=0` で無効）
 
 ### 到達の確認（#299）
@@ -239,7 +245,7 @@ oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute
 
 ## oe-select — 宛先をインタラクティブに選んで送信
 
-`oe-list` と同一ソースの候補から fzf（無ければ番号 read）で 1 件選び、pane id を抽出して `oe-send` へ素通しする。既定で自ペインを候補から除外する。
+`oe-list` と同一ソースの候補から fzf（無ければ番号 read）で 1 件選び、pane id を抽出して `oe-send` へ渡す。既定で自ペインを候補から除外する。選んだ時点で、そのペインのフォアグラウンドのプロセスが lease の binding なら lease_id で `oe-send` に渡し、`oe-send` が送る直前に本人を確かめ直す（#577 PR-3）。lease の無いペインは pane id で渡す。
 
 ```bash
 oe-select [--print|-p] [--no-enter] [--include-self] [--kickoff <path>] [--] [ad-hoc...]
@@ -264,11 +270,12 @@ oe-jump --record [--] <target>         # target を記録するだけ（通知�
 
 - `<target>` … tmux ペイン/ラベルを指す単一トークン:
   - `%N` … tmux ペイン（素通し）→ `tmux switch-client`/`select-window`/`select-pane`（ID 系 target）
-  - `#N` / 任意名 … ラベル（`oe_reg_resolve` で tmux `%N` に解決。候補は `oe-list`）
+  - `#N` / 任意名 … ラベル（lease の記録から引いて本人を確かめる。引けなければ `oe_reg_resolve` で tmux `%N` に解決。候補は `oe-list`・#577 PR-3）
+  - lease_id … lease の記録から引いて本人を確かめる
   - 裸の整数（例 `5`）や `wez:N` は wez（engine）ペイン指しとみなして**拒否**し、`%N`(tmux) か `wez pane activate N`(wez) を案内する（silent な誤 focus を出さない）
 - `--record <target>` … target を state（`~/.claude/state/oe-jump/last-target`・最後の1件・上書き）に記録。**通知連携規約（scope item 1）**の実装: 通知を撃つ側が記録し、人間は `oe-jump`（無引数）で直近の target へ飛ぶ＝真の 1 アクション。記録は token の**形だけ検証**し解決はしない（記録時に tmux/生存ペインを要求しない・解決は jump 時）。記録した token をそのまま解決するので「トースト表示文字列」と「解決契約」がズレない。
 - `--print`, `-p` … 解決した tmux pane id（`%N`）を stdout に出して終了（focus しない・dry-run/検査用）
-- exit: 0 成功 / 1 未解決・曖昧・ペイン無し・focus 失敗・replay 対象なし / 2 usage・環境エラー（tmux 不在）
+- exit: 0 成功 / 1 未解決・曖昧・ペイン無し・focus 失敗・replay 対象なし / 2 usage・環境エラー（tmux 不在）/ 5 lease から引いた宛先の本人を確かめられない（飛ばない）
 - 通知発火そのもの（誰が・いつ撃つか）は #179 スコープ外（状態検出による自動発火 = #P2/agent-deck）。`wez notify` は前提・不改変。WezTerm のトーストはクリックで url を開くのみ＝コマンド直接起動は不可のため、focus は本コマンド経由（issue の「コマンド経由フォールバック」）。
 - 既知制約: spawn-registry の任意名ラベルは spawn した親ペインからのみ解決可（`oe_reg_resolve` の parent スコープ）。pane-issue ラベル（`#N`）と `%N` 直接トークンはスコープ非依存。
 
@@ -418,6 +425,7 @@ oe-tree                      # 現 server の spawn 森林を罫線ツリーで�
 oe-tree --watch              # live 表示（2s poll 再描画・q / Esc / C-c で終了）
 oe-tree --watch --interval 5 # 更新間隔を変更（秒・正整数）
 oe-tree --pick               # 対話ナビ: ノードを fzf で選び jump + 最大化（fzf 非在時は番号選択）
+oe-tree --lease              # lease の記録から統括 → 子の木を描く（#577 PR-5・下の「--lease」節）
 oe-tree -h                   # ヘルプ
 ```
 
@@ -533,6 +541,23 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
 
 ---
 
+### --lease（lease の記録から描く・#577 PR-5）
+
+spawn registry でなく lease の記録（`~/.claude/state/oe-lease/`）から、統括の lease → 子の lease → 孫の木を描く。
+lease はペインでなくこちらで作る ID なので、**tmux を起こし直したあとも、前の統括と子を「プロセスが無い（gone）」として出せる**（既定の表示は registry を server の pid で絞るので、前の server の分は出ない）。
+
+```text
+cockpit  supervisor gen 23  alive  %10  lease <統括の lease_id>
+└─ #900  delegation gen 1  alive  %12  lease <子の lease_id>
+   └─ #901  delegation gen 1  gone  -  lease <孫の lease_id>
+```
+
+- 各ノード: `<label> <kind> gen <N> <プロセス alive|gone|?> <ペイン|-> lease <lease_id>`
+- プロセスの生死は lease の binding（pid と開始時刻）で決める。ペインは、プロセスが生きていて本人を確かめられたときだけ出す（確かめられなければ `?`）
+- 親の lease が閉じている子は、根として出し、その前の行に `(親の lease <id> は開いていない)` を書く
+- `$TMUX` が無くても描く（ペインの列が `-` になるだけ）。`--watch` / `--pick` とは併用不可
+- 既定の表示を lease の記録に切り替えるのは、復帰のテストのときに一度に行う（#577 の owner の答え Q66）
+
 ## oe-threads — 生存ペインごとのモデル名とコンテキスト%（#327・read-only）
 
 **cockpit の主役ではない。** owner が見る面は `oe-tree`（`Ctrl+Space` → `v` の popup）で、そちらには
@@ -561,12 +586,15 @@ oe-threads --fresh 300      # 帰属を解決する鮮度窓（既定 900・OE_T
 
 **鮮度の使い分け（DJ-B）**: 行を落とすのには使わず、帰属の解決にだけ使う。生存ペインの行は鮮度に
 関係なく常に出る（静かなスレッドが消えない）。どの sidecar をそのペインの現役とみなすかだけを鮮度窓で
-決める。fresh な候補が2件以上あるときは `PANE` に `?` を付けて値を出さない（最新で潰さない＝pane
-再利用の誤帰属を「解決済み」に見せない）。
+決める。
 
-**server identity（DJ-D）**: 突合は `server_pid` と `pane` の組で行う。pane 番号は tmux server 内で
-のみ一意なので、pane だけでは別 server の同番ペインと衝突する。sidecar 側の `server_pid` が空のもの
-（producer 更新前・`$TMUX` 不在で書かれた記録）は pane だけで突合する劣化動作。
+**帰属の規則（DJ-C・DJ-D・#577 PR-5 で変えた）**: ペインの session は `lib/heartbeat-resolve.sh` の
+`oe_hb_session_for_pane`（heartbeat からペインを引く規則を1つにまとめた関数・#577 の N6）で引く。
+`server_pid` が一致し、鮮度窓の中にあるもののうち、いちばん新しいものを採る。いちばん新しいものが同じ
+時刻で別の session に分かれたときだけ `PANE` に `?` を付けて値を出さない。1分を超えて未来の拍動は
+候補にしない。以前は「fresh な候補が2件以上なら曖昧」「`server_pid` が空の sidecar も pane だけで突合」
+だったが、1つのペインで動く claude は1つなので新しい方が今の session であり、`server_pid` の無い
+sidecar はいまは書かれないので、読む側の規則を1つにそろえた。
 
 read-only / 非検出: 読むのは (1) sidecar (2) tmux query 3種（ペイン存在＝`list-panes` の `pane_id` /
 server pid＝`display-message` の `#{pid}` / `pane_title`＝ラベル解決の最終段）(3) pane-issue のみ。
