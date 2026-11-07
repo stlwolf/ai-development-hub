@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# oe-lease — 統括と委譲子の「誰か」を持つ lease の記録を作る・名乗る・引く・閉じる・掃除する（#577 PR-1）
+#
+# 設計の正本は projects/orchestration-engine/docs/discussions/2026-11-06-discussion-577-record-identity-key.md。
+# 記録の読み書きは lib/lease.sh が持ち、この verb は呼び方を決めるだけである。
+# PR-1 では既存の verb（oe-delegate・oe-send・oe-handoff など）はまだこの記録を使わない。
+#
+# usage:
+#   oe-lease create --label <label> [--kind supervisor|delegation] [-w <workspace>] [--parent <lease_id>] [--generation <N>]
+#   oe-lease create --root --label <label> [-w <workspace>] [--generation <N>]
+#   oe-lease bind <lease_id> [-w <workspace>] [--owner-confirmed]
+#   oe-lease whoami
+#   oe-lease resolve <lease_id|label>
+#   oe-lease show <lease_id>
+#   oe-lease close <lease_id>
+#   oe-lease gc [--days <N>] [--dry-run]
+#
+#   create --root  手で立てた統括が、自分の Bash から打つ。lease を作り、自分（CLAUDE_PID）を binding に書き、
+#                  自分の CLAUDE_CODE_SESSION_ID を登録する（DJ-18）。
+#   bind           本人が自分の Bash から打つ。いまの generation の binding を自分に張り替え（前の binding が
+#                  生きていないと確かめられたときか、もう自分のときだけ）、自分の session_id を登録する。
+#                  張り替えと登録は1回の書き込みで、session_id がほかにあれば binding も変えない。
+#                  自分の session_id がまだその lease に無いとき（名乗る方法3・会話の記録の lease_id を渡すとき）は、
+#                  lease の workspace が自分の workspace と一致することを確かめ、統括の lease なら
+#                  --owner-confirmed（owner が確かめた）を求める（DJ-7）。
+#   whoami         環境変数（OE_LEASE_ID・OE_GENERATION）か、自分の CLAUDE_CODE_SESSION_ID で、自分の lease を出す。
+#   resolve        いまの generation の binding と照らしたペインを出す（照らせなければ出さない）。
+#   gc             閉じた lease と、古い heartbeat の sidecar を消す（.hb.* は触らない）。既定 30 日。
+#
+# exit: lib/lease.sh の戻り値の決まりをそのまま返す。
+#   0 成功 / 1 対象が無い / 2 呼び方の誤り・前提の不足 / 3 epoch が合わない / 4 ロックが取れない
+#   5 張り替えを断った・本人を確かめられない / 6 claude でない・確かめられない / 7 閉じている・退任している
+#   8 session_id がほかの lease にある / 9 binding が無い / 10 確かめが要る（workspace の不一致・owner の確かめ）
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/lease.sh
+. "${BIN_DIR}/../lib/lease.sh"
+
+err() { echo "oe-lease: $*" >&2; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed -e '/^set -euo/d' -e 's/^# \{0,1\}//' >&2; }
+
+# 自分のプロセスを binding の材料として読む（推し量らない: CLAUDE_PID が無ければ止まる）。
+self_proc() {
+  local pid="${CLAUDE_PID:-}" started comm
+  [ -n "$pid" ] || { err "CLAUDE_PID がありません（Claude Code の Bash から打ってください）"; return 2; }
+  started="$(oe_tpi_proc_started "$pid")" || { err "自分のプロセスの開始時刻を読めません（pid ${pid}）"; return 6; }
+  comm="$(oe_tpi_proc_comm "$pid")" || { err "自分のプロセスのコマンド名を読めません（pid ${pid}）"; return 6; }
+  SELF_PID="$pid"; SELF_STARTED="$started"; SELF_COMM="$comm"
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  create)
+    kind="delegation"; label=""; ws="$(pwd)"; parent=""; gen="1"; root=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --root) root=1; kind="supervisor"; shift ;;
+        --kind) [ $# -ge 2 ] || { err "--kind requires a value"; exit 2; }; kind="$2"; shift 2 ;;
+        --label) [ $# -ge 2 ] || { err "--label requires a value"; exit 2; }; label="$2"; shift 2 ;;
+        -w|--workspace) [ $# -ge 2 ] || { err "$1 requires a value"; exit 2; }; ws="$2"; shift 2 ;;
+        --parent) [ $# -ge 2 ] || { err "--parent requires a value"; exit 2; }; parent="$2"; shift 2 ;;
+        --generation) [ $# -ge 2 ] || { err "--generation requires a value"; exit 2; }; gen="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) err "unknown option: $1"; exit 2 ;;
+      esac
+    done
+    [ -n "$label" ] || { err "--label is required"; exit 2; }
+    if [ "$root" -eq 1 ]; then
+      [ -z "$parent" ] || { err "--root は --parent と一緒に使えません"; exit 2; }
+      rc=0; self_proc || rc=$?; [ "$rc" -eq 0 ] || exit "$rc"
+      [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || { err "CLAUDE_CODE_SESSION_ID がありません"; exit 2; }
+      if oe_lease_find_by_session "$CLAUDE_CODE_SESSION_ID" >/dev/null 2>&1; then
+        err "session_id ${CLAUDE_CODE_SESSION_ID} は、もう開いた lease に登録されています（oe-lease whoami で確かめてください）"; exit 8
+      fi
+    fi
+    id="$(oe_lease_create "$kind" "$label" "$ws" "$parent" "$gen")" || exit $?
+    if [ "$root" -eq 1 ]; then
+      rc=0; oe_lease_claim "$id" 0 "$SELF_PID" "$SELF_STARTED" "$SELF_COMM" "$CLAUDE_CODE_SESSION_ID" || rc=$?
+      [ "$rc" -eq 0 ] || { err "作った lease ${id} に自分を binding できませんでした（rc=${rc}）"; exit "$rc"; }
+    fi
+    printf '%s\n' "$id"
+    ;;
+  bind)
+    id=""; ws="$(pwd)"; confirmed=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -w|--workspace) [ $# -ge 2 ] || { err "$1 requires a value"; exit 2; }; ws="$2"; shift 2 ;;
+        --owner-confirmed) confirmed=1; shift ;;
+        -*) err "unknown option: $1"; exit 2 ;;
+        *) [ -z "$id" ] || { err "bind takes one lease_id"; exit 2; }; id="$1"; shift ;;
+      esac
+    done
+    [ -n "$id" ] || { err "bind requires a lease_id"; exit 2; }
+    rc=0; self_proc || rc=$?; [ "$rc" -eq 0 ] || exit "$rc"
+    [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || { err "CLAUDE_CODE_SESSION_ID がありません"; exit 2; }
+    cur="$(oe_lease_get "$id")" || { err "lease ${id} がありません"; exit 1; }
+    epoch="$(printf '%s' "$cur" | jq -r '.epoch')"
+    # 名乗る方法2（自分の session_id がもうこの lease にある）なら追加の確かめは要らない。方法3 なら確かめる。
+    if ! printf '%s' "$cur" | jq -e --arg s "$CLAUDE_CODE_SESSION_ID" 'any(.generations[]; (.session_ids // []) | index($s))' >/dev/null; then
+      lws="$(printf '%s' "$cur" | jq -r '.workspace')"
+      lws_real="$(cd "$lws" 2>/dev/null && pwd -P)" || lws_real=""
+      ws_real="$(cd "$ws" 2>/dev/null && pwd -P)" || ws_real=""
+      # どちらかのディレクトリが無いときは、空どうしを一致と読まない。
+      if [ -z "$lws_real" ] || [ -z "$ws_real" ] || [ "$lws_real" != "$ws_real" ]; then
+        err "lease ${id} の workspace（${lws}）が自分の workspace（${ws}）と一致しません。lease_id を読み違えていないか確かめてください"; exit 10
+      fi
+      if [ "$(printf '%s' "$cur" | jq -r '.kind')" = "supervisor" ] && [ "$confirmed" -ne 1 ]; then
+        err "統括の lease ${id} に、記録に無い session_id で名乗ります。owner に確かめてから --owner-confirmed を付けて打ってください"; exit 10
+      fi
+    fi
+    rc=0; oe_lease_claim "$id" "$epoch" "$SELF_PID" "$SELF_STARTED" "$SELF_COMM" "$CLAUDE_CODE_SESSION_ID" || rc=$?
+    case "$rc" in
+      0) ;;
+      3) err "lease ${id} は読んだあとに書き換えられました（取り合いに負けた）。もう一度確かめてください"; exit 3 ;;
+      5) err "前の binding のプロセスが生きているか、生きているか分からないので張り替えません"; exit 5 ;;
+      6) err "自分のプロセスが claude ではありません"; exit 6 ;;
+      7) err "lease ${id} は閉じているか、いまの generation が退任しています"; exit 7 ;;
+      8) err "session_id ${CLAUDE_CODE_SESSION_ID} は、ほかの開いた lease か、この lease の別の generation に登録されています。binding は変えていません"; exit 8 ;;
+      *) err "binding を書けませんでした（rc=${rc}）"; exit "$rc" ;;
+    esac
+    oe_lease_whoami_out="$(OE_LEASE_ID="$id" OE_GENERATION="" oe_lease_whoami)" || true
+    printf '%s\n' "$oe_lease_whoami_out"
+    ;;
+  whoami)
+    rc=0; out="$(oe_lease_whoami)" || rc=$?
+    [ "$rc" -eq 0 ] || { err "自分の lease を決められません（環境変数も、session_id の照合も外れた）"; exit "$rc"; }
+    printf '%s\n' "$out"
+    if [ "$(printf '%s' "$out" | jq -r '.state')" = "retired" ]; then
+      err "この generation は退任しています。いまの generation は $(printf '%s' "$out" | jq -r '.current_generation') です。統括の操作に進まないでください"
+      exit 7
+    fi
+    ;;
+  resolve)
+    target="${1:-}"; [ -n "$target" ] || { err "resolve requires a lease_id or label"; exit 2; }
+    if _oe_lease_valid_id "$target"; then id="$target"
+    else
+      ids="$(oe_lease_find_by_label "$target")" || { err "label ${target} の開いた lease がありません"; exit 1; }
+      [ "$(printf '%s\n' "$ids" | grep -c .)" -eq 1 ] || { err "label ${target} の開いた lease が複数あります"; exit 3; }
+      id="$ids"
+    fi
+    rc=0; pane="$(oe_lease_resolve_pane "$id")" || rc=$?
+    case "$rc" in
+      0) printf '%s\n' "$pane" ;;
+      1) err "lease ${id} の候補のペインがありません（heartbeat が無いか古い）"; exit 1 ;;
+      3) err "lease ${id} の候補のペインが分かれています"; exit 3 ;;
+      5) err "lease ${id} のペインにいるのが binding のプロセスではありません（送らない）"; exit 5 ;;
+      7) err "lease ${id} は閉じています"; exit 7 ;;
+      9) err "lease ${id} には binding がありません"; exit 9 ;;
+      *) err "lease ${id} のペインを確かめられません（rc=${rc}）"; exit 6 ;;
+    esac
+    ;;
+  show)
+    id="${1:-}"; [ -n "$id" ] || { err "show requires a lease_id"; exit 2; }
+    oe_lease_get "$id" | jq . || exit $?
+    ;;
+  close)
+    id="${1:-}"; [ -n "$id" ] || { err "close requires a lease_id"; exit 2; }
+    rc=0; oe_lease_close "$id" || rc=$?
+    case "$rc" in 0) ;; 1) err "lease ${id} は無いか、もう閉じています"; exit 1 ;; *) exit "$rc" ;; esac
+    ;;
+  gc)
+    days=30; dry=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --days) [ $# -ge 2 ] || { err "--days requires a value"; exit 2; }; days="$2"; shift 2 ;;
+        --dry-run) dry="dry-run"; shift ;;
+        *) err "unknown option: $1"; exit 2 ;;
+      esac
+    done
+    oe_lease_gc "$days" "$dry"
+    ;;
+  -h|--help|"") usage; [ -n "$cmd" ] && exit 0; exit 2 ;;
+  *) err "unknown subcommand: ${cmd}"; usage; exit 2 ;;
+esac

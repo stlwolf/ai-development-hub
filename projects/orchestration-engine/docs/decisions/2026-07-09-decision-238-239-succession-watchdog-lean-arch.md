@@ -4,6 +4,7 @@ title: "#238/#239 統括 succession/watchdog の上位アーキは lean — decl
 date: 2026-07-09
 type: decision
 status: accepted
+superseded_by: "Partially superseded by 2026-11-06-decision-577-record-identity-key.md — lean の決定（新しい engine state を作らない・seat の先送り）を、identity について #577 の decision で覆した。declared・observed・producer の形は残る。"
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/238"
