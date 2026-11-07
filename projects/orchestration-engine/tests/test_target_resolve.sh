@@ -87,7 +87,8 @@ mk_lease() {
   local id; id="$(lib oe_lease_create "$1" "$2" "$WS" "${6:-}" 1)"
   lib oe_lease_claim "$id" 0 "$3" "$4" claude "$5"; printf '%s' "$id"; }
 sent_to() { awk '{for (i=1;i<=NF;i++) if ($i=="-t") {print $(i+1); exit}}' <(grep -- '-l' "$SENT" | tail -1); }
-send() { : > "$SENT"; set +e; OUT="$(bash "$BIN/oe-send" "$@" 2>&1)"; RC=$?; set -e; }
+# 送る側は統括（自分の lease は SUP）。ラベルは自分の lease を親に持つ子だけから引く。
+send() { : > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-send" "$@" 2>&1)"; RC=$?; set -e; }
 
 SUP="$(mk_lease supervisor cockpit 901 "$S1" sid-sup)"; beat sid-sup %1
 C2="$(mk_lease delegation '#900' 902 "$S2" sid-c2 "$SUP")"; beat sid-c2 %2
@@ -108,14 +109,14 @@ rm -f "$OE_PANE_ISSUE_DIR/4242__3"
 printf '{"name":"#701"}\n' > "$OE_PANE_ISSUE_DIR/4242__3"
 send '#701' "hi"
 ck  "(2) lease で引けなければ古い引き方で送る" "%3" "$(sent_to)"
-U="$(lib oe_lease_create delegation '#702' "$WS" "" 1)"
+U="$(lib oe_lease_create delegation '#702' "$WS" "$SUP" 1)"
 printf '{"name":"#702"}\n' > "$OE_PANE_ISSUE_DIR/4242__3"
 send '#702' "hi"
 ck  "(3) binding の無い lease しか無ければ古い引き方で送る" "%3" "$(sent_to)"
 ckc "(3) そう言う" "$OUT" "binding が無い（${U}"
-D="$(mk_lease delegation '#703' 904 "$S4" sid-d)"; beat sid-d %4
+D="$(mk_lease delegation '#703' 904 "$S4" sid-d "$SUP")"; beat sid-d %4
 fake_proc_del 904
-L3="$(mk_lease delegation '#703' 903 "$S3" sid-l3)"; beat sid-l3 %3
+L3="$(mk_lease delegation '#703' 903 "$S3" sid-l3 "$SUP")"; beat sid-l3 %3
 send '#703' "hi"
 ck  "(4) 終わった lease は候補にせず、生きている方へ送る" "%3" "$(sent_to)"
 ckc "(4) 生きている方の lease を名乗る" "$OUT" "lease ${L3}"
@@ -125,6 +126,15 @@ ck  "(5) 生きた候補が2つなら決めない（1）" "1" "$RC"
 ckc "(5) そう言う" "$OUT" "1つに決まりません"
 ck  "(5) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 lib oe_lease_close "$D" "$(lib oe_lease_epoch "$D")" >/dev/null || true
+OTHER="$(mk_lease supervisor other 904 "$S4" sid-other)"
+O6="$(mk_lease delegation '#706' 903 "$S3" sid-o6 "$OTHER")"; beat sid-o6 %3
+send '#706' "hi"
+ck  "(6) 別の統括の子のラベルは lease から引かない（registry にも無いので 1）" "1" "$RC"
+ck  "(6) 別の統括の子へ送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$OTHER" bash "$BIN/oe-send" '#706' "hi" 2>&1)"; RC=$?; set -e
+ck  "(6) その統括からは引ける" "%3" "$(sent_to)"
+lib oe_lease_close "$O6" "$(lib oe_lease_epoch "$O6")" >/dev/null || true
+lib oe_lease_close "$OTHER" "$(lib oe_lease_epoch "$OTHER")" >/dev/null || true
 
 echo "=== (C) 本人を確かめられなければ送らない ==="
 fake_proc_del 902; fake_proc_add 950 'Sat Nov  7 12:00:00 2026' claude ttys002 950
@@ -165,7 +175,7 @@ set +e; OUT="$(bash "$BIN/oe-send" --to-parent 2>&1)"; RC=$?; set -e
 ck  "(5) 送る文が無ければ 2（呼び方の誤り）" "2" "$RC"
 
 echo "=== (E) oe-jump ==="
-: > "$SENT"; set +e; OUT="$(bash "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e
 ck  "(1) lease のペインへ飛ぶ" "0" "$RC"
 ckc "(1) select-pane は lease のペイン" "$(cat "$SENT")" "select-pane -t %2"
 fake_proc_del 902; fake_proc_add 950 'Sat Nov  7 12:00:00 2026' claude ttys002 950

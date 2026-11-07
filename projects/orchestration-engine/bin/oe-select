@@ -161,6 +161,26 @@ if [[ "$PRINT_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+# 選んだ時点で、選んだペインのフォアグラウンドのプロセスが lease の binding なら、その lease を覚えておき、
+# ペイン番号でなく lease_id で送る（#577 PR-3・DJ-15）。oe-send が送る直前にその lease の本人を確かめ直す
+# ので、文を打っているあいだにペインの中身が替わっても、別の相手に送らない（実装SO の指摘で、lease を
+# 引く時点を文を打つ前へ移した）。lease が無いペインは、いままでどおりペイン番号で送る。ペインの
+# プロセスを確かめられないときもペイン番号で送るが、そのことを知らせる（以前と同じ送り方）。
+SEND_TO="$PANE"
+if [[ "$PRINT_ONLY" -eq 0 ]] && declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
+  if fg="$(oe_tpi_pane_foreground "$PANE" 2>/dev/null)"; then
+    if sel_lease="$(oe_lease_find_by_binding "${fg%%"$_OE_TPI_TAB"*}" "${fg#*"$_OE_TPI_TAB"}" 2>/dev/null)"; then
+      if [[ "$(printf '%s\n' "$sel_lease" | grep -c .)" -eq 1 ]]; then
+        SEND_TO="$sel_lease"
+      else
+        echo "oe-select: ${PANE} のプロセスを binding に持つ lease が複数あるので、ペイン番号で送ります" >&2
+      fi
+    fi
+  else
+    echo "oe-select: ${PANE} のプロセスを確かめられないので、lease は使わずペイン番号で送ります" >&2
+  fi
+fi
+
 # 送信モード: message 確定。
 #  - ad-hoc があればそれを使う
 #  - 無く --kickoff があればメッセージ空でよい（kickoff が payload）
@@ -176,18 +196,6 @@ if [[ -z "$MESSAGE" && -z "$KICKOFF" ]]; then
   # rc1 になり契約（cancel=130）に反する。--kickoff 指定時は payload があるため
   # この経路に入らない（上の条件で除外済み）。
   [[ -n "$MESSAGE" ]] || exit 130
-fi
-
-# 選んだペインのフォアグラウンドのプロセスが lease の binding なら、ペイン番号でなく lease_id で送る
-# （#577 PR-3・DJ-15）。oe-send が送る直前に宛先の本人を確かめ直すので、選んでから送るまでのあいだに
-# ペインの中身が替わっても、別の相手に送らない。lease が無いペインは、いままでどおりペイン番号で送る。
-SEND_TO="$PANE"
-if declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
-  if fg="$(oe_tpi_pane_foreground "$PANE" 2>/dev/null)" \
-     && sel_lease="$(oe_lease_find_by_binding "${fg%%"$_OE_TPI_TAB"*}" "${fg#*"$_OE_TPI_TAB"}" 2>/dev/null)" \
-     && [[ "$(printf '%s\n' "$sel_lease" | grep -c .)" -eq 1 ]]; then
-    SEND_TO="$sel_lease"
-  fi
 fi
 
 # 隣接 oe-send を exec で呼ぶ。passthrough: --no-enter / --kickoff <path>。

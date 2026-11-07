@@ -9,9 +9,11 @@
 #     受け付ける形:
 #       %N        生のペイン。いままでどおり素通しで、本人は確かめない（移行とフォールバックのため）
 #       lease_id  26文字の lease の ID
-#       ラベル    #N か名前。lease の記録から先に引く。開いた lease のうち、ラベルが合い、binding があり、
-#                 binding のプロセスが「無い」と確かめられていないものを候補にする。候補が無ければ、移行の
-#                 あいだだけ古い引き方（pane-issue と registry・oe_reg_resolve）に落とす（owner の答え Q77）
+#       ラベル    #N か名前。lease の記録から先に引く。自分の lease（oe_lease_whoami）を親に持つ開いた lease の
+#                 うち、ラベルが合い、binding があり、binding のプロセスが「無い」と確かめられていないものを
+#                 候補にする（registry が「いまの親の子」に限っていたのと同じ範囲・実装SO の指摘）。自分の lease が
+#                 分からないときと、候補が無いときは、移行のあいだだけ古い引き方（pane-issue と registry・
+#                 oe_reg_resolve）に落とす（owner の答え Q77）
 #     lease から引いたときは、heartbeat の候補のペイン → tmux に在る → ペインのフォアグラウンドのプロセスが
 #     binding の pid と開始時刻、の順で確かめる（lib/lease.sh の oe_lease_resolve_pane）。
 #
@@ -60,13 +62,16 @@ _oe_target_from_lease() {
 }
 
 # ラベルが合う lease を探す。出力: 1行1件 "<lease_id>\t<binding の有無 yes|no>"。
-# binding のプロセスが「無い」と確かめられた lease（終わった子）は出さない。
+# 自分の lease を親に持つものだけを見る（別の統括の子へ送らない）。binding のプロセスが「無い」と
+# 確かめられた lease（終わった子）は出さない。
 _oe_target_leases_for_label() {
-  local target="$1" f row id label pid st state
+  local target="$1" f row id label pid st state me
   [ -n "${OE_LEASE_DIR:-}" ] && [ -d "$OE_LEASE_DIR" ] || return 0
+  me="$(oe_lease_whoami 2>/dev/null | jq -r '.lease_id // ""' 2>/dev/null)" || me=""
+  [ -n "$me" ] || return 0
   for f in "$OE_LEASE_DIR"/*.json; do
     [ -f "$f" ] || continue
-    row="$(jq -r 'select(.state=="open") | .current_generation as $g
+    row="$(jq -r --arg me "$me" 'select(.state=="open" and (.parent_lease_id // "") == $me) | .current_generation as $g
       | [ .lease_id, (.label // ""),
           ((.generations[] | select(.generation==$g) | .binding.pid // "") | tostring),
           (.generations[] | select(.generation==$g) | .binding.started // "") ] | @tsv' "$f" 2>/dev/null)" || continue
