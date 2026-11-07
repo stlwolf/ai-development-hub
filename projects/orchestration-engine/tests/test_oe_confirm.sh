@@ -303,6 +303,10 @@ echo "[17b] 古いロックは回収する（プロセス死の残骸で永久�
 mkfix f17b
 sent "2026-09-11T12:00:00+00:00" "%61" "%53" "$N1" "STALELOCK"
 mkdir -p "$EVDIR/oe-confirm/.lock"
+# 古さは「固定した now − ロックの mtime」で決まる。作りたてのロックの mtime は実際の時刻なので、
+# 実行した日が固定の now（2026-09-11 12:20 UTC）より後だと古さが負になり回収に入らない。
+# 実行した日に左右されないよう、mtime を固定の now の1時間前（11:20 UTC）に置く。
+TZ=UTC touch -t 202609111120 "$EVDIR/oe-confirm/.lock"
 OUT="$(env PATH="$STUB_BIN:$PATH" OE_EVENT_DIR="$EVDIR" OE_CONFIRM_NOW_EPOCH=1789129200 \
   OE_CONFIRM_LOCK_STALE_SEC=0 bash "$OE_CONFIRM" --write-latest 2>&1)"
 ckc "古いロックを回収したと告げる" "$OUT" "古いロックを回収しました"
