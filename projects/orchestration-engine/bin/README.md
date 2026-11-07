@@ -591,10 +591,11 @@ oe-threads --fresh 300      # 帰属を解決する鮮度窓（既定 900・OE_T
 **帰属の規則（DJ-C・DJ-D・#577 PR-5 で変えた）**: ペインの session は `lib/heartbeat-resolve.sh` の
 `oe_hb_session_for_pane`（heartbeat からペインを引く規則を1つにまとめた関数・#577 の N6）で引く。
 `server_pid` が一致し、鮮度窓の中にあるもののうち、いちばん新しいものを採る。いちばん新しいものが同じ
-時刻で別の session に分かれたときだけ `PANE` に `?` を付けて値を出さない。1分を超えて未来の拍動は
-候補にしない。以前は「fresh な候補が2件以上なら曖昧」「`server_pid` が空の sidecar も pane だけで突合」
-だったが、1つのペインで動く claude は1つなので新しい方が今の session であり、`server_pid` の無い
-sidecar はいまは書かれないので、読む側の規則を1つにそろえた。
+時刻で別の session に分かれたときだけ `PANE` に `?` を付けて値を出さない。未来の拍動は候補にしない。
+以前は「fresh な候補が2件以上なら曖昧」「`server_pid` が空の sidecar も pane だけで突合」だったが、
+1つのペインで動く claude は1つなので新しい方が今の session である。`server_pid` が空の sidecar
+（producer の更新より前の記録と、`$TMUX` が無いか壊れた環境で書かれた記録）は、どの server のペインか
+決められないので候補にしない。読む側の規則を1つにそろえた。
 
 read-only / 非検出: 読むのは (1) sidecar (2) tmux query 3種（ペイン存在＝`list-panes` の `pane_id` /
 server pid＝`display-message` の `#{pid}` / `pane_title`＝ラベル解決の最終段）(3) pane-issue のみ。

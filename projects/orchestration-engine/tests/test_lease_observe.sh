@@ -98,6 +98,13 @@ OUT="$(bash "$BIN/oe-tree" --lease 2>&1)"
 ckc "親が開いていないと書く" "$OUT" "(親の lease ${C} は開いていない)"
 ck  "閉じた子は出さない" "0" "$(printf '%s\n' "$OUT" | grep -c "  lease ${C}\$" || true)"
 ckc "孫は根として出る" "$OUT" "#901"
+# 親の連鎖が循環している2件（A の親が B、B の親が A）も、黙って落とさずに出す（実装SO の指摘）
+CA="$(lib oe_lease_create delegation '#cyc-a' "$WS" "" 1)"; CB="$(lib oe_lease_create delegation '#cyc-b' "$WS" "$CA" 1)"
+lib oe_lease_set_parent "$CA" "$(lib oe_lease_epoch "$CA")" "$CB" >/dev/null
+OUT="$(bash "$BIN/oe-tree" --lease 2>&1)"; RC=$?
+ck  "循環があっても 0 で終わる" "0" "$RC"
+ckc "循環していると書く" "$OUT" "(親の lease の連鎖が循環している)"
+ck  "循環した2件をどちらも1度ずつ出す" "2" "$(printf '%s\n' "$OUT" | grep -c '#cyc-' || true)"
 set +e; OUT="$(bash "$BIN/oe-tree" --lease --watch 2>&1)"; RC=$?; set -e
 ck  "ほかの指定とは併用できない（2）" "2" "$RC"
 

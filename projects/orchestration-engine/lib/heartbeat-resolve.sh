@@ -9,7 +9,7 @@
 # 提供する関数:
 #   oe_hb_pane_for <server_pid> <max_age_sec> <lease_id> <generation> [<session_id>...]
 #       lease の今の generation の候補のペインを1つ選び、"<pane>\t<session_id>" を出す。
-#       候補にするのは、server の pid が一致し、鮮度の窓の中にあり（1分を超えて未来の拍動は外す）、
+#       候補にするのは、server の pid が一致し、鮮度の窓の中にあり（未来の拍動は外す）、
 #       (a) sidecar の lease_id と generation が一致する、か (b) sidecar の session_id が渡した並びにある、もの。
 #       rc: 0 選べた / 1 候補が無い / 3 いちばん新しい候補が同じ時刻で別のペインに分かれた / 2 呼び方の誤り
 #   oe_hb_session_for_pane <server_pid> <max_age_sec> <pane>
@@ -65,8 +65,9 @@ EOF
     [ "$pane" != "-" ] || continue
     [ "$rspid" = "$spid" ] || continue
     [ $((now - ts)) -le "$maxage" ] || continue
-    # 1分を超えて未来の拍動は候補にしない（時計が戻ったあとに、いつまでも「いちばん新しい」として勝ち続ける）
-    [ $((ts - now)) -le 60 ] || continue
+    # 未来の拍動は候補にしない。時計が戻ると、終わった session の拍動が「いちばん新しい」として勝ち続ける。
+    # producer と読む側は同じマシンの時計を使うので、ふつうは未来にならない（実装SO の指摘で1分の猶予をやめた）。
+    [ "$ts" -le "$now" ] || continue
     sid="$(basename "$f" .json)"
     hit=0
     if [ -n "$lid" ] && [ "$rlid" = "$lid" ] && [ "$rgen" = "$gen" ]; then hit=1; fi
@@ -99,8 +100,9 @@ EOF
     [ "$pane" = "$want" ] || continue
     [ "$rspid" = "$spid" ] || continue
     [ $((now - ts)) -le "$maxage" ] || continue
-    # 1分を超えて未来の拍動は候補にしない（時計が戻ったあとに、いつまでも「いちばん新しい」として勝ち続ける）
-    [ $((ts - now)) -le 60 ] || continue
+    # 未来の拍動は候補にしない。時計が戻ると、終わった session の拍動が「いちばん新しい」として勝ち続ける。
+    # producer と読む側は同じマシンの時計を使うので、ふつうは未来にならない（実装SO の指摘で1分の猶予をやめた）。
+    [ "$ts" -le "$now" ] || continue
     cands="${cands}${ts}${_OE_HB_TAB}$(basename "$f" .json)${_OE_HB_TAB}$(basename "$f" .json)
 "
   done

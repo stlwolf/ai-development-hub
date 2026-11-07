@@ -117,6 +117,12 @@ ckc "新しい方（10秒前・33）を採る"  "$OUT" "33"
 ncc "古い方（44）は出さない"        "$OUT" "44"
 ncc "曖昧マークは付かない"          "$OUT" "%4?"
 reset_beats
+mkbeat past 10 33 '%4' "$SPID" 'Fable 5'
+mkbeat skew -30 44 '%4' "$SPID" 'Opus 5'     # 時計が戻ったあとの、30秒未来の古い session（実装SO の指摘）
+OUT="$(run '%4')"
+ckc "未来の拍動より、いまの session（33）を採る" "$OUT" "33"
+ncc "未来の拍動（44）は採らない"               "$OUT" "44"
+reset_beats
 mkbeat tiea 10 33 '%4' "$SPID" 'Fable 5'
 mkbeat tieb 10 44 '%4' "$SPID" 'Opus 5'
 OUT="$(run '%4')"

@@ -36,9 +36,10 @@
 #   以前の決まりとの違い（#577 PR-5）: 以前は「fresh な候補が2件以上なら曖昧」とし、sidecar の
 #   server_pid が空のものも pane だけで突合していた。1つのペインで動く claude は1つなので、候補が2件
 #   なら新しい方が今の session である（古い方が新しい拍動を書くことはない）。新しい session がまだ
-#   拍動を書いていない窓は、以前の決まりでも候補が1件なので同じく古い方を出す。server_pid が空の
-#   sidecar は producer の更新より前の記録で、いまは書かれない。読む側ごとに規則が違うと、同じペインの
-#   session が verb によって違って見えるので、1つにそろえた。
+#   拍動を書いていない窓は、以前の決まりでも候補が1件なので同じく古い方を出す。時計が戻ったときの
+#   未来の拍動は、N6 の側で候補から外す。server_pid が空の sidecar（producer の更新より前の記録と、
+#   $TMUX が無いか壊れた環境で書かれた記録）は、どの server のペインか決められないので候補にしない。
+#   読む側ごとに規則が違うと、同じペインの session が verb によって違って見えるので、1つにそろえた。
 #
 # 列（DJ-E）: PANE / CTX / AGE / MODEL / LABEL。MODEL は幅で切らない（display_name の末尾に
 #   1M 版の区別が載るため）。可変幅が2列あるので、切らない MODEL に最小幅を与え、溢れは最後の
@@ -256,6 +257,15 @@ while IFS= read -r _p; do
       _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
       break
     done
+    # 上で集めたあとに現れた sidecar を N6 が選んだときは、その sidecar を直に読む（2回の読み取りの
+    # 食い違いで値が - になるのを防ぐ・実装SO の指摘）
+    if [[ "$_n" -eq 0 && -f "${BEAT_DIR}/${_hsid}.json" ]]; then
+      _raw="$(jq -r "$_PROJECT" "${BEAT_DIR}/${_hsid}.json" 2>/dev/null)" || _raw=""
+      if [[ -n "$_raw" ]]; then
+        IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$(printf '%s' "$_raw" | tr '\011' '\037')"
+        _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
+      fi
+    fi
   elif [[ "$_hrc" -eq 3 ]]; then
     _n=2
   fi
