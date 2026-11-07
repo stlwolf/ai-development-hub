@@ -14,6 +14,7 @@
 #   oe-lease show <lease_id>
 #   oe-lease close <lease_id>
 #   oe-lease gc [--days <N>] [--dry-run]
+#   oe-lease adopt [--dry-run]
 #
 #   create --root  手で立てた統括が、自分の Bash から打つ。lease を作り、自分（CLAUDE_PID）を binding に書き、
 #                  自分の CLAUDE_CODE_SESSION_ID を登録する（DJ-18）。
@@ -26,6 +27,10 @@
 #   whoami         環境変数（OE_LEASE_ID・OE_GENERATION）か、自分の CLAUDE_CODE_SESSION_ID で、自分の lease を出す。
 #   resolve        いまの generation の binding と照らしたペインを出す（照らせなければ出さない）。
 #   gc             閉じた lease と、古い heartbeat の sidecar を消す（.hb.* は触らない）。既定 30 日。
+#   adopt          一度だけの取り込み（#577 PR-2・DJ-11）。いまの tmux server の registry の記録ごとに、ペインの
+#                  フォアグラウンドのプロセスをキーにして lease を作り binding を書き、registry の親子から親を書く。
+#                  同じ binding の lease がもうあれば作らないので、2回走らせても増えない。session_id は登録しない
+#                  （登録は本人の verb だけ・DJ-18）。統括の generation は 1 から始まる（交代の番号は引き継がない）。
 #
 # exit: lib/lease.sh の戻り値の決まりをそのまま返す。
 #   0 成功 / 1 対象が無い / 2 呼び方の誤り・前提の不足 / 3 epoch が合わない / 4 ロックが取れない
@@ -36,6 +41,10 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/lease.sh
 . "${BIN_DIR}/../lib/lease.sh"
+# shellcheck source=../lib/delegate-registry.sh
+. "${BIN_DIR}/../lib/delegate-registry.sh"
+# shellcheck source=../lib/event-bus.sh
+. "${BIN_DIR}/../lib/event-bus.sh" || true
 
 err() { echo "oe-lease: $*" >&2; }
 usage() { sed -n '2,/^set -euo/p' "$0" | sed -e '/^set -euo/d' -e 's/^# \{0,1\}//' >&2; }
@@ -169,6 +178,65 @@ case "$cmd" in
       esac
     done
     oe_lease_gc "$days" "$dry"
+    ;;
+  adopt)
+    dry=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --dry-run) dry=1; shift ;;
+        *) err "unknown option: $1"; exit 2 ;;
+      esac
+    done
+    _oe_lease_ready || exit 2
+    [ -n "${OE_DELEGATE_STATE_DIR:-}" ] && [ -d "$OE_DELEGATE_STATE_DIR" ] || { err "registry の置き場がありません"; exit 1; }
+    spid="${OE_LEASE_SERVER_PID:-}"
+    if [ -z "$spid" ]; then spid="${TMUX:-}"; spid="${spid#*,}"; spid="${spid%%,*}"; fi
+    case "$spid" in ''|*[!0-9]*) err "tmux server の pid が分かりません（tmux の中で打ってください）"; exit 6 ;; esac
+    map=""   # "<pane> <lease_id>" の行
+    rows=""  # "<pane> <parent_pane>" の行
+    for f in "$OE_DELEGATE_STATE_DIR/${spid}"_*.json; do
+      [ -f "$f" ] || continue
+      pane="$(jq -r '.pane // ""' "$f" 2>/dev/null)" || continue
+      label="$(jq -r '.label // ""' "$f" 2>/dev/null)" || label=""
+      ws="$(jq -r '.workspace // ""' "$f" 2>/dev/null)" || ws=""
+      parent="$(jq -r '.parent_pane // ""' "$f" 2>/dev/null)" || parent=""
+      case "$pane" in %[0-9]*) ;; *) continue ;; esac
+      rc=0; fg="$(oe_tpi_pane_foreground "$pane")" || rc=$?
+      if [ "$rc" -ne 0 ]; then printf 'skipped %s %s（フォアグラウンドのプロセスを確かめられない・rc=%s）\n' "$pane" "$label" "$rc"; continue; fi
+      fpid="${fg%%"$_OE_TPI_TAB"*}"; fst="${fg#*"$_OE_TPI_TAB"}"
+      comm="$(oe_tpi_proc_comm "$fpid" 2>/dev/null)" || comm=""
+      case "$comm" in *claude*) ;; *) printf 'skipped %s %s（フォアグラウンドのプロセスが claude でない・%s）\n' "$pane" "$label" "${comm:-不明}"; continue ;; esac
+      rows="${rows}${pane} ${parent}
+"
+      if have="$(oe_lease_find_by_binding "$fpid" "$fst" 2>/dev/null)"; then
+        have="$(printf '%s\n' "$have" | head -1)"
+        map="${map}${pane} ${have}
+"
+        printf 'exists %s %s %s\n' "$pane" "$have" "$label"
+        continue
+      fi
+      kind="delegation"; [ -n "$parent" ] || kind="supervisor"
+      if [ -n "$dry" ]; then printf 'would-adopt %s %s %s\n' "$pane" "$kind" "$label"; continue; fi
+      id="$(oe_lease_create "$kind" "$label" "$ws" "" 1)" || { printf 'failed %s %s（lease を作れない）\n' "$pane" "$label"; continue; }
+      rc=0; oe_lease_bind "$id" 0 "$fpid" "$fst" "$comm" || rc=$?
+      if [ "$rc" -ne 0 ]; then printf 'failed %s %s（binding を書けない・rc=%s）\n' "$pane" "$id" "$rc"; continue; fi
+      map="${map}${pane} ${id}
+"
+      if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "$pane" "$id" 1 adopt "$label" || true; fi
+      printf 'adopted %s %s %s %s\n' "$pane" "$id" "$kind" "$label"
+    done
+    [ -z "$dry" ] || exit 0
+    # 親を書く。親も子も取り込めていて、子の親がまだ空のときだけ書く（書いてあるものは変えない）。
+    printf '%s' "$rows" | while read -r pane parent; do
+      [ -n "$pane" ] && [ -n "$parent" ] || continue
+      cid="$(printf '%s' "$map" | awk -v p="$pane" '$1==p {print $2; exit}')"
+      pid_="$(printf '%s' "$map" | awk -v p="$parent" '$1==p {print $2; exit}')"
+      [ -n "$cid" ] && [ -n "$pid_" ] || continue
+      cur="$(oe_lease_get "$cid" 2>/dev/null)" || continue
+      [ -z "$(printf '%s' "$cur" | jq -r '.parent_lease_id')" ] || continue
+      oe_lease_set_parent "$cid" "$(printf '%s' "$cur" | jq -r '.epoch')" "$pid_" 2>/dev/null \
+        && printf 'parented %s %s %s\n' "$pane" "$cid" "$pid_"
+    done
     ;;
   -h|--help|"") usage; [ -n "$cmd" ] && exit 0; exit 2 ;;
   *) err "unknown subcommand: ${cmd}"; usage; exit 2 ;;

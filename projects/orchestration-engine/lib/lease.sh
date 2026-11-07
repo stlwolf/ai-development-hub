@@ -407,6 +407,24 @@ oe_lease_find_by_label() {
   printf '%s\n' "$out"
 }
 
+# oe_lease_find_by_binding <pid> <started> — 開いた lease のうち、いまの generation の binding がそのプロセスのものを出す
+#   （adopt が同じプロセスを2回取り込まないため・oe-register link が相手の lease を見つけるため）
+oe_lease_find_by_binding() {
+  local pid="${1:-}" started="${2:-}" f out=""
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  [ -n "$started" ] && [ -n "$OE_LEASE_DIR" ] && [ -d "$OE_LEASE_DIR" ] || return 1
+  started="$(_oe_tpi_norm "$started")"
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    out="${out}$(jq -r --argjson p "$pid" --arg st "$started" 'select(.state=="open") | .current_generation as $g
+      | select(any(.generations[]; .generation==$g and .binding != null and .binding.pid==$p and .binding.started==$st))
+      | .lease_id' "$f" 2>/dev/null)
+"
+  done
+  out="$(printf '%s' "$out" | grep -v '^$')" || return 1
+  printf '%s\n' "$out"
+}
+
 # --- 名乗る ---
 # oe_lease_whoami — 自分の lease と generation を、環境変数（方法1）か自分の session_id（方法2）で決めて JSON で出す。
 #   どちらでも決まらなければ rc 1。方法3（会話の記録の lease_id を bind に渡す）は verb の側で扱う。

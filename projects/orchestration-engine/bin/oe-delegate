@@ -29,6 +29,9 @@ source "${BIN_DIR}/../lib/delegate-registry.sh"
 # 2>/dev/null は付けない（#322）。消せるのは診断だけで、失敗そのものは止められない。
 # || true は残す（event-bus 不在でも delegate は動く・declare -F の no-op と対）。
 source "${BIN_DIR}/../lib/event-bus.sh" || true
+# lease の記録（#577 PR-2）。registry と両方書く。source に失敗しても委譲本体は壊さない。
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh" || true
 
 usage() {
   cat >&2 <<'EOF'
@@ -199,6 +202,11 @@ shell_quote() {
 build_child_command() {
   local cmd
   cmd="PARENT_TMUX_PANE=$(shell_quote "$PARENT_PANE") claude"
+  # 子の lease（#577 DJ-7 の方法1）。作れたときだけ環境に入れる。PARENT_TMUX_PANE と同じく承認の digest には含めない
+  # （ID は起こすたびに違う・承認の対象は子が何をするかである）。
+  if [[ -n "${LEASE_ID:-}" ]]; then
+    cmd="OE_LEASE_ID=$(shell_quote "$LEASE_ID") OE_GENERATION=$(shell_quote "1") ${cmd}"
+  fi
   local arg
   # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
   # （4.4+ は許容）。oe-kick 等が --claude-arg 無しで呼ぶと CLAUDE_ARGS は空のため、
@@ -357,6 +365,17 @@ fi
 # split は親ペイン（$PARENT_PANE = oe-delegate を起動した pane）を -t で明示する。-t を省くと
 # tmux はフォーカス中ペインを分割するため、親が別ウィンドウを active にしている間に委譲すると
 # 子が無関係なウィンドウに生える（#203）。-d は focus 移動の抑止で、生える「場所」は -t が決める。
+# 子の lease を作る（#577 PR-2・registry と両方書く）。親の lease は、親が自分の環境の OE_LEASE_ID か
+# 自分の session_id で名乗れたときだけ入れる（名乗れなければ空＝root）。どこで失敗しても委譲は続ける。
+LEASE_ID=""; PARENT_LEASE=""
+if declare -F oe_lease_create >/dev/null 2>&1 && [[ -n "${OE_LEASE_DIR:-}" ]]; then
+  if _pw="$(oe_lease_whoami 2>/dev/null)" && [[ "$(printf '%s' "$_pw" | jq -r '.state' 2>/dev/null)" == "active" ]]; then
+    PARENT_LEASE="$(printf '%s' "$_pw" | jq -r '"\(.lease_id):\(.generation)"' 2>/dev/null)" || PARENT_LEASE=""
+  fi
+  LEASE_ID="$(oe_lease_create delegation "$LABEL" "$WORKSPACE" "${PARENT_LEASE%%:*}" 1 2>/dev/null)" || LEASE_ID=""
+  [[ -n "$LEASE_ID" ]] || echo "oe-delegate: lease を作れませんでした（registry だけで続けます）" >&2
+fi
+
 CHILD_COMMAND="$(build_child_command)"
 CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -t "$PARENT_PANE" -c "$WORKSPACE" "$CHILD_COMMAND")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
@@ -374,11 +393,33 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
 # spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
 oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
 
+# 子の lease の最初の binding を書く（#577 DJ-18）。起動を確かめたいま、子のペインの端末のフォアグラウンドの
+# プロセスを読み、コマンドが claude のときだけ書く。確かめられなければ binding は未確定のまま残し、委譲は続ける
+# （子は報告のときの oe-lease の verb で自分を登録できる）。
+CHILD_LEASE=""
+if [[ -n "$LEASE_ID" ]] && declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
+  if _fg="$(oe_tpi_pane_foreground "$CHILD_PANE" 2>/dev/null)"; then
+    _fpid="${_fg%%"$_OE_TPI_TAB"*}"; _fst="${_fg#*"$_OE_TPI_TAB"}"
+    _fcomm="$(oe_tpi_proc_comm "$_fpid" 2>/dev/null)" || _fcomm=""
+    if oe_lease_bind "$LEASE_ID" 0 "$_fpid" "$_fst" "$_fcomm" 2>/dev/null; then
+      CHILD_LEASE="${LEASE_ID}:1"
+      if declare -F oe_event_lease_bound >/dev/null 2>&1; then
+        oe_event_lease_bound "$CHILD_PANE" "$LEASE_ID" 1 spawn "$LABEL" || true
+      fi
+    else
+      echo "oe-delegate: 子の lease ${LEASE_ID} に binding を書けませんでした（フォアグラウンドのプロセスが claude でない・${_fcomm:-不明}）。binding は未確定のままです" >&2
+    fi
+  else
+    echo "oe-delegate: 子のペイン ${CHILD_PANE} のフォアグラウンドのプロセスを確かめられません。lease ${LEASE_ID} の binding は未確定のままです" >&2
+  fi
+  [[ -n "$CHILD_LEASE" ]] || CHILD_LEASE="${LEASE_ID}:1"
+fi
+
 # 活動ログに child_spawned を best-effort emit（registry 登録後 ＝ 親 label 解決可）。本体は壊さない。
 # permission_mode + elevated を焼き込み、elevated spawn を通常 spawn と事後区別できるようにする
 # （#262・audit・実装SO D5＝auto でも elevated 宣言の有無で区別可能に）。
 if declare -F oe_event_child_spawned >/dev/null 2>&1; then
-  oe_event_child_spawned "$PARENT_PANE" "$CHILD_PANE" "$LABEL" "$PERM_MODE" "${IS_ELEVATED:+true}" || true
+  oe_event_child_spawned "$PARENT_PANE" "$CHILD_PANE" "$LABEL" "$PERM_MODE" "${IS_ELEVATED:+true}" "$CHILD_LEASE" "$PARENT_LEASE" || true
 fi
 
 # キックを oe-send で注入する。delegate は report を内包しない（戻しは子が oe-send で行う）。

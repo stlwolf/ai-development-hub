@@ -70,6 +70,13 @@ _oe_heartbeat_write() {
   server_pid="${server_pid#*,}"
   server_pid="${server_pid%%,*}"
   [[ "$server_pid" =~ ^[0-9]+$ ]] || server_pid=""
+  # lease（#577 DJ-3）: claude を起こしたときに環境へ入れた OE_LEASE_ID と OE_GENERATION を、形が正しいときだけ
+  # 足す。無ければ項目ごと出さない（いままでと同じ出力）。候補のペインを探す手がかりで、session_id の登録の
+  # 根拠にはしない（DJ-18）。
+  local lease_id="${OE_LEASE_ID:-}" generation="${OE_GENERATION:-}"
+  if [[ ! "$lease_id" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ || ! "$generation" =~ ^[1-9][0-9]*$ ]]; then
+    lease_id=""; generation=""
+  fi
   dir="$OE_HEARTBEAT_DIR"
 
   mkdir -p "$dir" 2>/dev/null || return 0
@@ -77,7 +84,7 @@ _oe_heartbeat_write() {
   # 本体は input を主入力に取り、ts/pane/server_pid を注入。context_pct は null/欠落を // 0 で吸収。
   # model は object のときだけ投影する（object 以外を素朴に index すると jq 全体が落ちる＝上の契約参照）。
   if printf '%s' "$input" \
-    | jq -c --argjson ts "$ts" --arg pane "$pane" --arg spid "$server_pid" \
+    | jq -c --argjson ts "$ts" --arg pane "$pane" --arg spid "$server_pid" --arg lid "$lease_id" --arg gen "$generation" \
         '{ts:$ts,
           context_pct:((.context_window.used_percentage // 0) | tonumber? // 0),
           pane:$pane,
@@ -85,7 +92,8 @@ _oe_heartbeat_write() {
           model:(if (.model|type) == "object"
                  then {id:(.model.id | if type == "string" then . else "" end),
                        display_name:(.model.display_name | if type == "string" then . else "" end)}
-                 else {} end)}' \
+                 else {} end)}
+         + (if $lid != "" then {lease_id:$lid, generation:($gen|tonumber)} else {} end)' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "${dir}/${sid}.json" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   else

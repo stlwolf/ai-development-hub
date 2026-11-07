@@ -15,7 +15,7 @@
     "type": {
       "type": "string",
       "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。#390 で supervisor_succession（統括の交代）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
-      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received", "supervisor_succession"]
+      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received", "supervisor_succession", "lease_bound"]
     },
     "from": {
       "$ref": "#/definitions/endpoint",
@@ -103,12 +103,33 @@
         "label": {
           "type": "string",
           "description": "emit 時に焼き込んだ識別ラベル（pane-issue の #N slug 優先 → spawn registry の label）。空は識別情報なし（honest）。"
+        },
+        "lease_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "#577（任意・additive）: emit 時に分かっていたこの端の lease。ペインが替わっても同じ相手だと分かる。足したあとの event だけが持つ（足す前の event は %N だけで、後から確実には見分けられない）。"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "#577（任意・additive）: lease_id と一緒に入る、その lease の generation。"
         }
       },
       "additionalProperties": false
     }
   },
   "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "lease_bound" } } },
+      "then": {
+        "required": ["lease_id", "generation", "bind_reason"],
+        "properties": {
+          "lease_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+          "bind_reason": { "enum": ["spawn", "root", "rebind", "adopt"] }
+        },
+        "description": "lease_bound（#577）は lease の binding を書いた・張り替えたことを残す。from=binding したプロセスのペイン、to は空。bind_reason は spawn（oe-delegate が子を起こした）・root（手で立てた統括の oe-lease create --root）・rebind（本人の oe-lease bind）・adopt（一度だけの取り込み）。"
+      }
+    },
     {
       "if": { "properties": { "type": { "const": "message_sent" } } },
       "then": {
