@@ -66,12 +66,28 @@
 #   - board の `現統括` は PR-C frontmatter 形（`現統括: "%144"`）と現行 freeform 行（`現統括: pane
 #     `%158``）の双方に対応するため、`現統括` marker 以降の最初の `%NNN` を現統括 pane とする heuristic。
 #   - `wez notify` の cron（no TTY / mux socket）到達性は段階0 から未検証 → stdout が durable signal。
+#
+# 統括の lease を読む（#577 PR-4・DJ-12）:
+#   統括が誰かの機械の正本は、統括の lease の記録（いまの generation と binding）である。board の `現統括` は
+#   人が読む表示になった。この verb は、まず統括の lease を探し、見つかればそれで判定する。
+#     - 探し方: OE_VITALS_LEASE_ID があればそれ。無ければ、board の置き場（<workspace>/.oe/）から workspace を
+#       決め、その workspace の開いた統括の lease が1つならそれ。複数なら binding のプロセスが生きているものが
+#       1つならそれ。決まらなければ、いままでどおり board のペインで判定する（移行のあいだの逃げ道）。
+#     - 拍動: lease のいまの generation の session_id か、sidecar の lease_id と generation で選ぶ
+#       （heartbeat の引き方は lib/heartbeat-resolve.sh の1つの関数・N6）。
+#     - death: binding のプロセス（pid と開始時刻）が無いと確かめられたときだけ（DJ-9）。ペインが残っていても、
+#       プロセスが終わっていれば death になる。プロセスがあるか分からないときは death にしない。
+#   読むだけで、lease の記録は書かない。
 
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/seat.sh
 source "${BIN_DIR}/../lib/seat.sh"
+# 統括の lease を読む（#577 PR-4）。読めなければ board で判定する（移行のあいだの逃げ道）。
+_LEASE_LIB="${BIN_DIR}/../lib/lease.sh"
+# shellcheck source=../lib/lease.sh
+if [[ -r "$_LEASE_LIB" ]]; then source "$_LEASE_LIB" || true; fi
 
 # #224/#233: 会話到達面へ出す文字列（stdout / wez notify body）を無害化する共有 helper（oe-undelivered
 # と同型）。不在時は degrade（jq の cntrl→space が効くので従来同等の安全度）。
@@ -228,6 +244,40 @@ resolve_succession() {
 
 SUP="$(resolve_supervisor_pane "$OE_BOARD_FILE")"
 
+# --- 統括の lease を探す（#577 PR-4）---
+# 出力は lease_id（決まらなければ空）。決まらなかった理由は LEASE_NOTE に入れる（表示だけ）。
+LEASE_NOTE=""
+_real_dir() { (cd "$1" 2>/dev/null && pwd -P); }
+resolve_supervisor_lease() {
+  declare -F oe_lease_get >/dev/null 2>&1 || return 0
+  [[ -n "${OE_LEASE_DIR:-}" && -d "$OE_LEASE_DIR" ]] || return 0
+  if [[ -n "${OE_VITALS_LEASE_ID:-}" ]]; then printf '%s' "$OE_VITALS_LEASE_ID"; return 0; fi
+  [[ -n "$OE_BOARD_FILE" ]] || return 0
+  local ws f row id w pid st cands=() alive=()
+  ws="$(_real_dir "$(dirname "$OE_BOARD_FILE")/..")" || return 0
+  [[ -n "$ws" ]] || return 0
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    row="$(jq -r 'select(.state=="open" and .kind=="supervisor") | .current_generation as $g
+      | [ .lease_id, (.workspace // ""), ((.generations[] | select(.generation==$g) | .binding.pid // "") | tostring),
+          (.generations[] | select(.generation==$g) | .binding.started // "") ] | @tsv' "$f" 2>/dev/null)" || continue
+    [[ -n "$row" ]] || continue
+    IFS=$'\t' read -r id w pid st <<< "$row"
+    [[ -n "$w" && "$(_real_dir "$w")" == "$ws" ]] || continue
+    cands+=("$id")
+    if [[ "$(oe_tpi_proc_state "$pid" "$st")" == "alive" ]]; then alive+=("$id"); fi
+  done
+  if [[ "${#cands[@]}" -eq 1 ]]; then printf '%s' "${cands[0]}"; return 0; fi
+  if [[ "${#cands[@]}" -gt 1 && "${#alive[@]}" -eq 1 ]]; then printf '%s' "${alive[0]}"; return 0; fi
+  if [[ "${#cands[@]}" -gt 1 ]]; then
+    LEASE_NOTE="workspace ${ws} の統括の lease が ${#cands[@]} 件あり、1つに決まらない（OE_VITALS_LEASE_ID で指せる）"
+  fi
+  return 0
+}
+LEASE_ID="$(resolve_supervisor_lease)"
+# サブシェルで決めた理由をもう一度取る（$( ) の中の代入は外に残らないため）
+if [[ -z "$LEASE_ID" && -n "$OE_BOARD_FILE" ]]; then resolve_supervisor_lease >/dev/null; fi
+
 # 置き場が決まらないのは「記録が無い」ではない（#322 DJ-3）。0 件と混ぜて exit 0 で返すと、
 # 読めていないことが成功に化ける。空 base に suffix を足して "/..." を組み立てもしない。
 if [[ -z "$OE_HEARTBEAT_DIR" ]]; then
@@ -241,9 +291,47 @@ files=("$OE_HEARTBEAT_DIR"/*.json)
 shopt -u nullglob
 total_sidecars=${#files[@]}
 
-if [[ "$total_sidecars" -eq 0 ]]; then
+# 統括の lease が決まっていれば、拍動が1件も無くても binding のプロセスの生死は見る（実装SO の指摘・#577 PR-4）。
+if [[ "$total_sidecars" -eq 0 && -z "$LEASE_ID" ]]; then
   echo "oe-vitals: no heartbeat recorded yet (${OE_HEARTBEAT_DIR}) — producer 未配備 or 未実行"
   exit 0
+fi
+
+# --- lease で判定する（#577 PR-4）。決まれば、ここで sup_* と plive を埋めて下の共通の判定へ進む ---
+sup_sid=""; sup_ts=-1; sup_ctx="0"; sup_pane=""; empty_pane_count=0; plive=""; LEASE_LABEL=""
+if [[ -n "$LEASE_ID" ]] && cur="$(oe_lease_get "$LEASE_ID" 2>/dev/null)"; then
+  l_gen="$(printf '%s' "$cur" | jq -r '.current_generation')"
+  l_pid="$(printf '%s' "$cur" | jq -r --argjson g "$l_gen" '.generations[] | select(.generation==$g) | (.binding.pid // "") | tostring')"
+  l_st="$(printf '%s' "$cur" | jq -r --argjson g "$l_gen" '.generations[] | select(.generation==$g) | .binding.started // ""')"
+  l_sids=()
+  while IFS= read -r _s; do [[ -n "$_s" ]] && l_sids+=("$_s"); done < <(printf '%s' "$cur" | jq -r --argjson g "$l_gen" '.generations[] | select(.generation==$g) | (.session_ids // [])[]')
+  LEASE_LABEL="lease ${LEASE_ID} generation ${l_gen}"
+  case "$(oe_tpi_proc_state "$l_pid" "$l_st")" in
+    alive) plive="alive" ;;
+    dead)  plive="gone" ;;
+    *)     plive="?" ;;
+  esac
+  l_spid="${TMUX:-}"; l_spid="${l_spid#*,}"; l_spid="${l_spid%%,*}"
+  if [[ -z "$l_spid" && "$TMUX_AVAIL" == "1" ]]; then l_spid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"; fi
+  l_cand=""
+  if [[ -n "$l_spid" ]]; then
+    # 窓は判定の窓（W）より広く取り、古い拍動も「stale」として見えるようにする（death は拍動に頼らない）。
+    l_cand="$(OE_HB_NOW_EPOCH="$NOW_EPOCH" oe_hb_pane_for "$l_spid" 315360000 "$LEASE_ID" "$l_gen" ${l_sids[@]+"${l_sids[@]}"} 2>/dev/null || true)"
+  fi
+  if [[ -n "$l_cand" ]]; then
+    sup_pane="${l_cand%%$'\t'*}"; sup_sid="${l_cand#*$'\t'}"
+    l_row="$(jq -r 'select(type=="object") | "\(.ts // 0)|\(.context_pct // 0)"' "$OE_HEARTBEAT_DIR/${sup_sid}.json" 2>/dev/null || true)"
+    IFS='|' read -r sup_ts sup_ctx <<< "${l_row:-0|0}"
+    [[ "$sup_ts" =~ ^[0-9]+$ ]] || sup_ts=0
+  elif [[ "$plive" == "gone" ]]; then
+    # 拍動が無くても、binding のプロセスが無いと確かめられれば death として出す。
+    sup_sid="${LEASE_ID}:${l_gen}"; sup_ts=-1
+  else
+    echo "oe-vitals: 統括の ${LEASE_LABEL} の heartbeat が見つかりません（プロセス=${plive}）→ 検知なし。"
+    echo "  note: statusLine の producer が sidecar を書けているか、lease の session_id が登録されているかを確認してください。"
+    exit 0
+  fi
+  SUP="${sup_pane:-${LEASE_LABEL}}"
 fi
 
 if [[ -z "$SUP" ]]; then
@@ -256,8 +344,7 @@ fi
 # empty_pane_count = pane 空の sidecar 数。全 sidecar が pane 空なら board 突合の前提（sidecar.pane が
 # 埋まっている）が崩れており、producer の $TMUX_PANE 未伝播（PR-A session_id 主キー vs PR-B pane 突合の
 # 契約差）を honest に signal する材料にする（設計SO codex/cursor の指摘）。
-sup_sid=""; sup_ts=-1; sup_ctx="0"; sup_pane=""; empty_pane_count=0
-if [[ "$total_sidecars" -gt 0 ]]; then
+if [[ -z "$LEASE_LABEL" && "$total_sidecars" -gt 0 ]]; then
   for f in "${files[@]}"; do
     [[ -e "$f" ]] || continue
     # 壊れた / object でない JSON は黙って skip（degrade）。US 区切りで ts/context_pct/pane を投影。
@@ -273,6 +360,9 @@ if [[ "$total_sidecars" -gt 0 ]]; then
   done
 fi
 
+if [[ -n "$LEASE_NOTE" && -z "$LEASE_LABEL" ]]; then
+  echo "oe-vitals: note: ${LEASE_NOTE}。board のペインで判定します。"
+fi
 if [[ -z "$sup_sid" ]]; then
   # board は現統括 pane を declare したが、その pane を持つ sidecar が無い（producer 未設定 or
   # $TMUX_PANE 未伝播で pane 空）＝拍動が絶対 fresh でも scope できない。「不在」を「死」に化かさない。
@@ -289,10 +379,11 @@ fi
 # --- 検知（統括 sidecar 1 件に真理値表を適用）---
 age=$(( NOW_EPOCH - sup_ts ))
 [[ "$age" -lt 0 ]] && age=0   # 未来 ts（時計ずれ）は 0 秒扱い（fresh 側・誤検知回避）
-plive="$(liveness_of "$sup_pane")"
+# lease で決めたときは、plive は binding のプロセスの生死（上で決めた）。board で決めたときはペインの生死。
+[[ -n "$LEASE_LABEL" ]] || plive="$(liveness_of "$sup_pane")"
 
 is_fresh=0
-[[ "$age" -le "$WINDOW" ]] && is_fresh=1
+[[ "$sup_ts" -ge 0 && "$age" -le "$WINDOW" ]] && is_fresh=1
 over_threshold=0
 # context_pct は float でありうる（producer は数値化して書く）。bash の -gt は整数専用ゆえ awk で比較。
 if awk -v c="$sup_ctx" -v t="$THRESHOLD" 'BEGIN{ exit !((c+0) > (t+0)) }' 2>/dev/null; then
@@ -332,12 +423,17 @@ sup_ctx_disp="$(oe_sanitize_conversation "$sup_ctx")"
 sup_sid_disp="$(oe_sanitize_conversation "$sup_sid")"
 age_disp="$(fmt_age "$age")"
 beat_disp="$( [[ $is_fresh -eq 1 ]] && echo fresh || echo stale )(${age_disp})"
+[[ "$sup_ts" -ge 0 ]] || beat_disp="none"
 
 if [[ "$flag_kind" == "context" ]]; then
   note="context 肥大接近（>${THRESHOLD}%）— handoff 促し"
 else
   succ="$(oe_sanitize_conversation "$(resolve_succession "$OE_BOARD_FILE")")"
-  note="プロセス死（crash 疑い・board が現統括のまま pane 消滅）· board succession=${succ:-?}"
+  if [[ -n "$LEASE_LABEL" ]]; then
+    note="プロセス死（crash 疑い・${LEASE_LABEL} の binding のプロセスが無い）· board succession=${succ:-?}"
+  else
+    note="プロセス死（crash 疑い・board が現統括のまま pane 消滅）· board succession=${succ:-?}"
+  fi
 fi
 
 printf '=== supervisor vitals (read-only · window=%ss · threshold=%s%%) ===\n' "$WINDOW" "$THRESHOLD"

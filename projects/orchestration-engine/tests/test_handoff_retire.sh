@@ -142,6 +142,33 @@ mk_handoff() {
 git -C "$WS" init -q 2>/dev/null || true
 git -C "$WS" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null || true
 
+# #577 PR-4: retire は閉じてよいかを統括の lease の記録で判定し、閉じる相手が本人かを前任のペインの
+# フォアグラウンドのプロセスで確かめる。前任（%10・pid 910）と後継（%11・pid 911）を偽の ps と tmux に置き、
+# 統括の lease を「generation 14 = 前任（退任）・15 = 後継」の形で作る。引き継ぎ文書の機械の節は読まない。
+# shellcheck source=fixtures/fake-proc.sh
+. "$SCRIPT_DIR/fixtures/fake-proc.sh"
+fake_proc_setup "$_TMP_DIR/fakeproc"
+S910='Sat Nov  7 09:00:00 2026'; S911='Sat Nov  7 10:00:00 2026'
+fake_proc_add 910 "$S910" claude ttys010 910
+fake_proc_add 911 "$S911" claude ttys011 911
+fake_pane_add %10 /dev/ttys010; fake_pane_add %11 /dev/ttys011
+export CLAUDE_PID=911 CLAUDE_CODE_SESSION_ID=sid-succ
+mk_lease() { # [前任の session_id] — 置き場を作り直して統括の lease を1つ作り、lease_id を出す
+  # （workspace は LEASE_WS があればそれ・無ければ $WS。retire は lease の workspace と -w の一致を見る）
+  # shellcheck disable=SC2031  # OE_LEASE_DIR は export 済みで、lib を読む subshell は値を変えない
+  rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"
+  ( set +e
+    # shellcheck source=../lib/lease.sh
+    . "$PROJECT_DIR/lib/lease.sh"
+    id="$(oe_lease_create supervisor cockpit "${LEASE_WS:-$WS}" "" 14)"
+    oe_lease_bind "$id" 0 910 "$S910" claude
+    [ -z "${1:-}" ] || oe_lease_register_session "$id" "$1" 910 "$S910"
+    oe_lease_advance "$id" "$(oe_lease_epoch "$id")" planned 911 "$S911" claude >/dev/null
+    oe_lease_register_session "$id" sid-succ 911 "$S911"
+    printf '%s' "$id" )
+}
+mk_lease sid-pred >/dev/null
+
 BOARD="$WS/.oe/board.md"; HANDOFF="$WS/.oe/handoff.md"
 mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 mk_beat "sid-pred" "%10"
@@ -158,17 +185,17 @@ ckc "次の一手を出す"        "$out1" "oe-handoff retire --execute"
 ck  "kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任はまだ生きている"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[2] session_id が引き継ぎ記録に無くても閉じる（owner 裁定 2026-09-13・2件目）"
+echo "[2] 前任の session_id が lease の記録に無くても閉じる（owner 裁定 2026-09-13・2件目）"
 # 以前はこれが必須条件1で、閉じるのを止めていた。根拠だった「開き直せない＝取り返しがつかない」
 # が実態と合わない（復帰の手段は別に在る）。**止めるのは「閉じる相手を取り違える経路」と
 # 「仕事が失われる経路」だけにする。** 引けなかったことは「後継が引き受けるもの」に出す。
-mk_handoff "$HANDOFF" "" "済んだ"
+mk_lease >/dev/null   # 前任の session_id を登録していない lease（#577 PR-4: session_id は lease の記録から読む）
 : > "$CALL_LOG"
 set +e
 out2="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc2=$?
 set -e
 ck  "0 で終わる"                "0" "$rc2"
-ckc "記録に無いと出す"          "$out2" "session_id が引き継ぎ記録に無い"
+ckc "記録に無いと出す"          "$out2" "session_id が lease の記録に無い"
 ckc "閉じない理由にしないと出す" "$out2" "閉じない理由にはしない"
 ckc "復帰の ID が残らないと出す" "$out2" "復帰の ID は手元に残りません"
 # **空の ID で「開き直せます」と言わない**（緩めたことで生じた経路・自分で見つけた）
@@ -176,7 +203,7 @@ nck "空の resume を案内しない"  "$out2" "claude --resume  で開き直�
 ckc "一覧から選べと案内する"    "$out2" "claude --resume の一覧から選んでください"
 ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
-mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+mk_lease sid-pred >/dev/null
 
 echo "[3] 生きた委譲子が居ても閉じる（owner 裁定 2026-09-13）"
 # 以前はここが必須条件2で、子が居ると閉じなかった。**子が生きたままの交代が正常系**であり、
@@ -254,7 +281,9 @@ ckc "食い違いを挙げる"    "$out8" "open PR #399 に処分が付いてい
 ckc "閉じないと言う"      "$out8" "食い違っています"
 ck  "前任は生きたまま"    "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[9] 引き継ぎ記録と board の註が食い違えば閉じない"
+echo "[9] board の註の前任のペインに、前の generation のプロセスがいなければ閉じない"
+# #577 PR-4: 以前は引き継ぎ記録（機械の節）の前任と board の註の食い違いを見ていた。いまは機械の節を
+# 読まず、board の註のペインのフォアグラウンドのプロセスが lease の前の generation の binding かを見る。
 BAD="$WS/.oe/badboard.md"
 # shellcheck disable=SC2016  # backtick は board の Markdown 記法
 printf '鮮度: 2026-09-12 / 現統括: pane `%%11`（前任 `%%77` は退任申告済み・停止待ち）\n' > "$BAD"
@@ -262,7 +291,7 @@ set +e
 out9="$("$OE_HANDOFF" retire -w "$WS" --board "$BAD" --handoff "$HANDOFF" --execute 2>&1)"; rc9=$?
 set -e
 ck  "非0 で終わる"      "1" "$rc9"
-ckc "食い違いを言う"    "$out9" "board の註（%77）が食い違っています"
+ckc "前の generation のプロセスがいないと言う" "$out9" "前任のペイン %77 に前の generation のプロセス（pid 910）がいない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo "[10] board の席が自分でなければ閉じない（先に take を通す）"
@@ -337,18 +366,20 @@ set -e
 ck  "2 で終わる"       "2" "$rc16"
 ck  "前任は生きたまま" "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[17] board の註から前任を読めなければ閉じない"
+echo "[17] board の註から前任を読めなければ、閉じる相手が決まらないので呼び方の誤りとして止まる"
 NONOTE="$WS/.oe/nonote.md"
 # shellcheck disable=SC2016  # backtick は board の Markdown 記法
 printf '鮮度: 2026-09-12 / 現統括: pane `%%11`（註に前任が書かれていない）\n' > "$NONOTE"
 set +e
 out17="$("$OE_HANDOFF" retire -w "$WS" --board "$NONOTE" --handoff "$HANDOFF" --execute 2>&1)"; rc17=$?
 set -e
-ck  "非0 で終わる"      "1" "$rc17"
-ckc "理由を言う"        "$out17" "board の註から前任を読めない"
+ck  "2 で終わる"        "2" "$rc17"
+ckc "理由を言う"        "$out17" "board の註から前任のペインを読めません"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[18] 機械の節が挙げた PR が申告に出てこなければ閉じない"
+echo "[18] 機械の節が PR を挙げていても読まない（照合するのは、いまの open PR）"
+# #577 PR-4・owner の答え Q84: retire は機械の節を読まない。機械の節の PR は prepare の時点の値なので、
+# 照合はいまの値（下の open PR の再検査）だけで行う。いまの open PR で処分を求めることは [8] と [21] が見る。
 MACH="$WS/.oe/mach.md"
 {
   printf '%s\n' '<!-- oe-handoff:machine:begin -->' '## 観測できる状態'
@@ -367,9 +398,10 @@ MACH="$WS/.oe/mach.md"
 set +e
 out18="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$MACH" --execute 2>&1)"; rc18=$?
 set -e
-ck  "非0 で終わる"      "1" "$rc18"
-ckc "理由を言う"        "$out18" "機械の節が挙げた PR #501 に処分が付いていない"
-ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"          "0" "$rc18"
+nck "機械の節の PR を照合しない" "$out18" "機械の節が挙げた PR"
+ck  "前任は閉じた"        "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo "[19] 閉じる直前に現れた委譲子を数え直して出す（閉じるのは止めない）"
 # **最初の検査では子を見せない。** 目印を「retire の途中で必ず走る別のコマンド」に作らせる。
@@ -442,7 +474,7 @@ ck  "非0 で終わる"           "1" "$rc20"
 ckc "確認できていないと言う" "$out20" "不在を確認できていません"
 nck "確認したとは言わない"   "$out20" "不在を確認しました"
 
-echo "[21] PR 番号の照合が部分一致で通らない"
+echo "[21] PR 番号の照合が部分一致で通らない（いまの open PR と申告）"
 printf '%%10\n%%11\n' > "$ALIVE"
 cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
@@ -471,10 +503,10 @@ SUB="$WS/.oe/substr.md"
   printf '\n%s\n' '## owner が下した裁定' '-'
 } > "$SUB"
 set +e
-out21="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$SUB" --execute 2>&1)"; rc21=$?
+out21="$(GH_PRS='501 draft=false 機械が挙げた PR' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$SUB" --execute 2>&1)"; rc21=$?
 set -e
 ck  "非0 で終わる"      "1" "$rc21"
-ckc "欠落を見逃さない"  "$out21" "機械の節が挙げた PR #501 に処分が付いていない"
+ckc "欠落を見逃さない"  "$out21" "open PR #501 に処分が付いていない"
 ck  "前任は生きたまま"  "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo "[22] 閉じる直前に transcript が使えなくても閉じる（表示はする）"
@@ -492,68 +524,51 @@ ckc "止めないと明示する"    "$out22" "閉じるのは止めません"
 ck  "前任は閉じた"          "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 
-echo "[23] 閉じるペインが別の session のものになっていたら閉じない（pane 番号の再利用）"
-# **transcript が使えることは「記録の session が生きている」ことしか言わない。**
-# ペイン番号が再利用されていれば、そのペインに座っているのは別の session である。
-# 確かめずに閉じると、関係のないセッションを閉じたうえで「前任は resume で開き直せる」と
-# 報告することになる（実装SO の指摘・2026-09-13）。
-# **同じ時刻の拍動を2つ置くと「同じ新しさ」になり unknown へ落ちる**（[24] がその分岐である）。
-# ここで作りたいのは「新しい別の session がそのペインに座っている」状態なので、**厳密に新しい**
-# 拍動を置く。最初にこれを間違え、tie になって [24] と同じ分岐を通っていた。
-NEWER=$((NOW_EPOCH + 60))
-jq -cn --arg p '%10' --argjson t "$NEWER" '{ts:$t, context_pct:50, pane:$p, server_pid:"900"}' > "$HB/sid-other.json"
-printf '{"type":"user"}\n' > "$TR/sid-other.jsonl"
-perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1] or die' "$NEWER" "$TR/sid-other.jsonl"
+echo "[23] 前任のペインに別のプロセスがいたら閉じない（pane 番号の再利用）"
+# #577 PR-4: 以前は拍動の session_id と記録を突き合わせていた。いまはペインのフォアグラウンドのプロセスが
+# lease の前の generation の binding（pid と開始時刻）かを見る。拍動に頼らないので、新しいセッションが
+# まだ拍動を書いていない窓でも見分けられる。
+fake_proc_del 910; fake_proc_add 930 'Sat Nov  7 11:00:00 2026' claude ttys010 930
 : > "$CALL_LOG"
 set +e
 out23="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc23=$?
 set -e
 ck  "非0 で終わる"            "1" "$rc23"
-ckc "別の session だと言う"   "$out23" "に座っているのは別の session です"
-ckc "記録といまの両方を出す"  "$out23" "記録 sid-pred / いま sid-other"
-ckc "再利用だと言う"          "$out23" "ペイン番号が再利用されています"
+ckc "前任のプロセスがいないと言う" "$out23" "前任のペイン %10 に前の generation のプロセス（pid 910）がいない"
 ck  "前任は生きたまま"        "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-rm -f "$HB/sid-other.json" "$TR/sid-other.jsonl"
+fake_proc_del 930; fake_proc_add 910 "$S910" claude ttys010 910
 
-echo "[24] 閉じる直前に session_id を引けなくても閉じる（同一性は pid とコマンド名で見る）"
-# 同じ pane に**同じ新しさ**の拍動が2つあると oe_hs_session_for_pane は unknown を返す。
-# **「引けなかった」は「別人だと分かった」ではない**（owner 裁定 2026-09-13・2件目）。
-# 引けないことでは止めず、**食い違いが見えたときだけ**止める（[23] と [25] がその分岐）。
+echo "[24] 閉じる直前に session_id を引けなくても閉じる（同一性はフォアグラウンドのプロセスで見る）"
+# 同じ pane に**同じ新しさ**の拍動が2つあると、拍動からは session_id を決められない。
+# 閉じる相手が本人かは lease の binding とフォアグラウンドのプロセスで見るので、拍動は閉じるかどうかに効かない。
 mk_beat "sid-tie-a" "%10"; mk_beat "sid-tie-b" "%10"
-printf '{"type":"user"}\n' > "$TR/sid-tie-a.jsonl"
-printf '{"type":"user"}\n' > "$TR/sid-tie-b.jsonl"
 : > "$CALL_LOG"
 set +e
 out24="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc24=$?
 set -e
 ck  "0 で終わる"                  "0" "$rc24"
-ckc "引けなかったと言う"          "$out24" "閉じる直前の session_id: 引けませんでした"
-ckc "pid で見ると明示する"        "$out24" "同一性は pid とコマンド名で見ます"
+ckc "閉じる直前に確かめたと言う"  "$out24" "閉じる直前の確かめ: %10 のフォアグラウンドのプロセスは前の generation の binding（pid 910）である"
 ck  "前任は閉じた"                "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 ck  "kill-pane を呼ぶ"            "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 rm -f "$HB/sid-tie-a.json" "$HB/sid-tie-b.json" "$TR/sid-tie-a.jsonl" "$TR/sid-tie-b.jsonl"
 
-echo "[25] 拍動がまだ旧世代を指しているあいだも、pid が変わっていれば閉じない"
-# **これが session_id の突合だけでは塞げない窓である。** `oe_hs_session_for_pane` は
-# 「ペインが再利用され、新しいセッションがまだ一度も拍動を書いていない」あいだ**旧世代の
-# session_id を返す**（lib の注記）。つまり sid の突合は通る。**pid は tmux が握っているので
-# その窓でも変わる。** [23] は新しい拍動が既に在る場合しか作っていなかった（実装SO の指摘）。
-printf '9999\n' > "$PIDMAP/10"        # %10 の pid が変わった（ペインが作り直された）
+echo "[25] 同じ pid でも開始時刻が違えば閉じない（pid の再利用）"
+# pid は OS が使い回す。開始時刻まで比べるので、前任が終わって同じ pid の別のプロセスが座っても閉じない。
+fake_proc_del 910; fake_proc_add 910 'Sat Nov  7 12:00:00 2026' claude ttys010 910
 : > "$CALL_LOG"
 set +e
 out25="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc25=$?
 set -e
 ck  "非0 で終わる"                "1" "$rc25"
-ckc "sid の突合は通っている"      "$out25" "前任の session_id が引き継ぎ記録にある（sid-pred）"
-ckc "pid が変わったと言う"        "$out25" "で走っているプロセスが変わっています"
-ckc "記録といまの両方を出す"      "$out25" "記録 pid 910 / いま 9999"
+ckc "前任のプロセスがいないと言う" "$out25" "前任のペイン %10 に前の generation のプロセス（pid 910）がいない"
 ck  "kill-pane を呼ばない"        "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
-rm -f "$PIDMAP/10"
+fake_proc_del 910; fake_proc_add 910 "$S910" claude ttys010 910
 
-echo "[26] 引き継ぎ記録に pid が無い（古い形式）なら閉じない"
+echo "[26] 引き継ぎ文書に pid の行が無くても（古い形式）、lease の記録で判定して閉じる"
+# #577 PR-4: 以前は pid の行が無いと閉じなかった。いまは機械の節を読まないので、文書の形に関係なく判定する。
 # pid の行が無い引き継ぎ文書を作る。**「無い」を「一致した」に畳まない。**
 OLDFMT="$WS/.oe/handoff-oldfmt.md"
 {
@@ -574,10 +589,10 @@ OLDFMT="$WS/.oe/handoff-oldfmt.md"
 set +e
 out26="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$OLDFMT" --execute 2>&1)"; rc26=$?
 set -e
-ck  "非0 で終わる"              "1" "$rc26"
-ckc "古い形式だと言う"          "$out26" "古い形式の引き継ぎ文書です"
-ckc "prepare を走らせ直せと言う" "$out26" "oe-handoff prepare を走らせ直して"
-ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "0 で終わる"                "0" "$rc26"
+nck "古い形式だと言わない"      "$out26" "古い形式の引き継ぎ文書です"
+ck  "kill-pane を呼ぶ"          "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo "[27] 申告の表: escaped pipe で処分が付いたように見せられない"
 # `| command \| 済んだ |  | … |` は Markdown 上では**処分欄が空**である。素朴に `-F'|'` で
@@ -682,7 +697,7 @@ ck  "非0 で終わる"        "1" "$rc30"
 ckc "処分が無いと言う"    "$out30" "処分が付いていない（または語彙の外の）項目がある"
 ck  "前任は生きたまま"    "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[31] 機械の節の PR は、散文に番号を書いただけでは通らない"
+echo "[31] open PR は、散文に番号を書いただけでは通らない"
 # 申告の節全体を部分一致で見ていたので、**表に別の適法な行を1つ置き、散文に番号を書くだけで**
 # 未処分の PR を通せた（実装SO の2レーンが独立に再現・2026-09-13）。
 PROSE="$WS/.oe/handoff-prose.md"
@@ -708,10 +723,10 @@ PROSE="$WS/.oe/handoff-prose.md"
   printf '\n%s\n' '## owner が下した裁定'
 } > "$PROSE"
 set +e
-out31="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$PROSE" --execute 2>&1)"; rc31=$?
+out31="$(GH_PRS='501 draft=false 未処分にしたい PR' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$PROSE" --execute 2>&1)"; rc31=$?
 set -e
 ck  "非0 で終わる"                "1" "$rc31"
-ckc "処分が無いと言う"            "$out31" "機械の節が挙げた PR #501 に処分が付いていない"
+ckc "処分が無いと言う"            "$out31" "open PR #501 に処分が付いていない"
 ckc "表の語彙の検査は通っている"  "$out31" "申告の全項目に処分が付いている（1 件）"
 ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
@@ -719,7 +734,7 @@ echo "[32] 表の行に処分付きで書いてあれば通る（[31] の対に�
 OKP="$WS/.oe/handoff-okprose.md"
 sed 's/^| PR #392 | 済んだ | これは適法な行 |$/| PR #501 | 引き継ぐ | 表の行に処分付きで書いた |/' "$PROSE" > "$OKP"
 set +e
-out32="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$OKP" 2>&1)"; rc32=$?
+out32="$(GH_PRS='501 draft=false 未処分にしたい PR' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$OKP" 2>&1)"; rc32=$?
 set -e
 ck  "下見は 0 で終わる"       "0" "$rc32"
 nck "PR の処分を落とさない"   "$out32" "PR #501 に処分が付いていない"
@@ -728,14 +743,15 @@ echo "[33] 同一性の検査と kill のあいだに何も挟まない"
 # 以前は pid の突合が子の数え直しより前にあり、**確かめてから閉じるまでに別の処理が入っていた**。
 # そのあいだにペイン番号が再利用されると、確かめた相手と閉じる相手がずれる（実装SO の指摘）。
 # **窓を0にはできないが、あいだに何も挟まないことは機械で見られる。**
-# CALL_LOG の `kill-pane` の直前の tmux 呼び出しが、pid を要求する list-panes であることを見る。
+# #577 PR-4: CALL_LOG の `kill-pane` の直前の呼び出しが、フォアグラウンドのプロセスの確かめ（開始時刻を
+# 読む ps）であることを見る（偽の ps と tmux の呼び出しも同じ CALL_LOG に書く）。
 mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 : > "$CALL_LOG"
 set +e
-"$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1
+FAKE_PROC_LOG="$CALL_LOG" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute >/dev/null 2>&1
 set -e
 prev_call="$(awk '/^tmux kill-pane/{print prev; exit} {prev=$0}' "$CALL_LOG")"
-ckc "kill の直前は pid を引く呼び出し" "$prev_call" "pane_pid"
+ckc "kill の直前はフォアグラウンドのプロセスの確かめ" "$prev_call" "tpi-ps -o lstart= -p 910"
 ck  "kill-pane は1回だけ"              "1" "$(grep -c '^tmux kill-pane' "$CALL_LOG" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 
@@ -776,7 +792,9 @@ UPH="$UP/.oe/handoff.md"
 up_ahead="$(git -C "$UP" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)"
 ck "fixture に未 push が1件在る" "1" "$up_ahead"
 set +e
+LEASE_WS="$UP" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out34="$("$OE_HANDOFF" retire -w "$UP" --board "$BOARD" --handoff "$UPH" --execute 2>&1)"; rc34=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"          "1" "$rc34"
 ckc "散文では通らない"      "$out34" "未 push が残っているのに、処分の付いた申告の行に出てこない"
@@ -807,12 +825,12 @@ XK="$WS/.oe/handoff-crosskind.md"
   printf '\n%s\n' '## owner が下した裁定'
 } > "$XK"
 set +e
-out35="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$XK" --execute 2>&1)"; rc35=$?
+out35="$(GH_PRS='501 draft=false 未処分にしたい PR' "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$XK" --execute 2>&1)"; rc35=$?
 set -e
 ck  "非0 で終わる"                "1" "$rc35"
-ckc "PR の処分が無いと言う"       "$out35" "機械の節が挙げた PR #501 に処分が付いていない"
+ckc "PR の処分が無いと言う"       "$out35" "open PR #501 に処分が付いていない"
 # shellcheck disable=SC2016  # backtick は出力に含まれる Markdown 記法で、展開させない
-ckc "求める形を言う"              "$out35" '`#501` の形で出てこない'
+ckc "求める形を言う"              "$out35" '`#501` の形で書く'
 ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
 echo "[36] GFM の alignment delimiter を未処分のデータ行として数えない"
@@ -850,14 +868,17 @@ echo "[37] worktree を数えられなければ、無いことにしない"
 NOGIT="$_TMP_DIR/not-a-repo"; mkdir -p "$NOGIT/.oe"
 cp "$HANDOFF" "$NOGIT/.oe/handoff.md"
 set +e
+LEASE_WS="$NOGIT" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out37="$("$OE_HANDOFF" retire -w "$NOGIT" --board "$BOARD" --handoff "$NOGIT/.oe/handoff.md" --execute 2>&1)"; rc37=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"                "1" "$rc37"
 ckc "数えられないと言う"          "$out37" "worktree を数えられなかった"
 ckc "無いとは言わないと明示する"  "$out37" "未処分の worktree が無いとは言えない"
 ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[38] 機械の節の目印が壊れていたら、文書の散文から値を拾わない"
+echo "[38] 機械の節の目印が無くても、散文の値は使わず lease の記録で判定する"
+# #577 PR-4: 機械の節を読まないので、目印が壊れていても止めない。散文に書かれた pid（ここでは 999）は使わない。
 # 以前は `grep -m1 '^- 前任のペイン: '` を文書全体に当てていたので、**機械の節が無くても
 # 同じ形の行が散文にあれば値を信用した**（実装SO の指摘・2026-09-13）。
 FAKE="$WS/.oe/handoff-nomarker.md"
@@ -868,7 +889,7 @@ FAKE="$WS/.oe/handoff-nomarker.md"
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任の session_id: `sid-pred`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
-  printf -- '- 前任のペインの pid: `910`\n'
+  printf -- '- 前任のペインの pid: `999`\n'
   # shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法
   printf -- '- 前任のペインの pid のコマンド: `claude`\n'
   printf '\n%s\n\n' '## 前任の自己申告（人が書く）'
@@ -881,13 +902,13 @@ FAKE="$WS/.oe/handoff-nomarker.md"
 set +e
 out38="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$FAKE" --execute 2>&1)"; rc38=$?
 set -e
-ck  "2 で終わる"                  "2" "$rc38"
-ckc "目印が1組でないと言う"       "$out38" "機械の節の目印が1組になっていません"
-ckc "機械が書いた記録と言えないと言う" "$out38" "機械が書いた記録だと言えないので閉じません"
-ck  "kill-pane を呼ばない"        "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-ck  "前任は生きたまま"            "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+ck  "0 で終わる"                  "0" "$rc38"
+nck "目印の検査をしない"          "$out38" "機械の節の目印が1組になっていません"
+ckc "lease の binding で確かめる" "$out38" "前の generation の binding（pid 910）である"
+ck  "kill-pane を呼ぶ"            "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
-echo '[39] 機械の節が # 付きで書いていても読む（表示と要求する形を揃えた分）'
+echo '[39] 機械の節の open PR の書き方は判定に効かない（いまの open PR が無ければ閉じてよい）'
 # `prepare` は 2026-09-13 から open PR を `- #501 draft=...` と出す（人に要求する形と揃えるため）。
 # **読む側は `#` の有無どちらも受ける**（それ以前の文書も検査が走るように）。
 for form in '- 501 draft=false 古い形式' '- #501 draft=false 新しい形式'; do
@@ -915,8 +936,8 @@ for form in '- 501 draft=false 古い形式' '- #501 draft=false 新しい形式
   set +e
   out39="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$FRM" 2>&1)"; rc39=$?
   set -e
-  ck  "[$form] 非0 で終わる"     "1" "$rc39"
-  ckc "[$form] 欠落を見つける"   "$out39" "機械の節が挙げた PR #501 に処分が付いていない"
+  ck  "[$form] 下見は 0 で終わる" "0" "$rc39"
+  nck "[$form] 機械の節の PR を照合しない" "$out39" "PR #501 に処分が付いていない"
 done
 
 echo "[40] 申告の表: 先頭パイプを省略した行も読む（未処分を黙って落とさない）"
@@ -992,52 +1013,68 @@ WTH="$WTR/.oe/handoff.md"
   printf '\n%s\n' '## owner が下した裁定'
 } > "$WTH"
 set +e
+LEASE_WS="$WTR" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out42="$("$OE_HANDOFF" retire -w "$WTR" --board "$BOARD" --handoff "$WTH" --execute 2>&1)"; rc42=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"              "1" "$rc42"
 ckc "worktree の処分が無いと言う" "$out42" "main 以外の worktree に処分が付いていない（501）"
 ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[43] ペインの最初のプロセスがシェルなら閉じない（pane_pid の性質）"
-# `#{pane_pid}` は**そのペインの最初のプロセス**である。既存のシェルの中で claude を起こした
-# 形ではシェルの pid になり、**claude が終わってシェルだけ残っていても pid は変わらない**。
-# 拍動も窓の中なら旧世代を返すので、**pid と session_id の両方が通って無関係なものを閉じる**
-# （実装SO の指摘・2026-09-13。repo 自身も delegate-task の skill にこの性質を書いている）。
-mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ" 0 910 bash   # 記録も bash
-printf 'bash\n' > "$PSMAP/910"
+echo "[43] ペインの最初のプロセスがシェルでも、フォアグラウンドが前任なら閉じる（M3）"
+# #577 PR-4・DJ-9: `#{pane_pid}` はペインの最初のプロセスで、シェルの中で claude を起こした形ではシェルになる。
+# 以前は「確かめられない」として閉じなかった。いまはペインの端末のフォアグラウンドのプロセスを見るので、
+# そこにいるのが前の generation の binding（pid と開始時刻）なら閉じてよいと判定できる。
+fake_proc_add 905 'Sat Nov  7 08:59:00 2026' -bash ttys010 910
+printf '905\n' > "$PIDMAP/10"; printf -- '-bash\n' > "$PSMAP/905"
+mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 : > "$CALL_LOG"
 set +e
 out43="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc43=$?
 set -e
-ck  "非0 で終わる"                  "1" "$rc43"
-ckc "claude ではないと言う"          "$out43" "最初のプロセスは claude ではありません（bash）"
-ckc "pid の一致では示せないと言う"   "$out43" "pid の一致は「前任がまだ座っている」ことを示しません"
-ck  "kill-pane を呼ばない"           "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-ck  "前任は生きたまま"               "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
-printf 'claude\n' > "$PSMAP/910"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
+ck  "0 で終わる"                    "0" "$rc43"
+ckc "フォアグラウンドで確かめたと言う" "$out43" "閉じる直前の確かめ: %10 のフォアグラウンドのプロセスは前の generation の binding（pid 910）である"
+ck  "kill-pane を呼ぶ"              "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
-echo "[44] pid のコマンドが記録と違えば閉じない"
-printf 'node\n' > "$PSMAP/910"
+echo "[44] シェルで始まるペインでも、フォアグラウンドの開始時刻が違えば閉じない（M3 の対）"
+# 前任が終わり、同じシェルの中で別の claude が同じ pid で起きた形（pid の再利用）。開始時刻で見分ける。
+fake_proc_del 910; fake_proc_add 910 'Sat Nov  7 12:00:00 2026' claude ttys010 910
 : > "$CALL_LOG"
 set +e
 out44="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc44=$?
 set -e
 ck  "非0 で終わる"            "1" "$rc44"
-ckc "変わったと言う"          "$out44" "で走っているコマンドが変わっています（記録 claude / いま node）"
+ckc "前任のプロセスがいないと言う" "$out44" "前任のペイン %10 に前の generation のプロセス（pid 910）がいない"
 ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
-printf 'claude\n' > "$PSMAP/910"
+fake_proc_del 910; fake_proc_add 910 "$S910" claude ttys010 910
+fake_proc_del 905; rm -f "$PIDMAP/10" "$PSMAP/905"
 
-echo "[45] 引き継ぎ記録に pid のコマンドが無ければ閉じない（古い形式）"
-NOCMD="$WS/.oe/handoff-nocmd.md"
-grep -v '前任のペインの pid のコマンド' "$HANDOFF" > "$NOCMD"
-ck "fixture から行が消えている" "0" "$(grep -c 'pid のコマンド' "$NOCMD" | tr -d ' ')"
+echo "[45] lease の記録で交代が確かめられなければ閉じない"
+# (a) lease が無い（take の前）。(b) lease に前の generation が無い（交代した記録が無い）。
+# shellcheck disable=SC2031  # OE_LEASE_DIR は export 済みで、lib を読む subshell は値を変えない
+rm -rf "$OE_LEASE_DIR"
+# shellcheck disable=SC2031
+mkdir -p "$OE_LEASE_DIR"
 : > "$CALL_LOG"
 set +e
-out45="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$NOCMD" --execute 2>&1)"; rc45=$?
+out45a="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc45a=$?
 set -e
-ck  "非0 で終わる"              "1" "$rc45"
-ckc "古い形式だと言う"          "$out45" "pid のコマンドがありません（古い形式の引き継ぎ文書です）"
-ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "(a) 非0 で終わる"          "1" "$rc45a"
+ckc "(a) take を促す"           "$out45a" "自分のプロセスを binding に持つ lease が無い"
+ck  "(a) kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+( set +e
+  # shellcheck source=../lib/lease.sh
+  . "$PROJECT_DIR/lib/lease.sh"
+  id="$(oe_lease_create supervisor cockpit "$WS" "" 1)"
+  oe_lease_bind "$id" 0 911 "$S911" claude )
+set +e
+out45b="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc45b=$?
+set -e
+ck  "(b) 非0 で終わる"          "1" "$rc45b"
+ckc "(b) 交代の記録が無いと言う" "$out45b" "前の generation（0）の記録が無い"
+ck  "(b) kill-pane を呼ばない"  "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+mk_lease sid-pred >/dev/null
 
 echo "[46] 申告の表: 区切り行が無い散文は表として扱わない"
 # `|` を含む行が2行続くだけで表として通っていたので、**散文の行が「処分が付いた表の行」として
@@ -1086,13 +1123,15 @@ awk '{ print } /^\| PR #392 \| /{ print "| foo | 済んだ | 切れた basename 
   "$SPW/.oe/handoff.md" > "$SPW/.oe/handoff.md.new" && mv "$SPW/.oe/handoff.md.new" "$SPW/.oe/handoff.md"
 ck "申告に foo の行を足した" "1" "$(grep -c '^| foo | 済んだ' "$SPW/.oe/handoff.md" | tr -d ' ')"
 set +e
+LEASE_WS="$SPW" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out47="$("$OE_HANDOFF" retire -w "$SPW" --board "$BOARD" --handoff "$SPW/.oe/handoff.md" --execute 2>&1)"; rc47=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"                  "1" "$rc47"
 ckc "空白込みの basename で言う"    "$out47" "main 以外の worktree に処分が付いていない（foo bar）"
 ck  "前任は生きたまま"              "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[48] 引けて記録と一致したときは「一致」と出す（引けた／引けなかったを畳まない）"
+echo "[48] 閉じる直前の確かめが通ったことを出す"
 # 緩めたことで「引けなかった」経路が通るようになった。**一致した側も出さないと、画面で
 # 区別できない**（緩めた結果を記録し損ねる形・自分で見つけた・2026-09-13）。
 mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
@@ -1100,38 +1139,46 @@ set +e
 out48="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc48=$?
 set -e
 ck  "0 で終わる"                "0" "$rc48"
-ckc "一致と出す"                "$out48" "閉じる直前の session_id: sid-pred（記録と一致）"
+ckc "確かめたと出す"            "$out48" "閉じる直前の確かめ: %10 のフォアグラウンドのプロセスは前の generation の binding（pid 910）である"
 ckc "resume の案内を出す"       "$out48" "claude --resume sid-pred で開き直せます"
 ck  "前任は閉じた"              "0" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 printf '%%10\n' >> "$ALIVE"
 
-echo "[49] tmux server の世代が変わっていたら閉じない"
-# pane 番号も OS の pid も、**server が再起動すれば作り直されて再利用される。** 世代が違えば
-# `%N` は別のペインを指しうる。session_id が unknown でも pid が一致してしまう経路が在った
-# （実装SO の指摘・2026-09-13）。記録の server pid と突き合わせる。
+echo "[49] 退任した generation のプロセスが retire を打っても閉じない"
+# DJ-8: 前任（退任した generation）のプロセスは、lease のいまの generation の binding ではない。
 mk_board "$BOARD"; mk_handoff "$HANDOFF" "sid-pred" "済んだ"
 : > "$CALL_LOG"
 set +e
-out49="$(OE_HS_SERVER_PID="901" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc49=$?
+out49="$(CLAUDE_PID=910 "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc49=$?
 set -e
 ck  "非0 で終わる"              "1" "$rc49"
-ckc "世代が変わったと言う"      "$out49" "tmux server の世代が変わっています（記録 900 / いま 901）"
-ckc "前任だと言えないと言う"    "$out49" "前任だとは言えません"
+ckc "いまの generation でないと言う" "$out49" "自分のプロセスを binding に持つ lease が無い"
 ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
 
-echo "[50] 引き継ぎ記録に tmux server の pid が無ければ閉じない（古い形式）"
-NOSPID="$WS/.oe/handoff-nospid.md"
-# shellcheck disable=SC2016  # backtick は引き継ぎ文書の Markdown 記法で、展開させない
-sed 's/^- 前任のペイン: `%10`（tmux server pid `900`）$/- 前任のペイン: `%10`/' "$HANDOFF" > "$NOSPID"
-ck "fixture から server pid が消えている" "0" "$(grep -c 'tmux server pid' "$NOSPID" | tr -d ' ')"
+echo "[49b] lease の workspace と -w の workspace が違えば閉じない（Copilot の指摘・PR #583）"
+OTHERWS="$_TMP_DIR/ws-other"; mkdir -p "$OTHERWS/.oe"
+git -C "$OTHERWS" init -q 2>/dev/null || true
+cp "$BOARD" "$OTHERWS/.oe/board.md"; cp "$HANDOFF" "$OTHERWS/.oe/handoff.md"
 : > "$CALL_LOG"
 set +e
-out50="$("$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$NOSPID" --execute 2>&1)"; rc50=$?
+out49b="$("$OE_HANDOFF" retire -w "$OTHERWS" --board "$OTHERWS/.oe/board.md" --handoff "$OTHERWS/.oe/handoff.md" --execute 2>&1)"; rc49b=$?
 set -e
-ck  "非0 で終わる"            "1" "$rc50"
-ckc "古い形式だと言う"        "$out50" "tmux server の pid がありません（古い形式の引き継ぎ文書です）"
-ck  "kill-pane を呼ばない"    "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+ck  "非0 で終わる"              "1" "$rc49b"
+ckc "workspace が違うと言う"    "$out49b" "-w の workspace（${OTHERWS}）と違う"
+ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+
+echo "[50] tmux server が変わっていても、プロセスの開始時刻で前任を確かめて閉じる"
+# #577 PR-4・DJ-9: 以前は記録の tmux server の pid と違えば閉じなかった（ペイン番号も pid も作り直されるため）。
+# いまは pid と開始時刻の組で前任のプロセスを見るので、server の世代に頼らない。
+: > "$CALL_LOG"
+set +e
+out50="$(OE_HS_SERVER_PID="901" "$OE_HANDOFF" retire -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --execute 2>&1)"; rc50=$?
+set -e
+ck  "0 で終わる"              "0" "$rc50"
+nck "世代で止めない"          "$out50" "tmux server の世代が変わっています"
+ck  "kill-pane を呼ぶ"        "1" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
+printf '%%10\n' >> "$ALIVE"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

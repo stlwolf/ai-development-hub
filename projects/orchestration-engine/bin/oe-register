@@ -42,16 +42,29 @@ source "${BIN_DIR}/../lib/lease.sh" || true
 source "${BIN_DIR}/../lib/event-bus.sh" || true
 
 # root: 自分の lease がまだ無ければ、oe-lease create --root で作る（自分の CLAUDE_PID と session_id を使う・DJ-18）。
+# lease があってもなくても、そのあとで、このペインの子のうち lease の親が空のものに自分の lease を書く
+# （#577 PR-4。統括の lease ができる前に起こした子は、親が空のまま残るため）。
 lease_root_best_effort() {
   declare -F oe_lease_whoami >/dev/null 2>&1 || return 0
   [[ -n "${OE_LEASE_DIR:-}" && -n "${CLAUDE_PID:-}" && -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || return 0
-  if oe_lease_whoami >/dev/null 2>&1; then return 0; fi
-  local id
-  if id="$("${BIN_DIR}/oe-lease" create --root --label "${LABEL:-cockpit}" -w "${WORKSPACE:-$(pwd)}" 2>/dev/null)"; then
+  local id me spid line
+  if me="$(oe_lease_whoami 2>/dev/null)"; then
+    id="$(printf '%s' "$me" | jq -r '.lease_id' 2>/dev/null)" || return 0
+  elif id="$("${BIN_DIR}/oe-lease" create --root --label "${LABEL:-cockpit}" -w "${WORKSPACE:-$(pwd)}" 2>/dev/null)"; then
     echo "oe-register: lease ${id} を自分の lease にしました（root）" >&2
   else
     echo "oe-register: lease を作れませんでした（registry だけで続けます）" >&2
+    return 0
   fi
+  [[ -n "$id" ]] || return 0
+  spid="${TMUX:-}"; spid="${spid#*,}"; spid="${spid%%,*}"
+  [[ -n "$spid" ]] || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      parented\ *) echo "oe-register: 子 ${line#parented } の lease の親を ${id} にしました" >&2 ;;
+      skipped\ *)  echo "oe-register: 子の lease の親を書けませんでした（${line#skipped }）" >&2 ;;
+    esac
+  done < <(oe_lease_fill_children "$id" "$SELF" "$spid" 2>/dev/null || true)
 }
 
 # link: 相手のペインのフォアグラウンドのプロセスから相手の lease を見つけ、親を自分の lease にする。

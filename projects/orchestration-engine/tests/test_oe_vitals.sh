@@ -18,6 +18,11 @@ command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
+# #577 PR-4: oe-vitals は統括の lease の記録を先に読む。本物の置き場を読まないよう一時ディレクトリへ向ける
+# （この中に lease が無いので、ここのテストはいままでどおり board のペインで判定する。lease の場面は
+# tests/test_lease_handoff.sh が見る）。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset OE_VITALS_LEASE_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 
 # --- stub tmux (%158 alive・他は gone) + wez (呼出記録) ---
 STUB_BIN="$_TMP_DIR/bin"; mkdir -p "$STUB_BIN"
