@@ -377,6 +377,23 @@ ck "通知失敗なら seen は空" "0" "$( [[ -r "$EVDIR/oe-confirm/seen" ]] &&
 run 1789129200 --notify >/dev/null
 ck "経路が戻れば通知できる" "1" "$(grep -c "$N1" "$WEZ_LOG" || true)"
 
+echo "[21] #577 N7: 子の lease があれば、同じペイン番号の前の子の通知済みのキーで、新しい子の消滅を抑えない"
+mkfix f21
+LA="AAAAAAAAAAAAAAAAAAAAAAAAAA"; LB="BBBBBBBBBBBBBBBBBBBBBBBBBB"
+printf '{"type":"child_spawned","ts":"2026-09-11T12:00:00+00:00","from":{"pane":"%%61"},"to":{"pane":"%%70","label":"#1","lease_id":"%s","generation":1}}\n' "$LA" >> "$EVFILE"
+printf '{"type":"child_spawned","ts":"2026-09-11T12:05:00+00:00","from":{"pane":"%%61"},"to":{"pane":"%%70","label":"#2","lease_id":"%s","generation":1}}\n' "$LB" >> "$EVFILE"
+mkdir -p "$EVDIR/oe-confirm"; printf 'pane|%%70|lease:%s\n' "$LA" > "$EVDIR/oe-confirm/seen"   # 前の子は通知済み
+: > "$WEZ_LOG"
+run 1789129200 --notify >/dev/null
+ck "新しい子（lease B）の消滅を知らせる" "1" "$(grep -c "lease:${LB}" "$WEZ_LOG" || true)"
+ck "前の子（lease A）は二度知らせない" "0" "$(grep -c "lease:${LA}" "$WEZ_LOG" || true)"
+mkfix f21b
+printf '{"type":"child_spawned","ts":"2026-09-11T12:00:00+00:00","from":{"pane":"%%61"},"to":{"pane":"%%71","label":"#3"}}\n' >> "$EVFILE"
+mkdir -p "$EVDIR/oe-confirm"; printf 'pane|%%71\n' > "$EVDIR/oe-confirm/seen"
+: > "$WEZ_LOG"
+run 1789129200 --notify >/dev/null
+ck "lease の無い古い子は、いままでのキーのまま（二度知らせない）" "0" "$(grep -c '%71' "$WEZ_LOG" || true)"
+
 echo ""
 echo "=== test_oe_confirm: PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
