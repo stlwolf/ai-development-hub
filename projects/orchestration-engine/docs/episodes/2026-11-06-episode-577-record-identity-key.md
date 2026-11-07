@@ -304,3 +304,15 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - oe-vitals: 統括の lease を、`OE_VITALS_LEASE_ID` か board の置き場の workspace で探す。death は binding のプロセスが無いと確かめられたときだけにした（ペインが残っていても、プロセスが終わっていれば death になる）。lease が決まらなければ、いままでどおり board のペインで判定する。cron で走るので、tmux server の pid は `$TMUX` か `tmux display-message` で取る。
 - テストの道具: `lib/tmux-pane-identity.sh` の偽の ps・tmux・kill を `tests/fixtures/fake-proc.sh` にまとめた。PR-2 の `tests/test_lease_writers.sh` には同じ形の偽物が直に書いてあるが、そちらは触っていない。
 - `tests/test_oe_vitals.sh` は lease の置き場を一時ディレクトリに向けていなかったので、向けた。向けないと、本物の置き場の統括の lease を読み、テストの結果が手元の状態で変わる。
+
+### I3: 実装SO（Codex の1レーン・2026-11-07）
+
+- `so-compare --codex-only`（`gpt-6.1-sol`・195秒・初回で返った）。プロンプトと出力は統括のワークスペースの根の `tmp/577-record-identity/impl-pr4-prompt.md` と `tmp/577-record-identity/so-impl-pr4/`。
+- 採ったもの（4件・`7bdc972`）:
+  - 高: take が前任を確かめてから epoch を読み直していたので、そのあいだに別の後継が進めた lease を、確かめていない相手のまま進められた。確かめと epoch を同じ1回の読み取りから取る形にした。
+  - 高: 別の後継が lease を進めて board を書く前に止まった場面で、もう1つの後継が take を打つと、前任はいまの generation の binding でないので「lease が無い」と取り違え、2つ目の統括の lease を作っていた。前任のプロセスが退任した generation の binding なら止まる形にした。
+  - 高: 後継が take の前に自分の lease を作っていると「既に自分」で通り、前任の lease が在任のまま残っていた。また、board の前任のペイン番号が別のリポジトリの統括に使い回されていると、その lease を進められた。自分の lease の前の generation が前任のプロセスであることと、前任の lease の workspace がこの交代の workspace であることを確かめる形にした。
+  - 中: oe-vitals は拍動が1件も無いと、lease の binding のプロセスが無くても death を出さなかった。lease が決まっていれば拍動の数で止まらない形にした。
+- 採らなかったもの（1件）: board を書いたあとに止まったときの打ち直しで、交代イベントだけが直らない件（中・被害は低い）。#390 からの「席は既に自分」の分岐が `--predecessor` と `--generation` を案内するので、take の保証の書き方を「lease を進めたあと board を書く前に止まった場合」に限るコメントに直した。
+- 指摘が無かった点: retire の判定（機械の節を読まない・4つの確かめを1つにしたこと）・oe-vitals の workspace の一致での取り違え・テストの隔離。
+- 振り返り: 指摘の3件は、どれも「確かめた相手」と「書き換える相手」が離れる形だった。#390 の take が board の compare-and-swap で塞いだのと同じ型を、lease の側で1回作り直していた。確かめに使った値と書き換えの条件を同じ読み取りから取る、を lease の書き込みでも守る。
