@@ -316,3 +316,8 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 - 採らなかったもの（1件）: board を書いたあとに止まったときの打ち直しで、交代イベントだけが直らない件（中・被害は低い）。#390 からの「席は既に自分」の分岐が `--predecessor` と `--generation` を案内するので、take の保証の書き方を「lease を進めたあと board を書く前に止まった場合」に限るコメントに直した。
 - 指摘が無かった点: retire の判定（機械の節を読まない・4つの確かめを1つにしたこと）・oe-vitals の workspace の一致での取り違え・テストの隔離。
 - 振り返り: 指摘の3件は、どれも「確かめた相手」と「書き換える相手」が離れる形だった。#390 の take が board の compare-and-swap で塞いだのと同じ型を、lease の側で1回作り直していた。確かめに使った値と書き換えの条件を同じ読み取りから取る、を lease の書き込みでも守る。
+
+### I3: Copilot の1ラウンド（2026-11-07）
+
+- Copilot は行のコメントを付けず（「No open issues」）、概要の見出しだけで「退任の確かめが、対象の workspace を確かめずに通る」と書いた。具体の箇所は無かったが、読み直すと retire は lease の workspace と `-w` の workspace の一致を見ていなかった（take は実装SO の指摘で見るようにした）。申告と突き合わせる open PR・worktree・未 push は `-w` の workspace で見るので、違えば別のリポジトリの記録で閉じる判断をすることになる。take と同じ確かめを retire に足した。
+- 既存のテストのうち、未 push と worktree の確かめのために `-w` を別の workspace にしていた4件は、lease もその workspace で作る形にした（retire 200件）。

@@ -979,6 +979,14 @@ cmd_retire() {
     note_fail "自分のプロセスは統括の lease でなく $(printf '%s' "$cur" | jq -r '.kind // "?"') の lease（${lid}）の binding である"
     _retire_report
   fi
+  # 申告と突き合わせる open PR・worktree・未 push は -w の workspace で見るので、lease の workspace と同じで
+  # なければ、別のリポジトリの記録で閉じる判断をすることになる（Copilot の指摘・PR #583。take と同じ確かめ）。
+  local lws
+  lws="$(printf '%s' "$cur" | jq -r '.workspace // ""')"
+  if [ -n "$lws" ] && [ "$(_realdir "$lws")" != "$(_realdir "$WORKSPACE")" ]; then
+    note_fail "lease ${lid} の workspace（${lws}）が、-w の workspace（${WORKSPACE}）と違う。別のリポジトリの記録で判定することになるので閉じない"
+    _retire_report
+  fi
   curgen="$(printf '%s' "$cur" | jq -r '.current_generation')"
   prevgen=$((curgen - 1))
   prev="$(printf '%s' "$cur" | jq -c --argjson g "$prevgen" '.generations[] | select(.generation==$g)' 2>/dev/null)" || prev=""

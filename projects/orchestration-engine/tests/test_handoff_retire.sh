@@ -154,12 +154,13 @@ fake_proc_add 911 "$S911" claude ttys011 911
 fake_pane_add %10 /dev/ttys010; fake_pane_add %11 /dev/ttys011
 export CLAUDE_PID=911 CLAUDE_CODE_SESSION_ID=sid-succ
 mk_lease() { # [前任の session_id] — 置き場を作り直して統括の lease を1つ作り、lease_id を出す
+  # （workspace は LEASE_WS があればそれ・無ければ $WS。retire は lease の workspace と -w の一致を見る）
   # shellcheck disable=SC2031  # OE_LEASE_DIR は export 済みで、lib を読む subshell は値を変えない
   rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"
   ( set +e
     # shellcheck source=../lib/lease.sh
     . "$PROJECT_DIR/lib/lease.sh"
-    id="$(oe_lease_create supervisor cockpit "$WS" "" 14)"
+    id="$(oe_lease_create supervisor cockpit "${LEASE_WS:-$WS}" "" 14)"
     oe_lease_bind "$id" 0 910 "$S910" claude
     [ -z "${1:-}" ] || oe_lease_register_session "$id" "$1" 910 "$S910"
     oe_lease_advance "$id" "$(oe_lease_epoch "$id")" planned 911 "$S911" claude >/dev/null
@@ -791,7 +792,9 @@ UPH="$UP/.oe/handoff.md"
 up_ahead="$(git -C "$UP" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)"
 ck "fixture に未 push が1件在る" "1" "$up_ahead"
 set +e
+LEASE_WS="$UP" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out34="$("$OE_HANDOFF" retire -w "$UP" --board "$BOARD" --handoff "$UPH" --execute 2>&1)"; rc34=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"          "1" "$rc34"
 ckc "散文では通らない"      "$out34" "未 push が残っているのに、処分の付いた申告の行に出てこない"
@@ -865,7 +868,9 @@ echo "[37] worktree を数えられなければ、無いことにしない"
 NOGIT="$_TMP_DIR/not-a-repo"; mkdir -p "$NOGIT/.oe"
 cp "$HANDOFF" "$NOGIT/.oe/handoff.md"
 set +e
+LEASE_WS="$NOGIT" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out37="$("$OE_HANDOFF" retire -w "$NOGIT" --board "$BOARD" --handoff "$NOGIT/.oe/handoff.md" --execute 2>&1)"; rc37=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"                "1" "$rc37"
 ckc "数えられないと言う"          "$out37" "worktree を数えられなかった"
@@ -1008,7 +1013,9 @@ WTH="$WTR/.oe/handoff.md"
   printf '\n%s\n' '## owner が下した裁定'
 } > "$WTH"
 set +e
+LEASE_WS="$WTR" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out42="$("$OE_HANDOFF" retire -w "$WTR" --board "$BOARD" --handoff "$WTH" --execute 2>&1)"; rc42=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"              "1" "$rc42"
 ckc "worktree の処分が無いと言う" "$out42" "main 以外の worktree に処分が付いていない（501）"
@@ -1116,7 +1123,9 @@ awk '{ print } /^\| PR #392 \| /{ print "| foo | 済んだ | 切れた basename 
   "$SPW/.oe/handoff.md" > "$SPW/.oe/handoff.md.new" && mv "$SPW/.oe/handoff.md.new" "$SPW/.oe/handoff.md"
 ck "申告に foo の行を足した" "1" "$(grep -c '^| foo | 済んだ' "$SPW/.oe/handoff.md" | tr -d ' ')"
 set +e
+LEASE_WS="$SPW" mk_lease sid-pred >/dev/null   # この場面は -w を別の workspace にするので lease も合わせる
 out47="$("$OE_HANDOFF" retire -w "$SPW" --board "$BOARD" --handoff "$SPW/.oe/handoff.md" --execute 2>&1)"; rc47=$?
+mk_lease sid-pred >/dev/null
 set -e
 ck  "非0 で終わる"                  "1" "$rc47"
 ckc "空白込みの basename で言う"    "$out47" "main 以外の worktree に処分が付いていない（foo bar）"
@@ -1146,6 +1155,18 @@ ck  "非0 で終わる"              "1" "$rc49"
 ckc "いまの generation でないと言う" "$out49" "自分のプロセスを binding に持つ lease が無い"
 ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 ck  "前任は生きたまま"          "1" "$(grep -cxF -- '%10' "$ALIVE" | tr -d ' ')"
+
+echo "[49b] lease の workspace と -w の workspace が違えば閉じない（Copilot の指摘・PR #583）"
+OTHERWS="$_TMP_DIR/ws-other"; mkdir -p "$OTHERWS/.oe"
+git -C "$OTHERWS" init -q 2>/dev/null || true
+cp "$BOARD" "$OTHERWS/.oe/board.md"; cp "$HANDOFF" "$OTHERWS/.oe/handoff.md"
+: > "$CALL_LOG"
+set +e
+out49b="$("$OE_HANDOFF" retire -w "$OTHERWS" --board "$OTHERWS/.oe/board.md" --handoff "$OTHERWS/.oe/handoff.md" --execute 2>&1)"; rc49b=$?
+set -e
+ck  "非0 で終わる"              "1" "$rc49b"
+ckc "workspace が違うと言う"    "$out49b" "-w の workspace（${OTHERWS}）と違う"
+ck  "kill-pane を呼ばない"      "0" "$(grep -c 'kill-pane' "$CALL_LOG" | tr -d ' ')"
 
 echo "[50] tmux server が変わっていても、プロセスの開始時刻で前任を確かめて閉じる"
 # #577 PR-4・DJ-9: 以前は記録の tmux server の pid と違えば閉じなかった（ペイン番号も pid も作り直されるため）。
