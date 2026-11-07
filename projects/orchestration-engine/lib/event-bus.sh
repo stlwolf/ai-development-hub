@@ -242,7 +242,11 @@ oe_event_message_sent() {
   extra="$(jq -cn --arg p "$preview" --arg d "$delivery" --arg nc "$nonce" --argjson n "$maxc" \
     '{preview: (if ($p|length) > $n then ($p[0:$n] + "…") else $p end), delivery_signal: $d}
      + (if $nc != "" then {delivery_receipt: {nonce: $nc}} else {} end)' 2>/dev/null)" || return 0
-  oe_event_emit "message_sent" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra"
+  # 宛先の lease（#577 PR-3）。oe-send が lease から宛先を引いたときだけ、引いたペインと一緒に環境で渡す。
+  # 宛先のペインが一致するときだけ使う（別の送信に焼き込まない）。
+  local tlease=""
+  if [[ -n "${OE_EVENT_TO_LEASE:-}" && "${OE_EVENT_TO_PANE:-}" == "$tp" ]]; then tlease="$OE_EVENT_TO_LEASE"; fi
+  oe_event_emit "message_sent" "$fp" "$frole" "$flabel" "$tp" "$trole" "$tlabel" "$extra" "" "$tlease"
 }
 
 # oe_event_prompt_received <from_pane(取り込んだ側=受け手)> <to_pane(送信元)> <nonce>

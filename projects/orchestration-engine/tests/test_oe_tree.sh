@@ -20,12 +20,17 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 _TMP_DIR="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
 [[ -n "$_TMP_DIR" && -d "$_TMP_DIR" ]] || { echo "FATAL: mktemp -d returned an invalid path: '${_TMP_DIR}'" >&2; exit 1; }
+# #577 PR-3: oe-send・oe-jump・oe-select は lease の記録から宛先を引く。本物の置き場の lease（本物のペインを
+# 指す）を読まないよう、一時ディレクトリへ向け、セッションの lease の環境も外す。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset OE_LEASE_ID OE_GENERATION CLAUDE_PID CLAUDE_CODE_SESSION_ID 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/lib" "$_TMP_DIR/pathbin"
 
 cp "$PROJECT_DIR/bin/oe-tree" "$_TMP_DIR/bin/oe-tree"
 chmod +x "$_TMP_DIR/bin/oe-tree"
-ln -s "$PROJECT_DIR/lib/delegate-registry.sh" "$_TMP_DIR/lib/delegate-registry.sh"
+# #577 PR-3: oe-jump は lib/lease.sh と lib/target-resolve.sh（とそれが読む lib）も source する（実装SO の指摘）。
+for _lib in "$PROJECT_DIR"/lib/*.sh; do ln -s "$_lib" "$_TMP_DIR/lib/$(basename "$_lib")"; done
 # --pick は隣接 oe-jump を再利用する（jump ロジック複製なし・#227）。同じ temp/bin に symlink し、
 # oe-jump 自身の lib 解決（../lib/delegate-registry.sh）が temp/lib（上の symlink）を指すようにする。
 ln -s "$PROJECT_DIR/bin/oe-jump" "$_TMP_DIR/bin/oe-jump"

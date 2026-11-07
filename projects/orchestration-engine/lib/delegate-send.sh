@@ -6,6 +6,8 @@
 #
 # 既存 lib/spawn.sh の oe_spawn_send（wez・claude -p・非対話・envelope 経由）とは
 # 別系統。こちらは対話セッションへ tmux send-keys で注入する transport。
+# transport を替えるときの参考: #577 の discussion の DJ-10（Claude Code のセッション間の文を送る機能の受け取る側の制御）
+# （projects/orchestration-engine/docs/discussions/2026-11-06-discussion-577-record-identity-key.md）。
 # bin/oe-send / bin/oe-delegate が使う。将来 bin/oe-report も無改修で乗れるよう独立。
 #
 # 送信信頼化（Issue #144）: tmux send-keys → Claude Code TUI の取り込みは間欠的に

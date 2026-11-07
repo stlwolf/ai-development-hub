@@ -17,13 +17,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 _TMP_DIR="$(mktemp -d)"
+# #577 PR-3: oe-send・oe-jump・oe-select は lease の記録から宛先を引く。本物の置き場の lease（本物のペインを
+# 指す）を読まないよう、一時ディレクトリへ向け、セッションの lease の環境も外す。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset OE_LEASE_ID OE_GENERATION CLAUDE_PID CLAUDE_CODE_SESSION_ID 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/lib" "$_TMP_DIR/pathbin" "$_TMP_DIR/logs"
 
 # oe-select をテスト用 bin/ にコピー。lib/ は実体を symlink（delegate-registry.sh を共有）。
 cp "$PROJECT_DIR/bin/oe-select" "$_TMP_DIR/bin/oe-select"
 chmod +x "$_TMP_DIR/bin/oe-select"
-ln -s "$PROJECT_DIR/lib/delegate-registry.sh" "$_TMP_DIR/lib/delegate-registry.sh"
+# #577 PR-3: oe-send・oe-jump・oe-select は lib/lease.sh と lib/target-resolve.sh（とそれが読む lib）も source する。
+for _lib in "$PROJECT_DIR"/lib/*.sh; do ln -s "$_lib" "$_TMP_DIR/lib/$(basename "$_lib")"; done
 
 # stub oe-send: 受けた全引数を 1 行ずつ log に記録する（送信はしない）。
 cat > "$_TMP_DIR/bin/oe-send" <<'EOF'
