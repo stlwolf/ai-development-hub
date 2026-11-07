@@ -290,3 +290,17 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 
 - Copilot の指摘2件をどちらも直して返信した（`06f6cf6`）。1件目は、producer のテストが lease の環境を受け継ぐと従来の出力の確かめが崩れること。I2 で verb を呼ぶテスト9本を隔離したときに、producer のテストを見落としていた。producer は verb ではなく環境変数だけを読むので、「verb を呼ぶテスト」という探し方では引っかからなかった。2件目は、本物の置き場を比べる相手が呼ぶたびに更新されるファイルだったこと。PR-1 の `tests/test_lease.sh` にも同じ形があったので一緒に直した。
 - 全体のテスト（57本・両方の bash・`TMUX` を外した環境）で落ちたのは `test_home_unset`（2件）と `test_oe_confirm`（2件）だけで、master の `d2b5a99` でも同じ4件が落ちることを、同じ環境で回して確かめた。テストのあとも本物の `~/.claude/state/oe-lease/` は作られていない。
+
+## I3: PR-4（統括の lease・交代を lease の記録で行う）（2026-11-07）
+
+- PR-2（#581）は master の `62381f1` にマージされた。origin/master を feature ブランチに merge してから始めた（`798f124`）。
+- R2 と R4 の実機の確かめは、統括が使い捨ての子で済ませ、どちらも合格だった（sidecar に lease_id と generation が載る・binding の pid はフォアグラウンドの claude と一致）。DJ-18 の書く時点の直しは要らない。統括の観測が1件あった。統括は PR-2 より前に席を取ったので自分の lease が無く、子の `parent_lease_id` が空だった。
+- この観測に対して、子の lease の親が空なら埋める関数 `oe_lease_fill_children` を足し、`oe-register root` と `oe-handoff take` の両方から呼ぶ形にした。`oe-register root` は PR-2 の時点で、もう root のペインで打ち直しても lease を作る（または使う）形になっていたが、それより前に起こした子の親は空のまま残っていた。
+- take: 統括の lease の generation を進める1回の書き込みを commit point にし、registry・board・event はそのあとに書く派生の記録にした（DJ-5）。前任は、前任のペインのフォアグラウンドのプロセスが lease のいまの generation の binding であることで確かめる。前任に lease が無いとき（#577 の前に席を取った統括）は、前任のプロセスを binding にして作る。作る lease の番号は board の代目に合わせた（後継の代目 - 1 から始める）。adopt が 1 から始めるのと揃っていないが、統括の lease は board の代目と同じ番号の方が人が読みやすいので、take の側だけ合わせた。
+- take を2回目に走らせたとき、board がもう自分を指していれば、lease の段より前の「席は既に自分」で終わる（#390 からある分岐）。lease を進めてから board を書く前に止まった場面では、2回目は lease を飛ばして board を直す。この2つをテストで分けて確かめた。
+- retire: 閉じてよいかを lease の記録だけで判定し、引き継ぎ文書の機械の節は読まない（owner の答え Q84）。以前の4つの確かめ（session_id・ペインの pid・コマンド名・tmux server の pid）は、前任のペインのフォアグラウンドのプロセスが前の generation の binding（pid と開始時刻）である、の1つにした。シェルで始まるペインの前任も閉じられるようになった（M3）。機械の節の PR と申告の照合はやめ、いまの open PR との照合だけにした。照合の規則（部分一致にしない・種別をまたがない）を見ていた既存のテストは、いまの open PR の側で同じ規則を見る形に書き直した。
+- retire の既存のテストは、機械の節に頼っていた17件を書き直した。数は 206 から 197 に減った。減ったのは、機械の節の目印・古い形式・server の pid を見ていた確かめで、いまは存在しない分岐である。
+- handoff-state の heartbeat の引き方は、N6 の関数に任せても既存のテスト（prepare 81件・take 125件・retire 206件）がそのまま通った。`oe_hs_beat_age_for_pane` は「いちばん新しい拍動の古さ」を出す別の問いなので、N6 の関数へは寄せていない（理由の文を作るために使っている）。
+- oe-vitals: 統括の lease を、`OE_VITALS_LEASE_ID` か board の置き場の workspace で探す。death は binding のプロセスが無いと確かめられたときだけにした（ペインが残っていても、プロセスが終わっていれば death になる）。lease が決まらなければ、いままでどおり board のペインで判定する。cron で走るので、tmux server の pid は `$TMUX` か `tmux display-message` で取る。
+- テストの道具: `lib/tmux-pane-identity.sh` の偽の ps・tmux・kill を `tests/fixtures/fake-proc.sh` にまとめた。PR-2 の `tests/test_lease_writers.sh` には同じ形の偽物が直に書いてあるが、そちらは触っていない。
+- `tests/test_oe_vitals.sh` は lease の置き場を一時ディレクトリに向けていなかったので、向けた。向けないと、本物の置き場の統括の lease を読み、テストの結果が手元の状態で変わる。

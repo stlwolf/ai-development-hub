@@ -53,6 +53,27 @@ MARK_END='<!-- oe-handoff:machine:end -->'
 
 err() { printf '%s\n' "oe-handoff: $*" >&2; }
 
+# そのプロセスを、退任した generation の binding に持つ開いた lease を引く（#577 PR-4・実装SO の指摘）。
+# 前任が既に退任していれば（別の後継が lease を進めたあと）、いまの generation の binding では見つからないので、
+# 「lease が無い」と取り違えて2つ目の統括の lease を作らないために使う。出力は "<lease_id>\t<generation>"。
+_lease_retired_by_proc() {
+  local pid="${1:-}" st f out=""
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  st="$(_oe_tpi_norm "${2:-}")"
+  [ -n "$st" ] && [ -n "${OE_LEASE_DIR:-}" ] && [ -d "$OE_LEASE_DIR" ] || return 1
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    out="${out}$(jq -r --argjson p "$pid" --arg st "$st" 'select(.state=="open") | .lease_id as $l
+      | .generations[] | select(.state=="retired" and .binding != null and .binding.pid==$p and .binding.started==$st)
+      | "\($l)\t\(.generation)"' "$f" 2>/dev/null)
+"
+  done
+  out="$(printf '%s' "$out" | grep -v '^$')" || return 1
+  printf '%s\n' "$out" | head -1
+}
+
+_realdir() { (cd "$1" 2>/dev/null && pwd -P); }
+
 # ペインのフォアグラウンドのプロセスから、そのプロセスを binding に持つ lease を引く（#577 PR-4）。
 # 出力は "<lease_id>\t<pid>\t<started>"（lease が無いときは lease_id が空）。
 # rc: 0 引けた / 1 lease が無い / 3 同じプロセスを binding に持つ lease が複数 / 6 プロセスを確かめられない
@@ -651,8 +672,10 @@ cmd_take() {
 
   # --- (3.5) lease の記録（#577 PR-4・commit point）---
   # 交代の正本は統括の lease の記録である（DJ-12）。generation を進める1回の書き込みを commit point にし、
-  # registry・board・event はそのあとに書く派生の記録にする（DJ-5）。途中で止まっても、もう一度走らせると
-  # 進んだ lease を見つけて飛ばし、残りの派生の記録を直す。前任が誰かは、前任のペインのフォアグラウンドの
+  # registry・board・event はそのあとに書く派生の記録にする（DJ-5）。lease を進めたあと board を書く前に
+  # 止まったら、もう一度走らせると進んだ lease を見つけて飛ばし、登記と board を直す。board を書いたあとに
+  # 止まった（交代イベントだけが無い）場合は、#390 からの「席は既に自分」の分岐で終わるので、
+  # --predecessor と --generation を明示して打ち直す（その分岐が案内を出す）。前任が誰かは、前任のペインのフォアグラウンドの
   # プロセスが lease のいまの generation の binding であることで確かめる（ペインの番号だけでは決めない）。
   local me_pid me_st me_comm lid pl prc rest pfg_pid pfg_st pcomm startgen ep newgen lrc kind line
   me_pid="${CLAUDE_PID:-}"
@@ -686,7 +709,26 @@ cmd_take() {
       note_undone "統括の lease に座っていないので席を動かしていない"
       report_and_exit 1
     fi
-    note_done "lease ${lid} のいまの generation は既に自分である（進めていない）"
+    # 自分が座っている lease が、今回引き継ぐ前任の lease かを確かめる（実装SO の指摘）。後継が take の前に
+    # oe-register root などで自分の lease を作っていると、前任の lease は在任のまま残る。前の generation が
+    # 退任していて、その binding が前任のペインのいまのフォアグラウンドのプロセスであることを見る。
+    local lcur lprev lpp lps
+    lcur="$(oe_lease_get "$lid")"
+    lprev="$(printf '%s' "$lcur" | jq -c '.current_generation as $g | .generations[] | select(.generation == ($g - 1))' 2>/dev/null)" || lprev=""
+    if [ -z "$lprev" ] || [ "$(printf '%s' "$lprev" | jq -r '.state')" != "retired" ]; then
+      err "自分が座っている lease ${lid} は、前任から引き継いだ lease ではありません（前の generation が退任していない）"
+      note_undone "前任の lease を進めていない。oe-lease show ${lid} で確かめ、take の前に作った自分の lease なら閉じてから take をやり直す"
+      report_and_exit 1
+    fi
+    lpp="$(printf '%s' "$lprev" | jq -r '(.binding.pid // "") | tostring')"; lps="$(printf '%s' "$lprev" | jq -r '.binding.started // ""')"
+    oe_tpi_verify_pane "$pred" "$lpp" "$lps"; lrc=$?
+    case "$lrc" in
+      0) note_done "lease ${lid} のいまの generation は既に自分で、前の generation は前任（${pred}）である（進めていない）" ;;
+      1) err "lease ${lid} の前の generation（pid ${lpp}）は、前任のペイン ${pred} のプロセスではありません"
+         note_undone "引き継いだ相手が前任と一致しないので席を動かしていない"
+         report_and_exit 1 ;;
+      *) note_done "lease ${lid} のいまの generation は既に自分である（進めていない。前任のペインのプロセスは確かめられなかった・rc=${lrc}）" ;;
+    esac
   else
     pl="$(_lease_of_pane "$pred")"; prc=$?
     case "$prc" in
@@ -701,6 +743,12 @@ cmd_take() {
     lid="${pl%%"$_OE_TPI_TAB"*}"
     rest="${pl#*"$_OE_TPI_TAB"}"; pfg_pid="${rest%%"$_OE_TPI_TAB"*}"; pfg_st="${rest#*"$_OE_TPI_TAB"}"
     if [ -z "$lid" ]; then
+      local retired_hit
+      if retired_hit="$(_lease_retired_by_proc "$pfg_pid" "$pfg_st")"; then
+        err "前任のペイン ${pred} のプロセスは、lease ${retired_hit%%"$_OE_TPI_TAB"*} の generation ${retired_hit#*"$_OE_TPI_TAB"} として既に退任しています（別の後継が lease を進めています）"
+        note_undone "前任は既に退任しているので、lease を作らず席も動かしていない（oe-lease show で、いまの generation を確かめる）"
+        report_and_exit 1
+      fi
       # 前任が #577 の前に席を取ったので lease が無い。前任のプロセスを binding にして作る（adopt と同じ形）。
       # 番号は board の代目に合わせる（後継の代目 - 1 から始める）。分からなければ 1 から始める。
       pcomm="$(oe_tpi_proc_comm "$pfg_pid")" || pcomm=""
@@ -726,13 +774,31 @@ cmd_take() {
       if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "$pred" "$lid" "$startgen" adopt cockpit || true; fi
       note_done "前任の lease が無かったので、前任のプロセス（pid ${pfg_pid}）を binding にして作った（${lid}・generation ${startgen}）"
     fi
-    kind="$(oe_lease_get "$lid" | jq -r '.kind')"
+    # 1回読んだ記録で、kind・workspace・いまの generation の binding を確かめ、同じ記録の epoch で進める
+    # （確かめてから epoch を読み直すと、そのあいだに別の後継が進めた lease を、確かめていない相手のまま
+    # 進めてしまう・実装SO の指摘）。
+    local snap swsp
+    snap="$(oe_lease_get "$lid")"
+    kind="$(printf '%s' "$snap" | jq -r '.kind')"
     if [ "$kind" != "supervisor" ]; then
       err "前任のペインのプロセスは統括でなく ${kind} の lease（${lid}）の binding です"
       note_undone "前任が統括の lease に座っていないので、lease の記録も席も動かしていない"
       report_and_exit 1
     fi
-    ep="$(oe_lease_epoch "$lid")"
+    if [ "$(printf '%s' "$snap" | jq -r --argjson p "$pfg_pid" --arg st "$(_oe_tpi_norm "$pfg_st")" '.current_generation as $g
+         | any(.generations[]; .generation==$g and .binding != null and .binding.pid==$p and .binding.started==$st)')" != "true" ]; then
+      err "lease ${lid} のいまの generation の binding が、前任のペイン ${pred} のプロセスではなくなりました（確かめたあとに動いた）"
+      note_undone "lease を進めていない（もう一度 take を走らせる）"
+      report_and_exit 1
+    fi
+    # 別の workspace の統括の lease を進めない（ペイン番号は別のリポジトリの統括に使い回されうる・実装SO の指摘）。
+    swsp="$(printf '%s' "$snap" | jq -r '.workspace // ""')"
+    if [ -n "$swsp" ] && [ "$(_realdir "$swsp")" != "$(_realdir "$WORKSPACE")" ]; then
+      err "前任の lease ${lid} の workspace（${swsp}）が、この交代の workspace（${WORKSPACE}）と違います"
+      note_undone "別のリポジトリの統括かもしれないので、lease の記録も席も動かしていない（-w を確かめる）"
+      report_and_exit 1
+    fi
+    ep="$(printf '%s' "$snap" | jq -r '.epoch')"
     lrc=0; newgen="$(oe_lease_advance "$lid" "$ep" planned "$me_pid" "$me_st" "$me_comm")" || lrc=$?
     case "$lrc" in
       0) note_done "lease ${lid} の generation を ${newgen} に進めた（前の generation は退任・binding は自分のプロセス）" ;;

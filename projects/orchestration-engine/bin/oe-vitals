@@ -291,7 +291,8 @@ files=("$OE_HEARTBEAT_DIR"/*.json)
 shopt -u nullglob
 total_sidecars=${#files[@]}
 
-if [[ "$total_sidecars" -eq 0 ]]; then
+# 統括の lease が決まっていれば、拍動が1件も無くても binding のプロセスの生死は見る（実装SO の指摘・#577 PR-4）。
+if [[ "$total_sidecars" -eq 0 && -z "$LEASE_ID" ]]; then
   echo "oe-vitals: no heartbeat recorded yet (${OE_HEARTBEAT_DIR}) — producer 未配備 or 未実行"
   exit 0
 fi

@@ -120,7 +120,7 @@ n1="$(n_leases)"; e1="$(jq -r '.epoch' "$OE_LEASE_DIR/$SUP.json")"
 # lease を進めたあと board を書く前に止まった形（board はまだ前任）。もう一度走らせると lease は飛ばして board を直す。
 mk_board
 out2="$(take)"
-ckc "2回目は lease を飛ばす" "$out2" "のいまの generation は既に自分である（進めていない）"
+ckc "2回目は lease を飛ばす" "$out2" "のいまの generation は既に自分で、前の generation は前任（%10）である（進めていない）"
 # shellcheck disable=SC2016  # backtick は board の Markdown 記法
 ck  "2回目で board を直す" "1" "$(grep -c '現統括: pane `%11`' "$BOARD")"
 ck  "2回目で lease は増えない" "$n1" "$(n_leases)"
@@ -158,6 +158,32 @@ ck  "lease を作らない" "3" "$(n_leases)"
 ck  "前任の lease を進めた" "2" "$(jq -r '.current_generation' "$OE_LEASE_DIR/$P.json")"
 ck  "親がある子は変えない" "$OTHER" "$(jq -r '.parent_lease_id' "$OE_LEASE_DIR/$CHILD.json")"
 nck "作ったとは言わない" "$out" "前任の lease が無かったので"
+
+echo "=== (C2) take: 引き継ぐ相手を取り違えない（実装SO の指摘） ==="
+rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"; mk_board; before="$(cat "$BOARD")"
+# (1) 前任は別の後継（pid 920）に既に退任させられている。lease を作り直さない
+P="$(lib oe_lease_create supervisor cockpit "$WS" "" 14)"; lib oe_lease_bind "$P" 0 910 "$S910" claude
+lib oe_lease_advance "$P" "$(lib oe_lease_epoch "$P")" planned 920 'Sat Nov  7 10:30:00 2026' claude >/dev/null
+set +e; out="$(take)"; rc=$?; set -e
+ck  "(1) 1 で終わる" "1" "$rc"
+ckc "(1) 既に退任していると言う" "$out" "既に退任しています"
+ck  "(1) lease を作らない" "1" "$(n_leases)"
+ck  "(1) board を変えない" "$before" "$(cat "$BOARD")"
+# (2) 後継が take の前に自分の lease を作っていた（前の generation が無い）
+rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"
+OWN="$(lib oe_lease_create supervisor cockpit "$WS" "" 1)"; lib oe_lease_bind "$OWN" 0 911 "$S911" claude
+set +e; out="$(take)"; rc=$?; set -e
+ck  "(2) 1 で終わる" "1" "$rc"
+ckc "(2) 引き継いだ lease でないと言う" "$out" "前任から引き継いだ lease ではありません"
+ck  "(2) board を変えない" "$before" "$(cat "$BOARD")"
+# (3) 前任の lease が別の workspace のもの（ペイン番号の使い回し）
+rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR" "$_TMP_DIR/other-ws"
+P="$(lib oe_lease_create supervisor cockpit "$_TMP_DIR/other-ws" "" 3)"; lib oe_lease_bind "$P" 0 910 "$S910" claude
+set +e; out="$(take)"; rc=$?; set -e
+ck  "(3) 1 で終わる" "1" "$rc"
+ckc "(3) workspace が違うと言う" "$out" "workspace（"
+ck  "(3) 別の workspace の lease を進めない" "3" "$(jq -r '.current_generation' "$OE_LEASE_DIR/$P.json")"
+ck  "(3) board を変えない" "$before" "$(cat "$BOARD")"
 
 echo "=== (D) M1: 統括のプロセスが新しいプロセスで戻っても、子の lease の記録は書き換わらない ==="
 # 統括の lease に記録に無い session_id で戻るのは owner の確かめが要る（--owner-confirmed・PR-1 の決まり）。
@@ -227,7 +253,9 @@ ckc "binding のプロセスが無ければ death" "$out" "binding のプロセ�
 ckc "lease を名指す" "$out" "lease ${SUP} generation 1"
 rm -f "$OE_HEARTBEAT_DIR/sid-v.json"
 ckc "拍動が無くてもプロセスが無ければ death" "$(vit)" "death"
-reset_proc; beat sid-v %11 $((NOW - 60)) 40
+rm -f "$OE_HEARTBEAT_DIR"/*.json
+ckc "拍動が1件も無くてもプロセスが無ければ death（実装SO の指摘）" "$(vit)" "binding のプロセスが無い"
+reset_proc; beat sid-v %11 $((NOW - 60)) 40; beat sid-old %10 $((NOW - 30)) 99
 S2="$(lib oe_lease_create supervisor cockpit2 "$WS" "" 1)"; lib oe_lease_bind "$S2" 0 912 "$S912" claude
 out="$(vit)"
 ckc "lease が2つでも、生きているのが2つなら決めずに board で判定する" "$out" "1つに決まらない"
