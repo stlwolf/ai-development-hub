@@ -156,7 +156,10 @@ if [[ "$MODE" == lease ]]; then
   # shellcheck source=../lib/lease.sh
   source "${BIN_DIR}/../lib/lease.sh"
   [[ -n "${OE_LEASE_DIR:-}" ]] || env_fail "lease の置き場が決まりません（HOME 未設定・OE_LEASE_DIR も未指定）"
-  if [[ ! -d "$OE_LEASE_DIR" ]]; then echo "(lease の記録はまだありません: ${OE_LEASE_DIR})"; exit 0; fi
+  if [[ ! -e "$OE_LEASE_DIR" ]]; then echo "(lease の記録はまだありません: ${OE_LEASE_DIR})"; exit 0; fi
+  # 置き場が在るのに読めないときは、「記録が無い」に畳まず止まる（Copilot の指摘・PR #590）
+  [[ -d "$OE_LEASE_DIR" ]] || env_fail "lease の置き場がディレクトリではありません: ${OE_LEASE_DIR}"
+  [[ -r "$OE_LEASE_DIR" && -x "$OE_LEASE_DIR" ]] || env_fail "lease の置き場を読めません: ${OE_LEASE_DIR}"
   L_ID=(); L_PARENT=(); L_LINE=()
   shopt -s nullglob
   _lfiles=("$OE_LEASE_DIR"/*.json)
@@ -191,7 +194,6 @@ if [[ "$MODE" == lease ]]; then
     L_SEEN="${L_SEEN}${i} "
     if [[ "$depth" -eq 0 ]]; then printf '%s\n' "${L_LINE[$i]}"
     else printf '%s%s %s\n' "$pre" "$( [[ "$last" -eq 1 ]] && printf '└─' || printf '├─')" "${L_LINE[$i]}"; fi
-    [[ "$depth" -lt 20 ]] || return 0
     for j in "${!L_ID[@]}"; do [[ "${L_PARENT[$j]}" == "${L_ID[$i]}" ]] && kids+=("$j"); done
     n="${#kids[@]}"
     local child_pre="$pre"

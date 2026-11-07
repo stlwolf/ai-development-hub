@@ -14,6 +14,10 @@
 #       rc: 0 選べた / 1 候補が無い / 3 いちばん新しい候補が同じ時刻で別のペインに分かれた / 2 呼び方の誤り
 #   oe_hb_session_for_pane <server_pid> <max_age_sec> <pane>
 #       そのペインのいちばん新しい sidecar の session_id を出す。rc は上と同じ。
+#   oe_hb_pick_panes <server_pid> <max_age_sec> <now>
+#       標準入力の行 "<ts>\t<pane>\t<server_pid>\t<session_id>" から、ペインごとに上と同じ規則で1つ選び、
+#       "<pane>\t<session_id>" を出す（同じ時刻で分かれたペインは session_id を "?" にする）。すでに sidecar を
+#       読んである読む側（oe-threads）が、ペインごとに置き場を読み直さずに同じ規則を当てるための口である。
 #
 # どちらも候補を選ぶための手がかりである。使う前には必ず lib/tmux-pane-identity.sh の oe_tpi_verify_pane で
 # ペインのフォアグラウンドのプロセスを binding と照らす（DJ-6）。sidecar は session_id の登録の根拠にしない（DJ-18）。
@@ -81,14 +85,31 @@ EOF
   printf '%s' "$cands" | grep -v '^$' | _oe_hb_pick
 }
 
+oe_hb_pick_panes() {
+  local spid="${1:-}" maxage="${2:-}" now="${3:-}"
+  case "$maxage" in ''|*[!0-9]*) return 2 ;; esac
+  case "$now" in ''|*[!0-9]*) return 2 ;; esac
+  [ -n "$spid" ] || return 2
+  # 候補: server の pid が一致し、ペインがあり、鮮度の窓の中にあり、未来でないもの。ペインごとにいちばん新しい
+  # ものを採り、同じ時刻で別の session に分かれたら "?" にする（未来の拍動を外す理由は oe_hb_pane_for と同じ）。
+  awk -F '\t' -v spid="$spid" -v maxage="$maxage" -v now="$now" '
+    $3 != spid || $2 == "" || $2 == "-" { next }
+    $1 !~ /^[0-9]+$/ { next }
+    ($1 + 0) > (now + 0) { next }
+    (now - $1) > (maxage + 0) { next }
+    { p = $2
+      if (!(p in best) || ($1 + 0) > best[p]) { best[p] = $1 + 0; sid[p] = $4; tie[p] = 0 }
+      else if (($1 + 0) == best[p] && $4 != sid[p]) { tie[p] = 1 } }
+    END { for (p in best) printf "%s\t%s\n", p, (tie[p] ? "?" : sid[p]) }'
+}
+
 oe_hb_session_for_pane() {
   local spid="${1:-}" maxage="${2:-}" want="${3:-}"
   case "$maxage" in ''|*[!0-9]*) return 2 ;; esac
   [ -n "$spid" ] && [ -n "$want" ] || return 2
   [ -n "$OE_HEARTBEAT_DIR" ] && [ -d "$OE_HEARTBEAT_DIR" ] || return 1
   command -v jq >/dev/null 2>&1 || return 2
-  local now f row ts pane rspid rlid rgen cands="" out rc
-  now="$(_oe_hb_now)"
+  local f row ts pane rspid rlid rgen rows="" hit
   for f in "$OE_HEARTBEAT_DIR"/*.json; do
     [ -f "$f" ] || continue
     row="$(_oe_hb_project "$f")" || continue
@@ -96,20 +117,12 @@ oe_hb_session_for_pane() {
     IFS="$_OE_HB_TAB" read -r ts pane rspid rlid rgen <<EOF
 $row
 EOF
-    case "$ts" in ''|*[!0-9]*) continue ;; esac
     [ "$pane" = "$want" ] || continue
-    [ "$rspid" = "$spid" ] || continue
-    [ $((now - ts)) -le "$maxage" ] || continue
-    # 未来の拍動は候補にしない。時計が戻ると、終わった session の拍動が「いちばん新しい」として勝ち続ける。
-    # producer と読む側は同じマシンの時計を使うので、ふつうは未来にならない（実装SO の指摘で1分の猶予をやめた）。
-    [ "$ts" -le "$now" ] || continue
-    cands="${cands}${ts}${_OE_HB_TAB}$(basename "$f" .json)${_OE_HB_TAB}$(basename "$f" .json)
+    rows="${rows}${ts}${_OE_HB_TAB}${pane}${_OE_HB_TAB}${rspid}${_OE_HB_TAB}$(basename "$f" .json)
 "
   done
-  # 同じペインの候補どうしなので、同じ時刻の別の session_id を「分かれた」と数える（3列目で比べる）。
-  out="$(printf '%s' "$cands" | grep -v '^$' | awk -F '\t' '
-    { if ($1 > best) { best=$1; sid=$3; tie=0 } else if ($1 == best && $3 != sid) { tie=1 } n++ }
-    END { if (n == 0) exit 1; if (tie) exit 3; printf "%s", sid }')"; rc=$?
-  [ "$rc" -eq 0 ] || return "$rc"
-  printf '%s' "$out"
+  hit="$(printf '%s' "$rows" | oe_hb_pick_panes "$spid" "$maxage" "$(_oe_hb_now)" | awk -F '\t' -v p="$want" '$1 == p { print $2; exit }')"
+  [ -n "$hit" ] || return 1
+  [ "$hit" != "?" ] || return 3
+  printf '%s' "$hit"
 }

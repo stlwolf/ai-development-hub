@@ -105,6 +105,17 @@ OUT="$(bash "$BIN/oe-tree" --lease 2>&1)"; RC=$?
 ck  "循環があっても 0 で終わる" "0" "$RC"
 ckc "循環していると書く" "$OUT" "(親の lease の連鎖が循環している)"
 ck  "循環した2件をどちらも1度ずつ出す" "2" "$(printf '%s\n' "$OUT" | grep -c '#cyc-' || true)"
+# 25段の深い木を、循環と取り違えずに描く（Copilot の指摘・PR #590）
+P0=""; for d in $(seq 1 25); do P0="$(lib oe_lease_create delegation "#deep-${d}" "$WS" "$P0" 1)"; done
+OUT="$(bash "$BIN/oe-tree" --lease 2>&1)"
+ck  "深い木の25段をすべて出す" "25" "$(printf '%s\n' "$OUT" | grep -c '#deep-' || true)"
+ck  "深い木を循環と書かない（循環の2件の分だけ）" "1" "$(printf '%s\n' "$OUT" | grep -c '循環している' || true)"
+# 置き場が在るのに読めないときは、「記録が無い」に畳まず 2（Copilot の指摘）
+NR="$_TMP_DIR/noread"; mkdir -p "$NR"; chmod 000 "$NR"
+set +e; OUT="$(OE_LEASE_DIR="$NR" bash "$BIN/oe-tree" --lease 2>&1)"; RC=$?; set -e
+chmod 700 "$NR"
+ck  "読めない置き場は 2" "2" "$RC"
+ckc "読めないと言う" "$OUT" "lease の置き場を読めません"
 set +e; OUT="$(bash "$BIN/oe-tree" --lease --watch 2>&1)"; RC=$?; set -e
 ck  "ほかの指定とは併用できない（2）" "2" "$RC"
 

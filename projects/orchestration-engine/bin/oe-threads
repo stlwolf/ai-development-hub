@@ -242,32 +242,29 @@ if [[ ! "$SERVER_PID" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+# 生存ペインごとの session を1回でまとめて決める（N6 の規則・lib/heartbeat-resolve.sh の oe_hb_pick_panes）。
+PICKED="$(for _r in ${RECS[@]+"${RECS[@]}"}; do
+  IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
+  printf '%s\t%s\t%s\t%s\n' "$_rts" "$_rpane" "$_rspid" "$_rsid"
+done | oe_hb_pick_panes "$SERVER_PID" "$FRESH" "$NOW")"
+
 printf '%-8s %5s %6s  %-20s %s\n' "PANE" "CTX" "AGE" "MODEL" "LABEL"
 
 while IFS= read -r _p; do
   [[ -n "$_p" ]] || continue
   _n=0; _ts=0; _ctx=""; _model=""
-  # ペインの session を引く規則は N6 の関数に任せる（上の DJ-C・DJ-D）。鮮度は帰属の解決にだけ使う。
-  _hrc=0
-  _hsid="$(OE_HEARTBEAT_DIR="$BEAT_DIR" OE_HB_NOW_EPOCH="$NOW" oe_hb_session_for_pane "$SERVER_PID" "$FRESH" "$_p" 2>/dev/null)" || _hrc=$?
-  if [[ "$_hrc" -eq 0 ]]; then
+  # ペインの session は、上で読んだ sidecar（RECS）に N6 の規則（oe_hb_pick_panes）を当てた結果から引く。
+  # 帰属と表示の値を同じ読み取りから決め、ペインごとに置き場を読み直さない（Copilot の指摘・PR #590）。
+  _hsid="$(printf '%s\n' "$PICKED" | awk -F '\t' -v p="$_p" '$1 == p { print $2; exit }')"
+  if [[ "$_hsid" == "?" ]]; then
+    _n=2
+  elif [[ -n "$_hsid" ]]; then
     for _r in ${RECS[@]+"${RECS[@]}"}; do
       IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
       [[ "$_rsid" == "$_hsid" ]] || continue
       _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
       break
     done
-    # 上で集めたあとに現れた sidecar を N6 が選んだときは、その sidecar を直に読む（2回の読み取りの
-    # 食い違いで値が - になるのを防ぐ・実装SO の指摘）
-    if [[ "$_n" -eq 0 && -f "${BEAT_DIR}/${_hsid}.json" ]]; then
-      _raw="$(jq -r "$_PROJECT" "${BEAT_DIR}/${_hsid}.json" 2>/dev/null)" || _raw=""
-      if [[ -n "$_raw" ]]; then
-        IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$(printf '%s' "$_raw" | tr '\011' '\037')"
-        _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
-      fi
-    fi
-  elif [[ "$_hrc" -eq 3 ]]; then
-    _n=2
   fi
 
   # ラベルの key は <server_pid>_<pane> なので、$TMUX が空でも解決できるよう確定済みの pid を
