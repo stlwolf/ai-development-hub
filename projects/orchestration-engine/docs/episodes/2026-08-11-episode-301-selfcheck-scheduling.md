@@ -166,7 +166,7 @@ audit_id `20260811022619CQHBXKZ068BM`。かけた案は「実行者（launchd）
 
 このほかに挙がった指摘は次のとおり。
 
-- `SessionStart` はリポジトリ自身の hook 仕様調査（`docs/research/2026-03-30-ai-tool-hooks-specification-survey.md:227`）が**モデルへの文脈注入**として分類している。人の面ではない公算が大きい。
+- `SessionStart` はリポジトリ自身の hook 仕様調査（`docs/research/investigations/2026-03-30-ai-tool-hooks-specification-survey.md:227`）が**モデルへの文脈注入**として分類している。人の面ではない公算が大きい。
 - 読み手（hook）自身の無言死が未解決である。hook の配布は symlink（`scripts/sync/sync-claude.sh:131`）で、worktree から sync してその worktree を消すと黙って止まる。しかも hook の死を検出できるのは `oe-selfcheck` の `hook-contract` 検査であり、その結果を読むのが死んだ当の hook である。**循環を解いたのではなく一段上へ移していた。**
 - `oe-vitals` の launchd への**相乗り**を、理由を書かずに捨てていた。しかもこの選択肢は実測すると生きている。
 - `indeterminate` を 3 へ動かす案は exit 2 の実際の発生箇所と合っていない。`oe-selfcheck:78` は `jq` 不在で 2 を返しており、これは呼び方の誤りではなく**環境の失敗**である。帯を作り直すなら環境失敗の帯も決める必要がある。

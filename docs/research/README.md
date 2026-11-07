@@ -8,6 +8,7 @@
 |------|--------|------|
 | `docs/research/YYYY-MM-DD-<slug>.md` | `research-intake` コマンド | 記事/論文の分析ノート |
 | `docs/research/oss-sessions/` | `oss-research-session` スキル | OSS/ライブラリ調査レポート |
+| `docs/research/investigations/YYYY-MM-DD-<slug>.md` | 手で書く（コマンド・スキルなし） | 一次情報（公式 doc・ソース・実機）を確かめて書く調査メモ。形式は自由で、追記していく |
 
 ---
 
