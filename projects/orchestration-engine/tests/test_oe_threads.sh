@@ -107,14 +107,21 @@ ncc "曖昧マークは付かない"         "$OUT" "%0?"
 
 # ============================================================================
 echo ""
-echo "[3] DJ-C: fresh な候補が2件なら曖昧マークを付けて値を出さない"
+echo "[3] DJ-C（#577 PR-5 で N6 の規則にそろえた）: いちばん新しい候補を採り、同じ時刻で分かれたときだけ曖昧にする"
 # ============================================================================
 reset_beats
 mkbeat dupa 10 33 '%4' "$SPID" 'Fable 5'
 mkbeat dupb 20 44 '%4' "$SPID" 'Opus 5'
 OUT="$(run '%4')"
-ckc "PANE に曖昧マーク"           "$OUT" "%4?"
-ckc "件数を出す"                  "$OUT" "ambiguous(2)"
+ckc "新しい方（10秒前・33）を採る"  "$OUT" "33"
+ncc "古い方（44）は出さない"        "$OUT" "44"
+ncc "曖昧マークは付かない"          "$OUT" "%4?"
+reset_beats
+mkbeat tiea 10 33 '%4' "$SPID" 'Fable 5'
+mkbeat tieb 10 44 '%4' "$SPID" 'Opus 5'
+OUT="$(run '%4')"
+ckc "同じ時刻で分かれたら PANE に曖昧マーク" "$OUT" "%4?"
+ckc "曖昧と出す"                  "$OUT" "ambiguous"
 ncc "値は出さない（33）"           "$OUT" "33"
 ncc "値は出さない（44）"           "$OUT" "44"
 
@@ -128,12 +135,12 @@ OUT="$(run '%1')"
 ncc "別 server の ctx を出さない"       "$OUT" "22"
 ncc "別 server の model を出さない"     "$OUT" "Haiku"
 ckc "値は - になる"                     "$OUT" "%1           -      -  -"
-# server_pid が空の記録（producer 更新前 / TMUX 不在）は pane だけで突合する劣化動作
+# server_pid が空の記録（producer 更新前）は、#577 PR-5 で N6 の規則にそろえて候補にしない
 reset_beats
 mkbeat legacy 15 22 '%1' '' 'Haiku 4.5'
 OUT="$(run '%1')"
-ckc "server_pid 空は pane だけで突合する" "$OUT" "Haiku 4.5"
-ckc "  ctx も出る"                        "$OUT" "22"
+ncc "server_pid 空は候補にしない"        "$OUT" "Haiku 4.5"
+ckc "  値は - になる"                    "$OUT" "%1           -      -  -"
 
 # ============================================================================
 echo ""
@@ -153,9 +160,9 @@ echo ""
 echo "[6] 空フィールドで列がずれない（実装中に発見・TAB 区切りの罠の回帰）"
 # ============================================================================
 reset_beats
-mkbeat e1 5 61 '%0' '' 'Opus 5'          # server_pid だけ空
+mkbeat e1 5 61 '%0' "$SPID" '-none-'      # model だけ空
 OUT="$(run '%0')"
-ckc "server_pid 空でも model が MODEL 列に出る" "$OUT" "Opus 5"
+ckc "model が空でも ctx が CTX 列に出る"         "$OUT" "61"
 ncc "  SESSION 値が PANE 列に来ていない"        "$OUT" "e1  "
 reset_beats
 mkbeat e2 5 61 '' '' 'Opus 5'            # pane と server_pid の両方が空

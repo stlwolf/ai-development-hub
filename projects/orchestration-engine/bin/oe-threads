@@ -27,14 +27,18 @@
 #   関係なく常に出る（静かなスレッドが消えない）。一方どの sidecar をそのペインの現役とみなすかは
 #   鮮度窓で決める（古い sidecar は候補にしない）。
 #
-# 帰属の曖昧さ（DJ-C）: fresh な候補が1件なら値を出す。2件以上なら PANE に ? を付けて値は出さない
-#   （最新で潰さない — pane 再利用の誤帰属を「解決済み」に見せない）。0件なら値は - にする。
-#
-# server identity（DJ-D）: 突合は server_pid と pane の組で行う。pane 番号は tmux server 内でのみ
-#   一意なので、pane だけでは別 server の同番ペインと衝突する。sidecar 側の server_pid が空のもの
-#   （producer 更新前に書かれた記録・TMUX 不在で書かれた記録）は pane だけで突合する劣化動作とし、
-#   非空で不一致のものは候補にしない。observer 側の pid は list-panes に答えた server から取り、
-#   確定できないときは帰属を推測せず exit 2 にする（$TMUX に依存しない）。
+# 帰属の決め方（DJ-C・DJ-D）: #577 PR-4・PR-5 で、heartbeat からペインの session を引く規則を
+#   lib/heartbeat-resolve.sh の1つの関数（oe_hb_session_for_pane・#577 の N6）にまとめ、この verb もそれを
+#   使う。規則は、server の pid が一致し、鮮度の窓の中にあるもののうち、いちばん新しいものを採る。
+#   いちばん新しいものが同じ時刻で別の session に分かれたときだけ、PANE に ? を付けて値は出さない。
+#   候補が無ければ値は - にする。observer 側の pid は list-panes に答えた server から取り、確定できない
+#   ときは帰属を推測せず exit 2 にする（$TMUX に依存しない）。
+#   以前の決まりとの違い（#577 PR-5）: 以前は「fresh な候補が2件以上なら曖昧」とし、sidecar の
+#   server_pid が空のものも pane だけで突合していた。1つのペインで動く claude は1つなので、候補が2件
+#   なら新しい方が今の session である（古い方が新しい拍動を書くことはない）。新しい session がまだ
+#   拍動を書いていない窓は、以前の決まりでも候補が1件なので同じく古い方を出す。server_pid が空の
+#   sidecar は producer の更新より前の記録で、いまは書かれない。読む側ごとに規則が違うと、同じペインの
+#   session が verb によって違って見えるので、1つにそろえた。
 #
 # 列（DJ-E）: PANE / CTX / AGE / MODEL / LABEL。MODEL は幅で切らない（display_name の末尾に
 #   1M 版の区別が載るため）。可変幅が2列あるので、切らない MODEL に最小幅を与え、溢れは最後の
@@ -55,6 +59,8 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${BIN_DIR}/.." && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${PROJECT_DIR}/lib/delegate-registry.sh"
+# shellcheck source=../lib/heartbeat-resolve.sh
+source "${PROJECT_DIR}/lib/heartbeat-resolve.sh"
 
 err() { printf 'oe-threads: %s\n' "$*" >&2; }
 
@@ -240,17 +246,19 @@ printf '%-8s %5s %6s  %-20s %s\n' "PANE" "CTX" "AGE" "MODEL" "LABEL"
 while IFS= read -r _p; do
   [[ -n "$_p" ]] || continue
   _n=0; _ts=0; _ctx=""; _model=""
-  for _r in ${RECS[@]+"${RECS[@]}"}; do
-    IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
-    [[ "$_rpane" == "$_p" ]] || continue
-    [[ "$_rts" =~ ^[0-9]+$ ]] || continue
-    # server identity: 非空で不一致なら候補にしない（別 server の同番ペインを誤帰属しない）
-    if [[ -n "$_rspid" && "$_rspid" != "$SERVER_PID" ]]; then continue; fi
-    # 鮮度窓の外は候補にしない（帰属の解決にだけ鮮度を使う）
-    [[ $((NOW - _rts)) -le "$FRESH" && $((NOW - _rts)) -ge 0 ]] || continue
-    _n=$((_n + 1))
-    _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
-  done
+  # ペインの session を引く規則は N6 の関数に任せる（上の DJ-C・DJ-D）。鮮度は帰属の解決にだけ使う。
+  _hrc=0
+  _hsid="$(OE_HEARTBEAT_DIR="$BEAT_DIR" OE_HB_NOW_EPOCH="$NOW" oe_hb_session_for_pane "$SERVER_PID" "$FRESH" "$_p" 2>/dev/null)" || _hrc=$?
+  if [[ "$_hrc" -eq 0 ]]; then
+    for _r in ${RECS[@]+"${RECS[@]}"}; do
+      IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
+      [[ "$_rsid" == "$_hsid" ]] || continue
+      _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
+      break
+    done
+  elif [[ "$_hrc" -eq 3 ]]; then
+    _n=2
+  fi
 
   # ラベルの key は <server_pid>_<pane> なので、$TMUX が空でも解決できるよう確定済みの pid を
   # 第4引数で渡す（これをしないと tmux 外から叩いたときだけ pane-issue が引けず pane_title へ落ちる）。
@@ -262,8 +270,8 @@ while IFS= read -r _p; do
     printf '%-8s %5s %6s  %-20s %s\n' \
       "$_p" "${_ctx:--}" "$(_age "$((NOW - _ts))")" "$(_out "${_model:--}" 60)" "$_label"
   elif [[ "$_n" -gt 1 ]]; then
-    # 曖昧: 最新で潰さず、値を出さない（どれが現役か決められないことを表示で示す）
-    printf '%-8s %5s %6s  %-20s %s\n' "${_p}?" "-" "-" "ambiguous(${_n})" "$_label"
+    # 曖昧: いちばん新しい拍動が同じ時刻で別の session に分かれた。値を出さない（どれが現役か決められない）
+    printf '%-8s %5s %6s  %-20s %s\n' "${_p}?" "-" "-" "ambiguous" "$_label"
   else
     printf '%-8s %5s %6s  %-20s %s\n' "$_p" "-" "-" "-" "$_label"
   fi
