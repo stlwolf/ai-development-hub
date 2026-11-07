@@ -13,6 +13,10 @@ OE_REPORT="$PROJECT_DIR/bin/oe-report"
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
 _TMP_DIR="$(mktemp -d)"
+# #577 PR-3: oe-send・oe-jump・oe-select は lease の記録から宛先を引く。本物の置き場の lease（本物のペインを
+# 指す）を読まないよう、一時ディレクトリへ向け、セッションの lease の環境も外す。
+export OE_LEASE_DIR="${_TMP_DIR}/lease"
+unset OE_LEASE_ID OE_GENERATION CLAUDE_PID CLAUDE_CODE_SESSION_ID 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 export OE_EVENT_DIR="$_TMP_DIR/events"
 export OE_DELEGATE_STATE_DIR="$_TMP_DIR/oe-delegate"

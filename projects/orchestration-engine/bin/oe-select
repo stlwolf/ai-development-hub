@@ -16,6 +16,8 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh"
 
 # 対話入力（番号 read / message read）は端末から直接読む。既定は /dev/tty。
 # OE_SELECT_TTY はテスト用のシーム（自動テストで端末を差し替えるため）。本番では未設定。
@@ -176,13 +178,25 @@ if [[ -z "$MESSAGE" && -z "$KICKOFF" ]]; then
   [[ -n "$MESSAGE" ]] || exit 130
 fi
 
+# 選んだペインのフォアグラウンドのプロセスが lease の binding なら、ペイン番号でなく lease_id で送る
+# （#577 PR-3・DJ-15）。oe-send が送る直前に宛先の本人を確かめ直すので、選んでから送るまでのあいだに
+# ペインの中身が替わっても、別の相手に送らない。lease が無いペインは、いままでどおりペイン番号で送る。
+SEND_TO="$PANE"
+if declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
+  if fg="$(oe_tpi_pane_foreground "$PANE" 2>/dev/null)" \
+     && sel_lease="$(oe_lease_find_by_binding "${fg%%"$_OE_TPI_TAB"*}" "${fg#*"$_OE_TPI_TAB"}" 2>/dev/null)" \
+     && [[ "$(printf '%s\n' "$sel_lease" | grep -c .)" -eq 1 ]]; then
+    SEND_TO="$sel_lease"
+  fi
+fi
+
 # 隣接 oe-send を exec で呼ぶ。passthrough: --no-enter / --kickoff <path>。
 PASS=()
 [[ "$SEND_ENTER" -eq 0 ]] && PASS+=(--no-enter)
 [[ -n "$KICKOFF" ]] && PASS+=(--kickoff "$KICKOFF")
 
 if [[ -n "$MESSAGE" ]]; then
-  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$PANE" "$MESSAGE"
+  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$SEND_TO" "$MESSAGE"
 else
-  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$PANE"
+  exec "${BIN_DIR}/oe-send" ${PASS[@]+"${PASS[@]}"} -- "$SEND_TO"
 fi

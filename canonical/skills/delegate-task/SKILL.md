@@ -29,7 +29,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 | `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / brief を送る汎用入口。宛先はラベル or `%N` |
 | `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
 | `oe-register` | — | 手動起動 pane を登記（`root`=自己 root / `link %N`=相手を自分の下に）。spawn を経ない pane を oe-tree / cockpit に現す |
-| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは oe-send に一本化**（論点E で整理） |
+| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは `oe-send --to-parent` に一本化**（`oe-report` は古い子が残っていないと確かめてから廃止する） |
 
 `oe-delegate` = spawn + `oe-send`（キック）の合成。送信の実体は `oe-send` に集約されている。
 
@@ -214,16 +214,25 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ## 戻し（子 → 親）
 
-delegate は report を内包しないので、**戻しは汎用の `oe-send` で行う**。子に渡っている
-`PARENT_TMUX_PANE`（親ペイン ID）へ送るだけ:
+delegate は report を内包しないので、**戻しは汎用の `oe-send` の `--to-parent` で行う**。宛先は書かない:
 
 ```bash
-"$BIN/oe-send" "$PARENT_TMUX_PANE" "実装完了。PR #150: https://github.com/<owner>/<repo>/pull/150"
-"$BIN/oe-send" --no-enter "$PARENT_TMUX_PANE" "親が読んでから送りたい下書き"
+"$BIN/oe-send" --to-parent "実装完了。PR #150: https://github.com/<owner>/<repo>/pull/150"
+"$BIN/oe-send" --to-parent --no-enter "親が読んでから送りたい下書き"
 ```
 
-`PARENT_TMUX_PANE` が未設定（手動委譲・再アタッチ後など）なら、親ペインを `oe-list` で確認して
-`%N` を直接指定する。
+`--to-parent` の宛先の決め方は、子の環境で2つに分かれる。
+
+- **`OE_LEASE_ID` がある子**（`oe-delegate` が起こした子）: 自分の lease の親の lease へ送る。親の lease の
+  いまの持ち主のペインを引き、そのペインのプロセスが親の lease に記録された本人であることを確かめてから送る。
+  **統括が交代していても、同じ持ち場の後継へ届く。** 本人を確かめられないときは送らずに exit 5 で止まる。
+  そのときは、生きた統括を `oe-tree` で探し、`%N` を明示して送る。
+- **`OE_LEASE_ID` が無い子**（lease の仕組みより前に起こした子・手動委譲）: いままでどおり `PARENT_TMUX_PANE`
+  に送る。この値は起動時に焼き込まれたままで、統括が交代すると前任を指して残る。交代を知らされたら、
+  知らされた `%N` を明示して送る。
+
+明示された宛先（直近の指示や brief の「報告の宛先」）があるときは、そちらが優先する。決め方の正本は
+`doc-flow-guardrail` の委譲固定節「報告の宛先」である。
 
 成果物は番号ではなく URL で戻す。親はこの戻しをそのまま operator への導線に使うので、`#150` だけ
 受け取っても URL を組み立て直せない（`output-format-rule` §5 / §6）。doc は、その時点で開ける絶対パス
@@ -237,9 +246,9 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 
 ### oe-report（legacy）
 
-`oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。delegate された子では
-`PARENT_TMUX_PANE` env から親を解決して一応動くが、**戻しは上記 oe-send に一本化**する方針
-（oe-report 自体の整理＝薄い alias 化／廃止は論点E）。
+`oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。`PARENT_TMUX_PANE` から
+親を引くので、統括が交代すると前任を指す。**戻しは上記 `oe-send --to-parent` に一本化**する。
+`oe-report` は、呼びうる古い子が残っていないと確かめてから廃止する。
 
 ---
 
@@ -331,7 +340,7 @@ plan を書いて止まる委譲子にとって、止まること自体は**正�
 - `projects/orchestration-engine/bin/oe-send` — 既存ペインへの汎用送信
 - `projects/orchestration-engine/bin/oe-list` — 宛先候補の一覧
 - `projects/orchestration-engine/bin/oe-register` — 手動起動 pane の登記（自己 root / 既存 pane の委譲 link・#259）
-- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは oe-send に一本化）
+- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは `oe-send --to-parent` に一本化）
 - `projects/orchestration-engine/lib/delegate-send.sh` — 改行拒否の 1 行 safe-send
 - `projects/orchestration-engine/lib/delegate-registry.sh` — アドレッシング（record/resolve/list/gc）
 - `implementer-contract` スキル — 実装委譲時に kick プロンプトへ組み込む契約定義

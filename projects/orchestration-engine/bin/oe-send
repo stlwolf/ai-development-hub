@@ -2,12 +2,17 @@
 # oe-send — 既存セッション（ペイン）へ 1 行を送る汎用入口
 #
 # usage: oe-send [--brief <path>] [--] <target> [ad-hoc...]
+#        oe-send --to-parent [--brief <path>] [--] [ad-hoc...]
 #
 # 親→子の追加指示、子→親の戻し、関連の薄い側道会話など「既存ペインへの送信」を
 # 一手に担う。payload は delegate-send.sh の oe_send_line で 1 行保証して注入する。
 #
-# <target> は 生のペインID（%N、素通し）か、ラベル（#N / 任意名）。ラベルは
-# delegate-registry.sh が親所有 spawn レジストリ + pane-issue state の union で解決する。
+# <target> は 生のペインID（%N、素通し）・lease_id・ラベル（#N / 任意名）。lease_id とラベルは、
+# lease の記録から引いて、送る前に宛先の本人（ペインのフォアグラウンドのプロセスが lease の binding）を
+# 確かめる（#577 PR-3・DJ-6・DJ-15）。ラベルが lease の記録で引けなければ、移行のあいだだけ
+# delegate-registry.sh の古い引き方（spawn レジストリ + pane-issue state の union）に落とす（Q77）。
+# --to-parent は、子が親へ送る入口である。自分の lease（OE_LEASE_ID）の親の lease へ送るので、統括が
+# 交代していても届く。OE_LEASE_ID が無い子は、いままでどおり PARENT_TMUX_PANE に送る。
 
 set -euo pipefail
 
@@ -16,13 +21,22 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${BIN_DIR}/../lib/delegate-send.sh"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh"
+# shellcheck source=../lib/target-resolve.sh
+source "${BIN_DIR}/../lib/target-resolve.sh"
+OE_TARGET_CALLER="oe-send"
 
 usage() {
   cat >&2 <<'EOF'
 usage: oe-send [--brief <path>] [--] <target> [ad-hoc...]
+       oe-send --to-parent [--brief <path>] [--] [ad-hoc...]
 
-  <target>            送信先。生のペインID（例: %5）か ラベル（#142 / 任意名）。
-                      ラベルは registry で解決（候補は oe-list で確認）
+  <target>            送信先。生のペインID（例: %5）・lease_id・ラベル（#142 / 任意名）。
+                      lease_id とラベルは lease の記録から引き、送る前に宛先の本人を確かめる。
+                      ラベルが lease の記録で引けなければ registry で引く（候補は oe-list で確認）
+  --to-parent         子が親へ送る。自分の lease の親の lease へ送る（統括が交代していても届く）。
+                      OE_LEASE_ID が無い子は PARENT_TMUX_PANE に送る
   ad-hoc...           1 行の追加指示（複数語は空白連結、改行は不可）
   --brief <path>      "<path> を読んで進めて。" を payload 先頭に付ける
   --kickoff <path>    --brief の deprecated alias（後方互換・#255）。新規は --brief を使う
@@ -35,7 +49,8 @@ payload は「--brief のパス指示」＋「ad-hoc テキスト」を 1 行に
 exit: 送信した、または help を表示した→0 / 宛先が無い（生存しない %N・解決できない
       ラベル・曖昧なラベル）→1 / 呼び方の誤り（unknown option・引数の欠落）と環境
       エラー（tmux・jq の不在、改行を含む payload、送信そのものの失敗）→2 /
-      未着の可能性（OE_SEND_SIGNAL_MISS=1 のときだけ）→4。
+      未着の可能性（OE_SEND_SIGNAL_MISS=1 のときだけ）→4 / lease から引いた宛先の本人を
+      確かめられない（送っていない・生のペイン番号で送れる）→5。
       0 は配送の成功を意味しない（help も 0 である）。取り込みの確認は受領印、
       読んだことの確認は oe-ack の層で見る。
 EOF
@@ -43,6 +58,7 @@ EOF
 
 BRIEF=""
 SEND_ENTER=1
+TO_PARENT=0
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     --brief|--kickoff)
@@ -51,15 +67,19 @@ while [[ "${1:-}" == -* ]]; do
       [[ $# -ge 2 ]] || { echo "oe-send: $1 requires a value" >&2; exit 2; }
       BRIEF="$2"; shift 2 ;;
     --no-enter) SEND_ENTER=0; shift ;;
+    --to-parent) TO_PARENT=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     *) echo "oe-send: unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
-TARGET="${1:-}"
-[[ -n "$TARGET" ]] || { echo "oe-send: target is required" >&2; usage; exit 2; }
-shift
+TARGET=""
+if [[ "$TO_PARENT" -eq 0 ]]; then
+  TARGET="${1:-}"
+  [[ -n "$TARGET" ]] || { echo "oe-send: target is required" >&2; usage; exit 2; }
+  shift
+fi
 ADHOC="$*"
 
 # payload 組立。target 解決より先に済ませる。payload の欠落は呼び方の誤りなので、宛先が
@@ -78,8 +98,19 @@ if [[ -n "$ADHOC" ]]; then
 fi
 [[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --brief and/or ad-hoc text)" >&2; usage; exit 2; }
 
-# target 解決（%N は素通し、ラベル #N/名前 は registry の union 解決）
-PANE="$(oe_reg_resolve "$TARGET")" || exit
+# target 解決（%N は素通し、lease_id とラベルは lease の記録から引いて本人を確かめる・#577 PR-3）
+rrc=0
+if [[ "$TO_PARENT" -eq 1 ]]; then
+  oe_target_resolve_parent || rrc=$?
+else
+  oe_target_resolve "$TARGET" || rrc=$?
+fi
+[[ "$rrc" -eq 0 ]] || exit "$rrc"
+PANE="$OE_TARGET_PANE"
+# 活動ログの to に宛先の lease を残す（lease から引いたときだけ・lib/event-bus.sh の message_sent）
+if [[ -n "$OE_TARGET_LEASE" ]]; then
+  export OE_EVENT_TO_LEASE="$OE_TARGET_LEASE" OE_EVENT_TO_PANE="$PANE"
+fi
 
 # brief パスの警告は宛先が決まってから出す。組立の側で出すと、宛先が解決できず送信しない
 # 経路でも「子が自分の workspace で解決するだろう」と言ってしまい、診断が反実仮想になる。
@@ -100,4 +131,8 @@ EOF
   exit "$rc"
 fi
 [[ "$rc" -eq 0 ]] || exit "$rc"
-echo "oe-send: sent to ${PANE}" >&2
+if [[ -n "$OE_TARGET_LEASE" ]]; then
+  echo "oe-send: sent to ${PANE}（lease ${OE_TARGET_LEASE%%:*} generation ${OE_TARGET_LEASE##*:}）" >&2
+else
+  echo "oe-send: sent to ${PANE}" >&2
+fi

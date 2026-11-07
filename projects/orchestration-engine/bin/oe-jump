@@ -6,7 +6,8 @@
 #
 # <target> は tmux ペイン/ラベルを指す単一トークン:
 #   %N         tmux ペイン（素通し）              → tmux switch-client/select-window/select-pane
-#   #N / 名前  ラベル（registry で tmux %N に解決）→ 同上
+#   #N / 名前  ラベル（lease の記録から引き、本人を確かめる。引けなければ registry）→ 同上
+#   lease_id   lease（記録から引き、本人を確かめる・#577 PR-3）→ 同上
 #
 # #188 の identity 分裂（engine=wez 整数 pane_id / delegate=tmux %N）への対応として、
 # oe-jump は **tmux substrate 専用**にする。`oe_reg_resolve` は常に tmux %N を返すため、
@@ -26,6 +27,11 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/delegate-registry.sh
 source "${BIN_DIR}/../lib/delegate-registry.sh"
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh"
+# shellcheck source=../lib/target-resolve.sh
+source "${BIN_DIR}/../lib/target-resolve.sh"
+OE_TARGET_CALLER="oe-jump"
 
 # 記録 target の state（最後の1件のみ・上書き）。テストは env で隔離する。
 if   [ -n "${OE_JUMP_STATE_DIR+x}" ]; then :
@@ -41,7 +47,9 @@ usage: oe-jump [--print|-p] [--] [<target>]
 
   <target>       focus 先（tmux ペイン/ラベル）。単一トークン:
                    %N        tmux ペイン（素通し）
-                   #N / 名前 ラベル（registry で tmux %N に解決。候補は oe-list）
+                   #N / 名前 ラベル（lease の記録から引いて本人を確かめる。引けなければ
+                             registry で解決。候補は oe-list）
+                   lease_id  lease（記録から引いて本人を確かめる）
                  省略時は直近 --record した target を replay（真の 1 アクション）。
   --record       <target> を state file に記録するだけ（focus しない）。通知連携用。
   --print, -p    解決した tmux pane id（%N）を stdout に出して終了（focus しない）
@@ -54,6 +62,7 @@ exit:
   0   focus 成功（--print/--record 時は成功）
   1   ラベル未解決(0件) / 曖昧(複数件) / ペイン無し / focus 失敗 / replay 対象なし
   2   usage エラー / 環境エラー（tmux 不在・接続不可）
+  5   lease から引いた宛先の本人を確かめられない（focus しない・%N なら飛べる）
 EOF
 }
 
@@ -76,13 +85,14 @@ _oe_jump_validate_shape() {
   return 0
 }
 
-# _oe_jump_resolve <token> — token を tmux %N に解決して stdout へ。
-#   shape 検証 → oe_reg_resolve（%N 素通し / #N・名前ラベル → tmux %N）。jump/replay 時のみ呼ぶ。
-#   oe_reg_resolve の rc（0件/曖昧=1, 環境=2）はそのまま伝播。
+# _oe_jump_resolve <token> — token を tmux %N に解決して OE_TARGET_PANE に入れる。
+#   shape 検証 → oe_target_resolve（%N 素通し / lease_id とラベルは lease の記録から引いて本人を確かめる /
+#   ラベルが lease で引けなければ registry・#577 PR-3）。jump/replay 時のみ呼ぶ。
+#   rc（0件/曖昧=1, 環境=2, 本人を確かめられない=5）はそのまま伝播。$( ) で呼ばない（変数が外に残らない）。
 _oe_jump_resolve() {
   local token="$1"
   _oe_jump_validate_shape "$token" || return
-  oe_reg_resolve "$token"
+  oe_target_resolve "$token"
 }
 
 # _oe_jump_tmux <pane> — tmux ペイン %N をクライアントへ寄せて focus する。
@@ -189,7 +199,10 @@ if [[ "$HAVE_ARG" -eq 0 ]]; then
 fi
 
 # --- 解決（tmux %N） ---
-PANE="$(_oe_jump_resolve "$TARGET")" || exit
+jrc=0
+_oe_jump_resolve "$TARGET" || jrc=$?
+[[ "$jrc" -eq 0 ]] || exit "$jrc"
+PANE="$OE_TARGET_PANE"
 
 # --- --print（解決のみ・focus しない） ---
 if [[ "$PRINT_ONLY" -eq 1 ]]; then
