@@ -285,3 +285,8 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
   - 低: `oe-lease bind` と `oe-lease create --root` を直接打ったときに `lease_bound` が残らなかった。`oe-lease` の側で残す形にし、`oe-register` の側の重複を外した。
 - 指摘が無かった点: lease の部分が失敗しても委譲・登記・送信が今までどおり進むこと・producer が遅くならないこと・別のセッションの lease を焼き込まないこと・adopt の重複と server の絞り込み・テストの隔離。
 - 残る確かめ: R2（statusLine が環境を受け継ぐか）と R4（起動から4秒後のフォアグラウンドのプロセスが claude か）は、偽物の道具のテストでは確かめられない。実機の確かめが要る（報告で統括に聞く）。
+
+### I2: Copilot の1ラウンドと、全体のテスト（2026-11-07）
+
+- Copilot の指摘2件をどちらも直して返信した（`06f6cf6`）。1件目は、producer のテストが lease の環境を受け継ぐと従来の出力の確かめが崩れること。I2 で verb を呼ぶテスト9本を隔離したときに、producer のテストを見落としていた。producer は verb ではなく環境変数だけを読むので、「verb を呼ぶテスト」という探し方では引っかからなかった。2件目は、本物の置き場を比べる相手が呼ぶたびに更新されるファイルだったこと。PR-1 の `tests/test_lease.sh` にも同じ形があったので一緒に直した。
+- 全体のテスト（57本・両方の bash・`TMUX` を外した環境）で落ちたのは `test_home_unset`（2件）と `test_oe_confirm`（2件）だけで、master の `d2b5a99` でも同じ4件が落ちることを、同じ環境で回して確かめた。テストのあとも本物の `~/.claude/state/oe-lease/` は作られていない。

@@ -158,7 +158,8 @@ owner の答え（Q69「推測するな計測せよ」）により、resume の�
 
 ### I1〜I6: PR-1〜PR-6（実装の追補の書面で始める）
 
-- I1（PR-1）: draft の PR #580 を作った。テスト・shellcheck・実装SO・Copilot の1ラウンドを終え、owner のマージを待つ。
+- I1（PR-1）: PR #580 は master の `d2b5a99` にマージされた（2026-11-07）。
+- I2（PR-2）: draft の PR #581 を作った。テスト・shellcheck・実装SO・Copilot の1ラウンドを終え、owner のマージを待つ。R2（statusLine が `OE_LEASE_ID` を受け継ぐか）と R4（起動から4秒後のフォアグラウンドのプロセスが claude か）の実機の確かめは、まだしていない。
 
 各 I のあとに、テストと shellcheck のゲート・実装SO・Copilot の1ラウンドを、別の項目として置く（実装の追補の書面で確定する）。
 
