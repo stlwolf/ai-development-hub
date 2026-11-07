@@ -102,6 +102,16 @@ BOARD="$WS/.oe/board.md"; HANDOFF="$WS/.oe/handoff.md"
 mk_board "$BOARD"; mk_handoff "$HANDOFF"
 mk_beat "sid-pred" "%10" 90 60
 export TMUX_PANE="%11"
+# #577 PR-4: take は統括の lease を進めてから席を動かす。前任（%10）と後継（%11）のペインのフォアグラウンドの
+# プロセスを偽の ps と tmux に置く。後継の Bash にある CLAUDE_PID と session_id も偽の値にする。
+# 最初の take が前任の lease を作って進め、以後の take は「lease は既に自分」で飛ばして席の処理へ進む。
+# shellcheck source=fixtures/fake-proc.sh
+. "$SCRIPT_DIR/fixtures/fake-proc.sh"
+fake_proc_setup "$_TMP_DIR/fakeproc"
+fake_proc_add 910 'Sat Nov  7 09:00:00 2026' claude ttys010 910
+fake_proc_add 911 'Sat Nov  7 10:00:00 2026' claude ttys011 911
+fake_pane_add %10 /dev/ttys010; fake_pane_add %11 /dev/ttys011
+export CLAUDE_PID=911 CLAUDE_CODE_SESSION_ID=sid-succ
 
 echo "[1] 席の張替と検算（正常系）"
 out="$("$OE_HANDOFF" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" --reason context_exhaustion 2>&1)" || true

@@ -10,6 +10,7 @@
 #   fake_proc_add <pid> <lstart> <comm> <tty> <tpgid>
 #   fake_proc_del <pid>                           プロセスが終わった形にする
 #   fake_pane_add <pane> <tty>
+#   FAKE_PROC_LOG=<file>                          在れば、偽の ps と tmux が呼ばれた引数を1行ずつ足す（呼ぶ順を見るため）
 #
 # フォアグラウンドのプロセスは、その tty の行のうち pid と tpgid が一致する行である（lib と同じ決まり）。
 
@@ -20,6 +21,7 @@ fake_proc_setup() {
   cat > "$FAKE_PROC_DIR/bin/ps" <<EOF
 #!/usr/bin/env bash
 T="$FAKE_PROC_DIR/ps.table"
+[ -z "\${FAKE_PROC_LOG:-}" ] || printf 'tpi-ps %s\n' "\$*" >> "\$FAKE_PROC_LOG"
 mode=""; pid=""; tty=""
 while [ \$# -gt 0 ]; do
   case "\$1" in -o) mode="\$2"; shift 2 ;; -p) pid="\$2"; shift 2 ;; -t) tty="\$2"; shift 2 ;; *) shift ;; esac
@@ -34,6 +36,7 @@ esac
 EOF
   cat > "$FAKE_PROC_DIR/bin/tmux" <<EOF
 #!/usr/bin/env bash
+[ -z "\${FAKE_PROC_LOG:-}" ] || printf 'tpi-tmux %s\n' "\$*" >> "\$FAKE_PROC_LOG"
 case "\${1:-}" in
   list-panes) cat "$FAKE_PROC_DIR/panes"; exit 0 ;;
 esac
