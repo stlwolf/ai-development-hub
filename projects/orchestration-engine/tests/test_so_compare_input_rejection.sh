@@ -19,6 +19,7 @@ REFUTE="$SCRIPT_DIR/../bin/oe-refute"
 
 _TMP="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
 trap 'rm -rf "$_TMP"' EXIT
+export CODEX_HOME="$_TMP/codex-home"
 
 PASS=0; FAIL=0
 ck()  { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
@@ -92,8 +93,17 @@ echo "[8] 陽性対照: 正当な入力は今までどおり通る"
 STUB="$_TMP/stub"; mkdir -p "$STUB"
 cat > "$STUB/codex" <<'STUBEOF'
 #!/bin/sh
-echo "VERDICT: survived"
-echo "REASON: stub"
+if [ "${1:-}" = --version ]; then echo '0.0.0-stub'; exit 0; fi
+mkdir -p "$CODEX_HOME/sessions"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"00000000-0000-0000-0000-000000000001"}}' > "$CODEX_HOME/sessions/rollout-test-00000000-0000-0000-0000-000000000001.jsonl"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) printf 'VERDICT: survived\nREASON: stub\n' > "$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+echo '{"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}'
+echo '{"type":"turn.completed"}'
 exit 0
 STUBEOF
 chmod +x "$STUB/codex"
@@ -310,7 +320,7 @@ ALLSTUB="$_TMP/allstub"; mkdir -p "$ALLSTUB"
 # 3レーンとも --version で自分を名乗る。下の pc_run が meta の cli_version を見て
 # 「実物の CLI ではなくスタブが答えた」ことを固定するため（gate 4 の cursor の指摘）。
 # shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
-printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\necho "REASON: stub"\nexit 0\n' > "$ALLSTUB/codex"
+cp "$STUB/codex" "$ALLSTUB/codex"
 # shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）
 printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.0.0-stub"; exit 0; fi\necho "VERDICT: survived"\nexit 0\n' > "$ALLSTUB/agent"
 # shellcheck disable=SC2016  # $1 はスタブ側で展開させる（ここでは展開しない）

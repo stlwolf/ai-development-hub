@@ -22,6 +22,7 @@ SO="$SCRIPT_DIR/../../../scripts/so-compare.sh"
 
 _TMP="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
 trap 'rm -rf "$_TMP"' EXIT
+export CODEX_HOME="$_TMP/codex-home"
 
 PASS=0; FAIL=0
 ck()  { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
@@ -36,6 +37,19 @@ for tool in codex claude agent; do
   cat > "$STUB/$tool" <<STUBEOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" > "$ARGS/$tool.args"
+if [[ "$tool" == codex && "\${1:-}" != --version ]]; then
+  mkdir -p "\$CODEX_HOME/sessions"
+  printf '%s\\n' '{"type":"session_meta","payload":{"id":"00000000-0000-0000-0000-000000000001"}}' > "\$CODEX_HOME/sessions/rollout-test-00000000-0000-0000-0000-000000000001.jsonl"
+  while [[ \$# -gt 0 ]]; do
+    case "\$1" in
+      --output-last-message) printf 'ok\\n' > "\$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  echo '{"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}'
+  echo '{"type":"turn.completed"}'
+  exit 0
+fi
 printf 'ok\n'
 exit 0
 STUBEOF
