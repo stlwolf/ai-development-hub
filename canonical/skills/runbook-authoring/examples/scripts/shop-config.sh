@@ -154,7 +154,7 @@ changed_keys() {
   printf '%s' "${keys:-無い}"
 }
 
-# 前提の確かめ。C1〜C3 が外れたら 2、C4 が外れたら 1 を返す。何も変えない
+# 前提を確かめる。C1〜C3 が外れたら 2、C4 が外れたら 1 を返す。何も変えない
 check_prereq() {
   local worst=0 bad
   if have_tools; then
