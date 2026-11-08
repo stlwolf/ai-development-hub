@@ -3,7 +3,7 @@ id: "01M6XCD1P0SVJZYMA56Y5M6CTC"
 title: "#355 統括が応答しないときの復帰を verb 1本に畳む"
 date: 2026-11-08
 type: plan
-status: in-development   # ゲート3 は 2026-11-08 に承認（plan @ 2d32816）。H1 は補正
+status: stable   # 実装完了（2026-11-08・I1〜I6・PR #597）。ゲート3 承認は 2d32816 の版（2026-11-08・owner が Q92〜Q97 をすべて推奨どおり。Q94 に補足）。承認のあとの直し H1〜H3（どれも補正）は「ゲート3 のあとの変更」節
 so:
   design: weak
   impl: weak
@@ -305,7 +305,7 @@ verb を新しく作る前提を外して、ほかの形を1度並べた。
 
 ### I5: クラッシュ drill（Q5 の答えの対象で）と、達成を見る数の計測。結果を episode に書く（完了・3回目の試行で通った）
 
-### I6: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close はしない）
+### I6: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close はしない）（完了）
 
 ## GATE 3 の問い
 
