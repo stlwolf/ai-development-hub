@@ -142,3 +142,7 @@ S1-2 の昇格の印（スキルが「確かめ」と「確認」を別の意味
 ### 形式メモ
 
 チャネルの骨格で、SO で撤回した判断と数え違いを拾えた。皮（KPT・YWT）は使っていない。摩擦は小さく、直しの対象が多い単位でも、直し方の判断を S1-2 の1節にまとめたので closure は pointer で足りた。
+
+### 外部チェック（Step 4）
+
+`so-compare --codex-only`（`SO_TIMEOUT=480`）で、closure の4観点（選択的な省略・follow-up の行き先・証拠の置き場・他の文書への書き戻し）を確かめた。Codex（`gpt-6.1-sol`・出所は config）は38秒・リトライなしで、15:16 に返り、4観点とも「問題なし」だった。依頼文と出力は master の `tmp/585-renyo-noun-skills/so-closure-r1-prompt.txt` と `tmp/585-renyo-noun-skills/so-closure-r1/`（gitignored）にある。補足として、報告のファイル（`.oe/report-585.md`）はこの時点でまだ無く、統括に届いたかは確かめられないと書かれていた。報告は closure のあとに書いて送る順なので、指摘ではなく順序の確認として扱う。
