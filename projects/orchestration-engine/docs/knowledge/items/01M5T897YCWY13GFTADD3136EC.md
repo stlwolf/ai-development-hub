@@ -13,6 +13,10 @@ observations:
     ref: "#545"
     state: followed
     note: "経緯を渡さない場面の当てを、道具をすべて外した claude -p --tools '' で動かし、本物の oe-send や Artifact の道具に届く経路を起点ごと無くした。場面のペインの番号も存在しない番号にした"
+  - date: 2026-11-08
+    ref: "#355"
+    state: followed
+    note: "oe-recover のテストで、偽の bin に足がかりの oe-tree ごと置き、~/bin を PATH から外し、state の置き場を一時ディレクトリに向け、本物の置き場が書かれていないことを最後に確かめた（tests/test_oe_recover.sh）。ただし Bash 組み込みの kill -0 は PATH の偽物を通らず、実装SO が見つけた。差し替えの起点に組み込みのコマンドも入る"
 exclusions:
   - "差し替える道具を、手順が名前で直接呼ぶだけで、間接の引き方を持たない場合"
   - "確かめの場面を、本物の道具が入っていない隔離された環境（別のコンテナなど）で動かす場合"

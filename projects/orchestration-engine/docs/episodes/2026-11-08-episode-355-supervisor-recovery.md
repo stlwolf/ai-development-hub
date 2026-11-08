@@ -3,7 +3,7 @@ id: "01M6XCD1N8KVH8DYNCPG5Z4F5W"
 title: "#355 統括が応答しないときの復帰を verb 1本に畳む（設計）"
 date: 2026-11-08
 type: episode
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/355"
@@ -20,7 +20,38 @@ related:
   - type: reference
     ref: "projects/orchestration-engine/docs/plans/2026-11-08-plan-355-supervisor-recovery.md"
     reason: "この単位の plan"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-11-08-decision-355-supervisor-recovery.md"
+    reason: "この単位から昇格した decision（D1〜D4）"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/knowledge/items/01M6XN85N408CMMERA12QR1C3F.md"
+    reason: "この単位から収穫した negative knowledge（非対話の wrapper の中で起こした claude は、前面のプロセスで本人を確かめられない）"
 tags: [orchestration, supervisor, recovery, lease, design]
+promotion:
+  - subject: "同じ会話の復帰では generation を進めず binding だけを張り替える"
+    verdict: required
+    ref: ["本文: 確定版の「generation を進めて席を取る」は、いまの lib の決まりと合わない", "本文: ゲート3（2026-11-08）"]
+  - subject: "復帰の派生の工程は前の情報でなく lease の記録といまの観測から作り直す"
+    verdict: required
+    ref: "本文: 一番大きく動いたところ: 派生の工程を「前の情報で直す」から「lease からまるごと作り直す」に変えた"
+  - subject: "送れなかった送信は delivery_held に残し、要照合の履歴として出す"
+    verdict: required
+    ref: ["本文: `delivery_held` の主張を弱めた", "本文: GATE 4: 実装SO（2026-11-08）"]
+  - subject: "前の claude が生きていれば verb は閉じず、閉じるのは owner である"
+    verdict: required
+    ref: "本文: ゲート3（2026-11-08）"
+  - subject: "verb の名前を oe-recover にする"
+    verdict: not-required
+    ref: "本文: verb の名前"
+  - subject: "oe-vitals の death の重複抑止のキーを lease と binding の組にする"
+    verdict: not-required
+    ref: ["本文: `oe-vitals` の二重通知のキーに穴がある", "本文: I3: `delivery_held` と `oe-vitals`（2026-11-08）"]
+  - subject: "止まったときの案内に状況と次にやることを出す（H1）"
+    verdict: not-required
+    ref: "本文: ゲート3（2026-11-08）"
+  - subject: "非対話の wrapper の中で起こした claude は前面のプロセスで本人を確かめられない"
+    verdict: required
+    ref: "本文: drill の1回目: seed が rc 6 で黙って止まった（2026-11-08）"
 ---
 
 # #355 統括が応答しないときの復帰を verb 1本に畳む（設計）
@@ -212,3 +243,68 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - 1回目: `up` が非対話の wrapper の中で claude を起こしていて、前面のプロセスが bash になり seed が止まった（上の節）。
 - 2回目: hint を打ったペインと resume を打ったペインが別で、drill の環境（PATH と置き場）が resume した会話に渡らなかった（上の節）。
 - 3回目の前: resume の1行を手で打ち直したときに session_id の末尾1文字が欠け、「no session match」になった。hint の1行はコピーして打つ前提で、手で打ち直すと誤りうる。
+
+## closure（2026-11-08・PR #597 の Copilot のレビューの前に書き、レビューのあとに足す）
+
+tier は heavy である（設計SO と実装SO を明示して起動した・撤回があった・選択肢を比べて棄却した・昇格がある）。この節は本文を指すだけで、本文の再掲はしない。
+
+### closure gate
+
+- Context: `本文: なぜこの作業が始まったか`
+- 次の消費者: #577 PR-6（移行の片付け）を担う子と統括。この drill が PR-6 の条件で、registry を作り直す工程（DJ-3 の 6-2）は PR-6 のあとに要らなくなる。次に復帰の流れを触る人（報告の受け箱・`SessionStart` hook・サスペンドと resume）も読む。
+- status: stable。達成度は「達成」（受入の4つ: 確定版の各項目・テスト・クラッシュ drill・達成を見る数）。ただし owner の許可の数は未確認（`本文: 達成を見る数: 復帰1回に人が打つ操作の回数`）。
+- evidence anchor: SO の依頼文と回答は hub の作業層 `tmp/355-supervisor-recovery/` にあり、git の対象外である。要点（判定・指摘の件数・採否）は plan の「設計SO」の表と `本文: GATE 4: 実装SO（2026-11-08）` に写してある。drill の数値（pid・lease_id・event）は `本文: I5: クラッシュ drill の結果（2026-11-08 22:15 JST・3回目の試行で通った）` に写してある。
+- SO 証跡: 設計SO `本文: P2: 設計SO（2026-11-08）`・実装SO `本文: GATE 4: 実装SO（2026-11-08）`。
+- 観測の書き戻し: brief で注入された negative knowledge は `01M5T897YCWY13GFTADD3136EC` の1件で、`followed`（ref `#355`）を1件書き戻した。根拠は `tests/test_oe_recover.sh` の足場（偽の bin に足がかりの `oe-tree`・`~/bin` を外す・置き場を一時ディレクトリ・本物の置き場を見る）で、Bash 組み込みの `kill -0` が偽物を通らない抜けを実装SO が見つけたことも注記した（`本文: GATE 4: 実装SO（2026-11-08）`）。
+- 認識合わせの抜け: 確定版に無かった要件は2つ見つかった。どちらも見つけたその場で本文に書いた。1つは「generation を進める」が lib の決まりと合わないこと（`本文: 確定版の「generation を進めて席を取る」は、いまの lib の決まりと合わない`・ゲート3 で owner が確定版の書き方の誤りと認めた）。もう1つは、resume した統括が `oe-recover` を verb 解決規約で引く必要があること（`本文: drill の2回目: resume した統括で oe-recover が exit 127（2026-11-08 22:10 ごろ）`）。後者は hub の文脈の置き場（スキル）に入れた。どちらも `issue-intake` の固定の問いに足す種類ではない。
+
+### 事実・失敗
+
+- 確定版の「generation を進める」が lib の決まりと合わなかった: `本文: 確定版の「generation を進めて席を取る」は、いまの lib の決まりと合わない`
+- 最初の派生の工程の案（前の registry を手がかりに `oe-register link`）は、設計SO の指摘で撤回した: `本文: 一番大きく動いたところ: 派生の工程を「前の情報で直す」から「lease からまるごと作り直す」に変えた`
+- schema を JSON として書き直して差分が膨らみ、元に戻した: ``本文: I2: verb `oe-recover`（2026-11-08）``
+- テストの偽物の不足が2つ（偽の tmux の書式・偽の date の仕掛けの位置）: ``本文: I2: verb `oe-recover`（2026-11-08）``
+- 実装SO の指摘8件（高1）: `本文: GATE 4: 実装SO（2026-11-08）`
+- drill の1回目（wrapper の中の claude）と2回目（hint と resume が別のペイン）と、3回目の前の session_id の打ち間違い: `本文: drill の1回目: seed が rc 6 で黙って止まった（2026-11-08）`・`本文: drill の2回目: resume した統括で oe-recover が exit 127（2026-11-08 22:10 ごろ）`・`本文: drill の手順の側で分かったこと（次に回す人のため）`
+
+### 決定と根拠
+
+- 昇格した decision: `projects/orchestration-engine/docs/decisions/2026-11-08-decision-355-supervisor-recovery.md`（D1〜D4）。棄却した案と理由は decision と plan の DJ が持つ。
+
+### 昇格の判定（frontmatter の `promotion` と1対1）
+
+- 同じ会話の復帰では generation を進めず binding だけを張り替える: required → decision の D1 に入れた（この PR）。複数の解釈が実際にあり（確定版が逆を書いた）、覆すには generation の意味の議論が要り、新しく入る人も同じ分岐に立つ。
+- 復帰の派生の工程は前の情報でなく lease の記録といまの観測から作り直す: required → decision の D2（この PR）。最初の案が実際にあり、棄却の理由は実物の確認だけでは復元できない。
+- 送れなかった送信は delivery_held に残し、要照合の履歴として出す: required → decision の D3（この PR）。decision #577 の D15 が申し送った判断で、受け箱の案との比較が残る。
+- 前の claude が生きていれば verb は閉じず、閉じるのは owner である: required → decision の D4（この PR）。自動で閉じる案との比較で、価値判断（作業の途中のプロセスを守る）を含む。
+- verb の名前を oe-recover にする: not-required。理由（seat を使わない）は decision #577 の D16 が持ち、名前は `bin/README.md` を読めば正しく使える（1段目で外れる）。
+- oe-vitals の death の重複抑止のキーを lease と binding の組にする: not-required。理由はコードの注記（`bin/oe-vitals` のキーの直前）にあり、正本だけを見て正しく使える（1段目で外れる）。
+- 止まったときの案内に状況と次にやることを出す（H1）: not-required。owner の要件で、手順は `bin/README.md` とスキル ⑤ にあり、覆すのに議論は要らない。
+- 非対話の wrapper の中で起こした claude は前面のプロセスで本人を確かめられない: required → negative knowledge として収穫した（`projects/orchestration-engine/docs/knowledge/items/01M6XN85N408CMMERA12QR1C3F.md`・この PR）。decision #577 の D6 の前提に足すかは、#577 の仕組みについての判断なので、この PR では入れない（下の follow-up）。
+
+### 蒸留シグナル
+
+- decision: 上の D1〜D4（入れた）。knowledge store: 1件（入れた）。skill: `doc-flow-guardrail` ⑤（入れた・I4）。rule: なし。
+
+### 残課題と行き先
+
+- decision #577 の D6 の帰結に「前面のプロセスで本人を確かめるのは、claude が前面のプロセスグループの長であることが前提」を足すか: 行き先は統括（#577 の仕組みの判断なので、決めるのは #577 の側の担当）。報告に書く。knowledge item は収穫済みなので、教訓そのものは store にある。
+- #577 PR-6 の条件（この drill）が満たされた: 行き先は統括（PR-6 は別の子が行う）。報告に書く。
+- 別の会話が死んだ持ち場を引き取る口・報告の受け箱・`SessionStart` hook の自動の復帰・サスペンドと resume に近い形: 行き先は decision の「決めていないこと」と issue #355 の範囲外の記録。issue にするかは owner と統括が決める（報告に書く）。
+- master から残っている検査の失敗（`bin/oe-send` の SC2034・`tests/test_handoff_take.sh` の SC2329・`tests/test_home_unset.sh` の helper の数え方）: 行き先は統括（issue にするかの判断）。この PR では直さない。報告に書く。
+- drill の hint の1行に drill 用の前置きを付けるか: 追わない（理由は `本文: drill の2回目: resume した統括で oe-recover が exit 127（2026-11-08 22:10 ごろ）`）。
+- owner の Bash の許可の数: 確かめられなかった。追わない（目標の中身は「統括の手作業を0にする」で、許可の数はそれに効かない）。
+
+### Step 4（外部チェック）
+
+PR の Copilot のレビューのあとに、`so-compare` で closure の focused check を1回入れる（下に結果を足す）。
+
+### 形式メモ
+
+- 拾えたもの: 撤回（派生の工程・schema の書き直し）と、drill の3回の失敗。拾えなかったもの: owner の許可の数。皮（KPT/YWT）は使っていない。摩擦: SO の回答が作業層にしか無いので、要点を本文に写す手間が要った。
+
+
+## I6: #576 のセッション名を hint に足した（2026-11-08）
+
+- #576（統括のセッション名）が master `0433e18` に入ったと統括から知らせが来た。`oe-recover hint` が、セッション名の記録（hook との約束の形）を読むだけで引き、名前があれば `claude -r '<名前>'` の1行も出すようにした。一覧から探す道（`claude -r cockpit`・↓・Ctrl+A）も出す。plan の補正 H3 として申告する。
+- このブランチは `df16c60` から切ったので #576 のコードを持たないが、名前の記録の形は hook との約束なので、lib を使わずに記録の形だけを読んだ。master との衝突は無い（`git merge-tree` で確かめた）。

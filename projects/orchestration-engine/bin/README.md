@@ -283,7 +283,7 @@ oe-recover [-w <workspace>] [--board <path>] [--lease <lease_id> [--owner-confir
 復帰の手順（人が打つのは 1〜3）:
 
 1. owner が「統括が応答しない」に気づく（`oe-vitals` の death の知らせ・`oe-tree --lease` の `gone` など）。
-2. owner が普通のシェルで `oe-recover hint -w <workspace>` を打つ。binding のプロセスが生きていない統括の lease について、`cd <workspace> && OE_LEASE_ID=<lease_id> OE_GENERATION=<N> claude --resume <session_id>` の1行が出る。tmux ごと再起動したときは `--all` を付け、子の resume のコマンドも出す。
+2. owner が普通のシェルで `oe-recover hint -w <workspace>` を打つ。binding のプロセスが生きていない統括の lease について、`cd <workspace> && OE_LEASE_ID=<lease_id> OE_GENERATION=<N> claude --resume <session_id>` の1行が出る。tmux ごと再起動したときは `--all` を付け、子の resume のコマンドも出す。統括の会話にセッション名（`cockpit <リポジトリ名> gen<代>`・#576）が付いていれば、`claude -r '<名前>'` で入る1行も出る。hint を打たずに一覧から探すなら、`claude -r cockpit` を打ち、一覧に移って（↓）Ctrl+A ですべてのセッションを出す。
 3. owner が新しいペイン（落ち方によっては元のペイン）でその1行を打ち、resume した会話に「復帰して」と頼む。
 4. 統括が `oe-recover --board <board のパス>` を打つ。済んだら、出た一覧（送れなかった送信の履歴・報告のファイル・古い子）を読み、判断ボードと引き継ぎの文書を読み直して作業に戻る。
 5. 子も落ちていれば、子ごとに 2〜4 を繰り返す（子では `--board` は要らない）。

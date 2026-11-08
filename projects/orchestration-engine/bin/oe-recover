@@ -72,6 +72,17 @@ _mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 # ============================================================================
 # hint: resume の前に打つ。読むだけ。
 # ============================================================================
+# セッション名（#576）の記録から、その会話の名前を引く。記録の形は hook との約束（canonical/hooks/README.md の
+# session-name.sh の節）: ~/.claude/state/session-title/<session_id を英数字以外 _ に直したもの>.json の name。
+# 無ければ空を返す（名前は resume の一覧で見分けるための手がかりで、無くても復帰はできる）。
+_title_of() {
+  local sid="$1" dir key
+  dir="${OE_SESSION_TITLE_DIR:-${HOME:+${HOME}/.claude/state/session-title}}"
+  [ -n "$dir" ] && [ -n "$sid" ] || return 0
+  key="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_')"
+  jq -r 'select(type=="object") | (.name // "") | select(type=="string") | gsub("[[:cntrl:]]"; "")' "${dir}/${key}.json" 2>/dev/null | head -1
+}
+
 cmd_hint() {
   local ws="$1" all="$2" wsr f rows lid kind label gen bpid bst sid lws st n=0 sups=" "
   wsr="$(_realdir "$ws")" || { err "workspace が見つかりません: ${ws}"; exit 2; }
@@ -105,6 +116,11 @@ cmd_hint() {
         if [ -n "$sid" ]; then
           printf '  次にやること: 新しいペインで次の1行を打ち、resume した会話に「復帰して」と頼みます（会話は oe-recover を打ちます）。\n'
           printf '    cd %q && OE_LEASE_ID=%s OE_GENERATION=%s claude --resume %s\n' "$lws" "$lid" "$gen" "$sid"
+          tname="$(_title_of "$sid")"
+          if [ -n "$tname" ]; then
+            case "$tname" in *"'"*) tq="$(printf '%q' "$tname")" ;; *) tq="'${tname}'" ;; esac
+            printf '  名前で入るなら（上の1行の環境変数は付かないが、session_id の照合で lease は決まる）: cd %q && claude -r %s\n' "$lws" "$tq"
+          fi
         else
           printf '  次にやること: session_id が記録に無いので、claude --resume の一覧から会話を選びます。resume したあと oe-recover --lease %s を打ちます（統括なら owner が確かめて --owner-confirmed を付けます）。\n' "$lid"
         fi ;;
@@ -136,6 +152,7 @@ cmd_hint() {
   if [ "$n" -eq 0 ]; then
     printf '\nこの workspace の開いた統括の lease はありません。\n'
   fi
+  printf '\n一覧から探すなら: claude -r cockpit を打ち、一覧に移って（↓）すべてのセッションを出す（Ctrl+A）。統括の会話には「cockpit <リポジトリ名> gen<代>」の名前が付いている（#576）。\n'
   exit 0
 }
 

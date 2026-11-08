@@ -306,6 +306,13 @@ ckc "--all で子を出す" "$OUT" "#9 child"
 ckc "--all で孫を出す" "$OUT" "#10 grand"
 ckc "生きている子には復帰は要らないと言う" "$OUT" "復帰は要りません"
 ck "何も書いていない" "$SNAP" "$(find "$_TMP_DIR/case-hint" -type f -exec shasum {} + | sort)"
+nck "セッション名の記録が無ければ名前の1行は出さない" "$OUT" "claude -r 'cockpit"
+ckc "一覧から探す道を出す（#576）" "$OUT" "claude -r cockpit"
+export OE_SESSION_TITLE_DIR="$_TMP_DIR/case-hint/title"; mkdir -p "$OE_SESSION_TITLE_DIR"
+jq -cn '{format:1, request_id:"x:1", name:"cockpit ws gen23", requested_at:"2026-11-08T00:00:00Z"}' > "$OE_SESSION_TITLE_DIR/sid_sup.json"
+run "$VERB" hint -w "$WS"
+ckc "セッション名の記録があれば名前で入る1行も出す（#576）" "$OUT" "claude -r 'cockpit ws gen23'"
+unset OE_SESSION_TITLE_DIR
 
 echo "=== T-11 途中で binding がほかに移る ==="
 setup lost
