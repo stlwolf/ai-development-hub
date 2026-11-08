@@ -35,7 +35,7 @@ tags: [skill, japanese, harness]
 
 ### S1-1: 対象を数えた結果（2026-11-08 15:09 頃）
 
-brief の grep（`grep -rnE 'の(確かめ|戻し|直し|引き取り|比べ|書き直し)([^方]|$)' canonical/`）を `ed64889` で打ち直した。当たったのは 26 行で、1行に2か所あるものがあるので 29 か所である。
+brief の grep（`grep -rnE 'の(確かめ|戻し|直し|引き取り|比べ|書き直し)([^方]|$)' canonical/`）を `ed64889` で打ち直した。当たったのは 26 行である。
 
 - 直さないもの（2行）: `canonical/rules/output-format-rule.md:33` と `canonical/output-styles/readable-conversation.md:27`。どちらも規則の文自身が引用の中で示す例である。
 - 直すもの（24行・27か所・11ファイル）: issue の表の10ファイルに `canonical/skills/orchestration-toolkit/SKILL.md:13` を足したもの。統括の数え直しの 25 か所との差は、1行に2か所ある行（`implementer-contract/SKILL.md:160`・`html-one-pager/SKILL.md:326`）を別に数えたためで、対象の行は同じである。
@@ -57,7 +57,7 @@ commit はスキルごとに固定した（CATALOG は1つの commit にした�
 ### S1-3: 直したあとの結果（2026-11-08 15:10）
 
 - brief の grep を `canonical/` に当てると、残るのは S1-1 の「直さないもの」の2行だけである。
-- 「の」の前に英字・数字・記号が来る形（#582 の episode の follow-up 6）も `[A-Za-z0-9`)）] ?の(...)` で探し、`canonical/skills` と `CATALOG.md` に0件だった。
+- 「の」の前に英字・数字・記号が来る形（#582 の episode の follow-up 6）も `` [A-Za-z0-9`)）] ?の(...) `` で探し、`canonical/skills` と `CATALOG.md` に0件だった。
 - `python3 canonical/skills/html-one-pager/tests/test_build.py`: 485 件 OK。
 - `python3 canonical/skills/runbook-authoring/tests/test_check_runbook.py`: 95 件 OK。
 - `shellcheck canonical/skills/runbook-authoring/examples/scripts/shop-config.sh`: 指摘なし。
