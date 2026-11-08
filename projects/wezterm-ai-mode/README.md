@@ -4,10 +4,18 @@ WezTerm の **Human Mode（tmux 維持）** と **AI Mode（`wezterm cli` 上乗
 
 ## ステータス
 
-**Phase 1 完了** — `wez discover` + `wez pane` (list/split/send/capture/kill) + `wez notify` が動作し、Cursor / Claude Code / Codex CLI の3ツールで7ステップ統合フロー（discover → pane list → split → send → capture → notify → kill）の E2E 検証を完了。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) で Phase 2 以降の追加機能を予定。
+**Phase 1 完了** — `wez discover` + `wez pane` (list/split/send/capture/kill) + `wez notify` が動作し、Cursor / Claude Code / Codex CLI の3ツールで7ステップ統合フロー（discover → pane list → split → send → capture → notify → kill）の E2E 検証を完了。
+
+その後に足したもの:
+
+- **toast 通知の開通**（#86）: dotfiles の `.wezterm.lua` に Lua ハンドラを統合し、`wez notify` の user-var からデスクトップ通知が出ることを確認した（[VERIFICATION_MATRIX.md](docs/VERIFICATION_MATRIX.md) の A-1-4・[episode](docs/episodes/2026-06-16-phase2-dotfiles-lua-integration.md)）
+- **`wez pane activate`**: split のあとに元のペインへフォーカスを戻す
+- **`wez layout`**: preset（`lib/layouts/*.json`）から盤面を構築する（下の CLI リファレンス）
+
+[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) は close 済み。`wez agent`（Epic の Phase 3 の構想・中間層のリッチ化）は実装していない。
 
 **既知制約**:
-- capture の出力に tmux statusbar / prompt 装飾が混入する。`wez pane capture --raw` は ANSI escape を保持するオプション（CLI リファレンス参照）であり、装飾除去ではない。マーカー方式で回避可能。装飾を落とすフィルタやオーケストレータ向けの専用オプションは Phase 2 で検討。
+- capture の出力に tmux statusbar / prompt 装飾が混入する。`wez pane capture --raw` は ANSI escape を保持するオプション（CLI リファレンス参照）であり、装飾除去ではない。マーカー方式で回避可能。装飾を落とすフィルタやオーケストレータ向けの専用オプションは未実装。
 - Cursor / Codex CLI のサンドボックス環境では `required_permissions: ["all"]` が必要（WezTerm の Unix ソケットへのアクセス制限）
 
 ## クイックスタート
@@ -302,7 +310,7 @@ Options:
 - **Primary**: `wezterm cli list` から `tty_name` を取得し、TTY デバイスに OSC を直接書き込み。history 汚染なし、プロンプト状態非依存
 - **Fallback**: `tty_name` が利用不可の場合、`printf` コマンド文字列を `send-text --no-paste` で送信。history にコマンドが残る
 
-**toast 通知の表示**: Phase 1 では CLI（user-var 送信）のみ。デスクトップ通知を表示するには `.wezterm.lua` に Lua イベントハンドラが必要（Phase 2、ADR-006）。
+**toast 通知の表示**: `wez notify` が送るのは user-var だけである。デスクトップ通知を表示するには `.wezterm.lua` に Lua イベントハンドラが必要（ADR-006）。ハンドラは dotfiles 側に統合済みで（#86）、toast の表示まで確認している。
 
 **JSON 出力スキーマ** (`--json`):
 
