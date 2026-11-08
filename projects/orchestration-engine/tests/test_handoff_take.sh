@@ -523,6 +523,35 @@ ck "宣言は後継を指す"     "%11" "$(oe_seat_resolve "$NL")"
 ck "行数が変わらない"     "$nl_lines" "$(awk 'END { print NR }' "$NL")"
 ckc "最後の行が残る"      "$(tail -n1 "$NL")" "本文は触られてはならない。"
 
+echo "[37] 復帰の註（#355）は交代の註と書き分け、retire が閉じる相手と読まない"
+RC="$_TMP_DIR/recover.md"; mk_board "$RC"
+set +e
+oe_seat_rewrite "$RC" "%11" 15 "2026-11-08" "%10" "%10" recover; rc37=$?
+set -e
+rcline="$(grep -m1 -- '現統括:' "$RC")"
+ck  "張替は 0 で終わる"        "0"   "$rc37"
+ck  "宣言は復帰したペインを指す" "%11" "$(oe_seat_resolve "$RC")"
+ckc "復帰の註を書く"            "$rcline" "前のペイン \`%10\` は応答なし・復帰で張り替え"
+ckc "過去の記録だと分かる印がある" "$rcline" "これより後ろは前のペインまでの記録である"
+nck "交代の註を書かない"        "$rcline" "退任申告済み"
+# retire は「前任 `%N`」の形の最初の一致を閉じる相手として読む（bin/oe-handoff の cmd_retire）。
+# shellcheck disable=SC2016  # backtick は board の Markdown 記法
+rc_pred="$(printf '%s' "$rcline" | grep -oE '前任 `%[0-9]+`' | grep -oE '%[0-9]+' | head -1)" || rc_pred=""
+if [ "$rc_pred" = "%10" ]; then
+  echo "  FAIL: retire が復帰の註の前のペインを閉じる相手と読む"; FAIL=$((FAIL+1))
+else
+  echo "  PASS: retire が復帰の註の前のペインを閉じる相手と読まない"; PASS=$((PASS+1))
+fi
+KD="$_TMP_DIR/kind.md"; mk_board "$KD"; kd_before="$(cat "$KD")"
+set +e
+oe_seat_rewrite "$KD" "%11" 15 "2026-11-08" "%10" "%10" other; rc38=$?
+set -e
+ck "註の種類が handoff・recover でなければ 2" "2" "$rc38"
+ck "board を書き換えない"                     "$kd_before" "$(cat "$KD")"
+HD="$_TMP_DIR/handoff-explicit.md"; mk_board "$HD"
+oe_seat_rewrite "$HD" "%11" 15 "2026-11-08" "%10" "%10" handoff >/dev/null 2>&1 || true
+ckc "handoff を明示すると、いままでの註を書く" "$(grep -m1 -- '現統括:' "$HD")" "前任 \`%10\` は退任申告済み・停止待ち"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

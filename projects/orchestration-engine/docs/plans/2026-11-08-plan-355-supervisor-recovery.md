@@ -290,7 +290,7 @@ verb を新しく作る前提を外して、ほかの形を1度並べた。
 
 ### GATE 3: owner の plan 承認（承認の記録 `.oe/decision-355-gate3.md` が届いてから I に進む）
 
-### I1: lib の直し（`oe_lease_claim` の `rebinds` と lease の schema・`oe_seat_rewrite` の註の種類）と、既存のテストが通ることの確認
+### I1: lib の直し（`oe_lease_claim` の `rebinds` と lease の schema・`oe_seat_rewrite` の註の種類）と、既存のテストが通ることの確認（完了）
 
 ### I2: verb `oe-recover`（DJ-1〜DJ-6・DJ-9・DJ-11）とテスト T-1〜T-8・T-11〜T-13
 

@@ -16,7 +16,11 @@
 #   ~/.claude/state/oe-lease/<lease_id>.json
 #   { format, lease_id, kind, label, workspace, parent_lease_id, state, created_at, closed_at, epoch,
 #     current_generation, generations: [ { generation, state, started_at, retired_at, successor,
-#                                          session_ids: [...], binding: { pid, started, comm, bound_at } | null } ] }
+#                                          session_ids: [...], binding: { pid, started, comm, bound_at } | null,
+#                                          rebinds: [ { pid, started, comm, bound_at, replaced_at } ]（任意） } ] }
+#   rebinds は、同じ generation の中で binding を別のプロセスに張り替えたときに、張り替える前の binding を
+#   張り替えと同じ1回の書き込みで足していく並びである（#355・復帰の verb が、張り替えたあとに止まっても
+#   前の binding を引けるようにするため）。張り替えが無ければ項目ごと無い。
 #   型は schemas/oe-lease.schema.json、検査は scripts/validate-lease.sh。
 #
 # 書き込みの決まり（DJ-5・owner の答え Q72）:
@@ -184,7 +188,8 @@ oe_lease_bind() {
                 --arg st "$started" --arg comm "$comm" --arg now "$now" '
               .epoch += 1
               | .generations |= map(if .generation == $g
-                  then .binding = { pid: $pid, started: $st, comm: $comm, bound_at: $now } else . end)')" || rc=2
+                  then (if .binding != null then .rebinds = ((.rebinds // []) + [.binding + { replaced_at: $now }]) else . end)
+                       | .binding = { pid: $pid, started: $st, comm: $comm, bound_at: $now } else . end)')" || rc=2
           fi
         fi
       fi
@@ -242,6 +247,7 @@ oe_lease_register_session() {
 #   binding の張り替え（oe_lease_bind と同じ決まり）と session_id の登録（oe_lease_register_session と同じ決まり）を、
 #   すべての lease に共通のロック → lease のロックの中で確かめてから、1回の書き込みで行う。session_id がほかの
 #   開いた lease か、同じ lease の別の generation にあれば、binding も変えずに 8 で止まる（実装SO の指摘）。
+#   別のプロセスへ張り替えるときは、張り替える前の binding を同じ書き込みで rebinds に足す（#355）。
 oe_lease_claim() {
   local id="${1:-}" expect="${2:-}" pid="${3:-}" started="${4:-}" comm="${5:-}" sid="${6:-}" file glock lock rc=0 cur gen old_pid old_started f other self=0 now
   _oe_lease_valid_id "$id" || return 2
@@ -288,7 +294,9 @@ oe_lease_claim() {
         --arg comm "$comm" --arg now "$now" --arg s "$sid" --argjson self "$self" '
       (if $self == 1 then . else .epoch += 1 end)
       | .generations |= map(if .generation == $g then
-          (if $self == 1 then . else .binding = { pid: $pid, started: $st, comm: $comm, bound_at: $now } end)
+          (if $self == 1 then .
+           else (if .binding != null then .rebinds = ((.rebinds // []) + [.binding + { replaced_at: $now }]) else . end)
+                | .binding = { pid: $pid, started: $st, comm: $comm, bound_at: $now } end)
           | (if ((.session_ids // []) | index($s)) then . else .session_ids += [$s] end)
         else . end)')" || rc=2
   fi

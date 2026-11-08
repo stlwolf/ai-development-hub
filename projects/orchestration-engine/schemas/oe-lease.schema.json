@@ -32,6 +32,22 @@
           "retired_at": { "type": "string" },
           "successor": { "type": ["integer", "null"] },
           "session_ids": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }, "uniqueItems": true, "description": "この generation の会話の session_id。登録するのは本人の verb だけ（DJ-18）。開いた lease のあいだで重ならない" },
+          "rebinds": {
+            "type": "array",
+            "description": "#355: 同じ generation の中で binding を別のプロセスに張り替えたとき、張り替える前の binding を張り替えと同じ1回の書き込みで足していく並び（古い順）。張り替えが無ければ項目ごと無い",
+            "items": {
+              "type": "object",
+              "required": ["pid", "started", "comm", "bound_at", "replaced_at"],
+              "additionalProperties": false,
+              "properties": {
+                "pid": { "type": "integer", "minimum": 1 },
+                "started": { "type": "string", "minLength": 1 },
+                "comm": { "type": "string", "pattern": "claude" },
+                "bound_at": { "type": "string" },
+                "replaced_at": { "type": "string" }
+              }
+            }
+          },
           "binding": {
             "oneOf": [
               { "type": "null" },

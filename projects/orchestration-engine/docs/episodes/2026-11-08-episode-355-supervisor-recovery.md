@@ -102,3 +102,10 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - owner は Q92〜Q97 の6件とも推奨どおりに答えた（判断ボード・統括が回収）。承認の記録は統括のワークスペースの根の `.oe/decision-355-gate3.md`（plan @ `2d32816`）。
 - 確定版との違い: 確定版の「generation を進めて席を取る」は、統括が「書き方の誤り」と認めた（承認の記録の Q93）。plan の DJ-2（同じ会話の復帰は generation を進めず binding を張り替える）が正である。確定版は書き直さず、この節を違いの記録にする。
 - Q94 に owner の補足「状況がわかりやすい説明と、next action のサジェスチョンをちゃんと出すこと」が付いた。統括の指示で、plan に補正 H1 として書き込んだ（plan の「ゲート3 のあとの変更」）。補足は Q94 のカードに付いたが、統括の指示の言い方（verb の止まったときの案内の要件）に合わせ、verb が止まるときのすべてに当てた。範囲を広げた読みなので、申告のときに統括に見せた。
+
+## I1: lib の直し（2026-11-08）
+
+- `oe_lease_claim` と `oe_lease_bind` は、別のプロセスへ binding を張り替えるとき、張り替える前の binding に `replaced_at` を足して、その generation の `rebinds` に同じ1回の書き込みで足すようにした。binding が無いところへの最初の書き込みと、本人がもう一度取るときは足さない。lease の schema と `scripts/validate-lease.sh` に、任意の項目として `rebinds` を足した。
+- `oe_seat_rewrite` に7つ目の引数として註の種類（`handoff` が既定・`recover`）を足した。復帰の註は「前のペイン `%N` は応答なし・復帰で張り替え」で、「前任 `%N`」の形を使わない。`oe-handoff retire` は「前任 `%N`」の最初の一致を閉じる相手として読むので、復帰の註の前のペインを閉じる相手と読まないことをテストで確かめた（`tests/test_handoff_take.sh` の [37]）。
+- 確かめ: `test_lease.sh`（136）・`test_handoff_take.sh`（139）を含む関係の13本がすべて終了コード 0。触ったファイルは shellcheck を通った。
+- 気づいたこと（直していない）: `tests/test_handoff_take.sh:487` の `rmdir()` に、shellcheck 0.11.0 が SC2329（info）を出す。master の同じファイルでも出るので、この変更から来たものではない。既存の disable は SC2317 で、0.11.0 では番号が SC2329 に分かれたものと思われる [speculation]。この PR の範囲の外として報告に書く。
