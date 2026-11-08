@@ -150,6 +150,13 @@ n_before="$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
 CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" root --label cockpit -w "$_TMP_DIR/ws" >/dev/null 2>&1 || true
 ck "もう lease があれば作らない" "$n_before" "$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
 ck "同じ ID の要求があれば root は上書きしない" "cockpit ws gen9" "$(jq -r '.name' "$STR" 2>/dev/null)"
+# hook が無視する壊れた要求は「ある」と扱わず、root を打ち直せば書き直す（Copilot の指摘・PR #599）
+printf '{"format":1,"request_id":"%s:1","name":""}' "$rid" > "$STR"
+CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" root --label cockpit -w "$_TMP_DIR/ws" >/dev/null 2>&1 || true
+ck "同じ ID でも name が空の要求は root が書き直す" "cockpit ws" "$(jq -r '.name' "$STR" 2>/dev/null)"
+printf '{"format":1,"request_id":"%s:1","name":"cockpit ws gen9"}{' "$rid" > "$STR"
+CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" root --label cockpit -w "$_TMP_DIR/ws" >/dev/null 2>&1 || true
+ck "途中で切れた要求は root が書き直す" "cockpit ws" "$(jq -r '.name' "$STR" 2>/dev/null)"
 ck "link の前の子の lease の親は空" "" "$(jq -r '.parent_lease_id' "$OE_LEASE_DIR/$lid.json")"
 printf '{"pane":"%%9","label":"#9","workspace":"%s","parent_pane":"","role":"child"}\n' "$_TMP_DIR/ws" > "$OE_DELEGATE_STATE_DIR/4242__9.json"
 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" link %9 --force >/dev/null 2>"$_TMP_DIR/link.err" || true

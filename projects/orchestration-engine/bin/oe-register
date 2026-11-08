@@ -83,7 +83,9 @@ session_title_root_best_effort() {
   local me id gen rid name
   me="$(oe_lease_whoami 2>/dev/null)" || { echo "oe-register: 自分の lease が無いので、セッション名の要求を書きません" >&2; return 0; }
   id="$(printf '%s' "$me" | jq -r '.lease_id // empty' 2>/dev/null)" || return 0
-  gen="$(printf '%s' "$me" | jq -r '.current_generation // empty' 2>/dev/null)" || return 0
+  # 自分の session_id が座っている generation で ID を作る（lease のいまの generation ではない）。退任した
+  # generation のセッションが root を打っても、後継の要求と同じ ID を作らないため。
+  gen="$(printf '%s' "$me" | jq -r '.generation // empty' 2>/dev/null)" || return 0
   [[ -n "$id" && -n "$gen" ]] || return 0
   rid="${id}:${gen}"
   if oe_session_title_has_request "$CLAUDE_CODE_SESSION_ID" "$rid"; then return 0; fi

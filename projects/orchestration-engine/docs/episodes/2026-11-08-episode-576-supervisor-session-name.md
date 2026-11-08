@@ -152,3 +152,11 @@ tags: [orchestration, hooks, session-name, lease]
 - 採らない: `oe-register root` が「要求は無い」と確かめた直後に、並行する take が同じ ID の代つきの要求を書くと、root が代なしで上書きする。take は自分の要求を書いたあとに root を順に呼ぶので、同じセッションで take と root が並んで走るのは、take の外で root を別に同時に打つときだけである。統括がそうする手順は無いので、ロックは足さない。
 
 テストは `test_session_name.sh` が 37件（bash 5.2 と /bin/bash 3.2）。直す前の hook に当てると新しい3件が落ちる。shellcheck は通る。
+
+### I2-2: Copilot（1ラウンド・2026-11-08）
+
+行のコメントは1件（中）で、直した。
+
+- 指摘: `oe_session_title_has_request` は request_id だけを見ていたので、hook が無視する要求（name が空・途中で切れた JSON）も「ある」と扱い、`oe-register root --label cockpit` を打ち直しても名前を戻せなかった。判定を hook と同じ（JSON のオブジェクトがちょうど1つ・request_id と name が文字列・制御文字を除いても name が残る）にした。`test_lease_writers.sh` に2件足し、直す前の lib では2件とも落ちることを確かめた。
+- 概要の見出しには「退任したセッションが要求を上書きしうる」ともあった（行のコメントは無い）。当ててみると、root は要求の ID を lease のいまの generation（`current_generation`）で作っていたので、退任した generation のセッションが root を打つと、後継と同じ ID を自分の要求に書く。要求のファイルは session_id ごとなので後継の要求は上書きされないが、ID の意味が食い違う。自分の session_id が座っている generation（`oe-lease whoami` の `generation`）で作るように直した。ふつうの場合は2つの値が同じなので、テストは足していない。
+- 再依頼はしない（owner の明示の指示が無いため）。

@@ -46,15 +46,24 @@ oe_session_title_supervisor_name() {
 }
 
 # oe_session_title_has_request <session_id> <request_id>
-# 同じ request_id の要求がすでにあれば 0。oe-register root が、take の書いた代つきの名前を
-# 代なしの名前で上書きしないために使う（take は中で oe-register root を呼ぶ）。
+# 同じ request_id の「hook が受け付ける」要求がすでにあれば 0。oe-register root が、take の書いた
+# 代つきの名前を代なしの名前で上書きしないために使う（take は中で oe-register root を呼ぶ）。
+# 判定は hook と同じにする: JSON のオブジェクトがちょうど1つで、request_id と name が文字列で、
+# 制御文字を除いても name が残る。hook が無視する壊れた要求を「ある」と扱うと、root を打ち直しても
+# 名前を戻せなくなる（Copilot の指摘・PR #599）。
 oe_session_title_has_request() {
-  local sid="${1:-}" rid="${2:-}" key file
+  local sid="${1:-}" rid="${2:-}" key file obj name
   [ -n "$sid" ] && [ -n "$rid" ] && [ -n "$OE_SESSION_TITLE_DIR" ] || return 1
   key="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_')"
   file="${OE_SESSION_TITLE_DIR}/${key}.json"
   [ -f "$file" ] || return 1
-  [ "$(jq -r '.request_id // ""' "$file" 2>/dev/null || true)" = "$rid" ]
+  obj="$(jq -cs 'if length == 1 and (.[0] | type) == "object"
+                   and (.[0].request_id | type) == "string" and (.[0].name | type) == "string"
+                 then .[0] else empty end' "$file" 2>/dev/null || true)"
+  [ -n "$obj" ] || return 1
+  [ "$(printf '%s' "$obj" | jq -r '.request_id' 2>/dev/null || true)" = "$rid" ] || return 1
+  name="$(printf '%s' "$obj" | jq -r '.name' 2>/dev/null | tr -d '\000-\037\177')"
+  [ -n "$name" ]
 }
 
 # oe_session_title_request <session_id> <request_id> <name>
