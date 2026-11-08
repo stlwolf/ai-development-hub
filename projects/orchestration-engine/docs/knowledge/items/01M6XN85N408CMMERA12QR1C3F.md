@@ -8,7 +8,11 @@ prediction: "「cd … && . env && claude …; exec bash」のように、非対
 source:
   ref: "projects/orchestration-engine/docs/episodes/2026-11-08-episode-355-supervisor-recovery.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-11-09
+    ref: "#577"
+    state: no_opportunity
+    note: "PR-6 では tmux のペインで claude を起こすコマンドを書かなかった。教訓の中身は decision #577 の帰結に、D6 と retire の本人確認の前提として書き足した（適用ではなく記述）"
 exclusions:
   - "人が対話のシェルで claude を打つ場合（シェルがジョブ制御で claude を別のプロセスグループに置くので、前面のプロセスは claude になる）"
   - "claude を exec で起こす場合（ペインの最初のプロセスも前面のプロセスも claude になる）"

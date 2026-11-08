@@ -55,6 +55,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D9 生きていないことの機械の確かめ**（DJ-9）。`binding` するときにそのプロセスのコマンドが claude であることを確かめる。`binding` のプロセス（pid と、`LC_ALL=C` で取った開始時刻）が無ければ生きていない。問い合わせが失敗したときは「分からない」として張り替えない。heartbeat の古さ・画面・累積の CPU 時間では決めない。`oe-handoff retire` はこの確かめで、シェルで始まるペインの前任も閉じてよいかを判定できる。retire は引き継ぎ文書の機械の節を読まず、`lease` の記録だけで判定する。機械の節は `lease` の記録から作る表示にする（owner の答え Q84）。
 - **D10 transport は tmux の send-keys のままにする**（DJ-10・owner の答え: Q67）。Claude Code への依存を深めないので、セッション間の文を送る機能には乗らず、別の issue も起こさない。Claude Code に頼るのは、文書化された環境変数（`CLAUDE_CODE_SESSION_ID`・`CLAUDE_PID`）だけにする。
 - **D11 移行は両方書いて読む側を1つずつ切り替える**（DJ-11・owner の答え: Q66）。両方書く期間は復帰のテスト（#355 の drill）までとし、registry をキーとして読むのをやめる最後の切り替えは、そのとき一度に行ってよい。進行中の委譲は一度だけの取り込みで引き取り、`PARENT_TMUX_PANE` しか持たない子は古い宛先のまま終わらせる（owner の答え Q76 で D14 の古い子の経路を外したので、この D11 が正である）。ほかのリポジトリの統括には sync の前に知らせる。
+  - （2026-11-09・PR-6 で追記）drill は 2026-11-08 に通ったが、両方書く期間はまだ終わっていない。ほかのリポジトリで PR-2 より前から動いている統括3つが `lease` を持たず、`PARENT_TMUX_PANE` だけを持つ子が5つ生きていたので、registry の両方書き・`oe-lease adopt`・`PARENT_TMUX_PANE` の注入・スキルの古い規則・`oe-report` は外さず、外す作業を #603 に移した。外したのは、書く側の無かった `/tmp/oe-parent-<N>` のフォールバックだけである。確かめた結果は episode の「I6: 外す条件を本物の記録で確かめた」、行ごとの判定は plan の「移行の終わり方」にある。
 - **D12 統括の `lease` の正本は `lease` の記録にする**（DJ-12）。board の `現統括:` の行は、`oe-handoff take` が書き続ける表示である。読み手（`oe-vitals`）と書き手（`oe-handoff take`）を同じ PR で切り替える（board schema の §9）。board の散文の形は変えない。
 - **D13 event の snapshot に `lease_id` と `generation` を足す**（DJ-13）。`binding` の張り替え（復帰）の型を足す。
 - **D14 子の報告は親の `lease` へ送る**（DJ-15）。`OE_LEASE_ID` を持つ子は、親の `lease` のいまの `generation` へ送る。label は `lease` の記録から引き、pane-issue からは引かない。生の `%N` はフォールバックとして残す。`OE_LEASE_ID` を持たない古い子は D11 のとおり古い宛先のまま終わらせる（古い子も親の `lease` へ送れるようにする案は owner の答え Q76 で外した）。移行のあいだは、`#N` のラベルを `lease` の記録で引けなければ古い引き方に落とす（owner の答え Q77）。委譲固定節の「報告の宛先」の規則を、この形に置き換える。
@@ -62,7 +63,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D16 新しい概念は識別子で呼ぶ**（discussion の §5.0・DJ-17・owner の答え: Q71）。持ち場は `lease`（ID の項目は `lease_id`・verb は `oe-lease`。Kubernetes の Lease に合わせた。時間で期限切れにならない点は Kubernetes と違う）、その持ち場に座った会話は既存の `generation`、プロセスとの結び付きは `binding`、比べる番号は `epoch`、送れなかったことを残す events の型の名前の案は `delivery_held` である（使うかは #355 で決める）。`seat` は current_supervisor の意味から外す方向（#564）なので使わない。
 - **D17 最初の `binding` と、あとから増える session_id の書き手**（DJ-18）。起こした子と後継は、起こした側の verb（`oe-delegate`・`oe-handoff start`）が、ペインの生存を確かめる時点で、端末のフォアグラウンドのプロセスの pid と開始時刻を `binding` に書く（コマンドが claude であることを確かめ、確かめられなければ未確定で止める）。手で立てた統括は、本人が `oe-lease create --root` を打つ。session_id を登録するのは、本人が動かす `oe-lease` の verb だけで、自分の `CLAUDE_PID` が `binding` と一致するときに自分の `CLAUDE_CODE_SESSION_ID` を登録する。heartbeat の sidecar は登録の根拠にしない。
 - **D18 ペインの本人確認を1つの関数にする**（DJ-19）。tmux に固有の確かめを集めた小さな lib に置き、送信・adopt・retire・`oe-jump`・`oe-select` がそれを使う。
-- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。PR-3 では配っているスキルの文を替え、`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する。
+- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。PR-3 では配っているスキルの文を替え、`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する。（2026-11-09・PR-6 で追記）PR-6 で外したのは書く側の無い `/tmp/oe-parent-<N>` のフォールバックだけで、`oe-report` の verb は、それを呼びうる古い子が生きていたので #603 に移した。
 
 ## decision #188・#206・#238/#239 との関係
 
@@ -111,6 +112,7 @@ discussion の §7 の探索木が正本である。要点だけを書く。
   - 移行のあいだ、`PARENT_TMUX_PANE` しか持たない古い子は、親の交代のあとに前任へ送るか、ペインの番号の使い回しで別人へ送りうる（D11 のとおり古い宛先のまま終わらせることの残り）。
   - 復帰の手順が出すコマンドを使わずに resume すると、環境変数（1 の方法）が入らない。そのときは session_id の照合（2 の方法）に頼る。id を付けない resume で 2 の方法が成り立つかは、実機で確かめるまで分からない。
   - `binding` の pid を持たない `lease`（取り込みで pid を取れなかった `lease`）は、生きているか分からないとして人の判断に回る。
+  - D6 の送る前の確かめと D9 の retire の判定がペインの端末のフォアグラウンドのプロセスで本人を確かめるのは、claude がフォアグラウンドのプロセスグループの長であることが前提である。非対話の wrapper（`bash -c` など）の子として claude を起こすと、フォアグラウンドのプロセスは wrapper のシェルになり、本人を確かめられない（`binding` できない・送れない・閉じてよいと判定できない）。`oe-delegate` と `oe-handoff start` は `exec` で起こすので当たらない。由来は #355 の drill で、knowledge `01M6XN85N408CMMERA12QR1C3F` にある（2026-11-09・PR-6 で足した）。
 - 新しい write path（`lease` の記録）が1つ増える。書き手は verb だけで、heartbeat の write path には入らない。
 
 ## 確定したときに直したこと

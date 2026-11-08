@@ -17,6 +17,10 @@ observations:
     ref: "#355"
     state: followed
     note: "oe-recover のテストで、偽の bin に足がかりの oe-tree ごと置き、~/bin を PATH から外し、state の置き場を一時ディレクトリに向け、本物の置き場が書かれていないことを最後に確かめた（tests/test_oe_recover.sh）。ただし Bash 組み込みの kill -0 は PATH の偽物を通らず、実装SO が見つけた。差し替えの起点に組み込みのコマンドも入る"
+  - date: 2026-11-09
+    ref: "#577"
+    state: followed
+    note: "既存のテストをセッションの中で回すと、セッションの CLAUDE_PID から本物の lease の置き場へ書く経路が残っていた（テストの外の環境変数）。書く前に気づき、verb を呼ぶテストで lease の置き場を一時ディレクトリに向けて変数を外した。PR-6 でも全体のテストの前後で本物の lease と registry の shasum が一致することを確かめた"
 exclusions:
   - "差し替える道具を、手順が名前で直接呼ぶだけで、間接の引き方を持たない場合"
   - "確かめの場面を、本物の道具が入っていない隔離された環境（別のコンテナなど）で動かす場合"
