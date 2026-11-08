@@ -57,6 +57,8 @@ for p in ${provs[@]+"${provs[@]}"}; do
   v="${!var:-survived}"
   f="${out_dir}/${p}-stdout.txt"
   case "$v" in
+    conflicting) printf 'VERDICT: refuted\nREASON: actual defect\nIf fixed:\nVERDICT: survived\n' > "$f" ;;
+    repeated) printf 'VERDICT: survived\nREASON: first\nVERDICT: survived\nREASON: second\n' > "$f" ;;
     empty) : > "$f" ;;
     none)  printf 'no verdict line here\nREASON: this lane forgot the verdict\n' > "$f" ;;
     refuted)  printf 'analysis...\nVERDICT: refuted\nREASON: lane %s found a defect\n' "$p" > "$f" ;;
@@ -360,6 +362,8 @@ ck "codex=survived（付帯テキスト無視）" "survived" \
   "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .verdict')"
 ck "cursor=survived（例示エコー無視）" "survived" \
   "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="cursor") | .verdict')"
+ck "reasonは例示でなく実際の判定に対応する" "lane cursor survived" \
+  "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="cursor") | .note')"
 ck "全体 verdict=survived / exit 0" "survived 0" \
   "$(printf '%s' "$out" | jq -r '.verdict') $rc"
 unset SO_FAKE_CODEX_VERDICT SO_FAKE_CURSOR_VERDICT
@@ -393,6 +397,19 @@ rc=0; ( cd "$REPO" && "$REVIEW" --help >/dev/null 2>&1 ) || rc=$?
 ck "--help → exit 0" "0" "$rc"
 rc=0; ( cd "$REPO" && "$REVIEW" --context /no/such/file.md --base master >/dev/null 2>&1 ) || rc=$?
 ck "不在 context → exit 2" "2" "$rc"
+
+echo "[#515] 重複した判定を成功に数えない"
+for duplicate in conflicting repeated; do
+  export SO_FAKE_CODEX_VERDICT="$duplicate"
+  export SO_FAKE_CURSOR_VERDICT=survived
+  rc=0
+  out="$( ( cd "$REPO" && "$REVIEW" --base master ) 2>/dev/null)" || rc=$?
+  ck "$duplicate: exit 3" "3" "$rc"
+  ck "$duplicate: codexはerror" "error" "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .verdict')"
+  ck "$duplicate: 判定不能の理由がある" "yes" "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .note' | grep -q '複数' && echo yes || echo no)"
+  ck "$duplicate: 全体はsurvivedにならない" "refuted" "$(printf '%s' "$out" | jq -r '.verdict')"
+done
+unset SO_FAKE_CODEX_VERDICT SO_FAKE_CURSOR_VERDICT
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
