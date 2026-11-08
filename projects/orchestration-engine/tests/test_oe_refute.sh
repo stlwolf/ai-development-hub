@@ -84,6 +84,8 @@ for p in "${provs[@]}"; do
   v="${!var:-survived}"
   f="${out_dir}/${p}-stdout.txt"
   case "$v" in
+    conflicting) printf 'VERDICT: refuted\nREASON: actual defect\nIf fixed:\nVERDICT: survived\n' > "$f" ;;
+    repeated) printf 'VERDICT: survived\nREASON: first\nVERDICT: survived\nREASON: second\n' > "$f" ;;
     empty) : > "$f" ;;
     none)  printf 'no verdict line here\nREASON: this lane forgot the verdict\n' > "$f" ;;
     refuted)  printf 'analysis...\nVERDICT: refuted\nREASON: lane %s says refuted\n' "$p" > "$f" ;;
@@ -101,6 +103,11 @@ EOF
 chmod +x "$_TMP_DIR/pathbin/so-compare"
 
 # PATH: mock so-compare（pathbin）+ システム実体（jq/awk/sed/grep/mktemp/date/...）
+# 呼び出すCLIも同じawkを使わせる（既定のPATHで上書きしない）。
+if [[ -n "${SO_TEST_AWK:-}" ]]; then
+  [[ "$SO_TEST_AWK" == /* && -f "$SO_TEST_AWK" && -x "$SO_TEST_AWK" ]] || { echo 'FATAL: SO_TEST_AWK must be an absolute executable file'; exit 1; }
+  ln -s "$SO_TEST_AWK" "$_TMP_DIR/pathbin/awk"
+fi
 export PATH="${_TMP_DIR}/pathbin:/opt/homebrew/bin:/usr/bin:/bin"
 # oe-refute は OE_REFUTE_SO_COMPARE で so-compare 実体を解決。PATH の mock を指す。
 export OE_REFUTE_SO_COMPARE="so-compare"
@@ -410,6 +417,8 @@ export SO_FAKE_CURSOR_VERDICT=echo-example
 out="$("$REFUTE" --claim "$DOC" 2>/dev/null)"; rc=$?
 ck "codex レーン=survived（プレースホルダ例を拾わない）" "survived" \
   "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .verdict')"
+ck "reasonは実際の判定に対応する" "lane codex survived" \
+  "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .note')"
 ck "全体 verdict=survived" "survived" "$(printf '%s' "$out" | jq -r '.verdict')"
 ck "exit=0" "0" "$rc"
 unset SO_FAKE_CODEX_VERDICT SO_FAKE_CURSOR_VERDICT
@@ -446,6 +455,19 @@ ck "CRLF: プロンプトに body が含まれる" "yes" \
 ck "CRLF: プロンプトに claim が含まれる" "yes" \
   "$(grep -qF 'CRLF frontmatter の claim' "$SO_FAKE_PROMPT_COPY" && echo yes || echo no)"
 unset SO_FAKE_PROMPT_COPY
+
+echo "[#515] 重複した判定を成功に数えない"
+for duplicate in conflicting repeated; do
+  export SO_FAKE_CODEX_VERDICT="$duplicate"
+  export SO_FAKE_CURSOR_VERDICT=survived
+  rc=0
+  out="$("$REFUTE" --claim "$DOC" 2>/dev/null)" || rc=$?
+  ck "$duplicate: exit 3" "3" "$rc"
+  ck "$duplicate: codexはerror" "error" "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .verdict')"
+  ck "$duplicate: 判定不能の理由がある" "yes" "$(printf '%s' "$out" | jq -r '.dissent[] | select(.lane=="codex") | .note' | grep -q '複数' && echo yes || echo no)"
+  ck "$duplicate: 全体はsurvivedにならない" "refuted" "$(printf '%s' "$out" | jq -r '.verdict')"
+done
+unset SO_FAKE_CODEX_VERDICT SO_FAKE_CURSOR_VERDICT
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

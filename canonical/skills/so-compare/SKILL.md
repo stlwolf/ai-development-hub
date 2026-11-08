@@ -9,6 +9,12 @@ depends:
 
 > **SO モード: 弱 SO**（強/弱の定義は `canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）。**1 周で終了可**（iteration は推奨だが任意）。**終了条件**: partial（**実返却が 1 レーン以上**）=**disclose して進む**（advisory）／**"0"（全レーン実返却なし）=SO 未実施扱いで再試行/escalate＝最低 1 レーン実返却必須（"0 はなし"）**。※`success_empty`〔exit0 だが空〕は機構上 partial（exit1）計上だが、**全レーンがこれ＝実返却ゼロなら "0" 扱い**（consumer 判定・`so-compare.sh` は success_empty を PARTIAL 集計）。機構: `SO_TIMEOUT`（既定 240・codex / cursor）と `SO_CLAUDE_TIMEOUT`（既定 1200・claude）が**初回試行の基準**・`timeout_empty` 時のみ **そのレーンの基準の** `×1.5` に延長して**1回リトライ**（なお空なら "0" 扱い）。**claude だけ既定が長い理由は「レーンごとの所要時間」節を見よ**。レーン数/モデルは mode と直交（都度指定・既定ポリシーは `orchestration-toolkit`）。全レーン合意まで詰める **強 SO** が要る局面は `peer-ai-review`。
 
+## oe-refute / oe-review が読む判定（#515）
+
+`VERDICT: refuted` または `VERDICT: survived` と、対応する `REASON:` は最後に1組だけ書く。本文の例にも有効なVERDICTを重ねて書かない。共有の集計は有効なVERDICTが1件のときだけ採用し、複数あれば同じ値の繰り返しでも判定不能（レーンの `error`）にする。最後の判定で先の反証を上書きしない。
+
+理由は、その一意なVERDICTの後から次のVERDICTラベルまでにある最初のREASONを採る。判定の前や、未記入の `VERDICT: <...>` の例に続く理由は混ぜない。判定の大小文字、末尾の補足は従来どおり扱う。判定不能の返答は人が内容を確認し、必要なら再依頼する。#448の道具の障害・観測不能の扱いも引き続き優先する。
+
 ## スクリプトの場所
 
 ```

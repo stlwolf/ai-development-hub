@@ -16,27 +16,57 @@
 # 戻り値を返す（lib/envelope.sh と同じ global-return 規約）。呼び出し側は set -euo pipefail
 # 前提（各抽出は grep 不一致を `|| true` で吸収する）。
 
-# so_verdict_extract_verdict <lane_stdout_file>
-#   stdout: refuted | survived | unknown
-#   末尾の最後の VERDICT: 行を拾い、VERDICT: 直後の token のみ判定する
-#   （#184 Fix 1: 行末の付帯テキスト "VERDICT: survived (not refuted)" を refuted と誤分類しない）。
-so_verdict_extract_verdict() {
-  local f="$1" line token
-  [[ -s "$f" ]] || { printf 'unknown'; return; }
-  line="$(grep -iE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | tail -n 1 || true)"
-  if [[ -z "$line" ]]; then printf 'unknown'; return; fi
-  token="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*VERDICT:[[:space:]]*([A-Za-z]+).*/\1/I')"
-  if printf '%s' "$token" | grep -qiE '^refuted$'; then printf 'refuted'; else printf 'survived'; fi
+# #515: 有効なVERDICTが1件の場合だけ、その判定と続く最初のREASONを採る。
+# 認識するtokenは従来のgrepと同じ。awk -vには行番号だけを渡すことで、
+# 理由のバックスラッシュ等をawkに再解釈させない。placeholderは件数に含めず、
+# 次のVERDICTラベル（未記入の例も含む）が出たら理由を読む範囲を閉じる。
+_so_verdict_extract() {
+  local f="$1" field="$2" numbers result
+  numbers=""
+  if [[ -s "$f" ]]; then
+    numbers="$(grep -niE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | cut -d: -f1 | tr '\n' ' ' || true)"
+  fi
+  if [[ -s "$f" ]] && result="$(awk -v lines="$numbers" -v field="$field" '
+      BEGIN {
+        count = lines ~ /^ *$/ ? 0 : split(lines, positions, " ")
+        target = positions[1] + 0
+      }
+      { lower = tolower($0) }
+      NR == target {
+        match(lower, /^[[:space:]]*verdict:[[:space:]]*/)
+        verdict = substr(lower, RLENGTH + 1)
+        sub(/[^a-z].*$/, "", verdict)
+        in_result = 1
+        next
+      }
+      in_result && lower ~ /^[[:space:]]*verdict:/ { in_result = 0 }
+      in_result && !found && match(lower, /^[[:space:]]*reason:[[:space:]]*/) {
+        reason = substr($0, RLENGTH + 1)
+        found = 1
+      }
+      END {
+        if (field == "verdict") print (count == 1 ? verdict : "unknown")
+        else if (field == "reason" && count == 1) printf "%s", reason
+        else if (field == "error") {
+          if (count > 1) printf "VERDICT 行が複数あります（%d件）。判定不能のため通常SOには数えません", count
+          else printf "VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"
+        }
+      }
+    ' "$f")"; then
+    printf '%s' "$result"
+  else
+    case "$field" in
+      verdict) printf 'unknown' ;;
+      error) printf 'VERDICT 行を取得できませんでした（レーン出力なし/形式不正）' ;;
+    esac
+  fi
 }
 
-# so_verdict_extract_reason <lane_stdout_file>
-#   stdout: REASON: 行のラベルを剥がした本文（無ければ空）。末尾の最後の REASON: 行を採る。
-so_verdict_extract_reason() {
-  local f="$1" line
-  [[ -s "$f" ]] || { printf ''; return; }
-  line="$(grep -iE '^[[:space:]]*REASON:' "$f" | tail -n 1 || true)"
-  printf '%s' "$line" | sed -E 's/^[[:space:]]*REASON:[[:space:]]*//I'
-}
+# stdout: refuted | survived | unknown。複数の有効な判定は同値でもunknown。
+so_verdict_extract_verdict() { _so_verdict_extract "$1" verdict; }
+
+# 一意な判定の後、次のVERDICTラベルまでにある最初のREASON（無ければ空）。
+so_verdict_extract_reason() { _so_verdict_extract "$1" reason; }
 
 # so_verdict_collect_lanes <output_dir> <providers_csv>
 #   <output_dir>/<provider>-stdout.txt をレーンとして回し、以下のグローバルを populate する
@@ -78,7 +108,7 @@ so_verdict_collect_lanes() {
         if [[ -n "$tool_status" && "$tool_status" != "not_observed" ]]; then
           note="道具の障害または観測不能のため通常SOには数えません"
         else
-          note="VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"
+          note="$(_so_verdict_extract "$stdout_file" error)"
         fi
         SO_VERDICT_ERROR_COUNT=$((SO_VERDICT_ERROR_COUNT + 1)) ;;
     esac
