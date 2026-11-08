@@ -94,6 +94,9 @@ expect() {
 
 checkout() { git -C "$REPO" checkout -q -B "$1"; }
 
+# same <群> <説明> <期待> <実際>
+same() { if [[ "$4" == "$3" ]]; then ok "$1" "$2"; else ng "$1" "$2" "want='$3' got='$4'"; fi; }
+
 echo "=== A: 今の hook の動き ==="
 
 # T1: 要求も pane の記録も無い master のセッションは、リポジトリ名になる
@@ -144,6 +147,76 @@ run sid-t5c "$REPO" "" "" default "/rename foo"
 expect A "T5 / で始まるプロンプトでは命名しない" ""
 run sid-t5d "$REPO" "already named"
 expect A "T5 初めて見る名前付きのセッションは名前を残す" ""
+
+echo "=== B: 統括の名前の要求 ==="
+
+# 書く側は engine の lib を使う（hook との約束の形を両側から確かめる）
+# shellcheck source=../lib/session-title.sh
+OE_SESSION_TITLE_DIR="$H/.claude/state/session-title" . "$SCRIPT_DIR/../lib/session-title.sh"
+req() { OE_SESSION_TITLE_DIR="$H/.claude/state/session-title" oe_session_title_request "$1" "$2" "$3"; }
+
+# 名前の決まり（DJ-1・H1）
+checkout master
+got="$(oe_session_title_supervisor_name "$REPO" 23)"
+same B "名前: 代があれば cockpit <repo> gen<N>" "cockpit myrepo gen23" "$got"
+got="$(oe_session_title_supervisor_name "$REPO" "")"
+same B "名前: 代が無ければ cockpit <repo>" "cockpit myrepo" "$got"
+git -C "$REPO" worktree add -q "$_TMP_DIR/myrepo.wt" -b wt-branch 2>/dev/null
+got="$(oe_session_title_supervisor_name "$_TMP_DIR/myrepo.wt" 5)"
+same B "名前: worktree の中からでも本体のリポジトリ名" "cockpit myrepo gen5" "$got"
+
+# T6: 要求があるセッションは要求の名前になる。pane の記録が残っていても Path1 に戻らない
+printf '{"name":"#12 add-export"}' > "$H/.claude/state/pane-issue/$PANE_KEY"
+run sid-t6 "$REPO" "" "$PANE"
+expect B "T6 前置き: 要求が無ければ pane の記録の名前" "#12 add-export"
+req sid-t6 "LEASEA:1" "cockpit myrepo gen23"
+run sid-t6 "$REPO" "#12 add-export" "$PANE"
+expect B "T6 要求の名前に改名する" "cockpit myrepo gen23"
+# T7: 同じ要求なら何もしない（pane の記録にも戻さない）
+run sid-t6 "$REPO" "cockpit myrepo gen23" "$PANE"
+expect B "T7 同じ要求なら何も出さない" ""
+rm -f "$H/.claude/state/pane-issue/$PANE_KEY"
+
+# T8: 同じ要求の ID のあいだは手で付けた名前を残す。新しい要求の ID が来たら改名する
+req sid-t8 "LEASEB:1" "cockpit myrepo gen23"
+run sid-t8 "$REPO" "myrepo"
+expect B "T8 master のリポジトリ名から要求の名前へ" "cockpit myrepo gen23"
+run sid-t8 "$REPO" "my manual name"
+expect B "T8 同じ要求のあいだは手で付けた名前を残す" ""
+req sid-t8 "LEASEB:2" "cockpit myrepo gen23"
+run sid-t8 "$REPO" "my manual name"
+expect B "T8 新しい要求の ID（同じ名前）で改名する" "cockpit myrepo gen23"
+st="$(jq -r '.last_branch' "$H/.claude/state/session-branch/sid_t8.json" 2>/dev/null || echo '?')"
+same B "T8 state の last_branch を残す" "master" "$st"
+
+# T9: plan mode と / で始まるプロンプトでは改名せず、要求も消費しない
+req sid-t9 "LEASEC:1" "cockpit myrepo gen7"
+run sid-t9 "$REPO" "myrepo" "" plan
+expect B "T9 plan mode では改名しない" ""
+run sid-t9 "$REPO" "myrepo" "" default "/clear"
+expect B "T9 / で始まるプロンプトでは改名しない" ""
+run sid-t9 "$REPO" "myrepo"
+expect B "T9 次の普通のプロンプトで改名する" "cockpit myrepo gen7"
+
+# T10: 壊れた要求は無視して今の動きになる
+mkdir -p "$H/.claude/state/session-title"
+printf 'not json' > "$H/.claude/state/session-title/sid_t10a.json"
+run sid-t10a "$REPO" ""
+expect B "T10 JSON でない要求は無視（Path2）" "myrepo"
+printf '{"format":1,"request_id":"X:1","name":""}' > "$H/.claude/state/session-title/sid_t10b.json"
+run sid-t10b "$REPO" ""
+expect B "T10 name が空の要求は無視（Path2）" "myrepo"
+printf '{"format":1,"request_id":7,"name":"cockpit x"}' > "$H/.claude/state/session-title/sid_t10c.json"
+run sid-t10c "$REPO" ""
+expect B "T10 request_id が文字列でない要求は無視（Path2）" "myrepo"
+
+# T11: 名前の制御文字は除かれる
+req sid-t11 "LEASED:1" "$(printf 'cockpit\033[31m my\nrepo')"
+run sid-t11 "$REPO" ""
+expect B "T11 制御文字を除く" "cockpit[31m myrepo"
+
+# 要求の書き手は、足りない引数で書かない
+if req "" "X:1" "n"; then ng B "書き手: session_id が空なら書かない" "rc=0"; else ok B "書き手: session_id が空なら書かない"; fi
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 i=0

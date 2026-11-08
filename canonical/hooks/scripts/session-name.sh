@@ -6,6 +6,9 @@
 # the tmux pane title), so parallel sessions — and the notifications built from
 # the pane title (notify.sh) — can be told apart. Two behaviors, in priority:
 #
+#   0. Supervisor seat (#576): when a seat-taking verb wrote a name request for
+#      this session_id, rename once per new request_id and respect a manual
+#      /rename until the next request. Details at "--- 0)" below.
 #   1. Active issue worktree: when wt-pane-issue.sh recorded "#<issue> <slug>"
 #      for this tmux pane (on `wt switch`), title the session with it and KEEP it
 #      there — STICKY: re-assert on every prompt whenever the title has drifted
@@ -52,6 +55,69 @@ emit_title() {
   printf '%s' "$out"
   exit 0
 }
+
+# --- 0) Supervisor seat request (session_id keyed; written by the seat-taking verbs) ---
+# A supervisor (the parent session that delegates to children) runs on the default
+# branch, so Path 2 would name it after the repo and it could not be told apart in
+# `claude --resume`. The seat-taking verbs (oe-handoff take / oe-register root) write
+# a small request keyed by session_id:
+#   ~/.claude/state/session-title/<sid>.json  {"format":1,"request_id":"…","name":"…","requested_at":"…"}
+# This hook knows only that file, not the engine's records. Rename ONCE per new
+# request_id (a new seat), then respect a manual /rename until the next request —
+# like Path 2 renames once per branch change. A session WITH a valid request is
+# handled here and never falls through: Path 1 is pane keyed, and a stale pane
+# record from a previous occupant would otherwise pull the title back to "#<issue>".
+# No request / unreadable / empty fields -> skip to Path 1 and Path 2 unchanged.
+sid="$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null || true)"
+if [ -n "$sid" ]; then
+  sid_key="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_')"
+  title_dir="${home}/.claude/state/session-title"
+  rfile="${title_dir}/${sid_key}.json"
+  req_id=""; req_name=""
+  if [ -f "$rfile" ]; then
+    req_id="$(jq -r 'if (.request_id|type)=="string" then .request_id else "" end' "$rfile" 2>/dev/null || true)"
+    req_name="$(jq -r 'if (.name|type)=="string" then .name else "" end' "$rfile" 2>/dev/null || true)"
+    req_name="$(printf '%s' "$req_name" | tr -d '\000-\037\177' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
+  fi
+  if [ -n "$req_id" ] && [ -n "$req_name" ]; then
+    # Plan mode / a slash command: do not rename and do NOT consume the request,
+    # so the next ordinary prompt still applies it.
+    [ "$(printf '%s' "$payload" | jq -r '.permission_mode // ""' 2>/dev/null || true)" != "plan" ] || exit 0
+    case "$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null || true)" in /*) exit 0 ;; esac
+    touch -- "$rfile" 2>/dev/null || true
+    # The applied request_id lives in the same per-session state as Path 2's
+    # last_branch, so both share one file and one GC window.
+    branch_dir="${home}/.claude/state/session-branch"
+    sfile="${branch_dir}/${sid_key}.json"
+    applied=""
+    [ -f "$sfile" ] && applied="$(jq -r '.seat_request_id // ""' "$sfile" 2>/dev/null || true)"
+    if [ "$applied" = "$req_id" ]; then
+      # Same seat: our name is in place, or the user renamed it by hand — respect it.
+      touch -- "$sfile" 2>/dev/null || true
+      exit 0
+    fi
+    # New seat: record it, then (re)name. Keep last_branch; seed it when absent so
+    # that if the request is later GC'd, Path 2 does not mistake "" for a branch change.
+    cur_cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"
+    cur_branch=""
+    [ -n "$cur_cwd" ] && cur_branch="$(git -C "$cur_cwd" symbolic-ref --short HEAD 2>/dev/null || true)"
+    if mkdir -p "$branch_dir" 2>/dev/null; then
+      find "$title_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
+      prev='{}'
+      [ -f "$sfile" ] && prev="$(jq -c 'if type=="object" then . else {} end' "$sfile" 2>/dev/null || echo '{}')"
+      tmp="${sfile}.tmp.$$"
+      if printf '%s' "$prev" | jq -c --arg r "$req_id" --arg b "$cur_branch" \
+           '.seat_request_id = $r | (if has("last_branch") then . else .last_branch = $b end)' >"$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$sfile" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+      else
+        rm -f "$tmp" 2>/dev/null
+      fi
+    fi
+    session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
+    [ "$session_title" = "$req_name" ] || emit_title "$req_name"
+    exit 0
+  fi
+fi
 
 # --- 1) Active issue worktree (tmux pane keyed; recorded by wt-pane-issue.sh) ---
 pane="${TMUX_PANE:-}"

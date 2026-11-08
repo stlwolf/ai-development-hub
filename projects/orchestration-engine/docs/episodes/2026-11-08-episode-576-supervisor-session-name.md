@@ -90,3 +90,10 @@ tags: [orchestration, hooks, session-name, lease]
 - `projects/orchestration-engine/tests/test_session_name.sh` を新しく置き、群 A（T1〜T5・15件）を書いた。今の hook で bash 5.2.37 と /bin/bash 3.2 の両方で 15件すべて通った。shellcheck も通る。
 - テストの効き目を、壊した写しで確かめた。Path1 の冪等の判定を外すと T2 の1件、Path2 の「同じブランチで手で付けた名前を残す」判定を外すと T5 の1件が落ちた。
 - 書いている途中で分かったこと: Path1 は plan mode と `/` で始まるプロンプトでも名前を取り戻す（除外は Path2 にしかない）。統括の道（I1-2）の除外は plan の DJ-4 のとおり統括の道の中で行う。
+
+### I1-2: 書く側の部品と hook の統括の道（2026-11-08）
+
+- `projects/orchestration-engine/lib/session-title.sh` に、名前を出す関数（`oe_session_title_supervisor_name`）と要求を書く関数（`oe_session_title_request`）を置いた。名前のリポジトリ名は、git の共通ディレクトリの親から取る。worktree の中から呼ばれても本体のリポジトリ名になるようにするためである（plan の DJ-1 の「git のトップのディレクトリ名」を、worktree でも同じ名前になる形で実装した。統括は本体で動くので結果は同じ）。
+- `canonical/hooks/scripts/session-name.sh` の先頭に統括の道（Path0）を入れた。plan の DJ-3・DJ-4・DJ-6 のとおりである。要求を適用したとき、state に `last_branch` が無ければ今のブランチで埋める。要求が GC で消えたあとに、Path2 が空の `last_branch` をブランチの変化と取り違えて、手で付けた名前を上書きしないためである。
+- テストの群 B（18件）を足した。変更のあとは bash 5.2 と /bin/bash 3.2 の両方で 33件すべて通る。master の hook に当てると群 B のうち6件が落ちる（T6・T7・T8 の2件・T9 の最後・T11）。落ちない12件は、名前の関数と書き手（hook を通らない）と、「改名しない」「今の動きのまま」を確かめる件（T9 の前の2件・T10）で、変更の前でも同じ結果になるのが正しい。
+- shellcheck は変えた3本で通る。
