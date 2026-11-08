@@ -4,6 +4,18 @@
 
 ## インデックス
 
+### orchestration-engine
+
+複数の AI コーディングエージェントのセッションを、統括（親）と子に分けて動かすための Bash + jq の CLI 群。
+
+- 本体のエンジン `oe`: wez のペインに agent を起こし、1 サイクル（envelope→spawn→capture→verify→monitor）を自律で回す
+- 親子の委譲: `oe-delegate` / `oe-kick` / `oe-send` などで、統括から tmux の子セッションへタスクを渡し、報告を受ける
+- cockpit の観測: `oe-tree` / `oe-activity` / `oe-threads` / `oe-status` などの read-only のビューと、`oe-vitals` / `oe-undelivered` / `oe-confirm` などの見張り
+- 統括の交代と lease: `oe-handoff` で統括を計画的に交代し、`oe-lease` で統括と子の「誰か」をペインと切り離して記録する
+- SO のゲート: `oe-refute`（設計の反証）・`oe-review`（実装のレビュー）
+
+詳細は [orchestration-engine/README.md](orchestration-engine/README.md) を参照。
+
 ### arena-compare
 
 Cursor CLI（`agent` コマンド）によるマルチモデル並列比較スクリプト。
@@ -43,12 +55,11 @@ Cursor/VS Code 統合ターミナルから Claude CLI を安全に実行する�
 
 ### wezterm-ai-mode
 
-WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。Phase 1 完了。
+WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツールキット（Bash）。Phase 1（CLI）の完了後に、dotfiles の Lua ハンドラとの統合による toast 通知の開通（#86）と `wez layout` を足した。[Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) は close 済みで、`wez agent`（Epic の Phase 3 の構想）は実装していない。
 
-- サブコマンド: `discover`（ソケット自動検出）/ `pane`（list/split/send/capture/kill）/ `notify`（OSC 1337 user-var 送信）
+- サブコマンド: `discover`（ソケット自動検出）/ `pane`（list/split/activate/send/capture/kill）/ `layout`（preset による盤面の構築）/ `notify`（OSC 1337 user-var 送信）
 - Cursor / Claude Code / Codex CLI の3ツールで E2E 検証済み
 - `~/bin/wez` として PATH 配置済み（`scripts/sync/sync-bin.sh`）
-- [Epic #20](https://github.com/stlwolf/ai-development-hub/issues/20) でスコープ・Phase をトラッキング
 - [CONVENTIONS.md](wezterm-ai-mode/CONVENTIONS.md)、[VERIFICATION_MATRIX.md](wezterm-ai-mode/docs/VERIFICATION_MATRIX.md)
 
 詳細は [wezterm-ai-mode/README.md](wezterm-ai-mode/README.md) を参照。
@@ -94,6 +105,12 @@ WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツー
 - [ドキュメント関連マップ](second-opinion-verification/docs/INDEX.md)
 
 詳細は [second-opinion-verification/README.md](second-opinion-verification/README.md) を参照。
+
+### poc/
+
+技術検証（PoC）の凍結スナップショット。
+
+- [`poc/wezterm-ai-mode/`](poc/wezterm-ai-mode/README.md): wezterm-ai-mode の一次根拠の PoC
 
 ---
 
