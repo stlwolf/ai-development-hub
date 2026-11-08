@@ -94,10 +94,18 @@ printf '%s\n' \
 run_case printed-quote not_observed 0
 printf '%s\n' \
   '{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"example"}}' \
+  '{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":[{"type":"input_text","text":"Script completed\nProcess exited with code 0\nOutput:"},{"type":"input_text","text":"timed out negotiating with the code-mode host"}]}}' > "$ROLLOUT_FIXTURE"
+run_case split-header-quote not_observed 0
+printf '%s\n' \
+  '{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"example"}}' \
   '{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"other","output":"timed out negotiating with the code-mode host"}}' > "$ROLLOUT_FIXTURE"
 run_case other-call unknown 1
 printf '%s\n' '{"type":"response_item","payload":{"type":"function_call_output","call_id":"","output":"timed out negotiating with the code-mode host"}}' > "$ROLLOUT_FIXTURE"
 run_case no-call-id unknown 1
+printf '%s\n' '{"type":"response_item","payload":{"type":"function_call_output","output":"timed out negotiating with the code-mode host"}}' > "$ROLLOUT_FIXTURE"
+run_case missing-call-id unknown 1
+printf '%s\n' '{"type":"response_item","payload":{"type":"function_call_output","call_id":null,"output":"timed out negotiating with the code-mode host"}}' > "$ROLLOUT_FIXTURE"
+run_case null-call-id unknown 1
 unset ROLLOUT_FIXTURE
 CODEX_STUB_RC=42 run_case process-error not_observed 1
 ck 'nonzero process exit preserved' 42 "$(sed -n 's/^exit_code=//p' "$TMP_ROOT/process-error/codex-meta.txt")"

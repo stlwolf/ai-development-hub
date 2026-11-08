@@ -857,7 +857,7 @@ commit_meta() {
 # **同じ日に2回変えたら英字を足す。** バージョンは日付だけだと同日の2回目が前と同じ値になり、
 # 観測をバージョンで層別できなくなる（#303 がまさにこれを必要としている）。a は付けず、2回目を
 # b、3回目を c とする。
-SO_COMPARE_VERSION="2026-11-08"
+SO_COMPARE_VERSION="2026-11-08b"
 
 # --- CLI のバージョンの取得（#298） ---
 #
@@ -1171,13 +1171,13 @@ codex_tool_status() {
                         contains("timed out negotiating with the code-mode host")))
                 else . end |
                 if .session and $e.type == "response_item" and
-                    ($e.payload.type == "custom_tool_call_output" or $e.payload.type == "function_call_output") and
-                    ($e.payload.call_id | type) == "string" then
+                    ($e.payload.type == "custom_tool_call_output" or $e.payload.type == "function_call_output") then
                     ($e.payload.output | if type == "string" then [.] elif type == "array" then
-                        [.[] | select(.type == "input_text") | .text] else [] end) as $texts |
-                    if any($texts[];
+                        [.[] | select(.type == "input_text") | .text] else [] end | join("\n")) as $reply |
+                    if ($reply |
                         test("^(tool exec error: |Error: )?timed out negotiating with the code-mode host[.]?$")) then
-                        if .calls[$e.payload.call_id] == true then .degraded = true
+                        if ($e.payload.call_id | type) != "string" then .unmatched = true
+                        elif .calls[$e.payload.call_id] == true then .degraded = true
                         else .unmatched = true end
                     else . end
                 else . end
