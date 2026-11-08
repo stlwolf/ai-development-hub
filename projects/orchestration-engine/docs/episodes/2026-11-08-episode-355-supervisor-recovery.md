@@ -109,3 +109,13 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - `oe_seat_rewrite` に7つ目の引数として註の種類（`handoff` が既定・`recover`）を足した。復帰の註は「前のペイン `%N` は応答なし・復帰で張り替え」で、「前任 `%N`」の形を使わない。`oe-handoff retire` は「前任 `%N`」の最初の一致を閉じる相手として読むので、復帰の註の前のペインを閉じる相手と読まないことをテストで確かめた（`tests/test_handoff_take.sh` の [37]）。
 - 確かめ: `test_lease.sh`（136）・`test_handoff_take.sh`（139）を含む関係の13本がすべて終了コード 0。触ったファイルは shellcheck を通った。
 - 気づいたこと（直していない）: `tests/test_handoff_take.sh:487` の `rmdir()` に、shellcheck 0.11.0 が SC2329（info）を出す。master の同じファイルでも出るので、この変更から来たものではない。既存の disable は SC2317 で、0.11.0 では番号が SC2329 に分かれたものと思われる [speculation]。この PR の範囲の外として報告に書く。
+
+## I2: verb `oe-recover`（2026-11-08）
+
+- `bin/oe-recover` を足した。本体（resume した本人が打つ）と `hint`（resume の前に普通のシェルから打つ・読むだけ）の2つの入口を持つ。流れは plan の DJ-3 の 1〜8 のとおりで、止まるときと済んでいない工程が残るときは、H1 の3つの節（いまの状況・書いたもの／書かなかったもの・次にやること）を出す。
+- step の境の動き: plan では event の型（schema と `lib/event-bus.sh` の関数）を I3 に置いていたが、verb が `supervisor_recovery` を書くので I2 で足した。`delivery_held` の関数と schema も同じときに足した（`oe-send` から呼ぶのは I3）。中身は plan の DJ-4・DJ-7 のままで、記録の級の直し（step の中の順を入れ替えただけ）と読む。
+- schema の `reason` は交代の型の enum なので、`delivery_held` の理由は `held_reason` という別の項目にした（同じ名前を2つの意味に使わない）。
+- 撤回: schema を最初に JSON として読み書きしたら、ファイル全体の書式が変わって差分が 265 行になった。自分の変更だけだったので元に戻し、文字列の置き換えで足し直した（差分 39 行）。
+- テスト `tests/test_oe_recover.sh`（84 件）: T-1〜T-8・T-11〜T-13。偽の ps・tmux・kill・date に差し替え、足がかりの `oe-tree` も偽の bin に置き、`~/bin` を PATH から外し、state の置き場を一時ディレクトリに向けた（negative knowledge `01M5T897YCWY13GFTADD3136EC`）。最後に本物の置き場が書かれていないことを確かめる。
+- テストを書く途中で2つ外れ、どちらもテストの偽物の不足だった。1つは、偽の tmux が `list-panes -F '#{pane_id} #{pid}'`（registry の掃除が server の pid を確かめる書式）に答えず、掃除が走らなかったこと。もう1つは、T-11 で binding を途中で移す仕掛けを偽の `date` に置いたら、board の日付より先に、張り替えの時刻を作る呼び出しで動いたこと。偽の `date` は `+%Y-%m-%d` のときだけ動くようにした。
+- 出力の実物を1回見て（成功の場合と、前の claude が生きている場合）、「前の binding（… から）のあいだ」の言い方を「前の binding が張られた時刻（…）より後」に直した。

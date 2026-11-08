@@ -14,8 +14,8 @@
     },
     "type": {
       "type": "string",
-      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。#390 で supervisor_succession（統括の交代）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
-      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received", "supervisor_succession", "lease_bound"]
+      "description": "イベント種別。増分1 は child_spawned / message_sent の 2 種、増分A で report_received（受領印）を追加、#299 で prompt_received（取り込み印）を追加。#390 で supervisor_succession（統括の交代）を追加。#355 で supervisor_recovery（応答しない統括・委譲の子の復帰）と delivery_held（子が親の lease へ送れなかった送信）を追加。追加種別は additive に拡張する。report_received と prompt_received は別物であり、混同してはならない（前者=人/AI が読んだ・後者=セッションが1ターンとして取り込んだ）。",
+      "enum": ["child_spawned", "message_sent", "report_received", "prompt_received", "supervisor_succession", "lease_bound", "supervisor_recovery", "delivery_held"]
     },
     "from": {
       "$ref": "#/definitions/endpoint",
@@ -68,16 +68,16 @@
     "generation": {
       "type": "integer",
       "minimum": 1,
-      "description": "supervisor_succession のみ（#390）: 後継が何代目か。board の宣言と突き合わせて、交代の鎖を親子でなく並列の継承として辿るための番号。"
+      "description": "supervisor_succession（#390）: 後継が何代目か。board の宣言と突き合わせて、交代の鎖を親子でなく並列の継承として辿るための番号。supervisor_recovery（#355）: 復帰した lease の generation（同じ会話の復帰では generation は進まないので、復帰の前と同じ値）。"
     },
     "reason": {
       "type": "string",
-      "description": "supervisor_succession のみ（#390）: 交代のきっかけ。context_exhaustion=context の枯渇（計画的な交代の主因）/ planned=それ以外の計画的な交代 / unspecified=申告されなかった。応答しない前任からの復帰（#355）はこの型で書かない — 前任が申告できたかどうかが別物だからである。",
+      "description": "supervisor_succession のみ（#390）: 交代のきっかけ。context_exhaustion=context の枯渇（計画的な交代の主因）/ planned=それ以外の計画的な交代 / unspecified=申告されなかった。応答しない前任からの復帰（#355）はこの型で書かず、supervisor_recovery の型で書く — 前任が申告できたかどうかが別物だからである。",
       "enum": ["context_exhaustion", "planned", "unspecified"]
     },
     "server_pid": {
       "type": "string",
-      "description": "supervisor_succession のみ（#390）: 交代した時点の tmux server の pid。pane 番号は server をまたぐと再利用されるので、これが無いと別世代の同番号 pane と区別できない（#290 §7.2 が『server identity を持たせると2つの穴が同時に閉じる』と書いた位置）。"
+      "description": "supervisor_succession のみ（#390）: 交代した時点の tmux server の pid。pane 番号は server をまたぐと再利用されるので、これが無いと別世代の同番号 pane と区別できない（#290 §7.2 が『server identity を持たせると2つの穴が同時に閉じる』と書いた位置）。supervisor_recovery（#355）でも、復帰した時点の tmux server の pid を入れる。"
     },
     "covers_last_ts": {
       "type": "string",
@@ -160,6 +160,35 @@
       "then": {
         "required": ["nonce"],
         "description": "prompt_received（#299）は nonce を必須とする。from=取り込んだ側（受け手ペイン・hook が $TMUX_PANE から焼く）。to.pane は常に空である — 送信側は finalize の窓が閉じてから message_sent を書くので、受領印が書かれる時点ではまだ nonce がログに無く、emit 時に送信元を引けない（実機で確認）。送信元は read 時に nonce で message_sent と突き合わせて解決する。covers_* は持たない — report_received（読んだ）の意味を継がないため。"
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "supervisor_recovery" } } },
+      "then": {
+        "required": ["lease_id", "generation", "kind", "recovery_id", "server_pid", "complete", "undone"],
+        "properties": {
+          "lease_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+          "kind": { "enum": ["supervisor", "delegation"] },
+          "recovery_id": { "type": "string", "pattern": "^([0-9A-HJKMNP-TV-Z]{26})?$" },
+          "complete": { "type": "boolean" },
+          "undone": { "type": "array", "items": { "type": "string" } },
+          "prev_binding": { "type": "object", "properties": { "pid": { "type": "integer", "minimum": 1 }, "started": { "type": "string" } }, "additionalProperties": false },
+          "from": { "properties": { "role": { "const": "" } } },
+          "to": { "properties": { "role": { "const": "" } } }
+        },
+        "description": "supervisor_recovery（#355）は oe-recover が復帰の1回ごとに1行書く。from=復帰したペイン（lease_id と generation を持つ）、to は空。kind は lease の種類。recovery_id はその1回を見分ける ULID（作れなければ空）。prev_binding は張り替える前の binding（lease の rebinds の最後の要素・無ければ項目ごと無い）。complete=false の行は「復帰の変換が終わっていない」で、undone に済んでいない工程の名前が並ぶ。role はどちらも空にする（復帰は spawn の親子ではない）。"
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "delivery_held" } } },
+      "then": {
+        "required": ["held_reason"],
+        "properties": {
+          "held_reason": { "enum": ["no_parent_lease", "unresolved", "not_self", "closed", "no_binding", "unknown"] },
+          "brief": { "type": "string" },
+          "preview": { "type": "string" }
+        },
+        "description": "delivery_held（#355・decision #577 の D15 の申し送り）は、子が oe-send --to-parent で親の lease へ送ろうとして、送る前の確かめで外れて送らなかったときに書く。from=子（lease_id と generation を持つ）、to=親の lease（to.lease_id・pane は空）。held_reason は外れた理由、brief は --brief のパス、preview は送ろうとした1行の先頭。送れなかった送信の履歴であって、未回収の報告の集合ではない（再送で届いたもの・同じ報告の繰り返しを含みうる）。"
       }
     }
   ]
