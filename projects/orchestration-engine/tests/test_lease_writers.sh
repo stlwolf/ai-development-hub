@@ -140,9 +140,16 @@ rid="$(OE_LEASE_ID="" CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-lease" whoam
 ck "root は自分の lease を作る" "supervisor" "$(jq -r '.kind' "$OE_LEASE_DIR/$rid.json" 2>/dev/null)"
 ck "root の lease の binding は自分" "101" "$(jq -r '.generations[0].binding.pid' "$OE_LEASE_DIR/$rid.json" 2>/dev/null)"
 ck "lease_bound（root）が残る" "root" "$(jq -r --arg l "$rid" 'select(.type=="lease_bound" and .lease_id==$l) | .bind_reason' "$EVENTS" | tail -1)"
+# #576: label が cockpit の root は、統括のセッション名の要求を書く（root は代を知らないので代なし）
+STR="$HOME/.claude/state/session-title/sid_root.json"
+ck "root はセッション名の要求を書く" "cockpit ws" "$(jq -r '.name' "$STR" 2>/dev/null)"
+ck "要求の ID は <lease_id>:<generation>" "${rid}:1" "$(jq -r '.request_id' "$STR" 2>/dev/null)"
+# take が代つきの名前を書いたあとに中で root を呼んでも、同じ ID の要求を上書きしない
+jq -c '.name = "cockpit ws gen9"' "$STR" > "$STR.tmp" && mv "$STR.tmp" "$STR"
 n_before="$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
 CLAUDE_PID=101 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" root --label cockpit -w "$_TMP_DIR/ws" >/dev/null 2>&1 || true
 ck "もう lease があれば作らない" "$n_before" "$(find "$OE_LEASE_DIR" -name '*.json' | grep -c .)"
+ck "同じ ID の要求があれば root は上書きしない" "cockpit ws gen9" "$(jq -r '.name' "$STR" 2>/dev/null)"
 ck "link の前の子の lease の親は空" "" "$(jq -r '.parent_lease_id' "$OE_LEASE_DIR/$lid.json")"
 printf '{"pane":"%%9","label":"#9","workspace":"%s","parent_pane":"","role":"child"}\n' "$_TMP_DIR/ws" > "$OE_DELEGATE_STATE_DIR/4242__9.json"
 CLAUDE_CODE_SESSION_ID=sid-root bash "$BIN/oe-register" link %9 --force >/dev/null 2>"$_TMP_DIR/link.err" || true

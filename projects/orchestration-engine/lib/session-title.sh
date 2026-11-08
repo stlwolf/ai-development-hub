@@ -45,6 +45,18 @@ oe_session_title_supervisor_name() {
   esac
 }
 
+# oe_session_title_has_request <session_id> <request_id>
+# 同じ request_id の要求がすでにあれば 0。oe-register root が、take の書いた代つきの名前を
+# 代なしの名前で上書きしないために使う（take は中で oe-register root を呼ぶ）。
+oe_session_title_has_request() {
+  local sid="${1:-}" rid="${2:-}" key file
+  [ -n "$sid" ] && [ -n "$rid" ] && [ -n "$OE_SESSION_TITLE_DIR" ] || return 1
+  key="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_')"
+  file="${OE_SESSION_TITLE_DIR}/${key}.json"
+  [ -f "$file" ] || return 1
+  [ "$(jq -r '.request_id // ""' "$file" 2>/dev/null || true)" = "$rid" ]
+}
+
 # oe_session_title_request <session_id> <request_id> <name>
 # 名前の要求を書く（tmp に書いて mv で置き換える）。同じ request_id でも上書きしてよい（再試行）。
 oe_session_title_request() {
