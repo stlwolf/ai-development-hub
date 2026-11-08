@@ -2,19 +2,19 @@
 
 Cursor CLI（`agent` コマンド）を使って、同一プロンプトを複数モデルに並列投入し結果を比較するスクリプト。
 
-Cursor サブスク内の全モデル（38+）を使えるため、外部 API のコスト・レート制限を回避できる。
+Cursor サブスクのモデルを使うので、外部 API のキーやレート制限を別に持たなくてよい。既定は `composer-2.5` の1本で、ほかのモデルは `--list-models` で確かめて `-m` で渡す。
 
 ## 使い方
 
 ```bash
-# 2モデルで比較（デフォルト: gpt-5.2, gemini-3.1-pro）
+# 既定のモデル（composer-2.5）で実行
 ./arena-compare.sh "プロンプト"
 
-# モデル指定
-./arena-compare.sh -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" "プロンプト"
+# モデル指定（モデル名は --list-models で確かめる）
+./arena-compare.sh -m "<モデル>,<モデル>" "プロンプト"
 
 # コンテキストファイル付き
-./arena-compare.sh -m "opus-4.6,sonnet-4.6" -c src/file.ts "このコードをレビューして"
+./arena-compare.sh -c src/file.ts "このコードをレビューして"
 
 # プロンプトをファイルから読み込み
 ./arena-compare.sh -f prompt.txt
@@ -27,13 +27,13 @@ Cursor サブスク内の全モデル（38+）を使えるため、外部 API �
 
 ```bash
 # 初回実行（チャットIDが自動保存される）
-./arena-compare.sh -m "opus-4.6,sonnet-4.6" -o tmp/session1 "最初の質問"
+./arena-compare.sh -m "<モデル>,<モデル>" -o tmp/session1 "最初の質問"
 
 # 2回目（前回のコンテキストを保持して追加質問）
-./arena-compare.sh --resume-from tmp/session1 -m "opus-4.6,sonnet-4.6" -o tmp/session1-r2 "前の回答を踏まえて深掘り"
+./arena-compare.sh --resume-from tmp/session1 -m "<モデル>,<モデル>" -o tmp/session1-r2 "前の回答を踏まえて深掘り"
 
 # 3回目（さらに連鎖）
-./arena-compare.sh --resume-from tmp/session1-r2 -m "opus-4.6,sonnet-4.6" -o tmp/session1-r3 "さらに追加の質問"
+./arena-compare.sh --resume-from tmp/session1-r2 -m "<モデル>,<モデル>" -o tmp/session1-r3 "さらに追加の質問"
 ```
 
 ## 前提条件
@@ -47,31 +47,28 @@ agent status
 
 | オプション | 説明 | デフォルト |
 |-----------|------|----------|
-| `-m MODELS` | 比較モデル（カンマ区切り） | モード別（下記参照） |
+| `-m MODELS` | 比較モデル（カンマ区切り） | `composer-2.5` |
 | `-f FILE` | プロンプトをファイルから読み込み | - |
 | `-c FILE...` | コンテキストファイルを添付 | - |
 | `-o DIR` | 出力ディレクトリ指定 | `tmp/arena-YYYYMMDD-HHMMSS` |
 | `-w PATH` | ワークスペースパス | カレントディレクトリ |
 | `--mode MODE` | agent モード（agent/plan/ask） | `ask` |
 | `--resume-from DIR` | 前回の出力ディレクトリからセッション再開 | - |
-| `--list-models` | モデル一覧表示 | - |
+| `--list-models` | 使えるモデルの一覧を表示（`agent models`） | - |
 | `--dry-run` | 実行せずコマンド表示 | - |
 
 ## 環境変数
 
 | 変数 | 説明 | デフォルト |
 |------|------|----------|
-| `ARENA_MODELS` | デフォルトモデル（全モード共通で上書き） | モード別デフォルト |
+| `ARENA_MODELS` | デフォルトモデル（カンマ区切り。`-m` が優先） | `composer-2.5` |
 | `ARENA_TIMEOUT` | タイムアウト秒数 | `240` |
 
-## モード別デフォルトモデル
+## デフォルトモデル
 
-| モード | デフォルトモデル | 選定理由 |
-|--------|-----------------|----------|
-| ask / plan | `gpt-5.2,gemini-3.1-pro` | 異ファミリー2つで多様性確保。メインスレッドの Claude と合わせて3視点 |
-| agent | `gpt-5.3-codex-high,gemini-3.1-pro` | Codex で実装力 + Gemini で多角性 |
+既定はモードによらず `composer-2.5` の1本である。セカンドオピニオン（so-compare）の Cursor のレーンの既定とそろえている。
 
-メインスレッドが Claude 系（opus-4.6 等）のため、デフォルトは非 Claude の 2 モデルに絞っている。`-m` で明示すれば任意のモデル・数を指定可能。
+複数のモデルで比べたいときは、`--list-models` でアカウントで使えるモデル名を確かめ、`-m` か `ARENA_MODELS` で渡す。モデル名は Cursor の側で変わるので、この README には具体的な名前を並べない。
 
 ## 出力構造
 

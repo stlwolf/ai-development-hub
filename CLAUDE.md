@@ -32,7 +32,7 @@ so-compare -w "$(pwd)" "プロンプト"              # 推奨: -w でワーク�
 so-compare -w "$(pwd)" "プロンプト" --codex-only  # Codex のみ
 
 # arena-compare: マルチモデル並列比較（Cursor CLI）
-arena-compare -w "$(pwd)" "プロンプト"            # デフォルト3モデル
+arena-compare -w "$(pwd)" "プロンプト"            # デフォルトは composer-2.5 の1本
 arena-compare --resume-from tmp/arena-XXXXXXXX "追加質問"  # セッション継続
 
 # wez: WezTerm AI Mode CLI（~/bin/wez として配置）

@@ -26,6 +26,7 @@ ai-development-hub/
 │   ├── orchestration-engine/  # 蒸留の木: decision / episode / plan / knowledge（so-compare・sync 等の hub 全体の作業も入っている。整理は #335）
 │   ├── issues/             # issue 番号ごとの作業資料（検証プロンプト・結果等）
 │   ├── draft/              # ドラフト・作成中のドキュメント
+│   ├── _archived/          # 役割を終えたドキュメント（過去の記録）
 │   ├── knowledge/          # ナレッジ（セットアップガイド等）
 │   ├── research/           # 調査メモ・OSSセッション・ハーネス調査・手で書く調査（investigations/）
 │   ├── specs/              # 仕様の discussion
@@ -54,6 +55,7 @@ ai-development-hub/
 - **`harness/`** / **`orchestration-engine/`**: 蒸留の木（discussion / plan / episode / decision と knowledge）。木の置き方と文書型の規約は [`canonical/orchestration-spec/document-format.md`](canonical/orchestration-spec/document-format.md)
 - **`issues/`**: issue 番号ごとの作業資料
 - **`draft/`**: 作成中・検証中のドキュメント
+- **`_archived/`**: 役割を終えたドキュメント（過去の記録）
 - **`knowledge/`**: セットアップ等のナレッジ
 - **`research/`**: 調査メモ、OSS セッション、テーマ別調査（例: harness-engineering）、手で書く調査（`investigations/`）
 - **`specs/`**: 仕様の discussion

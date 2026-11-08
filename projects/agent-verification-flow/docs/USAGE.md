@@ -1,5 +1,7 @@
 # 詳細な使用方法
 
+> **凍結（2026-11-08・#594）。** 2026-02 時点の記録である。マルチエージェントの調査と SO の分析はその後 `projects/orchestration-research/`・`projects/orchestration-engine/`・so-compare 系のスキルへ引き継がれ、この文書は更新していない。スクリプト（`scripts/`）とテンプレート（`docs/templates/`）は現役である。
+
 ## 対象アーキテクチャ
 
 本ツールは以下のような一般的なWebサービス構成を想定しています:

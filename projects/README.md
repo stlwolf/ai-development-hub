@@ -21,7 +21,7 @@
 Cursor CLI（`agent` コマンド）によるマルチモデル並列比較スクリプト。
 
 - 同一プロンプトを複数モデルに並列投入して結果を比較
-- Cursor サブスク内の全モデル（38+）を利用（外部 API 不要）
+- 既定は `composer-2.5` の1本。ほかのモデルは `--list-models` で確かめて `-m` で渡す（Cursor サブスクのモデルを使うので外部 API は不要）
 - `-w` でワークスペースパス参照（`-c` によるファイル添付は非推奨）
 - `--resume-from` によるセッション維持でイテレーション可能
 - スキル（`canonical/skills/arena-compare/SKILL.md`）とコマンド（`/arena-perspectives`）を通じたサブエージェント委譲対応
@@ -63,17 +63,6 @@ WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツー
 - [CONVENTIONS.md](wezterm-ai-mode/CONVENTIONS.md)、[VERIFICATION_MATRIX.md](wezterm-ai-mode/docs/VERIFICATION_MATRIX.md)
 
 詳細は [wezterm-ai-mode/README.md](wezterm-ai-mode/README.md) を参照。
-
-### agent-rule-decomposition
-
-マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。
-
-- 集権的ルール（CONVENTIONS.md）のサブエージェント向け分割粒度の検証
-- エージェント役割とルールのマッピング（実装/レビュー/ドキュメント）
-- スキル/ルール/.mdc の配布メカニズムと優先順位の調査
-- ルール衝突時の解決パターン
-
-詳細は [agent-rule-decomposition/README.md](agent-rule-decomposition/README.md) を参照。
 
 ### orchestration-research
 
@@ -125,6 +114,17 @@ Cursor Composer / Agent スレッドの Markdown エクスポート（拡張 + C
 **正本・Release は [stlwolf/cursor-thread-tools](https://github.com/stlwolf/cursor-thread-tools) に移行済み。** hub 側は履歴アーカイブのみ。
 
 詳細は [_archived/cursor-thread-tools/README.md](_archived/cursor-thread-tools/README.md) を参照。
+
+### agent-rule-decomposition
+
+マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。議論ドキュメントの段階のまま、検証には進まずにアーカイブ（#594）。
+
+- 集権的ルール（CONVENTIONS.md）のサブエージェント向け分割粒度の検証
+- エージェント役割とルールのマッピング（実装/レビュー/ドキュメント）
+- スキル/ルール/.mdc の配布メカニズムと優先順位の調査
+- ルール衝突時の解決パターン
+
+詳細は [_archived/agent-rule-decomposition/README.md](_archived/agent-rule-decomposition/README.md) を参照。
 
 ### cursor-devtools-inspector
 

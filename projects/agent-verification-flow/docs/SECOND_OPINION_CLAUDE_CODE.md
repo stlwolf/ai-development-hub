@@ -1,5 +1,7 @@
 # セカンドオピニオン: 多角的な視点からの提案
 
+> **凍結（2026-11-08・#594）。** 2026-02 時点の記録である。マルチエージェントの調査と SO の分析はその後 `projects/orchestration-research/`・`projects/orchestration-engine/`・so-compare 系のスキルへ引き継がれ、この文書は更新していない。スクリプト（`scripts/`）とテンプレート（`docs/templates/`）は現役である。
+
 > **このドキュメントについて**
 > 
 > 本ドキュメントは、`ai_verify_generic` の設計に対して**異なるAIエージェント（Claude Code）からの独自見解**をまとめたものです。

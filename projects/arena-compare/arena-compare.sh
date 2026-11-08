@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # arena-compare.sh - Cursor CLI (agent) でマルチモデル並列比較
 # Cursor サブスクのモデルを使い、同一プロンプトを複数モデルに並列投入して結果を比較する
+# 既定は composer-2.5 の1本。ほかのモデルは --list-models で確かめて -m で渡す
 
 set -euo pipefail
 
@@ -9,14 +10,12 @@ usage() {
 Usage:
   arena-compare.sh "プロンプトテキスト"
   arena-compare.sh -f prompt.txt
-  arena-compare.sh -m "opus-4.6,gpt-5.2,gemini-3-flash" "プロンプト"
+  arena-compare.sh -m "<モデル>,<モデル>" "プロンプト"   # モデル名は --list-models で確かめる
 
 Options:
   -f FILE          プロンプトをファイルから読み込み
-  -m MODELS        比較モデル（カンマ区切り）
-                   デフォルトはモード別:
-                     ask/plan: gpt-5.2,gemini-3.1-pro
-                     agent:    gpt-5.3-codex-high,gemini-3.1-pro
+  -m MODELS        比較モデル（カンマ区切り。デフォルト: composer-2.5）
+                   使えるモデル名は --list-models（agent models）で確かめる
   -c FILE...       コンテキストファイルを添付（プロンプトに内容を追記）
   -o DIR           出力ディレクトリを指定（デフォルト: tmp/arena-YYYYMMDD-HHMMSS）
   -w PATH          ワークスペースパス（デフォルト: カレントディレクトリ）
@@ -27,7 +26,7 @@ Options:
   -h, --help       このヘルプを表示
 
 Environment:
-  ARENA_MODELS     デフォルトモデル（カンマ区切り）
+  ARENA_MODELS     デフォルトモデル（カンマ区切り。未指定なら composer-2.5）
   ARENA_TIMEOUT    タイムアウト秒数（デフォルト: 240）
 USAGE
 }
@@ -121,16 +120,9 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
-# モデルリスト確定（モード別デフォルト）
+# モデルリスト確定（-m > ARENA_MODELS > 既定の composer-2.5。モードによらず同じ）
 if [[ -z "$MODELS_STR" ]]; then
-    if [[ -n "${ARENA_MODELS:-}" ]]; then
-        MODELS_STR="$ARENA_MODELS"
-    else
-        case "$AGENT_MODE" in
-            agent) MODELS_STR="gpt-5.3-codex-high,gemini-3.1-pro" ;;
-            *)     MODELS_STR="gpt-5.2,gemini-3.1-pro" ;;
-        esac
-    fi
+    MODELS_STR="${ARENA_MODELS:-composer-2.5}"
 fi
 IFS=',' read -ra MODELS <<< "$MODELS_STR"
 

@@ -1,7 +1,7 @@
 ---
 title: "情報収集ストリームの状態 — 成果物索引・未処理の在庫・再取得手順"
-updated: 2026-08-20
-status: living
+updated: 2026-11-08
+status: frozen   # 2026-11-08 にストリームとして終了（#594）。続きは #130 の新しい構想
 tags: [intake, feedly, backlog, continuation]
 related_research:
   - docs/research/2026-07-27-loop-engineering-intake.md（ループ軸・Feedly API の実測を含む）
@@ -22,6 +22,8 @@ next_step:
 ---
 
 # 情報収集ストリームの継続資料
+
+> **このストリームは 2026-11-08 に終了し、この文書は凍結した（#594）。** 情報収集の続きは、#130 の新しい構想（[情報の入口と実行の場所の案・2026-11-01](https://github.com/stlwolf/ai-development-hub/issues/130#issuecomment-6558911735)）で扱う。そこでは Feedly は入口の候補の1つになる。未処理の在庫（§3）の要点は #130 にコメントで移した。下の本文は 2026-08-20 時点の記録で、Feedly の token の期限（§4・§6）と「X からの収集は見送る」（§7）は、その時点の判断である。
 
 ## 1. このドキュメントの役割
 
