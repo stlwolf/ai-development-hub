@@ -6,6 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../lib/so-verdict.sh"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
+if [[ -n "${SO_TEST_AWK:-}" ]]; then
+  [[ "$SO_TEST_AWK" == /* && -f "$SO_TEST_AWK" && -x "$SO_TEST_AWK" ]] || { echo 'FATAL: SO_TEST_AWK must be an absolute executable file'; exit 1; }
+  mkdir -p "$TMP_ROOT/awk-bin"
+  ln -s "$SO_TEST_AWK" "$TMP_ROOT/awk-bin/awk"
+  export PATH="$TMP_ROOT/awk-bin:$PATH"
+fi
 FILE="$TMP_ROOT/codex-stdout.txt"
 PASS=0; FAIL=0
 ck() {

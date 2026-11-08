@@ -24,11 +24,11 @@ _so_verdict_extract() {
   local f="$1" field="$2" numbers result
   numbers=""
   if [[ -s "$f" ]]; then
-    numbers="$(grep -niE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | cut -d: -f1 || true)"
+    numbers="$(grep -niE '^[[:space:]]*VERDICT:[[:space:]]*(refuted|survived)\b' "$f" | cut -d: -f1 | tr '\n' ' ' || true)"
   fi
   if [[ -s "$f" ]] && result="$(awk -v lines="$numbers" -v field="$field" '
       BEGIN {
-        count = lines == "" ? 0 : split(lines, positions, "\n")
+        count = lines ~ /^ *$/ ? 0 : split(lines, positions, " ")
         target = positions[1] + 0
       }
       { lower = tolower($0) }
@@ -45,7 +45,7 @@ _so_verdict_extract() {
         found = 1
       }
       END {
-        if (field == "verdict") print count == 1 ? verdict : "unknown"
+        if (field == "verdict") print (count == 1 ? verdict : "unknown")
         else if (field == "reason" && count == 1) printf "%s", reason
         else if (field == "error") {
           if (count > 1) printf "VERDICT 行が複数あります（%d件）。判定不能のため通常SOには数えません", count

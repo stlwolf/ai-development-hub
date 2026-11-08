@@ -73,6 +73,11 @@ exit "${SO_FAKE_RC:-0}"
 EOF
 chmod +x "$_TMP_DIR/pathbin/so-compare"
 
+# 呼び出すCLIも同じawkを使わせる（既定のPATHで上書きしない）。
+if [[ -n "${SO_TEST_AWK:-}" ]]; then
+  [[ "$SO_TEST_AWK" == /* && -f "$SO_TEST_AWK" && -x "$SO_TEST_AWK" ]] || { echo 'FATAL: SO_TEST_AWK must be an absolute executable file'; exit 1; }
+  ln -s "$SO_TEST_AWK" "$_TMP_DIR/pathbin/awk"
+fi
 export PATH="${_TMP_DIR}/pathbin:/opt/homebrew/bin:/usr/bin:/bin"
 export OE_REVIEW_SO_COMPARE="so-compare"
 export OE_DATA_DIR="$_TMP_DIR"

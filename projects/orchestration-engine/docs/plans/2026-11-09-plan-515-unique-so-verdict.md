@@ -33,7 +33,8 @@ so:
 - [x] 実際のoe-refute / oe-reviewをスタブ付きで起動し、error・集計結果・終了コードを確認する。
 - [x] #448の劣化判定も含む4スイート244項目、ShellCheck、bash -n、git diff --checkを確認する。
 - [x] PR #606を作成し、Copilotの1ラウンドを確認した（指摘0件・Approval recommended）。
-- [ ] ownerのレビューとマージ指示を待つ。
+- [x] macOSのawkについてのローカルレビューに対応し、mawkとOne True Awk 20200816の双方で各244項目を確認した。
+- [ ] 最新修正のmacOS実機での再確認と、ownerのマージ指示を待つ。
 
 検証コマンドは `bash projects/orchestration-engine/tests/test_so_verdict.sh`、同じtests配下の `test_oe_refute.sh`・`test_oe_review.sh`・`test_so_compare_tool_status.sh`。変更したシェルファイルに `shellcheck -x -P SCRIPTDIR` と `bash -n` を実行する。
 
