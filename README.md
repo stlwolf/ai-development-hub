@@ -15,23 +15,30 @@ ai-development-hub/
 │   ├── agents/             # エージェント定義
 │   ├── commands/           # コマンド（review/, investigation/, verification/）
 │   ├── hooks/              # フック定義（ツール別設定 + 共通スクリプト → sync で配布）
-│   ├── mcp/                # MCP設定（cursor.json → ~/.cursor/mcp.json にリンク）
-│   ├── cursor/             # Cursor 固有（コマンド定義等）
+│   ├── orchestration-spec/ # ツール横断の仕様（document-format.md: 蒸留の文書の型・遷移・ゲート）
+│   ├── output-styles/      # Claude Code の output style
+│   ├── mcp/                # MCP設定（cursor.json → ~/.cursor/mcp.json にリンク、claude.json → ~/.claude.json にマージ）
+│   ├── claude/             # Claude Code 固有（settings の宣言、statusLine のスクリプト）
+│   ├── cursor/             # Cursor 固有（rules の .mdc、skills、コマンド定義）
 │   └── codex/              # Codex 固有（AGENTS.md, commands-registry, agents 等）
 ├── docs/                   # ドキュメント
+│   ├── harness/            # 蒸留の木: ハーネス（canonical・scripts）の discussion / plan / episode / decision / knowledge
+│   ├── orchestration-engine/  # 蒸留の木: decision / episode / plan / knowledge（so-compare・sync 等の hub 全体の作業も入っている。整理は #335）
+│   ├── issues/             # issue 番号ごとの作業資料（検証プロンプト・結果等）
 │   ├── draft/              # ドラフト・作成中のドキュメント
 │   ├── knowledge/          # ナレッジ（セットアップガイド等）
-│   ├── decisions/          # 意思決定記録（Decision）
-│   ├── plans/              # Issue 連携キックオフ・プラン類
-│   ├── research/           # 調査メモ・OSSセッション・ハーネス調査等
-│   ├── specs/              # 仕様・ドキュメントフォーマット（例: document-format）
-│   └── BACKLOG.md          # 軽量バックログ（Issue化前の検討事項）
+│   ├── research/           # 調査メモ・OSSセッション・ハーネス調査・手で書く調査（investigations/）
+│   ├── specs/              # 仕様の discussion
+│   ├── BACKLOG.md          # 軽量バックログ（Issue化前の検討事項）
+│   └── INTAKE-STATUS.md    # 情報収集ストリームの状態
 ├── ideas/                  # アイデア（YYYYMMDD/、凍結スナップショット）
 ├── projects/               # 独立したツールキット（_archived/ にアーカイブ含む）
 └── scripts/                # ユーティリティ
     ├── sync.sh             # 統合 sync ランナー（cursor / claude / codex / bin）
-    ├── sync/               # 各ツール向け同期スクリプト
+    ├── sync/               # 各ツール向け同期スクリプト・設定の適用と検査
+    ├── wt/                 # worktree 連携（wt-pane-issue.sh・worktrunk の設定）
     ├── check-codex-guardrails.sh  # Codex ガードレール整合チェック
+    ├── harness-check.sh    # rule / skill の発動効果を CLI agent で実測するランナー
     ├── so-compare.sh       # セカンドオピニオン用（~/bin へ sync-bin で配置）
     └── arena-compare.sh    # arena-compare へのラッパー（同上）
 ```
@@ -44,13 +51,16 @@ ai-development-hub/
 ### `docs/`
 開発フロー、調査、仕様、意思決定のドキュメント。
 
+- **`harness/`** / **`orchestration-engine/`**: 蒸留の木（discussion / plan / episode / decision と knowledge）。木の置き方と文書型の規約は [`canonical/orchestration-spec/document-format.md`](canonical/orchestration-spec/document-format.md)
+- **`issues/`**: issue 番号ごとの作業資料
 - **`draft/`**: 作成中・検証中のドキュメント
 - **`knowledge/`**: セットアップ等のナレッジ
-- **`decisions/`**: 採用・方針の Decision 記録
-- **`plans/`**: Issue 連携のキックオフ・プラン
-- **`research/`**: 調査メモ、OSS セッション、テーマ別調査（例: harness-engineering）
-- **`specs/`**: ドキュメント形式などの仕様定義
+- **`research/`**: 調査メモ、OSS セッション、テーマ別調査（例: harness-engineering）、手で書く調査（`investigations/`）
+- **`specs/`**: 仕様の discussion
 - **`BACKLOG.md`**: Issue化するまでもない検討・調査タスクの管理
+- **`INTAKE-STATUS.md`**: 情報収集ストリームの状態・未処理の在庫
+
+蒸留の木は `projects/{name}/docs/` の下にもある（例: `projects/orchestration-engine/docs/`）。
 
 ### `ideas/`
 アイデア、ブレスト、素案の保管場所。日付ディレクトリ（`YYYYMMDD/`）ごとに整理。追加後は凍結（frozen snapshot）。
@@ -87,8 +97,10 @@ ai-development-hub/
 1. **プロジェクトルール**: 作業対象リポジトリの `.cursor/rules/` にプロジェクト用 `.mdc` を配置
 2. **共通ルール**: `canonical/rules/*.md` を各ツールのルール設定として使用
    - **Claude Code**: `./scripts/sync.sh claude` で `~/.claude/rules/` にシンボリックリンクを自動配置
-   - **Cursor**: User Rules として手動で登録（`sync-cursor.sh` は rules を配置しない）
-   - **Codex**: 現時点では rules 未対応（設定体系の拡張待ち、`sync-codex.sh` は skills のみ配置）
+   - **Cursor**: `canonical/rules/*.md` は User Rules として手動で登録する。Cursor 固有の `.mdc`（`canonical/cursor/rules/`）は `./scripts/sync.sh cursor` が `~/.cursor/rules/` に配置する
+   - **Codex**: `canonical/rules/` は配置しない。代わりに行動ガードレールの正本 `canonical/codex/AGENTS.md` を `~/.codex/AGENTS.md` に配置し、`canonical/rules` との整合を `check-codex-guardrails.sh` で検証する
+
+各ツールに配る内容（skills・agents・commands・hooks・orchestration-spec・MCP 等）の一覧は [scripts/README.md](scripts/README.md) を参照。
 
 ## タスク管理
 

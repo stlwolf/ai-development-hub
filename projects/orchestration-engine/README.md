@@ -1,6 +1,18 @@
 # orchestration-engine
 
-自前オーケストレーションツール MVP の実装プロジェクト（[Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) Phase 4）。
+複数の AI コーディングエージェント（Claude Code・Cursor・Codex）のセッションを、統括（親）と子に分けて動かすための Bash + jq の CLI 群。人間は WezTerm + tmux の画面（cockpit）で全体を見て介入し、統括のセッションが子へ作業を渡し、報告を受け、交代する。
+
+いま持っている面は次の5つである。
+
+| 面 | 主な入口 | 何をするか |
+|----|----------|------------|
+| 本体のエンジン | `oe` | wez のペインに agent を起こし、1 サイクル（envelope→spawn→capture→verify→monitor）を非対話で自律に回す（Phase 4 の MVP） |
+| 親子の委譲 | `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register` | 統括から tmux の子セッションを起こしてタスクを渡し、子から報告を受ける |
+| cockpit の観測と見張り | `oe-tree` / `oe-activity` / `oe-threads` / `oe-status` / `oe-vitals` / `oe-undelivered` / `oe-confirm` | 誰が動いているか・届いたか・統括が生きているかを read-only で見る |
+| 統括の交代と lease | `oe-handoff` / `oe-lease` | 統括を計画的に交代する。統括と子の「誰か」を、tmux のペインと切り離した lease の記録で持つ（#577 で移行中） |
+| SO のゲート | `oe-refute` / `oe-review` | 確定前の設計の反証と、実装のレビューを so-compare で回して判定を記録する |
+
+各 verb の引数は [`bin/README.md`](bin/README.md) にある。始まりは自前オーケストレーションツール MVP の実装プロジェクト（[Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) Phase 4・close 済み）で、その経緯は下の「状態」節に残す。
 
 ## 目的
 
@@ -44,6 +56,8 @@ projects/orchestration-engine/
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
 │   ├── oe-threads             # 生存ペインごとのモデル名とコンテキスト%（statusLine 拍動 sidecar を pane 側から引く・#327）
 │   ├── oe-register            # 手動起動ペインの自己 root 登記 / 既存ペインの委譲 link（#259）
+│   ├── oe-handoff             # 統括の計画的な交代（prepare / start / take / retire・#390）
+│   ├── oe-lease               # 統括と委譲子の lease の記録を作る・名乗る・引く・閉じる・掃除する（#577）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
 │   ├── oe-jump                # 通知/ラベルから対象 tmux ペインへ focus（--record で直近 target を replay・#179）
 │   ├── oe-view                # 生成 doc のビューア入口（md→viewer ペインで glow / 非 md→open・#210）
@@ -53,9 +67,11 @@ projects/orchestration-engine/
 │   ├── oe-ident               # ペインのオーケストレーション識別子を read 時投影（pane-border-format 用・#202）
 │   ├── oe-activity            # 親子活動ログ（oe-events.jsonl）の read 時投影ビュー: 往復/配送/preview/子生存/受領（inbox PENDING・timeline ack 行）（#206）
 │   ├── oe-tree                # spawn トポロジ（親→子→孫）の read-only 罫線ツリー表示 + --watch live 表示 + --pick 対話ナビ（選択→jump+最大化）（registry 現 server スナップショット・#221/#223/#227）
+│   ├── oe-confirm             # 送信が受け手の会話に着いたかを送信1件ごとに照合（read-only・常駐の見張り可・#336）
 │   ├── oe-undelivered         # 報告未達検知 watchdog（未ack × 時間窓 × 受領印・read-only・cron 可・#239 段階0）
 │   ├── oe-selfcheck           # バージョンに固定された前提の点検（3値判定・read-only・#299 P3）
 │   ├── oe-hookfire            # 止める側のフック3本の発火記録を直近の窓で読む read-only 検査（3値判定・#309）
+│   ├── oe-lane-explain        # SO のレーンが返らなかった理由を過去の出力から分類（read-only・#303）
 │   └── oe-vitals              # 統括 vital 監視 watchdog（拍動鮮度 + context% 閾値・read-only・cron 可・#239 段階1）
 ├── lib/                       # Bash 関数ライブラリ（source 専用）
 │   ├── constants.sh           # OE_POLL_INTERVAL, OE_CB_*, OE_DATA_DIR, OE_TARGET_AI_*, OE_VERIFY_AI_* 等
@@ -73,8 +89,14 @@ projects/orchestration-engine/
 │   ├── delegate-send.sh       # 1 行 safe-send（改行 fail-fast）+ 観測ベース finalize（Enter 吸収の回復・#144）
 │   ├── so-verdict.sh          # SO の VERDICT 抽出/集約/dissent/exit（oe-refute / oe-review が共有・#197）
 │   ├── sanitize.sh            # 会話到達面（event-bus preview 等）の制御文字サニタイズ（write+read 両側・#224）
-│   └── oe-viewer.sh           # viewer ペイン解決（argv-spawn replace モデル・oe-view が使用・#210）
-├── schemas/                   # JSON Schema 6 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy / oe-events）
+│   ├── oe-viewer.sh           # viewer ペイン解決（argv-spawn replace モデル・oe-view が使用・#210）
+│   ├── handoff-state.sh       # 統括の交代で引き継ぎ文書に書く「機械で取れる状態」の収集（#390）
+│   ├── seat.sh                # board の「現統括」の席を読む・張り替える・検算する（#390）
+│   ├── lease.sh               # lease の記録の読み書き（#577）
+│   ├── target-resolve.sh      # 送る・飛ぶ・選ぶの宛先を lease の記録から引き、本人を確かめる（#577）
+│   ├── tmux-pane-identity.sh  # ペインにいまいるのが誰か・プロセスが生きているかの確認（#577）
+│   └── heartbeat-resolve.sh   # heartbeat の sidecar からペインと session_id を引く規則（#577）
+├── schemas/                   # JSON Schema 7 件（envelope / audit-log / session-state / exit-code-mapping / failure-taxonomy / oe-events / oe-lease）
 ├── tests/                     # mock テスト suite（delegate registry / send 等の単体を含む）
 │   └── e2e_real_agent/        # 実 agent (cursor-agent + claude) で 1 サイクル E2E 検証（Step 4-4 で新設）
 ├── scripts/
@@ -83,14 +105,17 @@ projects/orchestration-engine/
 │   ├── validate-board.sh      # board（統括の盤面 doc）のスキーマ検証（#238）
 │   ├── validate-knowledge.sh  # negative knowledge item のスキーマ検証（observations 要素を含む・advisory）
 │   ├── knowledge-list.sh      # negative knowledge store の item を蒸留木横断で read-only 列挙
-│   └── measure-delivery-arrival.py  # 到達率の測定器（transport 前後比較の基準・#299）
+│   ├── validate-lease.sh      # lease の記録（schemas/oe-lease.schema.json）の検証（#577）
+│   ├── measure-delivery-arrival.py  # 到達率の測定器（transport 前後比較の基準・#299）
+│   └── register-metrics/      # 会話面の応答レジスタを転記から測る測定スクリプト群（#348・README あり）
 ├── audit/                     # 監査ログ JSONL 出力先（runtime）
 ├── state/                     # セッション状態 KVS 出力先（runtime。委譲レジストリは ~/.claude/state/ 配下）
 └── docs/
     ├── discussions/           # 探索・ブレスト・調査メモ
     ├── plans/                 # KickOff / Plan（実行可能粒度）
     ├── episodes/              # 実行記録・作業ログ
-    └── decisions/             # ADR / 意思決定の蒸留
+    ├── decisions/             # ADR / 意思決定の蒸留
+    └── knowledge/             # negative knowledge の item（items/・README あり）
 ```
 
 docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の構造を踏襲し、`spec-card` スキルの蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision/ADR）に準拠する。
@@ -191,7 +216,7 @@ MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した�
 - `oe-kick` — `oe-delegate` の薄いワンショットラッパー（[#178](https://github.com/stlwolf/ai-development-hub/issues/178)）
 - **cockpit 直列スパイン**（[#169](https://github.com/stlwolf/ai-development-hub/issues/169)）: `wez pane split` targeting 規約（[#174](https://github.com/stlwolf/ai-development-hub/issues/174)）→ 宣言的盤面 `wez layout`（[#165](https://github.com/stlwolf/ai-development-hub/issues/165)）→ `spawn.sh` の `oe_board_apply` 化（[#175](https://github.com/stlwolf/ai-development-hub/issues/175)。`wez layout` の pane_id map を pool 消費・`OE_SPAWN_PANE_ID` 不変・空なら従来 split fallback）
 - **cockpit 観測UI** `oe-status`（ENGINE=audit-terminal state / DELEGATE=liveness の read-only 俯瞰 + 監査ログ閲覧・[#177](https://github.com/stlwolf/ai-development-hub/issues/177)）= runtime セッション観測の入口
-- **設計SO / 実装SO ゲート verb**: `oe-refute`（確定前の同期反証＝設計SO・[#183](https://github.com/stlwolf/ai-development-hub/issues/183) Stage A）/ `oe-review`（実装SO＝コード欠陥の reviewed-diff バインド独立 artifact・[#195](https://github.com/stlwolf/ai-development-hub/pull/195) L2）+ 共有 `lib/so-verdict.sh`（[#197](https://github.com/stlwolf/ai-development-hub/pull/197)）。実装SO は設計SO と**別レンズ・別 audit**で識別（[#192](https://github.com/stlwolf/ai-development-hub/pull/192) の false-pass 防止）。蒸留パイプラインの soft floor は `.claude/rules/episode-flow-discipline.md`（A1）
+- **設計SO / 実装SO ゲート verb**: `oe-refute`（確定前の同期反証＝設計SO・[#183](https://github.com/stlwolf/ai-development-hub/issues/183) Stage A）/ `oe-review`（実装SO＝コード欠陥の reviewed-diff バインド独立 artifact・[#195](https://github.com/stlwolf/ai-development-hub/pull/195) L2）+ 共有 `lib/so-verdict.sh`（[#197](https://github.com/stlwolf/ai-development-hub/pull/197)）。実装SO は設計SO と**別レンズ・別 audit**で識別（[#192](https://github.com/stlwolf/ai-development-hub/pull/192) の false-pass 防止）。蒸留パイプラインの soft floor（A1）は `.claude/rules/episode-flow-discipline.md`（このリポジトリの外のファイルで、hub には無い）
 - **2 基盤 identity 決定**（[#188](https://github.com/stlwolf/ai-development-hub/issues/188)）: engine（wez 整数 pane）と delegate（tmux `%N`）は**別多重化レイヤ**＝pane 層で統一せず、相関は **read 時**（query-side fusion）。ADR: `docs/decisions/2026-06-19-decision-188-identity-unification.md`
 
 ### Phase 4 完了報告と Phase 5 方向感
@@ -209,12 +234,14 @@ MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した�
 
 ### 派生 Issue (MVP 後拡張候補、Phase 5 で本質性仕分け)
 
-| Issue | 内容 |
-|---|---|
-| [#92](https://github.com/stlwolf/ai-development-hub/issues/92) | 検証ゲート v2: 検証入力を **commit 範囲 (baseline..end)** 評価に変更 (単一 UC 分 landed)。変更ファイル=`git diff baseline..end`・完了報告=`git log baseline..end`・worker commit 契約 + baseline/end materialize。設計SO 3 ラウンドで working-tree diff の pane-blind/dirty 混入を構造的欠陥と確定 (→ commit 評価に reframe)。残: multi-pane 帰属 (branch/worktree)・reviewer verdict チャネルの marker 注入 ([#101](https://github.com/stlwolf/ai-development-hub/issues/101)) は別 follow-up |
-| [#93](https://github.com/stlwolf/ai-development-hub/issues/93) | reviewer 一時ファイル掃除 (前半完了) + nonce marker (後半 = MVP 後拡張) |
-| [#98](https://github.com/stlwolf/ai-development-hub/issues/98) | target ペイン出力を file redirect 経路に統一 |
-| [#99](https://github.com/stlwolf/ai-development-hub/issues/99) | bin/oe --task-file の異常系 (空 / 不在 / 不正パス) の仕様明示 |
-| [#100](https://github.com/stlwolf/ai-development-hub/issues/100) | _oe_verify_scan_log_file の単体テスト追加 |
-| [#101](https://github.com/stlwolf/ai-development-hub/issues/101) | reviewer marker の false-positive 抑制 |
-| [#102](https://github.com/stlwolf/ai-development-hub/issues/102) | _oe_strip_ansi 共通関数化 |
+| Issue | 内容 | 状態 |
+|---|---|---|
+| [#92](https://github.com/stlwolf/ai-development-hub/issues/92) | 検証ゲート v2: 検証入力を **commit 範囲 (baseline..end)** 評価に変更 (単一 UC 分 landed)。変更ファイル=`git diff baseline..end`・完了報告=`git log baseline..end`・worker commit 契約 + baseline/end materialize。設計SO 3 ラウンドで working-tree diff の pane-blind/dirty 混入を構造的欠陥と確定 (→ commit 評価に reframe)。残: multi-pane 帰属 (branch/worktree)・reviewer verdict チャネルの marker 注入 ([#101](https://github.com/stlwolf/ai-development-hub/issues/101)) は別 follow-up | close |
+| [#93](https://github.com/stlwolf/ai-development-hub/issues/93) | reviewer 一時ファイル掃除 (前半完了) + nonce marker (後半 = MVP 後拡張) | open |
+| [#98](https://github.com/stlwolf/ai-development-hub/issues/98) | target ペイン出力を file redirect 経路に統一 | close |
+| [#99](https://github.com/stlwolf/ai-development-hub/issues/99) | bin/oe --task-file の異常系 (空 / 不在 / 不正パス) の仕様明示 | close |
+| [#100](https://github.com/stlwolf/ai-development-hub/issues/100) | _oe_verify_scan_log_file の単体テスト追加 | close |
+| [#101](https://github.com/stlwolf/ai-development-hub/issues/101) | reviewer marker の false-positive 抑制 | close |
+| [#102](https://github.com/stlwolf/ai-development-hub/issues/102) | _oe_strip_ansi 共通関数化 | close |
+
+状態は 2026-11-08 時点の issue の open / close である。
