@@ -1,0 +1,91 @@
+---
+id: "01M6XCD1N8KVH8DYNCPG5Z4F5W"
+title: "#355 統括が応答しないときの復帰を verb 1本に畳む（設計）"
+date: 2026-11-08
+type: episode
+status: in-development
+related:
+  - type: parent_issue
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/355"
+    reason: "本 episode の作業対象"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/355#issuecomment-6719836978"
+    reason: "着手時の認識合わせの確定版（通し直し・2026-11-08・深掘りなし）。この単位はこれを前提にする"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
+    reason: "復帰の前提になる lease と generation の決定（D1〜D19）"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/discussions/2026-07-13-discussion-supervisor-succession-recovery-and-observability.md"
+    reason: "復帰を verb にする元の設計材料（§4・§5）"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/plans/2026-11-08-plan-355-supervisor-recovery.md"
+    reason: "この単位の plan"
+tags: [orchestration, supervisor, recovery, lease, design]
+---
+
+# #355 統括が応答しないときの復帰を verb 1本に畳む（設計）
+
+**この episode は着手時（2026-11-08）に枠を作り、作業しながら追記している。** 後追いで再構成した節があれば、その節の冒頭に `reconstructed` と書く。
+
+## なぜこの作業が始まったか
+
+統括のセッションが落ちたりペインが消えたりしたあと、同じ会話を resume しても、統括の席・登記・子の報告先が死んだペインを指したまま残り、統括が手で3〜4つの直しをしてきた（2026-09-09 から 10-30 までの5回・復帰の見取り図の「実例」）。#577 で「誰か」を lease の記録で持つようになったので、その上に復帰の verb を作る。この委譲は設計まで（brief の終端は P3）。
+
+## P1: 着手（2026-11-08）
+
+- worktree: `feature/#355_supervisor_recovery` を `origin/master`（`df16c60`）から作った。
+- 確定版の照合: `issue-intake` の 1-2 の手順で、最後の行が `confirmed`・見出し4・URL が brief の「認識合わせ」欄と一致した。自分では認識合わせを通し直さない。
+- 読んだもの: issue の本文とコメント全部（2026-09-11・09-15・10-06・10-18・11-05・11-08）、復帰の見取り図（artifact）、discussion 2026-07-13、decision #577 と discussion #577 の DJ-1〜DJ-7、`lib/lease.sh`・`bin/oe-lease`・`bin/oe-handoff` の take と retire・`lib/tmux-pane-identity.sh`・`bin/oe-vitals` の lease の判定・`bin/oe-send` の `--to-parent`・`lib/event-bus.sh` の `lease_bound`。
+
+## P1: 設計判断の洗い出しで分かったこと（2026-11-08）
+
+### 確定版の「generation を進めて席を取る」は、いまの lib の決まりと合わない
+
+- `lib/lease.sh:11` は「generation は交代でだけ進む。resume では進まない」と書き、`oe_lease_claim` は session_id が同じ lease の別の generation にあれば rc 8 で止まる。同じ会話を resume して generation を進めると、1つの会話が2つの generation に分かれ、自分の id が退任した generation に残る。
+- `oe-lease bind` は、前の binding のプロセスが死んでいれば同じ generation のまま binding を張り替える。復帰の lease の工程は、新しく書かなくても既にある。
+- 判断: plan の DJ-2 で「進めず張り替える」を推奨にし、確定版との違いとしてゲート3 で owner に確かめる（Q2）。確定版を書いたのは統括で、decision #577 の D5 の「generation を進めてよいのは…復帰のとき」の文を読んだものと思われる [speculation]。D5 のその文は、別の会話が引き取る場合に当たる読み方ができる。
+
+昇格の印: 「同じ会話の復帰は generation を進めず binding を張り替える」は、復帰の意味の決まりなので、ゲート3 で決まったら decision に残す候補である。
+
+### 子の lease の親は書き換えなくてよい
+
+- `OE_LEASE_ID` を持つ子は親の lease へ送る（`bin/oe-send:14`）。統括が同じ lease に戻れば、宛先は自動で新しいペインになる。確定版の「子の lease の親と登記のつけかえ」のうち、lease の側は要らない。registry の側だけが移行のあいだ残る（decision #577 の D11）。
+
+### 「古い拍動 sidecar の掃除」は verb の工程にしない
+
+- sidecar のファイル名は session_id なので、同じ会話を resume すれば同じファイルが新しいペインで上書きされる（`canonical/claude/statusline/statusline-oe-heartbeat.sh:9`・`:98`）。ほかの session_id の sidecar は、lease のペインを引く関数の候補にならない（`lib/heartbeat-resolve.sh:9-14`）。消さなくても誤った宛先にはならないので、`oe-lease gc` に任せる。
+
+### `oe-vitals` の二重通知のキーに穴がある
+
+- キーは `death|<session_id>`（`bin/oe-vitals:447`）。復帰のあとに同じ会話がもう一度落ちると、session_id が同じなので知らせが出ない、とコードから読める（実機では起きていない）。plan の DJ-8 でキーに binding を足す。
+
+### verb の名前
+
+- 仮称 `oe-reseat` の `seat` は、decision #577 の D16 が「使わない」と決めた語である。plan の DJ-1 で `oe-recover` を推奨にし、owner に確かめる（Q1）。
+
+### 決め方の分け
+
+- owner に聞く: DJ-1（名前）・DJ-2（generation）・DJ-6（前のプロセスを閉じる工程）・DJ-7（`delivery_held`）・drill の対象。
+- 自分で決めた: DJ-3（流れ）・DJ-4（event の型）・DJ-5（古い子）・DJ-8（`oe-vitals`）・DJ-9（session_id の引き方）・DJ-10（手順の置き場）・DJ-11（別のリポジトリ）。どれも decision #577 か既存の形から導けるためである。
+
+## P2: 設計SO（2026-11-08）
+
+- レーン: Codex の1レーン（`so-compare --codex-only -w <worktree>`・`SO_TIMEOUT=600`）。`gpt-6.1-sol`（設定から解決）・`codex-cli 0.166.0`・198秒・リトライなし・判定「Issues Found」。依頼文と回答は、hub の作業ディレクトリの gitignored な `tmp/355-supervisor-recovery/`（`so-355-design-prompt.md` と `so-355-design/codex-stdout.txt`）に置いた。依頼文に `.oe/` の中身は入れていない。
+- 採否は plan の「設計SO」の表（S-1〜S-11・N1〜N3）が正本である。ここには、判断が動いたところだけを書く。
+
+### 一番大きく動いたところ: 派生の工程を「前の情報で直す」から「lease からまるごと作り直す」に変えた
+
+- 最初の案は、registry の親のペインが前のペインのままの子を探してつけかえる、board の前のペインを前の binding から書く、という「前の情報を手がかりに直す」形だった。Codex は、`oe_lease_claim` が前の binding を残さずに上書きするので、張り替えたあとに止まると打ち直しで前の情報を引けないこと、tmux を起こし直すと前の server の registry は記録のたびに消えること、前のペインの番号は使い回されうることを挙げた。3つとも、コードを読んで当たっていると確かめた（`lib/lease.sh:283-290`・`lib/delegate-registry.sh:78`）。
+- 直し: 前の binding は、張り替えと同じ1回の書き込みで `rebinds` に残す。registry は、lease の記録の親子から、いまのペインを引いて作り直す。前の registry と前のペインの番号は手がかりにしない。
+- 撤回したもの: 「子の registry のつけかえに `oe-register link` を使う」。`link` は子の lease の親も書き換えて `epoch` を進める（`bin/oe-register:71-85`）ので、「子の lease は書き換えない」と食い違っていた。最初の案を書くとき、`oe-register` の lease の側の副作用を読んでいたのに（P1 で `lease_root_best_effort` を読んだ）、`link` の側を当てていなかった。
+
+昇格の印: 「復帰の派生の工程は、前の情報でなく lease の記録といまの観測から作り直す」は、復帰の verb の設計の要なので、decision に残す候補である。
+
+### `delivery_held` の主張を弱めた
+
+- 最初の案は「送れなかった報告を拾える」と書いた。Codex は、送れなかった送信の履歴は未回収の報告の集合と同じではない（再送で届いたもの・同じ報告の繰り返しが混ざる・event の追記は best-effort）と指摘した。一覧は「要照合の履歴」として出し、空でも取りこぼしが無いとは言わない形に変えた。報告の受け箱（Codex の N3）は別の issue の候補として owner に見せる。
+
+### 採らなかったもの
+
+- N1（owner の普通のシェルで動く一括の復帰の道具）: decision #577 の D17（session_id の登録は本人の verb だけ）を変えることになる。
+- N2（board と registry を書かず、読むときに作る）: registry は #577 の PR-5・PR-6 で読むのをやめる方向で、この drill がその条件である。この issue で先取りすると #577 の移行の順を崩す。
