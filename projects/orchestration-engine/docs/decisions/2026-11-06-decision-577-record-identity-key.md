@@ -63,7 +63,7 @@ tags: [orchestration, registry, identity, supervisor, delegation, decision]
 - **D16 新しい概念は識別子で呼ぶ**（discussion の §5.0・DJ-17・owner の答え: Q71）。持ち場は `lease`（ID の項目は `lease_id`・verb は `oe-lease`。Kubernetes の Lease に合わせた。時間で期限切れにならない点は Kubernetes と違う）、その持ち場に座った会話は既存の `generation`、プロセスとの結び付きは `binding`、比べる番号は `epoch`、送れなかったことを残す events の型の名前の案は `delivery_held` である（使うかは #355 で決める）。`seat` は current_supervisor の意味から外す方向（#564）なので使わない。
 - **D17 最初の `binding` と、あとから増える session_id の書き手**（DJ-18）。起こした子と後継は、起こした側の verb（`oe-delegate`・`oe-handoff start`）が、ペインの生存を確かめる時点で、端末のフォアグラウンドのプロセスの pid と開始時刻を `binding` に書く（コマンドが claude であることを確かめ、確かめられなければ未確定で止める）。手で立てた統括は、本人が `oe-lease create --root` を打つ。session_id を登録するのは、本人が動かす `oe-lease` の verb だけで、自分の `CLAUDE_PID` が `binding` と一致するときに自分の `CLAUDE_CODE_SESSION_ID` を登録する。heartbeat の sidecar は登録の根拠にしない。
 - **D18 ペインの本人確認を1つの関数にする**（DJ-19）。tmux に固有の確かめを集めた小さな lib に置き、送信・adopt・retire・`oe-jump`・`oe-select` がそれを使う。
-- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。PR-3 では配っているスキルの文を替え、`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する。
+- **D19 子から親への報告の入口を `oe-send --to-parent` の1本にする**（DJ-20）。PR-3 では配っているスキルの文を替え、`oe-report` と `/tmp/oe-parent-<N>` は、古い子が残っていないと確かめてから PR-6 で廃止する。（2026-11-09・PR-6 で追記）PR-6 で外したのは書く側の無い `/tmp/oe-parent-<N>` のフォールバックだけで、`oe-report` の verb は、それを呼びうる古い子が生きていたので #603 に移した。
 
 ## decision #188・#206・#238/#239 との関係
 

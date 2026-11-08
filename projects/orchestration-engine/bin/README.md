@@ -368,7 +368,7 @@ oe-view --help
 
 ## oe-report — 親へ申し送り（legacy）
 
-親ペインへ申し送り / レビュー依頼を送る。**legacy**: 戻しは `oe-send "$PARENT_TMUX_PANE"` に一本化が方針。
+親ペインへ申し送り / レビュー依頼を送る。**legacy**: 戻しは `oe-send --to-parent` に一本化が方針（#577 の D19。verb を消すのは #603）。親ペインは環境変数 `PARENT_TMUX_PANE` だけから引き、無ければ exit 1 で止まる（`/tmp/oe-parent-<自 pane>` のファイルへのフォールバックは #577 PR-6 で外した）。
 
 ```bash
 oe-report [--review] <message>

@@ -70,14 +70,16 @@ rc=0; env PATH="$STUB_BIN:$PATH" TMUX="oe,9999,0" TMUX_PANE="%9" PARENT_TMUX_PAN
       OE_SEND_FINALIZE=0 bash "$OE_REPORT" "x" >/dev/null 2>&1 || rc=$?
 ck "rc=1（pane not found）" "1" "$rc"
 
-echo "[5] 親未解決（env も file も無し）: exit 1"
+echo "[5] 親未解決（PARENT_TMUX_PANE が無い）: exit 1"
 rc=0; env -u PARENT_TMUX_PANE -u TMUX_PANE PATH="$STUB_BIN:$PATH" bash "$OE_REPORT" "x" >/dev/null 2>&1 || rc=$?
 ck "rc=1" "1" "$rc"
 
 echo "[5b] #577 PR-6: /tmp/oe-parent-<自 pane> のファイルがあっても読まない（フォールバックを外した）"
 # 使い捨ての番号のファイルを置き、PARENT_TMUX_PANE を外して呼ぶ。読まれれば生きた親 %1 へ送って rc=0 になる。
-_fb_pane="9$$${RANDOM}"
+# 本物のペインの番号と重ならないよう、数字でない接頭辞を付ける。途中で止まっても消すよう EXIT の trap に足す。
+_fb_pane="oe577test-$$-${RANDOM}"
 _fb_file="/tmp/oe-parent-${_fb_pane}"
+trap 'rm -rf "$_TMP_DIR"; rm -f -- "$_fb_file"' EXIT
 printf '%%1\n' > "$_fb_file"
 before="$(nlines)"
 rc=0; env -u PARENT_TMUX_PANE PATH="$STUB_BIN:$PATH" TMUX="oe,9999,0" TMUX_PANE="%${_fb_pane}" \
