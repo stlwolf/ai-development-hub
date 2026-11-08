@@ -109,3 +109,35 @@ tags: [orchestration, hooks, session-name, lease]
 ### I1-4: README（2026-11-08）
 
 - `canonical/hooks/README.md` の「session-name.sh + wt-pane-issue.sh」節に、(0) の要約と Path0 の項（要求の形・一度だけ改名する決まり・Path1 と Path2 に落ちないこと・`claude -r` の範囲）を足した。
+
+### I1-5: 実物の確かめ（2026-11-08・Claude Code v2.1.319）
+
+#### やり方
+
+- 動いている `~/.claude/hooks/session-name.sh` は main のチェックアウト（master）の hook への symlink なので、そのままでは新しい hook が動かない。検証用の claude だけ、`--setting-sources project,local`（ユーザー設定を読まない）と `--settings`（UserPromptSubmit にブランチの hook だけを置いた JSON）で起こした。sync はしていない（hook は配布物なので sync は統括の仕事）。
+- scratchpad に git のリポジトリを2つ（`trial-a`・`trial-b`）作り、tmux の検証用のウィンドウにそれぞれ claude を起こした。今の統括の lease と登記には触っていない。
+- それぞれのセッションで、bash モード（`!`）でブランチの `oe-register root --label cockpit` を打ち、次に普通のプロンプトを1つ送った。
+
+#### 結果
+
+- `oe-register` の出力: 「registered %N as root (label: cockpit)」「lease … を自分の lease にしました（root）」「セッション名の要求を書きました（cockpit trial-a。次のプロンプトで付きます）」。
+- 次のプロンプトで、ペインの題・プロンプト欄の右の名前・会話の記録の `customTitle` が、すべて `cockpit trial-a` になった。記録は `{"format":1,"request_id":"<lease_id>:1","name":"cockpit trial-a",…}`、state は `{"seat_request_id":"<lease_id>:1","last_branch":"master"}` だった。trial-b も同じく `cockpit trial-b` になった。
+- `/rename manual-x` のあとにもう1つプロンプトを送っても、名前は `manual-x` のままだった（同じ要求の ID のあいだは手で付けた名前を残す）。
+- `trial-a` で `claude -r cockpit` を打つと、一覧は語「cockpit」で絞られ、出たのは `cockpit trial-a` の1件だけだった（今のリポジトリだけ）。
+- その一覧で `Ctrl+A` を押しても、検索欄にいるあいだは広がらなかった。`↓` で一覧に移ってから `Ctrl+A` を押すと、語で絞ったまま `cockpit trial-b`（パス `…/t576/trial-b`）と `cockpit trial-a` が並んだ。案内の行も「Ctrl+A to only show current repo」に変わった。広げた一覧の写しは、ほかのリポジトリの会話も出るので、ここには検証用の2件だけを写す。
+- 2つのセッションを閉じてから `claude -r "cockpit trial-a"` を打つと、一覧を通さずにそのセッションに入り、名前も会話もそのままだった。
+
+昇格の印: `claude -r <語>` の一覧の `Ctrl+A` は、検索欄にいるあいだは効かず、`↓` で一覧に移ってから押す（#355 の復帰の手順に書く事実）
+
+#### 片付け
+
+- 検証用の lease 2本（workspace が `trial-a` と `trial-b`）を `oe-lease close` で閉じ、検証用のウィンドウを閉じた。
+- registry の検証用の root 2件は、ペインが無くなったので `oe-tree` に `gone` として出ている。registry の GC は次に registry を書いたときに走るので、そのときに消える。GC を手で走らせると統括の下のほかの `gone` の記録も消すので、走らせていない。
+- 名前の要求の記録 2件（`~/.claude/state/session-title/`）は残した。30日で GC される。
+
+#### 受入（GATE I1）
+
+- A1: root の道は実物で確かめた（上）。take の道（代つきの `gen<N>`）は `test_handoff_take.sh` で確かめた。take を実物で走らせるには統括の交代が要るので、実物では確かめていない。
+- A2: 上のとおり満たす。`Ctrl+A` の押し方を README に書いた。
+- A3: `test_session_name.sh` の T1〜T5 が変更の前後で同じ結果。
+- A4: engine の全テストが、master でも落ちる `test_home_unset.sh` の2件を除いて通る（I1-3）。shellcheck は変えたファイルで通る。
