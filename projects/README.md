@@ -21,7 +21,7 @@
 Cursor CLI（`agent` コマンド）によるマルチモデル並列比較スクリプト。
 
 - 同一プロンプトを複数モデルに並列投入して結果を比較
-- Cursor サブスク内の全モデル（38+）を利用（外部 API 不要）
+- 既定は `composer-2.5` の1本。ほかのモデルは `--list-models` で確かめて `-m` で渡す（Cursor サブスクのモデルを使うので外部 API は不要）
 - `-w` でワークスペースパス参照（`-c` によるファイル添付は非推奨）
 - `--resume-from` によるセッション維持でイテレーション可能
 - スキル（`canonical/skills/arena-compare/SKILL.md`）とコマンド（`/arena-perspectives`）を通じたサブエージェント委譲対応

@@ -27,12 +27,12 @@ arena-compare [OPTIONS] "プロンプト"
 |-----------|------|-----------|
 | `-w PATH` | ワークスペースパス（推奨） | カレントディレクトリ |
 | `-f FILE` | プロンプトをファイルから読み込み | - |
-| `-m MODELS` | 比較モデル（カンマ区切り） | モード別デフォルト |
+| `-m MODELS` | 比較モデル（カンマ区切り） | `composer-2.5` |
 | `-c FILE...` | コンテキストファイル添付（**非推奨**。`-w` を使うこと） | - |
 | `-o DIR` | 出力ディレクトリ指定 | `tmp/arena-YYYYMMDD-HHMMSS` |
 | `--mode MODE` | agent モード: `agent` / `plan` / `ask` | `ask` |
 | `--resume-from DIR` | 前回出力からセッション再開 | なし |
-| `--list-models` | 利用可能モデル一覧を表示 | - |
+| `--list-models` | 使えるモデルの一覧を表示（`agent models`） | - |
 | `--dry-run` | 実行せずコマンド表示のみ | - |
 
 ### 環境変数
@@ -40,7 +40,7 @@ arena-compare [OPTIONS] "プロンプト"
 | 変数 | 説明 | デフォルト |
 |------|------|-----------|
 | `ARENA_TIMEOUT` | 各モデルのタイムアウト秒数 | `240` |
-| `ARENA_MODELS` | デフォルトモデル（カンマ区切り） | モード別デフォルト |
+| `ARENA_MODELS` | デフォルトモデル（カンマ区切り。`-m` が優先） | `composer-2.5` |
 
 ### 基本パターン
 
@@ -48,8 +48,8 @@ arena-compare [OPTIONS] "プロンプト"
 # 推奨: -w でワークスペースを渡す
 arena-compare -w "$(pwd)" "この設計の問題点を指摘して"
 
-# モデル明示指定
-arena-compare -m "sonnet-4.6,gpt-5.2,gemini-3.1-pro" -w "$(pwd)" "プロンプト"
+# モデル明示指定（モデル名は arena-compare --list-models で確かめる）
+arena-compare -m "<モデル>,<モデル>" -w "$(pwd)" "プロンプト"
 
 # セッション継続（前回の回答を踏まえて追加質問）
 arena-compare --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質問"
@@ -57,31 +57,16 @@ arena-compare --resume-from tmp/arena-20260304-001234 -w "$(pwd)" "追加の質�
 
 ## モデル選択の基準
 
-### モード別デフォルトモデル
+### デフォルトモデル
 
-| モード | デフォルトモデル | 理由 |
-|--------|----------------|------|
-| `ask` / `plan` | `gpt-5.2,gemini-3.1-pro` | 異ファミリー2つ。メインスレッドの Claude と合わせて3視点 |
-| `agent` | `gpt-5.3-codex-high,gemini-3.1-pro` | Codex で実装力 + Gemini で多角性 |
+既定はモードによらず `composer-2.5` の1本である（so-compare の Cursor のレーンの既定とそろえている）。
 
-### 選択の指針
+### ほかのモデルを使うとき
 
-- **ファミリー多様性**: 同じファミリー（例: Claude系×2）を避け、異なるモデルファミリーを混ぜる
-- **メインスレッドとの差異**: メインスレッドが Claude 系のため、デフォルトは非 Claude の 2 モデルに絞っている
-- **think モデル**: 深い推論が必要な場合は `-m` で think モデル（`claude-4.6-opus-high-thinking`, `claude-4.6-sonnet-medium-thinking`）を明示指定する。デフォルトに含めると 240 秒タイムアウトでハングしやすい
-
-### よく使う組み合わせ
-
-```bash
-# 思考モデルを含める
--m "claude-4.6-opus-high-thinking,claude-4.6-sonnet-medium-thinking,gpt-5.2"
-
-# 軽量モデルで素早く比較
--m "gemini-3-flash,sonnet-4.6,gpt-5.2"
-
-# 5モデル比較（時間がかかる）
--m "opus-4.6,sonnet-4.6,gpt-5.2,gemini-3.1-pro,grok"
-```
+- **モデル名は実行時に確かめる**: `arena-compare --list-models`（中で `agent models` を呼ぶ）で、アカウントで使えるモデル名を出してから `-m` に渡す。モデル名は Cursor の側で変わるので、このスキルには具体的な名前を並べない
+- **ファミリー多様性**: 複数のモデルで比べるときは、同じファミリーを2つ並べず、異なるファミリーを混ぜる
+- **メインスレッドとの差異**: メインスレッドと同じ会社のモデルを選ぶと、別の視点になりにくい
+- **think モデル**: 深い推論のモデルは 240 秒のタイムアウトに掛かりやすい。使うなら `ARENA_TIMEOUT` を延ばす
 
 ## `--resume-from` によるセッション継続
 
