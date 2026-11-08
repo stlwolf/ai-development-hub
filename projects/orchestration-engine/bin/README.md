@@ -2,11 +2,11 @@
 
 orchestration-engine の実行可能エントリの簡易リファレンス（AI エージェント / 人間向け）。背景は親 [`../README.md`](../README.md)、詳細は各スクリプト冒頭のコメントと `docs/` を参照。
 
-scripts は役割別に次の 26 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
+scripts は役割別に次の 27 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195） / `oe-lane-explain`（SO のレーンが返らなかった理由を読み取る・#303）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-lease`（統括と委譲子の lease の記録・#577） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
 - **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（バージョンに固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
 - **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
@@ -242,6 +242,34 @@ oe-handoff retire  [-w WORKSPACE] [--board <path>] [--handoff <path>] [--execute
 関連 lib: `seat.sh`（席の解決・張替・検算）/ `handoff-state.sh`（機械で取れる状態の収集・read-only）/ `delegate-registry.sh`（登記）/ `event-bus.sh`（交代イベント）。テンプレート: `../templates/handoff.md.template`。
 
 ---
+
+## oe-lease — 統括と委譲子の lease の記録（#577）
+
+統括と委譲子の「誰か」を、tmux のペインと切り離した lease の記録（`~/.claude/state/oe-lease/<lease_id>.json`）で持つ。記録を作る・名乗る・引く・閉じる・掃除する verb である。記録の読み書きは `lib/lease.sh` が持ち、この verb は呼び方を決めるだけである。設計の正本は [`../docs/discussions/2026-11-06-discussion-577-record-identity-key.md`](../docs/discussions/2026-11-06-discussion-577-record-identity-key.md)。
+
+```bash
+oe-lease create --label <label> [--kind supervisor|delegation] [-w <workspace>] [--parent <lease_id>] [--generation <N>]
+oe-lease create --root --label <label> [-w <workspace>] [--generation <N>]
+oe-lease bind <lease_id> [-w <workspace>] [--owner-confirmed]
+oe-lease whoami
+oe-lease resolve <lease_id|label>
+oe-lease show <lease_id>
+oe-lease close <lease_id>
+oe-lease gc [--days <N>] [--dry-run]
+oe-lease adopt [--dry-run]
+```
+
+- 言葉: **lease** は人が入れ替わっても続く持ち場（統括の lease・委譲1件の lease）。**generation** はその lease に座った1つの会話で、交代でだけ進む（resume では進まない）。**binding** は generation と、いまその会話を動かしているプロセス（pid・開始時刻・コマンド名）の結び付き
+- `create --root` … 手で立てた統括が自分の Bash から打つ。lease を作り、自分（`CLAUDE_PID`）を binding に書き、自分の `CLAUDE_CODE_SESSION_ID` を登録する
+- `bind` … 本人が自分の Bash から打つ。いまの generation の binding を自分に張り替え（前の binding が生きていないと確かめられたときか、もう自分のときだけ）、session_id を登録する。統括の lease を会話の記録の lease_id で名乗るときは `--owner-confirmed` を求める
+- `whoami` … `OE_LEASE_ID`・`OE_GENERATION` か、自分の `CLAUDE_CODE_SESSION_ID` で自分の lease を出す
+- `resolve` … いまの generation の binding と照らしたペインを出す（照らせなければ出さない）
+- `gc` … 閉じた lease と古い heartbeat の sidecar を消す（`.hb.*` は触らない・既定 30 日）
+- `adopt` … 一度だけの取り込み。いまの tmux server の registry の記録ごとに lease を作り、registry の親子から親を書く。2回走らせても増えない
+- exit: 0 成功 / 1 対象が無い / 2 呼び方の誤り・前提の不足 / 3 epoch が合わない / 4 ロックが取れない / 5 張り替えを断った・本人を確かめられない / 6 claude でない・確かめられない / 7 閉じている・退任している / 8 session_id がほかの lease にある / 9 binding が無い / 10 確かめが要る（workspace の不一致・owner の確かめ）
+- 記録の検証は `scripts/validate-lease.sh`（`schemas/oe-lease.schema.json`）
+
+関連 lib: `lease.sh`（記録の読み書き）・`target-resolve.sh`（送る・飛ぶ・選ぶの宛先を lease から引いて本人を確かめる）・`tmux-pane-identity.sh`・`heartbeat-resolve.sh`
 
 ## oe-select — 宛先をインタラクティブに選んで送信
 
