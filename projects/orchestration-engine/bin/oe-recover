@@ -67,7 +67,9 @@ finish() { report; exit "${1:-0}"; }
 
 _realdir() { (cd "$1" 2>/dev/null && pwd -P); }
 _iso_epoch() { jq -rn --arg t "$1" '$t | fromdateiso8601' 2>/dev/null; }
-_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# GNU の stat を先に試す。GNU の `stat -f` はファイルシステムの情報を返して成功するので、BSD の形を先に試すと
+# GNU で更新時刻でない値を読む（Copilot の指摘・PR #597）。BSD の stat は `-c` を知らず失敗するので次へ落ちる。
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
 # ============================================================================
 # hint: resume の前に打つ。読むだけ。
@@ -86,7 +88,10 @@ _title_of() {
 cmd_hint() {
   local ws="$1" all="$2" wsr f rows lid kind label gen bpid bst sid lws st n=0 sups=" "
   wsr="$(_realdir "$ws")" || { err "workspace が見つかりません: ${ws}"; exit 2; }
-  _oe_lease_ready || { err "lease の置き場が決まりません（OE_LEASE_DIR）"; exit 2; }
+  # hint は読むだけなので、置き場のディレクトリを作らない（_oe_lease_ready は mkdir する・Copilot の指摘）。
+  command -v jq >/dev/null 2>&1 || { err "jq がありません"; exit 2; }
+  [ -n "${OE_LEASE_DIR:-}" ] || { err "lease の置き場が決まりません（OE_LEASE_DIR）"; exit 2; }
+  if [ ! -d "$OE_LEASE_DIR" ]; then printf '=== oe-recover hint（%s）===\n\nlease の記録がまだありません（%s）。\n' "$wsr" "$OE_LEASE_DIR"; exit 0; fi
   printf '=== oe-recover hint（%s）===\n' "$wsr"
   rows=""
   # shellcheck disable=SC2153  # OE_LEASE_DIR は lib/lease.sh が決める

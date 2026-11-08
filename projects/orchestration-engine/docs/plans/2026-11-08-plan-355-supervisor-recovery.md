@@ -150,7 +150,7 @@ verb は resume した本人が自分の Bash から打つ。lease の記録の1
 
 - 落ちているあいだの death の知らせは、そのまま残す。owner が「統括が応答しない」と気づく合図になるためである（見取り図の流れの最初の箱）。いまのキーでは session ごとに1回しか出ないので、鳴り続けることはない（P-6）。
 - 二重通知を抑えるキーを、lease で判定したときは `death|<lease_id>|<generation>|<binding の pid>|<binding の開始時刻>` にする。いまのキー `death|<session_id>` のままだと、復帰したあとに同じ会話がもう一度落ちたとき、session_id が同じなので知らせが出ない（P-6 から導いた・[speculation] 実機ではまだ起きていない）。session_id はキーに使わない。heartbeat が無いときは `sup_sid` が `lease_id:generation` に替わる（`projects/orchestration-engine/bin/oe-vitals:321` の前後）ので、同じ `binding` の死でも sidecar の有無でキーが変わってしまうためである（設計SO の S-10）。board で判定したとき（lease が決まらない移行の逃げ道）は、いまのキーのままにする。既存の seen の記録の行は、キーの形が変わるので一致しなくなるだけで、消さない。並行に走った `oe-vitals` の二重通知（seen の確かめと追記が排他されていない）は、この issue では直さない。
-- 検算（DJ-3 の 6）では `oe-vitals` を通知なしで走らせ、判定の行だけを読む。いまは通知を止める口が無いので、`wez` を探す経路を env（`OE_VITALS_NOTIFY=0`）で止める口を足す。テストの差し替えと同じ形にする。
+- drill の確かめでは `oe-vitals` を通知なしで走らせ、判定の行だけを読む（verb の検算では使わない・DJ-3 の 7 と設計SO の S-7）。いまは通知を止める口が無いので、`wez` を探す経路を env（`OE_VITALS_NOTIFY=0`）で止める口を足す。テストの差し替えと同じ形にする。
 
 ### DJ-9 resume する session_id をどこから引くか（自分で決めた）
 
@@ -253,6 +253,7 @@ verb を新しく作る前提を外して、ほかの形を1度並べた。
   6. 復帰（統括）: `oe-recover` を1回打つ。
   7. 確かめる3点（実装の子）: `oe-tree --lease` に統括が alive として出る。統括の heartbeat の sidecar が `pane` と `server_pid` を持つ。`oe-vitals`（通知なし）が death を出さない。加えて、子が `oe-send --to-parent` で送った1行が新しいペインに届くこと、`oe-recover` の一覧に 4 の `delivery_held` が出ることを見る。
   8. 片付け（実装の子）: 一時ディレクトリを消す。使い捨てのペインは owner が閉じる。
+- 実際に回した手順（2026-11-08・記録の級の注記）: 上の 2 の「`oe-delegate` で子を1つ起こす」は使わなかった。`oe-delegate` は tmux の新しいペインで子を起こし、そのペインの環境は tmux server の環境から来るので、記録の置き場を一時ディレクトリに向ける環境変数が子に渡らないためである。統括も子も、環境変数を付けた `exec claude` で直接立て、lease への結び付けは drill の道具が行った。上の 5 は、hint を打ったのと同じペインで resume の1行を打つ（drill では、そのペインで drill の環境を読み込んでおく）。経緯は episode の「I5: クラッシュ drill の準備」と「drill の2回目」の節にある。
 - 偽物と本物の境（negative knowledge の item `01M5T897YCWY13GFTADD3136EC`）: 自動のテストは、偽の tmux・偽の ps・一時ディレクトリの state に差し替える。偽の `bin/` に足がかりの `oe-tree` ごと置き、`~/bin` を PATH から外し、存在しないペインの番号を使う。「記録されたのは偽物だけ」と「本物の呼び出しが無い」の両方を見る。drill だけは本物の tmux を使い、state は一時ディレクトリに向ける。生きている `~/.claude/state/` には書かない。
 - #577 PR-6 との関係: この drill は、#577 PR-6（registry の両方書きをやめるなど）の条件である（decision #577 の D11）。PR-6 は別の子が行う。
 

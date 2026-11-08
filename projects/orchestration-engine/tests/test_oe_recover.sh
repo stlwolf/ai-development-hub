@@ -314,6 +314,10 @@ run "$VERB" hint -w "$WS"
 ckc "セッション名の記録があれば名前で入る1行も出す（#576）" "$OUT" "claude -r 'cockpit ws gen23'"
 unset OE_SESSION_TITLE_DIR
 
+ND="$_TMP_DIR/no-lease-dir"
+run env OE_LEASE_DIR="$ND" "$VERB" hint -w "$WS"
+ck "hint は lease の置き場が無くても作らない（読むだけ・Copilot の指摘）" "0:0" "$RC:$([ -e "$ND" ] && echo 1 || echo 0)"
+
 echo "=== T-11 途中で binding がほかに移る ==="
 setup lost
 kill_pid 101

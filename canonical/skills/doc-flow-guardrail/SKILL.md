@@ -190,7 +190,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 
 **統括のセッションが落ちた・ペインが消えた・tmux ごと再起動した**あと、owner が同じ会話を resume して「復帰して」と頼んだら、resume した統括が踏む工程である。前任が申告できる交代（④）とは別で、引き継ぎ文書は使わない。
 
-**owner の側（統括が落ちているあいだは人にしかできない）**: 普通のシェルで `oe-recover hint -w <workspace>` を打つと、生きていない統括の lease ごとに `OE_LEASE_ID=… OE_GENERATION=… claude --resume <session_id>` の1行が出る。その1行をペインで打ち、resume した会話に「復帰して」と頼む。tmux ごと再起動したときは `--all` で子のコマンドも出る。
+**owner の側（統括が落ちているあいだは人にしかできない）**: 普通のシェルで `oe-recover hint -w <workspace>` を打つと（PATH に無ければ「verb 解決規約」節で引く）、生きていない統括の lease ごとに `OE_LEASE_ID=… OE_GENERATION=… claude --resume <session_id>` の1行が出る。その1行をペインで打ち、resume した会話に「復帰して」と頼む。tmux ごと再起動したときは `--all` で子のコマンドも出る。
 
 **統括の側**（「復帰して」を受けたら、その1回の指示で 1〜4 を通す）:
 

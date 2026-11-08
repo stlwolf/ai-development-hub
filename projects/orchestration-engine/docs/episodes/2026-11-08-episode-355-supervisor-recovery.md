@@ -265,6 +265,9 @@ tier は heavy である（設計SO と実装SO を明示して起動した・�
 - schema を JSON として書き直して差分が膨らみ、元に戻した: ``本文: I2: verb `oe-recover`（2026-11-08）``
 - テストの偽物の不足が2つ（偽の tmux の書式・偽の date の仕掛けの位置）: ``本文: I2: verb `oe-recover`（2026-11-08）``
 - 実装SO の指摘8件（高1）: `本文: GATE 4: 実装SO（2026-11-08）`
+- `delivery_held` を「未回収の報告を拾える」と書いた最初の主張を、設計SO の指摘で撤回した: ``本文: `delivery_held` の主張を弱めた``
+- 同じ会話がもう一度落ちたとき `oe-vitals` の知らせが出ない穴を、コードから見つけた: ``本文: `oe-vitals` の二重通知のキーに穴がある``
+- master から残っている検査の失敗3件（`bin/oe-send` の SC2034・`tests/test_handoff_take.sh` の SC2329・`tests/test_home_unset.sh` の helper の数え方）: ``本文: I1: lib の直し（2026-11-08）``・``本文: I3: `delivery_held` と `oe-vitals`（2026-11-08）``・`本文: CHECK（2026-11-08）`
 - drill の1回目（wrapper の中の claude）と2回目（hint と resume が別のペイン）と、3回目の前の session_id の打ち間違い: `本文: drill の1回目: seed が rc 6 で黙って止まった（2026-11-08）`・`本文: drill の2回目: resume した統括で oe-recover が exit 127（2026-11-08 22:10 ごろ）`・`本文: drill の手順の側で分かったこと（次に回す人のため）`
 
 ### 決定と根拠
@@ -291,13 +294,20 @@ tier は heavy である（設計SO と実装SO を明示して起動した・�
 - decision #577 の D6 の帰結に「前面のプロセスで本人を確かめるのは、claude が前面のプロセスグループの長であることが前提」を足すか: 行き先は統括（#577 の仕組みの判断なので、決めるのは #577 の側の担当）。報告に書く。knowledge item は収穫済みなので、教訓そのものは store にある。
 - #577 PR-6 の条件（この drill）が満たされた: 行き先は統括（PR-6 は別の子が行う）。報告に書く。
 - 別の会話が死んだ持ち場を引き取る口・報告の受け箱・`SessionStart` hook の自動の復帰・サスペンドと resume に近い形: 行き先は decision の「決めていないこと」と issue #355 の範囲外の記録。issue にするかは owner と統括が決める（報告に書く）。
-- master から残っている検査の失敗（`bin/oe-send` の SC2034・`tests/test_handoff_take.sh` の SC2329・`tests/test_home_unset.sh` の helper の数え方）: 行き先は統括（issue にするかの判断）。この PR では直さない。報告に書く。
+- master から残っている検査の失敗（`bin/oe-send` の SC2034・`tests/test_handoff_take.sh` の SC2329・`tests/test_home_unset.sh` の helper の数え方）: この PR では直さない（この PR の変更から来たものではない）。行き先は、統括に issue にするかを決めてもらうことで、報告 `.oe/report-355-i6.md` の「範囲の外」に3件を並べて渡した。統括が issue にしなければ、追わないことになる。
 - drill の hint の1行に drill 用の前置きを付けるか: 追わない（理由は `本文: drill の2回目: resume した統括で oe-recover が exit 127（2026-11-08 22:10 ごろ）`）。
 - owner の Bash の許可の数: 確かめられなかった。追わない（目標の中身は「統括の手作業を0にする」で、許可の数はそれに効かない）。
 
 ### Step 4（外部チェック）
 
-PR の Copilot のレビューのあとに、`so-compare` で closure の focused check を1回入れる（下に結果を足す）。
+- `so-compare` の Codex の1レーン（`gpt-6.1-sol`・130秒）で closure の focused check を1回入れた。依頼文と回答は hub の作業層 `tmp/355-supervisor-recovery/so-355-closure-prompt.md` と `so-355-closure/codex-stdout.txt`。
+- 指摘は4件で、すべて直した。(1) 事実・失敗に、`delivery_held` の主張の撤回・`oe-vitals` の穴・master から残る検査の失敗の3つの pointer が無かった → 足した。(2) master から残る検査の失敗の行き先が「報告に書く」止まりだった → 報告の節と、統括が issue にしなければ追わないことを書いた。(3) plan の drill の手順が、実際に回した手順（`oe-delegate` を使わない・hint と resume を同じペイン）に直っていなかった → plan に記録の級の注記を足した。(4) plan の DJ-8 の文が、`oe-vitals` を verb の検算で使うと書いたままだった（S-7 で drill に移した） → 直した。
+- 揮発パスの要点の写し漏れと、promotion の ref の見出しの実在（8件・11参照）は、問題が無いと返った。
+
+### PR のレビュー（Copilot・1ラウンド）
+
+- Copilot のレビュー（2026-11-08 13:27Z）は行ごとのコメントが0件で、本文の要約に4点を挙げた。3点は当たっていたので直した。GNU/Linux で `stat -f %m` がファイルシステムの情報を返して報告のファイルの時刻を読み違えること（GNU の形を先に試す順にした）、`hint` が置き場のディレクトリを作りうること（作らないようにし、テストを足した）、README のコマンドが通常の PATH に無いこと（verb 解決規約で引く1行を README とスキル ⑤ に書いた）。残る1点「子の報告が古いペインへ向かう」は、`OE_LEASE_ID` を持たない古い子のことで、decision #577 の D11 が決めた動き（古い子は古い宛先のまま終わらせる）なので直していない。
+- `oe-recover` を `~/bin` に配るか（sync の配布の一覧に足すか）は、範囲を足す判断なので統括に出した（報告の「判断を求めること」）。
 
 ### 形式メモ
 
