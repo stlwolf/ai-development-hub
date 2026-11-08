@@ -3,7 +3,7 @@ id: "01M6XJGTFG2MW9MS5FSHEW7XZ3"
 title: "#448 Codexの道具の障害を通常SOの成功に数えない"
 date: 2026-11-08
 type: plan
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/448"
@@ -33,7 +33,7 @@ so:
 - [x] CLIスタブで実際のso-compareを起動する回帰テストを追加する。
 - [x] 回帰テスト・既存のSO関連テスト・ShellCheck・構文検査を通す（404項目成功）。
 - [x] 設計SO・実装SOは省略する（2026-11-08、ownerの明示指示「cloudではso使えないから飛ばしてよい」）。SOの実施済みとは数えない。
-- [ ] PRレビューを通し、ownerの判断でマージする。
+- [x] PRレビューを通し、ownerからマージ・issueクローズの明示承認を受けた（2026-11-08）。
 
 検証コマンドは `bash projects/orchestration-engine/tests/test_so_compare_tool_status.sh`、同じtests配下の `test_so_compare_read_only.sh`・`test_so_compare_input_rejection.sh`・`test_so_compare_version.sh`・`test_oe_refute.sh`・`test_oe_review.sh`・`test_oe_lane_explain.sh`。変更したシェルスクリプトには `shellcheck -x -P SCRIPTDIR` と `bash -n` を実行する。
 

@@ -3,7 +3,7 @@ id: "01M6XJGTFHY25MG9JQYRX1RARC"
 title: "#448 Codexの道具の障害の検知とSO集計"
 date: 2026-11-08
 type: episode
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/448"
@@ -12,6 +12,13 @@ related:
     ref: "projects/orchestration-engine/docs/plans/2026-11-08-plan-448-codex-tool-degradation.md"
     reason: "実装計画"
 tags: [so-compare, codex, verification]
+promotion:
+  - subject: "プロセスの終了結果と道具の障害の観測を別に記録する"
+    verdict: not-required
+    ref: "本文: S2: 実装と失敗の記録"
+  - subject: "公開イベントと同じ実行の保存記録を併用する"
+    verdict: not-required
+    ref: "本文: S1: 調査と設計の補足"
 ---
 
 # #448 Codexの道具の障害の検知とSO集計
@@ -48,7 +55,7 @@ ClaudeとCursorのCLI・接続ツールは無い。Codexの別モデル（gpt-6-
 
 ## 検証と残り
 
-関連7スイートで404項目が成功した。内訳は、道具の障害66・read-only契約14・入力拒否120・版の整合4・oe-refute63・oe-review64・oe-lane-explain73である。ShellCheck 0.11.0、bash -n、git diff --checkも成功した。Bash 3.2、実環境のcode-mode障害、別モデルの実装レビューは未確認。PRレビューは未完了のため、episodeは閉じない。
+関連7スイートで404項目が成功した。内訳は、道具の障害66・read-only契約14・入力拒否120・版の整合4・oe-refute63・oe-review64・oe-lane-explain73である。ShellCheck 0.11.0、bash -n、git diff --checkも成功した。Bash 3.2、実環境のcode-mode障害、別モデルの実装レビューは未確認。その後、下記closureのとおりレビュー承認を受け、episodeを閉じた。
 
 
 ## レビューへ渡す状態
@@ -64,4 +71,18 @@ PR #601をレビュー可能にしてCopilotに依頼したところ、2件の�
 - 呼び出しIDが欠落・nullの直接エラー返答を条件で飛ばしていた。IDを調べる前に返答を確認し、関連付け不能ならunknownにした。
 - input_textが複数の要素に分かれたとき、成功ヘッダーの後の引用本文だけを見て障害と誤判定した。テキストを結合し、返答全体が直接のエラーかを判定するようにした。
 
-先に追加した3ケース6項目は修正前に全件失敗した（PASS=60・FAIL=6）。修正後の結果は上の検証欄へ反映した。スクリプトの版を2026-11-08bへ進め、ハッシュの期待値も更新した。各指摘への返信には修正コミットを記載する。再レビューは依頼していない。
+先に追加した3ケース6項目は修正前に全件失敗した（PASS=60・FAIL=6）。修正後の結果は上の検証欄へ反映した。スクリプトの版を2026-11-08bへ進め、ハッシュの期待値も更新した。各指摘へ43b5872を添えて返信し、両スレッドを解決済みにした。再レビューは依頼していない。
+
+
+## closure
+
+- 達成度: 達成。ownerからレビューOK・マージ・対象issueへのコメントとクローズの承認を受けた（2026-11-08）。
+- tier: heavy。実装中の失敗と別モデルへの問い合わせの試行がある。
+- 次の消費者: so-compareを保守する人と、SOのmetaを読んでゲートの成立を判断する人。
+- 事実・失敗: jqの出力指定、旧形式のスタブ、公開JSONLだけでは不足する経路、IDの関連付け、分割された返答の誤判定を修正した。`本文: S2: 実装と失敗の記録` / `本文: Copilotのレビューと対応`
+- 外部確認: SOはownerのクラウドでの省略指示により省略した。実施済みには数えない。Copilotの2件は43b5872で修正し、返信・解決済み。`本文: S3: 別モデルの確認の試行` / `本文: Copilotのレビューと対応`
+- 昇格の判定「プロセスの終了結果と道具の障害の観測を別に記録する」: not-required。値の意味と読み方はso-compareスキルとコード・テストにあり、それだけで使える機械契約なので1段目で対象外。`本文: S2: 実装と失敗の記録`
+- 昇格の判定「公開イベントと同じ実行の保存記録を併用する」: not-required。診断を取得する実装上の条件であり、根拠・制約はso-compareスキルにも記載した。独立したADRを読まずに正しく使える。`本文: S1: 調査と設計の補足`
+- 残課題の行き先: 旧metaの一般的な成否判定は#516。実際の同じ障害の再現とBash 3.2の実行はこのクラウドでは追わず、未確認事項としてPR #601と利用手順に残す。CLI自体の障害修理は本issueの範囲外のため追わない。
+- Step 4の外部チェック: ownerの「cloudではso使えないから飛ばしてよい」の明示指示により省略。
+- status: stable。検証結果・指摘の採否・失敗理由は本文に残し、一時ファイルだけを根拠にしていない。
