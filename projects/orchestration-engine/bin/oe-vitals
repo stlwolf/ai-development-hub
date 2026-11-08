@@ -108,6 +108,7 @@ usage:
                       環境変数 OE_VITALS_WINDOW_SEC でも指定可（--window が優先）。
   --threshold <pct>   context% 閾値 T（0-100 整数）。既定 85。context_pct > T で ping。
                       環境変数 OE_VITALS_CONTEXT_THRESHOLD でも指定可（--threshold が優先）。
+  環境変数 OE_VITALS_NOTIFY=0 なら owner へ通知しない（判定の行だけを出す・#355 の検算と drill 用）。
 
 statusLine 拍動 producer（PR-A）が書く sidecar を読み、board（OE_BOARD_FILE）の現統括 pane と突合して
 統括 session だけを対象化する。read-only: sidecar / board / tmux ペイン存在のみを読む（capture・engine
@@ -445,7 +446,16 @@ printf '%-8s  %-6s  %-14s  %-6s  %-28s  %-8s  %s\n' \
 # seen cache は「実際に owner へ通知できた」ときだけ追記する（oe-undelivered と同じ規律）: wez 不在 /
 # notify 失敗時に先行追記すると、通知していないのにキーが seen となり owner ping が永続的に抑止される。
 key="${flag_kind}|${sup_sid}"
-if ! seen_has "$key" && command -v wez >/dev/null 2>&1; then
+# lease で判定した death は、lease・generation・binding の組をキーにする（#355・DJ-8）。session_id のままだと、
+# 復帰（同じ会話を resume して binding を張り替える）のあとに同じ会話がもう一度落ちても知らせが出ない。
+# また sup_sid は heartbeat が無いと lease_id:generation に替わるので、同じ binding の死でも sidecar の有無で
+# キーが変わってしまう。board で判定したとき（移行の逃げ道）と context の知らせは、いままでのキーのままにする。
+if [[ "$flag_kind" == "death" && -n "$LEASE_LABEL" && -n "${l_pid:-}" ]]; then
+  key="death|${LEASE_ID}|${l_gen}|${l_pid}|$(printf '%s' "${l_st:-}" | tr -s ' ')"
+fi
+if [[ "${OE_VITALS_NOTIFY:-1}" == "0" ]]; then
+  :   # 通知しない（判定の行は上で出した）
+elif ! seen_has "$key" && command -v wez >/dev/null 2>&1; then
   if [[ "$flag_kind" == "context" ]]; then
     title="oe watchdog: supervisor context high"
   else

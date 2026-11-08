@@ -2,11 +2,11 @@
 
 orchestration-engine の実行可能エントリの簡易リファレンス（AI エージェント / 人間向け）。背景は親 [`../README.md`](../README.md)、詳細は各スクリプト冒頭のコメントと `docs/` を参照。
 
-scripts は役割別に次の 27 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
+scripts は役割別に次の 28 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
 
 - **本体エンジン**: `oe`（+ 補助 `oe-capture`）
 - **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195） / `oe-lane-explain`（SO のレーンが返らなかった理由を読み取る・#303）
-- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-lease`（統括と委譲子の lease の記録・#577） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
+- **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-lease`（統括と委譲子の lease の記録・#577） / `oe-recover`（応答しない統括が resume のあとに打つ復帰・#355） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
 - **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（バージョンに固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
 - **doc 表示**: `oe-view`（md → viewer ペインで `glow` / 非 md → `open`・#210）
 
@@ -270,6 +270,34 @@ oe-lease adopt [--dry-run]
 - 記録の検証は `scripts/validate-lease.sh`（`schemas/oe-lease.schema.json`）
 
 関連 lib: `lease.sh`（記録の読み書き）・`target-resolve.sh`（送る・飛ぶ・選ぶの宛先を lease から引いて本人を確かめる）・`tmux-pane-identity.sh`・`heartbeat-resolve.sh`
+
+## oe-recover — 応答しない統括の復帰（#355）
+
+統括のセッションが落ちたりペインが消えたりしたあと、同じ会話を `claude --resume` で開き直した統括が1回打つ verb である。前任が応答できる計画的な交代は `oe-handoff` の担当で、この verb は前任が応答しない場合だけを扱う。設計の正本は [`../docs/plans/2026-11-08-plan-355-supervisor-recovery.md`](../docs/plans/2026-11-08-plan-355-supervisor-recovery.md)。
+
+```bash
+oe-recover hint [-w <workspace>] [--all]                                   # resume の前に、普通のシェルから（読むだけ）
+oe-recover [-w <workspace>] [--board <path>] [--lease <lease_id> [--owner-confirmed]]   # resume した統括が自分の Bash から
+```
+
+復帰の手順（人が打つのは 1〜3）:
+
+1. owner が「統括が応答しない」に気づく（`oe-vitals` の death の知らせ・`oe-tree --lease` の `gone` など）。
+2. owner が普通のシェルで `oe-recover hint -w <workspace>` を打つ。binding のプロセスが生きていない統括の lease について、`cd <workspace> && OE_LEASE_ID=<lease_id> OE_GENERATION=<N> claude --resume <session_id>` の1行が出る。tmux ごと再起動したときは `--all` を付け、子の resume のコマンドも出す。
+3. owner が新しいペイン（落ち方によっては元のペイン）でその1行を打ち、resume した会話に「復帰して」と頼む。
+4. 統括が `oe-recover --board <board のパス>` を打つ。済んだら、出た一覧（送れなかった送信の履歴・報告のファイル・古い子）を読み、判断ボードと引き継ぎの文書を読み直して作業に戻る。
+5. 子も落ちていれば、子ごとに 2〜4 を繰り返す（子では `--board` は要らない）。
+
+verb がすること:
+
+- 同じ会話の復帰では generation を進めず、いまの generation の binding を自分に張り替える。張り替える前の binding は lease の記録の `rebinds` に残る。張り替えるのは、前の binding のプロセスが生きていないと確かめられたときだけである。
+- 張り替えのあと、board の現統括の表示（註は「前のペイン `%N` は応答なし・復帰で張り替え」）と registry（自分と、lease の記録で自分を親に持つ子）を、lease の記録といまの観測から作り直す。子の lease の記録は書き換えない（`OE_LEASE_ID` を持つ子は親の lease へ送るので、統括が同じ lease に戻れば届く）。
+- 自分の lease あての `delivery_held`（子が `oe-send --to-parent` で送れなかった送信）を「要照合の履歴」として出す。未回収の報告の一覧ではない。
+- 最後に `supervisor_recovery` の event を1行書く。`complete: false` の行は「復帰の変換が終わっていない」である。
+- 止まったとき（前の claude が生きている・lease が決まらない・退任している など）は、「いまの状況」「書いたもの・書かなかったもの」「次にやること」の3つを出す。前の claude が生きているときは閉じない。どのペインのフォアグラウンドにいるかを確かめられたときだけ `tmux kill-pane -t %N` を案内し、閉じるのは owner である。
+- exit: 0 復帰が済んだ / 1 止まった・済んでいない工程が残った / 2 呼び方の誤り・前提の不足。何度打っても同じ結果になるので、止まったら直してからもう一度打つ。
+
+関連 lib: `lease.sh`（`oe_lease_claim` と `rebinds`）・`seat.sh`（`oe_seat_rewrite` の註の種類 `recover`）・`delegate-registry.sh`（`oe_reg_record`）・`event-bus.sh`（`supervisor_recovery`・`delivery_held`）
 
 ## oe-select — 宛先をインタラクティブに選んで送信
 
@@ -810,7 +838,7 @@ oe-vitals -h | --help
 
 - **2 検知器**: (1) **context**（`beat fresh + pane ¬gone + context_pct > T` → handoff 促し・#238 中核）(2) **death**（`pane が tmux 確定 gone` のときのみ・beat 鮮度非依存 → crash 疑い）。`alive/? × stale` は no-op（生存/不明を死に化かさない・hang 誤検知を実装しない）。**tmux 不在時は death 検知不可・context のみ degrade 動作**（偽陽性を出すより安全側）。
 - **統括スコープ化（board 突合）**: sidecar dir には statusLine を持つ全 session の beat が入るため、board（declared 層・PR-C）の `現統括` pane（`現統括:` 宣言行の最初の `%NNN`・見出し併記は除外）と sidecar の `pane` を突合し、現統括の sidecar だけを判定する。board path は `OE_BOARD_FILE` で与える（machine-local・既定なし）。**未設定 / 未解決 / 現統括 pane の sidecar 不在 → no-op**（未設定を「死」に化かさない）。orderly handoff 後は board の `現統括` が後任へ進み前任は scope 外＝想定内 handoff は ping しない（`gone × declared` のみ crash 疑い）。
-- **出力**: stdout に FLAG（cron ログ / 手動確認の durable signal）。owner ping は `wez notify`（best-effort）。**二重通知抑止**: verb 固有 seen cache（`${OE_EVENT_DIR}/oe-vitals/seen`・キー `<kind>|<session_id>`・通知成功時のみ追記。producer の sidecar dir `oe-heartbeat/` とは別 namespace）。
+- **出力**: stdout に FLAG（cron ログ / 手動確認の durable signal）。owner ping は `wez notify`（best-effort）。**二重通知抑止**: verb 固有 seen cache（`${OE_EVENT_DIR}/oe-vitals/seen`・キー `<kind>|<session_id>`。統括の lease で判定した death は `death|<lease_id>|<generation>|<binding の pid>|<開始時刻>` で、復帰のあとに同じ会話がもう一度落ちても知らせる・#355。通知成功時のみ追記。`OE_VITALS_NOTIFY=0` なら通知しない。producer の sidecar dir `oe-heartbeat/` とは別 namespace）。
 - **read-only / 非検出**: 触れるのは sidecar dir / board / tmux ペイン存在（mux query）のみ。producer の sidecar は **GC しない**（削除しない＝read-only 観測姿勢）。exit は常に 0（observer）・usage エラーのみ 2。
 - **cron 配線**（登録は owner 環境依存・自動化しない）: verb 単体では回らない。周期実行の crontab / launchd エントリ設置は deployment 手順で、段階0 `oe-undelivered` と同じ out-of-session cron に相乗りする。`OE_BOARD_FILE` を必ず設定すること（board 突合の前提）。例:
 

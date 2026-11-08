@@ -1,6 +1,6 @@
 ---
 name: doc-flow-guardrail
-description: ドキュメントフロー全体の地図・委譲 brief の固定節テンプレ・新 repo/新統括の cold-start 手順を注入する薄い枠。統括が子へ委譲する brief を組むとき、memory の無い新 repo/新統括セッションでフローを立ち上げるとき、統括が計画的な交代を始めるとき（前任側）、蒸留5段のどの層・どの遷移・どのゲートでどのスキルを必ず通すか確認するときに使用する。中身の品質基準は個別スキルへ routing する（枠は薄く保つ）。
+description: ドキュメントフロー全体の地図・委譲 brief の固定節テンプレ・新 repo/新統括の cold-start 手順を注入する薄い枠。統括が子へ委譲する brief を組むとき、memory の無い新 repo/新統括セッションでフローを立ち上げるとき、統括が計画的な交代を始めるとき（前任側）、応答しなくなった統括の会話を resume して復帰させるとき、蒸留5段のどの層・どの遷移・どのゲートでどのスキルを必ず通すか確認するときに使用する。中身の品質基準は個別スキルへ routing する（枠は薄く保つ）。
 ---
 
 # doc-flow-guardrail — ドキュメントフロー・ガードレール枠
@@ -15,7 +15,7 @@ AI 駆動開発のドキュメントフロー全体を「注入可能な枠」�
 
 ## 位置づけ（DJ-11 二層・薄い枠）
 
-本スキルが持つのは **(a) 各段の大原則1行** と **(b) 遷移・ゲートごとの「必ず通すスキル」routing 表** の2つのみ。**到達性の穴を塞ぐための例外が2つある。統括の計画的な交代の工程（④）と、`oe-*` の在り処の解決（「verb 解決規約」節）は、routing 先が同じ穴を持つため本スキルが持つ。** **中身の品質基準は個別スキルが持つ**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract）。枠を薄く安定に保ち、基準は各スキルで独立にイテレートする。
+本スキルが持つのは **(a) 各段の大原則1行** と **(b) 遷移・ゲートごとの「必ず通すスキル」routing 表** の2つのみ。**到達性の穴を塞ぐための例外が3つある。統括の計画的な交代の工程（④）・応答しない統括の復帰の工程（⑤）・`oe-*` の在り処の解決（「verb 解決規約」節）は、routing 先が同じ穴を持つため本スキルが持つ。** **中身の品質基準は個別スキルが持つ**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract）。枠を薄く安定に保ち、基準は各スキルで独立にイテレートする。
 
 3軸分離: **本スキル = 文書軸** / `orchestration-toolkit` = ツール軸（oe-*） / `delegate-task` = 操作軸（親子委譲）。
 
@@ -164,7 +164,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 **統括 succession は2つに分かれる。** 分かれ目は前任が自分の状態を申告できるかどうかの1点である。
 
 - **計画的な交代（前任が応答できる）は本スキルが持つ。** verb は `oe-handoff`（`prepare` / `start` / `take` / `retire`）で実装済みである。**前任が踏む工程は下の ④**、**後継が踏む工程は上の cold-start の手順5**（登記のつけかえと、子への宛先の通知）。
-- **復旧（前任が応答しない）は本スキルの範囲外**（engine track・#238/#239・#355）。誤 close / resume からの復帰手順（board `現統括:` を新 pane へ張替 → 孤児 sidecar 掃除 → 検証。死んだ親の下へ再 parenting しない＝後継は並列 peer）は discussion `projects/orchestration-engine/docs/discussions/2026-07-13-discussion-supervisor-succession-recovery-and-observability.md`（§4-2 / §4-3 / §5(0)）を参照する。自動化 verb `oe-reseat` は仮称・未実装。
+- **復帰（前任が応答しない）は下の ⑤ が持つ。** verb は `oe-recover` である。同じ会話を resume した統括が自分で打つ（前任と後継が同じ会話なので、引き継ぎ文書は要らない）。
 
 ## ④ 計画的な交代を始める（前任側の工程）
 
@@ -185,6 +185,21 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 6. **`start` のあとは新しい作業を始めない。** 申告のあとに open PR・未 push・worktree が動くと、**後継の `retire` がその食い違いで止まる**（下見でも `--execute` でも実状態を数え直す）。動かしたなら `prepare` を打ち直して申告を直す（**人が書いた節は消えない**）。
 
 **ここから先は後継である。** 後継は `take` → `retire`（下見）→ `retire --execute` → **③ の手順5**（登記のつけかえと宛先の通知）の順に進む。**`take` と `retire` には、文書に書いた board を `--board` で渡す**（`OE_BOARD_FILE` でも同じ）。**文書を既定から動かしてあるなら `--handoff` も要る。** **前任は自分のペインを閉じない。** verb の起動方法は「verb 解決規約」節、各 verb の詳細は engine の `bin/README.md`（上の規約で引いた `$oe_bin/README.md`）。
+
+## ⑤ 応答しない統括の復帰（resume のあとの工程）
+
+**統括のセッションが落ちた・ペインが消えた・tmux ごと再起動した**あと、owner が同じ会話を resume して「復帰して」と頼んだら、resume した統括が踏む工程である。前任が申告できる交代（④）とは別で、引き継ぎ文書は使わない。
+
+**owner の側（統括が落ちているあいだは人にしかできない）**: 普通のシェルで `oe-recover hint -w <workspace>` を打つと、生きていない統括の lease ごとに `OE_LEASE_ID=… OE_GENERATION=… claude --resume <session_id>` の1行が出る。その1行をペインで打ち、resume した会話に「復帰して」と頼む。tmux ごと再起動したときは `--all` で子のコマンドも出る。
+
+**統括の側**（「復帰して」を受けたら、その1回の指示で 1〜4 を通す）:
+
+1. **`oe-recover --board <board のパス>` を自分の Bash から打つ。** 同じ会話なので generation は進めず、binding を自分に張り替え、board の現統括の表示と registry を lease の記録から作り直し、検算して event を書く。**何度打っても同じ結果になる**ので、止まったら出力の「次にやること」に従って直し、もう一度打つ。
+2. **止まったら、出力の3つの節（いまの状況・書いたもの／書かなかったもの・次にやること）をそのまま owner に伝える。** 前の claude が生きて残っているときは verb は閉じない。**閉じるのは owner で、統括は閉じるコマンドを打たない**（作業の途中のプロセスかを verb は見分けられない）。
+3. **済んだら、出た一覧を読む。** 「送れなかった送信の履歴（要照合）」の brief・時刻で絞った報告と問いのファイル・古い子（lease を持たず、宛先が前のペインのままの子）。**要照合の一覧は未回収の報告の一覧ではない**ので、空でも子に照会してよい。古い子へ宛先を伝えるかは統括が決め、出たコマンドで送る。
+4. **判断ボードと引き継ぎの文書を読み直して作業に戻る。** 判断ボードは `judgment-board-flow` の「統括が交代するとき」節の読み方で、台帳の最後の版から続ける。
+
+**子も落ちていれば**、子ごとに owner が resume して「復帰して」と頼み、子も `oe-recover` を打つ（子は `--board` 不要）。親と子のどちらが先でもよい（registry は lease の記録から作り直すので、あとから戻ったほうがそろえる）。各 verb の詳細と exit は engine の `bin/README.md`（上の規約で引いた `$oe_bin/README.md`）。
 
 ## routing 表（遷移・ゲート → 必ず通すスキル・DJ-11 layer b）
 

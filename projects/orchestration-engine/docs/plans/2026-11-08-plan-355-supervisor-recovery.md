@@ -294,11 +294,11 @@ verb を新しく作る前提を外して、ほかの形を1度並べた。
 
 ### I2: verb `oe-recover`（DJ-1〜DJ-6・DJ-9・DJ-11）とテスト T-1〜T-8・T-11〜T-13（完了）
 
-### I3: `oe-send` の `delivery_held`（DJ-7）・`oe-vitals` のキーと通知の口（DJ-8）・event の schema（DJ-4）とテスト T-9・T-10
+### I3: `oe-send` の `delivery_held`（DJ-7）・`oe-vitals` のキーと通知の口（DJ-8）・event の schema（DJ-4）とテスト T-9・T-10（完了）
 
-### CHECK: 既存のテストと shellcheck を通す
+### CHECK: 既存のテストと shellcheck を通す（完了・下の episode の CHECK）
 
-### I4: `bin/README.md` と `doc-flow-guardrail` の節（DJ-10）
+### I4: `bin/README.md` と `doc-flow-guardrail` の節（DJ-10）（完了）
 
 ### GATE 4: 実装SO（弱・1レーン）
 

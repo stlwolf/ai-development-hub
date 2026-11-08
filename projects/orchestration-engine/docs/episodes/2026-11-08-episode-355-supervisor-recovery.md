@@ -119,3 +119,21 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - テスト `tests/test_oe_recover.sh`（84 件）: T-1〜T-8・T-11〜T-13。偽の ps・tmux・kill・date に差し替え、足がかりの `oe-tree` も偽の bin に置き、`~/bin` を PATH から外し、state の置き場を一時ディレクトリに向けた（negative knowledge `01M5T897YCWY13GFTADD3136EC`）。最後に本物の置き場が書かれていないことを確かめる。
 - テストを書く途中で2つ外れ、どちらもテストの偽物の不足だった。1つは、偽の tmux が `list-panes -F '#{pane_id} #{pid}'`（registry の掃除が server の pid を確かめる書式）に答えず、掃除が走らなかったこと。もう1つは、T-11 で binding を途中で移す仕掛けを偽の `date` に置いたら、board の日付より先に、張り替えの時刻を作る呼び出しで動いたこと。偽の `date` は `+%Y-%m-%d` のときだけ動くようにした。
 - 出力の実物を1回見て（成功の場合と、前の claude が生きている場合）、「前の binding（… から）のあいだ」の言い方を「前の binding が張られた時刻（…）より後」に直した。
+
+## I3: `delivery_held` と `oe-vitals`（2026-11-08）
+
+- `lib/target-resolve.sh` は、lease の宛先を確かめられずに外れた理由を終了コードに畳んでいた。理由を `OE_TARGET_WHY`（closed / unresolved / not_self / no_binding / unknown）にも残すようにした。送る・送らないの判定と終了コードは変えていない。
+- `bin/oe-send` は、`--to-parent` で親の lease へ送れなかったときだけ `delivery_held` を書き、「送れなかったことを残した。報告のファイルは置いたままにして」と出す。`OE_LEASE_ID` の無い子（親の lease が無い）は書かない。
+- `bin/oe-vitals` は、統括の lease で判定した death の重複抑止のキーを `death|<lease_id>|<generation>|<binding の pid>|<開始時刻>` にした。`OE_VITALS_NOTIFY=0` で通知を止める口を足した。context の知らせと board で判定したときのキーは変えていない。
+- テスト: T-9 は `tests/test_target_resolve.sh` の (D)(7)(8)、T-10 は `tests/test_lease_handoff.sh` の (H)。偽の `wez` を置いて、通知の回数を数えた。
+- 気づいたこと（直していない）: `bin/oe-send:28` の `OE_TARGET_CALLER` に shellcheck 0.11.0 が SC2034（warning）を出す。master の同じファイルでも出る。source した lib が読む変数で、`-x` を付けても消えない。この PR の範囲の外として報告に書く。
+
+## I4: 手順の置き場（2026-11-08）
+
+- `projects/orchestration-engine/bin/README.md` に `oe-recover` の節（使い方・人が打つ手順・verb がすること・exit）を足し、索引の本数を 27 から 28 にした。`oe-vitals` の節の重複抑止のキーの文を直した。`projects/orchestration-engine/README.md` の表と木に `oe-recover` を足した。
+- `canonical/skills/doc-flow-guardrail/SKILL.md` の「復旧（前任が応答しない）は本スキルの範囲外」の行を、⑤「応答しない統括の復帰」の節に置き換えた。計画的な交代（④）と同じく、routing 先が同じ穴を持つので本スキルが持つ例外にし、冒頭の「例外が2つ」を3つにした。description にも発火の場面を1つ足した。スキルの文は hub のパスに頼らず、コマンド名と「verb 解決規約」で引いた `$oe_bin/README.md` で書いた。
+
+## CHECK（2026-11-08）
+
+- engine の `tests/test_*.sh` 61 本を走らせ、60 本が終了コード 0。落ちた1本は `tests/test_home_unset.sh` の「`_oe_home_usable` の定義は1種類」で、master（`df16c60`）の作業ツリーでも同じく落ちる。`lib/handoff-state.sh` の定義が複数行で書かれていて、1行の定義と別の種類に数えられるためで、この PR の変更から来たものではない。範囲の外として報告に書く。
+- 触ったファイル（`bin/oe-recover`・`lib/lease.sh`・`lib/seat.sh`・`lib/event-bus.sh`・`lib/target-resolve.sh`・`bin/oe-vitals`・`scripts/validate-lease.sh`・足したテスト）は shellcheck を通る。`bin/oe-send` の SC2034 と `tests/test_handoff_take.sh` の SC2329 は master から残っているもので、I1 と I3 に書いた。
