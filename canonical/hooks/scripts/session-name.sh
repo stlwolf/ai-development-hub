@@ -75,8 +75,16 @@ if [ -n "$sid" ]; then
   rfile="${title_dir}/${sid_key}.json"
   req_id=""; req_name=""
   if [ -f "$rfile" ]; then
-    req_id="$(jq -r 'if (.request_id|type)=="string" then .request_id else "" end' "$rfile" 2>/dev/null || true)"
-    req_name="$(jq -r 'if (.name|type)=="string" then .name else "" end' "$rfile" 2>/dev/null || true)"
+    # Read the file ONCE (a writer may replace it between two reads: never pair one
+    # request's id with another's name) and accept exactly one JSON object (-s: a
+    # parse error yields nothing, so a truncated/concatenated file is "no request").
+    req="$(jq -cs 'if length == 1 and (.[0] | type) == "object"
+                     and (.[0].request_id | type) == "string" and (.[0].name | type) == "string"
+                   then .[0] else empty end' "$rfile" 2>/dev/null || true)"
+    if [ -n "$req" ]; then
+      req_id="$(printf '%s' "$req" | jq -r '.request_id' 2>/dev/null || true)"
+      req_name="$(printf '%s' "$req" | jq -r '.name' 2>/dev/null || true)"
+    fi
     req_name="$(printf '%s' "$req_name" | tr -d '\000-\037\177' | head -c 80 | { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; })"
   fi
   if [ -n "$req_id" ] && [ -n "$req_name" ]; then
@@ -101,18 +109,23 @@ if [ -n "$sid" ]; then
     cur_cwd="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"
     cur_branch=""
     [ -n "$cur_cwd" ] && cur_branch="$(git -C "$cur_cwd" symbolic-ref --short HEAD 2>/dev/null || true)"
+    saved=0
     if mkdir -p "$branch_dir" 2>/dev/null; then
       find "$title_dir" -maxdepth 1 -type f -mmin +43200 -delete 2>/dev/null || true
-      prev='{}'
-      [ -f "$sfile" ] && prev="$(jq -c 'if type=="object" then . else {} end' "$sfile" 2>/dev/null || echo '{}')"
+      prev=""
+      [ -f "$sfile" ] && prev="$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else {} end' "$sfile" 2>/dev/null || true)"
+      [ -n "$prev" ] || prev='{}'
       tmp="${sfile}.tmp.$$"
       if printf '%s' "$prev" | jq -c --arg r "$req_id" --arg b "$cur_branch" \
            '.seat_request_id = $r | (if has("last_branch") then . else .last_branch = $b end)' >"$tmp" 2>/dev/null; then
-        mv -f "$tmp" "$sfile" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+        if mv -f "$tmp" "$sfile" 2>/dev/null; then saved=1; else rm -f "$tmp" 2>/dev/null; fi
       else
         rm -f "$tmp" 2>/dev/null
       fi
     fi
+    # Rename only when the applied id was saved. Otherwise the next prompt would see
+    # the request as new again and keep overriding a manual /rename every prompt.
+    [ "$saved" = 1 ] || exit 0
     session_title="$(printf '%s' "$payload" | jq -r '.session_title // ""' 2>/dev/null || true)"
     [ "$session_title" = "$req_name" ] || emit_title "$req_name"
     exit 0

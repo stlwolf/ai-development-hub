@@ -210,6 +210,25 @@ printf '{"format":1,"request_id":7,"name":"cockpit x"}' > "$H/.claude/state/sess
 run sid-t10c "$REPO" ""
 expect B "T10 request_id が文字列でない要求は無視（Path2）" "myrepo"
 
+printf '{"format":1,"request_id":"r","name":"cockpit repo"}{' > "$H/.claude/state/session-title/sid_t10d.json"
+run sid-t10d "$REPO" ""
+expect B "T10 途中で切れた要求（後ろに壊れた JSON）は無視（Path2・実装SO）" "myrepo"
+printf '{"request_id":"r1","name":"a"}{"request_id":"r2","name":"b"}' > "$H/.claude/state/session-title/sid_t10e.json"
+run sid-t10e "$REPO" ""
+expect B "T10 JSON が2つ並んだ要求は無視（Path2・実装SO）" "myrepo"
+
+# T12: 適用済みの ID を保存できないときは改名しない（毎回手動の名前を上書きしないため・実装SO）
+if [[ "$(id -u)" != "0" ]]; then
+  req sid-t12 "LEASEE:1" "cockpit myrepo gen3"
+  mkdir -p "$H/.claude/state/session-branch"
+  chmod a-w "$H/.claude/state/session-branch"
+  run sid-t12 "$REPO" "my manual name"
+  expect B "T12 state を保存できなければ改名しない" ""
+  chmod u+w "$H/.claude/state/session-branch"
+  run sid-t12 "$REPO" "my manual name"
+  expect B "T12 保存できるようになれば改名する" "cockpit myrepo gen3"
+fi
+
 # T11: 名前の制御文字は除かれる
 req sid-t11 "LEASED:1" "$(printf 'cockpit\033[31m my\nrepo')"
 run sid-t11 "$REPO" ""
