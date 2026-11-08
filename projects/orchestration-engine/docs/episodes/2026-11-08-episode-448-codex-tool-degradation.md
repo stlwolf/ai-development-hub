@@ -48,11 +48,11 @@ ClaudeとCursorのCLI・接続ツールは無い。Codexの別モデル（gpt-6-
 
 ## 検証と残り
 
-関連7スイートで398項目が成功した。内訳は、道具の障害60・read-only契約14・入力拒否120・版の整合4・oe-refute63・oe-review64・oe-lane-explain73である。ShellCheck 0.11.0、bash -n、git diff --checkも成功した。Bash 3.2、実環境のcode-mode障害、別モデルの実装レビューは未確認。レビューゲートが未完了のため、episodeは閉じない。
+関連7スイートで398項目が成功した。内訳は、道具の障害60・read-only契約14・入力拒否120・版の整合4・oe-refute63・oe-review64・oe-lane-explain73である。ShellCheck 0.11.0、bash -n、git diff --checkも成功した。Bash 3.2、実環境のcode-mode障害、別モデルの実装レビューは未確認。PRレビューは未完了のため、episodeは閉じない。
 
 
 ## レビューへ渡す状態
 
-実環境の同じcode-mode障害での確認と、別モデルの実装SOが未完了である。通常のSOとして数えられる外部回答は0件。`document-format.md` §4.1の「0はなし」により、レビューを完了したとは扱わず、下書きPRとして渡す。
+当初はSOの実返却0件のため下書きPR #601として渡した。その後、ownerから「cloudではso使えないから飛ばしてよい」と明示指示を受けた（2026-11-08）。この作業の設計SO・実装SOを省略し、PRをレビュー可能な状態へ進める。SOの回答を取得したことにはしない。実環境の同じcode-mode障害とBash 3.2の未確認は残す。
 
 検証中に、RespondToModelの返答のcall_idが空になる経路もソースで見つけた。対応するexec/waitを特定できない直接の障害返答は、正常とせずunknownにするテストと処理を追加した。別の呼び出しの出力をexecの障害と断定せず、関連付け不能と区別する。

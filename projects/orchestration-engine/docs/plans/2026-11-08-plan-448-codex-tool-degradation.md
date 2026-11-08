@@ -15,7 +15,7 @@ tags: [so-compare, codex, verification]
 so:
   design: weak
   impl: weak
-  reason: "記録の追加と集計の変更は可逆で、CLIスタブによる回帰テストで検証できる。別モデルの実返却は未取得で、レビューゲートは未完了"
+  reason: "記録の追加と集計の変更は可逆で、CLIスタブによる回帰テストで検証できる。クラウドでSOを使えないため、ownerの明示指示により設計SO・実装SOを省略する。SOを実施済みとは数えない"
 ---
 
 # #448 Codexの道具の障害を通常SOの成功に数えない
@@ -32,7 +32,7 @@ so:
 - [x] 道具の障害を独立したmetaに残し、表示と集計に届ける。
 - [x] CLIスタブで実際のso-compareを起動する回帰テストを追加する。
 - [x] 回帰テスト・既存のSO関連テスト・ShellCheck・構文検査を通す（398項目成功）。
-- [ ] 実装SOを完了する。別モデルへの問い合わせは認証失効で実返却0件のため未完了。
+- [x] 設計SO・実装SOは省略する（2026-11-08、ownerの明示指示「cloudではso使えないから飛ばしてよい」）。SOの実施済みとは数えない。
 - [ ] PRレビューを通し、ownerの判断でマージする。
 
 検証コマンドは `bash projects/orchestration-engine/tests/test_so_compare_tool_status.sh`、同じtests配下の `test_so_compare_read_only.sh`・`test_so_compare_input_rejection.sh`・`test_so_compare_version.sh`・`test_oe_refute.sh`・`test_oe_review.sh`・`test_oe_lane_explain.sh`。変更したシェルスクリプトには `shellcheck -x -P SCRIPTDIR` と `bash -n` を実行する。
