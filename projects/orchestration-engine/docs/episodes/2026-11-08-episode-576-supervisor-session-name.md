@@ -77,3 +77,9 @@ tags: [orchestration, hooks, session-name, lease]
 - 範囲の外として残す: `--fork-session` で session_id が変わった統括の名前の引き継ぎ。新しい id には要求が無いので、席を取り直したときに付く。#355（復帰）で席を取り直す手順に乗る。
 - 範囲の外として残す: 2つのプロセスが同じ session_id を持つ場合。lease 側で同じ session_id を2つの lease に登録できない（`oe_lease_register_session` の rc=8）ので、新しい対策は足さない。
 - 残りの指摘（原子的な置き換え・壊れた JSON・id の検証など）は、今の hook がすでに使っている書き方（tmp に書いて mv・jq で読み失敗したら何もしない）で満たすので、plan の実装の決まりに書く。
+
+### GATE 3（2026-11-08）
+
+- 統括から承認が届いた（plan は `dac722c` の版）。owner は判断ボードの Q98〜Q101 をすべて推奨どおりに選んだ。
+- Q98（名前の形）に owner の補足「代目の日本語はいらない。入れても gen？」があった。名前を `cockpit <リポジトリ名> gen<N>`（例 `cockpit ai-development-hub gen23`）にし、plan の「ゲート3 のあとの変更」の H1（補正）に書いて統括へ申告した。`gen` と数字を続けて書くのは、`gen23` を1語として検索でき、`claude -r "<名前>"` に渡す語の区切りが1つ減るためである。
+- Q100 で owner は受け入れ基準の書き換えを承認した。plan の A2 をその文に置き換えた（H1 に含む）。
