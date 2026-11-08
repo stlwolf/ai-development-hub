@@ -54,6 +54,8 @@ description（frontmatter）を変えたのは judgment-board-flow だけで、�
 
 commit はスキルごとに固定した（CATALOG は1つの commit にした）。
 
+implementer-contract と doc-flow-guardrail の「1つの直しに級が混じるなら」は、最初は「一度に直す中身に級が混じるなら」にした。このスキルでは「直し」を、plan を変える1件ごとの単位の名前として使っている（「補正は…直しである」）ので、「修正」に替えると同じ節の中で語がそろわないと考えたためである。この判断は S2-1 の実装SO の指摘 A で撤回した。
+
 ### S1-3: 直したあとの結果（2026-11-08 15:10）
 
 - brief の grep を `canonical/` に当てると、残るのは S1-1 の「直さないもの」の2行だけである。
@@ -62,3 +64,12 @@ commit はスキルごとに固定した（CATALOG は1つの commit にした�
 - `python3 canonical/skills/runbook-authoring/tests/test_check_runbook.py`: 95 件 OK。
 - `shellcheck canonical/skills/runbook-authoring/examples/scripts/shop-config.sh`: 指摘なし。
 - 古い文字列を `projects/*/tests`・`projects/*/bin`・`scripts` で探し、直した文を引くテストが無いことを確かめた。当たったのは engine の `oe-handoff` の出力の文「閉じる直前の確かめ」と、そのテスト（`test_handoff_retire.sh`）と `test_lease.sh` のコメントである。同じ形だが `projects/` は brief の範囲の外なので直さず、follow-up に回す。
+
+### S2-1: 実装SO の結果と採否 — 指摘2件をどちらも採った（2026-11-08 15:11〜15:12）
+
+`SO_TIMEOUT=480 so-compare --codex-only -w <worktree>` で、5つの観点（A 意味が変わっていないか・B 発火の語・C 複合語と定着した名詞・D 新しく不自然な形になっていないか・E 見出しの参照）を確かめた。Codex は `model_resolved=gpt-6.1-sol`（出所は config で、観測値ではない）、`codex-cli 0.166.0`、75秒・リトライなしで返った。依頼文と出力は master の `tmp/585-renyo-noun-skills/so-impl-r1-prompt.txt` と `tmp/585-renyo-noun-skills/so-impl-r1/`（gitignored）にある。B・C・E は「問題なし」で、A と D が「問題あり」だった。
+
+- A（意味が変わった）: 採った。「一度に直す中身」は、同時に行う独立した複数の修正までまとめて重い級で扱う意味にも読める。元の「1つの直し」は修正1件を単位にしている。「1つの修正に級が混じるなら」に直した。S1-2 で「直し」の語をそろえるために選んだ言い方が、条件の単位を変えていた。
+- D（新しく不自然な形）: 採った。judgment-board-flow の「回収の途中で確かめる1行」「この段で確かめる1行」は、「確かめる」が「1行」を修飾し、その1行自体を確かめる意味にも読める。「内容を確かめるために返す1行」に直した。
+
+直したあとも、brief の grep で残るのは規則の文の2行だけである。
