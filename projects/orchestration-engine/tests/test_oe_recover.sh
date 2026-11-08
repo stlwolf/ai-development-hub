@@ -146,7 +146,15 @@ as_sup() { env TMUX="/tmp/fake-sock,900,0" TMUX_PANE=%2 CLAUDE_PID=201 CLAUDE_CO
 run() { OUT="$("$@" 2>&1)"; RC=$?; }
 lease_pid() { jq -r '.current_generation as $g | .generations[] | select(.generation==$g) | .binding.pid' "$OE_LEASE_DIR/$1.json"; }
 reg_parent() { jq -r '.parent_pane' "$OE_DELEGATE_STATE_DIR/900__${1#%}.json" 2>/dev/null || echo none; }
-three_sections() { ckc "$1: いまの状況の節" "$OUT" "--- いまの状況 ---"; ckc "$1: 書いたもの・書かなかったものの節" "$OUT" "--- 書いたもの・書かなかったもの ---"; ckc "$1: 次にやることの節" "$OUT" "--- 次にやること ---"; }
+three_sections() {
+  ckc "$1: いまの状況の節" "$OUT" "--- いまの状況 ---"; ckc "$1: 書いたもの・書かなかったものの節" "$OUT" "--- 書いたもの・書かなかったもの ---"; ckc "$1: 次にやることの節" "$OUT" "--- 次にやること ---"
+  # 3つの節がこの順に出る（H1）。行番号で比べる。
+  local a b c
+  a="$(printf '%s\n' "$OUT" | grep -n -- '--- いまの状況 ---' | head -1 | cut -d: -f1)"
+  b="$(printf '%s\n' "$OUT" | grep -n -- '--- 書いたもの・書かなかったもの ---' | head -1 | cut -d: -f1)"
+  c="$(printf '%s\n' "$OUT" | grep -n -- '--- 次にやること ---' | head -1 | cut -d: -f1)"
+  ck "$1: 3つの節がこの順に出る" "1" "$([ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && echo 1 || echo 0)"
+}
 
 echo "=== T-2 落ち方 b（ペインが変わる・前のプロセスは死んでいる）==="
 setup b
@@ -177,6 +185,18 @@ ck "event: complete と前の binding" "true:101:supervisor" "$(printf '%s' "$ev
 ck "event: role は空・lease を持つ" ":${SUP}" "$(printf '%s' "$ev" | jq -r '"\(.from.role):\(.from.lease_id)"')"
 ck "event: lease_bound の rebind も書く" "1" "$(grep -c '"bind_reason":"rebind"' "$OE_EVENT_DIR/oe-events.jsonl")"
 
+echo "=== T-9（復帰の一覧の側）: delivery_held のあとに送れた記録があれば印を付ける ==="
+setup later
+kill_pid 101
+jq -cn --arg c "$CH" --arg s "$SUP" '{ts:"2026-11-08T10:30:00+00:00", type:"message_sent", from:{pane:"%3", role:"child", label:"#9 child", lease_id:$c, generation:1},
+  to:{pane:"%2", role:"parent", label:"cockpit", lease_id:$s, generation:1}, preview:"x", delivery_signal:"none"}' >> "$OE_EVENT_DIR/oe-events.jsonl"
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+ckc "あとで送れた印が付く" "$OUT" "#9 child（lease ${CH}）: 2 回・最後 2026-11-08T10:02:00+00:00・not_self・brief /ws/.oe/report-9.md・あとで送れた記録あり"
+setup notlater
+kill_pid 101
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+nck "送れた記録が無ければ印を付けない" "$OUT" "あとで送れた記録あり"
+
 echo "=== T-1 打ち直し（binding はもう自分）==="
 BOARD_AFTER="$(cat "$BOARD")"
 run as_sup "$VERB" -w "$WS" --board "$BOARD"
@@ -205,10 +225,12 @@ ck "board は変えない" "%1" "$(bash -c ". '$PROJECT_DIR/lib/seat.sh'; oe_sea
 sed -i.bak '/^%1 /d' "$PANES"; rm -f "$PANES.bak"
 run as_sup "$VERB" -w "$WS" --board "$BOARD"
 ck "ペインが無いとき: 終了コードは 1" "1" "$RC"
+three_sections "T-3 生きていてペインが分からない"
 nck "ペインの番号を出さない" "$OUT" "kill-pane"
 ckc "pid で確かめる手順を出す" "$OUT" "ps -p 101 -o pid,lstart,command"
 run env FAKE_PS_FAIL=1 TMUX="/tmp/fake-sock,900,0" TMUX_PANE=%2 CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-sup "$VERB" -w "$WS" --board "$BOARD"
 ck "ps が失敗したとき: 何も書かず止まる" "1:101" "$RC:$(lease_pid "$SUP")"
+three_sections "T-3 生きているか分からない"
 nck "閉じるコマンドを出さない" "$OUT" "kill-pane"
 nck "kill のコマンドも出さない" "$OUT" "が kill 101"
 
@@ -306,6 +328,17 @@ ckc "--all で子を出す" "$OUT" "#9 child"
 ckc "--all で孫を出す" "$OUT" "#10 grand"
 ckc "生きている子には復帰は要らないと言う" "$OUT" "復帰は要りません"
 ck "何も書いていない" "$SNAP" "$(find "$_TMP_DIR/case-hint" -type f -exec shasum {} + | sort)"
+( . "$PROJECT_DIR/lib/lease.sh"
+  NB="$(oe_lease_create supervisor nobind "$WS" "")"                                        # binding が無い
+  NS="$(oe_lease_create supervisor nosid "$WS" "")"; oe_lease_bind "$NS" 0 101 "$S1" claude  # session_id が無い（101 は死んでいる）
+  printf '%s %s\n' "$NB" "$NS" > "$_TMP_DIR/case-hint/extra" )
+read -r NB NS < "$_TMP_DIR/case-hint/extra"
+run "$VERB" hint -w "$WS"
+ckc "binding が無い lease は理由を出す" "$OUT" "binding が記録に無いので"
+ckc "session_id が無い lease は理由を出す" "$OUT" "session_id が記録に無いので"
+nck "binding が無い lease には resume のコマンドを出さない" "$OUT" "OE_LEASE_ID=${NB}"
+nck "session_id が無い lease には resume のコマンドを出さない" "$OUT" "OE_LEASE_ID=${NS}"
+ckc "どちらも --lease で名乗る道を出す" "$OUT" "oe-recover --lease ${NS}"
 nck "セッション名の記録が無ければ名前の1行は出さない" "$OUT" "claude -r 'cockpit"
 ckc "一覧から探す道を出す（#576）" "$OUT" "claude -r cockpit"
 export OE_SESSION_TITLE_DIR="$_TMP_DIR/case-hint/title"; mkdir -p "$OE_SESSION_TITLE_DIR"
@@ -357,6 +390,24 @@ ckc "board の場所を案内する" "$OUT" "oe-recover --board"
 ck "張り替えはした" "201" "$(lease_pid "$SUP")"
 ck "registry は書いた" "%2" "$(reg_parent %3)"
 ck "event の undone に board" "board" "$(grep '"supervisor_recovery"' "$OE_EVENT_DIR/oe-events.jsonl" | tail -1 | jq -r '.undone | join(",")')"
+setup board-ro
+kill_pid 101
+chmod 444 "$BOARD"
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+ck "board が書けない: 終了コードは 1・張り替えはする" "1:201" "$RC:$(lease_pid "$SUP")"
+ckc "board が書けないと言う" "$OUT" "を読めないか書けません"
+ck "board が書けない: registry は書いた" "%2" "$(reg_parent %3)"
+ck "board が書けない: board は変わらない" "%1" "$(bash -c ". '$PROJECT_DIR/lib/seat.sh'; oe_seat_resolve '$BOARD'")"
+chmod 644 "$BOARD"
+setup board-noline
+kill_pid 101
+printf '%s\n' "# board" "現統括の行が無い本文" > "$BOARD"
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+ck "現統括の行が無い: 終了コードは 1・張り替えはする" "1:201" "$RC:$(lease_pid "$SUP")"
+ckc "現統括の行が無いと言う" "$OUT" "「現統括:」の行か、その行のペインが見つかりません"
+ckc "行を足す案内を出す" "$OUT" "現統括: \`%2\`"
+ck "現統括の行が無い: registry は書いた" "%2" "$(reg_parent %3)"
+three_sections "T-13 現統括の行が無い"
 
 echo "=== 本物に届く経路が無い ==="
 ck "偽の ps と tmux が呼ばれた" "1" "$([ -s "$CALLS" ] && echo 1 || echo 0)"
