@@ -433,3 +433,7 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
   - 低: episode の「master に当てると FAIL」を、worktree の verb を差し替えて回した、と正確に書き直した。
 - 採らなかったもの: 凍結した過去の plan・discussion の「env → `/tmp/oe-parent`」の記述。当時の記録なので直さない。
 - 指摘が無かった点: 呼び出し元と配布スキルへの影響・exit code の帯・[5b] の検出力・外した/外さなかった判定とコードの事実・`lease_id` の1語の追加。
+
+### I6: Copilot の1ラウンド（PR #604・2026-11-09）
+
+- Copilot は行のコメントを付けず、概要で1つを挙げた。engine の `bin/README.md` の交代の節が「README が推す戻しの書き方 `oe-send "$PARENT_TMUX_PANE"`」と書いたままで、PR-3 で一本化した `oe-send --to-parent` と食い違う、という指摘である。本当だった。この段落は PR-6 で `oe-report` の文を直すときに触ったのに、同じ段落の古い推奨に気づかなかった。以前の推奨であることと、`OE_LEASE_ID` を持つ子は交代のあとも後継へ届くこと、穴が残るのは古い子と `oe-report` だけであることを書いた。PR に返信のコメントを書いた。
