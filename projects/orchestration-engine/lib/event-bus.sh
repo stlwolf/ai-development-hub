@@ -197,6 +197,40 @@ oe_event_lease_bound() {
   oe_event_emit "lease_bound" "$pane" "" "$label" "" "" "" "$extra" "${lid}:${gen}" ""
 }
 
+# oe_event_supervisor_recovery <pane> <lease_id> <generation> <kind> <recovery_id> <prev_pid> <prev_started> <server_pid> <complete> <undone_json> [label]
+#   oe-recover（#355）が復帰の1回ごとに1行書く。from=復帰したペイン（lease_id と generation を持つ）、to は空。
+#   role はどちらも空（復帰は spawn の親子ではない）。prev_pid が空なら prev_binding を書かない。
+#   complete は true か false、undone_json は文字列の配列の JSON。best-effort・常に return 0。
+oe_event_supervisor_recovery() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local pane="${1:-}" lid="${2:-}" gen="${3:-}" kind="${4:-}" rid="${5:-}" ppid="${6:-}" pst="${7:-}" spid="${8:-}"
+  local complete="${9:-false}" undone="${10:-[]}" label="${11:-}" extra
+  [[ "$lid" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ && "$gen" =~ ^[1-9][0-9]*$ ]] || return 0
+  case "$kind" in supervisor|delegation) ;; *) return 0 ;; esac
+  [[ "$rid" =~ ^([0-9A-HJKMNP-TV-Z]{26})?$ ]] || rid=""
+  case "$complete" in true|false) ;; *) complete=false ;; esac
+  extra="$(jq -cn --arg l "$lid" --argjson g "$gen" --arg k "$kind" --arg r "$rid" --arg s "$spid" \
+      --argjson c "$complete" --argjson u "$undone" --arg pp "$ppid" --arg ps "$pst" '
+    {lease_id:$l, generation:$g, kind:$k, recovery_id:$r, server_pid:$s, complete:$c, undone:$u}
+    + (if ($pp | test("^[1-9][0-9]*$")) then {prev_binding: {pid: ($pp | tonumber), started: $ps}} else {} end)' 2>/dev/null)" || return 0
+  oe_event_emit "supervisor_recovery" "$pane" "" "$label" "" "" "" "$extra" "${lid}:${gen}" ""
+}
+
+# oe_event_delivery_held <from_pane> <from_lease> <to_lease> <held_reason> [brief] [preview] [label]
+#   子が oe-send --to-parent で親の lease へ送ろうとして、送る前の確かめで外れて送らなかったときに書く（#355・D15）。
+#   from_lease / to_lease は "<lease_id>:<generation>"（親の lease が無ければ to_lease は空）。
+#   preview は先頭 100 文字に切る。送れなかった送信の履歴であって、未回収の報告の集合ではない。best-effort・常に return 0。
+oe_event_delivery_held() {
+  [[ "${OE_EVENT_LOG:-1}" != "0" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local fp="${1:-}" fl="${2:-}" tl="${3:-}" why="${4:-unknown}" brief="${5:-}" preview="${6:-}" label="${7:-}" extra
+  case "$why" in no_parent_lease|unresolved|not_self|closed|no_binding|unknown) ;; *) why="unknown" ;; esac
+  extra="$(jq -cn --arg w "$why" --arg b "$brief" --arg p "$preview" '
+    {held_reason:$w} + (if $b == "" then {} else {brief:$b} end) + {preview: ($p | .[0:100])}' 2>/dev/null)" || return 0
+  oe_event_emit "delivery_held" "$fp" "" "$label" "" "" "" "$extra" "$fl" "$tl"
+}
+
 # oe_event_message_sent <from_pane> <to_pane> <preview-text> [delivery_signal] [nonce]
 #   oe_send_line が送信成功後に呼ぶ。delivery_signal は unknown|none（#299 P0 以降 suspected_miss は
 #   書かない。delivered は名乗らない）。nonce（#299・任意）を渡すと delivery_receipt.nonce を焼く。

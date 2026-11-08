@@ -9,7 +9,7 @@
 | 本体のエンジン | `oe` | wez のペインに agent を起こし、1 サイクル（envelope→spawn→capture→verify→monitor）を非対話で自律に回す（Phase 4 の MVP） |
 | 親子の委譲 | `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register` | 統括から tmux の子セッションを起こしてタスクを渡し、子から報告を受ける |
 | cockpit の観測と見張り | `oe-tree` / `oe-activity` / `oe-threads` / `oe-status` / `oe-vitals` / `oe-undelivered` / `oe-confirm` | 誰が動いているか・届いたか・統括が生きているかを read-only で見る |
-| 統括の交代と lease | `oe-handoff` / `oe-lease` | 統括を計画的に交代する。統括と子の「誰か」を、tmux のペインと切り離した lease の記録で持つ（#577 で移行中） |
+| 統括の交代と lease | `oe-handoff` / `oe-lease` / `oe-recover` | 統括を計画的に交代する。応答しなくなった統括を resume のあとに復帰させる（#355）。統括と子の「誰か」を、tmux のペインと切り離した lease の記録で持つ（#577 で移行中） |
 | SO のゲート | `oe-refute` / `oe-review` | 確定前の設計の反証と、実装のレビューを so-compare で回して判定を記録する |
 
 各 verb の引数は [`bin/README.md`](bin/README.md) にある。始まりは自前オーケストレーションツール MVP の実装プロジェクト（[Epic #19](https://github.com/stlwolf/ai-development-hub/issues/19) Phase 4・close 済み）で、その経緯は下の「状態」節に残す。
@@ -58,6 +58,7 @@ projects/orchestration-engine/
 │   ├── oe-register            # 手動起動ペインの自己 root 登記 / 既存ペインの委譲 link（#259）
 │   ├── oe-handoff             # 統括の計画的な交代（prepare / start / take / retire・#390）
 │   ├── oe-lease               # 統括と委譲子の lease の記録を作る・名乗る・引く・閉じる・掃除する（#577）
+│   ├── oe-recover             # 応答しない統括が resume のあとに打つ復帰（hint・#355）
 │   ├── oe-select              # oe-list + fzf の対話ペインセレクタ（cockpit 最小 UI・#176）
 │   ├── oe-jump                # 通知/ラベルから対象 tmux ペインへ focus（--record で直近 target を replay・#179）
 │   ├── oe-view                # 生成 doc のビューア入口（md→viewer ペインで glow / 非 md→open・#210）

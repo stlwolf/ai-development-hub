@@ -1,0 +1,615 @@
+#!/usr/bin/env bash
+# oe-recover — 応答しなくなった統括（と委譲の子）が、同じ会話を resume したあとに1回打つ復帰の verb（#355）
+#
+# 設計の正本は projects/orchestration-engine/docs/plans/2026-11-08-plan-355-supervisor-recovery.md（DJ-1〜DJ-11・H1）。
+# 前任が応答できる計画的な交代は oe-handoff の担当で、この verb は前任が応答しない場合だけを扱う。
+#
+# usage:
+#   oe-recover [-w <workspace>] [--board <path>] [--lease <lease_id> [--owner-confirmed]]
+#   oe-recover hint [-w <workspace>] [--all]
+#   oe-recover -h | --help
+#
+#   （引数なし）  resume した本人が、自分の Claude Code の Bash から打つ。次の順に進む。
+#                 1 自分を確かめる → 2 自分の lease を決める → 3 復帰のロックを取る → 4 いまの binding を見る
+#                 → 5 binding を自分に張り替える（commit point。前の binding は rebinds に残る）
+#                 → 6 board の現統括の表示・registry を、lease の記録といまの観測から作り直す
+#                 → 7 検算 → 8 復帰の event を書く
+#                 同じ会話の復帰では generation を進めない（DJ-2）。止まったら、直してからもう一度打てばよい。
+#   hint          resume の前に、普通のシェルから打つ。読むだけで何も書かない。workspace の統括の lease のうち、
+#                 binding のプロセスが生きていないものについて、resume のコマンドを出す（DJ-9）。
+#                 --all を付けると、その統括の下の委譲の lease も出す（tmux ごと再起動したとき）。
+#
+# 止まったとき・済んでいない工程が残ったときは、次の3つをこの順に出す（H1）:
+#   いまの状況 / 書いたもの・書かなかったもの / 次にやること（誰が・何を打つか）
+#
+# exit: 0 復帰が済んだ（hint は出し終えた） / 1 止まった・済んでいない工程が残った / 2 呼び方の誤り・前提の不足
+#
+# 差し替えの口（テスト用）: OE_RECOVER_TREE（既定 同じディレクトリの oe-tree）
+# 置き場: OE_LEASE_DIR・OE_HEARTBEAT_DIR・OE_DELEGATE_STATE_DIR・OE_EVENT_DIR（各 lib の既定）
+
+set -uo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/lease.sh
+source "${BIN_DIR}/../lib/lease.sh"
+# shellcheck source=../lib/seat.sh
+source "${BIN_DIR}/../lib/seat.sh"
+# shellcheck source=../lib/delegate-registry.sh
+source "${BIN_DIR}/../lib/delegate-registry.sh"
+# shellcheck source=../lib/event-bus.sh
+source "${BIN_DIR}/../lib/event-bus.sh" || true
+
+OE_RECOVER_TREE="${OE_RECOVER_TREE:-${BIN_DIR}/oe-tree}"
+
+err() { printf '%s\n' "oe-recover: $*" >&2; }
+usage() { sed -n '2,/^set -uo/p' "$0" | sed -e '/^set -uo/d' -e 's/^# \{0,1\}//' >&2; }
+
+# --- 案内の3つの節（H1）---
+SIT=(); WROTE=(); NOTW=(); NEXT=(); UNDONE=()
+sit()   { SIT+=("$1"); }
+wrote() { WROTE+=("$1"); }
+notw()  { NOTW+=("$1"); }
+next_() { NEXT+=("$1"); }
+undone(){ UNDONE+=("$1"); }   # 済んでいない工程の名前（event に入れる）
+
+report() {
+  local h
+  printf '\n%s\n' '--- いまの状況 ---'
+  if [ "${#SIT[@]}" -eq 0 ]; then printf '  （なし）\n'; else for h in "${SIT[@]}"; do printf '  - %s\n' "$h"; done; fi
+  printf '%s\n' '--- 書いたもの・書かなかったもの ---'
+  if [ "${#WROTE[@]}" -eq 0 ] && [ "${#NOTW[@]}" -eq 0 ]; then printf '  （なし）\n'; fi
+  for h in ${WROTE[@]+"${WROTE[@]}"}; do printf '  - 書いた: %s\n' "$h"; done
+  for h in ${NOTW[@]+"${NOTW[@]}"};  do printf '  - 書かなかった: %s\n' "$h"; done
+  printf '%s\n' '--- 次にやること ---'
+  if [ "${#NEXT[@]}" -eq 0 ]; then printf '  （なし）\n'; else for h in "${NEXT[@]}"; do printf '  - %s\n' "$h"; done; fi
+}
+finish() { report; exit "${1:-0}"; }
+
+_realdir() { (cd "$1" 2>/dev/null && pwd -P); }
+_iso_epoch() { jq -rn --arg t "$1" '$t | fromdateiso8601' 2>/dev/null; }
+# GNU の stat を先に試す。GNU の `stat -f` はファイルシステムの情報を返して成功するので、BSD の形を先に試すと
+# GNU で更新時刻でない値を読む（Copilot の指摘・PR #597）。BSD の stat は `-c` を知らず失敗するので次へ落ちる。
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+
+# ============================================================================
+# hint: resume の前に打つ。読むだけ。
+# ============================================================================
+# セッション名（#576）の記録から、その会話の名前を引く。記録の形は hook との約束（canonical/hooks/README.md の
+# session-name.sh の節）: ~/.claude/state/session-title/<session_id を英数字以外 _ に直したもの>.json の name。
+# 無ければ空を返す（名前は resume の一覧で見分けるための手がかりで、無くても復帰はできる）。
+_title_of() {
+  local sid="$1" dir key
+  dir="${OE_SESSION_TITLE_DIR:-${HOME:+${HOME}/.claude/state/session-title}}"
+  [ -n "$dir" ] && [ -n "$sid" ] || return 0
+  key="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9' '_')"
+  jq -r 'select(type=="object") | (.name // "") | select(type=="string") | gsub("[[:cntrl:]]"; "")' "${dir}/${key}.json" 2>/dev/null | head -1
+}
+
+cmd_hint() {
+  local ws="$1" all="$2" wsr f rows lid kind label gen bpid bst sid lws st n=0 sups=" "
+  wsr="$(_realdir "$ws")" || { err "workspace が見つかりません: ${ws}"; exit 2; }
+  # hint は読むだけなので、置き場のディレクトリを作らない（_oe_lease_ready は mkdir する・Copilot の指摘）。
+  command -v jq >/dev/null 2>&1 || { err "jq がありません"; exit 2; }
+  [ -n "${OE_LEASE_DIR:-}" ] || { err "lease の置き場が決まりません（OE_LEASE_DIR）"; exit 2; }
+  if [ ! -d "$OE_LEASE_DIR" ]; then printf '=== oe-recover hint（%s）===\n\nlease の記録がまだありません（%s）。\n' "$wsr" "$OE_LEASE_DIR"; exit 0; fi
+  printf '=== oe-recover hint（%s）===\n' "$wsr"
+  rows=""
+  # shellcheck disable=SC2153  # OE_LEASE_DIR は lib/lease.sh が決める
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    rows="${rows}$(jq -r 'select(.state=="open") | .current_generation as $g | (.generations[] | select(.generation==$g)) as $c
+      | [ .lease_id, .kind, (.label | gsub("[[:cntrl:]]"; " ")), ($g|tostring), (($c.binding.pid // "")|tostring),
+          ($c.binding.started // ""), (($c.session_ids // []) | last // ""), .workspace, (.parent_lease_id // "") ] | join("\u001f")' "$f" 2>/dev/null)
+"
+  done
+  _hint_one() { # <lid> <kind> <label> <gen> <bpid> <bst> <sid> <lws>
+    local lid="$1" kind="$2" label="$3" gen="$4" bpid="$5" bst="$6" sid="$7" lws="$8" st
+    n=$((n + 1))
+    printf '\n[%s] %s（%s・lease %s・generation %s）\n' "$n" "$label" "$kind" "$lid" "$gen"
+    if [ -z "$bpid" ]; then
+      printf '  状況: binding が記録に無いので、生きているか分かりません。\n'
+      printf '  次にやること: claude --resume の一覧から会話を選び、resume したあと oe-recover --lease %s を打ちます（統括なら owner が確かめて --owner-confirmed を付けます）。\n' "$lid"
+      return 0
+    fi
+    st="$(oe_tpi_proc_state "$bpid" "$bst")"
+    case "$st" in
+      alive)
+        printf '  状況: binding のプロセス（pid %s・開始 %s）は生きています。復帰は要りません。\n' "$bpid" "$bst"
+        printf '  次にやること: 応答しないなら、そのプロセスが止まっているかを画面で確かめます。閉じる前に oe-recover は打たないでください。\n' ;;
+      dead)
+        printf '  状況: binding のプロセス（pid %s・開始 %s）は生きていません。\n' "$bpid" "$bst"
+        if [ -n "$sid" ]; then
+          printf '  次にやること: 新しいペインで次の1行を打ち、resume した会話に「復帰して」と頼みます（会話は oe-recover を打ちます）。\n'
+          printf '    cd %q && OE_LEASE_ID=%s OE_GENERATION=%s claude --resume %s\n' "$lws" "$lid" "$gen" "$sid"
+          tname="$(_title_of "$sid")"
+          if [ -n "$tname" ]; then
+            case "$tname" in *"'"*) tq="$(printf '%q' "$tname")" ;; *) tq="'${tname}'" ;; esac
+            printf '  名前で入るなら（上の1行の環境変数は付かないが、session_id の照合で lease は決まる）: cd %q && claude -r %s\n' "$lws" "$tq"
+          fi
+        else
+          printf '  次にやること: session_id が記録に無いので、claude --resume の一覧から会話を選びます。resume したあと oe-recover --lease %s を打ちます（統括なら owner が確かめて --owner-confirmed を付けます）。\n' "$lid"
+        fi ;;
+      *)
+        printf '  状況: binding のプロセス（pid %s）が生きているかを確かめられませんでした（ps の問い合わせが失敗したか、開始時刻が無い）。\n' "$bpid"
+        printf '  次にやること: owner が ps -p %s -o pid,lstart,command で確かめてから決めます。コマンドは出しません。\n' "$bpid" ;;
+    esac
+  }
+  while IFS=$'\037' read -r lid kind label gen bpid bst sid lws _par; do
+    [ -n "$lid" ] && [ "$kind" = "supervisor" ] || continue
+    [ "$(_realdir "$lws")" = "$wsr" ] || continue
+    sups="${sups}${lid} "
+    _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws"
+  done <<< "$rows"
+  if [ "$all" -eq 1 ]; then
+    # 統括の下の委譲の lease を、親をたどって出す（孫を含む）。
+    local added=1
+    while [ "$added" -eq 1 ]; do
+      added=0
+      while IFS=$'\037' read -r lid kind label gen bpid bst sid lws par; do
+        [ -n "$lid" ] && [ "$kind" = "delegation" ] || continue
+        case "$sups" in *" $lid "*) continue ;; esac
+        case "$sups" in *" $par "*) ;; *) continue ;; esac
+        sups="${sups}${lid} "; added=1
+        _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws"
+      done <<< "$rows"
+    done
+  fi
+  if [ "$n" -eq 0 ]; then
+    printf '\nこの workspace の開いた統括の lease はありません。\n'
+  fi
+  printf '\n一覧から探すなら: claude -r cockpit を打ち、一覧に移って（↓）すべてのセッションを出す（Ctrl+A）。統括の会話には「cockpit <リポジトリ名> gen<代>」の名前が付いている（#576）。\n'
+  exit 0
+}
+
+# ============================================================================
+# 復帰の本体
+# ============================================================================
+WS="$(pwd)"; BOARD="${OE_BOARD_FILE:-}"; LEASE_ARG=""; CONFIRMED=0
+sub=""
+case "${1:-}" in
+  hint) sub="hint"; shift ;;
+  -h|--help) usage; exit 0 ;;
+esac
+ALL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -w|--workspace) [ $# -ge 2 ] || { err "$1 requires a value"; exit 2; }; WS="$2"; shift 2 ;;
+    --board) [ $# -ge 2 ] || { err "--board requires a value"; exit 2; }; BOARD="$2"; shift 2 ;;
+    --lease) [ $# -ge 2 ] || { err "--lease requires a value"; exit 2; }; LEASE_ARG="$2"; shift 2 ;;
+    --owner-confirmed) CONFIRMED=1; shift ;;
+    --all) ALL=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) err "unknown option: $1"; usage; exit 2 ;;
+  esac
+done
+[ "$sub" != "hint" ] || cmd_hint "$WS" "$ALL"
+
+printf '=== oe-recover ===\n'
+command -v jq >/dev/null 2>&1 || { err "jq がありません"; exit 2; }
+_oe_lease_ready || { err "lease の置き場が決まりません（OE_LEASE_DIR）"; exit 2; }
+
+# --- 1 自分を確かめる ---
+SELF="${TMUX_PANE:-}"; ME_PID="${CLAUDE_PID:-}"; ME_SID="${CLAUDE_CODE_SESSION_ID:-}"
+if [ -z "$SELF" ] || [ -z "$ME_PID" ] || [ -z "$ME_SID" ]; then
+  sit "自分のペイン（TMUX_PANE=${SELF:-空}）・自分の claude の pid（CLAUDE_PID=${ME_PID:-空}）・自分の session_id（CLAUDE_CODE_SESSION_ID=${ME_SID:-空}）のどれかが分かりません。この verb は、resume した Claude Code の Bash から、tmux のペインの中で打つものです。"
+  notw "何も書いていません。"
+  next_ "統括（resume した会話）が、自分の Bash ツールから oe-recover を打ち直します。普通のシェルから打つのは oe-recover hint だけです。"
+  finish 2
+fi
+if ! ME_ST="$(oe_tpi_proc_started "$ME_PID")" || ! ME_COMM="$(oe_tpi_proc_comm "$ME_PID")"; then
+  sit "自分の claude のプロセス（pid ${ME_PID}）の開始時刻かコマンド名を読めませんでした。"
+  notw "何も書いていません。"
+  next_ "統括が ps -p ${ME_PID} -o pid,lstart,command を打って、プロセスが見えるかを確かめます。見えれば oe-recover を打ち直します。"
+  finish 1
+fi
+ME_ST="$(_oe_tpi_norm "$ME_ST")"
+oe_tpi_verify_pane "$SELF" "$ME_PID" "$ME_ST"; vrc=$?
+case "$vrc" in
+  0) sit "自分のペイン ${SELF} のフォアグラウンドのプロセスが自分（pid ${ME_PID}）であることを確かめました。" ;;
+  1) sit "自分のペイン ${SELF} のフォアグラウンドのプロセスが、自分（pid ${ME_PID}）ではありません。別のペインの環境を受け継いでいる可能性があります。"
+     notw "何も書いていません。"
+     next_ "統括が echo \$TMUX_PANE と tmux display-message -p '#{pane_id}' を比べ、食い違っていれば正しいペインで resume し直します。"
+     finish 1 ;;
+  *) sit "自分のペイン ${SELF} のフォアグラウンドのプロセスを確かめられませんでした（rc=${vrc}。tmux か ps の問い合わせが失敗しました）。本人を確かめられないペインを board と registry に書かないので、ここで止まります。"
+     notw "何も書いていません。"
+     next_ "統括が tmux list-panes -a -F '#{pane_id} #{pane_tty}' と ps -p ${ME_PID} -o pid,lstart,command を打って、どちらも答えるかを確かめます。答えるようになったら oe-recover をもう一度打ちます。"
+     finish 1 ;;
+esac
+
+# --- 2 自分の lease を決める（S-6: generation は session_id のある generation で決める）---
+LID=""; GEN=""; SRC=""
+hit="$(oe_lease_find_by_session "$ME_SID" 2>/dev/null)" || hit=""
+if [ -n "$hit" ]; then
+  if [ "$(printf '%s\n' "$hit" | grep -c .)" -ne 1 ]; then
+    sit "自分の session_id（${ME_SID}）が、開いた lease の複数の場所に登録されています: $(printf '%s' "$hit" | tr '\n\t' ' :')。"
+    notw "何も書いていません。"
+    next_ "統括が oe-lease show <lease_id> でそれぞれを見せ、owner がどれが自分の持ち場かを決めます。そのあと oe-recover --lease <lease_id> を打ちます。"
+    finish 1
+  fi
+  LID="${hit%%"$_OE_TPI_TAB"*}"; GEN="${hit#*"$_OE_TPI_TAB"}"; SRC="session_id の照合"
+fi
+if [ -n "${OE_LEASE_ID:-}" ]; then
+  if [ -n "$LID" ] && [ "$LID" != "$OE_LEASE_ID" ]; then
+    sit "環境変数の OE_LEASE_ID（${OE_LEASE_ID}）と、自分の session_id が登録されている lease（${LID}）が違います。"
+    notw "何も書いていません。"
+    next_ "統括が oe-lease show ${OE_LEASE_ID} と oe-lease show ${LID} を見せ、owner がどちらが自分の持ち場かを決めます。そのあと oe-recover --lease <lease_id> を打ちます。"
+    finish 1
+  fi
+  [ -n "$LID" ] || { LID="$OE_LEASE_ID"; SRC="環境変数"; }
+fi
+if [ -n "$LEASE_ARG" ]; then
+  if [ -n "$LID" ] && [ "$LID" != "$LEASE_ARG" ]; then
+    sit "--lease の値（${LEASE_ARG}）が、${SRC}で決まった lease（${LID}）と違います。"
+    notw "何も書いていません。"
+    next_ "統括が --lease を外して oe-recover を打ち直すか、owner がどちらの持ち場かを決めます。"
+    finish 1
+  fi
+  [ -n "$LID" ] || { LID="$LEASE_ARG"; SRC="--lease"; }
+fi
+if [ -z "$LID" ]; then
+  sit "自分の lease を決められませんでした。環境変数の OE_LEASE_ID が無く、自分の session_id（${ME_SID}）はどの開いた lease にも登録されていません。"
+  notw "何も書いていません。"
+  next_ "owner が普通のシェルで oe-recover hint -w <workspace> を打ち、出た lease_id を統括に伝えます。統括は oe-recover --lease <lease_id> を打ちます（統括の lease なら、owner が確かめたうえで --owner-confirmed を付けます）。"
+  finish 1
+fi
+if ! CUR="$(oe_lease_get "$LID" 2>/dev/null)"; then
+  sit "lease ${LID}（${SRC}で決めた）の記録がありません。"
+  notw "何も書いていません。"
+  next_ "owner が oe-recover hint -w <workspace> で、いまある lease を確かめます。"
+  finish 1
+fi
+KIND="$(printf '%s' "$CUR" | jq -r '.kind')"; LABEL="$(printf '%s' "$CUR" | jq -r '.label')"
+LWS="$(printf '%s' "$CUR" | jq -r '.workspace')"; CURGEN="$(printf '%s' "$CUR" | jq -r '.current_generation')"
+if [ "$(printf '%s' "$CUR" | jq -r '.state')" != "open" ]; then
+  sit "lease ${LID}（${LABEL}）は閉じています。"
+  notw "何も書いていません。"
+  next_ "owner が、この会話を復帰させる必要があるかを決めます。閉じた持ち場には戻しません。"
+  finish 1
+fi
+[ -n "$GEN" ] || GEN="${OE_GENERATION:-$CURGEN}"
+if [ "$GEN" != "$CURGEN" ]; then
+  sit "自分（${SRC}で決めた lease ${LID} の generation ${GEN}）は退任しています。いまの generation は ${CURGEN} です。交代のあとに前任の会話を resume した可能性があります。"
+  notw "何も書いていません。統括の操作に進まないでください。"
+  next_ "owner が、いまの統括（generation ${CURGEN}）が生きているかを oe-tree --lease で確かめます。この会話は統括として使いません。"
+  finish 1
+fi
+if [ "$SRC" != "session_id の照合" ]; then
+  # 方法1・方法3: workspace の一致を確かめる。方法3（--lease）で統括の lease なら owner の確かめを求める（D7）。
+  if [ "$(_realdir "$LWS")" != "$(_realdir "$WS")" ] || [ -z "$(_realdir "$WS")" ]; then
+    sit "lease ${LID} の workspace（${LWS}）が、自分の workspace（${WS}）と一致しません。lease_id の読み違いか、別のリポジトリの持ち場です。"
+    notw "何も書いていません。"
+    next_ "統括が lease_id を確かめるか、-w <workspace> を正しい値にして oe-recover を打ち直します。"
+    finish 1
+  fi
+  if [ "$SRC" = "--lease" ] && [ "$KIND" = "supervisor" ] && [ "$CONFIRMED" -ne 1 ]; then
+    sit "統括の lease ${LID}（${LABEL}）に、記録に無い session_id（${ME_SID}）で名乗ろうとしています。"
+    notw "何も書いていません。"
+    next_ "owner が、この会話が lease ${LID} の統括であることを確かめます。確かめたら統括が oe-recover --lease ${LID} --owner-confirmed を打ちます。"
+    finish 1
+  fi
+fi
+sit "自分の lease は ${LID}（${KIND}・${LABEL}・generation ${GEN}）です（${SRC}で決めました）。"
+
+# --- 3 復帰のロック（同じ lease の復帰を同時に2つ走らせない・S-3）---
+# 取り方と、置き去りのロックの引き取り方は lib/lease.sh の _oe_lease_lock と同じにする（持ち主が死んだロックと、
+# pid を書く前に落ちて空のまま古くなったロックだけを、引き取りのロックを持つ1人が片づける・実装SO の指摘）。
+RLOCK="$(_oe_lease_file "$LID").recover.lock"
+if ! OE_LEASE_LOCK_RETRY="${OE_RECOVER_LOCK_RETRY:-10}" _oe_lease_lock "$RLOCK"; then
+  owner="$(cat "${RLOCK}/pid" 2>/dev/null)" || owner=""
+  sit "lease ${LID} の復帰が、ほかで走っています（復帰のロック ${RLOCK} の持ち主 pid ${owner:-不明}）。同じ会話から2回打ったか、同じ会話を2か所で resume しています。"
+  notw "何も書いていません。"
+  next_ "統括が、前に打った oe-recover が終わるのを待ってから、もう一度打ちます。持ち主の pid が残り続けるなら、owner が ps -p ${owner:-<pid>} で確かめます。"
+  finish 1
+fi
+trap '_oe_lease_unlock "$RLOCK"' EXIT
+
+# --- 4 いまの binding を見る ---
+CUR="$(oe_lease_get "$LID")"
+EPOCH="$(printf '%s' "$CUR" | jq -r '.epoch')"
+BPID="$(printf '%s' "$CUR" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.pid // "") | tostring')"
+BST="$(printf '%s' "$CUR" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.started // "")')"
+NEED_CLAIM=1
+if [ -n "$BPID" ] && [ "$BPID" = "$ME_PID" ] && [ "$(_oe_tpi_norm "$BST")" = "$ME_ST" ]; then
+  NEED_CLAIM=0
+  sit "いまの binding はもう自分です（張り替えは要りません）。"
+  if ! printf '%s' "$CUR" | jq -e --argjson g "$GEN" --arg s "$ME_SID" '.generations[] | select(.generation==$g) | (.session_ids // []) | index($s)' >/dev/null 2>&1; then
+    # 取り込み（oe-lease adopt）で作られた lease は binding だけを持ち、session_id を持たない（実装SO の指摘）。
+    src2=0; oe_lease_register_session "$LID" "$ME_SID" "$ME_PID" "$ME_ST" || src2=$?
+    if [ "$src2" -eq 0 ]; then wrote "自分の session_id（${ME_SID}）を lease ${LID} の generation ${GEN} に登録した。"
+    else notw "自分の session_id の登録（rc=${src2}）。"; undone "register-session"
+         next_ "統括が oe-lease whoami を打ち、session_id がほかの lease に登録されていないかを確かめます。"; fi
+  fi
+elif [ -n "$BPID" ]; then
+  BSTATE="$(oe_tpi_proc_state "$BPID" "$BST")"
+  case "$BSTATE" in
+    dead) sit "いまの binding（pid ${BPID}・開始 ${BST}）のプロセスは生きていません。" ;;
+    alive)
+      # DJ-6: 前のプロセスがどのペインのフォアグラウンドにいるかを、確かめられたときだけペインを出す（S-8）。
+      cands=""
+      if [ "$KIND" = "supervisor" ] && [ -n "$BOARD" ] && [ -r "$BOARD" ]; then cands="$(oe_seat_resolve "$BOARD")"; fi
+      hp="$(oe_lease_resolve_pane "$LID" 2>/dev/null)" && cands="${cands} ${hp}"
+      found=""
+      for c in $cands; do
+        [ "$c" != "$SELF" ] || continue
+        if oe_tpi_verify_pane "$c" "$BPID" "$BST" >/dev/null 2>&1; then found="$c"; break; fi
+      done
+      notw "lease の記録・board・registry のどれも書き換えていません（生きている binding は張り替えない決まり）。"
+      if [ -n "$found" ]; then
+        sit "いまの binding（pid ${BPID}・開始 ${BST}）は、ペイン ${found} のフォアグラウンドで生きています。同じ会話を2か所で開いているか、前のプロセスが止まって残っています。"
+        next_ "owner がペイン ${found} の画面を見て、止まっている（入力を受け付けない・同じ表示のまま）なら次を打って閉じます: tmux kill-pane -t ${found}"
+        next_ "閉じたあと、統括が oe-recover をもう一度打ちます。"
+        next_ "ペイン ${found} がまだ作業を進めているなら、閉じずに、この会話（ペイン ${SELF}）のほうを閉じます。"
+      else
+        sit "いまの binding（pid ${BPID}・開始 ${BST}）は生きていますが、どのペインのフォアグラウンドにいるかを確かめられませんでした。ペインごと消えたのにプロセスが残ったか、background に移った可能性があります。"
+        next_ "owner が次を打ち、プロセスが前の claude 本人か（開始時刻が ${BST} と同じか）を確かめます: ps -p ${BPID} -o pid,lstart,command"
+        next_ "本人で、止まっているなら owner が kill ${BPID} で閉じます（ペインの番号は確かめられないので出しません）。閉じたあと、統括が oe-recover をもう一度打ちます。"
+      fi
+      finish 1 ;;
+    *)
+      sit "いまの binding（pid ${BPID}・開始 ${BST:-記録なし}）のプロセスが生きているかを確かめられませんでした（ps の問い合わせが失敗したか、開始時刻が記録に無い）。"
+      notw "lease の記録・board・registry のどれも書き換えていません（分からないときは張り替えない決まり）。"
+      next_ "owner が ps -p ${BPID} -o pid,lstart,command を打って、プロセスがあるかを確かめます。無ければ統括が oe-recover をもう一度打ちます。あれば、上の「生きている」の場合と同じく、止まっているかを確かめてから閉じます。"
+      finish 1 ;;
+  esac
+else
+  sit "いまの binding は記録に無い（取り込みのときに pid を取れなかった lease）ので、自分を binding にします。"
+fi
+
+# --- 5 binding を張り替える（commit point）---
+if [ "$NEED_CLAIM" -eq 1 ]; then
+  crc=0; oe_lease_claim "$LID" "$EPOCH" "$ME_PID" "$ME_ST" "$ME_COMM" "$ME_SID" || crc=$?
+  case "$crc" in
+    0) wrote "lease ${LID} の generation ${GEN} の binding を自分（pid ${ME_PID}）に張り替えた。前の binding は rebinds に残した。"
+       if declare -F oe_event_lease_bound >/dev/null 2>&1; then oe_event_lease_bound "$SELF" "$LID" "$GEN" rebind "$LABEL" || true; fi ;;
+    3|5) sit "lease ${LID} は、読んでから書くまでのあいだに、ほかのプロセスに書き換えられました（rc=${crc}）。同じ会話を2か所で resume した可能性があります。"
+         notw "何も書いていません（取り合いに負けました）。"
+         next_ "統括が oe-tree --lease で lease ${LID} の行を見て、ほかのペインがこの持ち場の統括として生きていれば、この会話は統括として使いません。生きていなければ oe-recover をもう一度打ちます。"
+         finish 1 ;;
+    8) sit "自分の session_id（${ME_SID}）が、ほかの開いた lease か、この lease の別の generation に登録されています。"
+       notw "何も書いていません。"
+       next_ "統括が oe-lease whoami を打ち、owner がどちらの持ち場かを決めます。"
+       finish 1 ;;
+    *) sit "binding を張り替えられませんでした（rc=${crc}）。"
+       notw "何も書いていません。"
+       next_ "統括が oe-lease show ${LID} の内容を owner に見せ、owner が判断します。"
+       finish 1 ;;
+  esac
+fi
+PREV="$(oe_lease_get "$LID" | jq -c --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.rebinds // []) | last // empty')"
+PREV_PID="$(printf '%s' "$PREV" | jq -r '(.pid // "") | tostring' 2>/dev/null)"
+PREV_ST="$(printf '%s' "$PREV" | jq -r '.started // ""' 2>/dev/null)"
+PREV_BOUND="$(printf '%s' "$PREV" | jq -r '.bound_at // ""' 2>/dev/null)"
+
+# 書く直前の確かめ（S-3）: binding がまだ自分か。自分でなければ止まる。
+still_mine() {
+  local c
+  c="$(oe_lease_get "$LID" 2>/dev/null)" || return 1
+  [ "$(printf '%s' "$c" | jq -r '.state')" = "open" ] || return 1
+  [ "$(printf '%s' "$c" | jq -r '.current_generation')" = "$GEN" ] || return 1
+  [ "$(printf '%s' "$c" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.pid // "") | tostring')" = "$ME_PID" ] || return 1
+  [ "$(_oe_tpi_norm "$(printf '%s' "$c" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.started // "")')")" = "$ME_ST" ]
+}
+lost_binding() {
+  sit "工程の途中で、lease ${LID} の binding が自分でなくなりました（ほかのプロセスが張り替えたか、交代で generation が進んだか、lease が閉じられました）。"
+  notw "これより後の board と registry の書き込みはしていません。"
+  next_ "統括が oe-tree --lease で lease ${LID} の行を見ます。ほかのペインが統括として生きていれば、この会話は統括として使いません。"
+  undone "binding が自分でなくなった"
+  emit_and_finish
+}
+
+SPID="$(_oe_reg_server_pid)"
+emit_and_finish() {
+  local complete=true rid undone_json
+  [ "${#UNDONE[@]}" -eq 0 ] || complete=false
+  rid="$(oe_generate_session_id 2>/dev/null)" || rid=""
+  undone_json="$(printf '%s\n' ${UNDONE[@]+"${UNDONE[@]}"} | jq -R . | jq -cs 'map(select(length > 0))')" || undone_json='[]'
+  if declare -F oe_event_supervisor_recovery >/dev/null 2>&1; then
+    oe_event_supervisor_recovery "$SELF" "$LID" "$GEN" "$KIND" "$rid" "$PREV_PID" "$PREV_ST" "$SPID" "$complete" "$undone_json" "$LABEL" || true
+  fi
+  if [ "$complete" = true ]; then
+    wrote "復帰の event（supervisor_recovery・recovery_id ${rid:-なし}・complete）を記録した（best-effort）。"
+    finish 0
+  fi
+  wrote "復帰の event（supervisor_recovery・recovery_id ${rid:-なし}・済んでいない工程あり）を記録した（best-effort）。"
+  finish 1
+}
+
+# --- 6-1 board の現統括の表示（統括の lease のときだけ）---
+if [ "$KIND" = "supervisor" ]; then
+  if [ -z "$BOARD" ]; then
+    sit "board の場所が分からないので、現統括の表示を書き換えていません。"
+    notw "board（場所が分からない）。"
+    next_ "統括が oe-recover --board <board のパス> をもう一度打ちます（OE_BOARD_FILE でも渡せます）。"
+    undone "board"
+  elif [ ! -r "$BOARD" ] || [ ! -w "$BOARD" ]; then
+    sit "board（${BOARD}）を読めないか書けません。"
+    notw "board（読み書きできない）。"
+    next_ "統括が board の権限を確かめてから、oe-recover をもう一度打ちます。"
+    undone "board"
+  else
+    declared="$(oe_seat_resolve "$BOARD")"
+    if [ "$declared" = "$SELF" ]; then
+      sit "board の現統括の表示は、もう自分（${SELF}）を指しています。"
+    elif [ -z "$declared" ]; then
+      sit "board（${BOARD}）に「現統括:」の行か、その行のペインが見つかりません。"
+      notw "board（現統括の行が無い）。"
+      next_ "統括が board に「現統括: \`${SELF}\`」の行を足してから、oe-recover をもう一度打ちます。"
+      undone "board"
+    else
+      still_mine || lost_binding
+      src=0; oe_seat_rewrite "$BOARD" "$SELF" "" "$(date '+%Y-%m-%d')" "$declared" "$declared" recover || src=$?
+      case "$src" in
+        0|1) if oe_seat_verify "$BOARD" "$SELF" >/dev/null; then
+               wrote "board の現統括の表示を ${declared} から自分（${SELF}）へ書き換え、読み直して確かめた（復帰の註）。"
+             else
+               notw "board（書き換えたが、読み直すと自分を指していない）。"
+               next_ "統括が board の「現統括:」の行を開いて確かめます。"
+               undone "board"
+             fi ;;
+        3) sit "board の現統括の表示が、確かめてから書くまでのあいだに ${declared} から動きました。"
+           notw "board（席が動いた）。"
+           next_ "統括が board の「現統括:」の行を見て、oe-recover をもう一度打ちます。"
+           undone "board" ;;
+        4) notw "board（いま別のプロセスが書き換えている）。"
+           next_ "統括が少し待ってから oe-recover をもう一度打ちます。"
+           undone "board" ;;
+        *) notw "board（書き換えられない・rc=${src}）。"
+           next_ "統括が board の「現統括:」の行の形を確かめます。"
+           undone "board" ;;
+      esac
+    fi
+  fi
+fi
+
+# --- 6-2 registry（移行のあいだだけ・lease の記録から作り直す・S-2/S-5）---
+if [ -z "$SPID" ] || [ -z "${OE_DELEGATE_STATE_DIR:-}" ]; then
+  sit "tmux の server の pid か registry の置き場が分からないので、registry を書いていません。"
+  notw "registry。"
+  next_ "統括が tmux のペインの中で oe-recover を打ち直します。"
+  undone "registry"
+else
+  # 自分の行
+  self_parent=""; self_ok=1
+  if [ "$KIND" = "delegation" ]; then
+    plid="$(printf '%s' "$CUR" | jq -r '.parent_lease_id // ""')"
+    if [ -z "$plid" ]; then self_ok=1
+    elif ! self_parent="$(OE_LEASE_SERVER_PID="$SPID" oe_lease_resolve_pane "$plid" 2>/dev/null)"; then
+      self_ok=0
+      sit "親の lease ${plid} のいまのペインを引けません（親がまだ復帰していないか、落ちています）。"
+      notw "registry の自分の行（親のペインが分からない）。"
+      next_ "親（統括）が復帰したあと、親の oe-recover がこの行を書きます。いま何かを打つ必要はありません。"
+      undone "registry-self"
+    fi
+  fi
+  if [ "$self_ok" -eq 1 ]; then
+    still_mine || lost_binding
+    if oe_reg_record "$SELF" "$LABEL" "$LWS" "$self_parent" >/dev/null 2>&1; then
+      wrote "registry に自分（${SELF}・${LABEL}）の行を書いた（親 ${self_parent:-なし}）。"
+    else
+      notw "registry の自分の行（書けない）。"; undone "registry-self"
+      next_ "統括が registry の置き場（${OE_DELEGATE_STATE_DIR}）の権限を確かめます。"
+    fi
+  fi
+  # 子の行
+  for f in "$OE_LEASE_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    if ! row="$(jq -r --arg p "$LID" 'select(.state=="open" and .parent_lease_id==$p) | [.lease_id, (.label | gsub("[[:cntrl:]]"; " ")), .workspace] | join("\u001f")' "$f" 2>/dev/null)"; then
+      # 読めなかった記録を「自分の子ではない」に畳まない（実装SO の指摘）。
+      sit "lease の記録 ${f} を読めませんでした。自分の子かどうかが分からないので、registry を直したとは言えません。"
+      notw "registry の子の行（読めない記録がある）。"; undone "registry-child"
+      next_ "統括が jq . ${f} を打って、記録が壊れていないかを確かめます。"
+      continue
+    fi
+    [ -n "$row" ] || continue
+    IFS=$'\037' read -r clid clabel cws <<< "$row"
+    if cpane="$(OE_LEASE_SERVER_PID="$SPID" oe_lease_resolve_pane "$clid" 2>/dev/null)"; then
+      still_mine || lost_binding
+      if oe_reg_record "$cpane" "$clabel" "$cws" "$SELF" >/dev/null 2>&1; then
+        wrote "registry に子 ${clabel}（${cpane}・lease ${clid}）の行を、親を自分にして書いた。"
+      else
+        notw "registry の子 ${clabel} の行（書けない）。"; undone "registry-child"
+      fi
+    else
+      rrc=$?
+      sit "子 ${clabel}（lease ${clid}）のいまのペインを引けません（rc=${rrc}。子が落ちているか、まだ heartbeat を書いていません）。"
+      notw "registry の子 ${clabel} の行。"
+      next_ "子 ${clabel} が落ちていれば、owner が oe-recover hint --all -w ${WS} で出るコマンドで子を resume し、子に「復帰して」と頼みます。子の oe-recover は親（あなた）のペインを引いて自分の行を書きます。"
+      undone "registry-child"
+    fi
+  done
+fi
+
+# --- 6-3 古い子（registry にだけ居て lease の記録に居ない子）の一覧（DJ-5）---
+if [ -n "$SPID" ] && [ -n "${OE_DELEGATE_STATE_DIR:-}" ] && [ -d "$OE_DELEGATE_STATE_DIR" ]; then
+  for f in "$OE_DELEGATE_STATE_DIR/${SPID}"_*.json; do
+    [ -f "$f" ] || continue
+    rp="$(jq -r '.pane // ""' "$f" 2>/dev/null)"; rpar="$(jq -r '.parent_pane // ""' "$f" 2>/dev/null)"; rl="$(jq -r '.label // ""' "$f" 2>/dev/null)"
+    [ -n "$rp" ] && [ -n "$rpar" ] && [ "$rp" != "$SELF" ] && [ "$rpar" != "$SELF" ] || continue
+    fg="$(oe_tpi_pane_foreground "$rp" 2>/dev/null)" || continue
+    if oe_lease_find_by_binding "${fg%%"$_OE_TPI_TAB"*}" "${fg#*"$_OE_TPI_TAB"}" >/dev/null 2>&1; then continue; fi
+    # 親のペインが生きていない子だけを出す（生きた別の統括の子は出さない）
+    if oe_tpi_pane_foreground "$rpar" >/dev/null 2>&1; then continue; fi
+    sit "古い子 ${rl}（${rp}）は lease の記録を持たず、報告の宛先が前のペイン ${rpar} のままです。"
+    next_ "統括が子 ${rl} の様子を見て、宛先を伝えるなら次を打ちます: oe-send ${rp} '統括は ${SELF} に移った。報告はここへ送って'"
+  done
+fi
+
+# --- 6-4 届かなかったかもしれない報告（DJ-7・要照合）---
+# 下限（H2）: 最後に complete で終わった復帰より後に張り替えられた binding のうち、いちばん古いものが張られた時刻。
+# rebinds の最後の要素だけを見ると、復帰が張り替えた直後にまた落ちて打ち直したとき、最初に落ちていたあいだの
+# 履歴が一覧から消える（実装SO の指摘）。complete の復帰が無ければ、rebinds のいちばん古い要素から見る。
+LB_EPOCH=""; LB_ISO=""
+LC_EPOCH=0
+if [ -n "${OE_EVENT_DIR:-}" ] && [ -r "${OE_EVENT_DIR}/oe-events.jsonl" ]; then
+  LC_EPOCH="$(jq -rs --arg l "$LID" '[ .[] | select(type=="object" and .type=="supervisor_recovery" and .complete==true and (.lease_id // "")==$l)
+      | (.ts | sub("\\+00:00$"; "Z") | fromdateiso8601? // 0) ] | max // 0' "${OE_EVENT_DIR}/oe-events.jsonl" 2>/dev/null)" || LC_EPOCH=0
+  case "$LC_EPOCH" in ''|*[!0-9]*) LC_EPOCH=0 ;; esac
+fi
+LB_ISO="$(oe_lease_get "$LID" | jq -r --argjson g "$GEN" --argjson lc "$LC_EPOCH" '
+  .generations[] | select(.generation==$g) | [ (.rebinds // [])[] | select((.replaced_at | fromdateiso8601? // 0) > $lc) | .bound_at ]
+  | sort | first // ""' 2>/dev/null)" || LB_ISO=""
+[ -n "$LB_ISO" ] || LB_ISO="$PREV_BOUND"
+[ -z "$LB_ISO" ] || LB_EPOCH="$(_iso_epoch "$LB_ISO")"
+if [ -n "$LB_EPOCH" ]; then
+  ev="${OE_EVENT_DIR:-}/oe-events.jsonl"
+  held=""
+  if [ -n "${OE_EVENT_DIR:-}" ] && [ -r "$ev" ]; then
+    held="$(jq -rs --arg l "$LID" --argjson lb "$LB_EPOCH" '
+      [ .[] | select(type=="object") | . as $e
+        | ($e.ts | sub("\\+00:00$"; "Z") | fromdateiso8601? // 0) as $t | $e + {_t: $t} ] as $all
+      | [ $all[] | select(.type=="delivery_held" and (.to.lease_id // "")==$l and ._t >= $lb) ]
+      | group_by([(.from.lease_id // .from.pane // ""), (.brief // "")])
+      | map(. as $g | ($g | max_by(._t)) as $last
+            | ($all | any(.[]; .type=="message_sent" and (.from.lease_id // "")==($last.from.lease_id // "-") and ._t > $last._t)) as $later
+            | "\($last.from.label // "?")（lease \($last.from.lease_id // "?")）: \($g | length) 回・最後 \($last.ts)・\($last.held_reason // "理由不明")・brief \($last.brief // "なし")\(if $later then "・あとで送れた記録あり" else "" end)")
+      | .[]' "$ev" 2>/dev/null)" || held=""
+  fi
+  if [ -n "$held" ]; then
+    sit "前の binding が張られた時刻（${LB_ISO}）より後に、自分の lease へ送れなかった送信の履歴があります（要照合。未回収の報告の一覧ではありません）:"
+    while IFS= read -r h; do [ -n "$h" ] && sit "  ${h}"; done <<< "$held"
+    next_ "統括が上の各 brief（報告のファイル）を読み、必要なら子に照会します。"
+  else
+    sit "前の binding が張られた時刻（${LB_ISO}）より後に、自分の lease へ送れなかった送信の履歴はありません。ただし記録は best-effort なので、取りこぼしが無いとは言えません。"
+  fi
+  files=""
+  for f in "$WS"/.oe/report-*.md "$WS"/.oe/question-*.json; do
+    [ -f "$f" ] || continue
+    m="$(_mtime "$f")" || continue
+    [ "${m:-0}" -ge "$LB_EPOCH" ] && files="${files}${f}
+"
+  done
+  if [ -n "$files" ]; then
+    sit "前の binding が張られた時刻より後に書かれた報告と問いのファイル（時刻で絞った参考の一覧）:"
+    while IFS= read -r h; do [ -n "$h" ] && sit "  ${h}"; done <<< "$files"
+    next_ "統括が上のファイルを読み、まだ扱っていないものを拾います。"
+  fi
+fi
+
+# --- 7 検算（4つを別々に判定する・S-7）---
+if still_mine; then sit "検算: lease ${LID} のいまの binding は自分です。"
+else lost_binding; fi
+case "$(oe_tpi_proc_state "$ME_PID" "$ME_ST")" in
+  alive) sit "検算: binding のプロセス（自分）は生きています。" ;;
+  *) sit "検算: binding のプロセス（自分）が生きていると確かめられませんでした。"; undone "verify-alive" ;;
+esac
+if rp="$(OE_LEASE_SERVER_PID="$SPID" oe_lease_resolve_pane "$LID" 2>/dev/null)" && [ "$rp" = "$SELF" ]; then
+  sit "検算: lease ${LID} からペインを引くと自分（${SELF}）が返ります（子の報告はここへ届きます）。"
+else
+  sit "検算: lease ${LID} からペインを引いて自分を確かめられませんでした（未確認）。新しいペインで heartbeat がまだ書かれていない可能性があります。失敗にはしません。"
+  next_ "統括が数十秒あとに oe-lease resolve ${LID} を打ち、${SELF} が返ることを確かめます。"
+fi
+if [ -x "$OE_RECOVER_TREE" ]; then
+  tline="$("$OE_RECOVER_TREE" --lease 2>/dev/null | grep -F "lease ${LID}" | head -1)" || tline=""
+  case "$tline" in
+    *" alive "*) sit "検算: oe-tree --lease の自分の行は alive です。" ;;
+    "") sit "検算: oe-tree --lease に自分の行が出ませんでした。"; undone "verify-tree" ;;
+    *) sit "検算: oe-tree --lease の自分の行が alive ではありません: ${tline}"; undone "verify-tree" ;;
+  esac
+fi
+
+# --- 8 event と結果 ---
+if [ "${#UNDONE[@]}" -eq 0 ]; then
+  sit "復帰は済みました（lease ${LID}・generation ${GEN}・ペイン ${SELF}）。"
+  [ "${#NEXT[@]}" -gt 0 ] || next_ "統括が判断ボードと引き継ぎの文書を読み直し、作業に戻ります。"
+fi
+emit_and_finish

@@ -183,6 +183,24 @@ ck  "(5) 送る文が無ければ 2（呼び方の誤り）" "2" "$RC"
 ck  "(6) 自分の lease の記録を読めなければ PARENT_TMUX_PANE に落とさず 2（Copilot の指摘）" "2" "$RC"
 ck  "(6) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 ckc "(6) そう言う" "$OUT" "記録を読めないので、送りません"
+# (7)(8) #355 T-9: 親の lease へ送れなかったときだけ delivery_held を残す
+held_n() { jq -s '[.[] | select(.type=="delivery_held")] | length' "$EVENTS"; }
+H0="$(held_n)"
+fake_proc_del 903   # 後継の統括（generation 2）が落ちた
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent --brief /ws/.oe/report-703.md "report" 2>&1)"; RC=$?; set -e
+ck  "(7) 親の統括が落ちていれば送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+ck  "(7) 失敗の終了コードはいままでどおり（0 でない）" "1" "$([ "$RC" -ne 0 ] && echo 1 || echo 0)"
+ck  "(7) delivery_held を1つ残す" "$((H0 + 1))" "$(held_n)"
+ck  "(7) from は子の lease・to は親の lease と generation・brief を持つ" "${C2}:1>${SUP}:2:/ws/.oe/report-703.md" \
+    "$(jq -r 'select(.type=="delivery_held") | "\(.from.lease_id):\(.from.generation)>\(.to.lease_id):\(.to.generation):\(.brief)"' "$EVENTS" | tail -1)"
+ck  "(7) held_reason は決まった値のどれか" "1" "$(jq -r 'select(.type=="delivery_held") | .held_reason' "$EVENTS" | tail -1 | grep -cE '^(closed|unresolved|not_self|no_binding|unknown)$')"
+ckc "(7) 残したと言う" "$OUT" "delivery_held として残しました"
+reset_proc
+H1="$(held_n)"
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+ck  "(8) 送れたときは delivery_held を残さない" "$H1" "$(held_n)"
+: > "$SENT"; set +e; OUT="$(PARENT_TMUX_PANE=%9 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+ck  "(8) OE_LEASE_ID の無い子は残さない（親の lease が無い）" "$H1" "$(held_n)"
 
 echo "=== (E) oe-jump ==="
 : > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e

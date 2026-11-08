@@ -26,6 +26,8 @@
 #     OE_TARGET_PANE   送る・飛ぶペイン（%N）
 #     OE_TARGET_LEASE  lease から引いたときだけ "<lease_id>:<generation>"
 #     OE_TARGET_HOW    raw / lease / label-lease / label-legacy / parent-lease / parent-legacy
+#     OE_TARGET_WHY    lease の宛先を確かめられずに外れたときの理由（#355・delivery_held に入れる）:
+#                      closed / unresolved / not_self / no_binding / unknown。外れなければ空
 #   rc: 0 引けた / 1 宛先が無い（閉じた lease・引けないラベル・曖昧なラベル・親が分からない）
 #       2 環境・呼び方の誤り / 5 宛先の本人を確かめられない（送らない）
 #   案内は stderr に、OE_TARGET_CALLER（既定 oe-target）を頭に付けて出す。
@@ -35,6 +37,7 @@
 OE_TARGET_PANE=""
 OE_TARGET_LEASE=""
 OE_TARGET_HOW=""
+OE_TARGET_WHY=""
 
 _oe_target_say() { printf '%s: %s\n' "${OE_TARGET_CALLER:-oe-target}" "$*" >&2; }
 
@@ -44,7 +47,7 @@ _oe_target_from_lease() {
   # 引いたペインと、記録に残す generation を同じ記録から取る。ペインを引くあいだに交代（generation を
   # 進める書き込み）が走ったら、epoch が変わるのでもう一度引く（Copilot の指摘・PR #588）。
   while :; do
-    cur="$(oe_lease_get "$id" 2>/dev/null)" || { _oe_target_say "${shown}: lease ${id} の記録がありません"; return 1; }
+    cur="$(oe_lease_get "$id" 2>/dev/null)" || { OE_TARGET_WHY="unresolved"; _oe_target_say "${shown}: lease ${id} の記録がありません"; return 1; }
     gen="$(printf '%s' "$cur" | jq -r '.current_generation')"; ep="$(printf '%s' "$cur" | jq -r '.epoch')"
     pane="$(oe_lease_resolve_pane "$id")"; rc=$?
     ep2="$(oe_lease_epoch "$id" 2>/dev/null)" || ep2=""
@@ -52,6 +55,7 @@ _oe_target_from_lease() {
     try=$((try + 1))
     if [ "$try" -ge 2 ]; then
       _oe_target_say "${shown}: lease ${id} が引くあいだに2回続けて書き換わったので、送りません（少し待ってからもう一度）"
+      OE_TARGET_WHY="unknown"
       return 5
     fi
   done
@@ -60,12 +64,12 @@ _oe_target_from_lease() {
     return 0
   fi
   case "$rc" in
-    7) _oe_target_say "${shown}: lease ${id} は閉じています（宛先がありません）"; return 1 ;;
-    1) why="heartbeat に、いまの generation のペインの候補がありません" ;;
-    3) why="heartbeat のいちばん新しい候補が同じ時刻で2つのペインに分かれています" ;;
-    5) why="候補のペインのフォアグラウンドのプロセスが binding（pid と開始時刻）と一致しません" ;;
-    9) why="lease に binding（プロセス）が書かれていません" ;;
-    *) why="ペインかプロセスを確かめられません（rc=${rc}）" ;;
+    7) OE_TARGET_WHY="closed"; _oe_target_say "${shown}: lease ${id} は閉じています（宛先がありません）"; return 1 ;;
+    1) OE_TARGET_WHY="unresolved"; why="heartbeat に、いまの generation のペインの候補がありません" ;;
+    3) OE_TARGET_WHY="unresolved"; why="heartbeat のいちばん新しい候補が同じ時刻で2つのペインに分かれています" ;;
+    5) OE_TARGET_WHY="not_self"; why="候補のペインのフォアグラウンドのプロセスが binding（pid と開始時刻）と一致しません" ;;
+    9) OE_TARGET_WHY="no_binding"; why="lease に binding（プロセス）が書かれていません" ;;
+    *) OE_TARGET_WHY="unknown"; why="ペインかプロセスを確かめられません（rc=${rc}）" ;;
   esac
   _oe_target_say "${shown}: lease ${id}（generation ${gen}）の宛先の本人を確かめられないので、送りません（${why}）"
   _oe_target_say "  生のペイン番号で送るなら oe-send %N を使ってください。記録は oe-lease show ${id} で確かめられます"
@@ -136,7 +140,7 @@ oe_target_resolve() {
 
 oe_target_resolve_parent() {
   local cur parent rc
-  OE_TARGET_PANE=""; OE_TARGET_LEASE=""; OE_TARGET_HOW=""
+  OE_TARGET_PANE=""; OE_TARGET_LEASE=""; OE_TARGET_HOW=""; OE_TARGET_WHY=""
   if [ -n "${OE_LEASE_ID:-}" ]; then
     # 記録を読めない・読み解けないときは、PARENT_TMUX_PANE に落とさず止まる。交代のあとなら前任を指して
     # いるので、本人を確かめないまま前任へ送ることになる（Copilot の指摘・PR #588）。落とすのは、正しく

@@ -263,6 +263,34 @@ ckc "board のペイン（%10）の拍動で判定する" "$out" "sid-old"
 out="$(OE_VITALS_LEASE_ID="$SUP" vit)"
 ckc "OE_VITALS_LEASE_ID で指せる" "$out" "現統括 %11は健全"
 
+echo "=== (H) oe-vitals: death の重複抑止のキーは lease と binding の組（#355 T-10）==="
+WEZ_LOG="$_TMP_DIR/wez.log"; : > "$WEZ_LOG"
+printf '#!/usr/bin/env bash\necho "wez $*" >> "%s"\nexit 0\n' "$WEZ_LOG" > "$STUB/wez"; chmod +x "$STUB/wez"
+wez_n() { awk 'END{print NR}' "$WEZ_LOG"; }
+rm -rf "$OE_LEASE_DIR" "$OE_HEARTBEAT_DIR" "$OE_EVENT_DIR/oe-vitals"; mkdir -p "$OE_LEASE_DIR" "$OE_HEARTBEAT_DIR"
+reset_proc
+SUPH="$(lib oe_lease_create supervisor cockpit "$WS" "" 1)"; lib oe_lease_claim "$SUPH" 0 911 "$S911" claude sid-h
+beat sid-h %11 $((NOW - 60)) 40
+fake_proc_del 911
+vit >/dev/null
+ck  "落ちたら1回知らせる" "1" "$(wez_n)"
+ckc "キーは lease・generation・binding" "$(cat "$OE_EVENT_DIR/oe-vitals/seen")" "death|${SUPH}|1|911|Sat Nov 7 10:00:00 2026"
+rm -f "$OE_HEARTBEAT_DIR/sid-h.json"
+vit >/dev/null
+ck  "heartbeat が無くなっても、同じ binding の death は2回目を知らせない" "1" "$(wez_n)"
+# 復帰: 同じ会話を resume した 913 が binding を張り替え、そのあとまた落ちた
+fake_proc_add 913 "$S913" claude ttys011 913
+lib oe_lease_claim "$SUPH" "$(lib oe_lease_epoch "$SUPH")" 913 "$S913" claude sid-h
+beat sid-h %11 $((NOW - 60)) 40
+fake_proc_del 913
+vit >/dev/null
+ck  "復帰のあとにまた落ちたら、同じ会話でも知らせる" "2" "$(wez_n)"
+rm -rf "$OE_EVENT_DIR/oe-vitals"
+out="$(OE_VITALS_NOTIFY=0 vit)"
+ck  "OE_VITALS_NOTIFY=0 なら知らせない" "2" "$(wez_n)"
+ckc "OE_VITALS_NOTIFY=0 でも判定の行は出す" "$out" "death"
+rm -f "$STUB/wez"
+
 echo "=== 本物に届く経路が無い ==="
 if [ -n "$REAL_HOME" ]; then
   ck "本物の lease の置き場は、このテストで書き換わっていない" "0" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$START_MARK" 2>/dev/null | grep -c . || true)"

@@ -7,7 +7,7 @@
 #
 # 提供する関数:
 #   oe_seat_resolve <board>                     — 宣言された現統括の pane（無ければ空）
-#   oe_seat_rewrite <board> <new> <gen> <date> [<old>] [<expect>] — 席を <new> へ張り替える
+#   oe_seat_rewrite <board> <new> <gen> <date> [<old>] [<expect>] [<note_kind>] — 席を <new> へ張り替える
 #       <expect> を省くと compare-and-swap が外れる（安全装置が黙って無くなるので、署名に出す）
 #   oe_seat_verify  <board> <expect>            — 張替後に同じ規則で読み直して一致を見る
 #
@@ -33,7 +33,7 @@ oe_seat_resolve() {
 }
 
 # 席を <new> へ張り替える。
-#   oe_seat_rewrite <board> <new_pane> <generation> <date> [<old_pane>] [<expect_pane>]
+#   oe_seat_rewrite <board> <new_pane> <generation> <date> [<old_pane>] [<expect_pane>] [<note_kind>]
 #
 # 書き換えるのは2つだけである。
 #   - 宣言行の「最後の `現統括` より後ろに現れる最初の `%NNN`」を <new_pane> にする
@@ -41,6 +41,10 @@ oe_seat_resolve() {
 # そのうえで、<old_pane> が渡されていれば **新しい pane の直後に**「退任申告済み・停止待ち」の
 # 註を挿す。**直後に置くのが肝である。** 読み取りの規則は「最後の marker より後ろの最初の
 # `%NNN`」なので、前任の pane が後継より先に来ると席が前任へ戻る（DJ-8）。
+#
+# <note_kind> は註の種類で、`handoff`（既定・計画的な交代）か `recover`（#355・応答しない統括からの復帰）。
+# `recover` の註は「前のペイン `%N` は応答なし・復帰で張り替え」と書き、「前任 `%N`」の形を使わない。
+# `oe-handoff retire` は「前任 `%N`」の形を閉じる相手として読むので、復帰の註を閉じる相手と読み違えない。
 #
 # <expect_pane> を渡すと、**書き換える直前に board が本当にそれを指しているか**を確かめる
 # （compare-and-swap）。確かめないと、検査した相手と書き換える相手がずれる。
@@ -94,7 +98,8 @@ oe_seat_rewrite() {
 }
 
 _oe_seat_rewrite_locked() {
-  local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}" expect="${6:-}"
+  local bf="${1:-}" new="${2:-}" gen="${3:-}" date="${4:-}" old="${5:-}" expect="${6:-}" kind="${7:-handoff}"
+  case "$kind" in handoff|recover) ;; *) return 2 ;; esac
   if [ -z "$bf" ] || [ ! -r "$bf" ] || [ ! -w "$bf" ]; then return 2; fi
   # new だけでなく old / expect も検証する。**この lib は復帰側（#355）からの再利用を前提に
   # 書いてある**ので、呼び出し側に同じガードがあることを当てにしない。old は註の文字列として
@@ -123,7 +128,11 @@ _oe_seat_rewrite_locked() {
     # 註を新しい pane の直後に挿すので、そのすぐ後ろには前任の parenthetical がそのまま続く。
     # 印が無いと、同じ1行が2つの世代を続けて名乗り、**後継がいちばん最初に読む行が矛盾する。**
     # 前任の散文を書き換えずに済ませたいので、消さずに「ここから後ろは過去」と宣言する。
-    note="（${who}${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち。**これより後ろは前任までの記録である**）"
+    if [ "$kind" = "recover" ]; then
+      note="（${who}${date} 復帰。前のペイン \`${old}\` は応答なし・復帰で張り替え。**これより後ろは前のペインまでの記録である**）"
+    else
+      note="（${who}${date} 着任。前任 \`${old}\` は退任申告済み・停止待ち。**これより後ろは前任までの記録である**）"
+    fi
   elif [ -n "$who" ]; then
     note="（${who}${date} 着任）"
   fi

@@ -105,6 +105,19 @@ if [[ "$TO_PARENT" -eq 1 ]]; then
 else
   oe_target_resolve "$TARGET" || rrc=$?
 fi
+if [[ "$rrc" -ne 0 && "$TO_PARENT" -eq 1 && -n "$OE_TARGET_WHY" && -n "${OE_LEASE_ID:-}" ]]; then
+  # 親の lease へ送れなかった（#355・decision #577 の D15）。送らない判定はそのままで、送れなかったことを
+  # delivery_held として残す。親が復帰したとき、oe-recover が「要照合の一覧」に出す。
+  held_parent="$(oe_lease_get "$OE_LEASE_ID" 2>/dev/null | jq -r '.parent_lease_id // ""' 2>/dev/null)" || held_parent=""
+  if [[ -n "$held_parent" ]] && declare -F oe_event_delivery_held >/dev/null 2>&1; then
+    held_pgen="$(oe_lease_get "$held_parent" 2>/dev/null | jq -r '.current_generation // ""' 2>/dev/null)" || held_pgen=""
+    held_gen="${OE_GENERATION:-}"
+    [[ -n "$held_gen" ]] || held_gen="$(oe_lease_get "$OE_LEASE_ID" 2>/dev/null | jq -r '.current_generation // ""' 2>/dev/null)" || held_gen=""
+    held_label="$(oe_lease_get "$OE_LEASE_ID" 2>/dev/null | jq -r '.label // ""' 2>/dev/null)" || held_label=""
+    oe_event_delivery_held "${TMUX_PANE:-}" "${OE_LEASE_ID}:${held_gen}" "${held_parent}:${held_pgen}" "$OE_TARGET_WHY" "$BRIEF" "$payload" "$held_label" || true
+    echo "oe-send: 送れなかったことを delivery_held として残しました（理由 ${OE_TARGET_WHY}）。報告のファイルは置いたままにしてください。親が復帰したときに一覧に出ます" >&2
+  fi
+fi
 [[ "$rrc" -eq 0 ]] || exit "$rrc"
 PANE="$OE_TARGET_PANE"
 # 活動ログの to に宛先の lease を残す（lease から引いたときだけ・lib/event-bus.sh の message_sent）

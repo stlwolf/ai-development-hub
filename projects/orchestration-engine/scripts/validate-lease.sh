@@ -79,7 +79,7 @@ check '.current_generation | type == "number" and . >= 1 and (. == floor)' "curr
 log "checking generations..."
 check '.generations | type == "array" and length >= 1' "generations must be a non-empty array"
 check 'all(.generations[]; type == "object"
-        and ((keys - ["generation","state","started_at","retired_at","successor","session_ids","binding"]) | length == 0)
+        and ((keys - ["generation","state","started_at","retired_at","successor","session_ids","binding","rebinds"]) | length == 0)
         and has("generation") and has("state") and has("started_at") and has("retired_at")
         and has("successor") and has("session_ids") and has("binding"))' "generation entries must have exactly the known fields"
 check 'all(.generations[]; (.generation | type == "number" and . >= 1 and (. == floor)))' "generation must be a positive integer"
@@ -98,6 +98,13 @@ check 'all(.generations[]; .binding == null or (.binding | type == "object"
         and (.started | type == "string" and length > 0)
         and (.comm | type == "string" and test("claude"))
         and (.bound_at | type == "string")))' "binding must be null or {pid, started, comm(claude), bound_at}"
+check 'all(.generations[]; (has("rebinds") | not) or (.rebinds | type == "array" and all(.[]; type == "object"
+        and ((keys - ["pid","started","comm","bound_at","replaced_at"]) | length == 0)
+        and (.pid | type == "number" and . >= 1 and (. == floor))
+        and (.started | type == "string" and length > 0)
+        and (.comm | type == "string" and test("claude"))
+        and (.bound_at | type == "string")
+        and (.replaced_at | type == "string"))))' "rebinds must be an array of {pid, started, comm(claude), bound_at, replaced_at}"
 
 log "valid"
 echo "OK: $TARGET"
