@@ -62,9 +62,9 @@ symlink で配れない設定ファイル（CLI が実行時に書き換える�
 
 | スクリプト | 役割 | 終了コード |
 |---|---|---|
-| `apply-claude-settings.sh` | `canonical/claude/settings.harness.json` の宣言項目だけを `~/.claude/settings.json` へ適用する。宣言に無い項目には触らない | 0 適用した / 1 適用できなかった / 2 実行できない |
+| `apply-claude-settings.sh` | `canonical/claude/settings.harness.json` の宣言項目だけを `~/.claude/settings.json` へ適用する。宣言に無い項目には触らない | 0 適用した、または安全のために触らなかった（対象が symlink・通常ファイル以外・JSON として読めない等。stderr に警告が出る）/ 1 適用できなかった / 2 実行できない。適用されたかは `check-claude-settings.sh` で確かめる |
 | `check-claude-settings.sh` | 宣言と `~/.claude/settings.json` を突き合わせて差分を報告する（読み取り専用） | 0 差分なし / 1 差分あり / 2 検査を実行できない |
-| `apply-codex-notify-config.sh` | Codex の `notify`・`tui.notifications`・`tui.notification_method`・`features.hooks` を `~/.codex/config.toml` へ冪等適用する | 0 適用した（変更しなかった場合を含む）/ 1 適用後の TOML が壊れたのでバックアップへ戻した |
+| `apply-codex-notify-config.sh` | Codex の `notify`・`tui.notifications`・`tui.notification_method`・`features.hooks` を `~/.codex/config.toml` へ冪等適用する | 0 適用した、変更が要らなかった、または安全のために変更しなかった（作業ファイルを作れない・置き換えに失敗した等。stderr に警告が出る）/ 1 適用後の TOML が壊れたのでバックアップへ戻した |
 | `check-orphan-links.sh` | 配布先の symlink のうち正本から消えたものを列挙する（既定は読み取り専用・`--prune` で削除） | 0 孤児なし / 1 孤児あり（`--prune` 時は消せなかった孤児が残った）/ 2 検査を実行できない |
 
 ```bash
@@ -119,7 +119,7 @@ so-compare.sh --with claude,cursor -w "$(pwd)" "プロンプト"
 | `-c FILE...` | コンテキストファイル添付（非推奨。プロンプト肥大化の原因） |
 | `-f FILE` | プロンプトをファイルから読み込み |
 | `-o DIR` | 出力ディレクトリ指定（デフォルト: `tmp/so-YYYYMMDD-HHMMSS`） |
-| `-s MODE` | Codex の sandbox モード（デフォルト: `read-only`） |
+| `-s MODE` | Codex の sandbox モード。受け付けるのは `read-only` だけで、ほかの値は `invalid:sandbox-not-read-only` で拒否する（終了コード `4`） |
 | `--prev DIR` | 前回出力を追記（イテレーション用） |
 | `--codex-model MODEL` | Codex のモデル（デフォルト: CLI 既定） |
 | `--claude-model MODEL` | Claude のモデル（エイリアス `opus` / `sonnet` / `haiku` 可。デフォルト: CLI 既定） |
