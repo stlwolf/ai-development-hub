@@ -3,7 +3,7 @@ id: "01M6PD1REX2CDA6WZRCZS8EYC2"
 title: "#577 engine の記録のキーを tmux のペインから切り離し、こちらで作る ID にする（設計）"
 date: 2026-11-06
 type: episode
-status: in-development
+status: stable   # 達成（I0〜I6）。移行の負債5つは #603 で追う
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/577"
@@ -23,6 +23,31 @@ related:
   - type: reference
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
     reason: "この単位の decision（2026-11-07 に accepted）"
+promotion:
+  - subject: "「誰か」のキーを lease_id と generation の記録にする（D1〜D19）"
+    verdict: required
+    ref: "本文: I1: decision を accepted に上げ、置き換えた側に印を足した（2026-11-07）"
+  - subject: "外す条件を満たさない移行の負債を #603 へ移す"
+    verdict: required
+    ref: "本文: I6: 外したものと、一緒に入れたもの（2026-11-09）"
+  - subject: "セッションの環境の CLAUDE_CODE_SESSION_ID と CLAUDE_PID が「名乗る経路が無い」の前提を崩す"
+    verdict: not-required
+    ref: "本文: 発見: セッションは自分の session_id を環境変数で知っている（2026-11-06）"
+  - subject: "パターンの外の対照で36本の外から7本が出た"
+    verdict: not-required
+    ref: "本文: 網羅の確かめ（パターンの外からの対照）"
+  - subject: "[verified] は文がある所までで、文の主語が主張の対象であるかを確かめていなかった"
+    verdict: not-required
+    ref: "本文: 訂正: `--continue` の文は MCP server の子プロセスについての文だった（2026-11-06）"
+  - subject: "名前は分野で一般的か・デファクトかで選び、公式の文書での出現で確かめる"
+    verdict: not-required
+    ref: "本文: DJ-17 の2回目の候補を一次情報で調べた"
+  - subject: "前の ADR を読むときは、owner があとで確かめ直した裁定まで追う"
+    verdict: not-required
+    ref: "本文: P2: 持ち場の名前が lease に決まり、plan-390 の裁定との関係を owner に確かめている（2026-11-06）"
+  - subject: "並行の仕組みへの小さな直しは、新しい窓を作っていないかを数えてから採る"
+    verdict: not-required
+    ref: "本文: I1: Copilot の1ラウンド（PR #580・2026-11-06）"
 tags: [orchestration, registry, identity, supervisor, delegation, design]
 ---
 
@@ -437,3 +462,77 @@ negative knowledge `01M07QDKE73BTK0Q3K90FE4G9T` を当てた。統括の36本は
 ### I6: Copilot の1ラウンド（PR #604・2026-11-09）
 
 - Copilot は行のコメントを付けず、概要で1つを挙げた。engine の `bin/README.md` の交代の節が「README が推す戻しの書き方 `oe-send "$PARENT_TMUX_PANE"`」と書いたままで、PR-3 で一本化した `oe-send --to-parent` と食い違う、という指摘である。本当だった。この段落は PR-6 で `oe-report` の文を直すときに触ったのに、同じ段落の古い推奨に気づかなかった。以前の推奨であることと、`OE_LEASE_ID` を持つ子は交代のあとも後継へ届くこと、穴が残るのは古い子と `oe-report` だけであることを書いた。PR に返信のコメントを書いた。
+
+## closure（2026-11-09・PR #604 の Copilot の1ラウンドのあと・マージ前）
+
+tier は heavy である（失敗と撤回があり、意図して起動した SO を各段で回し、選択肢を比べて棄却した設計判断がある）。
+
+### 次の消費者
+
+- #603（外せなかった5つの負債を外す作業）の担当。外す条件と、2026-11-09 に確かめた結果は `本文: I6: 外す条件を本物の記録で確かめた（2026-11-09 00:3x JST・読み取りだけ）` と plan の「移行の終わり方」の表にある。
+- #355 の続き（`delivery_held` と送れないときの保留・N4）を決める担当。decision #577 の D15 が「この decision では決めない」と置いた。
+
+### 事実・失敗
+
+- 公式の文書の行を開いて `[verified]` を付けたが、文の主語（MCP server の子プロセス）を取り違えていた。`` `本文: 訂正: `--continue` の文は MCP server の子プロセスについての文だった（2026-11-06）` ``
+- 語を置き換える小さなスクリプトが行頭の字下げを詰め、frontmatter を壊した。退避した写しへ戻した。`本文: P2: 新しい概念の名前を識別子にそろえた（2026-11-06）`
+- 名前の候補を、識別子の衝突だけで絞った（分野で通じるかを見ていなかった）。`本文: DJ-17 の2回目の候補を一次情報で調べた`
+- 設計SO の Codex のレーンが利用上限で返らず、Cursor の1レーンで進めた。`本文: P2: ゲート2（設計SO・2026-11-06）`
+- その Codex のやり直しで、手で立てた統括が lease を持たず session_id が登録されない穴などが見つかった。`本文: P5: Codex でゲート2 をやり直した（2026-11-06）`
+- 前の ADR（#238/#239）の本文だけを読み、owner が #390 の plan のゲート3 で確かめ直した裁定まで追っていなかった。`本文: P2: 持ち場の名前が lease に決まり、plan-390 の裁定との関係を owner に確かめている（2026-11-06）`
+- ゲート2 の採用で D14 だけを直し、D11 を見直さずに食い違いを残した（P5 で解消）。`本文: P4: 分身レビューの指摘のうち、owner の判断を待たずに直す10件（2026-11-06）`
+- 既存のテストをセッションの中で回すと、セッションの `CLAUDE_PID` から本物の lease の置き場に書くところだった。書く前に気づいた。`本文: I2: PR-2（書く側を lease と registry の両方書きにする）（2026-11-07）`。PR-3 でも同じ型を書く前に見つけた。`本文: I4: PR-3（送る側）（2026-11-07）`
+- 各 PR の実装SO と Copilot は、ほかにも見落としを見つけた（producer のテストの漏れ・retire が workspace を見ていなかった・oe-tree のテストの lib 不足など）。どれもその PR で直した。`本文: I2: Copilot の1ラウンドと、全体のテスト（2026-11-07）`・`本文: I3: Copilot の1ラウンド（2026-11-07）`・`本文: I4: 実装SO（Codex の1レーン・2026-11-07）`
+- 実装SO の指摘への小さな直しが、Copilot に別の窓を指摘された。`本文: I1: Copilot の1ラウンド（PR #580・2026-11-06）`
+- PR-5 で、規則を1つの関数にまとめたときに読み取りの回数を考えず、heartbeat を何度も読む形になった。`本文: I5: Copilot の1ラウンドと、全体のテスト（2026-11-08）`
+- 共有の成果物に統括のペイン番号と本物の lease_id を書いてしまい、直した。`本文: I5: PR-5（観測する側）（2026-11-07）`
+- PR-6 では、plan の外す条件がほかのリポジトリの古いセッションで止まり、5行を外せなかった。plan を書いたときに、ほかのリポジトリの統括が何日も交代しないことを見積もっていなかった。`本文: I6: 外す条件を本物の記録で確かめた（2026-11-09 00:3x JST・読み取りだけ）`
+- PR-6 の push で、squash で入った前の同名のリモートブランチ（PR #590 の head）が残っていて、force は安全確認で止められた。2026-11-09 に統括が古いリモートブランチを消し（ls-remote で0件を確かめた）、ふつうの push で出せた。`本文なし: 進行の障害で設計に関わらないため本文に節を立てなかった。事実はこの行に書いた`
+- PR-5 の子の Bash が、入力の無い `cat`（`bat` の alias）で約3時間止まり、2026-11-08 の 03:10 JST に統括が `bat` を終わらせて復帰させた。`本文なし: 子の側では起きた時点で書けなかった。事実は統括の記録から写してこの行に書いた`
+- PR-6 の全体のテストの1回目で、state の置き場の環境変数を必要以上に一時ディレクトリへ向け、テストが余計に落ちた。PR-6 の実装SO でも Codex が利用上限で返らず、Cursor の1レーンで回した。`本文: I6: 外したものと、一緒に入れたもの（2026-11-09）`・`本文: I6: 実装SO（2026-11-09）`
+- PR-6 の README の直しで、同じ段落にあった古い推奨（`oe-send "$PARENT_TMUX_PANE"`）を見落とし、Copilot に指摘された。`本文: I6: Copilot の1ラウンド（PR #604・2026-11-09）`
+
+### 決定と根拠
+
+- 設計の決定は decision #577（D1〜D19）が正本で、選択肢と棄却した案は discussion の §5・§7 にある。`本文: P2: ゲート1（ゼロベースの代替探索・2026-11-06）`
+- PR-6 で、外す条件を満たさない負債を外さず #603 へ移し、書く側の無い `/tmp/oe-parent-<N>` だけを外した（統括の判断）。`本文: I6: 外す条件を本物の記録で確かめた（2026-11-09 00:3x JST・読み取りだけ）`
+
+### わかったこと
+
+- セッションは `CLAUDE_CODE_SESSION_ID` と `CLAUDE_PID` で自分を知っていて、id を付けた `--resume` と `--continue` で会話の id と一致した。`本文: I0: resume の値の計測（2026-11-06・ゲート3 承認のあと）`
+- 全リポジトリに配る仕組みの移行は、hub の中の記録だけでは終わりを決められない。ほかのリポジトリで交代しない統括と、環境が書き換わらない古い子が、外す条件を止める。`本文: I6: 外す条件を本物の記録で確かめた（2026-11-09 00:3x JST・読み取りだけ）`
+
+### 昇格の判定
+
+frontmatter の `promotion` に1件ずつ書いた。理由と材料は次のとおり。
+
+- **「誰か」のキーを lease_id と generation の記録にする（D1〜D19）** — `required`。decision #577 として PR #580 で accepted にし、実行済み。材料は discussion の §5 と decision。`本文: I1: decision を accepted に上げ、置き換えた側に印を足した（2026-11-07）`
+- **外す条件を満たさない移行の負債を #603 へ移す** — `required`。決まったことは decision #577 の D11・D19 への追記と plan の補正 H2 として、この PR に入れた。`本文: I6: 外したものと、一緒に入れたもの（2026-11-09）`
+- **セッションの環境の CLAUDE_CODE_SESSION_ID と CLAUDE_PID が「名乗る経路が無い」の前提を崩す** — `not-required`。decision #577 の「前提の変化」の2と D7 に入っている。`本文: 発見: セッションは自分の session_id を環境変数で知っている（2026-11-06）`
+- **パターンの外の対照で36本の外から7本が出た** — `not-required`。昇格ではなく、注入された item `01M07QDKE73BTK0Q3K90FE4G9T` への観測として書き戻した（下の「注入された knowledge への観測」）。`本文: 網羅の確かめ（パターンの外からの対照）`
+- **[verified] は文がある所までで、文の主語が主張の対象であるかを確かめていなかった** — `not-required`。`evidence-verification-rule` の §1・§2 が「出典が主張を直接支える（entailment）」を `verified` の条件にしていて、同旨が着地している。`` `本文: 訂正: `--continue` の文は MCP server の子プロセスについての文だった（2026-11-06）` ``
+- **名前は分野で一般的か・デファクトかで選び、公式の文書での出現で確かめる** — `not-required`。output-format §8（PR #573）に「その分野の人がふだん何と呼ぶか」として着地している。`本文: DJ-17 の2回目の候補を一次情報で調べた`
+- **前の ADR を読むときは、owner があとで確かめ直した裁定まで追う** — `not-required`。decision #577 の「plan-390 のゲート3 の回答1 との関係」の節にこの件の関係が書かれている。一般の教訓としては knowledge `01M5PKRS6WECYZTYFC4WXANW50`（decision を要約の名前で引いて前提にするとき）が近い場面を受けている。`本文: P2: 持ち場の名前が lease に決まり、plan-390 の裁定との関係を owner に確かめている（2026-11-06）`
+- **並行の仕組みへの小さな直しは、新しい窓を作っていないかを数えてから採る** — `not-required`。一度の出来事で、行動の変え方が「直したあとの差分を読み直す」という一般のレビューの手順を越えない。収穫基準の「非自明」を満たさないと判断した。`本文: I1: Copilot の1ラウンド（PR #580・2026-11-06）`
+
+### 注入された knowledge への観測
+
+#577 の brief（統括のワークスペースの根の `.oe/brief-577-record-identity.md`・`brief-577-impl.md`・`brief-577-pr6.md`）に注入された item は4件である: `01M07QDKE73BTK0Q3K90FE4G9T`・`01KZKWJM1KTAFN22XK0WP0F96J`・`01M5T897YCWY13GFTADD3136EC`・`01M6XN85N408CMMERA12QR1C3F`。4件すべての `observations` に、ref `#577` で1レコードずつ足した。
+
+### 残課題
+
+- 移行の負債5つ（registry の両方書き・`oe-lease adopt`・`PARENT_TMUX_PANE` の注入・スキルの古い規則・`oe-report`）を外す → #603。
+- `delivery_held` と送れないときの保留（N4・D15） → #355。
+- `test_home_unset` の1件の失敗（`_oe_home_usable` の定義が2種類） → #602。
+- heartbeat の一時ファイル（`.hb.*`）が残る漏れ（plan の N5・decision の D4 が「別 issue」とした件） → #350（以前からある issue）。
+- 分身レビューが挙げた原則の足りない観点 → #404（統括が送る。`本文: 分身が挙げた、原則の足りない観点（記録だけ・#404 へは統括が送る）`）。
+- oe-threads と oe-confirm のテストが本物の tmux と heartbeat を読む経路 → 追わない。読むだけで書き換えず、#577 の前からある経路である（`本文: I5: 実装SO（Codex の1レーン・2026-11-08）`）。
+- 凍結した過去の plan と discussion に「env → `/tmp/oe-parent`」の記述が残る → 追わない（当時の記録で、凍結の規約で書き換えない）。
+- 対話の一覧から選ぶ resume で `CLAUDE_CODE_SESSION_ID` が一致するかは計測していない（D7） → 追わない。成り立たなくても方法3 に落ちるので、起きたときに直す。
+
+### 形式メモ
+
+- 出力型の骨格で、6日間・6つの PR にまたがる失敗を本文の節への pointer で拾えた。本文に節が無い出来事（push の障害・子の停止）は補完マーカーで書いた。
+- 皮（KPT・YWT）は使っていない。
+- 摩擦は、印6件の判定で、既存の着地先（rule・knowledge）を探す手間だった。
+- Step 4 の外部チェックは `so-compare --cursor-only` で回した（Codex は利用上限）。出力は統括のワークスペースの根の `tmp/so-20261109-003937/`。指摘のうち、pointer の誤り1件・事実・失敗の抜け6件・残課題の行き先3件・作業層だけの根拠2件を直した。knowledge の木が `docs/` と `projects/.../docs/` の2つにある点は、置き場の規約（source.ref と同じ木）のとおりで、直していない。
