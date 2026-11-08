@@ -3,7 +3,7 @@ id: "01M6XFZCAV660AB61J36YACWYN"
 title: "#576 統括のセッションに resume の一覧で見分けられる名前を付ける"
 date: 2026-11-08
 type: plan
-status: draft   # ゲート3 承認は dac722c の版（2026-11-08・owner が Q98〜Q101 をすべて推奨どおり。Q98 に補足）。承認のあとの直しは「ゲート3 のあとの変更」節
+status: stable   # 実装完了（2026-11-08・PR #599）。ゲート3 承認は dac722c の版（2026-11-08・owner が Q98〜Q101 をすべて推奨どおり。Q98 に補足）。承認のあとの直しは「ゲート3 のあとの変更」節
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/576"
@@ -164,11 +164,11 @@ T1〜T5 は今の hook でも通る形で先に書き、変更の前後で同じ
 
 ### GATE I1: A1〜A4 がすべて満たされている（通過・episode の I1-5 の「受入」）
 
-### I2: 実装SO（弱・Codex 1レーン）・PR を ready にする・Copilot 1ラウンド
+### I2: 実装SO（弱・Codex 1レーン）・PR を ready にする・Copilot 1ラウンド（完了・`9acca0d`・`dd90b53`・episode の I2-1・I2-2）
 
-### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件である（通過・実装SO は4件中3件を直した・Copilot は1件に返信）
 
-### I3: episode を閉じ、報告して止まる（マージ・worktree の掃除・issue の close・sync はしない）
+### I3: episode を閉じ、報告して止まる（マージ・worktree の掃除・issue の close・sync はしない）（完了・episode の closure・decision と knowledge item を同じ PR に入れた）
 
 ## GATE 3 の問い
 

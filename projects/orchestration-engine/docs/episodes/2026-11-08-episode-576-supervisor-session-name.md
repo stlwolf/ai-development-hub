@@ -3,7 +3,7 @@ id: "01M6XCDSHJJWHCDRBTKDSM4FC3"
 title: "#576 統括のセッションに resume の一覧で見分けられる名前を付ける"
 date: 2026-11-08
 type: episode
-status: draft
+status: stable   # closure 2026-11-08（PR #599 の実装SO と Copilot のラウンドの後・マージ前）。達成
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/576"
@@ -11,7 +11,35 @@ related:
   - type: reference
     ref: "projects/orchestration-engine/docs/episodes/2026-11-06-episode-577-record-identity-key.md"
     reason: "統括の lease（session_id を持つ記録）を入れた直前の作業"
+  - type: reference
+    ref: "https://github.com/stlwolf/ai-development-hub/pull/599"
+    reason: "この単位の PR"
+  - type: reference
+    ref: "projects/orchestration-engine/docs/decisions/2026-11-08-decision-576-supervisor-session-name.md"
+    reason: "この単位から昇格した decision"
 tags: [orchestration, hooks, session-name, lease]
+promotion:
+  - subject: "統括の名前を cockpit <リポジトリ名> gen<代> にする"
+    verdict: required
+    ref: "本文: GATE 3（2026-11-08）"
+  - subject: "名前の材料を席を取る verb が書く session_id ごとの要求にし、hook は lease を読まない"
+    verdict: required
+    ref: "本文: 設計SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン）"
+  - subject: "要求の ID が変わったときだけ一度改名し、要求のあるセッションは Path1・Path2 に落とさない"
+    verdict: required
+    ref: "本文: I1-2: 書く側の部品と hook の統括の道（2026-11-08）"
+  - subject: "claude -r <名前> は今のリポジトリだけを探し、全リポジトリには一覧の Ctrl+A が要る"
+    verdict: required
+    ref: "本文: 公式のドキュメントで分かったこと（受け入れ基準に効く）"
+  - subject: "claude -r の一覧の Ctrl+A は検索欄にいるあいだは効かず、↓ で一覧に移ってから押す"
+    verdict: not-required
+    ref: "本文: 結果"
+  - subject: "要求を1回だけ厳密に読み、適用済みを保存できたときだけ改名する（実装SO・Copilot の直し）"
+    verdict: not-required
+    ref: "本文: I2-1: 実装SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン・2026-11-08）"
+  - subject: "state に書く記録を verb に足したら、本物の HOME で走る既存のテストに新しい置き場の env を足す"
+    verdict: required
+    ref: "本文: I1-3: take と root から名前の要求を書く（2026-11-08）"
 ---
 
 # #576 統括のセッションに resume の一覧で見分けられる名前を付ける
@@ -160,3 +188,64 @@ tags: [orchestration, hooks, session-name, lease]
 - 指摘: `oe_session_title_has_request` は request_id だけを見ていたので、hook が無視する要求（name が空・途中で切れた JSON）も「ある」と扱い、`oe-register root --label cockpit` を打ち直しても名前を戻せなかった。判定を hook と同じ（JSON のオブジェクトがちょうど1つ・request_id と name が文字列・制御文字を除いても name が残る）にした。`test_lease_writers.sh` に2件足し、直す前の lib では2件とも落ちることを確かめた。
 - 概要の見出しには「退任したセッションが要求を上書きしうる」ともあった（行のコメントは無い）。当ててみると、root は要求の ID を lease のいまの generation（`current_generation`）で作っていたので、退任した generation のセッションが root を打つと、後継と同じ ID を自分の要求に書く。要求のファイルは session_id ごとなので後継の要求は上書きされないが、ID の意味が食い違う。自分の session_id が座っている generation（`oe-lease whoami` の `generation`）で作るように直した。ふつうの場合は2つの値が同じなので、テストは足していない。
 - 再依頼はしない（owner の明示の指示が無いため）。
+
+## closure（2026-11-08・PR #599 の Copilot のラウンドの後・マージ前）
+
+tier: heavy（設計SO と実装SO を明示的に起動した・案を比べて棄却した判断がある・実装SO と Copilot の指摘でコードを直した）。
+
+### 次の消費者
+
+- #355（統括の復帰）の担当。resume する id を探す工程を `claude -r "cockpit <リポジトリ名> gen<代>"` に置き換えられる。`claude -r` の範囲と `Ctrl+A` の押し方は README と decision にある。
+- この hook を sync する統括。sync するまで、統括に名前は付かない。
+
+### 事実・失敗
+
+- 確定版の受け入れ基準「`claude -r cockpit` で各リポジトリの統括が並ぶ」は、公式の挙動では名前をどう決めても満たせなかった。owner の承認を得て書き換えた（`本文: 公式のドキュメントで分かったこと（受け入れ基準に効く）`・`本文: GATE 3（2026-11-08）`）。
+- 設計SO の23件のうち、名前でなく ID で見る・Path1 に落とさないなど6件を採って設計を変え、SessionStart の案など2件を棄却し、2件を範囲の外とした（`本文: 設計SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン）`）。
+- engine の全テストで `test_home_unset.sh` の2件が落ちた。master でも同じ2件が落ちるので、この単位の変更によるものではない（`本文: I1-3: take と root から名前の要求を書く（2026-11-08）`）。
+- 1回目の検証用のウィンドウが、フォルダの信頼の確認の途中で閉じた。2回目は閉じても残る設定で起こし直し、`↓` が効いたことを画面で確かめてから Enter を送った（`本文: やり方`）。
+- `claude -r cockpit` の一覧で `Ctrl+A` を押しても広がらなかった。検索欄にいるあいだは行頭への移動になる（`本文: 結果`）。
+- 一覧を閉じるために送った Escape がシェルに渡り、次のコマンドが崩れて1回失敗した。Ctrl+C で行を消してから打ち直した（`本文なし: 実物の確かめの操作の手違いで、結果には影響しないので本文に書かなかった`）。
+- take が中で root を呼ぶので、root が代つきの名前を代なしで上書きする食い違いを、実装の途中で見つけて直した（`本文: I1-3: take と root から名前の要求を書く（2026-11-08）`）。
+- 既存のテストが本物の置き場に書く穴を、全体のテストを回す前に見つけて塞いだ（`本文: I1-3: take と root から名前の要求を書く（2026-11-08）`）。
+- 実装SO の3件と Copilot の1件は、どれも変更の前のコードで再現する欠陥だった（`本文: I2-1: 実装SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン・2026-11-08）`・`本文: I2-2: Copilot（1ラウンド・2026-11-08）`）。
+
+### 決定と根拠
+
+- 名前の形・記録の鍵・一度だけ改名する決まり・受け入れ基準の書き換えは、decision `projects/orchestration-engine/docs/decisions/2026-11-08-decision-576-supervisor-session-name.md` に昇格した（`本文: 設計SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン）`・`本文: GATE 3（2026-11-08）`）。
+- 実装SO の「root と take の同時実行」の指摘は採らなかった（`本文: I2-1: 実装SO（弱・Codex gpt-6.1-sol・設定から解決・1レーン・2026-11-08）`）。
+
+### 昇格の判定
+
+frontmatter の `promotion` に7件を置いた。理由は次のとおりである。
+
+- `required`（decision へ）: 名前の形・記録の鍵と境界・一度だけ改名する決まり・`claude -r` の範囲。どれも棄却した案があり（Q1）、覆すには hook と engine の境界や owner の好みをもう一度議論する必要があり（Q2）、`claude -r` の範囲や代の出どころという偽になりうる前提がある（Q3）。#355 と #537 で同じ分岐に立つ（Q4）。実行済み（decision を同じ PR に入れた）。
+- `required`（knowledge へ）: 既存のテストが本物の置き場に書く穴。#577 でも同じ型を lease で塞いでおり、再発している。実行済み（`knowledge/items/01M6XKTEME9VEC44CMD0NP9N7D.md`・`validate-knowledge` で OK）。既存の item `01M02P97RCCSDTRHCTTEMNZ1EN` は「受容の理由に検証行為を数え落とす」型で、別のものである。
+- `not-required`: `Ctrl+A` の押し方。実物を見れば決まる操作の事実で（Q2 は確認側）、README に置いた。
+- `not-required`: 要求を厳密に読む・保存できたときだけ改名する。hook のコードとコメントとテストを読めば正しく使えるので、1段目で外れる。
+- 本文の印2件（`本文: 公式のドキュメントで分かったこと（受け入れ基準に効く）` と `本文: 結果`）は、上の4件目と5件目に当たる。どちらも「#355 の手順に書く」の部分は #355 の担当の仕事なので、下の follow-up に行き先を付けた。
+
+### follow-up
+
+- #355 の復帰の手順に、`claude -r "<名前>"` で直接入ることと、一覧の `Ctrl+A` は `↓` で一覧に移ってから押すことを書く。行き先: 統括から #355 の子へ渡す（この単位の報告に書く）。
+- 統括が hook と verb を sync する。行き先: 統括（brief で sync は統括の仕事と決まっている）。
+- 検証で作った registry の root 2件（`gone`）は、次に registry を書いたときの GC で消える。行き先: 追わない（自然に消える。手で GC を走らせると統括の下のほかの記録も消えるため）。
+- 名前の要求の記録の形を、hook の README と lib のコメントの2か所に書いた。形を変えるときは両方を直す。行き先: 追わない（2か所とも同じ PR で書いた。形の変更は新しい issue の範囲になる）。
+- `--fork-session` で session_id が変わった統括の名前の引き継ぎ。行き先: #355（席を取り直す手順に乗る）。
+
+### 外部チェック（Step 4）
+
+closure の focused check を so-compare（Codex 1レーン）で行う。結果は下の「Step 4 の結果」に書く。
+
+### Step 4 の結果
+
+so-compare（Codex gpt-6.1-sol・設定から解決・1レーン）に closure の4点（失敗の省略・follow-up の行き先・一時的な置き場の参照・ほかの文書の欠陥）だけを確かめさせた。依頼文には episode の本文だけを入れた。
+
+- (1) 失敗の省略: 受け入れ基準が満たせなかったこと・設計SO の採否・`test_home_unset.sh` の2件が「事実・失敗」に無いと指摘された。3項目を足した。
+- (2) follow-up の行き先: 問題なし。
+- (3) 一時的な置き場の参照: 問題なし（要点は本文にある）。
+- (4) ほかの文書の欠陥: 問題なし。
+
+### 形式メモ
+
+- チャネルの骨格で拾えたもの: 検証の操作の手違い（本文に無かったので補完マーカーを付けた）。拾えなかったもの: なし。皮（KPT/YWT）は使っていない。摩擦: 本文の見出しが「結果」のように短いと pointer が一意でなくなりやすいので、見出しは単位の名前を含めたほうがよい。
