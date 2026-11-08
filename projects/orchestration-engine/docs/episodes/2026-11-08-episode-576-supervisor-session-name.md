@@ -83,3 +83,10 @@ tags: [orchestration, hooks, session-name, lease]
 - 統括から承認が届いた（plan は `dac722c` の版）。owner は判断ボードの Q98〜Q101 をすべて推奨どおりに選んだ。
 - Q98（名前の形）に owner の補足「代目の日本語はいらない。入れても gen？」があった。名前を `cockpit <リポジトリ名> gen<N>`（例 `cockpit ai-development-hub gen23`）にし、plan の「ゲート3 のあとの変更」の H1（補正）に書いて統括へ申告した。`gen` と数字を続けて書くのは、`gen23` を1語として検索でき、`claude -r "<名前>"` に渡す語の区切りが1つ減るためである。
 - Q100 で owner は受け入れ基準の書き換えを承認した。plan の A2 をその文に置き換えた（H1 に含む）。
+- 統括から、H1 を補正として受け付けた（承認の記録の entry 0）と届いた。
+
+### I1-1: 今の hook の動きをテストで固める（2026-11-08）
+
+- `projects/orchestration-engine/tests/test_session_name.sh` を新しく置き、群 A（T1〜T5・15件）を書いた。今の hook で bash 5.2.37 と /bin/bash 3.2 の両方で 15件すべて通った。shellcheck も通る。
+- テストの効き目を、壊した写しで確かめた。Path1 の冪等の判定を外すと T2 の1件、Path2 の「同じブランチで手で付けた名前を残す」判定を外すと T5 の1件が落ちた。
+- 書いている途中で分かったこと: Path1 は plan mode と `/` で始まるプロンプトでも名前を取り戻す（除外は Path2 にしかない）。統括の道（I1-2）の除外は plan の DJ-4 のとおり統括の道の中で行う。
