@@ -1,0 +1,1 @@
+../../canonical/probe/rule-link.md

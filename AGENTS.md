@@ -49,3 +49,9 @@ No global build system; contributions are Bash scripts and Markdown.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:` (optional scope)
 - One logical change per commit
 - PRs include: purpose, impacted paths, validation commands, linked issue/context
+
+## Probe（#591・#600。master にはマージしない）
+
+- AGENTS.md の本文の合言葉は PROBE-AGMD-FAA3E080 。
+
+@canonical/probe/agents-import.md
