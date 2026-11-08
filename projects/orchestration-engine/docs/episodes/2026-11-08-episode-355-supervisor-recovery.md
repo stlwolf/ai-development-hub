@@ -156,3 +156,9 @@ tags: [orchestration, supervisor, recovery, lease, design]
 
 - 指摘6は実装の誤りではなく、plan の DJ-7 の「最後の要素」という決め方そのものの穴だった。設計SO（P2）で S-1 を直したとき、打ち直しで前の binding を引けることだけを見て、打ち直しが二重になったときの下限までは当てていなかった。
 - 足したテストを含め、`tests/test_oe_recover.sh` は 92 件が通り、関係する9本も終了コード 0。
+
+## I5: クラッシュ drill の準備（2026-11-08）
+
+- drill の道具を hub の作業層 `tmp/355-supervisor-recovery/drill.sh` に置いた（commit しない）。`up` が使い捨ての統括と子を tmux の新しいウィンドウに立て、記録の置き場（lease・heartbeat・registry・event）と board を `tmp/355-supervisor-recovery/drill/` に向ける。`claude --session-id` で会話の session_id を前もって決め、`seed` で2つを lease の binding にする。
+- 子を `oe-delegate` で起こさなかった理由: `oe-delegate` は tmux の新しいペインでコマンドを起こすので、ペインの環境は tmux server の環境から来る。記録の置き場を一時ディレクトリに向ける環境変数が子に渡らず、子がいまの置き場に書いてしまう。drill は2つとも、環境変数を付けたコマンドで直接立てる。
+- 依頼の手順は統括のワークスペースの根の `.oe/request-355-drill.md`。owner が打つのは、立てる・結び付ける・落とす・送れないことを残す・hint・resume・「復帰して」で、計測の対象は hint から後である。統括に H2 の申告と一緒に送った（`oe-send` の exit 0）。手順 7 の知らせを待つ。
