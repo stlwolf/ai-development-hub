@@ -146,23 +146,23 @@ T1〜T5 は今の hook でも通る形で先に書き、変更の前後で同じ
 
 ### GATE 3: owner の plan 承認（通過・2026-11-08・dac722c の版・Q98〜Q101 すべて推奨どおり）
 
-### I1-1: hook のテストの T1〜T5 を書き、今の hook で通ることを確かめる（1コミット）
+### I1-1: hook のテストの T1〜T5 を書き、今の hook で通ることを確かめる（1コミット）（完了・`96e47b1`）
 
-### GATE I1-1: T1〜T5 が今の hook で通る
+### GATE I1-1: T1〜T5 が今の hook で通る（通過・15件・bash 5.2 と 3.2）
 
-### I1-2: `lib/session-title.sh` と hook の統括の道（DJ-2〜DJ-4・DJ-6）と T6〜T11（1コミット）
+### I1-2: `lib/session-title.sh` と hook の統括の道（DJ-2〜DJ-4・DJ-6）と T6〜T11（1コミット）（完了・`c99bfb6`）
 
-### GATE I1-2: T6〜T11 が変更の前の hook で落ち、変更のあとで T1〜T11 がすべて通る。shellcheck
+### GATE I1-2: T6〜T11 が変更の前の hook で落ち、変更のあとで T1〜T11 がすべて通る。shellcheck（通過・結果は episode の I1-2）
 
-### I1-3: take と root から要求を書く（DJ-5）と、その場合のテストを `test_handoff_take.sh`・`test_oe_register.sh` に足す（1コミット）
+### I1-3: take と root から要求を書く（DJ-5）と、その場合のテストを `test_handoff_take.sh`・`test_oe_register.sh` に足す（1コミット）（完了・`e5bb906`。root のテストは `test_lease_writers.sh` に足した・episode の I1-3）
 
-### GATE I1-3: engine のテストがすべて通る
+### GATE I1-3: engine のテストがすべて通る（通過・master でも落ちる `test_home_unset.sh` の2件を除く）
 
-### I1-4: `canonical/hooks/README.md` の「session-name.sh + wt-pane-issue.sh」節に統括の道と記録の形を書く（1コミット）
+### I1-4: `canonical/hooks/README.md` の「session-name.sh + wt-pane-issue.sh」節に統括の道と記録の形を書く（1コミット）（完了・`9dfa95d`）
 
-### I1-5: 実物の確かめ（確かめ方の最後の段落）。結果を episode に写す
+### I1-5: 実物の確かめ（確かめ方の最後の段落）。結果を episode に写す（完了・`c14b2f6`・episode の I1-5）
 
-### GATE I1: A1〜A4 がすべて満たされている
+### GATE I1: A1〜A4 がすべて満たされている（通過・episode の I1-5 の「受入」）
 
 ### I2: 実装SO（弱・Codex 1レーン）・PR を ready にする・Copilot 1ラウンド
 
