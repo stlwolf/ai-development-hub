@@ -179,3 +179,36 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - drill の側の原因: `hint` が出す1行は `OE_LEASE_ID`・`OE_GENERATION` と resume だけを持ち、PATH と記録の置き場の環境変数（`OE_*_DIR`）を持たない。本番は既定の置き場なので要らないが、drill は置き場を一時ディレクトリに向けているので、同じペインで `env.sh` を読み込まないと動かない。依頼の手順5は「新しいペインで env.sh を読み込み、hint を打ち、出た1行をそのペインで打つ」と書いていたが、hint と resume を同じペインで打つことを強く書いていなかった。
 - 足すかを決めたこと（drill の hint の1行に、drill 用の前置きを付けるか）: 付けない。`hint` が、既定でない置き場の環境変数（`OE_LEASE_DIR` など）が設定されているときだけ、それを出す1行に付ける案は考えられる。ただしそれは drill のためだけの働きで、本番の利用者は既定の置き場を使う。drill の依頼の文で「hint と resume を同じペインで打つ」を強く書くほうが範囲が小さい。次に drill を回す人のために、この節を残す。
 - 本番にも当たる抜け（直した）: resume した統括が `oe-recover` を素の名前で打つと、本番でも同じ exit 127 になる。`oe-*` は原則 PATH に無く、起動方法は `doc-flow-guardrail` の「verb 解決規約」節で決めるからである。drill の統括は依頼の文（「PATH にある」）に従って素の名前で打った。I4 で足した ⑤ の手順1が「verb 解決規約」節を指していなかったので、1文足した。級は補正（承認した I4 の節の書き漏れを直すだけで、手順は変えない）として申告する。
+
+## I5: クラッシュ drill の結果（2026-11-08 22:15 JST・3回目の試行で通った）
+
+落とし方は落ち方 b（`tmux kill-pane` で統括のペインごと消す）。使い捨ての統括の lease `20261108130815PTK22S76GVBR`・子の lease `202611081308155CB17RB8WDAG`。記録の置き場はすべて `tmp/355-supervisor-recovery/drill/` に向けた（統括が、本物の lease が9件のままで `supervisor_recovery` が0件であることを確かめた）。
+
+### 確かめる3点（`drill.sh check`・22:20 ごろ）
+
+| 確かめること | 結果 |
+|---|---|
+| `oe-tree --lease` に統括が alive として出る | 出た: `drill-cockpit  supervisor gen 1  alive  %628`。子も `alive  %626` で統括の下に出た |
+| 統括の heartbeat の sidecar が pane と server_pid を持つ | 持つ: `{"pane":"%628","server_pid":"739","lease_id":"20261108130815PTK22S76GVBR","generation":1}` |
+| `oe-vitals` が偽の知らせを出さない | 出さない: `現統括 %628は健全（beat fresh/0m · ctx=7% · pane=alive）→ 検知なし`（`OE_VITALS_NOTIFY=0`・lease で判定） |
+
+- lease の記録: generation は 1 のまま、binding は pid 83766（復帰した claude）、`rebinds` に落ちた claude の pid 26398、session_id は1つ。DJ-2（generation を進めない）のとおりである。
+- event: `supervisor_recovery` が1行・`complete: true`・`undone: []`・前の binding 26398・ペイン `%628`。
+- 落ちていたあいだの子の送信（`drill.sh held`）は `delivery_held`（`not_self`・brief つき）として残り、統括の報告によれば `oe-recover` の一覧に1件出た。
+
+### 子の報告が新しいペインに届く（`drill.sh deliver`）
+
+- 子として `oe-send --to-parent` を打つと、`sent to %628（lease 20261108130815PTK22S76GVBR generation 1）`・終了コード 0 だった。復帰した統括の会話の記録に、その1行が 13:20:50Z に入力として入っていることを確かめた（会話の記録の user の行）。子の lease の親は書き換えていない。
+
+### 達成を見る数: 復帰1回に人が打つ操作の回数
+
+- 数え方は統括の指示のとおり、失敗した試行を除く（1回目は 22:10 ごろの exit 127、2回目は session_id の末尾1文字が欠けた resume の打ち間違い）。
+- owner: `oe-recover hint` が1回・resume の1行が1回・「復帰して」が1回。Bash の実行の許可の数は、統括の知らせに無く、会話の記録からも見分けられなかったので「未確認」とする。
+- 統括（resume した会話）: 「復帰して」（13:15:20Z）を受けてから打ったコマンドは `oe-recover` の1回だけで、登記・board・つけかえのコマンドは0回だった（会話の記録の tool_use を数えた。13:20 以降の Read と ls は、届いた子の報告に応じたもので、復帰の工程ではない）。
+- 比べると: いままでは「owner の指示1 + resume をセッションの数 + 統括の手作業3〜4」だった。今回は「owner の hint 1 + resume 1 + 復帰して 1（+ 許可は未確認）+ 統括の verb 1」で、統括の手作業は0になった。owner の手数は hint の1回が増えた。そのかわりに session_id を探す工程は無くなった。
+
+### drill の手順の側で分かったこと（次に回す人のため）
+
+- 1回目: `up` が非対話の wrapper の中で claude を起こしていて、前面のプロセスが bash になり seed が止まった（上の節）。
+- 2回目: hint を打ったペインと resume を打ったペインが別で、drill の環境（PATH と置き場）が resume した会話に渡らなかった（上の節）。
+- 3回目の前: resume の1行を手で打ち直したときに session_id の末尾1文字が欠け、「no session match」になった。hint の1行はコピーして打つ前提で、手で打ち直すと誤りうる。

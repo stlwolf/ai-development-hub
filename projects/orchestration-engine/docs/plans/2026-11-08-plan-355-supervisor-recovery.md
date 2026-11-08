@@ -302,7 +302,7 @@ verb を新しく作る前提を外して、ほかの形を1度並べた。
 
 ### GATE 4: 実装SO（弱・1レーン）（完了・指摘8件をすべて直した・episode の GATE 4）
 
-### I5: クラッシュ drill（Q5 の答えの対象で）と、達成を見る数の計測。結果を episode に書く
+### I5: クラッシュ drill（Q5 の答えの対象で）と、達成を見る数の計測。結果を episode に書く（完了・3回目の試行で通った）
 
 ### I6: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close はしない）
 
