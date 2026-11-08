@@ -39,6 +39,9 @@ source "${BIN_DIR}/../lib/seat.sh"
 source "${BIN_DIR}/../lib/event-bus.sh" || true
 # shellcheck source=../lib/lease.sh
 source "${BIN_DIR}/../lib/lease.sh"
+# セッション名の要求（#576）。書けなくても席は動かす。
+# shellcheck source=../lib/session-title.sh
+source "${BIN_DIR}/../lib/session-title.sh" || true
 
 # 外部 verb の実体。テストで差し替えられるようにしておく（実物の登記や席に触れないため）。
 OE_HANDOFF_REGISTER="${OE_HANDOFF_REGISTER:-${BIN_DIR}/oe-register}"
@@ -823,6 +826,21 @@ cmd_take() {
     esac
   else
     note_undone "CLAUDE_CODE_SESSION_ID が無いので、自分の session_id を lease に登録していない"
+  fi
+  # セッション名の要求を書く（#576）。名前は `cockpit <リポジトリ名> gen<代>`（代が分からなければ代なし）、
+  # 要求の ID は `<lease_id>:<generation>` で、同じ take の再試行では同じ値になる。hook が次のプロンプトで
+  # 一度だけ改名する。書けなくても席は動かす。
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && declare -F oe_session_title_request >/dev/null 2>&1; then
+    local tgen tname
+    tgen="$(oe_lease_get "$lid" 2>/dev/null | jq -r '.current_generation // empty' 2>/dev/null || true)"
+    if [ -n "$tgen" ] && tname="$(oe_session_title_supervisor_name "${WORKSPACE:-$(pwd)}" "$GENERATION")" \
+       && oe_session_title_request "$CLAUDE_CODE_SESSION_ID" "${lid}:${tgen}" "$tname"; then
+      note_done "セッション名の要求を書いた（${tname}。次のプロンプトで付く）"
+    else
+      note_undone "セッション名の要求を書けなかった（席は動かした。名前は手で /rename する）"
+    fi
+  else
+    note_undone "セッション名の要求を書いていない（CLAUDE_CODE_SESSION_ID が無い）"
   fi
   # 前任の子のうち、lease の親が空のもの（統括の lease ができる前に起こした子）に、この lease を書く。
   while IFS= read -r line; do

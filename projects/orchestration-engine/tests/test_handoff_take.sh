@@ -26,6 +26,8 @@ _TMP_DIR="$(mktemp -d)"
 # #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
 # （外さないと oe-register root などが本物の置き場に lease を作る）。
 export OE_LEASE_DIR="${_TMP_DIR}/lease"
+# #576: セッション名の要求も本物の置き場へ書かない
+export OE_SESSION_TITLE_DIR="${_TMP_DIR}/session-title"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 
@@ -123,6 +125,12 @@ nck "つけかえの案内を出さない" "$out" "登記を自分の下へつ�
 ckc "session_id を確かめた" "$out" "前任の session_id を確かめた"
 ckc "自己登記した"         "$out" "root として登記した"
 ckc "登記の呼び出しに --force がある" "$(cat "$CALL_LOG")" "register root --label cockpit --force"
+# #576: 席を取ったら、session_id ごとにセッション名の要求を書く（名前は代つき・ID は lease と generation）
+ckc "セッション名の要求を書いたと言う" "$out" "セッション名の要求を書いた（cockpit ws gen15"
+STR="$OE_SESSION_TITLE_DIR/sid_succ.json"
+ck  "要求の名前は cockpit <リポジトリ名> gen<代>" "cockpit ws gen15" "$(jq -r '.name' "$STR" 2>/dev/null)"
+SUPL="$(for f in "$OE_LEASE_DIR"/*.json; do jq -r 'select(.kind=="supervisor") | .lease_id' "$f"; done | head -1)"
+ck  "要求の ID は <lease_id>:<generation>" "${SUPL}:15" "$(jq -r '.request_id' "$STR" 2>/dev/null)"
 
 echo "[2] DJ-8 の不変条件（後継の pane が前任より先に来る）"
 source "$PROJECT_DIR/lib/seat.sh"

@@ -25,6 +25,8 @@ _TMP_DIR="$(mktemp -d)"
 # #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
 # （外さないと oe-register root などが本物の置き場に lease を作る）。
 export OE_LEASE_DIR="${_TMP_DIR}/lease"
+# #576: セッション名の要求も本物の置き場へ書かない
+export OE_SESSION_TITLE_DIR="${_TMP_DIR}/session-title"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 

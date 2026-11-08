@@ -40,6 +40,9 @@ source "${BIN_DIR}/../lib/delegate-registry.sh"
 source "${BIN_DIR}/../lib/lease.sh" || true
 # shellcheck source=../lib/event-bus.sh
 source "${BIN_DIR}/../lib/event-bus.sh" || true
+# セッション名の要求（#576）。root で label が cockpit のときだけ書く。
+# shellcheck source=../lib/session-title.sh
+source "${BIN_DIR}/../lib/session-title.sh" || true
 
 # root: 自分の lease がまだ無ければ、oe-lease create --root で作る（自分の CLAUDE_PID と session_id を使う・DJ-18）。
 # lease があってもなくても、そのあとで、このペインの子のうち lease の親が空のものに自分の lease を書く
@@ -65,6 +68,33 @@ lease_root_best_effort() {
       skipped\ *)  echo "oe-register: 子の lease の親を書けませんでした（${line#skipped }）" >&2 ;;
     esac
   done < <(oe_lease_fill_children "$id" "$SELF" "$spid" 2>/dev/null || true)
+}
+
+# root で label が cockpit のとき、統括のセッション名の要求を書く（#576）。名前は `cockpit <リポジトリ名>`
+# （root は代を知らない）。要求の ID は自分の lease の `<lease_id>:<generation>`。同じ ID の要求がすでに
+# あれば書かない（oe-handoff take が代つきの名前を書いたあとに、この verb を中で呼ぶため）。best-effort。
+session_title_root_best_effort() {
+  [[ "${LABEL:-}" == "cockpit" ]] || return 0
+  declare -F oe_session_title_request >/dev/null 2>&1 || return 0
+  declare -F oe_lease_whoami >/dev/null 2>&1 || return 0
+  if [[ -z "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+    echo "oe-register: CLAUDE_CODE_SESSION_ID が無いので、セッション名の要求を書きません" >&2; return 0
+  fi
+  local me id gen rid name
+  me="$(oe_lease_whoami 2>/dev/null)" || { echo "oe-register: 自分の lease が無いので、セッション名の要求を書きません" >&2; return 0; }
+  id="$(printf '%s' "$me" | jq -r '.lease_id // empty' 2>/dev/null)" || return 0
+  # 自分の session_id が座っている generation で ID を作る（lease のいまの generation ではない）。退任した
+  # generation のセッションが root を打っても、後継の要求と同じ ID を作らないため。
+  gen="$(printf '%s' "$me" | jq -r '.generation // empty' 2>/dev/null)" || return 0
+  [[ -n "$id" && -n "$gen" ]] || return 0
+  rid="${id}:${gen}"
+  if oe_session_title_has_request "$CLAUDE_CODE_SESSION_ID" "$rid"; then return 0; fi
+  if name="$(oe_session_title_supervisor_name "${WORKSPACE:-$(pwd)}" "")" \
+     && oe_session_title_request "$CLAUDE_CODE_SESSION_ID" "$rid" "$name"; then
+    echo "oe-register: セッション名の要求を書きました（${name}。次のプロンプトで付きます）" >&2
+  else
+    echo "oe-register: セッション名の要求を書けませんでした" >&2
+  fi
 }
 
 # link: 相手のペインのフォアグラウンドのプロセスから相手の lease を見つけ、親を自分の lease にする。
@@ -224,6 +254,7 @@ if [[ "$MODE" == root ]]; then
   fi
   echo "oe-register: registered ${SELF} as root${LABEL:+ (label: ${LABEL})}" >&2
   lease_root_best_effort || true
+  session_title_root_best_effort || true
   exit 0
 fi
 
