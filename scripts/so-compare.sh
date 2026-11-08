@@ -580,6 +580,9 @@ fi
 if $RUN_CODEX && ! command -v "$CODEX_CMD" &>/dev/null; then
     reject "unavailable:${CODEX_CMD}" "環境" "--claude-only で Claude のみ実行できます"
 fi
+if $RUN_CODEX && ! command -v jq &>/dev/null; then
+    reject "unavailable:jq" "環境" "Codex の道具の障害を JSONL から確認するため jq が必要です"
+fi
 if $RUN_CLAUDE && ! command -v "$CLAUDE_CMD" &>/dev/null; then
     reject "unavailable:${CLAUDE_CMD}" "環境" "--codex-only で Codex のみ実行できます"
 fi
@@ -854,7 +857,7 @@ commit_meta() {
 # **同じ日に2回変えたら英字を足す。** バージョンは日付だけだと同日の2回目が前と同じ値になり、
 # 観測をバージョンで層別できなくなる（#303 がまさにこれを必要としている）。a は付けず、2回目を
 # b、3回目を c とする。
-SO_COMPARE_VERSION="2026-09-14b"
+SO_COMPARE_VERSION="2026-11-08"
 
 # --- CLI のバージョンの取得（#298） ---
 #
@@ -1109,6 +1112,83 @@ extract_claude_body() {
     return 1
 }
 
+# code-mode の RespondToModel エラーは公開JSONLに出ない経路がある。
+# その実行のthread IDでrolloutを特定する。他のセッションの記録は使わない。
+# 保存が無効・探索失敗・複数候補は観測不能。探索にも既存timeoutで上限を置く。
+capture_codex_rollout() {
+    local thread_id root paths path count
+    thread_id="$(jq -Rnr '[inputs | fromjson? | select(.type == "thread.started") |
+        .thread_id] | unique | if length == 1 then .[0] else empty end' \
+        "$OUT_DIR/codex-events.jsonl")" || return 1
+    [[ "$thread_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || return 1
+    root="${CODEX_HOME:-${HOME}/.codex}/sessions"
+    [[ -d "$root" ]] || return 1
+    paths="$OUT_DIR/codex-rollout-paths.tmp"
+    if ! timeout 5 find "$root" -type f -name "*-${thread_id}.jsonl" > "$paths"; then
+        rm -f "$paths"
+        return 1
+    fi
+    count="$(wc -l < "$paths" | tr -d ' ')"
+    if [[ "$count" != 1 ]]; then rm -f "$paths"; return 1; fi
+    IFS= read -r path < "$paths"
+    rm -f "$paths"
+    [[ -s "$path" ]] || return 1
+    CODEX_ROLLOUT_THREAD="$thread_id"
+    # 記録にはプロンプトなども含まれる。コピーはprivateな権限で作る。
+    ( umask 077; cp "$path" "$OUT_DIR/codex-rollout.jsonl" )
+}
+
+# 診断と、exec/waitへの直接のエラー返答だけを見る。依頼文・推論・回答・
+# コマンドの出力は検索しない。成功したセルの引用は「Script completed」等の
+# 本体を伴うので、タイムアウトだけの直接返答とは区別できる。
+# パースできない行があっても、その前後の有効な診断を捨てない。
+codex_tool_status() {
+    local events="$1" rollout_captured="$2"
+    jq -Rnr --arg captured "$rollout_captured" --arg thread_id "${CODEX_ROLLOUT_THREAD:-}" '
+        reduce inputs as $line (
+            {seen: false, session: false, invalid: false, degraded: false, unmatched: false, calls: {}};
+            ($line | try fromjson catch null) as $e |
+            if ($e | type) != "object" or ($e.type | type) != "string" then
+                .invalid = true
+            else
+                .seen = true |
+                if $e.type == "session_meta" and $e.payload.id == $thread_id then .session = true else . end |
+                if .session and $e.type == "response_item" and
+                    ($e.payload.type == "custom_tool_call" or $e.payload.type == "function_call") and
+                    ($e.payload.name == "exec" or $e.payload.name == "functions.exec" or
+                     $e.payload.name == "wait" or $e.payload.name == "functions.wait") and
+                    ($e.payload.call_id | type) == "string" then
+                    .calls[$e.payload.call_id] = true
+                else . end |
+                ($e | if .type == "error" then .message
+                    elif .type == "turn.failed" then .error.message
+                    elif .type == "item.completed" and .item.type == "error" then .item.message
+                    elif .type == "item.completed" and .item.type == "mcp_tool_call"
+                        and .item.status == "failed" then .item.error.message
+                    else null end) as $diagnostic |
+                if ($diagnostic | type) == "string" then
+                    .degraded = (.degraded or ($diagnostic |
+                        contains("timed out negotiating with the code-mode host")))
+                else . end |
+                if .session and $e.type == "response_item" and
+                    ($e.payload.type == "custom_tool_call_output" or $e.payload.type == "function_call_output") and
+                    ($e.payload.call_id | type) == "string" then
+                    ($e.payload.output | if type == "string" then [.] elif type == "array" then
+                        [.[] | select(.type == "input_text") | .text] else [] end) as $texts |
+                    if any($texts[];
+                        test("^(tool exec error: |Error: )?timed out negotiating with the code-mode host[.]?$")) then
+                        if .calls[$e.payload.call_id] == true then .degraded = true
+                        else .unmatched = true end
+                    else . end
+                else . end
+            end
+        ) |
+        if .degraded then "degraded"
+        elif .invalid or .unmatched or (.seen | not) or (.session | not) or $captured != "true" then "unknown"
+        else "not_observed" end
+    ' "$events" "$OUT_DIR/codex-rollout.jsonl"
+}
+
 # --- 実行関数 ---
 # shellcheck disable=SC2120  # 引数はリトライ時に渡される（初回はデフォルト値を使用）
 run_codex() {
@@ -1119,7 +1199,13 @@ run_codex() {
     write_meta_start codex "$attempt" "$tool_timeout"
     start=$(date +%s)
 
-    local codex_args=("exec" "-s" "$SANDBOX_MODE")
+    # JSONLは診断、stdout.txtは最終回答として別々に保存する。前の実行の回答を
+    # 誤用しないよう先に空にする（起動に失敗するとCLIは最終回答を書かない）。
+    : > "$OUT_DIR/codex-stdout.txt"
+    rm -f "$OUT_DIR/codex-rollout.jsonl"
+    ( umask 077; : > "$OUT_DIR/codex-rollout.jsonl" )
+    local codex_args=("exec" "-s" "$SANDBOX_MODE" "--json"
+        "--output-last-message" "$OUT_DIR/codex-stdout.txt")
     if [[ -n "$CODEX_MODEL" ]]; then
         codex_args+=("--model" "$CODEX_MODEL")
     fi
@@ -1137,7 +1223,7 @@ run_codex() {
     # （各 CLI が stdin を読むかの実測を取ってから判断する）。
     if timeout "$tool_timeout" "$CODEX_CMD" "${codex_args[@]}" "$PROMPT" \
         < /dev/null \
-        > "$OUT_DIR/codex-stdout.txt" 2> "$OUT_DIR/codex-stderr.txt"; then
+        > "$OUT_DIR/codex-events.jsonl" 2> "$OUT_DIR/codex-stderr.txt"; then
         exit_code=0
     else
         exit_code=$?
@@ -1148,6 +1234,10 @@ run_codex() {
 
     local timeout_status
     timeout_status=$(classify_result "codex" "$exit_code")
+    local tool_status rollout_captured=false
+    CODEX_ROLLOUT_THREAD=""
+    if capture_codex_rollout 2>> "$OUT_DIR/codex-stderr.txt"; then rollout_captured=true; fi
+    tool_status="$(codex_tool_status "$OUT_DIR/codex-events.jsonl" "$rollout_captured" 2>> "$OUT_DIR/codex-stderr.txt")" || tool_status=unknown
     local model_resolved
     model_resolved="$(resolve_codex_model "$CODEX_MODEL")"
 
@@ -1169,6 +1259,8 @@ run_codex() {
         echo "so_compare_version=$SO_COMPARE_VERSION"
         echo "exit_code=$exit_code"
         echo "timeout_status=$timeout_status"
+        echo "tool_status=$tool_status"
+        echo "tool_status_source=codex-jsonl-and-rollout"
         echo "elapsed_seconds=$elapsed"
         echo "stdout_lines=$(wc -l < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
         echo "stdout_bytes=$(wc -c < "$OUT_DIR/codex-stdout.txt" | tr -d ' ')"
@@ -1397,7 +1489,8 @@ for tool in codex claude cursor; do
     meta="$OUT_DIR/${tool}-meta.txt"
     [[ -f "$meta" ]] || continue
     status=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
-    if [[ "$status" == "timeout_empty" ]]; then
+    tool_status=$(grep '^tool_status=' "$meta" | cut -d= -f2 || true)
+    if [[ "$status" == "timeout_empty" && "$tool_status" != "degraded" ]]; then
         retry_timeout=$(retry_timeout_for "$tool")
         echo ""
         echo -e "${C_YELLOW}[${tool}] タイムアウト（出力なし）→ リトライ (${retry_timeout}秒)${C_RESET}"
@@ -1405,7 +1498,7 @@ for tool in codex claude cursor; do
         # raw.json も退避する。claude は生出力をここに置いており、これが
         # 上書きされると1回目の証跡が消える（#295 は証跡を残すための変更である）。
         # 他のレーンには存在しないが、その場合 cp が失敗するだけで害はない。
-        for suffix in meta.txt stdout.txt stderr.txt raw.json; do
+        for suffix in meta.txt stdout.txt stderr.txt raw.json events.jsonl rollout.jsonl; do
             cp "$OUT_DIR/${tool}-${suffix}" "$OUT_DIR/${tool}-${suffix}.attempt1" 2>/dev/null || true
         done
         # 同期リトライ（延長タイムアウト）。第2引数で試行番号を渡すので、
@@ -1437,6 +1530,15 @@ for tool in "${TOOLS_RUN[@]}"; do
     meta="$OUT_DIR/${tool}-meta.txt"
     if [[ -f "$meta" ]]; then
         ts=$(grep '^timeout_status=' "$meta" | cut -d= -f2 || true)
+        tool_status=$(grep '^tool_status=' "$meta" | cut -d= -f2 || true)
+        if [[ -n "$tool_status" && "$tool_status" != "not_observed" ]]; then
+            if [[ -s "$OUT_DIR/${tool}-stdout.txt" ]]; then
+                PARTIAL=$((PARTIAL + 1))
+            else
+                FAILED_COUNT=$((FAILED_COUNT + 1))
+            fi
+            continue
+        fi
         case "$ts" in
             success)                                      SUCCEEDED=$((SUCCEEDED + 1)) ;;
             success_empty|timeout_partial|error_partial) PARTIAL=$((PARTIAL + 1)) ;;
@@ -1474,6 +1576,11 @@ for tool in "${TOOLS_RUN[@]}"; do
             # まま終わった（試行の途中でレーンが落ちた）。集計では失敗側に数えて
             # いるが、無表示だと原因を追えないので状態として出す。
             *)               status_label="${C_RED}未確定(試行が完了していない)${C_RESET}" ;;
+        esac
+        tool_status=$(grep '^tool_status=' "$meta" | cut -d= -f2 || true)
+        case "$tool_status" in
+            degraded) status_label="${C_YELLOW}道具の障害を検知（通常SOには数えない）${C_RESET}" ;;
+            unknown) status_label="${C_YELLOW}道具の障害を確認できない（通常SOには数えない）${C_RESET}" ;;
         esac
         retry_label=""
         if [[ "${meta_retry:-}" == "1" ]]; then

@@ -49,7 +49,7 @@ so_verdict_extract_reason() {
 #   verdict を取れないレーンは error 扱いとし、survived にしない（保守側に倒す）。
 so_verdict_collect_lanes() {
   local output_dir="$1" providers_csv="$2"
-  local _providers prov stdout_file v note
+  local _providers prov stdout_file v note tool_status
   SO_VERDICT_LANE_NAMES=()
   SO_VERDICT_LANE_VERDICTS=()
   SO_VERDICT_LANE_NOTES=()
@@ -59,11 +59,28 @@ so_verdict_collect_lanes() {
   IFS=',' read -r -a _providers <<< "$providers_csv"
   for prov in ${_providers[@]+"${_providers[@]}"}; do
     stdout_file="${output_dir}/${prov}-stdout.txt"
-    v="$(so_verdict_extract_verdict "$stdout_file")"
+    # #448: metaの劣化を本文のVERDICTで上書きしない。新しい観測キーだけを
+    # 消費し、キーの無い旧metaの一般的な判定は変えない（#516は別件）。
+    tool_status=""
+    if [[ -f "${output_dir}/${prov}-meta.txt" ]]; then
+      tool_status="$(sed -n 's/^tool_status=//p' "${output_dir}/${prov}-meta.txt")"
+    fi
+    if [[ -n "$tool_status" && "$tool_status" != "not_observed" ]]; then
+      v="error"
+    else
+      v="$(so_verdict_extract_verdict "$stdout_file")"
+    fi
     case "$v" in
       refuted)  note="$(so_verdict_extract_reason "$stdout_file")"; SO_VERDICT_REFUTED_COUNT=$((SO_VERDICT_REFUTED_COUNT + 1)) ;;
       survived) note="$(so_verdict_extract_reason "$stdout_file")"; SO_VERDICT_SURVIVED_COUNT=$((SO_VERDICT_SURVIVED_COUNT + 1)) ;;
-      *)        v="error"; note="VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"; SO_VERDICT_ERROR_COUNT=$((SO_VERDICT_ERROR_COUNT + 1)) ;;
+      *)
+        v="error"
+        if [[ -n "$tool_status" && "$tool_status" != "not_observed" ]]; then
+          note="道具の障害または観測不能のため通常SOには数えません"
+        else
+          note="VERDICT 行を取得できませんでした（レーン出力なし/形式不正）"
+        fi
+        SO_VERDICT_ERROR_COUNT=$((SO_VERDICT_ERROR_COUNT + 1)) ;;
     esac
     SO_VERDICT_LANE_NAMES+=("$prov")
     SO_VERDICT_LANE_VERDICTS+=("$v")

@@ -38,6 +38,8 @@ so-compare [OPTIONS] "プロンプト"
 
 環境に足りないものは `unavailable:<コマンド>` である（`perl` / `timeout` / `mktemp` / `codex` / `claude` / `agent`）。
 
+Codex レーンには `jq` も必要である。`--json` の診断と、その実行の記録を読むために使う。無ければ `unavailable:jq`・exit 4 で起動前に止まる。
+
 - **`3` は使っていない。** `oe-refute` / `oe-review` が反証（`refuted`）に割り当てているためで、**入力の不備が「設計が反証された」として上位に届かない**ようにしてある。
 - **呼び方の誤りも `4` である。** 以前は `1` を返しており、「呼び方を間違えた」と「一部だけ返った」が同じ値だった。
 - `oe-refute` / `oe-review` は `4` を受けると**判定を作らずに exit 2 で止まる**。
@@ -133,6 +135,8 @@ tmp/so-YYYYMMDD-HHMMSS/
 ├── prompt.txt          # 最終プロンプト全文
 ├── codex-stdout.txt    # Codex の回答
 ├── codex-stderr.txt    # Codex の stderr
+├── codex-events.jsonl  # Codex の公開JSONLイベント（回答とは別）
+├── codex-rollout.jsonl # その実行の保存記録。非公開の文脈も含みうるため権限600で保存
 ├── codex-meta.txt      # メタデータ（全レーン共通の項目 + model_resolved 系）
 ├── claude-stdout.txt   # Claude の回答
 ├── claude-raw.json     # Claude の生 JSON（jq がある場合のみ。回答本文はここから取り出される）
@@ -154,10 +158,27 @@ tmp/so-YYYYMMDD-HHMMSS/
 | `model_requested` / `model_resolved` / `model_resolved_source` | 下記「解決後モデルの記録」 |
 | `cli_version` / `cli_version_source` | 下記「CLI のバージョンの記録」 |
 | `exit_code` / `timeout_status` | 終了コードと分類 |
+| `tool_status` / `tool_status_source` | Codexのみ。道具の障害の観測結果と出所（下記） |
 | `elapsed_seconds` | その試行の所要秒数 |
 | `stdout_lines` / `stdout_bytes` / `stderr_bytes` | 出力量 |
 
 リトライが走ると `retry=1` と `retry_timeout=<秒>` が追記され、**1 回目の記録は `<tool>-meta.txt.attempt1` に退避される**（`stdout` / `stderr` / `raw.json` も同様）。
+
+### Codex の道具の障害（#448）
+
+`exit_code=0`・`timeout_status=success` はプロセスが回答を返したことだけを表す。`tool_status` を併せて読む。
+
+- `degraded`: code-mode host のタイムアウトを検知した。その後に道具が成功しても、この実行で観測した障害は消さない。
+- `not_observed`: 読めた記録に、対象の障害が見つからなかった。すべての道具が正常だったことや、必要なファイルを実際に読んだことの証明ではない。
+- `unknown`: イベント・保存記録を読めなかった、実行IDを特定できなかった、直接の障害返答をexec/waitに関連付けられなかった、記録が壊れているなどの理由で確認できない。
+
+公開JSONLに出ずモデルへの返答だけに入るエラーがあるため、`thread.started` のIDと一致する `${CODEX_HOME:-~/.codex}/sessions/` の保存記録も確認する。探索は5秒まで。保存が無効・見つからない・複数ある・IDが一致しない場合は `unknown` とする。取得した記録は `codex-rollout.jsonl` に権限600で残す。システムの文脈や道具の返答を含むので、共有前に内容を確認する。
+
+検知対象は `timed out negotiating with the code-mode host` の診断と、`exec` / `wait` の呼び出しIDに結び付いた直接のエラー返答である。依頼文・推論・回答・通常のコマンド出力の引用は検索しない。Codex 0.163.0のソースで形式を確認し、回帰テストは構成した記録を使う。実環境の同じ障害での確認は未実施であり、別の文言・別の障害を網羅するものではない。
+
+**`degraded` / `unknown` は、通常のSOの実施済みに数えない。** 回答があれば部分成功（exit 1）、無ければ失敗に数える。`oe-refute` / `oe-review` の集計も、本文の `VERDICT` よりこの状態を優先して `error` とする。キーの無い旧metaにはこの検査を後付けできず、従来の扱いが残る（一般的なmetaの判定は #516）。
+
+差分を依頼文に入れた静的レビューを人が採用する場合は、道具を使って検証できなかった範囲・渡した材料・指摘を自分で確認した結果を記録する。metaを正常に書き換えたり、通常のSO完了として報告したりしない。既知の道具の障害で終わったレーンは自動リトライしない。通常の `timeout_empty` のリトライではJSONLと保存記録も `.attempt1` に退避する。
 
 ## 使われた上限を後から言うための記録
 
