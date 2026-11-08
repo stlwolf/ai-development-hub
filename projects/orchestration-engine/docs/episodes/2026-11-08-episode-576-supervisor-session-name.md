@@ -97,3 +97,15 @@ tags: [orchestration, hooks, session-name, lease]
 - `canonical/hooks/scripts/session-name.sh` の先頭に統括の道（Path0）を入れた。plan の DJ-3・DJ-4・DJ-6 のとおりである。要求を適用したとき、state に `last_branch` が無ければ今のブランチで埋める。要求が GC で消えたあとに、Path2 が空の `last_branch` をブランチの変化と取り違えて、手で付けた名前を上書きしないためである。
 - テストの群 B（18件）を足した。変更のあとは bash 5.2 と /bin/bash 3.2 の両方で 33件すべて通る。master の hook に当てると群 B のうち6件が落ちる（T6・T7・T8 の2件・T9 の最後・T11）。落ちない12件は、名前の関数と書き手（hook を通らない）と、「改名しない」「今の動きのまま」を確かめる件（T9 の前の2件・T10）で、変更の前でも同じ結果になるのが正しい。
 - shellcheck は変えた3本で通る。
+
+### I1-3: take と root から名前の要求を書く（2026-11-08）
+
+- `oe-handoff take` は、lease を進めて自分の session_id を登録したあとに、`cockpit <リポジトリ名> gen<代>` の要求を書く（ID は `<lease_id>:<generation>`）。`oe-register root` は label が `cockpit` のときだけ、代なしの `cockpit <リポジトリ名>` を書く。
+- 書いている途中で見つけた食い違い: take は中で `oe-register root --label cockpit --force` を呼ぶので、そのままだと take が書いた代つきの名前を root が代なしで上書きする。同じ ID の要求がすでにあれば root は書かないようにした（`oe_session_title_has_request`）。plan の DJ-5 の範囲の中の直しである。
+- 既存の `test_handoff_take.sh` と `test_handoff_retire.sh` は本物の HOME のまま `CLAUDE_CODE_SESSION_ID` を偽の値にして take を走らせるので、そのままでは本物の `~/.claude/state/session-title` に書く。どちらにも `OE_SESSION_TITLE_DIR` を一時ディレクトリに向ける1行を足した。全体を回したあと、本物の置き場が作られていないことを確かめた。
+- root のテストは、plan では `test_oe_register.sh` に足すと書いたが、lease の偽のプロセスがそろっている `test_lease_writers.sh` の (4) に足した（root が要求を書く・ID・同じ ID なら上書きしない、の3件）。take のテストは `test_handoff_take.sh` の [1] に3件足した。
+- GATE I1-3: `tests/` の全テストを、セッションの環境変数を外して bash 5.2 と /bin/bash 3.2 の両方で回した。落ちたのは `test_home_unset.sh` の2件だけで、master でも同じ2件が落ちる（`oe-register --help` の rc と `_oe_home_usable` の定義の種類の数）。新しい lib の `_oe_home_usable` の行は lease.sh と byte 一致させたので、種類の数は増えていない。
+
+### I1-4: README（2026-11-08）
+
+- `canonical/hooks/README.md` の「session-name.sh + wt-pane-issue.sh」節に、(0) の要約と Path0 の項（要求の形・一度だけ改名する決まり・Path1 と Path2 に落ちないこと・`claude -r` の範囲）を足した。
