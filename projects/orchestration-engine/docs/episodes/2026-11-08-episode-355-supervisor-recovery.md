@@ -137,3 +137,22 @@ tags: [orchestration, supervisor, recovery, lease, design]
 
 - engine の `tests/test_*.sh` 61 本を走らせ、60 本が終了コード 0。落ちた1本は `tests/test_home_unset.sh` の「`_oe_home_usable` の定義は1種類」で、master（`df16c60`）の作業ツリーでも同じく落ちる。`lib/handoff-state.sh` の定義が複数行で書かれていて、1行の定義と別の種類に数えられるためで、この PR の変更から来たものではない。範囲の外として報告に書く。
 - 触ったファイル（`bin/oe-recover`・`lib/lease.sh`・`lib/seat.sh`・`lib/event-bus.sh`・`lib/target-resolve.sh`・`bin/oe-vitals`・`scripts/validate-lease.sh`・足したテスト）は shellcheck を通る。`bin/oe-send` の SC2034 と `tests/test_handoff_take.sh` の SC2329 は master から残っているもので、I1 と I3 に書いた。
+
+## GATE 4: 実装SO（2026-11-08）
+
+- レーン: Codex の1レーン（`gpt-6.1-sol`・設定から解決・224秒・リトライなし）。依頼文と回答は hub の作業ディレクトリの `tmp/355-supervisor-recovery/so-355-impl-prompt.md` と `so-355-impl/codex-stdout.txt`。
+- 指摘は8件（高1・中6・低1）で、すべて採って直した。
+
+| 番号 | 指摘 | 重さ | 直し |
+|---|---|---|---|
+| 1 | 自分のペインの本人確認が「分からない」でも先へ進み、本人でないペインを board と registry に書きうる | 高 | 分からないときは何も書かずに止まる |
+| 2 | 死んだ復帰のロックを2つが同時に引き取ると、あとの持ち主のロックを消せる | 中 | `lib/lease.sh` の `_oe_lease_lock`（引き取りのロックを持つ1人だけが片づける）に置き換えた |
+| 3 | pid を書く前に落ちると、空のロックを永久に引き取れない | 中 | 同上（空のまま古くなったロックを引き取る） |
+| 4 | `still_mine` が、閉じられた lease への書き込みを止めない | 中 | lease が開いていることも見る |
+| 5 | binding が自分のとき、取り込みで作られた lease に session_id を登録しない | 中 | binding が自分でも、session_id が無ければ登録する |
+| 6 | 二重に落ちると、送れなかった送信の一覧の下限が縮む | 中 | 下限の決め方を直した（plan の補正 H2） |
+| 7 | 子の lease の記録を読み損ねると、黙って飛ばして complete にする | 中 | 読めなかった記録は「済んでいない」に入れる |
+| 8 | テストの「死んだ pid」999999 を本物のプロセス表で判定している | 低 | 生きていない pid を探して使う |
+
+- 指摘6は実装の誤りではなく、plan の DJ-7 の「最後の要素」という決め方そのものの穴だった。設計SO（P2）で S-1 を直したとき、打ち直しで前の binding を引けることだけを見て、打ち直しが二重になったときの下限までは当てていなかった。
+- 足したテストを含め、`tests/test_oe_recover.sh` は 92 件が通り、関係する9本も終了コード 0。

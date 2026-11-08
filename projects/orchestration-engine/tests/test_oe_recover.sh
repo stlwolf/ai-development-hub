@@ -59,6 +59,7 @@ EOF
 cat > "$FAKE/tmux" <<'EOF'
 #!/usr/bin/env bash
 echo "fake-tmux $*" >> "$CALLS"
+[ -z "${FAKE_TMUX_FAIL:-}" ] || exit 1
 if [ "${1:-}" = "list-panes" ]; then
   # 書式に #{pid}（server の pid）があれば "%N 900" で、それ以外は "%N /dev/ttysNNN" で答える（registry の掃除と本人確認）。
   case "$*" in *'#{pid}'*) awk '{print $1" 900"}' "$PANES" ;; *) cat "$PANES" ;; esac
@@ -222,6 +223,7 @@ ck "終了コードは 0" "0" "$RC"
 ck "binding は 701" "701" "$(lease_pid "$SUP")"
 ck "rebinds に 101 と 201" "101,201" "$(jq -r '[.generations[0].rebinds[].pid] | map(tostring) | join(",")' "$OE_LEASE_DIR/$SUP.json")"
 ck "board は %2" "%2" "$(bash -c ". '$PROJECT_DIR/lib/seat.sh'; oe_seat_resolve '$BOARD'")"
+ckc "二重に落ちても、最初に落ちていたあいだの送れなかった送信が出る（H2）" "$OUT" "#9 child（lease ${CH}）: 2 回"
 
 echo "=== T-5 復帰のロック ==="
 setup lock
@@ -230,10 +232,43 @@ mkdir "$OE_LEASE_DIR/$SUP.json.recover.lock"; printf '%s' "$$" > "$OE_LEASE_DIR/
 run as_sup "$VERB" -w "$WS" --board "$BOARD"
 ck "走っているときは止まる" "1:101" "$RC:$(lease_pid "$SUP")"
 ckc "ほかで走っていると言う" "$OUT" "ほかで走っています"
-printf '%s' "999999" > "$OE_LEASE_DIR/$SUP.json.recover.lock/pid"
+DEADPID=$(( $$ + 900000 )); while kill -0 "$DEADPID" 2>/dev/null; do DEADPID=$((DEADPID + 1)); done
+printf '%s' "$DEADPID" > "$OE_LEASE_DIR/$SUP.json.recover.lock/pid"
 run as_sup "$VERB" -w "$WS" --board "$BOARD"
 ck "持ち主が死んだロックは引き取る" "0:201" "$RC:$(lease_pid "$SUP")"
 ck "終わったらロックを外す" "0" "$([ -d "$OE_LEASE_DIR/$SUP.json.recover.lock" ] && echo 1 || echo 0)"
+mkdir "$OE_LEASE_DIR/$SUP.json.recover.lock"; touch -t 202601010000 "$OE_LEASE_DIR/$SUP.json.recover.lock"
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+ck "pid を書く前に落ちて空のまま古くなったロックも引き取る" "0" "$RC"
+
+echo "=== 実装SO の指摘: 本人確認が分からない・adopt の lease・閉じた lease・読めない記録 ==="
+setup verify-unknown
+kill_pid 101
+run env FAKE_TMUX_FAIL=1 TMUX="/tmp/fake-sock,900,0" TMUX_PANE=%2 CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-sup "$VERB" -w "$WS" --board "$BOARD"
+ck "自分のペインを確かめられなければ何も書かずに止まる" "1:101" "$RC:$(lease_pid "$SUP")"
+ck "board は変えない" "%1" "$(bash -c ". '$PROJECT_DIR/lib/seat.sh'; oe_seat_resolve '$BOARD'")"
+setup adopted
+kill_pid 101
+( . "$PROJECT_DIR/lib/lease.sh"
+  A="$(oe_lease_create supervisor cockpit-a "$WS" "")"; oe_lease_bind "$A" 0 201 "$S2" claude; printf '%s' "$A" > "$_TMP_DIR/case-adopted/adopted" )
+A="$(cat "$_TMP_DIR/case-adopted/adopted")"
+( . "$PROJECT_DIR/lib/lease.sh"; oe_lease_close "$SUP" >/dev/null )
+run env TMUX="/tmp/fake-sock,900,0" TMUX_PANE=%2 CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-adopt "$VERB" -w "$WS" --board "$BOARD" --lease "$A" --owner-confirmed
+ck "binding が自分で session_id が無い lease（adopt）は session_id を登録する" "sid-adopt" "$(jq -r '.generations[0].session_ids | join(",")' "$OE_LEASE_DIR/$A.json")"
+setup closed
+kill_pid 101
+cat > "$_TMP_DIR/hook-close.sh" <<EOF
+f="$OE_LEASE_DIR/$SUP.json"
+jq '.state = "closed" | .closed_at = "2026-11-08T12:00:00Z"' "\$f" > "\$f.t" && mv "\$f.t" "\$f"
+EOF
+run env FAKE_DATE_HOOK="$_TMP_DIR/hook-close.sh" TMUX="/tmp/fake-sock,900,0" TMUX_PANE=%2 CLAUDE_PID=201 CLAUDE_CODE_SESSION_ID=sid-sup "$VERB" -w "$WS" --board "$BOARD"
+ck "途中で lease が閉じられたら、それより後を書かない" "1:none" "$RC:$(reg_parent %2)"
+setup unreadable
+kill_pid 101
+printf '{broken' > "$OE_LEASE_DIR/ZZZZZZZZZZZZZZZZZZZZZZZZZZ.json"
+run as_sup "$VERB" -w "$WS" --board "$BOARD"
+ck "読めない lease の記録があれば complete にしない" "1" "$RC"
+ckc "読めないと言う" "$OUT" "を読めませんでした"
 
 echo "=== T-7 退任・workspace・--lease ==="
 setup retired

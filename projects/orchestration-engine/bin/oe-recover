@@ -188,7 +188,10 @@ case "$vrc" in
      notw "何も書いていません。"
      next_ "統括が echo \$TMUX_PANE と tmux display-message -p '#{pane_id}' を比べ、食い違っていれば正しいペインで resume し直します。"
      finish 1 ;;
-  *) sit "自分のペイン ${SELF} のフォアグラウンドのプロセスを確かめられませんでした（rc=${vrc}）。自分のプロセスで続けます。" ;;
+  *) sit "自分のペイン ${SELF} のフォアグラウンドのプロセスを確かめられませんでした（rc=${vrc}。tmux か ps の問い合わせが失敗しました）。本人を確かめられないペインを board と registry に書かないので、ここで止まります。"
+     notw "何も書いていません。"
+     next_ "統括が tmux list-panes -a -F '#{pane_id} #{pane_tty}' と ps -p ${ME_PID} -o pid,lstart,command を打って、どちらも答えるかを確かめます。答えるようになったら oe-recover をもう一度打ちます。"
+     finish 1 ;;
 esac
 
 # --- 2 自分の lease を決める（S-6: generation は session_id のある generation で決める）---
@@ -266,21 +269,17 @@ fi
 sit "自分の lease は ${LID}（${KIND}・${LABEL}・generation ${GEN}）です（${SRC}で決めました）。"
 
 # --- 3 復帰のロック（同じ lease の復帰を同時に2つ走らせない・S-3）---
+# 取り方と、置き去りのロックの引き取り方は lib/lease.sh の _oe_lease_lock と同じにする（持ち主が死んだロックと、
+# pid を書く前に落ちて空のまま古くなったロックだけを、引き取りのロックを持つ1人が片づける・実装SO の指摘）。
 RLOCK="$(_oe_lease_file "$LID").recover.lock"
-if ! mkdir "$RLOCK" 2>/dev/null; then
+if ! OE_LEASE_LOCK_RETRY="${OE_RECOVER_LOCK_RETRY:-10}" _oe_lease_lock "$RLOCK"; then
   owner="$(cat "${RLOCK}/pid" 2>/dev/null)" || owner=""
-  if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-    rm -f "${RLOCK}/pid" 2>/dev/null; rmdir "$RLOCK" 2>/dev/null || true
-  fi
-  if ! mkdir "$RLOCK" 2>/dev/null; then
-    sit "lease ${LID} の復帰が、ほかで走っています（復帰のロック ${RLOCK} の持ち主 pid ${owner:-不明}）。同じ会話から2回打ったか、同じ会話を2か所で resume しています。"
-    notw "何も書いていません。"
-    next_ "統括が、前に打った oe-recover が終わるのを待ってから、もう一度打ちます。持ち主の pid が残り続けるなら、owner が ps -p ${owner:-<pid>} で確かめます。"
-    finish 1
-  fi
+  sit "lease ${LID} の復帰が、ほかで走っています（復帰のロック ${RLOCK} の持ち主 pid ${owner:-不明}）。同じ会話から2回打ったか、同じ会話を2か所で resume しています。"
+  notw "何も書いていません。"
+  next_ "統括が、前に打った oe-recover が終わるのを待ってから、もう一度打ちます。持ち主の pid が残り続けるなら、owner が ps -p ${owner:-<pid>} で確かめます。"
+  finish 1
 fi
-printf '%s' "$$" > "${RLOCK}/pid" 2>/dev/null || true
-trap 'rm -f "${RLOCK}/pid" 2>/dev/null; rmdir "$RLOCK" 2>/dev/null || true' EXIT
+trap '_oe_lease_unlock "$RLOCK"' EXIT
 
 # --- 4 いまの binding を見る ---
 CUR="$(oe_lease_get "$LID")"
@@ -291,6 +290,13 @@ NEED_CLAIM=1
 if [ -n "$BPID" ] && [ "$BPID" = "$ME_PID" ] && [ "$(_oe_tpi_norm "$BST")" = "$ME_ST" ]; then
   NEED_CLAIM=0
   sit "いまの binding はもう自分です（張り替えは要りません）。"
+  if ! printf '%s' "$CUR" | jq -e --argjson g "$GEN" --arg s "$ME_SID" '.generations[] | select(.generation==$g) | (.session_ids // []) | index($s)' >/dev/null 2>&1; then
+    # 取り込み（oe-lease adopt）で作られた lease は binding だけを持ち、session_id を持たない（実装SO の指摘）。
+    src2=0; oe_lease_register_session "$LID" "$ME_SID" "$ME_PID" "$ME_ST" || src2=$?
+    if [ "$src2" -eq 0 ]; then wrote "自分の session_id（${ME_SID}）を lease ${LID} の generation ${GEN} に登録した。"
+    else notw "自分の session_id の登録（rc=${src2}）。"; undone "register-session"
+         next_ "統括が oe-lease whoami を打ち、session_id がほかの lease に登録されていないかを確かめます。"; fi
+  fi
 elif [ -n "$BPID" ]; then
   BSTATE="$(oe_tpi_proc_state "$BPID" "$BST")"
   case "$BSTATE" in
@@ -356,12 +362,13 @@ PREV_BOUND="$(printf '%s' "$PREV" | jq -r '.bound_at // ""' 2>/dev/null)"
 still_mine() {
   local c
   c="$(oe_lease_get "$LID" 2>/dev/null)" || return 1
+  [ "$(printf '%s' "$c" | jq -r '.state')" = "open" ] || return 1
   [ "$(printf '%s' "$c" | jq -r '.current_generation')" = "$GEN" ] || return 1
   [ "$(printf '%s' "$c" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.pid // "") | tostring')" = "$ME_PID" ] || return 1
   [ "$(_oe_tpi_norm "$(printf '%s' "$c" | jq -r --argjson g "$GEN" '.generations[] | select(.generation==$g) | (.binding.started // "")')")" = "$ME_ST" ]
 }
 lost_binding() {
-  sit "工程の途中で、lease ${LID} の binding が自分でなくなりました（ほかのプロセスが張り替えたか、交代で generation が進みました）。"
+  sit "工程の途中で、lease ${LID} の binding が自分でなくなりました（ほかのプロセスが張り替えたか、交代で generation が進んだか、lease が閉じられました）。"
   notw "これより後の board と registry の書き込みはしていません。"
   next_ "統括が oe-tree --lease で lease ${LID} の行を見ます。ほかのペインが統括として生きていれば、この会話は統括として使いません。"
   undone "binding が自分でなくなった"
@@ -464,7 +471,13 @@ else
   # 子の行
   for f in "$OE_LEASE_DIR"/*.json; do
     [ -f "$f" ] || continue
-    row="$(jq -r --arg p "$LID" 'select(.state=="open" and .parent_lease_id==$p) | [.lease_id, (.label | gsub("[[:cntrl:]]"; " ")), .workspace] | join("\u001f")' "$f" 2>/dev/null)" || row=""
+    if ! row="$(jq -r --arg p "$LID" 'select(.state=="open" and .parent_lease_id==$p) | [.lease_id, (.label | gsub("[[:cntrl:]]"; " ")), .workspace] | join("\u001f")' "$f" 2>/dev/null)"; then
+      # 読めなかった記録を「自分の子ではない」に畳まない（実装SO の指摘）。
+      sit "lease の記録 ${f} を読めませんでした。自分の子かどうかが分からないので、registry を直したとは言えません。"
+      notw "registry の子の行（読めない記録がある）。"; undone "registry-child"
+      next_ "統括が jq . ${f} を打って、記録が壊れていないかを確かめます。"
+      continue
+    fi
     [ -n "$row" ] || continue
     IFS=$'\037' read -r clid clabel cws <<< "$row"
     if cpane="$(OE_LEASE_SERVER_PID="$SPID" oe_lease_resolve_pane "$clid" 2>/dev/null)"; then
@@ -500,8 +513,21 @@ if [ -n "$SPID" ] && [ -n "${OE_DELEGATE_STATE_DIR:-}" ] && [ -d "$OE_DELEGATE_S
 fi
 
 # --- 6-4 届かなかったかもしれない報告（DJ-7・要照合）---
-LB_EPOCH=""
-[ -z "$PREV_BOUND" ] || LB_EPOCH="$(_iso_epoch "$PREV_BOUND")"
+# 下限（H2）: 最後に complete で終わった復帰より後に張り替えられた binding のうち、いちばん古いものが張られた時刻。
+# rebinds の最後の要素だけを見ると、復帰が張り替えた直後にまた落ちて打ち直したとき、最初に落ちていたあいだの
+# 履歴が一覧から消える（実装SO の指摘）。complete の復帰が無ければ、rebinds のいちばん古い要素から見る。
+LB_EPOCH=""; LB_ISO=""
+LC_EPOCH=0
+if [ -n "${OE_EVENT_DIR:-}" ] && [ -r "${OE_EVENT_DIR}/oe-events.jsonl" ]; then
+  LC_EPOCH="$(jq -rs --arg l "$LID" '[ .[] | select(type=="object" and .type=="supervisor_recovery" and .complete==true and (.lease_id // "")==$l)
+      | (.ts | sub("\\+00:00$"; "Z") | fromdateiso8601? // 0) ] | max // 0' "${OE_EVENT_DIR}/oe-events.jsonl" 2>/dev/null)" || LC_EPOCH=0
+  case "$LC_EPOCH" in ''|*[!0-9]*) LC_EPOCH=0 ;; esac
+fi
+LB_ISO="$(oe_lease_get "$LID" | jq -r --argjson g "$GEN" --argjson lc "$LC_EPOCH" '
+  .generations[] | select(.generation==$g) | [ (.rebinds // [])[] | select((.replaced_at | fromdateiso8601? // 0) > $lc) | .bound_at ]
+  | sort | first // ""' 2>/dev/null)" || LB_ISO=""
+[ -n "$LB_ISO" ] || LB_ISO="$PREV_BOUND"
+[ -z "$LB_ISO" ] || LB_EPOCH="$(_iso_epoch "$LB_ISO")"
 if [ -n "$LB_EPOCH" ]; then
   ev="${OE_EVENT_DIR:-}/oe-events.jsonl"
   held=""
@@ -517,11 +543,11 @@ if [ -n "$LB_EPOCH" ]; then
       | .[]' "$ev" 2>/dev/null)" || held=""
   fi
   if [ -n "$held" ]; then
-    sit "前の binding が張られた時刻（${PREV_BOUND}）より後に、自分の lease へ送れなかった送信の履歴があります（要照合。未回収の報告の一覧ではありません）:"
+    sit "前の binding が張られた時刻（${LB_ISO}）より後に、自分の lease へ送れなかった送信の履歴があります（要照合。未回収の報告の一覧ではありません）:"
     while IFS= read -r h; do [ -n "$h" ] && sit "  ${h}"; done <<< "$held"
     next_ "統括が上の各 brief（報告のファイル）を読み、必要なら子に照会します。"
   else
-    sit "前の binding が張られた時刻（${PREV_BOUND}）より後に、自分の lease へ送れなかった送信の履歴はありません。ただし記録は best-effort なので、取りこぼしが無いとは言えません。"
+    sit "前の binding が張られた時刻（${LB_ISO}）より後に、自分の lease へ送れなかった送信の履歴はありません。ただし記録は best-effort なので、取りこぼしが無いとは言えません。"
   fi
   files=""
   for f in "$WS"/.oe/report-*.md "$WS"/.oe/question-*.json; do
