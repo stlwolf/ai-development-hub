@@ -162,3 +162,13 @@ tags: [orchestration, supervisor, recovery, lease, design]
 - drill の道具を hub の作業層 `tmp/355-supervisor-recovery/drill.sh` に置いた（commit しない）。`up` が使い捨ての統括と子を tmux の新しいウィンドウに立て、記録の置き場（lease・heartbeat・registry・event）と board を `tmp/355-supervisor-recovery/drill/` に向ける。`claude --session-id` で会話の session_id を前もって決め、`seed` で2つを lease の binding にする。
 - 子を `oe-delegate` で起こさなかった理由: `oe-delegate` は tmux の新しいペインでコマンドを起こすので、ペインの環境は tmux server の環境から来る。記録の置き場を一時ディレクトリに向ける環境変数が子に渡らず、子がいまの置き場に書いてしまう。drill は2つとも、環境変数を付けたコマンドで直接立てる。
 - 依頼の手順は統括のワークスペースの根の `.oe/request-355-drill.md`。owner が打つのは、立てる・結び付ける・落とす・送れないことを残す・hint・resume・「復帰して」で、計測の対象は hint から後である。統括に H2 の申告と一緒に送った（`oe-send` の exit 0）。手順 7 の知らせを待つ。
+
+### drill の1回目: seed が rc 6 で黙って止まった（2026-11-08）
+
+- 何が起きたか: owner が手順1（`up`）を通したあと、手順2（`seed`）が何も出さずに止まった。統括が `bash -x` で確かめ、`oe_lease_bind` が rc 6（コマンドが claude でない）を返し、`set -e` で黙って終わっていたと分かった。
+- 原因: `up` は tmux に「`cd … && . env.sh && … claude …; exec bash`」を渡していた。非対話の `bash -c` はジョブ制御を持たないので、claude を自分と同じプロセスグループで起こす。ペインの端末の前面のプロセス（pid と tpgid が一致する行）はその bash（comm `bash`）になり、`oe_tpi_pane_foreground` は bash を返した。
+- 直し: claude を `exec` で起こす形にした（`OE_LEASE_ID=… exec claude …`）。ペインの最初のプロセスも前面のプロセスも claude になる。`oe-delegate` と `oe-handoff start` も同じ形で起こしている。`seed` は、失敗したところで理由（前面のプロセスの pid とコマンド名・lib の戻り値）を出してから止まるようにした。
+- 分かったこと: 非対話の wrapper（`bash -c "…; claude …"`）の中で claude を起こすと、前面のプロセスで本人を確かめる仕組み（decision #577 の D6・D9）は claude を見つけられない。対話のシェルで打った claude は、シェルがジョブ制御で別のプロセスグループに置くので、この問題は起きない。owner が resume を打つのは対話のシェルなので、復帰の手順そのものは当たらない。ただし、wrapper の中で claude を起こす使い方をすると、`oe-recover` は自分のペインの本人確認（DJ-3 の 1）で止まる（実装SO の指摘1 の直しで、分からないときと一致しないときは止まる）。
+- 昇格の印: 「lease の本人確認は、claude がペインの前面のプロセスグループの長であることを前提にしている。非対話の wrapper の中で起こすと成り立たない」は、`oe-*` の verb で claude を起こす場所すべてに当たる前提なので、decision #577 の D6 の帰結に足す候補である。
+
+昇格の印: 非対話の wrapper の中で起こした claude は、前面のプロセスで本人を確かめられない（decision #577 の D6 の前提）
