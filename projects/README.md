@@ -64,17 +64,6 @@ WezTerm の Human Mode / AI Mode デュアル構成を支える `wez` CLI ツー
 
 詳細は [wezterm-ai-mode/README.md](wezterm-ai-mode/README.md) を参照。
 
-### agent-rule-decomposition
-
-マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。
-
-- 集権的ルール（CONVENTIONS.md）のサブエージェント向け分割粒度の検証
-- エージェント役割とルールのマッピング（実装/レビュー/ドキュメント）
-- スキル/ルール/.mdc の配布メカニズムと優先順位の調査
-- ルール衝突時の解決パターン
-
-詳細は [agent-rule-decomposition/README.md](agent-rule-decomposition/README.md) を参照。
-
 ### orchestration-research
 
 エージェントオーケストレーション・並列エージェントツール群のランドスケープ調査プロジェクト。
@@ -125,6 +114,17 @@ Cursor Composer / Agent スレッドの Markdown エクスポート（拡張 + C
 **正本・Release は [stlwolf/cursor-thread-tools](https://github.com/stlwolf/cursor-thread-tools) に移行済み。** hub 側は履歴アーカイブのみ。
 
 詳細は [_archived/cursor-thread-tools/README.md](_archived/cursor-thread-tools/README.md) を参照。
+
+### agent-rule-decomposition
+
+マルチエージェント/サブエージェント環境におけるドキュメントルール分割の検証プロジェクト。議論ドキュメントの段階のまま、検証には進まずにアーカイブ（#594）。
+
+- 集権的ルール（CONVENTIONS.md）のサブエージェント向け分割粒度の検証
+- エージェント役割とルールのマッピング（実装/レビュー/ドキュメント）
+- スキル/ルール/.mdc の配布メカニズムと優先順位の調査
+- ルール衝突時の解決パターン
+
+詳細は [_archived/agent-rule-decomposition/README.md](_archived/agent-rule-decomposition/README.md) を参照。
 
 ### cursor-devtools-inspector
 
