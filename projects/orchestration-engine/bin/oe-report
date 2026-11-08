@@ -3,10 +3,8 @@
 #
 # usage: oe-report [--review] <message>
 #
-# 親ペイン ID の解決順:
-#   1. 環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す。これが主経路）
-#   2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（手動設定時のみ。oe-delegate は書き出さない）
-# どちらもなければエラー終了（exit 1）。
+# 親ペイン ID は環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す）だけから引く。無ければエラー終了（exit 1）。
+# 以前は /tmp/oe-parent-{TMUX_PANE#%} ファイルにも落ちたが、書く側がどこにも無いので #577 PR-6 で外した。
 # 注: 戻しは汎用 oe-send への一本化が方針。本コマンドは legacy（整理は #142 論点E）。
 # 送信は oe_send_line（delegate-send.sh）経由 — 生 send-keys 時代は message_sent を emit せず
 # 活動ログ（inbox / report_received ループ・#206A）の盲点だった。載せ替えで 1 行保証・
@@ -27,8 +25,7 @@ usage: oe-report [--review] <message>
   -h, --help  このヘルプを表示
 
 親ペイン ID の解決:
-  1. 環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す）
-  2. /tmp/oe-parent-{TMUX_PANE#%} ファイル（手動設定時のみ。oe-delegate は書き出さない）
+  環境変数 PARENT_TMUX_PANE（oe-delegate が子へ渡す）だけから引く
 
 注: 戻しは oe-send に一本化が方針。本コマンドは legacy。
 EOF
@@ -51,16 +48,6 @@ MESSAGE="${1:-}"
 
 # 親ペイン ID を解決
 PARENT_PANE="${PARENT_TMUX_PANE:-}"
-
-if [[ -z "$PARENT_PANE" ]]; then
-  SELF_PANE="${TMUX_PANE:-}"
-  if [[ -n "$SELF_PANE" ]]; then
-    PARENT_FILE="/tmp/oe-parent-${SELF_PANE#%}"
-    if [[ -f "$PARENT_FILE" ]]; then
-      PARENT_PANE="$(cat "$PARENT_FILE")"
-    fi
-  fi
-fi
 
 [[ -n "$PARENT_PANE" ]] || {
   echo "oe-report: parent pane not found — set PARENT_TMUX_PANE or run via oe-delegate" >&2

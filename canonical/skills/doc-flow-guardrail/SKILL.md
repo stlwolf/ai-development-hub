@@ -101,7 +101,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - **指示矛盾ガード**: 親の指示が brief の終端定義または plan の step 構成と矛盾する場合は、**従う前に**矛盾を指摘して確認を取る（順序は「指摘 → 確認 → 従う」・不服従ではなく確認要求）。矛盾に当たるのは (a) 終端の再定義 (b) 未達 step の飛び越し (c) step の要件の弱体化。**step ID が書かれていること自体は免責にならない**（指された位置までの義務が履行済みかで判断する。履行済みの位置への指定・差し戻しは矛盾ではない）。正本と弁別子は `implementer-contract`。
 - **承認のあとに plan が変わるとき**: ゲート3 のあとに plan を直すことは禁じない。変わり方は効果で3つの級に分ける。**記録**は、済み印・結果・status の更新で、承認した内容そのものは変わらない。子が自分で動かしてよく、申告も受け付けも要らない。**補正**は、承認の母集団と owner が決めたことを変えず、新しい結果・対応範囲・作業義務・設計判断も足さない直しである。母集団とは step 集合・要件・ゲート・終端を指す。裁定や指摘を書き込む・承認済みの結果を確かめる検査を強める・衛生の置き換え・文言や構成の整理がこれに当たる。子は申告して進めてよく、統括が次の報告で差分を確かめて受け付ける。**変更**は、step を削る・要件を弱める・ゲートを飛ばす・終端を書き換える・新しい作業義務や設計判断や対応範囲を足す直しである。**実行する前に**統括へ照会し、owner の再承認を経る。級の決め方は、記録だけの更新を先に除き、残りについてまず変更に当たるかを見て、当たらないものを補正とする。級は出どころ（裁定・SO・Copilot・照合）でなく効果で決める。1つの修正に級が混じるなら分けて見て重い側で扱い、迷ったら重い側に置く。補正と変更は末尾の「ゲート3 のあとの変更」節に置くことを推奨する。申告の形と確かめる項目は `implementer-contract`。
 - **マージ・worktree 掃除・issue close はしない**（親 / owner の Human Gate＝gate 6）。
-- **ephemeral-ID hygiene**: 揮発的なローカル文脈の識別子（tmux pane ID 等）を、commit され共有される成果物（4層 doc・issue・PR・commit・comment）に durable な参照として焼き込まない。role / issue / PR / SHA を使う（例外＝gitignored 作業層 / 形式例示 / 計測 evidence / verbatim raw-log）。
+- **ephemeral-ID hygiene**: 揮発的なローカル文脈の識別子（tmux pane ID・lease_id 等）を、commit され共有される成果物（4層 doc・issue・PR・commit・comment）に durable な参照として焼き込まない。role / issue / PR / SHA を使う（例外＝gitignored 作業層 / 形式例示 / 計測 evidence / verbatim raw-log）。
 - **work-routing / handoff**: 委譲 work の handoff 先を brief で明示する。ad-hoc subagent で work を stranded にしない（pipeline: plan → episode → 昇格 に乗せる）。
 - **client 識別子を入れない**（org / リポ / issue 名は generic な placeholder で例示）。
 - **SO を通す**: gate 2（設計SO）・gate 4（実装SO）は常に必須（「通すか」は固定。モード / レーンは可変＝下記）。
