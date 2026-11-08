@@ -89,3 +89,10 @@ tags: [orchestration, supervisor, recovery, lease, design]
 
 - N1（owner の普通のシェルで動く一括の復帰の道具）: decision #577 の D17（session_id の登録は本人の verb だけ）を変えることになる。
 - N2（board と registry を書かず、読むときに作る）: registry は #577 の PR-5・PR-6 で読むのをやめる方向で、この drill がその条件である。この issue で先取りすると #577 の移行の順を崩す。
+
+## P3: draft PR とゲート3 の問い（2026-11-08）
+
+- plan と episode を `a0c9623` で commit し、draft PR #597 に載せた。
+- ゲート3 の問いは6枚（verb の名前・generation の扱い・前のプロセスを閉じる工程・`delivery_held`・drill の対象・実装に進むか）で、統括のワークスペースの根の作業層に置いた（`build.py check` は誤りなし）。報告のファイルを書き、統括へ1行送った（`oe-send` の exit 0）。
+- 報告の宛先は brief の明示を採った。送る前に `oe-tree` で、宛先のペインが hub の root の `cockpit` として alive であることを確かめた。
+- ここで止まる。ゲート3 の承認の記録が届くまで実装に進まない。
