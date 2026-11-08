@@ -78,6 +78,8 @@ EOF
 
 ## ドキュメント
 
+`docs/` 直下の読み物（下の表と `AGENT_ORCHESTRATION_RESEARCH.md`・`SECOND_OPINION_CLAUDE_CODE.md`）は 2026-02 時点の記録として凍結している（2026-11-08・#594）。スクリプトとテンプレートは現役である。
+
 | ドキュメント | 内容 |
 |-------------|------|
 | [docs/USAGE.md](docs/USAGE.md) | 詳細な使用方法 |
