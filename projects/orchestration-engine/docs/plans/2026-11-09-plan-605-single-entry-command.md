@@ -3,7 +3,7 @@ id: "01M70B8NCM1XZ1HH1M3JYXN17P"
 title: "#605 engine の入口を1本のコマンドにして、verb をサブコマンドで振り分ける"
 date: 2026-11-09
 type: plan
-status: in-development   # ゲート3 承認は 2e0cca7 の版（2026-11-10・owner が Q103〜Q105 をすべて推奨どおり）。承認のあとの直し H1・H2（どちらも補正）は「ゲート3 のあとの変更」節
+status: stable   # 実装完了（2026-11-10・I1〜I5・PR #617）。ゲート3 承認は 2e0cca7 の版（2026-11-10・owner が Q103〜Q105 をすべて推奨どおり）。承認のあとの直し H1・H2（どちらも補正）は「ゲート3 のあとの変更」節
 so:
   design: weak
   impl: weak
@@ -236,7 +236,7 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 
 ### I4: 子のペインから入口を引けることを確かめる（完了・episode の I4。sync は worktree からかけず、一時ディレクトリのリンクを PATH に置いて確かめる。worktree からの sync は `~/.claude` のリンクを worktree に張り替える）
 
-### I5: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close・dotfiles の変更はしない）
+### I5: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close・dotfiles の変更はしない）（完了・Copilot は行コメント0件）
 
 ## GATE 3 の問い
 

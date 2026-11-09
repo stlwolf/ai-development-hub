@@ -3,7 +3,7 @@ id: "01M70B8NAAEJDS5VAX6ND2JZE6"
 title: "#605 engine の入口を1本のコマンドにして、verb をサブコマンドで振り分ける"
 date: 2026-11-09
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/605"
@@ -15,6 +15,22 @@ related:
     ref: "projects/orchestration-engine/docs/plans/2026-11-09-plan-605-single-entry-command.md"
     reason: "実装の計画"
 tags: [entry-command, distribution, verb-resolution]
+promotion:
+  - subject: "入口の名前を oe にし、1サイクルの本体を oe run に移す"
+    verdict: required
+    ref: "本文: GATE 3: 承認"
+  - subject: "入口の直下の verb はファイル名 oe-<verb> のとおり平らに並べ、束ねるのは verb の中のサブコマンドにする"
+    verdict: required
+    ref: "本文: P1: 調べものと設計判断の洗い出し"
+  - subject: "exec の前に本体のシェルで代入すると、local が export の属性を引き継いで値が verb に渡る"
+    verdict: required
+    ref: "本文: GATE 4: 実装SO（Codex の1レーン）と採否"
+  - subject: "偽物で確かめる隔離は、流用する既存の検査にも当て直す"
+    verdict: not-required
+    ref: "本文: P2: 設計SO（Codex の1レーン）と採否"
+  - subject: "pipefail の下で head -1 を使うと SIGPIPE で検査が黙って止まる"
+    verdict: not-required
+    ref: "本文: I1: 入口と本体の移動"
 ---
 
 # #605 engine の入口を1本のコマンドにして、verb をサブコマンドで振り分ける
@@ -88,6 +104,7 @@ brief は2件を採用している。2件目の ID が中身と合っていな�
 - `doc-flow-guardrail` の「verb 解決規約」を、入口 `oe <verb>` で呼ぶ3つの手順に置き換えた。旧い手順が作る `$oe_bin` を指していた3か所（③の止まる条件・④の後継・⑤の復帰）は、`oe --help` の1行目に出るディレクトリの `bin/README.md` を指すように直した（設計SO の指摘 3）。
 - インラインのコードで `oe-<verb> <引数>` と書かれた呼び方は `oe <verb> <引数>` に、`delegate-task` の `"$BIN/oe-<verb>"` は `oe <verb>` に、それぞれ機械的に置き換えた。引数の無い `oe-send` のような verb の名前としての言及は残した（ファイルの名前であり、呼び方の指示ではないため）。
 - 達成を見る数: `grep -rnE '\$oe_bin|\$anchor|\$BIN/oe-|BIN="\$REPO/projects/orchestration-engine/bin"' canonical` は 0 件になった（変える前は `doc-flow-guardrail`・`delegate-task` などで該当があった）。`~/bin` に配る engine の `bin/` のコマンドは、`sync-bin.sh --list` で `oe`・`oe-tree`・`oe-hookfire` の3本になった（前は2本）。
+- closure の外部チェックで、engine の `README.md` の冒頭の表に本体の入口 `oe` が残っていたことが分かり、`oe run` に直した。
 - 呼び方の形で残したのは `canonical/hooks/README.md` の2か所で、「どの verb のどの操作のときに名前が付くか」を説明する文である。呼び方の指示ではないので変えていない。
 
 昇格の印: `set -o pipefail` の下で、出力の多いコマンドを `| head -1` で受けると SIGPIPE で非0になり、`set -e` の検査が黙って止まる。検査で先頭の行を取るときは `sed -n 1p` を使う。engine の検査で同じ形を書く人が踏みうるので knowledge の候補である
@@ -109,3 +126,61 @@ brief は2件を採用している。2件目の ID が中身と合っていな�
 - 直したあとの検査を、直す前の入口（`7c3ba7f` の版）に当てて、足した4件がそろって落ちることを確かめた（陽性対照）。
 
 昇格の印: bash で、関数の `local` は同名の export 済みの変数の export の属性を引き継ぐので、`exec` で別のプログラムに置き換わる前に代入した名前は、呼び出し元が export していればその値が書き換わって渡る。透過であるべき振り分け役は、本体のシェルで代入せずに `exec` する。knowledge の候補である
+
+## closure（2026-11-10）
+
+tier は heavy である。設計SO と実装SO を品質ゲートとして明示的に回し、検査の止まり・壊した入口の後始末の失敗・plan の補正があったため。
+
+### 次の消費者
+
+- #609（統括の復帰を1本のコマンドにする）の担当。名前の付け方は decision #605 の決定2 に従う。
+- #537（engine の独立）の担当。入口 `oe` が外に見せる口になる前提と、名前の衝突の見直し（decision #605 の「当時の前提」）。
+- engine に verb を足す人。`oe-<verb>` を置けば `oe <verb>` で呼べ、配布の一覧は触らない。
+
+### 事実・失敗
+
+- brief の negative knowledge の2件目の ID が要約と合っていなかった。要約に合う item を採用し、統括が補正として受け付けた（`本文: negative knowledge の採用`）。
+- 検査が `| head -1` の SIGPIPE で結果の行を出さずに止まった（`本文: I1: 入口と本体の移動`）。
+- 陽性対照で壊した入口が残した偽の verb が、検査を包んだコマンドのパイプを握って終わらなかった（`本文: I1: 入口と本体の移動`）。
+- 設計SO で、名前の検査を glob と正規表現のどちらで書くかを決めていなかったこと、流用する既存の検査に隔離を当てていなかったことが見つかった（`本文: P2: 設計SO（Codex の1レーン）と採否`）。
+- plan の T-9 の対象に、`oe-handoff` の本人確認の場面を持たない検査を挙げていた。読み直して `test_lease_handoff.sh` を足した（`本文: I2: T-9 と配布`・plan の H1）。
+- 実装SO で、呼び出し元が export した同名の変数を入口が書き換えて渡していたこと（must）と、`oe-help`・偽の tmux の確認・子の復帰の呼び方・127 の説明の4件が見つかった（`本文: GATE 4: 実装SO（Codex の1レーン）と採否`・plan の H3）。
+- `oe review` は1レーンを受けないので、実装SO は `so-compare` で通した（`本文: I4: 子のペインから入口を引けるか`）。
+- Copilot の1ラウンドは行コメント0件・総評「No open issues」だった（レビューした commit は `59a016a`）。`本文なし: Copilot の結果は closure を書く直前に届いたため、本文の節を立てていない`
+
+### 決定と根拠
+
+- 入口の名前と本体の移し先・verb の並べ方・入口が状態を変えないこと（`本文: GATE 3: 承認`・`本文: P1: 調べものと設計判断の洗い出し`・`本文: GATE 4: 実装SO（Codex の1レーン）と採否`）。棄却した案と理由は decision #605 にある。
+- rebase をせず、承認の基準の commit をブランチに残した（`本文: GATE 3: 承認`）。
+
+### 昇格の判定
+
+- 入口の名前を oe にし、本体を oe run に移す: `required`。owner がゲート3 で選び、棄却した案が2つあり（別の名前・最初の引数で振り分ける）、覆すと配布物とスキルをまとめて直す議論が要る。`projects/orchestration-engine/docs/decisions/2026-11-10-decision-605-single-entry-command.md` の決定1 に入れた（`本文: GATE 3: 承認`）。
+- verb を平らに並べ、束ねるのは verb の中にする: `required`。#609 以降の名前の付け方を縛り、同じ分岐に次の verb の担当が立つ（Q4）。同じ decision の決定2 に入れた（`本文: P1: 調べものと設計判断の洗い出し`）。
+- exec の前に本体のシェルで代入すると値が渡る: `required`。非自明（設計SO と環境の比較の検査をすり抜けた）・再発しうる（wrapper を書くたび）・行動を変える、の3つを満たし、既存の rule・skill・item に同旨が無いことを grep で確かめた。knowledge item `01M70HVB17F0T2WZ0REDK6MPB7` として収穫した。入口の形の理由は decision の決定3 にも書いた（`本文: GATE 4: 実装SO（Codex の1レーン）と採否`）。
+- 偽物の隔離を流用する既存の検査にも当て直す: `not-required`。item `01M5T897YCWY13GFTADD3136EC` の教訓（差し替えの起点をたどる）の範囲の中の具体例で、新しい item にすると重なる。観測の書き戻しの note に残した（`本文: P2: 設計SO（Codex の1レーン）と採否`）。
+- pipefail の下で head -1 が SIGPIPE で止まる: `not-required`。bash の一般的な挙動で、落ちれば結果の行が出ないので見える。engine の判断ではなく、行動を変える範囲が広すぎる（`本文: I1: 入口と本体の移動`）。
+
+### follow-up
+
+- dotfiles の一時的な関数を消す: 行き先は owner か統括（マージと `./scripts/sync.sh bin` のあと。手順は plan の DJ-8 と P3 以降の報告）。この条件が済むまで issue は完了にしない。
+- verb が自分の案内の文で出すコマンドの形（`oe-handoff` が `oe-register` の絶対パスを出すなど）を `oe <verb>` に直す: 行き先は PR #617 の本文の「範囲の外で気づいたこと」（統括が issue にするかを決める）。各 verb の中身に触れないという #605 の範囲の外である。
+- `test_handoff_take.sh` の既定の回が `HOME` を隔離していない: 行き先は PR #617 の本文の「範囲の外で気づいたこと」（統括が issue にするかを決める）。入口越しの回だけ隔離した。
+- `oe-tree`・`oe-hookfire` の互換の配布を外す: 行き先は #537 と dotfiles の `.tmux.conf` の呼び出し元の移行（decision #605 の「当時の前提」）。
+- `oe` の名前の衝突（Yocto の `oe-*`）の見直し: 行き先は #537（decision #605 の「当時の前提」）。
+- `canonical/hooks/README.md` の `oe-handoff take` などの言及: 追わない。verb の操作を名前で説明する文で、呼び方の指示ではない（`本文: I3: 呼び方の文`）。
+
+### 観測の書き戻し
+
+- brief に注入された item は `01M6XN85N408CMMERA12QR1C3F`・`01KYCQV7SD6BVBWVCRFYJH9TYG`（書き違いの ID）・`01M5T897YCWY13GFTADD3136EC` の3件で、3件すべてに観測を足した（`followed`・`no_opportunity`・`followed`）。
+
+### status
+
+- `stable`。達成度は「部分」である。この PR の中で決めたことはすべて済んだが、issue の完了の条件の dotfiles の後始末がマージのあとに残る。
+
+### 外部チェック（Step 4）
+
+- `so-compare --codex-only` で closure の4点（失敗の省略・follow-up の行き先・揮発パス・他文書への書き戻し）と `promotion` の ref を見た。出力は worktree の `tmp/so-20261110-012555/`（gitignored）で、要点はここに書く。
+- 指摘は4件で、すべて直した。brief の ID の書き違いを「事実・失敗」に足した。統括に渡す follow-up 2件の行き先を PR #617 の本文に置いた。engine の `README.md` の冒頭の表の本体の入口を `oe run` に直した（`本文: I3: 呼び方の文`）。decision の決定3 の理由を、本人確認に効くのは環境変数であり、`exec` を選ぶのはプロセスの段とシグナル・終了コードのためである、と分けて書き直した。
+- 省略の無いことは、設計SO 10件・実装SO 5件・H1〜H3 が本文と plan の表で辿れることで確かめられた。揮発パスだけに頼る参照は無く、`promotion` の ref 5件は本文に一意に実在した。
+

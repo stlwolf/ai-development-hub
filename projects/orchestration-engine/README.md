@@ -6,8 +6,8 @@
 
 | 面 | 主な入口 | 何をするか |
 |----|----------|------------|
-| 本体のエンジン | `oe` | wez のペインに agent を起こし、1 サイクル（envelope→spawn→capture→verify→monitor）を非対話で自律に回す（Phase 4 の MVP） |
-| 親子の委譲 | `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register` | 統括から tmux の子セッションを起こしてタスクを渡し、子から報告を受ける |
+| 本体のエンジン | `oe run`（`bin/oe-run`） | wez のペインに agent を起こし、1 サイクル（envelope→spawn→capture→verify→monitor）を非対話で自律に回す（Phase 4 の MVP） |
+| 親子の委譲 | `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（どれも入口から `oe <verb>` で呼ぶ） | 統括から tmux の子セッションを起こしてタスクを渡し、子から報告を受ける |
 | cockpit の観測と見張り | `oe-tree` / `oe-activity` / `oe-threads` / `oe-status` / `oe-vitals` / `oe-undelivered` / `oe-confirm` | 誰が動いているか・届いたか・統括が生きているかを read-only で見る |
 | 統括の交代と lease | `oe-handoff` / `oe-lease` / `oe-recover` | 統括を計画的に交代する。応答しなくなった統括を resume のあとに復帰させる（#355）。統括と子の「誰か」を、tmux のペインと切り離した lease の記録で持つ（#577 で移行中） |
 | SO のゲート | `oe-refute` / `oe-review` | 確定前の設計の反証と、実装のレビューを so-compare で回して判定を記録する |
