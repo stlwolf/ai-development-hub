@@ -11,6 +11,8 @@ scripts/
 ├── so-compare.sh              # セカンドオピニオン比較
 ├── check-codex-guardrails.sh  # canonical/rules と canonical/codex/AGENTS.md の整合検証
 ├── harness-check.sh           # rule / skill の発動効果を CLI agent で実測するランナー
+├── cloud/
+│   └── link-project-context.sh # クラウドのコンテナの作業ツリーにだけ、規則と規約のスキルへのリンクを作る（環境の setup から呼ぶ）
 ├── wt/
 │   ├── wt-pane-issue.sh       # worktrunk の post-switch hook（tmux ペインごとに作業中の issue を記録）
 │   └── worktrunk-config.toml  # worktrunk のユーザー設定に入れる [post-switch] の例
@@ -72,6 +74,30 @@ symlink で配れない設定ファイル（CLI が実行時に書き換える�
 ./scripts/sync/check-orphan-links.sh claude
 ./scripts/sync/check-orphan-links.sh claude --prune
 ```
+
+## cloud/
+
+クラウドのエージェント（Claude Code on the web・Codex のクラウド）のコンテナには、手元のホーム（`~/.claude/` など）が無いので、sync で配った規則とスキルが届かない（#591）。repo にリンクを commit すると手元の hub で二重に読まれるので、commit はしない。代わりに、クラウドの環境の setup からこの script を呼び、そのコンテナの作業ツリーにだけリンクを作る。
+
+| スクリプト | 作るもの | 終了コード |
+|---|---|---|
+| `link-project-context.sh` | `canonical/` への相対のリンク。`.claude/rules/` に `canonical/rules/*.md` の全部、`.claude/skills/` と `.agents/skills/` に規約の4つのスキル（一覧は script の `CONVENTION_SKILLS`）。作ったディレクトリは git の `info/exclude` に足す | 0 すべて作った / 1 一部を作れなかった（正本に無いスキル・リンクでないファイルが先にある）/ 2 実行できない（`--cloud` が無い等） |
+
+- 手元で誤って走らせないよう、`--cloud` を付けたときだけ動く。
+- Claude は `.agents/` を、Codex は `.claude/` を読まないので、両方を作っても互いに影響しない。
+- 正本から消えたものを指して壊れたリンクは外す。人が置いたファイルとほかのリンクには触らない。
+- テストは `bash tests/scripts/test_link_project_context.sh`（偽の hub を一時ディレクトリに組んで流す）。
+
+環境の setup script（Claude）と install script（Codex）には、次を書く。repo の checkout を含むディレクトリから走る前提である。
+
+```bash
+if [ -f ai-development-hub/scripts/cloud/link-project-context.sh ]; then
+  bash ai-development-hub/scripts/cloud/link-project-context.sh --cloud
+fi
+```
+
+- Claude：setup script は新しいコンテナを作るたびに走るので、正本に足した規則は次のセッションで入る。
+- Codex：install script は環境を公開したときにだけ走る。スキルや規則を足したら、環境を編集して公開し直す。Codex のクラウドは、置いたスキルを仕組みとして読み込むとは限らない（#591 の観測）。
 
 ## ユーティリティ
 
