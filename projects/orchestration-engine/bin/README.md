@@ -2,9 +2,10 @@
 
 orchestration-engine の実行可能エントリの簡易リファレンス（AI エージェント / 人間向け）。背景は親 [`../README.md`](../README.md)、詳細は各スクリプト冒頭のコメントと `docs/` を参照。
 
-scripts は役割別に次の 28 本（`bin/` 直下の実行可能エントリの全数。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
+scripts は役割別に次の 29 本（`bin/` 直下の実行可能エントリの全数で、入口 `oe` と verb の `oe-*` 28本。verb を足したらこの索引にも足す。本体エンジン と 親子委譲 CLI の 2 系統という切り口は [`../README.md`](../README.md) 「2 系統」節）:
 
-- **本体エンジン**: `oe`（+ 補助 `oe-capture`）
+- **入口**: `oe`（`oe <verb>` で同じディレクトリの `oe-<verb>` を exec する・`~/bin` に配る・#605）
+- **本体エンジン**: `oe-run`（`oe run` で呼ぶ。#605 で `bin/oe` から移した）（+ 補助 `oe-capture`）
 - **SO ゲート**: `oe-refute`（設計SO・確定前の同期反証・#183） / `oe-review`（実装SO・reviewed diff にバインドしたコード欠陥レビュー・#195） / `oe-lane-explain`（SO のレーンが返らなかった理由を読み取る・#303）
 - **親子委譲 CLI（delegate-task 系）**: `oe-delegate` / `oe-kick` / `oe-send` / `oe-list` / `oe-register`（手動起動ペインの登記・#259） / `oe-handoff`（統括の計画的な交代・#390） / `oe-lease`（統括と委譲子の lease の記録・#577） / `oe-recover`（応答しない統括が resume のあとに打つ復帰・#355） / `oe-select` / `oe-report` / `oe-ack`（受領印・#206A） / `oe-jump`（通知→ペインへ focus）
 - **観測（cockpit・read-only）**: `oe-status`（engine state/audit + delegate liveness の俯瞰） / `oe-ident`（ペイン識別子を border へ read 時投影） / `oe-activity`（親子活動ログ `oe-events.jsonl` を read 時投影・report inbox（PENDING=未受領数）/ timeline・#206） / `oe-tree`（spawn トポロジの罫線ツリー・`--watch` live / `--pick` 対話ナビ・#221/#223/#227） / `oe-undelivered`（報告未達検知 watchdog・未ack 報告 × 時間窓・cron 可・#239 段階0） / `oe-confirm`（送信 1 件ごとの到達照合＋子ペイン消滅＋report 新規・双方向・launchd 可・#336） / `oe-vitals`（統括 vital 監視 watchdog・拍動鮮度 + context% 閾値・cron 可・#239 段階1） / `oe-selfcheck`（バージョンに固定された前提の点検・3値判定・#299 P3） / `oe-hookfire`（止める側のフックの発火記録を読む・3値判定・#309） / `oe-threads`（生存ペインごとのモデル名と context%・#327）
@@ -12,14 +13,33 @@ scripts は役割別に次の 28 本（`bin/` 直下の実行可能エントリ�
 
 ---
 
-## oe — 本体エンジン（自律オーケストレーション）
+## oe — 入口（verb をサブコマンドで振り分ける・#605）
 
-1 サイクルの自律ループ（envelope→spawn→capture→verify→monitor）。非対話・wez + `claude -p`。
+`~/bin` に配る1本の入口。`oe <verb> [引数...]` で、同じディレクトリの `oe-<verb>` を `exec` する。各 verb の中身には触れない。
 
 ```bash
-bash bin/oe "タスク記述"
-bash bin/oe --task-file <path>
-oe -h | --help
+oe <verb> [引数...]      # 例: oe send --to-parent '…' / oe recover hint -w . / oe run --task-file task.md
+oe -h | --help | help    # 使い方と verb の一覧（1行目は engine の bin/ の実体のパス）
+oe                       # 同じ一覧を標準エラーへ（exit 2）
+oe <verb> --help         # verb ごとの使い方（--help は verb へそのまま渡す）
+```
+
+- 自分の実体のディレクトリは、symlink を1段ずつたどって解く（`readlink -f` を使わない。bash 3.2 と古い macOS で動かすため）。解く処理はサブシェルで行い、呼び出し元の作業ディレクトリと環境を変えない。
+- 振り分け先は解いたディレクトリの `oe-<verb>` だけで、PATH は探さず書き換えない。`exec` なのでプロセスは1段も増えず、引数・標準入出力・終了コード・シグナル・環境変数（`CLAUDE_PID` など）は verb のまま受け渡される。
+- verb の名前は `^[a-z0-9][a-z0-9-]*$` だけを受け、`oe-<verb>` が symlink でない実行できる通常のファイルのときだけ振り分ける。一覧も同じ条件で `oe-*` から作るので、`oe-<verb>` を足すだけで呼べる（固定の一覧は持たない）。説明は各ファイルの2行目の `# oe-<verb> — <説明>` から出す。
+- exit: verb の終了コードのまま / 2 呼び方の誤り（引数なし・知らないオプション・`oe help <何か>`） / 127 その verb が無い（`oe oe-send` には `oe send` の案内を足す） / 1 入口が自分の場所を解けない
+- 差し替えの口（テスト用）: `OE_ENTRY_LINK_LIMIT`（symlink をたどる段の上限・既定 40）
+- 検査: `tests/test_oe_entry.sh`（bash 5 と `/bin/bash` 3.2 の両方で回す）・`tests/test_oe_entry_identity.sh`（`oe-recover` と `oe-handoff` の本人確認を入口越しに回す）
+- 設計: `docs/plans/2026-11-09-plan-605-single-entry-command.md`
+
+## oe-run — 本体エンジン（自律オーケストレーション）
+
+1 サイクルの自律ループ（envelope→spawn→capture→verify→monitor）。非対話・wez + `claude -p`。#605 で `bin/oe` から移した（`oe` は入口になった）。
+
+```bash
+oe run "タスク記述"
+oe run --task-file <path>
+oe run -h | --help
 ```
 
 - `--task-file <path>` の異常系は暗黙にフォールバックせず、明示エラーを stderr に出して **exit 2**（usage エラー）で弾く（#99）。対象: パス未指定 / 不在パス / ディレクトリ / 非通常ファイル / 読めない（権限）/ **空ファイル**（空は既定タスクへ暗黙フォールバックしていた挙動を廃止）。

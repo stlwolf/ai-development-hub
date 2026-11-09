@@ -15,9 +15,8 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 ## 前提
 
 - tmux 環境（`$TMUX_PANE` が設定されていること）
-- `projects/orchestration-engine/bin/` の `oe-delegate` / `oe-send` / `oe-list` / `oe-report` が実行可能なこと
+- engine の入口 `oe` が呼べること（`oe delegate` / `oe send` / `oe list` / `oe report` の形で呼ぶ。入口が PATH に無いときの呼び方は `doc-flow-guardrail` の「verb 解決規約」節）
 - `jq` が PATH にあること（アドレッシング解決に使用）
-- スクリプトは絶対パスで呼ぶ（`~/work/repos/.../projects/orchestration-engine/bin/oe-delegate`）か、PATH に入っていること
 
 ---
 
@@ -29,7 +28,7 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 | `oe-send` | 任意 → 任意 | 既存ペインへ 1 行 / brief を送る汎用入口。宛先はラベル or `%N` |
 | `oe-list` | — | 宛先候補を source 列付きで一覧（誤送信防止） |
 | `oe-register` | — | 手動起動 pane を登記（`root`=自己 root / `link %N`=相手を自分の下に）。spawn を経ない pane を oe-tree / cockpit に現す |
-| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは `oe-send --to-parent` に一本化**（`oe-report` は古い子が残っていないと確かめてから廃止する） |
+| `oe-report` | 子 → 親 | （legacy）子→親の申し送り。**戻しは `oe send --to-parent` に一本化**（`oe-report` は古い子が残っていないと確かめてから廃止する） |
 
 `oe-delegate` = spawn + `oe-send`（キック）の合成。送信の実体は `oe-send` に集約されている。
 
@@ -41,27 +40,26 @@ description: 親子 Claude Code セッション間の委譲操作を行う。del
 
 ```bash
 REPO="$(pwd)"
-BIN="$REPO/projects/orchestration-engine/bin"
 ```
 
 ### パターン別コマンド例
 
-**issue 番号あり（基本）** — `--label` で後から `oe-send #N` で指せるようにする
+**issue 番号あり（基本）** — `--label` で後から `oe send #N` で指せるようにする
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で確認して作業を進めて。リポジトリ: $REPO"
+oe delegate -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で確認して作業を進めて。リポジトリ: $REPO"
 ```
 
 **子 Claude に起動オプションを渡す** — 自律調査で権限プロンプト停止を避けたい場合
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
+oe delegate -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
 ```
 
 **brief doc（委譲指示書）を渡す（4層ドキュメント方式 / リッチな事前情報）**
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" --label "#N" --brief "$REPO/path/to/brief.md" "補足の要望があればここに1行で"
+oe delegate -w "$REPO" --label "#N" --brief "$REPO/path/to/brief.md" "補足の要望があればここに1行で"
 ```
 
 - `--brief <path>` は子へ `"<path> を読んで進めて。"` を付加し、子が読めるよう doc のディレクトリを `--add-dir` で開示する（旧 `--kickoff` は deprecated alias として存続・#255。新規は `--brief` を使う）
@@ -71,7 +69,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 **実装委譲（implementer-contract 併用）**
 
 ```bash
-"$BIN/oe-delegate" -w "$REPO" --label "#N" "Issue #N を実装して。リポジトリ: $REPO。実装規律は $REPO/canonical/skills/implementer-contract/SKILL.md を読んで従うこと"
+oe delegate -w "$REPO" --label "#N" "Issue #N を実装して。リポジトリ: $REPO。実装規律は $REPO/canonical/skills/implementer-contract/SKILL.md を読んで従うこと"
 ```
 
 **統括（並列 root）を spawn する場合** — brief 冒頭で `doc-flow-guardrail` の cold-start ロードを明示する（実装子と違い固定節でなくフロー全体が要るため）。
@@ -85,13 +83,13 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 `oe-delegate` は spawn + キックに専念し、戻し（report）を一切焼き付けない（Unix 哲学・単機能）。
 子に報告させたいなら、その指示は **task / brief の本文に自分で書く**。戻しの送信自体は子が
-汎用の `oe-send` を `$BIN` 付きのパスで呼んで行う（形は下記「戻し」・PATH に在るかは `command -v` で確かめる）。
+汎用の `oe send` で行う（形は下記「戻し」・入口 `oe` が PATH に在るかは `command -v oe` で確かめる）。
 
 ### worktree 作成分担（子が自作・統括は hands-off）
 
 委譲では **worktree を作るのは子**で、統括（親）は作らない。誰が作るかを取り違えると統括の pane が迷子になる。
 
-- **子が自分の worktree を作る**: 子は自分の pane で `wt switch --create <branch>` を実行する（`wt switch` がそのペインの pane-issue state＝`#N` を書き、以後 `oe-send "#N"` で指せる。issue 起点でも同じ）。並列委譲でも**各子がそれぞれ自分の分を作る**。
+- **子が自分の worktree を作る**: 子は自分の pane で `wt switch --create <branch>` を実行する（`wt switch` がそのペインの pane-issue state＝`#N` を書き、以後 `oe send "#N"` で指せる。issue 起点でも同じ）。並列委譲でも**各子がそれぞれ自分の分を作る**。
 - **統括（親）は事前作成しない・hands-off**: 親が `wt switch --create` すると親自身のペインの pane-issue state（`#N`）が張り替わり、親ペイン自身が迷子になる（`oe-send` の宛先解決もずれる）。**hands-off が統括の条件**。親がどうしても worktree を用意する稀な場合だけ、pane-issue state を書き換えない `git worktree add`（`wt switch` による pane-issue 更新を避ける）を使う。
 - **per-issue は end-to-end で子へ**: 各 issue の §0 洗い出し以降（設計 SO / 調査 / 実装）を統括が自分の会話で巻き取らず、issue ごとに子スレッドへ一気通貫で委譲する（親 lean）。§0 の一括 read-only 洗い出しだけは親 or 使い捨て subagent が担ってよい。
 - **マージ・worktree 掃除は親 / 人間（Human Gate、HG）**: 子は完了報告のみ行い、マージも worktree 掃除もしない。
@@ -108,7 +106,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ```bash
 # 1. spawn せず承認パッケージ + ダイジェストを印字（print は子を作らないので classifier に block されない）
-"$BIN/oe-delegate" -w "$REPO" --label "#N" --elevated \
+oe delegate -w "$REPO" --label "#N" --elevated \
   --claude-arg --permission-mode --claude-arg auto \
   --reason "本番隣接の非対話 deploy が要る" \
   --print-approval "タスク1行"
@@ -120,7 +118,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
 # 3. 実 spawn（同じ引数 + 承認ダイジェスト）。oe-delegate が引数から digest を再計算して照合し、
 #    承認後にコマンドが変わっていれば拒否（exit 3）＝承認↔実行の binding。--elevated 宣言も digest に
 #    束縛されるので、非 elevated の承認に後から --elevated を付けて escalation することはできない。
-"$BIN/oe-delegate" -w "$REPO" --label "#N" --elevated \
+oe delegate -w "$REPO" --label "#N" --elevated \
   --claude-arg --permission-mode --claude-arg auto \
   --reason "本番隣接の非対話 deploy が要る" \
   --approved-digest "<step1 のダイジェスト>" "タスク1行"
@@ -133,7 +131,7 @@ BIN="$REPO/projects/orchestration-engine/bin"
   - ダイジェストは公開入力からの決定論チェックサムで、**owner 承認の暗号的証明ではない**（nonce / 期限 / 消費状態を持たない）。**authZ の実体はハーネスの分類器**（agent は elevated spawn の block を自己解除できない）で、ダイジェストは「owner が見た内容 = 実行内容」を保証する drift-guard。両者は別レイヤー。
   - brief は承認時に内容 hash を束縛するが、spawn 後に子が読むまでの差し替え（read-time TOCTOU）までは束縛しない。
   - `permission_mode` は CLI 引数からの best-effort 推定（継承 config は反映しない）。enforcement は明示 `--elevated` を主ゲートにするので本番ケースは mode 推定に依存しない。
-- 規範（なぜ owner 承認が要るか）は `orchestration-toolkit`、ゲート位置は `doc-flow-guardrail` の routing 表、engine フラグの詳細は `oe-delegate -h` を参照（3軸分離）。
+- 規範（なぜ owner 承認が要るか）は `orchestration-toolkit`、ゲート位置は `doc-flow-guardrail` の routing 表、engine フラグの詳細は `oe delegate -h` を参照（3軸分離）。
 
 ---
 
@@ -143,28 +141,28 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ```bash
 # ラベルで送る（registry / pane-issue で解決）
-"$BIN/oe-send" "#142" "テストは pytest で。失敗ケースも足して"
+oe send "#142" "テストは pytest で。失敗ケースも足して"
 
 # 生のペインIDで送る（ラベルが無いペイン・側道会話）
-"$BIN/oe-send" "%37" "さっきの設計の続きだけど、TTL は 24h で合ってる？"
+oe send "%37" "さっきの設計の続きだけど、TTL は 24h で合ってる？"
 
 # brief doc を既存ペインに読ませる
-"$BIN/oe-send" --brief "$REPO/path/to/brief.md" "#142" "前提が変わったので読み直して"
+oe send --brief "$REPO/path/to/brief.md" "#142" "前提が変わったので読み直して"
 
 # Enter を撃たずに投入だけ（人間が読んでから送る／セッションを汚さない）
-"$BIN/oe-send" --no-enter "%37" "確認してほしい下書き"
+oe send --no-enter "%37" "確認してほしい下書き"
 ```
 
 > `--brief` のパスは **対象ペインの可読ルート内**（cwd / `--add-dir` 済みの場所）に置く。
 > 稼働中ペインには後付けで `--add-dir` できないため、ルート外だと子が権限プロンプトで止まる。
-> （`oe-delegate --brief` は起動時に doc dir を `--add-dir` 開示するので問題ない）
+> （`oe delegate --brief` は起動時に doc dir を `--add-dir` 開示するので問題ない）
 
 ### 誤送信を防ぐ
 
 宛先を間違えやすいときは、まず `oe-list` で候補を確認してからラベル / `%N` を選ぶ。
 
 ```bash
-"$BIN/oe-list"
+oe list
 # PANE     SOURCE         LABEL
 # %37      pane-issue     #142 oe-delegate redesign
 # %41      spawn-registry my-task
@@ -200,15 +198,15 @@ BIN="$REPO/projects/orchestration-engine/bin"
 
 ```bash
 # 手動起動した統括 pane を自分自身で root 登記（oe-tree に root として現す）
-"$BIN/oe-register" root --label "#N"
+oe register root --label "#N"
 
 # 既存の相手ペイン %N を自分の下に子として登記（spawn を経ない委譲の登記）
-"$BIN/oe-register" link "%37" --label "#150"
+oe register link "%37" --label "#150"
 ```
 
 - `link` の guard: target 非生存 / `%self` / 生存する別親の子 → 拒否（他人の子の横取り防止・`--force` で reparent）。orphan（親 gone）は引き取り可・既に自分の子は冪等
 - `root` の guard: 生きた親を持つ委譲子の自己 root 化（cold-start 手順の誤実行など）は拒否（detach 防止・`--force` で明示 re-root）
-- 登記後は `oe-send "#N"` / `oe-list` / `oe-tree` が通常どおり解決する（registry の record を書くだけ・既存挙動は不変）
+- 登記後は `oe send "#N"` / `oe-list` / `oe-tree` が通常どおり解決する（registry の record を書くだけ・既存挙動は不変）
 
 ---
 
@@ -217,8 +215,8 @@ BIN="$REPO/projects/orchestration-engine/bin"
 delegate は report を内包しないので、**戻しは汎用の `oe-send` の `--to-parent` で行う**。宛先は書かない:
 
 ```bash
-"$BIN/oe-send" --to-parent "実装完了。PR #150: https://github.com/<owner>/<repo>/pull/150"
-"$BIN/oe-send" --to-parent --no-enter "親が読んでから送りたい下書き"
+oe send --to-parent "実装完了。PR #150: https://github.com/<owner>/<repo>/pull/150"
+oe send --to-parent --no-enter "親が読んでから送りたい下書き"
 ```
 
 `--to-parent` の宛先の決め方は、子の環境で2つに分かれる。
@@ -246,8 +244,8 @@ delegate は report を内包しないので、**戻しは汎用の `oe-send` �
 
 ### oe-report（legacy）
 
-`oe-report "..."` / `oe-report --review "..."` は従来の子→親専用コマンド。`PARENT_TMUX_PANE` から
-親を引くので、統括が交代すると前任を指す。**戻しは上記 `oe-send --to-parent` に一本化**する。
+`oe report "..."` / `oe report --review "..."` は従来の子→親専用コマンド。`PARENT_TMUX_PANE` から
+親を引くので、統括が交代すると前任を指す。**戻しは上記 `oe send --to-parent` に一本化**する。
 `oe-report` は、呼びうる古い子が残っていないと確かめてから廃止する。
 
 ---
@@ -300,7 +298,7 @@ tmux capture-pane -p -e -J -t "%N" -S -6 | grep '❯' | tail -n 1
 ⚠ **属性付き（`-e`）の capture では、`❯` に行頭の錨を打ってはいけない。** 属性付きの行は `❯` より前に属性のエスケープ列が来るので、行頭を要求すると**1行も取れない**。engine の `lib/delegate-send.sh` は行頭に錨を打つ形を使っているが、あちらが読んでいるのは**属性なしの capture** である。**錨の有無は capture の取り方とセットで決まる**ので、検出器を別の取り方へ移すときはそのまま持っていかない。
 
 - **属性を見る**: 取れた行の `❯` の**後ろ**が `ESC[2m`（薄い表示）で始まっていれば、それは補完の予測であって未送信の入力ではない。見るのは**後ろだけ**にする — `❯` の前に付く色の属性は場面で変わる（`ESC[39m` のことも `ESC[37m` のこともある）ので、そちらを判定材料にしない。**この署名は検証した環境で観測されたものであって、一般の契約ではない。** 描画は TUI の実装に依存し、属性の並びは結合されうる。**判定が外れたときにまず疑うのは子ではなく自分の検出器**である。
-- **送信記録と突合する**: engine の送信イベント記録（既定は `~/.claude/state/oe-events.jsonl`・`OE_EVENT_DIR` で変わる）に、そのペイン宛（`to.pane`）の送信が残っているか見る。**記録があることは実入力の裏付けになるが、記録が無いことは補完の証明にならない。** 覆えるのは engine 経由の送信だけで、**人がそのペインへ直接打った入力はイベントに残らない**。`oe-send --no-enter` も実入力を入力欄へ置くだけで送信イベントを残さないし、記録自体が best-effort で `OE_EVENT_LOG=0` や `jq` 不在では黙って欠ける。
+- **送信記録と突合する**: engine の送信イベント記録（既定は `~/.claude/state/oe-events.jsonl`・`OE_EVENT_DIR` で変わる）に、そのペイン宛（`to.pane`）の送信が残っているか見る。**記録があることは実入力の裏付けになるが、記録が無いことは補完の証明にならない。** 覆えるのは engine 経由の送信だけで、**人がそのペインへ直接打った入力はイベントに残らない**。`oe send --no-enter` も実入力を入力欄へ置くだけで送信イベントを残さないし、記録自体が best-effort で `OE_EVENT_LOG=0` や `jq` 不在では黙って欠ける。
 
 **2つが食い違ったときの扱いを非対称にする。** 「実入力がある」と結論してよいのは2つが一致したときだけで、**どちらか一方でも欠けたら不明として人へ上げる**。2本を通しても穴は残るので、**入力欄の中身を根拠に消したり報告したりしない。** 判断が要るなら人か、その子自身に聞く。
 
@@ -340,7 +338,7 @@ plan を書いて止まる委譲子にとって、止まること自体は**正�
 - `projects/orchestration-engine/bin/oe-send` — 既存ペインへの汎用送信
 - `projects/orchestration-engine/bin/oe-list` — 宛先候補の一覧
 - `projects/orchestration-engine/bin/oe-register` — 手動起動 pane の登記（自己 root / 既存 pane の委譲 link・#259）
-- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは `oe-send --to-parent` に一本化）
+- `projects/orchestration-engine/bin/oe-report` — 子→親の報告（legacy。戻しは `oe send --to-parent` に一本化）
 - `projects/orchestration-engine/lib/delegate-send.sh` — 改行拒否の 1 行 safe-send
 - `projects/orchestration-engine/lib/delegate-registry.sh` — アドレッシング（record/resolve/list/gc）
 - `implementer-contract` スキル — 実装委譲時に kick プロンプトへ組み込む契約定義

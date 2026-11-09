@@ -61,7 +61,7 @@ description: owner（判断する人）への問いを、統括（子に作業�
 
 このスキルは、統括と子の委譲の仕組み（orchestration-engine）の部品である。次のものを前提にする。
 
-- 子へ1行を送る `oe-send` と、送った1行の受領印を確かめる `oe-confirm`。どちらも PATH に無いことがあるので、呼び方は `doc-flow-guardrail` の「verb 解決規約」節で決める。
+- 子へ1行を送る `oe-send` と、送った1行の受領印を確かめる `oe-confirm`。どちらも入口から `oe send`・`oe confirm` の形で呼ぶ（入口 `oe` が PATH に無いときの呼び方は `doc-flow-guardrail` の「verb 解決規約」節）。
 - 統括のワークスペースの根にある作業層 `.oe/`（git の対象外で、3日で消えない場所）。子の worktree の中ではなく、統括のワークスペースの根の `.oe/` を使う。
 - ページの形を決める `html-one-pager`（同じフォルダの `build.py` で検証して作る）。
 
@@ -394,5 +394,5 @@ python3 '<このスキルのフォルダ>/tests/test_ledger.py'
 - **engine の独立**: このスキルは engine の部品で、#537（engine を独立したパッケージにしていく）でファイルを動かす段に、engine と一緒に動かす対象である。いまのファイルの置き場は `canonical/skills/judgment-board-flow/` で、hub の sync が配る。
 - **まだ決めていないこと**: 「動いている作業」の表の中身と更新の決まり・長くなったときの切り替える点は #539、出し忘れと取りこぼしを知らせる道具は #540、SO のまとめをいつ作るかは #329、owner が統括に前もって任せた範囲をまとめるのは #541 で扱う。
 - **統括の名前**: hub の統括は `oe-tree` に root `cockpit` として出る。issue の無い統括の問いのファイルを `.oe/question-cockpit-<n>.json` とするのは、この名前による。
-- **引き継ぎ文書**: hub の統括の引き継ぎ文書は `.oe/handoff.md` で、`oe-handoff prepare` が機械の節を書く。判断ボードの URL と2つのパスは、人が書く節（「渡らないもの」など）に書く。
+- **引き継ぎ文書**: hub の統括の引き継ぎ文書は `.oe/handoff.md` で、`oe handoff prepare` が機械の節を書く。判断ボードの URL と2つのパスは、人が書く節（「渡らないもの」など）に書く。
 - **報告の宛先**: 子が問いを送る宛先は、brief の「報告の宛先」の決まり（`doc-flow-guardrail` の委譲固定節）で決める。

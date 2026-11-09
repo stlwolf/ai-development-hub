@@ -127,8 +127,10 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 
 | 系統 | 入口 | 性質 |
 |------|------|------|
-| **本体エンジン** | `bin/oe` | 非対話・wez + `claude -p` の自律オーケストレーションループ（Phase 4 MVP）。envelope→spawn→capture→verify→monitor を1サイクル回す |
+| **本体エンジン** | `oe run`（`bin/oe-run`） | 非対話・wez + `claude -p` の自律オーケストレーションループ（Phase 4 MVP）。envelope→spawn→capture→verify→monitor を1サイクル回す |
 | **親子委譲 CLI（delegate-task 系）** | `bin/oe-delegate` / `bin/oe-send` / `bin/oe-list` | 対話セッション間の軽量な委譲プリミティブ。tmux `send-keys` の1行注入で、統括スレッド（親）→ 子 Claude N 個のスター型委譲を行う |
+
+どちらの系統の verb も、入口 `bin/oe` から `oe <verb> [引数...]` で呼ぶ（#605）。入口は同じディレクトリの `oe-<verb>` を `exec` するだけで、`~/bin` には入口 `oe` を配る（verb の一覧は `oe --help`）。
 
 ### 親子委譲 CLI（delegate-task 系）
 
@@ -158,7 +160,7 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 |--------|------|------|
 | 閲覧・軽編集 | Cursor（任意・補助） | コード閲覧・局所編集 |
 | 認知 cockpit | WezTerm 画面 + tmux | 盤面の俯瞰・TTY 直接介入・人間の追送 |
-| 機械オーケストレ | `bin/oe` + `wez` + `claude -p` / `cursor-agent -p` | 非対話の自律 1 サイクル |
+| 機械オーケストレ | `oe run`（`bin/oe-run`） + `wez` + `claude -p` / `cursor-agent -p` | 非対話の自律 1 サイクル |
 | 正本・ルール | `canonical/` + sync | ハーネス配備 |
 
 cockpit 本線を構成する運用コマンド:
@@ -210,7 +212,7 @@ orchestration-engine の MVP は「閉セッション間のリアルタイム双
 
 ### Phase 4 後の追加（post-MVP）
 
-MVP（`bin/oe` 本体）完了後、運用ドッグフードから派生した拡張（上記「親子委譲 CLI」系統）:
+MVP（`bin/oe` 本体・#605 で `bin/oe-run` に移した）完了後、運用ドッグフードから派生した拡張（上記「親子委譲 CLI」系統）:
 
 - `oe-capture` — 既存ペインの終端マーカー capture（[#109](https://github.com/stlwolf/ai-development-hub/issues/109)）
 - 親子委譲 CLI（`oe-delegate` / `oe-send` / `oe-list`）— [#138](https://github.com/stlwolf/ai-development-hub/issues/138) 設計 → [PR #143](https://github.com/stlwolf/ai-development-hub/pull/143) 再設計（疎結合化・アドレッシング）→ [#144](https://github.com/stlwolf/ai-development-hub/issues/144) 送信信頼化（観測ベース finalize）
