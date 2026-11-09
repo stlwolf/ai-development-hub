@@ -9,4 +9,4 @@ repo の直下の `scripts/` など、どの `projects/` にも属さないも�
 bash tests/scripts/test_link_project_context.sh
 ```
 
-`scripts/sync/` のテストは、この置き場ができる前から `projects/orchestration-engine/tests/` にある（`test_check_orphan_links.sh` など）。移すかは別に決める。
+`scripts/sync/` のテストなど、engine の外を検査するテストの一部は、この置き場ができる前から `projects/orchestration-engine/tests/` にある（`test_check_orphan_links.sh` など）。ここへ移す作業は #616 で行う。
