@@ -14,7 +14,7 @@ set -uo pipefail
 #   - 正本に無いスキルとリンクでないファイルは、触らずに exit 1 で知らせる
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LINKER="$REPO_ROOT/scripts/cloud/link-project-context.sh"
 
 [[ -f "$LINKER" ]] || { echo "FAIL: script not found: $LINKER"; exit 1; }

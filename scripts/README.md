@@ -86,6 +86,7 @@ symlink で配れない設定ファイル（CLI が実行時に書き換える�
 - 手元で誤って走らせないよう、`--cloud` を付けたときだけ動く。
 - Claude は `.agents/` を、Codex は `.claude/` を読まないので、両方を作っても互いに影響しない。
 - 正本から消えたものを指して壊れたリンクは外す。人が置いたファイルとほかのリンクには触らない。
+- テストは `bash tests/scripts/test_link_project_context.sh`（偽の hub を一時ディレクトリに組んで流す）。
 
 環境の setup script（Claude）と install script（Codex）には、次を書く。repo の checkout を含むディレクトリから走る前提である。
 
