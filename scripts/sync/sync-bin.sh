@@ -61,12 +61,15 @@ usage() {
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-CMD_NAMES=("so-compare" "arena-compare" "wez" "wt-pane-issue" "oe-tree" "oe-hookfire" "validate-knowledge" "knowledge-list")
+# oe は engine の入口（#605）。verb はすべて `oe <verb>` で呼ぶので、verb を足してもこの配列は触らない。
+# oe-tree と oe-hookfire は、dotfiles の .tmux.conf などが ~/bin の絶対パスで呼ぶので互換で残す。
+CMD_NAMES=("so-compare" "arena-compare" "wez" "wt-pane-issue" "oe" "oe-tree" "oe-hookfire" "validate-knowledge" "knowledge-list")
 CMD_SOURCES=(
     "${REPO_ROOT}/scripts/so-compare.sh"
     "${REPO_ROOT}/projects/arena-compare/arena-compare.sh"
     "${REPO_ROOT}/projects/wezterm-ai-mode/bin/wez"
     "${REPO_ROOT}/scripts/wt/wt-pane-issue.sh"
+    "${REPO_ROOT}/projects/orchestration-engine/bin/oe"
     "${REPO_ROOT}/projects/orchestration-engine/bin/oe-tree"
     "${REPO_ROOT}/projects/orchestration-engine/bin/oe-hookfire"
     "${REPO_ROOT}/projects/orchestration-engine/scripts/validate-knowledge.sh"
