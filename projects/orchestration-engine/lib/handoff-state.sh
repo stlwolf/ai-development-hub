@@ -29,9 +29,7 @@
 #   OE_HS_BEAT_MAX_AGE_SEC    拍動を「いまの前任のもの」と見なす鮮度の窓（既定 21600 秒）
 
 # HOME を暗黙の既定パスに使ってよいか（delegate-registry.sh と byte 一致させる・#322）。
-declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() {
-  case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac
-}
+declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 
 if   [ -n "${OE_DELEGATE_STATE_DIR+x}" ]; then :
 elif _oe_home_usable; then OE_DELEGATE_STATE_DIR="${HOME}/.claude/state/oe-delegate"

@@ -491,7 +491,7 @@ echo "[33] ロックの解放は1回だけ（二重解放で他人のロック�
 RM_LOG="$_TMP_DIR/rmdir.log"; : > "$RM_LOG"
 LC="$_TMP_DIR/lockcount.md"; mk_board "$LC"
 (
-  # shellcheck disable=SC2317  # 関数で rmdir を差し替えて数える（間接的に呼ばれる）
+  # shellcheck disable=SC2317,SC2329  # 関数で rmdir を差し替えて数える（lib の oe_seat_rewrite から間接的に呼ばれる。0.11 で SC2317 から SC2329 が分かれた）
   rmdir() { printf 'call\n' >> "$RM_LOG"; command rmdir "$@"; }
   oe_seat_rewrite "$LC" "%11" 15 "2026-09-12" "%10" "%10" >/dev/null 2>&1
 )
