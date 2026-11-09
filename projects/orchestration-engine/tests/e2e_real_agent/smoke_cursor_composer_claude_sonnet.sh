@@ -61,9 +61,9 @@ echo "OE_VERIFY_AI_MODEL: ${OE_VERIFY_AI_MODEL}"
 echo "TASK_FILE        : ${TASK_FILE}"
 echo ""
 
-# Run engine; bin/oe blocks until target → verify → cleanup 完了
+# Run engine; bin/oe-run blocks until target → verify → cleanup 完了
 set +e
-bash "${PROJECT_DIR}/bin/oe" --task-file "${TASK_FILE}"
+bash "${PROJECT_DIR}/bin/oe-run" --task-file "${TASK_FILE}"
 ENGINE_EXIT=$?
 set -e
 

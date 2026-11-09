@@ -30,6 +30,10 @@ trap 'rm -rf "$_TMP_DIR"' EXIT
 REAL_HOME="${HOME:-}"
 export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
 START_MARK="$_TMP_DIR/.start-mark"; : > "$START_MARK"
+# #605 の T-9: OE_TEST_VIA_ENTRY=1 のときだけ、verb を入口 bin/oe 越しの呼び出しに差し替える（既定では何も変えない）。
+# shellcheck source=fixtures/via-entry.sh
+. "$SCRIPT_DIR/fixtures/via-entry.sh"
+OE_HANDOFF_VERB="$(via_entry_verb "$BIN/oe-handoff" "$_TMP_DIR")"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION PARENT_TMUX_PANE OE_VITALS_LEASE_ID 2>/dev/null || true
 
 export OE_LEASE_DIR="$_TMP_DIR/lease" OE_DELEGATE_STATE_DIR="$_TMP_DIR/registry" OE_HEARTBEAT_DIR="$_TMP_DIR/heartbeat"
@@ -93,7 +97,7 @@ lib() { ( set +e
   . "$PROJECT_DIR/lib/lease.sh"; "$@" ); }
 child_lease() { # 子（%12・pid 912）の委譲の lease を親なしで作る
   local id; id="$(lib oe_lease_create delegation "#900" "$WS" "" 1)"; lib oe_lease_bind "$id" 0 912 "$S912" claude; printf '%s' "$id"; }
-take() { CLAUDE_PID="${1:-911}" CLAUDE_CODE_SESSION_ID=sid-succ TMUX_PANE=%11 bash "$BIN/oe-handoff" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1; }
+take() { CLAUDE_PID="${1:-911}" CLAUDE_CODE_SESSION_ID=sid-succ TMUX_PANE=%11 bash "$OE_HANDOFF_VERB" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1; }
 n_leases() { find "$OE_LEASE_DIR" -name '*.json' 2>/dev/null | grep -c . || true; }
 sup_of() { for f in "$OE_LEASE_DIR"/*.json; do jq -r 'select(.kind=="supervisor") | .lease_id' "$f"; done | head -1; }
 
@@ -129,7 +133,7 @@ for f in "$OE_LEASE_DIR"/*.json; do ck "記録が検査を通る（$(basename "$
 
 echo "=== (B) take: 前提を満たさないときは lease も board も動かさない ==="
 rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"; mk_board; before="$(cat "$BOARD")"
-set +e; out="$(CLAUDE_CODE_SESSION_ID=sid-succ TMUX_PANE=%11 bash "$BIN/oe-handoff" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc=$?; set -e
+set +e; out="$(CLAUDE_CODE_SESSION_ID=sid-succ TMUX_PANE=%11 bash "$OE_HANDOFF_VERB" take -w "$WS" --board "$BOARD" --handoff "$HANDOFF" 2>&1)"; rc=$?; set -e
 ck  "(1) CLAUDE_PID が無ければ 1" "1" "$rc"
 ckc "(1) 理由を言う" "$out" "CLAUDE_PID がありません"
 ck  "(1) lease を作らない" "0" "$(n_leases)"
@@ -208,7 +212,7 @@ echo "=== (E) prepare: 機械の節に lease の記録の表示が出る ==="
 rm -rf "$OE_LEASE_DIR"; mkdir -p "$OE_LEASE_DIR"
 P="$(lib oe_lease_create supervisor cockpit "$WS" "" 7)"; lib oe_lease_bind "$P" 0 910 "$S910" claude
 rm -f "$HANDOFF"
-TMUX_PANE=%10 bash "$BIN/oe-handoff" prepare -w "$WS" --out "$HANDOFF" >/dev/null 2>&1 || true
+TMUX_PANE=%10 bash "$OE_HANDOFF_VERB" prepare -w "$WS" --out "$HANDOFF" >/dev/null 2>&1 || true
 m="$(sed -n '/oe-handoff:machine:begin/,/oe-handoff:machine:end/p' "$HANDOFF")"
 ckc "lease_id と generation を出す" "$m" "- 前任の lease: \`${P}\`（generation \`7\`）"
 ckc "binding を出す" "$m" "- 前任の binding: pid \`910\`"
@@ -216,7 +220,7 @@ ckc "表示だと書く" "$m" "この節は表示である"
 nck "ペインの pid の行は出さない" "$m" "前任のペインの pid"
 fake_proc_del 910
 rm -f "$HANDOFF"
-TMUX_PANE=%10 bash "$BIN/oe-handoff" prepare -w "$WS" --out "$HANDOFF" >/dev/null 2>&1 || true
+TMUX_PANE=%10 bash "$OE_HANDOFF_VERB" prepare -w "$WS" --out "$HANDOFF" >/dev/null 2>&1 || true
 ckc "プロセスを確かめられなければそう書く" "$(cat "$HANDOFF")" "- 前任の lease: ペインのフォアグラウンドのプロセスを確かめられなかった"
 reset_proc
 
@@ -294,6 +298,11 @@ rm -f "$STUB/wez"
 echo "=== 本物に届く経路が無い ==="
 if [ -n "$REAL_HOME" ]; then
   ck "本物の lease の置き場は、このテストで書き換わっていない" "0" "$(find "$REAL_HOME/.claude/state/oe-lease" -newer "$START_MARK" 2>/dev/null | grep -c . || true)"
+fi
+
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  echo "=== 入口越しに呼んだ（#605 の T-9） ==="
+  ck "verb を入口越しに呼んだ回数が0でない" "1" "$([ "$(via_entry_count "$_TMP_DIR")" -gt 0 ] && echo 1 || echo 0)"
 fi
 
 echo ""

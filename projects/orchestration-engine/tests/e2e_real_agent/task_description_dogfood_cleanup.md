@@ -47,7 +47,7 @@ OE_VERIFY_REVIEWER_SESSION_IDS=()
 
 - `OE_VERIFY_MARKER_RE` (`lib/constants.sh`) は **変更禁止** (派生 #93 後半 nonce マーカーは MVP 後拡張)
 - `oe_verify_run_phase` の polling 構造 (二値保持判定、CB タイムアウト) は **変更禁止**
-- `bin/oe` は **変更禁止**
+- `bin/oe-run`（1サイクルの本体）は **変更禁止**
 - `schemas/` / `bin/` / `tests/e2e_real_agent/` 以下の他ファイルは **変更禁止**
 - `oe_verify_spawn` / `_oe_verify_generate_session_id` の本体 (`reviewer_session_id="..."` 行) は **変更禁止**
 - 編集は上記 (1)(2)(3) の **追加のみ** (既存行の削除や置き換えはしない、コメント以外)

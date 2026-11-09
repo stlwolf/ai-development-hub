@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test_e2e_smoke.sh — bin/oe の最小 E2E スモークテスト
+# test_e2e_smoke.sh — bin/oe-run（1サイクルの本体）の最小 E2E スモークテスト。最後に入口 bin/oe の `oe run` 越しにも1回通す（#605）
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -126,8 +126,8 @@ export PATH="${_TMP_DIR}/bin:${PATH}"
 export OE_MOCK_LOG_DIR="${_TMP_DIR}/logs"
 export OE_DATA_DIR="${_TMP_DIR}/data"
 
-echo "=== bin/oe E2E smoke ==="
-bash "${PROJECT_DIR}/bin/oe" "E2E smoke task"
+echo "=== bin/oe-run E2E smoke ==="
+bash "${PROJECT_DIR}/bin/oe-run" "E2E smoke task"
 
 state_file="$(echo "${OE_DATA_DIR}"/state/*.state.json)"
 audit_file="$(echo "${OE_DATA_DIR}"/audit/*.jsonl)"
@@ -273,6 +273,18 @@ assert_eq "notify 本文に timeouts=0" "true" \
 # Copilot #2: verification_summary に timeouts フィールドが追加される
 assert_eq "verification_summary.timeouts = 0 (正常完了時)" "0" \
   "$(jq -r '.verification_summary.timeouts' "$state_file")"
+
+# #605: 入口 bin/oe の `oe run` 越しに正常系へ着くことを1回確かめる。state/audit とモックのログは
+# 上の回と混ざらないよう、別のディレクトリに向け直す。
+echo "=== bin/oe run（入口越し）E2E smoke ==="
+mkdir -p "${_TMP_DIR}/logs-entry" "${_TMP_DIR}/data-entry"
+entry_rc=0
+OE_MOCK_LOG_DIR="${_TMP_DIR}/logs-entry" OE_DATA_DIR="${_TMP_DIR}/data-entry" \
+  bash "${PROJECT_DIR}/bin/oe" run "E2E smoke task via entry" || entry_rc=$?
+assert_eq "入口越しの oe run は exit 0" "0" "$entry_rc"
+entry_state="$(echo "${_TMP_DIR}/data-entry"/state/*.state.json)"
+assert_eq "入口越しの state file exists" "true" "$( [[ -f "$entry_state" ]] && echo true || echo false )"
+assert_eq "入口越しの state.state" "success" "$( [[ -f "$entry_state" ]] && jq -r '.state' "$entry_state" || echo missing)"
 
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="

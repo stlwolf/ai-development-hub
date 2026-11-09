@@ -30,6 +30,15 @@ export OE_LEASE_DIR="${_TMP_DIR}/lease"
 export OE_SESSION_TITLE_DIR="${_TMP_DIR}/session-title"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
+# #605 の T-9: OE_TEST_VIA_ENTRY=1 のときだけ、verb を入口 bin/oe 越しの呼び出しに差し替える（既定では何も変えない）。
+# この検査は既定の回で HOME を隔離しておらず、下の [11b] は実物の oe-selfcheck を直に呼ぶ。入口越しの回では
+# HOME も一時ディレクトリへ向け、実物の oe-selfcheck が本物の ~/.claude を読む経路を残さない（設計SO の指摘 2）。
+# shellcheck source=fixtures/via-entry.sh
+. "$SCRIPT_DIR/fixtures/via-entry.sh"
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
+fi
+OE_HANDOFF="$(via_entry_verb "$OE_HANDOFF" "$_TMP_DIR")"
 
 PASS=0; FAIL=0
 ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
@@ -559,6 +568,11 @@ ck "board を書き換えない"                     "$kd_before" "$(cat "$KD")"
 HD="$_TMP_DIR/handoff-explicit.md"; mk_board "$HD"
 oe_seat_rewrite "$HD" "%11" 15 "2026-11-08" "%10" "%10" handoff >/dev/null 2>&1 || true
 ckc "handoff を明示すると、いままでの註を書く" "$(grep -m1 -- '現統括:' "$HD")" "前任 \`%10\` は退任申告済み・停止待ち"
+
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  echo "=== 入口越しに呼んだ（#605 の T-9） ==="
+  ck "verb を入口越しに呼んだ回数が0でない" "1" "$([ "$(via_entry_count "$_TMP_DIR")" -gt 0 ] && echo 1 || echo 0)"
+fi
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
