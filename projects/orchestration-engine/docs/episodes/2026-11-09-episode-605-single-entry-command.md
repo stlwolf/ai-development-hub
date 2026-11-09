@@ -62,3 +62,32 @@ brief は2件を採用している。2件目の ID が中身と合っていな�
 
 - plan・discussion・episode を1コミットにして push し、draft の PR #617 に載せた。実装はまだ無い。
 - ゲート3 の問いは3件（入口の名前と本体の移し先・#609 の名前の付け方・この plan で進むか）を、統括のワークスペースの作業層に問いのファイルとして書き、`build.py check` を通した。報告の宛先は brief の明示（cockpit の統括）で、`oe-tree` に root `cockpit` として生きて出ることを確かめてから、報告のファイルのパスを1行送った（exit 0）。ゲート3 の承認の記録が届くまで止まる。
+
+### GATE 3: 承認
+
+- 2026-11-10 に承認の記録 `.oe/decision-605-gate3.md` が届いた。owner は Q103〜Q105（入口の名前・#609 の名前の付け方・この plan で進む）をすべて推奨どおりに選んだ。baseline は plan @ `2e0cca7`。brief の negative knowledge の ID の補正も受け付けられた。
+- 承認の時点で master は `cd0723d`（#615）に進んでいた。重なるのは `scripts/README.md` だけである。承認の基準の commit をブランチに残すため、rebase はしないことにした。
+
+### I1: 入口と本体の移動
+
+- 入口 `bin/oe` を plan の DJ-3・DJ-4 のとおりに書いた。本体は `git mv` で `bin/oe-run` に移し、使い方の文と誤りの文の前置きを `oe run` に直した。本体の説明のコメントは4行目にあったので、一覧の説明に出るよう2行目に動かした（plan の H2・補正）。
+- 検査 `tests/test_oe_entry.sh`（T-1〜T-8）を書いた。最初の実行は結果の行を出さずに止まった。`set -o pipefail` の下で `oe --help | head -1` を使ったため、`head` が先に閉じて入口が SIGPIPE で終わり、パイプ全体が非0になって `set -e` で検査が止まっていた。`sed -n 1p`（入力を最後まで読む）に替えて直した。
+- 陽性対照として、入口を2通りにわざと壊して回した。`exec` をやめて子のプロセスで呼ぶ形にすると、T-3 の pid の一致が FAIL になった。名前の検査を glob（`[a-z0-9][a-z0-9-]*`）にすると、1文字の名前と T-1 のリンクの場面が FAIL になった（glob では `[a-z0-9-]` が1文字を表し、そのあとの `*` が任意の文字列になるので、2文字以上を要求する。T-1 は1文字の偽の verb `a` で呼んでいたので、リンクの場面もそろって落ちた）。どちらも元に戻し、`cmp` で一致を確かめた。
+- 1つ目の壊し方では、子のプロセスとして残った偽の verb（無限に回る `oe-loop`）が検査の出力のパイプを握ったまま残り、検査を包んだコマンドが終わらなかった。偽の verb の出力を `/dev/null` へ向け、入口が `exec` しない壊れ方でも検査が止まらないようにした。
+- 本体の検査3本（`test_oe_task_file.sh`・`test_e2e_smoke.sh`・e2e の smoke 1本）を `bin/oe-run` に向け直し、`test_e2e_smoke.sh` には入口の `oe run` 越しに正常系へ着く回を1回足した（設計SO の指摘 9）。
+
+### I2: T-9 と配布
+
+- T-9 の対象を読み直すと、`oe-handoff take` の本人確認の場面（一致しない・`CLAUDE_PID` が無い）を持っているのは `test_lease_handoff.sh` で、plan に挙げた `test_handoff_take.sh` は席の張替を見る検査だった。3本目として足し、3本を入口越しに回す `tests/test_oe_entry_identity.sh` を書いた（plan の H1・補正）。
+- 差し替えの口 `tests/fixtures/via-entry.sh` は、`OE_TEST_VIA_ENTRY=1` のときだけ verb を「入口を exec で呼ぶだけの小さなスクリプト」に替え、呼ばれた回数を記録する。各検査は最後に回数が0でないことを確かめる。既定の回は何も変えない。
+- 陽性対照として、入口が `exec` の前に `CLAUDE_PID` を消すように壊して回すと、T-9 は本人と一致する場面・止まる場面の行がそろって FAIL になった。入口は元に戻した。
+- `sync-bin.sh` の `CMD_NAMES` に `oe` を足した。T-10 は一時的な `HOME` で配置し、`~/bin/oe` が engine の `bin/oe` を指す symlink で、そこから `oe --help` と `oe run --help` が動くことを見る。
+
+### I3: 呼び方の文
+
+- `doc-flow-guardrail` の「verb 解決規約」を、入口 `oe <verb>` で呼ぶ3つの手順に置き換えた。旧い手順が作る `$oe_bin` を指していた3か所（③の止まる条件・④の後継・⑤の復帰）は、`oe --help` の1行目に出るディレクトリの `bin/README.md` を指すように直した（設計SO の指摘 3）。
+- インラインのコードで `oe-<verb> <引数>` と書かれた呼び方は `oe <verb> <引数>` に、`delegate-task` の `"$BIN/oe-<verb>"` は `oe <verb>` に、それぞれ機械的に置き換えた。引数の無い `oe-send` のような verb の名前としての言及は残した（ファイルの名前であり、呼び方の指示ではないため）。
+- 達成を見る数: `grep -rnE '\$oe_bin|\$anchor|\$BIN/oe-|BIN="\$REPO/projects/orchestration-engine/bin"' canonical` は 0 件になった（変える前は `doc-flow-guardrail`・`delegate-task` などで該当があった）。`~/bin` に配る engine の `bin/` のコマンドは、`sync-bin.sh --list` で `oe`・`oe-tree`・`oe-hookfire` の3本になった（前は2本）。
+- 呼び方の形で残したのは `canonical/hooks/README.md` の2か所で、「どの verb のどの操作のときに名前が付くか」を説明する文である。呼び方の指示ではないので変えていない。
+
+昇格の印: `set -o pipefail` の下で、出力の多いコマンドを `| head -1` で受けると SIGPIPE で非0になり、`set -e` の検査が黙って止まる。検査で先頭の行を取るときは `sed -n 1p` を使う。engine の検査で同じ形を書く人が踏みうるので knowledge の候補である

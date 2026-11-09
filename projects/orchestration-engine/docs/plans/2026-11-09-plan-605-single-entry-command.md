@@ -3,7 +3,7 @@ id: "01M70B8NCM1XZ1HH1M3JYXN17P"
 title: "#605 engine の入口を1本のコマンドにして、verb をサブコマンドで振り分ける"
 date: 2026-11-09
 type: plan
-status: draft
+status: in-development   # ゲート3 承認は 2e0cca7 の版（2026-11-10・owner が Q103〜Q105 をすべて推奨どおり）。承認のあとの直し H1・H2（どちらも補正）は「ゲート3 のあとの変更」節
 so:
   design: weak
   impl: weak
@@ -218,19 +218,19 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 
 ### P2: 設計SO（弱・Codex の1レーン）を plan の案に当て、採否を episode に書く（完了・10件をすべて採った）
 
-### P3: plan を draft PR に載せ、ゲート3 の問いを `.oe/question-605-1.json` に書いて `build.py check` を通し、`.oe/report-605-p3.md` を書いて報告の宛先へ1行送り、止まる
+### P3: plan を draft PR に載せ、ゲート3 の問いを `.oe/question-605-1.json` に書いて `build.py check` を通し、`.oe/report-605-p3.md` を書いて報告の宛先へ1行送り、止まる（完了）
 
-### GATE 3: owner の plan 承認（承認の記録 `.oe/decision-605-gate3.md` が届いてから I に進む）
+### GATE 3: owner の plan 承認（承認の記録 `.oe/decision-605-gate3.md` が届いてから I に進む）（完了・2026-11-10・3件とも推奨どおり）
 
-### I1: 入口 `bin/oe` を書き、1サイクル本体を `bin/oe-run` に移す。T-1〜T-8 と、本体の検査3本の書き換え
+### I1: 入口 `bin/oe` を書き、1サイクル本体を `bin/oe-run` に移す。T-1〜T-8 と、本体の検査3本の書き換え（完了）
 
 ### CHECK-1: T-1〜T-8 を bash 5 と bash 3.2 で通し、shellcheck と engine の既存の検査を回す
 
-### I2: T-9（本人確認を入口越しに通す口）と、`sync-bin.sh` の配布の一覧（DJ-5）と T-10
+### I2: T-9（本人確認を入口越しに通す口）と、`sync-bin.sh` の配布の一覧（DJ-5）と T-10（完了・H1）
 
-### I3: 「verb 解決規約」と呼び方を書いた文の書き換え（DJ-6）・README と CLAUDE.md
+### I3: 「verb 解決規約」と呼び方を書いた文の書き換え（DJ-6）・README と CLAUDE.md（完了）
 
-### CHECK-2: 「達成を見る数」を測る。スキルの文に残った古い呼び方を grep で探す
+### CHECK-2: 「達成を見る数」を測る。スキルの文に残った古い呼び方を grep で探す（完了・episode の I3）
 
 ### GATE 4: 実装SO（弱・1レーン）
 
@@ -246,4 +246,14 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 
 ## ゲート3 のあとの変更
 
-（なし）
+### H1（補正・2026-11-10・I2）: T-9 の対象に `tests/test_lease_handoff.sh` を足し、まとめて回す検査を1本足した
+
+- 何を変えたか: T-9 で入口越しに回す既存の検査を、plan の2本（`test_oe_recover.sh`・`test_handoff_take.sh`）に `test_lease_handoff.sh` を足した3本にした。3本を `OE_TEST_VIA_ENTRY=1` で回し、本人確認の場面の行が PASS で出たことを確かめる検査 `tests/test_oe_entry_identity.sh` を足した。差し替えの口は `tests/fixtures/via-entry.sh` に置いた。T-10 は `tests/test_oe_entry.sh` の中に置いた。
+- 理由: 実装の前に読み直すと、`oe-handoff take` の本人確認の場面（前任のペインのプロセスが claude でない・`CLAUDE_PID` が無い、のときに lease も board も動かさない）を持っているのは `test_lease_handoff.sh` の (B) で、`test_handoff_take.sh` は席の張替を見る検査で本人確認の場面を持っていなかった。plan の2本のままだと、T-9 の「本人と一致しない」を `oe-handoff` について確かめられない。
+- 級: 補正。承認した結果（入口越しに本人確認が通る）を確かめる検査を強める直しで、step・要件・ゲート・終端は変えていない。plan の2本はそのまま回し、`test_handoff_take.sh` の入口越しの回の `HOME` の隔離（設計SO の指摘 2）も入れてある。
+
+### H2（補正・2026-11-10・I1）: `bin/oe-run` の説明の行を2行目に置いた
+
+- 何を変えたか: 本体を移すとき、`bin/oe-run` の冒頭のコメント（`# oe-run — …`）を、`set -euo pipefail` の前の2行目に動かした。
+- 理由: DJ-4 は一覧の説明を各ファイルの2行目の `# oe-<verb> — <説明>` から取る。移す前の `bin/oe` は4行目に `# oe — …` を持っていたので、そのままでは `oe --help` の一覧で `run` だけ説明が空になる。
+- 級: 補正。文言と構成の整理で、本体の挙動は変えていない（`tests/test_oe_task_file.sh` と `tests/test_e2e_smoke.sh` が通る）。
