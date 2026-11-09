@@ -3,12 +3,22 @@ id: "01M6ZZY46X9PVAZ00BC56R3T8V"
 title: "#602 master で前から落ちている engine の検査3件を直す"
 date: 2026-11-09
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/602"
     reason: "作業対象"
 tags: [tests, shellcheck]
+promotion:
+  - subject: "_oe_home_usable は lib の側を1行にそろえ、検査の数え方は変えない"
+    verdict: not-required
+    ref: "本文: `_oe_home_usable` の定義の数え方"
+  - subject: "shellcheck の source= は走らせた場所から解決され、engine の根からだと lib を読まずに誤検知が出る"
+    verdict: not-required
+    ref: "本文: SC2034（`OE_TARGET_CALLER`）"
+  - subject: "SC2329 は SC2317 の注記と並べて止める"
+    verdict: not-required
+    ref: "本文: SC2329（`tests/test_handoff_take.sh` の `rmdir()`）"
 ---
 
 # #602 master で前から落ちている engine の検査3件を直す
@@ -66,6 +76,24 @@ negative knowledge: 着手時に `knowledge-list --strict` を見直した。「
 
 ## follow-up
 
-- 検査 [5d] の grep は `_oe_home_usable() {` が1行にそろっていることを前提にしており、`{` を別の行に置いた定義を見逃す。行き先は、この検査を次に触る engine の作業である（今回は issue の範囲の外）。
-- shellcheck の `source=` が走らせた場所から解決される件は、engine の根に `.shellcheckrc`（`source-path=SCRIPTDIR`）を置けば注記なしで消せる見込みがある。engine の全ファイルの検査結果が変わるので、別の issue で扱うのがよい。
-- `tests/test_monitor.sh`・`tests/test_spawn_board.sh`・`tests/test_verify.sh` にも shellcheck 0.11 の SC2329 が出ている（どれも SC2317 の注記だけがある箇所）。brief が対象を `tests/test_handoff_take.sh` に絞っているので直していない。同じ注記の足し方で止められる。
+- 検査 [5d] の grep は `_oe_home_usable() {` が1行にそろっていることを前提にしており、`{` を別の行に置いた定義を見逃す。行き先: 統括への報告（`.oe/report-602.md`）に載せ、起票するかを統括に渡す。今回は issue の範囲の外である。
+- shellcheck の `source=` が走らせた場所から解決される件は、engine の根に `.shellcheckrc`（`source-path=SCRIPTDIR`）を置けば注記なしで消せる見込みがある。engine の全ファイルの検査結果が変わるので、別の issue で扱うのがよい。行き先: 統括への報告に載せ、起票するかを統括に渡す。
+- `tests/test_monitor.sh`・`tests/test_spawn_board.sh`・`tests/test_verify.sh` にも shellcheck 0.11 の SC2329 が出ている（どれも SC2317 の注記だけがある箇所）。brief が対象を `tests/test_handoff_take.sh` に絞っているので直していない。同じ注記の足し方で止められる。行き先: 統括への報告に載せ、#602 の追加にするか別の issue にするかを統括に渡す。
+
+## closure
+
+tier は heavy である。品質ゲートとして実装SO を明示的に走らせたことと、SC2034 の誤検知の原因を一度取り違えて撤回したことがトリガに当たる。
+
+- 次の消費者: engine の PR を出す担当（master で落ちる検査の確かめ直しが要らなくなる）と、follow-up の3件の起票を判断する統括。
+- 事実・失敗: SC2034 の原因を最初「shellcheck が関数の中の読みを数えない」と書いて注記にしたが、最小の再現で否定され、`source=` の相対パスが走らせた場所から解決されることに直した（`` 本文: SC2034（`OE_TARGET_CALLER`） ``）。issue の本文の「`-x` 無しでは出ない」も実測と食い違った（`` 本文: 変更前の master で3件が落ちることの確認 ``）。実装SO は、検査 [5d] が `{` を別の行に置いた定義を見逃すという指摘を出した（`` 本文: 実装SO（弱・1レーン） ``）。今回の変更で入った穴ではないので直さず、follow-up に回した。
+- 決定と根拠: 数え方を変えず lib を1行にした理由と陰性対照（`` 本文: `_oe_home_usable` の定義の数え方 ``）。
+- わかったこと: 実装SO が、検査 [5d] は `{` を別の行に置いた定義を見逃すという既存の限界を見つけた（`` 本文: 実装SO（弱・1レーン） ``）。
+- 残課題: 3件はすべて行き先を付けた（`` 本文: follow-up ``）。古い shellcheck が知らない番号 SC2329 の disable を無視するかは確かめていない（`` 本文: SC2329（`tests/test_handoff_take.sh` の `rmdir()`） ``）。これは追わない。このリポジトリの検査は shellcheck 0.11.0 で回しており、古い版で回す場面が無いためである。
+- 他の文書への書き戻し: issue #602 の本文の「`-x` 無しでは出ない」は実測と食い違う。行き先: 統括への報告に載せ、issue に訂正のコメントを足すかを統括に渡す。
+- 昇格の判定（frontmatter の `promotion` と同じ3件）:
+  - 「_oe_home_usable は lib の側を1行にそろえ、検査の数え方は変えない」は not-required。lib の注記がすでに byte 一致を求めており（#322）、覆すのに要るのは議論でなく実物の確認である。
+  - 「shellcheck の source= は走らせた場所から解決され、engine の根からだと lib を読まずに誤検知が出る」は not-required。decision ではなく、`.shellcheckrc` で仕組みとして消す案を follow-up に回した。仕組みで消えれば knowledge item として注意を残す必要もなくなる。起票されなかった場合は、次にこの誤検知に当たった作業で knowledge item の収穫を考える。
+  - 「SC2329 は SC2317 の注記と並べて止める」は not-required。shellcheck の版の事実で、注記の横の1行で足りる。
+- knowledge の収穫: なし（上の理由）。観測の書き戻し: brief の negative knowledge の slot は採用0件だったので、書き戻す item は無い。
+- 外部チェック（Step 4）: closure を対象に `so-compare --codex-only` を1回走らせ、`VERDICT: refuted` だった。指摘は3つで、実装SO の指摘が事実・失敗の項目に無いこと、古い shellcheck の件に行き先が無いこと、issue #602 の本文の食い違いを書き戻す行き先が無いことだった。3つとも上の項目に行き先を足して直した。統括への報告 `.oe/report-602.md` はこの closure のあとに書くので、確かめた時点ではまだ無かった。
+- status: stable（達成）。
