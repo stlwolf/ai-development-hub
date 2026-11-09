@@ -13,6 +13,10 @@ observations:
     ref: "#577"
     state: no_opportunity
     note: "PR-6 では tmux のペインで claude を起こすコマンドを書かなかった。教訓の中身は decision #577 の帰結に、D6 と retire の本人確認の前提として書き足した（適用ではなく記述）"
+  - date: 2026-11-10
+    ref: "#605"
+    state: followed
+    note: "入口 bin/oe は verb を exec で呼び、プロセスを1段も挟まない形にした。T-3 で verb の pid が呼び出し元のシェルの pid と同じであることを確かめ、T-9 で oe-recover と oe-handoff の本人確認を入口越しに回した（tests/test_oe_entry.sh・tests/test_oe_entry_identity.sh）"
 exclusions:
   - "人が対話のシェルで claude を打つ場合（シェルがジョブ制御で claude を別のプロセスグループに置くので、前面のプロセスは claude になる）"
   - "claude を exec で起こす場合（ペインの最初のプロセスも前面のプロセスも claude になる）"

@@ -13,6 +13,10 @@ observations:
     ref: "#299"
     state: no_opportunity
     note: "検査を deny-list 型にしなかった（oe-selfcheck は前提ごとの陽性対照方式）ので迂回路の論点が立たなかった"
+  - date: 2026-11-10
+    ref: "#605"
+    state: no_opportunity
+    note: "brief の採用の欄に、別の item（01M5T897YCWY13GFTADD3136EC）の要約と一緒に誤って載った ID。統括が書き違いと認めた。自由文の欄を deny-list で検証する場面はこの作業に無かった"
 exclusions:
   - "検証結果が下流の判断に使われず、表示や警告だけに留まるケース（迂回のコストが低い）"
   - "入力が閉じた集合（enum・数値・機械生成 ID）で、自由文を許していないフィールド"
