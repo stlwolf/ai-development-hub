@@ -18,11 +18,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="$SCRIPT_DIR/../../../scripts/so-compare.sh"
+TARGET="$SCRIPT_DIR/../../scripts/so-compare.sh"
 [[ -f "$TARGET" ]] || { echo "FAIL: so-compare.sh not found: $TARGET"; exit 1; }
 
 # so-compare.sh の中身が変わったらここを更新する（上のコメントを読むこと）
-EXPECTED_SHA="3026ab5817d103d49cb4ef15c96633ff30cd48d81e9b46d371970a095aaba1bd"
+EXPECTED_SHA="3b85b33b84c673b75adc991e7f13d98749f9693ac39b89b2faf7ea2f25b6d5fb"
 EXPECTED_VERSION="2026-11-08b"
 
 PASS=0; FAIL=0

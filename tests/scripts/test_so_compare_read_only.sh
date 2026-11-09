@@ -17,7 +17,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SO="$SCRIPT_DIR/../../../scripts/so-compare.sh"
+SO="$SCRIPT_DIR/../../scripts/so-compare.sh"
 [[ -x "$SO" ]] || { echo "FAIL: so-compare.sh not found: $SO"; exit 1; }
 
 _TMP="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }

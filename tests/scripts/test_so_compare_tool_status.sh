@@ -2,7 +2,7 @@
 # #448: 実際の so-compare をCLIスタブで動かす。fixtureは構成したJSONLであり実測ログではない。
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SO="${SCRIPT_DIR}/../../../scripts/so-compare.sh"
+SO="${SCRIPT_DIR}/../../scripts/so-compare.sh"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 mkdir -p "$TMP_ROOT/bin"
@@ -123,8 +123,8 @@ printf '%s\n' '{"type":"turn.completed"}' > "$CODEX_FIXTURE"
 run_case normal not_observed 0
 
 # metaの無い旧レーンと併用しても、劣化したVERDICTを採用しない。
-# shellcheck source=../lib/so-verdict.sh
-source "$SCRIPT_DIR/../lib/so-verdict.sh"
+# shellcheck source=../../projects/orchestration-engine/lib/so-verdict.sh
+source "$SCRIPT_DIR/../../projects/orchestration-engine/lib/so-verdict.sh"
 printf 'VERDICT: survived\nREASON: legacy\n' > "$TMP_ROOT/failed/cursor-stdout.txt"
 so_verdict_collect_lanes "$TMP_ROOT/failed" codex,cursor
 ck 'degraded verdict becomes error' error "${SO_VERDICT_LANE_VERDICTS[0]}"

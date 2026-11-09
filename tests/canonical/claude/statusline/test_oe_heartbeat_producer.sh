@@ -17,7 +17,7 @@ set -euo pipefail
 #     決定化する（ホストが tmux 内で回すと ambient な $TMUX を拾って結果が変わるため）。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 PRODUCER="$REPO_ROOT/canonical/claude/statusline/statusline-oe-heartbeat.sh"
 
 [[ -f "$PRODUCER" ]] || { echo "FAIL: producer not found: $PRODUCER"; exit 1; }
