@@ -146,6 +146,11 @@ done
 # 作ったディレクトリを未追跡として見せない。行が既にあれば足さない。
 mkdir -p "$(dirname "$EXCLUDE")"
 touch "$EXCLUDE"
+# 最後の行が改行で終わっていないと、足した行が前の行につながって除外が効かない。
+# $(...) は末尾の改行を落とすので、空でなければ最後の1バイトは改行ではない。
+if [[ -s "$EXCLUDE" && -n "$(tail -c 1 "$EXCLUDE")" ]]; then
+  printf '\n' >> "$EXCLUDE"
+fi
 for d in "${LINK_DIRS[@]}"; do
   grep -qxF "/$d/" "$EXCLUDE" || printf '/%s/\n' "$d" >> "$EXCLUDE"
 done

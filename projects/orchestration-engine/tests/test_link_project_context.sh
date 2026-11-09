@@ -110,7 +110,16 @@ echo "[7] repo が見つからなければ止まる"
 run --cloud --repo "$_TMP_DIR/nowhere"
 ck "exit 2" "2" "$RC"
 
-echo "[8] 本物の hub の規約のスキルが、正本にそろっている"
+echo "[8] info/exclude の最後が改行で終わっていなくても、前の行につながらない"
+fresh no-newline
+printf '# last line without newline' > "$HUB/.git/info/exclude"
+run --cloud --repo "$HUB"
+ck  "exit 0" "0" "$RC"
+ck  "git status が空" "" "$(git -C "$HUB" status --short)"
+ck  "前の行が残る" "1" "$(grep -cxF '# last line without newline' "$HUB/.git/info/exclude")"
+ck  ".claude/rules の行が独立している" "1" "$(grep -cxF '/.claude/rules/' "$HUB/.git/info/exclude")"
+
+echo "[9] 本物の hub の規約のスキルが、正本にそろっている"
 for s in "${SKILLS[@]}"; do
   ck "$s が正本にある" "yes" "$([[ -f "$REPO_ROOT/canonical/skills/$s/SKILL.md" ]] && echo yes || echo no)"
 done
