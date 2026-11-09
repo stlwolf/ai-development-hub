@@ -19,8 +19,8 @@ set -euo pipefail
 #                  錨は「再承認の前の PR の先端（362e5be）では落ち、直したあとは通る」
 #
 # 実行系: フックを起動する bash は HOOK_BASH（既定はこのテストを動かしている bash）。
-#   bash tests/test_hook_judgment.sh        # PATH の bash（5 系）
-#   /bin/bash tests/test_hook_judgment.sh   # 3.2
+#   bash tests/canonical/hooks/test_hook_judgment.sh        # PATH の bash（5 系）
+#   /bin/bash tests/canonical/hooks/test_hook_judgment.sh   # 3.2
 # 変更前のスクリプトに当てるときは HOOKS_DIR で scripts の置き場を差し替える。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

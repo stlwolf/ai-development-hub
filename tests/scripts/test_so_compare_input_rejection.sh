@@ -13,8 +13,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SO="$SCRIPT_DIR/../../../scripts/so-compare.sh"
-REFUTE="$SCRIPT_DIR/../bin/oe-refute"
+SO="$SCRIPT_DIR/../../scripts/so-compare.sh"
+REFUTE="$SCRIPT_DIR/../../projects/orchestration-engine/bin/oe-refute"
 [[ -x "$SO" ]] || { echo "FAIL: so-compare.sh not found: $SO"; exit 1; }
 
 _TMP="$(mktemp -d)" || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
@@ -165,7 +165,7 @@ ck  "PREV_MAX_BYTES=1 でも拒否しない" "0" "$RC"
 ckc "代わりに警告で伝える" "$OUT" "PREV_MAX_BYTES"
 
 echo "[14] gate 4 の指摘: oe-review も拒否を「反証」と取り違えない"
-REVIEW="$SCRIPT_DIR/../bin/oe-review"
+REVIEW="$SCRIPT_DIR/../../projects/orchestration-engine/bin/oe-review"
 if [[ -x "$REVIEW" ]]; then
   RG="$_TMP/reviewrepo"; mkdir -p "$RG"
   ( cd "$RG" && git init -q . && git config user.email t@e && git config user.name t \

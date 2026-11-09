@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOKS_DIR="$REPO_ROOT/canonical/hooks/scripts"
-OE_HOOKFIRE="$(cd "$SCRIPT_DIR/.." && pwd)/bin/oe-hookfire"
+OE_HOOKFIRE="$REPO_ROOT/projects/orchestration-engine/bin/oe-hookfire"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 
@@ -222,7 +222,7 @@ echo "[18] exit 契約: help と呼び方の誤りを broken（1）の帯から�
 # 言っておらず、「indeterminate と区別できる」とは言っていない。
 # **番号を表として固定する。** 分離が #301 で決まったとき何が動くのかを機械で分かる
 # 形にしておく。
-OE_SELFCHECK="$(cd "$SCRIPT_DIR/.." && pwd)/bin/oe-selfcheck"
+OE_SELFCHECK="$REPO_ROOT/projects/orchestration-engine/bin/oe-selfcheck"
 rc_of() { # rc_of <script> [args...] — exit code だけを返す
   bash "$@" >/dev/null 2>&1 && printf '0' || printf '%s' "$?"
 }
