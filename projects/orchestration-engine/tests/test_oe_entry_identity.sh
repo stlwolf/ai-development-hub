@@ -49,6 +49,7 @@ echo "[T-9] oe-handoff take / start（test_handoff_take.sh を入口越しに・
 run_via_entry test_handoff_take.sh
 ck    "緑で終わる" "0" "$RC"
 cksub "入口越しに呼んだ" "PASS: verb を入口越しに呼んだ回数が0でない" "$OUT"
+cksub "実物の oe-selfcheck は偽の tmux を通った" "PASS: 実物の oe-selfcheck は偽の tmux を通った" "$OUT"
 
 echo ""
 echo "RESULT: pass=$PASS fail=$FAIL"

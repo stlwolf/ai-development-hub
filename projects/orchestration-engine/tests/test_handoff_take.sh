@@ -75,8 +75,12 @@ cat > "$STUB/send" <<EOF
 printf 'send %s\n' "\$*" >> "$CALL_LOG"
 exit 0
 EOF
+# 偽の tmux は、呼ばれた引数をすべて TMUX_LOG に1行ずつ足す（[11b] で、実物の oe-selfcheck が PATH の偽物を
+# 通ったことを確かめるため。#605 の実装SO の指摘 3）。CALL_LOG とは分ける（CALL_LOG の行を数える検査があるため）。
+TMUX_LOG="$_TMP_DIR/tmux-calls.log"; : > "$TMUX_LOG"
 cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMUX_LOG"
 if [ "\${1:-}" = "split-window" ]; then printf 'split %s\n' "\$*" >> "$CALL_LOG"; printf '%%77\n'; exit 0; fi
 if [ "\${1:-}" = "list-panes" ]; then printf '%%10\n%%11\n%%12\n%%77\n'; exit 0; fi
 exit 0
@@ -260,7 +264,12 @@ shape_of() { # stdin: JSON → "array:k1,k2" / "object:k1,k2" / "" （JSON で�
 # **終了コードを経路に載せない。** oe-selfcheck も stub も 1 を返すので、`pipefail` の下で
 # パイプの後ろに置くと代入そのものが非0になり、`set -e` で**テストが中断する**（実測）。
 # 出力を先に受け取ってから形にする。
+tmux_before="$(wc -l < "$TMUX_LOG" | tr -d ' ')"
 real_sc="$("$PROJECT_DIR/bin/oe-selfcheck" --json 2>/dev/null; true)"
+tmux_after="$(wc -l < "$TMUX_LOG" | tr -d ' ')"
+# 実物の oe-selfcheck は PATH の tmux で list-panes を呼ぶ。偽物が呼ばれていれば、本物の tmux は読んでいない。
+ck  "実物の oe-selfcheck は偽の tmux を通った（本物の tmux を読まない）" "1" \
+    "$([ "$tmux_after" -gt "$tmux_before" ] && sed -n "$((tmux_before+1)),\$p" "$TMUX_LOG" | grep -q '^list-panes' && echo 1 || echo 0)"
 stub_sc="$("$STUB/selfcheck" 2>/dev/null; true)"
 real_shape="$(printf '%s' "$real_sc" | shape_of)"
 stub_shape="$(printf '%s' "$stub_sc" | shape_of)"

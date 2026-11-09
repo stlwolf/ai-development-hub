@@ -62,6 +62,8 @@ mkdir "$FAKE/oe-dirverb"
 ln -s "$FAKE/does-not-exist" "$FAKE/oe-broken"
 ln -s /bin/echo "$FAKE/oe-outlink"
 echo "readme" > "$FAKE/README.md"
+# 名前 help は入口の help に使うので、oe-help を置いても候補にならない（実装SO の指摘 2）
+printf '#!/usr/bin/env bash\n# oe-help — 偽の verb help\necho fake-help\n' > "$FAKE/oe-help"; chmod +x "$FAKE/oe-help"
 
 # 入口へのリンク（~/bin に張られた形）
 HOMEBIN="$_TMP_DIR/home/bin"
@@ -127,6 +129,15 @@ ck "verb の pid は呼び出し元のシェルの pid と同じ（1段も増え
 direct="$(CLAUDE_PID=4242 TMUX_PANE=%9 CLAUDE_CODE_SESSION_ID=sid-x OE_LEASE_ID=lease-x "$BASH" "$FAKE/oe-envs")"
 via="$(CLAUDE_PID=4242 TMUX_PANE=%9 CLAUDE_CODE_SESSION_ID=sid-x OE_LEASE_ID=lease-x "$BASH" "$OE" envs)"
 ck "環境変数は直に呼んだときと同じ（入口は足さない）" "$direct" "$via"
+# 呼び出し元が、入口の中で使う名前と同じ変数を export していても、そのまま verb に届く（実装SO の指摘 1）
+same="dir=caller-dir verb=caller-verb src=caller-src limit=caller-limit n=caller-n target=caller-target name=caller-name f=caller-f desc=caller-desc line2=caller-line2 count=caller-count re=caller-re OE_ENTRY_NAME_RE=caller-re2"
+# shellcheck disable=SC2086  # 変数の並びを単語に分けて env に渡す
+direct_same="$(env $same "$BASH" "$FAKE/oe-envs")"
+# shellcheck disable=SC2086
+via_same="$(env $same "$BASH" "$OE" envs)"
+ck "入口の中と同じ名前の export 済みの変数も、直に呼んだときと同じ" "$direct_same" "$via_same"
+cksub "export 済みの dir は呼び出し元の値のまま" "dir=caller-dir" "$via_same"
+cksub "export 済みの verb は呼び出し元の値のまま" "verb=caller-verb" "$via_same"
 cksub "CLAUDE_PID が届く" "CLAUDE_PID=4242" "$via"
 cksub "TMUX_PANE が届く" "TMUX_PANE=%9" "$via"
 cksub "CLAUDE_CODE_SESSION_ID が届く" "CLAUDE_CODE_SESSION_ID=sid-x" "$via"
@@ -164,10 +175,12 @@ LIST="$(printf '%s\n' "$OUT" | sed -n '/^verbs:/,/^$/p')"
 for v in args io exit pid a pct nodesc; do
   cksub "一覧に $v" "  $(printf '%-16s' "$v")" "$LIST"
 done
-for v in foo.bak Upper noexec dirverb broken outlink README oe; do
+for v in foo.bak Upper noexec dirverb broken outlink README oe help; do
   cknot "一覧に $v を出さない" " ${v} " "$LIST"
 done
 cksub "説明が出る" "偽の verb args" "$LIST"
+run "$OE" help
+ck "oe-help を置いても oe help は入口の help（偽の verb を呼ばない）" "0:bin: $FAKE" "$RC:$(printf '%s\n' "$OUT" | sed -n 1p)"
 cksub "説明の % は書式にならない" "100%s done %d" "$LIST"
 for extra in "help send" "--help send"; do
   # shellcheck disable=SC2086

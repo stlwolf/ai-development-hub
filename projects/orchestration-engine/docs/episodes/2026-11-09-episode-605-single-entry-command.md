@@ -91,3 +91,21 @@ brief は2件を採用している。2件目の ID が中身と合っていな�
 - 呼び方の形で残したのは `canonical/hooks/README.md` の2か所で、「どの verb のどの操作のときに名前が付くか」を説明する文である。呼び方の指示ではないので変えていない。
 
 昇格の印: `set -o pipefail` の下で、出力の多いコマンドを `| head -1` で受けると SIGPIPE で非0になり、`set -e` の検査が黙って止まる。検査で先頭の行を取るときは `sed -n 1p` を使う。engine の検査で同じ形を書く人が踏みうるので knowledge の候補である
+
+### I4: 子のペインから入口を引けるか
+
+- この作業のセッション自身が `oe-delegate` で起こされた子のペインなので、その Bash で確かめた。PATH に `~/bin` が入っており（`tmux show-environment -g PATH` にも入っている）、sync したあとは `~/bin/oe` を引ける状態である。いまは配っていないので `command -v oe` は空だった。
+- worktree から sync はかけず（`~/.claude` のリンクが worktree に張り替わるため）、scratchpad の一時ディレクトリに worktree の `bin/oe` へのリンクを置いて PATH の先頭に足した。`command -v oe` がそのリンクを指し、`oe --help` の1行目が worktree の engine の `bin/`、`oe tree` が統括と自分のノードを出した（exit 0）。
+- 実装SO に `oe review --lanes 1` を入口越しに呼ぶと、`oe-review` が「`--lanes` は 2 か 3」と exit 2 で返した。入口越しでも verb の呼び方の誤りの文と終了コードがそのまま届いた例である。brief の「実装1レーン」に合わせ、実装SO は `so-compare --codex-only` で通すことにした。
+
+### CHECK-1: 全検査を master と比べる
+
+- engine の `tests/test_*.sh` を1本ずつ、branch（実装を入れた worktree）と master（`b7e4902`・作業の起点）で回し、名前と終了コードを並べた。どちらも全件が exit 0 で、違いは branch に足した `test_oe_entry.sh` だけだった。branch の回は差し替えの口を入れる前の版だったので、口を入れた3本と本体の検査2本は既定のモードで回し直し、どれも exit 0 だった。
+
+### GATE 4: 実装SO（Codex の1レーン）と採否
+
+- `so-compare --codex-only` を1回通した（gpt-6.1-sol・1回目で返った）。出力は worktree の `tmp/so-20261110-010758/`（gitignored）。指摘は5件（must 1・should 4）で、全件を採って直した。指摘ごとの直し方は plan の H3 にあり、ここでは再掲しない。
+- must（呼び出し元が export した同名の変数を入口が書き換えて verb に渡す）は、書き手も bash 5 と 3.2 で再現した。設計SO の指摘 4 で「入口は環境変数を足さない・書き換えたものを export しない」と決め、T-3 で「入口越しと直の呼び出しで env が同じ」を確かめていたのに、見落としていた。T-3 の比較は、呼び出し元が入口の中と同じ名前の変数を持たない場合しか見ていなかったからである。bash の `local` が export の属性を引き継ぐことは、「足さない」を確かめる検査では見えない。
+- 直したあとの検査を、直す前の入口（`7c3ba7f` の版）に当てて、足した4件がそろって落ちることを確かめた（陽性対照）。
+
+昇格の印: bash で、関数の `local` は同名の export 済みの変数の export の属性を引き継ぐので、`exec` で別のプログラムに置き換わる前に代入した名前は、呼び出し元が export していればその値が書き換わって渡る。透過であるべき振り分け役は、本体のシェルで代入せずに `exec` する。knowledge の候補である

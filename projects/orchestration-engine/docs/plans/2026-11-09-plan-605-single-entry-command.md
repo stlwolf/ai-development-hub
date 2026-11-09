@@ -224,7 +224,7 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 
 ### I1: 入口 `bin/oe` を書き、1サイクル本体を `bin/oe-run` に移す。T-1〜T-8 と、本体の検査3本の書き換え（完了）
 
-### CHECK-1: T-1〜T-8 を bash 5 と bash 3.2 で通し、shellcheck と engine の既存の検査を回す
+### CHECK-1: T-1〜T-8 を bash 5 と bash 3.2 で通し、shellcheck と engine の既存の検査を回す（完了・master `b7e4902` と branch の全検査がどちらも全件 exit 0）
 
 ### I2: T-9（本人確認を入口越しに通す口）と、`sync-bin.sh` の配布の一覧（DJ-5）と T-10（完了・H1）
 
@@ -232,9 +232,9 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 
 ### CHECK-2: 「達成を見る数」を測る。スキルの文に残った古い呼び方を grep で探す（完了・episode の I3）
 
-### GATE 4: 実装SO（弱・1レーン）
+### GATE 4: 実装SO（弱・1レーン）（完了・指摘5件をすべて直した・H3）
 
-### I4: 子のペインから入口を引けることを確かめる（sync は worktree からかけず、一時ディレクトリのリンクを PATH に置いて確かめる。worktree からの sync は `~/.claude` のリンクを worktree に張り替える）
+### I4: 子のペインから入口を引けることを確かめる（完了・episode の I4。sync は worktree からかけず、一時ディレクトリのリンクを PATH に置いて確かめる。worktree からの sync は `~/.claude` のリンクを worktree に張り替える）
 
 ### I5: PR を ready にし、Copilot の1ラウンドを終え、episode を closure して報告し、止まる（マージ・worktree の掃除・issue の close・dotfiles の変更はしない）
 
@@ -257,3 +257,14 @@ Codex は、DJ-2・DJ-5・DJ-7 に妨げになる点は見つからず、固定�
 - 何を変えたか: 本体を移すとき、`bin/oe-run` の冒頭のコメント（`# oe-run — …`）を、`set -euo pipefail` の前の2行目に動かした。
 - 理由: DJ-4 は一覧の説明を各ファイルの2行目の `# oe-<verb> — <説明>` から取る。移す前の `bin/oe` は4行目に `# oe — …` を持っていたので、そのままでは `oe --help` の一覧で `run` だけ説明が空になる。
 - 級: 補正。文言と構成の整理で、本体の挙動は変えていない（`tests/test_oe_task_file.sh` と `tests/test_e2e_smoke.sh` が通る）。
+
+### H3（補正・2026-11-10・ゲート4）: 実装SO の指摘5件を直した
+
+- 出どころ: 実装SO（`so-compare --codex-only`・gpt-6.1-sol・1回目で返った・判定は must 1・should 4）。`oe review` は2レーンか3レーンしか受けないので、brief の「実装1レーン」に合わせて `so-compare` で通した。must は書き手も bash 5 と 3.2 で再現した。
+- 直したこと:
+  1. （must）呼び出し元が export した変数と同じ名前（`dir`・`verb` など）を入口が中で使うと、bash の `local` は export の属性を引き継ぐので、書き換えた値が verb に届いていた。入口の判断をすべてサブシェルの関数 `oe_entry_check` に移し、本体のシェルでは変数に何も代入せずに `exec "$(oe_entry_dir)/oe-$1" "${@:2}"` とした。T-3 に同じ名前の変数を export して呼ぶ場面を足した。
+  2. （should）`oe-help` は一覧に出るのに `oe help` が入口の help に取られて呼べなかった。名前 `help` を候補の条件で外した（一覧にも出さない）。T-5 に `oe-help` を置く場面を足した。
+  3. （should）`test_handoff_take.sh` の [11b] は、実物の `oe-selfcheck` が PATH の偽の tmux を通ったことを確かめていなかった。偽の tmux が呼ばれた引数を別のログに残し、[11b] の前後で `list-panes` が増えたことを確かめる行を足した。T-9 のまとめの検査でもその行を見る。
+  4. （should）`doc-flow-guardrail` の⑤に「子も `oe-recover` を打つ」が残っていた。`oe recover` に直した。
+  5. （should）「verb 解決規約」の「127 なら何も実行されていない」は、入口が verb の終了コードをそのまま返すので言い切れない。標準エラーの `oe: no such verb` と `command not found` で入口の側の 127 を見分け、それ以外は verb の出力を読んでから打ち直すかを決める、と直した。
+- 級: 補正。承認した要件（環境変数をそのまま渡す・一覧と振り分けを同じ条件にする・入口越しの検査の隔離・呼び方をそろえる）を満たすための直しで、step・ゲート・終端は変えていない。`help` を候補から外すのは、DJ-4 がすでに `help` を入口の help に使うと決めていたことの帰結である。

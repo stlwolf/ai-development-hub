@@ -17,17 +17,17 @@
 # - 振り分け先は、解いたディレクトリの oe-<verb> だけを見る。PATH は探さず、書き換えない。
 # - 振り分けは exec で行う。プロセスが1段も増えないので、引数・標準入出力・終了コード・シグナル・環境変数は
 #   verb と呼び出し元の間で直に受け渡される（lease の本人確認は CLAUDE_PID とペインの前面のプロセスで行う）。
-# - verb の一覧は固定で持たない。oe-<verb> のファイルを足せば、入口を触らずに呼べる。
+# - verb の一覧は固定で持たない。oe-<verb> のファイルを足せば、入口を触らずに呼べる。名前 help だけは入口の
+#   help に使うので verb の候補にしない（oe-help を置いても一覧に出さず、呼べない）。
+# - 入口の判断（場所を解く・名前を確かめる・help を出す）は、すべてサブシェルの中で行う。本体のシェルでは
+#   変数に何も代入せずに exec する。呼び出し元が export した同名の変数（dir・verb など）を入口が書き換えて
+#   verb に渡すことがないようにするためである（実装SO の指摘 1。bash の local は export の属性を引き継ぐ）。
 #
 # exit: verb の終了コードのまま / 2 呼び方の誤り / 127 その verb が無い / 1 入口が自分の場所を解けない
 #
 # 差し替えの口（テスト用）: OE_ENTRY_LINK_LIMIT（symlink をたどる段の上限・既定 40）
 
 set -uo pipefail
-
-# verb の名前の検査は、端を固定した正規表現で行う（glob で書くと1文字の名前を拒み、abc/def を通す）。
-# 正規表現は変数に入れて [[ =~ ]] の右に引用せずに置く（bash 3.2 と 5 で同じに動く形）。
-OE_ENTRY_NAME_RE='^[a-z0-9][a-z0-9-]*$'
 
 oe_entry_err() { printf 'oe: %s\n' "$1" >&2; }
 
@@ -61,11 +61,15 @@ oe_entry_dir() (
   pwd -P
 )
 
-# 振り分けの候補の条件（一覧も同じ条件を使う）。名前の検査を通り、oe-<verb> が symlink でない
+# 振り分けの候補の条件（一覧も同じ条件を使う）。名前の検査を通り、help でなく、oe-<verb> が symlink でない
 # 通常のファイルで、実行できること。
+# 名前の検査は、端を固定した正規表現で行う（glob で書くと1文字の名前を拒み、abc/def を通す）。
+# 正規表現は変数に入れて [[ =~ ]] の右に引用せずに置く（bash 3.2 と 5 で同じに動く形）。
+# この関数はサブシェル（oe_entry_check）の中からだけ呼ぶ。
 oe_entry_is_verb() {
-  local dir="$1" name="$2" f
-  [[ "$name" =~ $OE_ENTRY_NAME_RE ]] || return 1
+  local dir="$1" name="$2" f re='^[a-z0-9][a-z0-9-]*$'
+  [[ "$name" =~ $re ]] || return 1
+  [ "$name" != help ] || return 1
   f="${dir}/oe-${name}"
   [ -f "$f" ] && [ ! -L "$f" ] && [ -x "$f" ]
 }
@@ -105,7 +109,11 @@ oe_entry_help() {
   printf 'exit: verb の終了コードのまま / 2 呼び方の誤り / 127 その verb が無い / 1 入口が自分の場所を解けない\n'
 }
 
-oe_entry_main() {
+# 入口の判断をすべて行うサブシェル。終わり方で本体のシェルに伝える。
+#   0   振り分けてよい（本体のシェルが exec する）
+#   100 help を出し終えた（本体のシェルは 0 で終わる）
+#   それ以外  その終了コードで終わる（誤りの文はここで出し終えている）
+oe_entry_check() (
   local dir verb
   dir="$(oe_entry_dir)" || exit 1
 
@@ -121,7 +129,7 @@ oe_entry_main() {
         exit 2
       fi
       oe_entry_help "$dir"
-      exit 0
+      exit 100
       ;;
     -*)
       oe_entry_err "知らないオプションです: $1"
@@ -131,9 +139,8 @@ oe_entry_main() {
   esac
 
   verb="$1"
-  shift
   if oe_entry_is_verb "$dir" "$verb"; then
-    exec "${dir}/oe-${verb}" "$@"
+    exit 0
   fi
 
   oe_entry_err "no such verb: '${verb}'（oe --help で一覧）"
@@ -145,6 +152,9 @@ oe_entry_main() {
       ;;
   esac
   exit 127
-}
+)
 
-oe_entry_main "$@"
+# 本体のシェルでは変数に代入しない。判断はサブシェルに任せ、通ったら場所を解き直して exec する
+# （場所を解く処理は同じ結果を返すので、2回目も同じディレクトリになる）。
+oe_entry_check "$@" || exit $(( $? == 100 ? 0 : $? ))
+exec "$(oe_entry_dir)/oe-$1" "${@:2}"
