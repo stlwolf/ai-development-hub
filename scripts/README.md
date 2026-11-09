@@ -50,7 +50,7 @@ scripts/
 | `sync-cursor.sh` | `canonical/{commands,skills,orchestration-spec,agents}` + `canonical/hooks/{cursor.hooks.json,scripts/}` + `canonical/mcp/cursor.json` + Cursor 固有（`canonical/cursor/{rules/*.mdc,skills/,command/thread/archive-title.md}`） | `~/.cursor/` |
 | `sync-claude.sh` | `canonical/{rules,orchestration-spec,skills,agents,commands,output-styles}` + `canonical/hooks/scripts/` + `canonical/claude/statusline/`。settings は `canonical/claude/settings.harness.json` の宣言項目だけを `apply-claude-settings.sh` で `~/.claude/settings.json` へ適用。`canonical/mcp/claude.json` は `~/.claude.json` の `mcpServers` へマージ | `~/.claude/`（MCP は `~/.claude.json`） |
 | `sync-codex.sh` | `canonical/{skills,orchestration-spec}` + `canonical/codex/{AGENTS.md,commands-registry}` + `canonical/agents`（toml 生成） + `canonical/hooks/{codex.hooks.json,scripts/}`。通知・hooks の設定は `apply-codex-notify-config.sh` で `~/.codex/config.toml` へ適用 | `~/.codex/` |
-| `sync-bin.sh` | CLI スクリプト8件（`so-compare` / `arena-compare` / `wez` / `wt-pane-issue` / `oe-tree` / `oe-hookfire` / `validate-knowledge` / `knowledge-list`。リンク名と実体の対応は同スクリプトの `CMD_NAMES` / `CMD_SOURCES`） | `~/bin/` |
+| `sync-bin.sh` | CLI スクリプト9件（`so-compare` / `arena-compare` / `wez` / `wt-pane-issue` / `oe`（engine の入口） / `oe-tree` / `oe-hookfire` / `validate-knowledge` / `knowledge-list`。リンク名と実体の対応は同スクリプトの `CMD_NAMES` / `CMD_SOURCES`） | `~/bin/` |
 
 `sync-codex.sh` は実行前に `check-codex-guardrails.sh` を呼び出し、`canonical/rules` と `canonical/codex/AGENTS.md` の整合を検証する。
 

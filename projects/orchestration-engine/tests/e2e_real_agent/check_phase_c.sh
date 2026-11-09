@@ -4,7 +4,7 @@ set -euo pipefail
 # check_phase_c.sh — Step 4-4 Phase C 完了判定
 #
 # 引数: target_session_id [data_dir]
-#   target_session_id  bin/oe が生成した session ID (ULID)
+#   target_session_id  bin/oe-run が生成した session ID (ULID)
 #   data_dir          OE_DATA_DIR のパス (デフォルト: projects/orchestration-engine)
 #
 # 確認項目 (Phase C 完了条件):

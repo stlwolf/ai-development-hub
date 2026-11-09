@@ -30,6 +30,15 @@ export OE_LEASE_DIR="${_TMP_DIR}/lease"
 export OE_SESSION_TITLE_DIR="${_TMP_DIR}/session-title"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
+# #605 の T-9: OE_TEST_VIA_ENTRY=1 のときだけ、verb を入口 bin/oe 越しの呼び出しに差し替える（既定では何も変えない）。
+# この検査は既定の回で HOME を隔離しておらず、下の [11b] は実物の oe-selfcheck を直に呼ぶ。入口越しの回では
+# HOME も一時ディレクトリへ向け、実物の oe-selfcheck が本物の ~/.claude を読む経路を残さない（設計SO の指摘 2）。
+# shellcheck source=fixtures/via-entry.sh
+. "$SCRIPT_DIR/fixtures/via-entry.sh"
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
+fi
+OE_HANDOFF="$(via_entry_verb "$OE_HANDOFF" "$_TMP_DIR")"
 
 PASS=0; FAIL=0
 ck()  { if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (want=[$2] got=[$3])"; FAIL=$((FAIL+1)); fi; }
@@ -66,8 +75,12 @@ cat > "$STUB/send" <<EOF
 printf 'send %s\n' "\$*" >> "$CALL_LOG"
 exit 0
 EOF
+# 偽の tmux は、呼ばれた引数をすべて TMUX_LOG に1行ずつ足す（[11b] で、実物の oe-selfcheck が PATH の偽物を
+# 通ったことを確かめるため。#605 の実装SO の指摘 3）。CALL_LOG とは分ける（CALL_LOG の行を数える検査があるため）。
+TMUX_LOG="$_TMP_DIR/tmux-calls.log"; : > "$TMUX_LOG"
 cat > "$STUB/tmux" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMUX_LOG"
 if [ "\${1:-}" = "split-window" ]; then printf 'split %s\n' "\$*" >> "$CALL_LOG"; printf '%%77\n'; exit 0; fi
 if [ "\${1:-}" = "list-panes" ]; then printf '%%10\n%%11\n%%12\n%%77\n'; exit 0; fi
 exit 0
@@ -251,7 +264,12 @@ shape_of() { # stdin: JSON → "array:k1,k2" / "object:k1,k2" / "" （JSON で�
 # **終了コードを経路に載せない。** oe-selfcheck も stub も 1 を返すので、`pipefail` の下で
 # パイプの後ろに置くと代入そのものが非0になり、`set -e` で**テストが中断する**（実測）。
 # 出力を先に受け取ってから形にする。
+tmux_before="$(wc -l < "$TMUX_LOG" | tr -d ' ')"
 real_sc="$("$PROJECT_DIR/bin/oe-selfcheck" --json 2>/dev/null; true)"
+tmux_after="$(wc -l < "$TMUX_LOG" | tr -d ' ')"
+# 実物の oe-selfcheck は PATH の tmux で list-panes を呼ぶ。偽物が呼ばれていれば、本物の tmux は読んでいない。
+ck  "実物の oe-selfcheck は偽の tmux を通った（本物の tmux を読まない）" "1" \
+    "$([ "$tmux_after" -gt "$tmux_before" ] && sed -n "$((tmux_before+1)),\$p" "$TMUX_LOG" | grep -q '^list-panes' && echo 1 || echo 0)"
 stub_sc="$("$STUB/selfcheck" 2>/dev/null; true)"
 real_shape="$(printf '%s' "$real_sc" | shape_of)"
 stub_shape="$(printf '%s' "$stub_sc" | shape_of)"
@@ -559,6 +577,11 @@ ck "board を書き換えない"                     "$kd_before" "$(cat "$KD")"
 HD="$_TMP_DIR/handoff-explicit.md"; mk_board "$HD"
 oe_seat_rewrite "$HD" "%11" 15 "2026-11-08" "%10" "%10" handoff >/dev/null 2>&1 || true
 ckc "handoff を明示すると、いままでの註を書く" "$(grep -m1 -- '現統括:' "$HD")" "前任 \`%10\` は退任申告済み・停止待ち"
+
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  echo "=== 入口越しに呼んだ（#605 の T-9） ==="
+  ck "verb を入口越しに呼んだ回数が0でない" "1" "$([ "$(via_entry_count "$_TMP_DIR")" -gt 0 ] && echo 1 || echo 0)"
+fi
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

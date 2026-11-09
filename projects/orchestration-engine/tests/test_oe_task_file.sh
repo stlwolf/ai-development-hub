@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test_oe_task_file.sh — bin/oe --task-file の異常系 validation 検証 (#99)。
+# test_oe_task_file.sh — bin/oe-run（#605 で bin/oe から移した本体）--task-file の異常系 validation 検証 (#99)。
 #
 # 異常系 3 種 (空ファイル / 不在パス / 不正パス=ディレクトリ・非通常ファイル・権限) が
 # 明示エラー + exit 2 で弾かれ、暗黙の既定タスクフォールバックや set -e 下の cat 失敗 (exit 1) に
 # 陥らないことを検証する。異常系は spawn (oe_board_apply / wez) 到達前に return するため wez 不要
 # (temp OE_DATA_DIR で state/audit を隔離)。
 #
-# bin/oe は末尾で oe_main を無条件実行するため source できない。よって subprocess 実行で検証する。
-# 内側の bin/oe は本テストと同じ bash (${BASH}) で起動し、bash 3.2 / 5.x 両系ゲートを実効化する。
+# bin/oe-run は末尾で oe_main を無条件実行するため source できない。よって subprocess 実行で検証する。
+# 内側の bin/oe-run は本テストと同じ bash (${BASH}) で起動し、bash 3.2 / 5.x 両系ゲートを実効化する。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-OE="$PROJECT_DIR/bin/oe"
+OE="$PROJECT_DIR/bin/oe-run"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 

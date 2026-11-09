@@ -29,6 +29,10 @@ command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required"; exit 0; }
 _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
 START_MARK="$_TMP_DIR/.start-mark"; : > "$START_MARK"
+# #605 の T-9: OE_TEST_VIA_ENTRY=1 のときだけ、verb を入口 bin/oe 越しの呼び出しに差し替える（既定では何も変えない）。
+# shellcheck source=fixtures/via-entry.sh
+. "$SCRIPT_DIR/fixtures/via-entry.sh"
+VERB="$(via_entry_verb "$VERB" "$_TMP_DIR")"
 REAL_HOME="${HOME:-}"
 export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
 unset TMUX_PANE PARENT_TMUX_PANE CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION OE_BOARD_FILE 2>/dev/null || true
@@ -413,6 +417,11 @@ echo "=== 本物に届く経路が無い ==="
 ck "偽の ps と tmux が呼ばれた" "1" "$([ -s "$CALLS" ] && echo 1 || echo 0)"
 if [ -n "$REAL_HOME" ]; then
   ck "本物の置き場は書いていない" "ok" "$(find "$REAL_HOME/.claude/state/oe-lease" "$REAL_HOME/.claude/state/oe-delegate" "$REAL_HOME/.claude/state/oe-events.jsonl" -newer "$START_MARK" 2>/dev/null | grep -c . | sed 's/^0$/ok/')"
+fi
+
+if [ "${OE_TEST_VIA_ENTRY:-}" = "1" ]; then
+  echo "=== 入口越しに呼んだ（#605 の T-9） ==="
+  ck "verb を入口越しに呼んだ回数が0でない" "1" "$([ "$(via_entry_count "$_TMP_DIR")" -gt 0 ] && echo 1 || echo 0)"
 fi
 
 echo ""

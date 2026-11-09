@@ -1,150 +1,160 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# oe — engine の入口。`oe <verb> [引数...]` で、同じディレクトリの oe-<verb> を exec する（#605）
+#
+# usage:
+#   oe <verb> [引数...]     同じディレクトリの oe-<verb> を、引数をそのままにして exec する
+#   oe -h | --help | help   使い方と verb の一覧を標準出力に出す（1行目は engine の bin/ の実体のパス）
+#   oe                      使い方と verb の一覧を標準エラーに出す（exit 2）
+#
+#   verb の使い方は `oe <verb> --help` で見る（入口は --help を verb へそのまま渡す）。
+#   1サイクルの自律オーケストレーションの本体は `oe run`（bin/oe-run）である。
+#
+# 設計の正本は projects/orchestration-engine/docs/plans/2026-11-09-plan-605-single-entry-command.md（DJ-3・DJ-4）。
+#
+# - 自分の実体のディレクトリは、symlink を1段ずつたどって解く（readlink に -f を付けない。bash 3.2 と
+#   readlink -f の無い macOS で動かすため）。解く処理はサブシェルの中で行い、呼び出し元の作業ディレクトリと
+#   環境を変えない。CDPATH はそのサブシェルの中で空にする（cd が行き先を標準出力に出して混ざるため）。
+# - 振り分け先は、解いたディレクトリの oe-<verb> だけを見る。PATH は探さず、書き換えない。
+# - 振り分けは exec で行う。プロセスが1段も増えないので、引数・標準入出力・終了コード・シグナル・環境変数は
+#   verb と呼び出し元の間で直に受け渡される（lease の本人確認は CLAUDE_PID とペインの前面のプロセスで行う）。
+# - verb の一覧は固定で持たない。oe-<verb> のファイルを足せば、入口を触らずに呼べる。名前 help だけは入口の
+#   help に使うので verb の候補にしない（oe-help を置いても一覧に出さず、呼べない）。
+# - 入口の判断（場所を解く・名前を確かめる・help を出す）は、すべてサブシェルの中で行う。本体のシェルでは
+#   変数に何も代入せずに exec する。呼び出し元が export した同名の変数（dir・verb など）を入口が書き換えて
+#   verb に渡すことがないようにするためである（実装SO の指摘 1。bash の local は export の属性を引き継ぐ）。
+#
+# exit: verb の終了コードのまま / 2 呼び方の誤り / 127 その verb が無い / 1 入口が自分の場所を解けない
+#
+# 差し替えの口（テスト用）: OE_ENTRY_LINK_LIMIT（symlink をたどる段の上限・既定 40）
 
-# oe — orchestration-engine エントリポイント
+set -uo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LIB_DIR="${PROJECT_DIR}/lib"
-export PROJECT_DIR
+oe_entry_err() { printf 'oe: %s\n' "$1" >&2; }
 
-# source lib/*.sh
-# shellcheck source=../lib/constants.sh
-source "${LIB_DIR}/constants.sh"
-# shellcheck source=../lib/session.sh
-source "${LIB_DIR}/session.sh"
-# shellcheck source=../lib/envelope.sh
-source "${LIB_DIR}/envelope.sh"
-# shellcheck source=../lib/spawn.sh
-source "${LIB_DIR}/spawn.sh"
-# shellcheck source=../lib/capture.sh
-source "${LIB_DIR}/capture.sh"
-# shellcheck source=../lib/audit.sh
-source "${LIB_DIR}/audit.sh"
-# shellcheck source=../lib/verify.sh
-source "${LIB_DIR}/verify.sh"
-# shellcheck source=../lib/monitor.sh
-source "${LIB_DIR}/monitor.sh"
-# shellcheck source=../lib/cleanup.sh
-source "${LIB_DIR}/cleanup.sh"
-
-export OE_CURRENT_SESSION_ID=""
-trap oe_cleanup EXIT INT TERM
-
-# oe_generate_session_id は lib/session.sh に移設（bin/oe-capture と共有）
-
-oe_usage() {
-  cat >&2 <<'EOF'
-usage: oe [-h|--help] [--task-file <path>] [<task-description>]
-
-  1 サイクルの自律オーケストレーション（envelope→spawn→capture→verify→monitor）。
-  非対話・wez + AI CLI（claude -p 等）。
-
-  <task-description>  子ペインへ送るタスク（1行または複数語。改行を含む長文は --task-file を使う）
-  --task-file <path>  タスク記述をファイルから読み込む（Markdown の改行・特殊文字を安全に渡す）
-  -h, --help          このヘルプを表示
-
-exit: 0 → 正常終了（-h / --help もここ）
-      2 → usage エラー（unknown option・余分な引数・--task-file の異常系）
-      1 → monitor / verify 等の実行時失敗（1 サイクル起動後）
-
---task-file の異常系は暗黙にフォールバックせず、明示エラーを stderr に出して exit 2 で弾く。
-EOF
-}
-
-oe_main() {
-  # E2E タスク説明（未指定時は既定値）
-  # Step 4-4 Phase A 反映 (F-5): --task-file <path> オプションを受け付け、ファイル内容を読み込む。
-  # Markdown を shell expansion 経由で渡す破綻 (改行 / 特殊文字) を回避。
-  # 後方互換: bin/oe "<text>" 形式も引き続き動作。
-  local task_description=""
-  while [[ "${1:-}" == -* ]]; do
-    case "$1" in
-      --task-file)
-        # --task-file 異常系の仕様 (#99): 空 / 不在 / 不正パス (ディレクトリ・非通常ファイル・権限) を
-        # 明示エラー + exit 2 (usage エラー) で弾く。文言・exit code は bin/oe-capture の validation
-        # 規約に揃える。これにより「空ファイルが暗黙に既定タスクへフォールバック」「読めないファイルが
-        # set -e 下の cat 失敗で exit 1 + 生エラー」といった暗黙挙動を排除する。
-        local task_file="${2:-}"
-        if [[ -z "$task_file" ]]; then
-          echo "oe: --task-file requires a path argument" >&2
-          return 2
-        fi
-        if [[ ! -e "$task_file" ]]; then
-          echo "oe: --task-file: file not found: $task_file" >&2
-          return 2
-        fi
-        if [[ -d "$task_file" ]]; then
-          echo "oe: --task-file: path is a directory, not a file: $task_file" >&2
-          return 2
-        fi
-        if [[ ! -f "$task_file" ]]; then
-          echo "oe: --task-file: not a regular file: $task_file" >&2
-          return 2
-        fi
-        if [[ ! -r "$task_file" ]]; then
-          echo "oe: --task-file: file not readable: $task_file" >&2
-          return 2
-        fi
-        if [[ ! -s "$task_file" ]]; then
-          echo "oe: --task-file: file is empty: $task_file" >&2
-          return 2
-        fi
-        task_description="$(cat "$task_file")"
-        shift 2
-        ;;
-      -h|--help)
-        oe_usage
-        return 0
-        ;;
-      *)
-        echo "oe: unknown option: $1" >&2
-        oe_usage
-        return 2
-        ;;
+# 自分の実体のディレクトリを出す。失敗したら誤りを出して非0を返す。
+oe_entry_dir() (
+  CDPATH=''
+  local src limit n target
+  src="${BASH_SOURCE[0]:-$0}"
+  limit="${OE_ENTRY_LINK_LIMIT:-40}"
+  case "$limit" in ''|*[!0-9]*) limit=40 ;; esac
+  n=0
+  while [ -L "$src" ]; do
+    n=$((n + 1))
+    if [ "$n" -gt "$limit" ]; then
+      oe_entry_err "自分の場所を解けません: symlink の段が上限（${limit}）を超えました: ${BASH_SOURCE[0]:-$0}"
+      return 1
+    fi
+    if ! target="$(readlink "$src")"; then
+      oe_entry_err "自分の場所を解けません: リンクを読めません: ${src}"
+      return 1
+    fi
+    case "$target" in
+      /*) src="$target" ;;
+      *)  src="$(dirname "$src")/${target}" ;;
     esac
   done
-  if [[ -n "$task_description" && $# -gt 0 ]]; then
-    echo "oe: unexpected argument: $1" >&2
-    oe_usage
-    return 2
+  if ! cd -P "$(dirname "$src")" 2>/dev/null; then
+    oe_entry_err "自分の場所を解けません: ディレクトリに入れません: $(dirname "$src")"
+    return 1
   fi
-  task_description="${task_description:-${*:-Run orchestration task}}"
+  pwd -P
+)
 
-  # 3) state/audit ディレクトリ準備
-  mkdir -p "${OE_STATE_DIR}" "${OE_AUDIT_DIR}"
-
-  # 4) セッションID確定
-  OE_CURRENT_SESSION_ID="$(oe_generate_session_id)"
-  local pane_id
-
-  # 5) 盤面初期化（#175: wez layout で宣言的に board を構築）→ spawn 準備 → envelope 生成 → send
-  #    oe_board_apply は 1 サイクルで 1 回だけ。target は pool[0]、verify の reviewer は pool[1] を消費する
-  #    （盤面初期化と都度 spawn の責務分離）。board 無効/失敗時は従来の都度 split にフォールバックする。
-  oe_board_apply
-  oe_spawn_prepare_pane
-  pane_id="$OE_SPAWN_PANE_ID"
-  oe_envelope_create "$OE_CURRENT_SESSION_ID" "$pane_id" "$task_description" "$PROJECT_DIR" "$OE_CB_TIMEOUT"
-  # Step 4-4 Phase A 反映: env var OE_TARGET_AI_CLI / OE_TARGET_AI_MODEL は oe_spawn_send 内のデフォルトで参照される
-  oe_spawn_send "$OE_CURRENT_SESSION_ID" "$pane_id" "$OE_ENVELOPE_PATH"
-
-  # 6) monitor loop
-  local monitor_rc
-  if oe_monitor_loop "$OE_CURRENT_SESSION_ID" "$pane_id"; then
-    monitor_rc=0
-  else
-    monitor_rc=$?
-  fi
-
-  # monitor が INT/TERM trap を解除するため、EXIT 経路の cleanup を再確保
-  trap oe_cleanup EXIT INT TERM
-
-  # 7) Step 4-3 Phase E: 検証フェーズ (CB / interrupt 発動時はスキップ)
-  if [[ "$monitor_rc" -eq 0 ]]; then
-    oe_verify_run_phase "$OE_CURRENT_SESSION_ID" "$pane_id"
-  fi
-
-  # 8) monitor 戻り値を尊重 (検証フェーズの結果は KVS / audit に記録、engine 自体は停止しない)
-  return "$monitor_rc"
+# 振り分けの候補の条件（一覧も同じ条件を使う）。名前の検査を通り、help でなく、oe-<verb> が symlink でない
+# 通常のファイルで、実行できること。
+# 名前の検査は、端を固定した正規表現で行う（glob で書くと1文字の名前を拒み、abc/def を通す）。
+# 正規表現は変数に入れて [[ =~ ]] の右に引用せずに置く（bash 3.2 と 5 で同じに動く形）。
+# この関数はサブシェル（oe_entry_check）の中からだけ呼ぶ。
+oe_entry_is_verb() {
+  local dir="$1" name="$2" f re='^[a-z0-9][a-z0-9-]*$'
+  [[ "$name" =~ $re ]] || return 1
+  [ "$name" != help ] || return 1
+  f="${dir}/oe-${name}"
+  [ -f "$f" ] && [ ! -L "$f" ] && [ -x "$f" ]
 }
 
-oe_main "$@"
+# verb の一覧。説明は2行目が「# oe-<verb> — <説明>」の形のときだけ出す（飾りなので、読めなくても一覧は出す）。
+oe_entry_list() {
+  local dir="$1" f name line2 desc count=0
+  for f in "${dir}"/oe-*; do
+    name="${f##*/oe-}"
+    oe_entry_is_verb "$dir" "$name" || continue
+    desc=''
+    if [ -r "$f" ]; then
+      line2="$(sed -n '2p' "$f" 2>/dev/null)" || line2=''
+      case "$line2" in
+        "# oe-${name} — "*) desc="${line2#"# oe-${name} — "}" ;;
+      esac
+    fi
+    printf '  %-16s %s\n' "$name" "$desc"
+    count=$((count + 1))
+  done
+  if [ "$count" -eq 0 ]; then
+    printf '  （verb がありません: %s に oe-<verb> の実行できるファイルが無い）\n' "$dir"
+  fi
+}
+
+oe_entry_help() {
+  local dir="$1"
+  printf 'bin: %s\n' "$dir"
+  printf '\n'
+  printf 'usage: oe <verb> [引数...]\n'
+  printf '       oe -h | --help | help\n'
+  printf '\n'
+  printf 'verbs:\n'
+  oe_entry_list "$dir"
+  printf '\n'
+  printf 'verb の使い方は oe <verb> --help で見ます。\n'
+  printf 'exit: verb の終了コードのまま / 2 呼び方の誤り / 127 その verb が無い / 1 入口が自分の場所を解けない\n'
+}
+
+# 入口の判断をすべて行うサブシェル。終わり方で本体のシェルに伝える。
+#   0   振り分けてよい（本体のシェルが exec する）
+#   100 help を出し終えた（本体のシェルは 0 で終わる）
+#   それ以外  その終了コードで終わる（誤りの文はここで出し終えている）
+oe_entry_check() (
+  local dir verb
+  dir="$(oe_entry_dir)" || exit 1
+
+  if [ "$#" -eq 0 ]; then
+    oe_entry_help "$dir" >&2
+    exit 2
+  fi
+
+  case "$1" in
+    -h|--help|help)
+      if [ "$#" -gt 1 ]; then
+        oe_entry_err "verb の使い方は oe <verb> --help で見ます（例: oe send --help）"
+        exit 2
+      fi
+      oe_entry_help "$dir"
+      exit 100
+      ;;
+    -*)
+      oe_entry_err "知らないオプションです: $1"
+      oe_entry_help "$dir" >&2
+      exit 2
+      ;;
+  esac
+
+  verb="$1"
+  if oe_entry_is_verb "$dir" "$verb"; then
+    exit 0
+  fi
+
+  oe_entry_err "no such verb: '${verb}'（oe --help で一覧）"
+  case "$verb" in
+    oe-*)
+      if oe_entry_is_verb "$dir" "${verb#oe-}"; then
+        oe_entry_err "前置きの oe- は付けません。oe ${verb#oe-} と打ちます"
+      fi
+      ;;
+  esac
+  exit 127
+)
+
+# 本体のシェルでは変数に代入しない。判断はサブシェルに任せ、通ったら場所を解き直して exec する
+# （場所を解く処理は同じ結果を返すので、2回目も同じディレクトリになる）。
+oe_entry_check "$@" || exit $(( $? == 100 ? 0 : $? ))
+exec "$(oe_entry_dir)/oe-$1" "${@:2}"
