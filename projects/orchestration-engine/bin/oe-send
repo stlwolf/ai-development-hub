@@ -25,7 +25,6 @@ source "${BIN_DIR}/../lib/delegate-registry.sh"
 source "${BIN_DIR}/../lib/lease.sh"
 # shellcheck source=../lib/target-resolve.sh
 source "${BIN_DIR}/../lib/target-resolve.sh"
-# shellcheck disable=SC2034  # lib/target-resolve.sh の _oe_target_say が読む。engine の根から走らせると source= の相対パスが lib に届かず誤検知になる
 OE_TARGET_CALLER="oe-send"
 
 usage() {
