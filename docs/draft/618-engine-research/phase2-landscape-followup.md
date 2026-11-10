@@ -18,7 +18,8 @@
   - CAO の `CHANGELOG.md` も先頭 10 万字（Unreleased 節が中心）までしか読めていない。v1.0.2 → v2.3.0 の間の版ごとの変更は未確認
   - agent-orchestrator が ComposioHQ から別の組織へ移った時期と理由は、一次情報で見つからなかった
   - OpenClaw の最新版（2026.11.2）のリリースノート本文は外部リンクで、開いていない
-  - OpenHands の SDK 側のサブエージェント委譲、Orca（PentAGI と同じ個票にあった Rust のツール）は調べていない
+  - OpenHands の SDK のリポジトリ（`OpenHands/software-agent-sdk`）は README だけ開いた。サブエージェントの委譲の記述は無く、SDK の文書サイト（`docs.openhands.dev/sdk`）は開いていない
+  - TAKT の manager / director の設計文書は、推測したパス（`docs/manager.md`）が 404 で、README の説明までしか取れていない
   - Claude Code 公式機能の時系列と仕様の要点は、同じディレクトリの `phase2-external.md` の2章が扱っている。本書では、各ツールが公式機能へどう追従したかを見るのに必要な範囲だけを確かめた
 
 ## 1. 一覧（まず全体を見る）
@@ -84,8 +85,8 @@
 
 | 観点 | 2026-02（v0.22） | 現在（v0.74） | 根拠 |
 | --- | --- | --- | --- |
-| 用語 | piece / movement（音楽の比喩） | workflow / step に統一。`workflows/` が正式なディレクトリ名。改名の時期は未確認 | `[verified]` README |
-| 複数ベンダー | Claude Code / Codex / OpenCode の3種 | 11種。SDK 系が `claude-sdk`・`codex`・`opencode`・`pi`・`deepseek-harness`、CLI 系が `claude-headless`・`claude-terminal`・`copilot`・`cursor`・`kiro`・`devin` | `[verified]` README |
+| 用語 | piece / movement（音楽の比喩） | workflow / step に統一。0.34.0（2026-04-03）で改名を破壊的変更として入れ（旧キーは互換の別名として残した）、0.36.0（2026-04-15）で旧用語を完全に廃止した。`workflows/` が正式なディレクトリ名 | `[verified]` CHANGELOG、README |
+| 複数ベンダー | Claude Code / Codex / OpenCode の3種 | 11種。SDK 系が `claude-sdk`・`codex`・`opencode`・`pi`・`deepseek-harness`、CLI 系が `claude-headless`・`claude-terminal`・`copilot`・`cursor`・`kiro`・`devin`。加わった版は cursor が 0.27.0（2026-02-27）、copilot が 0.28.0（2026-03-02）、claude-terminal が 0.42.0（2026-05-20）、kiro が 0.44.0（2026-06-03）、pi が 0.58.0（2026-08-11）、deepseek-harness が 0.60.0（2026-08-18）、devin が 0.74.0（2026-11-02） | `[verified]` CHANGELOG、README |
 | Claude の動かし方 | Claude Code SDK | 0.68.0（2026-10-03）で `claude-sdk`（Claude Agent SDK）が既定に。ヘッドレス CLI は `claude-headless` に改名。`claude-terminal` は「対話の端末セッションで Claude Code を動かす。tmux が要る」とだけ説明がある | `[verified]` CHANGELOG、README |
 | 依存の持ち方 | 同梱 | 0.71.0（2026-10-15）でプロバイダーの SDK を同梱しなくなり、`takt install <provider>` で入れる | `[verified]` CHANGELOG |
 | 常駐の統括 | なし（`takt watch` がキューを見るだけ） | 0.73.0（2026-10-27）で `takt manager`（目標について会話する TUI。裏で常駐デーモンが動く。AI の権限判定つき）。0.74.0 で `takt director`（複数の manager をまたいで目標と未回答の問いを見回り、人に知らせる）と Slack 連携。README は実験的と明記 | `[verified]` CHANGELOG、README |
@@ -250,7 +251,7 @@
   - 既定では OpenHands 自身のエージェントを動かすが、ACP 対応のエージェントも動かせる。README は Claude Code、Codex、Gemini CLI、Pi、OpenCode を挙げる
   - Automations（スケジュールや webhook で起動するワークフロー。Slack、GitHub、Linear、Notion、Datadog と連携）が、直近のリリースでいちばん手が入っている領域である
   - リポジトリは4つ（OpenHands、software-agent-sdk、typescript-client、automation）に分かれ、Agent Server の API は SDK 側にある
-  - サブエージェントの委譲は README と直近4件のリリースノートに出てこない（SDK 側は未確認）
+  - サブエージェントの委譲は README と直近4件のリリースノートに出てこない。SDK のリポジトリ（スター約 1.4k）の README にも、委譲・ACP・会話の永続化・stuck 検出・人の確認の記述は無い（文書サイトは未確認） `[verified]` https://github.com/OpenHands/software-agent-sdk
 - 読み方 `[speculation]`
   - 「自分のエージェントをサンドボックスで動かす」製品から、「他社の CLI も ACP で受け入れる管制画面」へ重心が移った。agent-orchestrator と同じ方向である
 
@@ -321,6 +322,8 @@
 | Agent Squad | 低調。約 7.8k、TypeScript 1.1.5 | `awslabs/agent-squad` から `2FastLabs/agent-squad` へ移った（「New home」の告知）。最終コミットは 2026-10-02。スターはほぼ横ばい | `[verified]` https://github.com/awslabs/agent-squad 、https://github.com/2FastLabs/agent-squad/commits/main |
 | PentAGI | 活発。約 33.9k、2.2.0 | スターが約5倍。2.2.0 はサンドボックス隔離の作り直し（CVE 対応）、Web 検索ツールの統合など | `[verified]` https://github.com/vxcontrol/pentagi 、https://github.com/vxcontrol/pentagi/releases |
 
+PentAGI と同じ個票にあった Orca（`santiagomed/orca`、Rust の LLM パイプライン）は、スター 286、最終コミットが 2024-03-14 で、2026-02 の「開発停止」のままである `[verified]` https://github.com/santiagomed/orca/commits/main
+
 汎用フレームワークの群に共通する動き `[speculation]`
 
 - 「途中で止めて、あとで続きから」が各社の看板になった（LangGraph の厳格な resume、Mastra の durable agents、PydanticAI の durable execution、OpenAI の sessions と sandbox agents）
@@ -373,4 +376,4 @@
 - CAO の「Enter の送り直し」と「質問ダイアログ中の保留」の実装（`CHANGELOG.md` の Unreleased 節と `clients/tmux.py`）。send-keys の受領確認の比較に要る
 - agent-orchestrator の移転の経緯と、安定版の最新。`docs/architecture.md` の「controller handoff」の節（制御の引き継ぎを起動時に突き合わせる処理）は、世代交代の実装の参考になるかもしれない
 - 公式の cross-session messaging のソケットへ hook から書く経路を、利用者のエンジンの受領の印の代わりに使えるかの実機確認（`phase2-external.md` の 2.2 と合わせて）
-- OpenHands の SDK 側のサブエージェント委譲、Orca の現状（今回は未調査）
+- OpenHands の SDK の文書サイトにあるサブエージェント委譲の仕様（今回は README までで、記述は見つからなかった）
