@@ -44,6 +44,8 @@ TAB_ROW_MAX = 6
 # 本文のタブのパネル。class で見分け、ブラウザが暗黙に閉じない要素（section・div）だけを使わせる。
 TAB_PANEL_CLASS = "hp-tabpanel"
 TAB_PANEL_TAGS = ("section", "div")
+# 本文の id の hp- の頭（E-N4）。タブの有無に関係なく止める。
+HP_ID_MSG = '本文の id "%s" が hp- で始まる（hp- は build.py が描く要素の id の頭なので、本文には使わない）'
 # 本文の一番外に、パネルのほかに置ける要素（中身を出さないもの）。
 TAB_BODY_TOP_TAGS = ("style", "script")
 # 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
@@ -377,6 +379,8 @@ class _BodyScan(html.parser.HTMLParser):
         self.stack = []     # 開いている要素の (名前, パネルか)
         self.panels = []    # 本文に書かれたパネルの (id か None, 要素の名前)。本文の並び
         self.ids = []       # 本文の要素の id（並び・重なりを含む）
+        # ブラウザが使う id（同じ属性が2回ある要素も含め、前の値）。タブの無いページの hp- の頭の検査（E-N4）に使う
+        self.browser_ids = []
         self.problems = []  # 誤りの文（タブのあるページでだけ使う）
         self.nested = False  # パネルの入れ子を知らせたか（外のパネルの閉じ忘れを、終わりで重ねて知らせない）
 
@@ -387,6 +391,10 @@ class _BodyScan(html.parser.HTMLParser):
                 self.stack.append((tag, False))
             return
         names = [k for k, _ in attrs]
+        # 同じ属性が2回あっても、ブラウザは前の値を使う。その id は、ほかの判定から外す要素でも文書に残る
+        first_id = next((v for k, v in attrs if k == "id"), None)
+        if first_id is not None:
+            self.browser_ids.append(first_id)
         twice = sorted({k for k in names if names.count(k) > 1})
         if twice:
             # この要素はパネルか・id は何かが書き手の意図とずれうるので、ほかの判定には使わない（同じ原因の誤りを重ねない）
@@ -1175,6 +1183,11 @@ class Validator:
                     self.add("E-N3", "sections[%d].tab" % i, "tabs の無いページの部品に tab がある（タブで分けるなら、ページに tabs を書く）")
             if body is not None and body.panels:
                 self.add("E-N3", "--body", "本文に %s があるのに、ページに tabs が無い（タブで分けるなら、ページに tabs を書く）" % TAB_PANEL_CLASS)
+            # タブの無いページでも、描く要素（答えの保存の表示 hp-store など）の id と取り違えないように、hp- の頭は止める
+            if body is not None:
+                for v in sorted(set(body.browser_ids)):
+                    if v.startswith("hp-"):
+                        self.add("E-N4", "--body", HP_ID_MSG % v)
             return
         # データの部品の側: 割り当てと、同じタブの部品を続けて並べること
         section_tab = {}  # 部品の位置 -> 引けるタブの key
@@ -1232,7 +1245,7 @@ class Validator:
                 # パネルの id の2回目はパネルの重なり（E-N3）で出しているので、id の重なりには数えない
                 panel_n = sum(1 for pid, _ in body.panels if pid == v)
                 if v.startswith("hp-"):
-                    self.add("E-N4", "--body", '本文の id "%s" が hp- で始まる（hp- は build.py が描く要素の id の頭なので、本文には使わない）' % v)
+                    self.add("E-N4", "--body", HP_ID_MSG % v)
                 elif v in tab_keys and counts[v] > panel_n:
                     self.add("E-N4", "--body", '本文の id "%s" がタブの key と重なる（その名前は、タブのパネルの id と URL の # に使う）' % v)
                 elif counts[v] > 1 and panel_n < 2:
@@ -1818,45 +1831,6 @@ def display_texts(data):
                 if isinstance(it, dict):
                     for f in ("text", "reason"):
                         add("%s.items[%d].%s" % (sp, j, f), it.get(f))
-    return out
-    add("why", data.get("why"))
-    if isinstance(data.get("request"), dict):
-        for f in REQUEST_FIELDS:
-            add(join("request", f), data["request"].get(f))
-    secs = data.get("sections")
-    for i, sec in enumerate(secs if isinstance(secs, list) else []):
-        if not isinstance(sec, dict):
-            continue
-        sp = "sections[%d]" % i
-        add(join(sp, "title"), sec.get("title"))
-        if sec.get("type") == "decisions" and isinstance(sec.get("cards"), list):
-            for j, c in enumerate(sec["cards"]):
-                if not isinstance(c, dict):
-                    continue
-                cp = "%s.cards[%d]" % (sp, j)
-                for f in ("title", "reason"):
-                    add(join(cp, f), c.get(f))
-                add_points(join(cp, "points"), c.get("points"))
-                for k, b in enumerate(c.get("blocks") if isinstance(c.get("blocks"), list) else []):
-                    if isinstance(b, dict):
-                        add("%s.blocks[%d].title" % (cp, k), b.get("title"))
-                        add_points("%s.blocks[%d].points" % (cp, k), b.get("points"))
-                # 推奨の選択肢の文は、カードの推奨の行で変換される（選択肢のボタンは変換しない）。
-                for k, o in enumerate(c.get("options") if isinstance(c.get("options"), list) else []):
-                    if isinstance(o, dict) and o.get("key") == c.get("recommend"):
-                        add("%s.options[%d].label" % (cp, k), o.get("label"))
-        elif sec.get("type") == "findings" and isinstance(sec.get("items"), list):
-            for j, it in enumerate(sec["items"]):
-                if isinstance(it, dict):
-                    for f in ("text", "reason"):
-                        add("%s.items[%d].%s" % (sp, j, f), it.get(f))
-        elif sec.get("type") == "table" and isinstance(sec.get("columns"), list) and isinstance(sec.get("rows"), list):
-            text_keys = [c.get("key") for c in sec["columns"] if isinstance(c, dict) and c.get("type", "text") == "text"]
-            for j, row in enumerate(sec["rows"]):
-                if isinstance(row, dict):
-                    for k in text_keys:
-                        if isinstance(k, str):
-                            add("%s.rows[%d].%s" % (sp, j, k), row.get(k))
     return out
 
 
