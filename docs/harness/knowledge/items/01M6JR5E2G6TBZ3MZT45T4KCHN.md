@@ -11,7 +11,15 @@ exclusions:
 source:
   ref: "docs/harness/episodes/2026-11-04-episode-565-humanize-ja-skill.md"
 landing: nl
-observations: []
+observations:
+  - date: 2026-11-09
+    ref: "#623"
+    state: followed
+    note: "ほかのリポジトリの委譲 A（ローカルの開発環境の言語のバージョンを上げる作業）。GATE 3 の答えと、そのあとの owner の答えを plan に写す前に、答えで変わる語で plan を grep して全体を直した。完了前の照合（unmet-gate-check）では、plan を直した commit が実装のブランチを作るより前にあることは確かめられたが、grep を打ったこと自体は確かめられなかった。state は子の申告のまま"
+  - date: 2026-11-09
+    ref: "#623"
+    state: followed
+    note: "ほかのリポジトリの委譲 B（依存の脆弱性を直す作業）。GATE 3 の答えを plan に写す前に、答えで変わる語で plan の全文を grep し、設計判断の節の外（step と条件の言い回し）も直した。その統括の判断ボードで owner が hub の store への書き戻しを認め、hub の統括が代わりに書いた"
 ---
 
 **ゲート3 の答えを plan に写すときは、答えで変わる判断の語（発火の条件・対象・置き場など）で plan の全文を grep し、設計判断の節だけでなく description・受入の条件・CATALOG の行・SKILL.md の「いつ使うか」まで当たりを全部直してから実装に入る。**
