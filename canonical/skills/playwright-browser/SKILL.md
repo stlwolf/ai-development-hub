@@ -127,6 +127,8 @@ snapshot が返す `ref` は操作のたびに変わる。**操作前に必ず�
 5. browser_snapshot → 結果を確認
 ```
 
+ログインの form のように資格情報を入れるときは、この手順ではなく「資格情報を入れる画面の扱い」の節に従う。
+
 ### エラー調査
 
 ```
@@ -182,6 +184,26 @@ await page.route('**/api/**', async (route) => {
 2. browser_snapshot + browser_take_screenshot
 3. browser_resize → width: 1920, height: 1080 (デスクトップ)
 4. browser_snapshot + browser_take_screenshot
+```
+
+## 資格情報を入れる画面の扱い
+
+画面の写し（`browser_snapshot` の出力と `browser_take_screenshot`）と、MCP の道具に渡した引数は、会話の記録に残る。ログインの画面を扱うときは、password などの資格情報の値がそこに混ざらないようにする。
+
+- 資格情報の値を、MCP の入力の道具（`browser_type`・`browser_fill_form`）の引数に渡さない。値はファイルから読むスクリプトの中で入れ、道具の引数にもスクリプトの本文にも値を書かない。
+- `browser_snapshot` の出力は accessibility の木で、password の欄に入っている値を文字として含みうる。画面に password の欄があり値が入っているあいだは、写しを撮らない。
+- ログインが成功したことは、写しを撮らずに確かめてから撮る。成功は、URL がログインの画面から変わったことと、password の欄（`input[type=password]`）が画面に無いことで見る。
+- 次の画面では、写しを撮る前に password の欄を空にするか、`about:blank` へ移る。
+  - ログインに失敗して、ログインの form に留まった画面。
+  - ログアウトしたあとに戻ったサインインの画面。ブラウザの自動入力が password の欄を埋めていることがある。
+- 待つ処理（`waitForURL` など）の失敗を `.catch(() => {})` で握りつぶさない。握りつぶすと、失敗したときの後始末（password の欄を空にする・`about:blank` へ移る）が走らない。失敗を捕まえたら、後始末をしてから失敗として止まる。
+- 残す画面から文字を伏せる処理（init script や MutationObserver で、ページの文字や入力欄を置き換える処理）を入れるときは、次の2つを守る。
+  - password の欄も対象にする。`input:not([type=password])` のように外さない。
+  - ログインの入力欄の値は置き換えない。置き換えると、伏せた値が送られてログインが失敗し、値の入った form が画面に残る。伏せる処理はログインが済んでから入れるか、ログインの form を対象から外す。
+- 写しを残した場所（会話の記録・`.playwright-mcp/` など）に値が混ざっていないかは、値を引数に出さない検査で確かめる。値はファイルから読ませ、当たったファイルの名前と件数だけを出す。値のファイルに空の行があると全部の行に当たるので、値の行だけにしておく。
+
+```bash
+grep -rcF -f <値を1行ずつ書いたファイル> <写しを残した場所> | grep -v ':0$'
 ```
 
 ## 注意事項
