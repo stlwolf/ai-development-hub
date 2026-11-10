@@ -125,7 +125,9 @@ _rc=0; env -u HOME timeout 20 "$BIN_DIR/oe-view" --from-link "/tmp/nonexistent-3
 ck "空 allowlist で --from-link が通らない" "yes" "$( [[ "$_rc" -ne 0 ]] && echo yes || echo no )"
 
 echo "[5d] 重複した helper の定義が全ファイルで byte 一致している"
-_n="$(grep -rh '_oe_home_usable() {' "$BIN_DIR" "$LIB_DIR" 2>/dev/null | sed 's/^ *//' | sort -u | grep -c .)"
+# 定義の頭（`_oe_home_usable()` / `function _oe_home_usable`）を含む行を、`{` の位置を問わず拾う（#611）。
+# `{` を次の行に置いた定義は頭の行が1行の形と違うので、別の種類として数えて落ちる。本体は1行の定義どうしで比べる（#602）。
+_n="$(grep -rhE '_oe_home_usable[[:space:]]*\(\)|function[[:space:]]+_oe_home_usable' "$BIN_DIR" "$LIB_DIR" 2>/dev/null | sed 's/^ *//' | grep -v '^#' | sort -u | grep -c .)"
 ck "_oe_home_usable の定義は1種類" "1" "$_n"
 _n="$(grep -rh 'declare -F _oe_state_dir' "$BIN_DIR" 2>/dev/null | sed 's/^ *//' | sort -u | grep -c .)"
 ck "_oe_state_dir の定義は1種類" "1" "$_n"
