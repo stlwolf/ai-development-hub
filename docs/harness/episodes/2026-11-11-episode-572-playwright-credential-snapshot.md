@@ -49,3 +49,17 @@ tags: [skill, playwright, credentials, harness]
 ### S1-3: スキル自身の文面が新しい節と食い違わないかを見た結果（2026-11-11 02:13 頃）
 
 採用した item `01M5F0CNEKA9ED9AMQ3YWGGF8W` に従い、`browser_type`・`browser_fill_form` が出てくる行をスキル全体で探した（`grep -n`）。「よくあるパターン」の「フォーム入力」は、`browser_fill_form` に「ユーザー名」の欄の値を渡す例で、ログインの form にもそのまま当てはめて読める。新しい節は資格情報の値を入力の道具に渡さないと書くので、同じスキルの中で例と決まりが食い違う。例そのものは資格情報でない form には正しいので消さず、例のすぐ下に「ログインの form のように資格情報を入れるときは、この手順ではなく『資格情報を入れる画面の扱い』の節に従う」の1行を足した。表の行（ツールの説明）と「注意事項」の `browser_type` の行は、道具の働きを書いているだけなので変えていない。
+
+### S2-1: 実装SO の結果と採否（2026-11-11 02:14〜02:18 頃）
+
+Codex 1レーン（`gpt-6.1-sol`・161秒・exit 0・`tool_status` は `not_observed`）は「修正推奨」で、指摘を4つ返した。結果は `tmp/so-572/codex-stdout.txt`（gitignored）にある。Codex は upstream の実装を根拠にしたので、主な2つを自分で `gh api` で upstream（`microsoft/playwright` の `main`・`microsoft/playwright-mcp` の README）から読んで確かめた。この環境で動いている Playwright MCP の版と同じかは確かめていない。
+
+1. 採る（高）。snapshot は `browser_snapshot` だけで撮られるのではない。upstream の `packages/playwright-core/src/tools/backend/` で、`browser_navigate`・`browser_navigate_back`（`navigate.ts`）、`browser_click`・`browser_drag`・`browser_hover`・`browser_select_option`（`snapshot.ts`）、`browser_type`・`browser_press_key`（`keyboard.ts`）、`browser_wait_for`（`wait.ts`）が `response.setIncludeSnapshot()` を呼ぶことを確かめた。最初の版は「写しを撮らない」と書いていたが、ログインの画面を開く `browser_navigate` の応答だけで、自動入力された値が記録に入りうる。節の最初の項目を、これらの道具を成功の確認か後始末まで呼ばない、に書き直し、ログインとログアウトの操作をひとつのスクリプトの中で済ませる項目を足した。基本フローと注意事項の「操作のたびに snapshot を取る」の2か所に、このあいだは当てないと書いた。
+   - accessibility の木が password の値を含むことも、`packages/injected/src/ariaSnapshot.ts` で、`input` の `type` が checkbox・radio・file でなければ `element.value` を子に入れることで確かめた（password を除いていない）。
+2. 採る（中）。URL の変化と password の欄の不在だけを成功とすると、多要素認証やエラーの画面へ移った場合と区別できない。成功の確認（ログインのあとにだけ出る要素や URL）と、写しを撮ってよいかの確認（password の欄が無い）を分けた。`type=text` に切り替えた欄・ワンタイムのコード・API キー・iframe の中の欄がセレクタで見つからないことも書いた。
+3. 採る（中）。値を出さない検査の限界（画像・escape や encode で形が変わった値は見つからない・値のファイルを検査する場所の中に置くと自身が当たる・読めないファイルのエラーを「当たり無し」と読まない）を箇条にした。件数が「出現の数」でなく「当たった行の数」であることも直した。
+4. 採る（低）。`.catch(() => {})` の害を「後始末が走らない」と断定していたのを、「失敗を成功として先へ進み、失敗のときの後始末に届かない」に直した（`finally` に置いた後始末は走るので）。
+
+ほかに Codex が挙げた、Playwright MCP の `--secrets` も1項目として足した。README の設定の説明（`secrets` は道具の応答の中の一致する文字を置き換える・便宜の機能で守りの機能ではない）を読んで確かめ、そのとおりに書いた。S1-2 の2つの判断（スクリプトの例を書かない・knowledge store に入れない）には反論が無かった。
+
+昇格の印: Playwright MCP の道具の多くが応答に snapshot を付けることは、資格情報に限らず「写しに残したくないものがある画面」全般に当たる。スキルの別の節（基本フロー）に一般の注意として書くかは、この単位の範囲の外である。
