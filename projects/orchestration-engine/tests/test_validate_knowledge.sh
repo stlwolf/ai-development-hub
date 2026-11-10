@@ -878,6 +878,48 @@ ck  ".md 以外しか無いときも exit 2"  "2" "$RUN_RC"
 run "$D53/knowledge/items"
 ck  "item が1件あれば exit 0"        "0" "$RUN_RC"
 
+echo "[54] 読める通常ファイルでない item → exit 2 / ERROR（item の不備と分ける・#557）"
+D54="$_TMP_DIR/unreadable-items"; mkdir -p "$D54"
+F54="$D54/bad.md"
+# *.md に当たるディレクトリも、壊れた symlink も黙って列挙から外さない。
+mkdir "$F54"
+run "$D54"
+ck  "ディレクトリの item は exit 2" "2" "$RUN_RC"
+ckc "通常ファイルでないと明示"       "$RUN_OUT" "not a regular file: $F54"
+ckc "ERROR を出す"                   "$RUN_OUT" "ERROR:"
+ncc "WARN に丸めない"                "$RUN_OUT" "WARN"
+ncc "OK を出さない"                  "$RUN_OUT" "OK:"
+rmdir "$F54"
+ln -s "$D54/missing" "$F54"
+run "$D54"
+ck  "壊れた symlink は exit 2"       "2" "$RUN_RC"
+ckc "壊れた symlink と明示"          "$RUN_OUT" "dangling symlink: $F54"
+ckc "ERROR を出す"                   "$RUN_OUT" "ERROR:"
+ncc "WARN に丸めない"                "$RUN_OUT" "WARN"
+ncc "OK を出さない"                  "$RUN_OUT" "OK:"
+rm "$F54"
+write_valid_item "$F54"
+chmod 000 "$F54"
+# root 等が読める環境では、この fixture は権限エラーを再現していない。
+if [[ ! -r "$F54" ]]; then
+  for target54 in "$D54" "$F54"; do
+    run "$target54"
+    ck  "読めない item は exit 2 ($target54)" "2" "$RUN_RC"
+    ckc "読めないと明示" "$RUN_OUT" "file is not readable: $F54"
+    ckc "ERROR を出す"    "$RUN_OUT" "ERROR:"
+    ncc "WARN に丸めない" "$RUN_OUT" "WARN"
+    ncc "OK を出さない"   "$RUN_OUT" "OK:"
+  done
+else
+  echo "  SKIP: chmod 000 file is still readable by this user"
+fi
+chmod 600 "$F54"
+# 読める通常ファイルへの symlink は引き続き検査する。
+mv "$F54" "$_TMP_DIR/readable-target"
+ln -s "$_TMP_DIR/readable-target" "$D54/$ULID.md"
+run "$D54"
+ck "通常ファイルへの symlink は exit 0" "0" "$RUN_RC"
+
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then
   exit 1

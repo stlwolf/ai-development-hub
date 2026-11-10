@@ -13,7 +13,8 @@ set -euo pipefail
 #   0 = valid（全 item が全 check を満たす）
 #   1 = invalid（1件以上の schema 違反。frontmatter/本文が knowledge item スキーマに反する。
 #       malformed YAML もここ＝item の不備であり環境障害ではない）
-#   2 = 環境エラー（file/dir not found / directory mode で item が0件 / jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
+#   2 = 環境エラー（file/dir not found / item が読める通常ファイルでない / directory mode で item が0件 /
+#       jq・yq 未導入 / jq の評価失敗 / usage）。jq の評価失敗は
 #       item を読むすべての jq の呼び出しで ERROR を出して止まる（item の不備や OK に丸めない・
 #       #274 / #283 / #424）
 #
@@ -159,6 +160,23 @@ validate_item() {
   local base
   base="$(basename "$file")"
   log "checking $file"
+
+  # 読み込み失敗を frontmatter 欠落（item の不備・exit 1）に丸めない（#557）。
+  # -e/-f は symlink の解決先を見るので、壊れた symlink は先に区別する。
+  # 通常ファイルかを先に確認し、FIFO 等を読んで待ち続けることも避ける。
+  if [[ -L "$file" && ! -e "$file" ]]; then
+    echo "ERROR: dangling symlink: $file" >&2
+    exit 2
+  elif [[ ! -e "$file" ]]; then
+    echo "ERROR: file not found: $file" >&2
+    exit 2
+  elif [[ ! -f "$file" ]]; then
+    echo "ERROR: not a regular file: $file" >&2
+    exit 2
+  elif [[ ! -r "$file" ]]; then
+    echo "ERROR: file is not readable: $file" >&2
+    exit 2
+  fi
 
   # --- frontmatter block の存在（1行目 '---' + 閉じ '---'）---
   if ! { [[ "$(sed -n '1p' "$file")" == "---" ]] && sed -n '2,$p' "$file" | grep -qxF -- '---'; }; then
