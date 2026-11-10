@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# lib/lease.sh は ( … ) の中で読み、lease を作る値（OE_LEASE_NOW_ISO など）を外へ漏らさないのが意図した動きである。
+# OE_LEASE_DIR は setup() が先に export しているので、lease.sh の既定値の代入は通らず、外の値は変わらない（SC2030/SC2031 の誤検知）。
+# 使う側の21か所に出るので、ファイル全体で止める。
+# shellcheck disable=SC2030,SC2031
 set -uo pipefail
 
 # test_oe_recover.sh — bin/oe-recover（#355・統括が応答しないときの復帰）の検証
