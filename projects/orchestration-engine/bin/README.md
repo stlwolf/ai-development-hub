@@ -600,6 +600,11 @@ bind-key v display-popup -E -x C -y C -w 70% -h 60% -T ' oe pick ' '/path/to/rep
   いたが、worktree で子を回している実機で 123 桁になり popup の実効幅（約 116 桁）を超え、拍動が真っ先に
   切れた**（worktree の末尾成分は `<repo>.<branch-slug>` で実測 53 桁）。ブランチ名の情報価値が低いという
   owner 裁定（2026-09-01）により workspace を最後に回した。
+- **記録に reasoning effort があれば、モデル名と context% のあいだに出す**（#570・例: `Opus 5.5 xhigh 37%`）。
+  effort は producer が `low` / `medium` / `high` / `xhigh` / `max` のときだけ記録する項目で、読む側でもこの
+  5語に限り、それ以外は無いものとして扱う（表示に混ぜない）。effort を持たない記録はいままでどおり
+  `モデル名 ctx%` で出す。モデル名・effort・context% は在る部分だけを空白でつなぐので、モデル名が無く
+  effort だけある記録は `xhigh 37%` になる。
 - **`gone` と拍動なしでは何も足さない。** `gone` は tmux にそのペインが無いので、そのペインを名乗る
   sidecar が新しくても現役の帰属とは言えない（pane 再利用の誤帰属になる）。
 - **帰属は鮮度窓（既定 900 秒・`OE_TREE_BEAT_WINDOW_SEC`）内の候補で解く。** 1件なら確定、2件以上は
@@ -653,7 +658,9 @@ oe-threads --fresh 300      # 帰属を解決する鮮度窓（既定 900・OE_T
 
 出力は `PANE / CTX / AGE / MODEL / LABEL`。`MODEL` は幅で切らない（`display_name` の末尾に 1M 版の
 区別が載るため）。可変幅が2列あるので、切らない `MODEL` に最小幅を与え、溢れは最後の `LABEL` 側へ
-逃がす（`oe-tree` の「長い値は溢れてよい」degrade と同じ）。
+逃がす（`oe-tree` の「長い値は溢れてよい」degrade と同じ）。記録に reasoning effort があれば `MODEL` の
+値の後ろに空白で足す（#570・例: `Opus 5.5 xhigh`。列は増やさない）。effort は `oe-tree` と同じく5語に
+限って読み、それ以外は出さない。effort を持たない記録はモデル名だけを出す。
 
 **なぜ生存ペインを左辺にするか（DJ-A）**: sidecar は同じ pane に何日分も溜まる（実測で `%0` に7件・
 うち6件が約4日前）。sidecar 側から列挙すると、生きているペインほど墓地が増えて一覧が使えなくなる。
@@ -847,7 +854,7 @@ oe-lane-explain --summary --scan .            # バージョンの目印で層�
 
 ## oe-vitals — 統括 vital 監視 watchdog（#239 段階1・read-only・cron 可）
 
-statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane, server_pid, model}`。`server_pid` と `model` は #327 で additive に追加。本 verb が読むのは従来の3キーだけ）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。
+statusLine 拍動 producer（PR-A・`canonical/claude/statusline/statusline-oe-heartbeat.sh`）が session 毎に書く sidecar（拍動 = `{ts, context_pct, pane, server_pid, model}` + 値が正しいときだけの `effort`。`server_pid` と `model` は #327、`effort` は #570 で additive に追加。本 verb が読むのは従来の3キーだけ）を **out-of-session cron から読み**、統括 session の **context% 肥大接近**（mode1 context 肥大死＝#238 中核）と **プロセス死**（pane 消滅）を検知して owner に ping する read-only 観測 verb。段階0 `oe-undelivered` の family（seen cache dedup / `wez notify` best-effort + stdout durable / exit 0 / `--window` + env + `NOW_EPOCH`）を踏襲する。**入力面は別**（`oe-undelivered` は oe-events.jsonl の frontier、本 verb は sidecar dir）。
 
 ```bash
 oe-vitals                          # 既定 W=1800s / T=85% で統括 vital を判定し owner ping

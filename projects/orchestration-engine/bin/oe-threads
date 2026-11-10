@@ -44,6 +44,10 @@
 # 列（DJ-E）: PANE / CTX / AGE / MODEL / LABEL。MODEL は幅で切らない（display_name の末尾に
 #   1M 版の区別が載るため）。可変幅が2列あるので、切らない MODEL に最小幅を与え、溢れは最後の
 #   LABEL 側へ逃がす（oe-tree:529 と同じ「長い値は溢れてよい」degrade）。
+#   記録に reasoning effort（#570）があれば MODEL の値の後ろに空白で足す（例: Opus 5.5 xhigh）。列は増やさない。
+#   effort は producer と同じ low / medium / high / xhigh / max に限り、それ以外は無いものとして扱う。
+#   effort を持たない記録はいままでどおりモデル名だけを出す。モデル名が無く effort だけある記録は effort を出す
+#   （oe-tree と同じく在る部分を出す）。
 #
 # exit: 0 正常 / 2 前提が満たせない。前提は**モードによって違う**（実装SO 指摘）:
 #     既定モード : jq / 置き場が決まる / **置き場が読める** / tmux が応答する
@@ -145,6 +149,17 @@ _out() { # <text> [max_cp]
     || printf '%s' "$s"
 }
 
+# _model_cell <model> <effort> <max_cp> — MODEL 列の値（#570）。モデル名は _out で sanitize して上限で切り、
+# effort はその後ろに足す（effort は切らない）。effort は5語に限り、それ以外は表示に混ぜない
+# （5語に限れば制御文字も区切りも入らないので sanitize は要らない）。どちらも無ければ "-"。
+_model_cell() {
+  local m="" e="$2"
+  [[ -n "$1" ]] && m="$(_out "$1" "$3")"
+  case "$e" in low|medium|high|xhigh|max) ;; *) e="" ;; esac
+  [[ -n "$e" ]] && m="${m:+$m }$e"
+  printf '%s' "${m:--}"
+}
+
 _age() { # <seconds>
   local s="$1"
   if   [[ "$s" -lt 0 ]];     then printf 'future'
@@ -174,7 +189,8 @@ _PROJECT='
       (.context_pct | n),
       (.pane | s),
       (.server_pid | s),
-      (if (.model | type) == "object" then (.model.display_name | s) else "" end) ]
+      (if (.model | type) == "object" then (.model.display_name | s) else "" end),
+      (.effort | s) ]
   | @tsv'
 RECS=()
 _files=0; _unreadable=0; _malformed=0
@@ -213,11 +229,11 @@ fi
 if [[ "$SHOW_ALL" -eq 1 ]]; then
   printf '%-8s %-6s %5s %6s  %-20s %s\n' "PANE" "SRVPID" "CTX" "AGE" "MODEL" "SESSION"
   for _r in ${RECS[@]+"${RECS[@]}"}; do
-    IFS="$_US" read -r _sid _ts _ctx _pane _spid _model <<< "$_r"
+    IFS="$_US" read -r _sid _ts _ctx _pane _spid _model _effort <<< "$_r"
     if [[ "$_ts" =~ ^[0-9]+$ ]]; then _agestr="$(_age "$((NOW - _ts))")"; else _agestr="-"; fi
     printf '%-8s %-6s %5s %6s  %-20s %s\n' \
       "${_pane:--}" "${_spid:--}" "${_ctx:--}" "$_agestr" \
-      "$(_out "${_model:--}" 60)" "${_sid:0:8}"
+      "$(_model_cell "$_model" "$_effort" 60)" "${_sid:0:8}"
   done
   exit 0
 fi
@@ -244,7 +260,7 @@ fi
 
 # 生存ペインごとの session を1回でまとめて決める（N6 の規則・lib/heartbeat-resolve.sh の oe_hb_pick_panes）。
 PICKED="$(for _r in ${RECS[@]+"${RECS[@]}"}; do
-  IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
+  IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel _reffort <<< "$_r"
   printf '%s\t%s\t%s\t%s\n' "$_rts" "$_rpane" "$_rspid" "$_rsid"
 done | oe_hb_pick_panes "$SERVER_PID" "$FRESH" "$NOW")"
 
@@ -252,7 +268,7 @@ printf '%-8s %5s %6s  %-20s %s\n' "PANE" "CTX" "AGE" "MODEL" "LABEL"
 
 while IFS= read -r _p; do
   [[ -n "$_p" ]] || continue
-  _n=0; _ts=0; _ctx=""; _model=""
+  _n=0; _ts=0; _ctx=""; _model=""; _effort=""
   # ペインの session は、上で読んだ sidecar（RECS）に N6 の規則（oe_hb_pick_panes）を当てた結果から引く。
   # 帰属と表示の値を同じ読み取りから決め、ペインごとに置き場を読み直さない（Copilot の指摘・PR #590）。
   _hsid="$(printf '%s\n' "$PICKED" | awk -F '\t' -v p="$_p" '$1 == p { print $2; exit }')"
@@ -260,9 +276,9 @@ while IFS= read -r _p; do
     _n=2
   elif [[ -n "$_hsid" ]]; then
     for _r in ${RECS[@]+"${RECS[@]}"}; do
-      IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
+      IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel _reffort <<< "$_r"
       [[ "$_rsid" == "$_hsid" ]] || continue
-      _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"
+      _n=1; _ts="$_rts"; _ctx="$_rctx"; _model="$_rmodel"; _effort="$_reffort"
       break
     done
   fi
@@ -275,7 +291,7 @@ while IFS= read -r _p; do
 
   if [[ "$_n" -eq 1 ]]; then
     printf '%-8s %5s %6s  %-20s %s\n' \
-      "$_p" "${_ctx:--}" "$(_age "$((NOW - _ts))")" "$(_out "${_model:--}" 60)" "$_label"
+      "$_p" "${_ctx:--}" "$(_age "$((NOW - _ts))")" "$(_model_cell "$_model" "$_effort" 60)" "$_label"
   elif [[ "$_n" -gt 1 ]]; then
     # 曖昧: いちばん新しい拍動が同じ時刻で別の session に分かれた。値を出さない（どれが現役か決められない）
     printf '%-8s %5s %6s  %-20s %s\n' "${_p}?" "-" "-" "ambiguous" "$_label"
@@ -286,12 +302,12 @@ done <<< "$LIVE"
 
 # --- pane を持たない fresh スレッドを末尾に足す（落とさない）---
 for _r in ${RECS[@]+"${RECS[@]}"}; do
-  IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel <<< "$_r"
+  IFS="$_US" read -r _rsid _rts _rctx _rpane _rspid _rmodel _reffort <<< "$_r"
   [[ -z "$_rpane" ]] || continue
   [[ "$_rts" =~ ^[0-9]+$ ]] || continue
   [[ $((NOW - _rts)) -le "$FRESH" && $((NOW - _rts)) -ge 0 ]] || continue
   printf '%-8s %5s %6s  %-20s %s\n' \
-    "-" "${_rctx:--}" "$(_age "$((NOW - _rts))")" "$(_out "${_rmodel:--}" 60)" \
+    "-" "${_rctx:--}" "$(_age "$((NOW - _rts))")" "$(_model_cell "$_rmodel" "$_reffort" 60)" \
     "unbound session ${_rsid:0:8}"
 done
 
