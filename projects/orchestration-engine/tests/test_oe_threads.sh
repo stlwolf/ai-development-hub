@@ -75,6 +75,18 @@ mkbeat() {
       model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end)}' \
     > "$OE_HEARTBEAT_DIR/${name}.json"
 }
+# mkbeat_ef <name> <age_sec> <ctx-json> <pane> <server_pid> <display_name|-none-> <effort の JSON 値>（#570）
+# effort は JSON の値をそのまま書く（'"xhigh"' / '5' / '{"level":"high"}' など。不正な値も置ける）。
+mkbeat_ef() {
+  local name="$1" age="$2" ctx="$3" pane="$4" spid="$5" dn="$6" ef="$7"
+  jq -nc --argjson ts "$((NOW - age))" --argjson ctx "$ctx" --arg pane "$pane" --arg spid "$spid" --arg dn "$dn" \
+    --argjson ef "$ef" \
+    '{ts:$ts, context_pct:$ctx, pane:$pane, server_pid:$spid,
+      model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end), effort:$ef}' \
+    > "$OE_HEARTBEAT_DIR/${name}.json"
+}
+# row <pane> <ctx> <age> <model> <label> — 既定モードの1行（verb と同じ書式）
+row() { printf '%-8s %5s %6s  %-20s %s' "$@"; }
 mkissue() { printf '%s' "{\"name\":\"$2\"}" > "$OE_PANE_ISSUE_DIR/${SPID}_${1}"; }
 reset_beats() { rm -rf "$OE_HEARTBEAT_DIR"; mkdir -p "$OE_HEARTBEAT_DIR"; }
 run() { MOCK_LIVE_PANES="$1" bash "$VERB" "${@:2}" 2>/dev/null; }
@@ -338,6 +350,83 @@ ck  "--all は tmux 不在でも exit 0"                "0" "$rc"
 ckc "  内容が出る"                                  "$OUT" "Opus 5"
 PATH="$_TMP/no-tmux:$(dirname "$(command -v jq)"):/usr/bin:/bin" bash "$VERB" >/dev/null 2>&1; rc=$?
 ck  "既定モードは tmux 不在で exit 2"              "2" "$rc"
+
+# ============================================================================
+echo ""
+echo "[14] #570: effort があれば MODEL の値の後ろに足す（列は増やさない）"
+# ============================================================================
+for _lv in low medium high xhigh max; do
+  reset_beats
+  mkbeat_ef ef1 5 37 '%0' "$SPID" 'Opus 5.5' "\"${_lv}\""
+  OUT="$(run '%0')"
+  ck "effort=${_lv} → MODEL に足す" "$(row '%0' 37 5s "Opus 5.5 ${_lv}" 'title of %0')" "$(printf '%s\n' "$OUT" | tail -n 1)"
+done
+ck  "ヘッダの列は増えない" "$(printf '%-8s %5s %6s  %-20s %s' PANE CTX AGE MODEL LABEL)" "$(printf '%s\n' "$OUT" | head -n 1)"
+reset_beats
+mkbeat ef2 5 61 '%0' "$SPID" 'Opus 5'
+ck  "effort を持たない記録はいまの表示のまま" "$(row '%0' 61 5s 'Opus 5' 'title of %0')" "$(run '%0' | tail -n 1)"
+reset_beats
+mkbeat_ef ef3 5 37 '%0' "$SPID" '-none-' '"high"'
+ck  "モデル名が無く effort だけ → effort を出す" "$(row '%0' 37 5s 'high' 'title of %0')" "$(run '%0' | tail -n 1)"
+reset_beats
+mkbeat_ef ef4 5 47 '%6' "$SPID" 'Opus 5 (1M context)' '"xhigh"'
+ckc "1M 版の display_name の後ろに出す" "$(run '%6')" "Opus 5 (1M context) xhigh"
+
+# ============================================================================
+echo ""
+echo "[15] #570: 読む側でも effort を5語に限る（不正な値は無いものとして扱う）"
+# ============================================================================
+for _ef in '"turbo"' '"XHIGH"' '"high "' '""' '5' 'null' 'true' '["max"]' '{"level":"high"}'; do
+  reset_beats
+  mkbeat_ef bad 5 37 '%0' "$SPID" 'Opus 5.5' "$_ef"
+  ck "effort=${_ef} → 出さない（モデル名のまま・行は脱落しない）" "$(row '%0' 37 5s 'Opus 5.5' 'title of %0')" "$(run '%0' | tail -n 1)"
+done
+# 改行・区切り・制御文字を含む値で表示やレコードを汚さない
+reset_beats
+jq -nc --argjson ts "$((NOW - 5))" '{ts:$ts, context_pct:11, pane:"%1", server_pid:"99999",
+  model:{id:"x", display_name:"Real"}, effort:("high" + ([10]|implode) + "%0\u001f1\u001f77\u001f\u001f\u001fForged\u001fmax")}' \
+  > "$OE_HEARTBEAT_DIR/inject.json"
+OUT="$(run '%0 %1')"
+ncc "偽装した値が出ない"              "$OUT" "Forged"
+ncc "  偽の ctx も出ない"             "$OUT" "77"
+ck  "行数はペイン数（2）"             "2" "$(rows "$OUT")"
+ckc "%1 は effort を出さずモデル名"   "$OUT" "$(row '%1' 11 5s 'Real' 'title of %1')"
+reset_beats
+jq -nc --argjson ts "$((NOW - 5))" '{ts:$ts, context_pct:11, pane:"%1", server_pid:"99999",
+  model:{id:"x", display_name:"Real"}, effort:("x" + ([27]|implode) + "[2Jhigh")}' > "$OE_HEARTBEAT_DIR/inject.json"
+ck  "制御文字入りの effort は出さない" "$(row '%1' 11 5s 'Real' 'title of %1')" "$(run '%1' | tail -n 1)"
+
+# ============================================================================
+echo ""
+echo "[16] #570: effort を持たない古い記録と新しい記録が混ざっても、それぞれの形で出す"
+# ============================================================================
+reset_beats
+mkbeat    old1 5 61 '%0' "$SPID" 'Opus 5'
+mkbeat_ef new1 5 37 '%1' "$SPID" 'Opus 5.5' '"xhigh"'
+mkbeat_ef unb1 9 8  ''   "$SPID" 'Sonnet 5' '"low"'
+OUT="$(run '%0 %1')"
+ckc "古い記録はモデル名だけ"          "$OUT" "$(row '%0' 61 5s 'Opus 5' 'title of %0')"
+ckc "新しい記録はモデル名 effort"     "$OUT" "$(row '%1' 37 5s 'Opus 5.5 xhigh' 'title of %1')"
+ckc "unbound 行にも effort が出る"    "$OUT" "$(row '-' 8 9s 'Sonnet 5 low' 'unbound session unb1')"
+# 同じペインで新しい拍動が古い記録より新しければ、新しい方（effort つき）を採る
+reset_beats
+mkbeat    old2 20 61 '%0' "$SPID" 'Opus 5'
+mkbeat_ef new2 5  37 '%0' "$SPID" 'Opus 5.5' '"max"'
+ck  "同じペイン: 新しい記録の effort を出す" "$(row '%0' 37 5s 'Opus 5.5 max' 'title of %0')" "$(run '%0' | tail -n 1)"
+reset_beats
+mkbeat_ef new3 20 37 '%0' "$SPID" 'Opus 5.5' '"max"'
+mkbeat    old3 5  61 '%0' "$SPID" 'Opus 5'
+ck  "同じペイン: 新しい方が古い形なら effort は漏れない" "$(row '%0' 61 5s 'Opus 5' 'title of %0')" "$(run '%0' | tail -n 1)"
+# --all でも同じ規則で出す
+reset_beats
+mkbeat    old4 5 61 '%0' "$SPID" 'Opus 5'
+mkbeat_ef new4 5 37 '%1' "$SPID" 'Opus 5.5' '"xhigh"'
+mkbeat_ef bad4 5 12 '%2' "$SPID" 'Haiku 4.5' '"turbo"'
+OUT="$(run '%0' --all)"
+ckc "--all: 新しい記録はモデル名 effort" "$OUT" "Opus 5.5 xhigh"
+ckc "--all: 古い記録はモデル名だけ"      "$OUT" "$(printf '%-20s %s' 'Opus 5' 'old4')"
+ckc "--all: 不正な effort は出さない"    "$OUT" "$(printf '%-20s %s' 'Haiku 4.5' 'bad4')"
+ncc "  --all: turbo が混ざらない"        "$OUT" "turbo"
 
 # ============================================================================
 echo ""

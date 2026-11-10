@@ -126,6 +126,15 @@ mkbeat() {
       model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end)}' \
     > "$OE_HEARTBEAT_DIR/${1}.json"
 }
+# mkbeat_ef <name> <age秒> <ctx> <pane> <server_pid> <display_name|-none-> <effort の JSON 値>（#570）
+# effort は JSON の値をそのまま書く（'"xhigh"' / '5' / '{"level":"high"}' など。不正な値も置ける）。
+mkbeat_ef() {
+  jq -nc --argjson ts "$((NOW_EPOCH - $2))" --argjson ctx "$3" --arg pane "$4" --arg spid "$5" --arg dn "$6" \
+    --argjson ef "$7" \
+    '{ts:$ts, context_pct:$ctx, pane:$pane, server_pid:$spid,
+      model:(if $dn == "-none-" then {} else {id:"id-x", display_name:$dn} end), effort:$ef}' \
+    > "$OE_HEARTBEAT_DIR/${1}.json"
+}
 reset_beats() { rm -rf "$OE_HEARTBEAT_DIR"; mkdir -p "$OE_HEARTBEAT_DIR"; }
 
 TREE="$_TMP_DIR/bin/oe-tree"
@@ -646,6 +655,82 @@ printf '%s' '"just a string"'          > "$OE_HEARTBEAT_DIR/str.json"
 OUT="$("$TREE")"
 ckc "健全な拍動は出る"                     "$OUT" "Opus 5 61%"
 ckc "非 object を件数で開示する"           "$OUT" "note: 2 heartbeat files malformed"
+reset_beats
+
+echo "[39] #570: effort があれば「モデル effort ctx%」で出す"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+for _lv in low medium high xhigh max; do
+  reset_beats; mkbeat_ef e1 5 37 '%60' 12345 'Opus 5.5' "\"${_lv}\""
+  ck "effort=${_lv} → モデル名と ctx% のあいだに出す" "-     %60    alive  solo  Opus 5.5 ${_lv} 37% ~one" "$("$TREE")"
+done
+reset_beats; mkbeat_ef e2 5 37 '%60' 12345 'Opus 5 (1M context)' '"xhigh"'
+ck "1M 版の display_name の後ろに出す" '-     %60    alive  solo  Opus 5 (1M context) xhigh 37% ~one' "$("$TREE")"
+reset_beats; mkbeat e3 5 61 '%60' 12345 'Opus 5'
+ck "effort を持たない記録はいまの表示のまま" '-     %60    alive  solo  Opus 5 61% ~one' "$("$TREE")"
+reset_beats; mkbeat_ef e4 5 37 '%60' 12345 '-none-' '"high"'
+ck "モデル名が無く effort だけ → 在る部分（effort ctx%）を出す" '-     %60    alive  solo  high 37% ~one' "$("$TREE")"
+reset_beats; mkbeat_ef e5 5 37 '%60' 12345 'AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEE' '"max"'
+ckc "長いモデル名を切っても effort は切らない" "$("$TREE")" "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDD... max 37%"
+reset_beats
+
+echo "[40] #570: 読む側でも effort を5語に限る（不正な値は無いものとして扱う）"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+for _ef in '"turbo"' '"XHIGH"' '"high "' '""' '5' 'null' 'true' '["max"]' '{"level":"high"}'; do
+  reset_beats; mkbeat_ef bad 5 37 '%60' 12345 'Opus 5.5' "$_ef"
+  ck "effort=${_ef} → 出さない（モデル ctx% のまま）" '-     %60    alive  solo  Opus 5.5 37% ~one' "$("$TREE")"
+done
+# 改行・区切り・制御文字を含む値で表示やレコードを汚さない（[36] と同じ注入の経路）
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+mkentry %61 "other" "/w/two" ""
+MOCK_LIVE_PANES="%60 %61"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:11, pane:"%61", server_pid:"12345",
+  model:{id:"x", display_name:"Real"}, effort:("high" + ([10]|implode) + "%60\u001f1\u001f77\u001fForged\u001fmax")}' \
+  > "$OE_HEARTBEAT_DIR/inject.json"
+OUT="$("$TREE")"
+ncc "偽装した拍動が %60 に載らない"   "$OUT" "Forged"
+ncc "  偽の ctx も出ない"             "$OUT" "77%"
+ckc "%60 は素のまま"                  "$OUT" "%60    alive  solo ~one"
+ckc "%61 は effort を出さずモデル ctx%" "$OUT" "%61    alive  other  Real 11% ~two"
+jq -nc --argjson ts "$((NOW_EPOCH - 5))" '{ts:$ts, context_pct:11, pane:"%61", server_pid:"12345",
+  model:{id:"x", display_name:"Real"}, effort:("x" + ([27]|implode) + "[2Jhigh")}' > "$OE_HEARTBEAT_DIR/inject.json"
+ck "制御文字入りの effort は出さない" "-     %61    alive  other  Real 11% ~two" "$("$TREE" | grep -F '%61')"
+reset_beats
+
+echo "[41] #570: effort を持たない古い記録と新しい記録が混ざっても、それぞれの形で出す"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+mkentry %61 "other" "/w/two" ""
+MOCK_LIVE_PANES="%60 %61"
+mkbeat    old1 5 61 '%60' 12345 'Opus 5'
+mkbeat_ef new1 5 37 '%61' 12345 'Opus 5.5' '"xhigh"'
+OUT="$("$TREE")"
+ckc "古い記録はモデル ctx%"          "$OUT" "%60    alive  solo  Opus 5 61% ~one"
+ckc "新しい記録はモデル effort ctx%" "$OUT" "%61    alive  other  Opus 5.5 xhigh 37% ~two"
+ncc "古い記録の行に effort が漏れない" "$(printf '%s\n' "$OUT" | grep -F '%60')" "xhigh"
+# 同じペインに古い記録と新しい記録が並ぶと、これまでどおり ambiguous で値を出さない
+reset_beats
+mkbeat    old2 5  61 '%60' 12345 'Opus 5'
+mkbeat_ef new2 10 37 '%60' 12345 'Opus 5.5' '"xhigh"'
+OUT="$("$TREE")"
+ckc "同じペインの混在 → ambiguous(2)" "$OUT" "solo  ambiguous(2) ~one"
+ncc "  ambiguous のとき effort を出さない" "$OUT" "xhigh"
+# server_pid が空の旧 sidecar（pane 単独で突合）に effort があっても同じ形で出す
+reset_beats; mkbeat_ef new3 5 44 '%60' '' 'Sonnet 5' '"low"'
+ckc "server_pid 空の記録でも effort を出す" "$("$TREE")" "solo  Sonnet 5 low 44% ~one"
+reset_beats
+
+echo "[42] #570: --pick-list（cockpit の popup が読む面）にも effort が出る"
+reset_state; reset_beats
+mkentry %60 "solo" "/w/one" ""
+MOCK_LIVE_PANES="%60"
+mkbeat_ef p2 5 37 '%60' 12345 'Opus 5.5' '"xhigh"'
+ck "pick-list の候補行にも出る（末尾までアンカー）" \
+   "$(printf '%%60\t-     %%60    alive  solo  Opus 5.5 xhigh 37%% ~one')" "$("$TREE" --pick-list)"
 reset_beats
 
 echo

@@ -97,7 +97,7 @@ usage: oe-tree [--watch [--interval N]] | [--pick] | [--lease]
 
 spawn registry の parent_pane 連鎖から親→子→孫のトポロジを罫線ツリーで表示する
 （read-only・現 tmux server の全森林）。
-各ノード: <座標 win.pane|-> <pane> <liveness> <label> [モデル ctx%] [(you)] [~workspace]
+各ノード: <座標 win.pane|-> <pane> <liveness> <label> [モデル effort ctx%] [(you)] [~workspace]
 （座標は複数セッション時のみ session: を前置。並びは画面配置順 = window→pane 昇順・
 gone は末尾）
 
@@ -530,6 +530,7 @@ done
 
 # --- 拍動 sidecar（#327）---
 # 目的の面は本 verb の `--pick`（cockpit の popup）。行末にモデル名とコンテキスト% を足す。
+# 記録に reasoning effort（#570）があれば、モデル名と context% のあいだに出す（例: Opus 5.5 xhigh 37%）。
 #
 # **拍動のために起こす jq を sidecar の件数に比例させない**（dir 全体を 1 回の jq で舐める）。
 # --watch は tick ごとに自分を再 exec し、--pick も候補取得のたびに再帰起動するので、1 ファイル
@@ -560,7 +561,7 @@ BEAT_NOW="${NOW_EPOCH:-$(date +%s 2>/dev/null)}"
 BEAT_SPID="$(tmux display-message -p '#{pid}' 2>/dev/null)"
 [[ "$BEAT_SPID" =~ ^[0-9]+$ ]] || BEAT_SPID="$SERVER_PID"
 [[ "$BEAT_SPID" =~ ^[0-9]+$ ]] || BEAT_SPID=""
-BEATS=""            # pane US n US ctx US model の行（n>=2 は ambiguous）
+BEATS=""            # pane US n US ctx US model US effort の行（n>=2 は ambiguous）
 BEAT_UNREADABLE=0   # 読めなかった sidecar（権限 / I-O）
 BEAT_MALFORMED=0    # 中身が壊れていた sidecar
 BEAT_DIR_BAD=0      # 置き場そのものが読めない
@@ -587,17 +588,19 @@ _beat_program='
            ts: (.ts | n),
            ctx: (.context_pct | n),
            spid: (.server_pid | s),
-           model: (if (.model | type) == "object" then (.model.display_name | s) else "" end) }
+           model: (if (.model | type) == "object" then (.model.display_name | s) else "" end),
+           effort: (.effort | s) }
        | select(.pane != "" and .ts != null)
        | select($now - .ts >= 0 and $now - .ts <= $win)
        | select(if $spid == "" then .spid == "" else (.spid == "" or .spid == $spid) end) ]
      | group_by(.pane)
      | map({ pane: .[0].pane, n: length, best: (sort_by(.ts) | last) })) as $rows
-  | (["!skipped", ($nonobj | tostring), "", ""] | @tsv),
+  | (["!skipped", ($nonobj | tostring), "", "", ""] | @tsv),
     ($rows[]
      | [ .pane, (.n | tostring),
          (if .n == 1 then (if .best.ctx == null then "" else (.best.ctx | floor | tostring) end) else "" end),
-         (if .n == 1 then .best.model else "" end) ]
+         (if .n == 1 then .best.model else "" end),
+         (if .n == 1 then .best.effort else "" end) ]
      | @tsv)'
 
 if command -v jq >/dev/null 2>&1 && [[ -n "$BEAT_DIR" ]]; then
@@ -644,23 +647,29 @@ if [[ -n "$BEATS" ]]; then
 fi
 
 # beat_of <pane> — 行末に足す文字列（無ければ空）。ENTRIES と同じ US 区切り + awk の idiom。
+# 形は「モデル effort ctx%」で、在る部分だけを空白でつなぐ（#570）。effort が無い記録はいままでどおり
+# 「モデル ctx%」になる。モデル名が無く effort だけある記録も、ctx% だけの記録と同じく在る部分を出す。
 beat_of() {
   [[ -n "$BEATS" ]] || return 0
-  local rec n ctx model
-  rec="$(printf '%s' "$BEATS" | awk -F $'\037' -v p="$1" '$1==p {print $2 "\037" $3 "\037" $4; exit}')"
+  local rec n ctx model effort out=""
+  rec="$(printf '%s' "$BEATS" | awk -F $'\037' -v p="$1" '$1==p {print $2 "\037" $3 "\037" $4 "\037" $5; exit}')"
   [[ -n "$rec" ]] || return 0
   n="${rec%%$'\037'*}"; rec="${rec#*$'\037'}"
-  ctx="${rec%%$'\037'*}"; model="${rec#*$'\037'}"
+  ctx="${rec%%$'\037'*}"; rec="${rec#*$'\037'}"
+  model="${rec%%$'\037'*}"; effort="${rec#*$'\037'}"
   if [[ "$n" != "1" ]]; then
     printf 'ambiguous(%s)' "$n"
     return 0
   fi
   model="$(sanitize_out "$model")"
   [[ "${#model}" -gt 40 ]] && model="${model:0:40}..."
-  if [[ -n "$model" && -n "$ctx" ]]; then printf '%s %s%%' "$model" "$ctx"
-  elif [[ -n "$model" ]];              then printf '%s' "$model"
-  elif [[ -n "$ctx" ]];                then printf '%s%%' "$ctx"
-  fi
+  # effort は producer と同じ5語に限る。それ以外（手で書かれた記録・壊れた値）は無いものとして扱い、
+  # 表示に混ぜない（5語に限れば制御文字も区切りも入らないので sanitize は要らない）。
+  case "$effort" in low|medium|high|xhigh|max) ;; *) effort="" ;; esac
+  [[ -n "$model" ]] && out="$model"
+  [[ -n "$effort" ]] && out="${out:+$out }$effort"
+  [[ -n "$ctx" ]] && out="${out:+$out }${ctx}%"
+  printf '%s' "$out"
 }
 
 # 読めない/解釈できない/重複の現 server entry は無言で捨てず件数を footer で開示する
