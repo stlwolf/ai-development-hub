@@ -379,6 +379,8 @@ class _BodyScan(html.parser.HTMLParser):
         self.stack = []     # 開いている要素の (名前, パネルか)
         self.panels = []    # 本文に書かれたパネルの (id か None, 要素の名前)。本文の並び
         self.ids = []       # 本文の要素の id（並び・重なりを含む）
+        # ブラウザが使う id（同じ属性が2回ある要素も含め、前の値）。タブの無いページの hp- の頭の検査（E-N4）に使う
+        self.browser_ids = []
         self.problems = []  # 誤りの文（タブのあるページでだけ使う）
         self.nested = False  # パネルの入れ子を知らせたか（外のパネルの閉じ忘れを、終わりで重ねて知らせない）
 
@@ -389,6 +391,10 @@ class _BodyScan(html.parser.HTMLParser):
                 self.stack.append((tag, False))
             return
         names = [k for k, _ in attrs]
+        # 同じ属性が2回あっても、ブラウザは前の値を使う。その id は、ほかの判定から外す要素でも文書に残る
+        first_id = next((v for k, v in attrs if k == "id"), None)
+        if first_id is not None:
+            self.browser_ids.append(first_id)
         twice = sorted({k for k in names if names.count(k) > 1})
         if twice:
             # この要素はパネルか・id は何かが書き手の意図とずれうるので、ほかの判定には使わない（同じ原因の誤りを重ねない）
@@ -1179,7 +1185,7 @@ class Validator:
                 self.add("E-N3", "--body", "本文に %s があるのに、ページに tabs が無い（タブで分けるなら、ページに tabs を書く）" % TAB_PANEL_CLASS)
             # タブの無いページでも、描く要素（答えの保存の表示 hp-store など）の id と取り違えないように、hp- の頭は止める
             if body is not None:
-                for v in sorted(set(body.ids)):
+                for v in sorted(set(body.browser_ids)):
                     if v.startswith("hp-"):
                         self.add("E-N4", "--body", HP_ID_MSG % v)
             return

@@ -715,6 +715,9 @@ BROKEN = [
      example_body("grasp-body.html").replace('<ol class="grasp-flow">', '<ol class="grasp-flow" id="hp-store">', 1)),
     ("n4_body_id_starts_with_hp_twice_without_tabs", "grasp", lambda d: None, [("E-N4", "--body")],
      example_body("grasp-body.html") + '<p id="hp-store">1つ目</p><p id="hp-store">2つ目</p>'),
+    # 同じ属性が2回ある要素でも、ブラウザは id を使うので止める（Copilot の指摘）
+    ("n4_body_id_starts_with_hp_with_twice_attr_without_tabs", "grasp", lambda d: None, [("E-N4", "--body")],
+     example_body("grasp-body.html") + '<p id="hp-store" class="a" class="b">x</p>'),
     # E-K2 タブを置けない種別・束の部品はタブごとに1つまで
     ("k2_tabs_on_confirm", "confirm", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
     ("k2_tabs_on_pick", "pick", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
