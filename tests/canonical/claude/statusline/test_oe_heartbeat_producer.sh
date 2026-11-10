@@ -15,6 +15,8 @@ set -euo pipefail
 #   - #327: model は .model が object のときだけ {id, display_name} を投影する（object 以外は {}）。
 #   - #327: server_pid は $TMUX の pid 部（非数値・不在は空）。テストは TMUX を常に明示制御して
 #     決定化する（ホストが tmux 内で回すと ambient な $TMUX を拾って結果が変わるため）。
+#   - #570: effort は .effort が object で .level が low / medium / high / xhigh / max の文字列のときだけ
+#     足す。欠落・object でない・未知の値・文字列でないときは項目ごと出さない（それ以外の記録は不変）。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
@@ -249,6 +251,39 @@ ckr "ts は epoch 秒"        "$(field 01M16 '.ts')" '^[0-9]+$'
 ck  "context_pct は不変"     "42"  "$(field 01M16 '.context_pct')"
 ck  "pane は不変"            "%9"  "$(field 01M16 '.pane')"
 ck  "既存 consumer の投影が通る（ts|ctx|pane）" "42|%9" "$(jq -r '"\(.context_pct)|\(.pane)"' "$HBDIR/01M16.json")"
+
+# ============================================================================
+echo ""
+echo "[17] #570: effort は .effort.level が既知の5語のときだけ足す（それ以外は項目ごと出さない）"
+# ============================================================================
+mkhb m17
+for _lv in low medium high xhigh max; do
+  run "{\"session_id\":\"01E17_${_lv}\",\"model\":{\"id\":\"m\",\"display_name\":\"M\"},\"effort\":{\"level\":\"${_lv}\"},\"context_window\":{\"used_percentage\":37}}" '%9' >/dev/null
+  ck "level=${_lv} → effort=${_lv}" "$_lv" "$(field "01E17_${_lv}" '.effort')"
+done
+ck  "effort ありのキー集合（既存5つ + effort）" "context_pct effort model pane server_pid ts" \
+    "$(field 01E17_xhigh 'keys_unsorted | sort | join(" ")')"
+ck  "  既存キーは不変（ctx / model / pane）" "37|M|%9" \
+    "$(jq -r '"\(.context_pct)|\(.model.display_name)|\(.pane)"' "$HBDIR/01E17_xhigh.json")"
+# 項目が出ない場合: 欠落・未知の文字列・非文字列（数・配列・null・object）・effort が object でない
+_n17=0
+for _ef in '' ',"effort":{"level":"turbo"}' ',"effort":{"level":"XHIGH"}' ',"effort":{"level":"high "}' \
+           ',"effort":{"level":5}' ',"effort":{"level":["max"]}' ',"effort":{"level":null}' \
+           ',"effort":{"level":{"v":"max"}}' ',"effort":{}' ',"effort":"high"' ',"effort":null' \
+           ',"effort":["high"]' ',"effort":3'; do
+  _n17=$((_n17 + 1))
+  rc=0
+  run "{\"session_id\":\"01E17N${_n17}\",\"model\":{\"id\":\"m\",\"display_name\":\"M\"}${_ef},\"context_window\":{\"used_percentage\":12}}" '%9' >/dev/null || rc=$?
+  ck "[${_ef:-欠落}] → exit 0" "0" "$rc"
+  ck "[${_ef:-欠落}] → effort の項目を出さない（キーは既存5つ）" "context_pct model pane server_pid ts" \
+     "$(field "01E17N${_n17}" 'keys_unsorted | sort | join(" ")')"
+  ck "[${_ef:-欠落}]   既存キーは書かれる（jq を落とさない）" "12|M" \
+     "$(jq -r '"\(.context_pct)|\(.model.display_name)"' "$HBDIR/01E17N${_n17}.json" 2>/dev/null)"
+done
+# model が object でなくても effort は独立に判定する
+run '{"session_id":"01E17M","model":"opus","effort":{"level":"max"},"context_window":{"used_percentage":5}}' '%9' >/dev/null
+ck  "model が文字列でも effort は載る"   "max" "$(field 01E17M '.effort')"
+ck  "  model は {}"                     "{}"  "$(fieldc 01E17M '.model')"
 
 # ============================================================================
 echo ""

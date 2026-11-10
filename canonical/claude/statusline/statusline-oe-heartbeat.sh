@@ -11,7 +11,8 @@
 #                    以前この行が ULID と書いていたのは誤り＝#327 で実データと照合して訂正）。
 #   - sidecar 内容 : {"ts":<epoch秒>, "context_pct":<0-100>, "pane":"<tmux pane|空>",
 #                     "server_pid":"<tmux server pid|空>",
-#                     "model":{"id":"<model id>","display_name":"<表示名>"}|{}}
+#                     "model":{"id":"<model id>","display_name":"<表示名>"}|{},
+#                     "effort":"low|medium|high|xhigh|max"（値が正しいときだけ・#570）}
 #       ts          = date +%s（BSD/GNU 両可搬・bin/oe-undelivered:100 と同型）
 #       context_pct = stdin .context_window.used_percentage（null/早期は // 0 fallback）
 #       pane        = ${TMUX_PANE:-}（statusLine 実行 env に伝播すれば載る。stdin には tmux pane 情報が
@@ -28,6 +29,11 @@
 #                     頭から切らないこと。**id / display_name は string 以外なら空にする** — 配列や
 #                     object をそのまま保存すると、消費者側の @tsv が rc=5 で落ちて sidecar のレコード
 #                     全体（有効な ts / context_pct / pane を含む）が脱落する（#327 の実装SO 指摘）。
+#       effort      = stdin .effort.level（reasoning effort・#570）。モデルが effort に対応するときだけ
+#                     Claude Code が渡す。**.effort が object で、.level が文字列の low / medium / high /
+#                     xhigh / max のどれかのときだけ**項目を足し、それ以外（欠落・object でない・未知の値・
+#                     文字列でない）は項目ごと出さない（いままでと同じ出力）。model と同じく、入力の形が
+#                     違っても jq 全体を落とさない。
 #   - write は atomic（同一 dir 内 temp + rename）。毎秒級 write × 別プロセス read の競合で
 #     consumer が半端な JSON を読まないようにする。
 #
@@ -83,6 +89,7 @@ _oe_heartbeat_write() {
   tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || return 0
   # 本体は input を主入力に取り、ts/pane/server_pid を注入。context_pct は null/欠落を // 0 で吸収。
   # model は object のときだけ投影する（object 以外を素朴に index すると jq 全体が落ちる＝上の契約参照）。
+  # effort は .effort が object で .level が既知の5語のときだけ足す（それ以外は項目ごと出さない＝上の契約参照）。
   if printf '%s' "$input" \
     | jq -c --argjson ts "$ts" --arg pane "$pane" --arg spid "$server_pid" --arg lid "$lease_id" --arg gen "$generation" \
         '{ts:$ts,
@@ -93,6 +100,10 @@ _oe_heartbeat_write() {
                  then {id:(.model.id | if type == "string" then . else "" end),
                        display_name:(.model.display_name | if type == "string" then . else "" end)}
                  else {} end)}
+         + (if (.effort|type) == "object"
+               and (.effort.level|type) == "string"
+               and (.effort.level | IN("low","medium","high","xhigh","max"))
+            then {effort:.effort.level} else {} end)
          + (if $lid != "" then {lease_id:$lid, generation:($gen|tonumber)} else {} end)' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "${dir}/${sid}.json" 2>/dev/null || rm -f "$tmp" 2>/dev/null
