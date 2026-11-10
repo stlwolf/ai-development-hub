@@ -44,6 +44,8 @@ TAB_ROW_MAX = 6
 # 本文のタブのパネル。class で見分け、ブラウザが暗黙に閉じない要素（section・div）だけを使わせる。
 TAB_PANEL_CLASS = "hp-tabpanel"
 TAB_PANEL_TAGS = ("section", "div")
+# 本文の id の hp- の頭（E-N4）。タブの有無に関係なく止める。
+HP_ID_MSG = '本文の id "%s" が hp- で始まる（hp- は build.py が描く要素の id の頭なので、本文には使わない）'
 # 本文の一番外に、パネルのほかに置ける要素（中身を出さないもの）。
 TAB_BODY_TOP_TAGS = ("style", "script")
 # 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
@@ -1175,6 +1177,11 @@ class Validator:
                     self.add("E-N3", "sections[%d].tab" % i, "tabs の無いページの部品に tab がある（タブで分けるなら、ページに tabs を書く）")
             if body is not None and body.panels:
                 self.add("E-N3", "--body", "本文に %s があるのに、ページに tabs が無い（タブで分けるなら、ページに tabs を書く）" % TAB_PANEL_CLASS)
+            # タブの無いページでも、描く要素（答えの保存の表示 hp-store など）の id と取り違えないように、hp- の頭は止める
+            if body is not None:
+                for v in sorted(set(body.ids)):
+                    if v.startswith("hp-"):
+                        self.add("E-N4", "--body", HP_ID_MSG % v)
             return
         # データの部品の側: 割り当てと、同じタブの部品を続けて並べること
         section_tab = {}  # 部品の位置 -> 引けるタブの key
@@ -1232,7 +1239,7 @@ class Validator:
                 # パネルの id の2回目はパネルの重なり（E-N3）で出しているので、id の重なりには数えない
                 panel_n = sum(1 for pid, _ in body.panels if pid == v)
                 if v.startswith("hp-"):
-                    self.add("E-N4", "--body", '本文の id "%s" が hp- で始まる（hp- は build.py が描く要素の id の頭なので、本文には使わない）' % v)
+                    self.add("E-N4", "--body", HP_ID_MSG % v)
                 elif v in tab_keys and counts[v] > panel_n:
                     self.add("E-N4", "--body", '本文の id "%s" がタブの key と重なる（その名前は、タブのパネルの id と URL の # に使う）' % v)
                 elif counts[v] > 1 and panel_n < 2:

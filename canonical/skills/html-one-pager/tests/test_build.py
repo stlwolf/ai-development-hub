@@ -709,6 +709,12 @@ BROKEN = [
     ("n4_body_id_starts_with_hp", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="hp-tab-flow"')),
     ("n4_body_id_is_a_tab_key", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace('id="memo"', 'id="flow"')),
     ("n4_body_id_twice", "grasp", map_tabs, [("E-N4", "--body")], MAP_BODY.replace("<br>", '<br id="memo">')),
+    # タブの無いページの本文でも hp- の頭は止める（ページの JS が操作する hp-store などと取り違えるため）。
+    # 同じ id を2回書いても1件にまとめる
+    ("n4_body_id_starts_with_hp_without_tabs", "grasp", lambda d: None, [("E-N4", "--body")],
+     example_body("grasp-body.html").replace('<ol class="grasp-flow">', '<ol class="grasp-flow" id="hp-store">', 1)),
+    ("n4_body_id_starts_with_hp_twice_without_tabs", "grasp", lambda d: None, [("E-N4", "--body")],
+     example_body("grasp-body.html") + '<p id="hp-store">1つ目</p><p id="hp-store">2つ目</p>'),
     # E-K2 タブを置けない種別・束の部品はタブごとに1つまで
     ("k2_tabs_on_confirm", "confirm", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
     ("k2_tabs_on_pick", "pick", put(["tabs"], copy.deepcopy(BOARD_TABS)), [("E-K2", "tabs")], False),
