@@ -1826,45 +1826,6 @@ def display_texts(data):
                     for f in ("text", "reason"):
                         add("%s.items[%d].%s" % (sp, j, f), it.get(f))
     return out
-    add("why", data.get("why"))
-    if isinstance(data.get("request"), dict):
-        for f in REQUEST_FIELDS:
-            add(join("request", f), data["request"].get(f))
-    secs = data.get("sections")
-    for i, sec in enumerate(secs if isinstance(secs, list) else []):
-        if not isinstance(sec, dict):
-            continue
-        sp = "sections[%d]" % i
-        add(join(sp, "title"), sec.get("title"))
-        if sec.get("type") == "decisions" and isinstance(sec.get("cards"), list):
-            for j, c in enumerate(sec["cards"]):
-                if not isinstance(c, dict):
-                    continue
-                cp = "%s.cards[%d]" % (sp, j)
-                for f in ("title", "reason"):
-                    add(join(cp, f), c.get(f))
-                add_points(join(cp, "points"), c.get("points"))
-                for k, b in enumerate(c.get("blocks") if isinstance(c.get("blocks"), list) else []):
-                    if isinstance(b, dict):
-                        add("%s.blocks[%d].title" % (cp, k), b.get("title"))
-                        add_points("%s.blocks[%d].points" % (cp, k), b.get("points"))
-                # 推奨の選択肢の文は、カードの推奨の行で変換される（選択肢のボタンは変換しない）。
-                for k, o in enumerate(c.get("options") if isinstance(c.get("options"), list) else []):
-                    if isinstance(o, dict) and o.get("key") == c.get("recommend"):
-                        add("%s.options[%d].label" % (cp, k), o.get("label"))
-        elif sec.get("type") == "findings" and isinstance(sec.get("items"), list):
-            for j, it in enumerate(sec["items"]):
-                if isinstance(it, dict):
-                    for f in ("text", "reason"):
-                        add("%s.items[%d].%s" % (sp, j, f), it.get(f))
-        elif sec.get("type") == "table" and isinstance(sec.get("columns"), list) and isinstance(sec.get("rows"), list):
-            text_keys = [c.get("key") for c in sec["columns"] if isinstance(c, dict) and c.get("type", "text") == "text"]
-            for j, row in enumerate(sec["rows"]):
-                if isinstance(row, dict):
-                    for k in text_keys:
-                        if isinstance(k, str):
-                            add("%s.rows[%d].%s" % (sp, j, k), row.get(k))
-    return out
 
 
 def check_collected(data, collected, has_body=False, words=None, body=None):
