@@ -25,7 +25,7 @@ TMP_DATA_DIR="${SCRIPT_DIR}/.tmp_self_verify_${TIMESTAMP}"
 mkdir -p "${TMP_DATA_DIR}/state" "${TMP_DATA_DIR}/audit"
 
 PANE_ID=""
-# shellcheck disable=SC2317  # trap 経由で呼ばれる（shellcheck は到達不能と誤判定）
+# shellcheck disable=SC2317,SC2329  # trap 経由で呼ばれる（shellcheck は到達不能と誤判定）
 cleanup() {
   if [[ -n "$PANE_ID" ]]; then
     wez pane kill "$PANE_ID" 2>/dev/null || true

@@ -1,0 +1,3 @@
+# `# shellcheck source=../lib/...` の相対パスを、shellcheck を走らせた場所でなく
+# 検査するファイルの置き場から解決する。engine の根から回しても lib を読める（#611）。
+source-path=SCRIPTDIR
