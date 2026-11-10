@@ -264,8 +264,8 @@ _acquire_lock() {
   err "他の実行がロックを持っています — 表示だけ行い、通知と状態の保存は見送ります（${d}）"
   return 0
 }
-# trap から呼ぶので shellcheck からは到達不能に見える（SC2317 の既知の誤検知）。
-# shellcheck disable=SC2317
+# trap から呼ぶので shellcheck からは到達不能に見える（SC2317 の既知の誤検知。0.11 で SC2317 から SC2329 が分かれた）。
+# shellcheck disable=SC2317,SC2329
 _release_lock() {
   if [[ -n "$LOCK_DIR" ]]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
 }
