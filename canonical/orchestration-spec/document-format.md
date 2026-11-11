@@ -217,7 +217,7 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 
 - 列挙コマンド `knowledge-list` が state ごとの件数を集計し、**`status: active` かつ `harmful` / `contradicted` の観測を持つ item に制御候補フラグ**を立てる。要素スキーマを満たさないレコードは集計の `invalid` に数え、**そこから候補は立てない**。
 - フラグは「adverse な観測が過去に一度でもあった印」であって未処理キューではない。誤観測を訂正する語彙は enum に無いため、**一度立った候補は消えない**（v0 の既知の制約。候補の総数を運用指標に使わない）。
-- **二段チェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
+- **二段階のチェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
 
 #### status 遷移規則（段6 の制御）
 
