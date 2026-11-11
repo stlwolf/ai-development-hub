@@ -86,7 +86,16 @@ _oe_heartbeat_write() {
   dir="$OE_HEARTBEAT_DIR"
 
   mkdir -p "$dir" 2>/dev/null || return 0
-  tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || return 0
+  # #350: Claude Code は、実行中の statusLine を次の更新で打ち切るとき SIGTERM を送る（2.1.322 で実測。
+  # スクリプトの process group に届き、無視すると1〜2秒で消える）。temp を作ってから mv か rm で片付ける
+  # までに打ち切られても temp を残さないよう、TERM・INT・HUP を受けたら自分の temp だけを消して終える。
+  # trap は mktemp の前に置き、temp ができてから trap を置くまでの隙間を作らない（tmp が空なら rm は何もしない）。
+  # ほかのセッションの書きかけの temp は消さない（並列のセッションが同じ置き場に書くため）。
+  tmp=""
+  trap 'rm -f "$tmp" 2>/dev/null; exit 143' TERM
+  trap 'rm -f "$tmp" 2>/dev/null; exit 130' INT
+  trap 'rm -f "$tmp" 2>/dev/null; exit 129' HUP
+  tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || { trap - TERM INT HUP; return 0; }
   # 本体は input を主入力に取り、ts/pane/server_pid を注入。context_pct は null/欠落を // 0 で吸収。
   # model は object のときだけ投影する（object 以外を素朴に index すると jq 全体が落ちる＝上の契約参照）。
   # effort は .effort が object で .level が既知の5語のときだけ足す（それ以外は項目ごと出さない＝上の契約参照）。
@@ -110,6 +119,7 @@ _oe_heartbeat_write() {
   else
     rm -f "$tmp" 2>/dev/null
   fi
+  trap - TERM INT HUP
   return 0
 }
 _oe_heartbeat_write || true

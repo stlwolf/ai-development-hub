@@ -287,5 +287,44 @@ ck  "  model は {}"                     "{}"  "$(fieldc 01E17M '.model')"
 
 # ============================================================================
 echo ""
+echo "[18] #350: 書きかけで SIGTERM を受けても temp（.hb.*）を残さない"
+# ============================================================================
+# Claude Code は実行中の statusLine を SIGTERM で打ち切り、process group に届く（2.1.322 で実測）。
+# 本体を書く jq を、pid を残して眠る stub に替えて書きかけの状態で止め、producer と stub の両方に
+# SIGTERM を送る（process group へ届くのを写す）。stub は本体を書く呼び出し（--argjson を含む）だけ眠り、
+# session_id を読む呼び出しは本物の jq へ渡す。
+mkhb m18
+STUB18="$_TMP_DIR/stub18-bin"; mkdir -p "$STUB18"
+_realjq="$(command -v jq)"
+cat > "$STUB18/jq" <<EOF18
+#!/bin/sh
+for a in "\$@"; do
+  if [ "\$a" = "--argjson" ]; then echo \$\$ > "$STUB18/jq.pid"; exec sleep 30; fi
+done
+exec "$_realjq" "\$@"
+EOF18
+chmod +x "$STUB18/jq"
+for _sh in "${BASH:-bash}" /bin/bash; do
+  [[ -x "$_sh" ]] || continue
+  rm -f "$STUB18/jq.pid"; rm -f "$HBDIR"/.hb.* "$HBDIR"/*.json 2>/dev/null || true
+  printf '%s' '{"session_id":"01T18","model":{"display_name":"Opus"},"context_window":{"used_percentage":4}}' \
+    | env -u TMUX -u TMUX_PANE OE_HEARTBEAT_DIR="$HBDIR" PATH="$STUB18:$PATH" "$_sh" "$PRODUCER" >/dev/null 2>&1 &
+  _pid18=$!
+  _seen=no
+  for _i in $(seq 1 50); do
+    if [[ -s "$STUB18/jq.pid" ]] && [[ -n "$(find "$HBDIR" -maxdepth 1 -name '.hb.*' 2>/dev/null)" ]]; then _seen=yes; break; fi
+    sleep 0.1
+  done
+  ck "[$_sh] 書きかけの temp ができた（前提）" "yes" "$_seen"
+  kill -TERM "$_pid18" 2>/dev/null || true
+  kill -TERM "$(cat "$STUB18/jq.pid" 2>/dev/null)" 2>/dev/null || true
+  rc=0; wait "$_pid18" 2>/dev/null || rc=$?
+  ck "[$_sh] SIGTERM で終わる（exit 143）" "143" "$rc"
+  ck "[$_sh] temp（.hb.*）を残さない" "0" "$(find "$HBDIR" -maxdepth 1 -name '.hb.*' | wc -l | tr -d ' ')"
+  ck "[$_sh] sidecar は書かない（書きかけを置き換えない）" "0" "$(find "$HBDIR" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')"
+done
+
+# ============================================================================
+echo ""
 echo "=== RESULT: PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]] || exit 1
