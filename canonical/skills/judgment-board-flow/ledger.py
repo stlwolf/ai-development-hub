@@ -264,7 +264,7 @@ def check_rules(ev, where, known, errors):
         if "moved_from" in ev and route != "board":
             errors.append("E-F2 %s.moved_from: 会話から移す問いは、判断ボードに載せる（route は board）" % where)
         if "gate" in ev and isinstance(ev["gate"], int) and not 1 <= ev["gate"] <= 8:
-            errors.append("E-F2 %s.gate: 判断の順の段は 1〜8" % where)
+            errors.append("E-F2 %s.gate: 判断の順のステップは 1〜8" % where)
     if t == "published":
         opened, added = ev.get("open"), ev.get("added")
         if isinstance(opened, list) and isinstance(added, list):
