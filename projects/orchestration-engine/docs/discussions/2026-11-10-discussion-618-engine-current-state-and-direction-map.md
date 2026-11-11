@@ -10,13 +10,16 @@ related:
     reason: "この discussion はフェーズ1（現在地）とフェーズ2（外との比較）の材料で、フェーズ3（方向性）の決定はしない"
   - type: source_material
     ref: "docs/draft/618-engine-research/"
-    reason: "調査の下請け4本の調査メモ。この文書の数字と表の出どころ"
+    reason: "調査の下請けの調査メモ9本（1回目の4本と、外の調査を広げた2回目の5本）。この文書の数字と表の出どころ"
   - type: source_material
     ref: "projects/orchestration-research/synthesis/architecture-sketch.md"
     reason: "2026-02 の調査の結論"
   - type: design_context
     ref: "projects/orchestration-engine/docs/decisions/2026-11-06-decision-577-record-identity-key.md"
     reason: "D10（transport は tmux の send-keys のまま・Claude Code に依存を深めない）を、外の変化と並べて見直す材料にする"
+  - type: sibling
+    ref: "https://github.com/stlwolf/ai-development-hub/issues/562"
+    reason: "Codex を子にする。3.9 節（ほかの CLI の口）と Q10 がここにつながる"
   - type: sibling
     ref: "https://github.com/stlwolf/ai-development-hub/issues/537"
     reason: "engine を独立したパッケージにする。名前と境界の決定がここにつながる"
@@ -42,15 +45,22 @@ tags: [orchestration-engine, roadmap, landscape, epic-618]
   - 外側: Claude Code 公式の cross-session messaging・agent teams・agent view の各ページ、Agent of Empires のリリース一覧、Gas Town の README（いずれも 2026-11-10 に取得）。
 - それ以外は調査の下請けの報告を引いたもので、`[unverified-summary]` として読む。推測は `[speculation]` とする。
 - パスは、接頭辞の無いものを `projects/orchestration-engine/` からの相対とする。
+- 同じ日に、別のクラウドのセッションが外の調査を2回目として広げた。1回目は「tmux と worktree で並べる道具」と Claude Code 公式が中心で、大小の OSS の横断が薄かったためである。下請け5本（2026-02 の21ツールの追跡・統括が子へ委譲する型の OSS・セッションを並べる層と端末・ほかの CLI の公式の口とプロトコル・設計のパターンと実践者の動向）の調査メモを `docs/draft/618-engine-research/` に足した。3.5 節から 3.9 節と、4節の書き直しがその反映である。
+- 2回目の調査では、結論を左右する17ページを、書き手がもう一度取得させ、原文の引用で突き合わせた（2026-11-10）。引用で確かめられた主張にだけ `[verified]` を付ける。対象は、herdr の規模とライセンスと v0.9.5 の変更、Cyclops の配送の4段階、OpenAI 公式の Codex プラグイン、Anthropic の 2026-03-24 の記事、ai-orchestrator の設計 issue、Symphony の仕様書、Gas Town の設計書とコミット履歴、Gas City の移行の文書とコマンド対応表とリリース、Codex の hook と CLI リファレンス、CAO の配送の文書、multi-agent-shogun の README である。
+- 突き合わせで、下請けの報告と原文が食い違った所が5つあった。本文はどれも原文に合わせてある。(1) Gas City の文書に「successor」の語は無い。(2) Symphony の仕様書は、統括が LLM でないとは明記していない。(3) Gas Town の README に Gas City への言及は無い。(4) Gas Town が agent teams へ乗る設計書は 2026-02-08 付けで、未実装と明記されている。(5) Codex の hook が既定で有効かどうかは、原文では確かめられなかった（信頼の確認を経てから走る、とは書かれている）。ページの取得は要約を挟む仕組みなので、`[verified]` でも、引用していない細部までは保証しない。
+- 1回目の記述のうち、2回目で誤りと分かったものは 3.5 節にまとめ、本文の該当箇所も直した。
 
 ## 1. 要点
 
 1. engine の中身は、性質の違う3つの層に分かれている。1つ目は、2026-05 の MVP である非対話の1サイクルの本体（`oe run`）で、06-04 以降は state が残っていない `[verified]`。2つ目は、tmux の `send-keys` で対話セッションへ委譲し、届いたかを確かめ、見張る層である。3つ目は、統括が落ちても持ち場が続くための lease・交代・復帰と、owner への問いを集める判断ボードである。README の「目的」節は1つ目の言葉で書かれたままで、冒頭の説明は2つ目と3つ目の言葉で書かれている `[verified]`。
 2. 6か月の実装の大半は、2つの痛みへの手当てに使われてきた。対話セッションへ文を送ったときに届いたかが分からないことと、長く走る統括の文脈が尽きることである。配送の対策は少なくとも6回作り直され、そのうち1回は検知器が逆を指していた（`suspected_miss` の 97.6% が実は到達）`[verified]`。統括は 07-09 の3〜4代目から 11-06 の23代目まで交代している `[unverified-summary]`。
 3. 2026-02 以降、外では「tmux と worktree でエージェントを並べて状態を見る」層が出そろった（Agent of Empires は 2026-11-08 に v1.22.3 で、ほぼ週次で出している `[verified]`）。Claude Code 公式にも、セッション間のメッセージ（同じマシンではセッションごとの Unix ソケットで届き、アイドルなら新しいターンを始める）と、落ちたセッションを再起動する supervisor が入った `[verified]`。子が Claude Code である限り、送信・生存監視・cockpit の表示は外へ寄せられる材料がそろった。
-4. 外に同等のものが見当たらないのは、統括の座の排他（lease）と統括の世代交代、Claude Code 以外の CLI を子にする委譲、別ベンダーのモデルによるセカンドオピニオン、選択肢と根拠を付けて owner に1枚で出す判断ボードである。agent teams は「Lead is fixed」で、ネストもできない `[verified]`。外で統括の交代と stuck の検知を持つのは Gas Town だけだった `[verified]`。
-5. #577 の D10 は「Claude Code への依存を深めないので、セッション間の文を送る機能には乗らない」と決めている `[verified]`。公式の文書には、スクリプトや hook からセッションのソケットへ投函する方法（`CLAUDE_CODE_MESSAGING_SOCKET`）と、届いたか・保留か・拒否かの3値が書かれている `[verified]`。D10 の前提をこの材料と並べて見直すかどうかは、フェーズ3の最初の論点になる。
-6. 蒸留文書は engine の木で 208本・45,098行（decision・discussion・episode・plan の合計）あり、bin と lib を合わせた 14,727行の約3倍になる `[verified]`。owner の第一目的が「認知負荷が減る」ことである以上、文書の量と保守の手間も方向性の論点に入る。
+4. 外に同等のものが見当たらないのは、2回目の調査で2つに絞られた。1つは、LLM の統括のセッションの座を lease で排他し、後任へ世代交代させる組である。もう1つは、選択肢と根拠を付けて owner に1枚で出す判断ボードである。agent teams は「Lead is fixed」で、ネストもできない `[verified]`。1回目に同じ並びへ入れた「Claude Code 以外の CLI を子にする委譲」と「別ベンダーのモデルによるセカンドオピニオン」は、公式には無いが OSS には広くあり、セカンドオピニオンには OpenAI 公式の Claude Code 向けプラグインが出ている `[verified]`（3.8）。
+5. 1回目の「統括の交代と stuck の検知を持つのは Gas Town だけ」は、探した範囲が狭かった。統括が子へ委譲し、見張り、文脈が尽きることへの手当てまで持つ OSS は少なくとも8件ある `[unverified-summary]`。そのうえ Gas Town 本体は、2026-07-23 のあと 10-20 まで main にコミットが無く、以後は依存の更新が大半である `[verified]`。仕掛けを取り出した先の Gas City は、見張り役（Deacon）の仕事を orchestrator の health patrol へ移した `[verified]`（3.5・3.6）。
+6. 外の設計は、engine の痛みと同じ所で、3つの形に寄ってきている（3.8）。(a) 配送では、本文をファイルや台帳に置き、端末へ打つのは起こす合図だけにする。受領は hook の発火や、受け手が本文を取り出したことで確かめる。Gas City・multi-agent-shogun・Cyclops が別々にこの形へ着いた。(b) 状態の読み取りでは、各 CLI の hook による自己申告を主にし、画面を読むのは hook が黙ったときと承認のダイアログに限る。(c) 統括の文脈では、統括を長く生きる LLM のセッションにしないか、状態を統括の会話の外（台帳・ログ・ファイル）に置いて、統括はいつ入れ替わってもよいものにする。Anthropic は文脈のリセットを Opus 4.5 で外した `[verified]`。
+7. #577 の D10 は「Claude Code への依存を深めないので、セッション間の文を送る機能には乗らない」と決めている `[verified]`。公式の文書には、スクリプトや hook からセッションのソケットへ投函する方法（`CLAUDE_CODE_MESSAGING_SOCKET`）と、届いたか・保留か・拒否かの3値が書かれている `[verified]`。2回目の調査で、D10 を保ったまま配送の痛みを減らす道（tmux のまま、本文と合図を分ける）も外に実例があると分かった。フェーズ3の最初の論点は、公式のソケットへ寄せる・本文と合図を分ける・いまのまま、の3つから選ぶ形になる。
+8. Claude Code に固有の4つの口（#618 のコメント）のうち、プロンプトを受け取った印の hook・セッションの ID・再開の3つは、Codex へほぼそのまま移せる。拍動（statusLine）だけは、どの CLI にも同じ口が無い `[unverified-summary]`（Codex の hook と CLI のコマンドは `[verified]`）（3.9）。
+9. 蒸留文書は engine の木で 208本・45,098行（decision・discussion・episode・plan の合計）あり、bin と lib を合わせた 14,727行の約3倍になる `[verified]`。owner の第一目的が「認知負荷が減る」ことである以上、文書の量と保守の手間も方向性の論点に入る。外の議論は、量を減らす・決定だけを分けて残す・繰り返す注意は文書でなく検査へ移す、でそろっている `[unverified-summary]`（3.8）。
 
 ## 2. 現在地（フェーズ1）
 
@@ -184,8 +194,8 @@ Claude Code 公式（`code.claude.com/docs`）:
 並べて状態を見るツール:
 
 - Agent of Empires は、tmux のセッションと git worktree を束ね、状態の検出と通知を持ち、Claude Code・Codex・Gemini CLI などを扱う。2026-11-08 に v1.22.3 を出した `[verified]`。claude-squad・CCManager・cmux・herdr も同じ層にいる。どれも「人が各セッションを操る前提で並べる」もので、親子の委譲は持たない `[unverified-summary]`。
-- Gas Town は、統括（Mayor）・作業者・見張り（Witness・stuck を検出して回復させる）を持ち、文脈を入れ替える handoff を持つ。外で engine に最も近い `[verified]`（https://github.com/gastownhall/gastown）。
-- Vibe Kanban は終了を告知し、Crystal は 2026-02 に deprecated になった `[unverified-summary]`。
+- Gas Town は、統括（Mayor）・作業者・見張り（Witness・stuck を検出して回復させる）を持ち、文脈を入れ替える handoff を持つ `[verified]`（https://github.com/gastownhall/gastown）。ただし 2回目の調査で、本体は機能の変更が止まり、後継の Gas City へ重心が移ったと分かった（3.5）。
+- Vibe Kanban は運営会社が 2026-04 に止まってコミュニティの保守になり、Crystal は 2026-02 に deprecated になった `[unverified-summary]`。
 
 他社の CLI（多くは二次情報）:
 
@@ -193,24 +203,116 @@ Claude Code 公式（`code.claude.com/docs`）:
 
 ### 3.3 engine の機能ごとの対照表
 
-判定は「ある（外へ任せられる水準）」「部分的にある（条件付き）」「見当たらない」の3つ。`phase2-external.md` 6節の表を要約した `[unverified-summary]`。
+判定は「ある（外へ任せられる水準）」「部分的にある（条件付き）」「見当たらない」の3つ。`phase2-external.md` 6節の表を、2回目の調査（`phase2-supervisor-orchestrators.md` 7節・`phase2-session-managers.md` 6節・`phase2-patterns-and-practice.md`）で更新した `[unverified-summary]`。
 
 | engine の機能 | 判定 | 外にあるもの | 足りないもの |
 |---|---|---|---|
-| 委譲と送受信 | 部分的にある | セッション間のメッセージ（ソケット・3値の結果）、Gas Town の mail | 受け手が読んだという応用の層の受領確認、Claude Code 以外の CLI への送信 |
-| 登記と木構造 | 部分的にある | `claude agents --json` の一覧、agent teams の members | セッションをまたぐ任意の深さの親子の木 |
-| 生存監視 | ある（子が Claude Code なら） | agent view の supervisor、hook の `StopFailure`・`Notification` | ほかの CLI の子は画面の推定か Gas Town |
-| 世代交代と lease | 見当たらない（lease）、部分的にある（交代） | Gas Town の handoff、Projects の文脈の設計 | 統括の座の排他。公式は lead を移せない |
-| 復帰 | 部分的にある | supervisor の再起動、保存した会話からの再開 | マシンの再起動のあとの自動の再開、統括と子の関係ごとの復元 |
-| セカンドオピニオン | 部分的にある | `/code-review`、workflows の相互検証 | 別ベンダーのモデル（Codex など）に見せる仕組み |
-| cockpit の表示 | ある | agent view、Agent of Empires、cmux、herdr | engine に固有の状態（木・lease）を映すこと |
-| 判断ボード | 部分的にある | agent view の Needs input、Projects の「Waiting on you」、Gas Town の escalate | 選択肢と根拠を付けて1枚にまとめて出すこと |
+| 委譲と送受信 | 部分的にある | Claude Code のセッション間のメッセージ（ソケット・3値の結果）。tmux のままなら Cyclops（配送を4段階に分ける）、CAO の inbox（受け手が待機中のときだけ届け、Enter を送り直す）、Gas City と multi-agent-shogun（本文は hook かファイル、端末は合図だけ） | 公式のソケットは、受け手が読んで着手したことまでは返さず、Claude Code 以外へは送れない。OSS 側は小さいもの（Cyclops はスター14）か、engine と土台が違うもの |
+| 登記と木構造 | 部分的にある | `claude agents --json` の一覧、agent teams の members、agent-deck の conductor の親子、tmux-agent-sidebar の木 | セッションをまたぐ任意の深さの親子の木 |
+| 生存監視 | ある（子が Claude Code なら） | agent view の supervisor、hook の `StopFailure`・`Notification`。ほかの CLI は herdr・Agent of Empires・workmux などの hook と画面読みの併用 | 見張りが黙ったことを拾う層は、どれも「最下層を LLM でない機械にする」作りで、engine にはまだ無い |
+| 世代交代と lease | 見当たらない（統括の座の lease）、部分的にある（交代） | 交代は Gas Town の handoff、NTM の context rotation、multi-agent-shogun の `/clear` と読み直し。lease はタスクとファイルについては多数ある（Hermes の Kanban、mcp_agent_mail、Beads） | LLM の統括の座の排他。公式は lead を移せない。外の主流は、統括を LLM にしないことで排他の要る場面を作らない |
+| 復帰 | 部分的にある | supervisor の再起動、保存した会話からの再開、herdr や workmux の復元 | マシンの再起動のあとの自動の再開、統括と子の関係ごとの復元 |
+| セカンドオピニオン | ある | OpenAI 公式の Codex plugin for Claude Code（`/codex:review`・`/codex:adversarial-review`）`[verified]`、PAL MCP、Oracle | SO を手順のゲートとして必ず通す仕組み（`oe-refute`・`oe-review` の役目）は、metaswarm のほかに見当たらない |
+| cockpit の表示 | ある | agent view、Agent of Empires、cmux、herdr、agent-deck、workmux | engine に固有の状態（木・lease）を映すこと |
+| 判断ボード | 部分的にある | agent view の Needs input、Projects の「Waiting on you」、Gas Town の escalate。同じ形の設計は ai-orchestrator の issue（2026-11-08・問いの共通のキュー・選択肢・まとめて答える）`[verified]` と、個人作の decisions、TAKT の director（実験的） | 選択肢と根拠を付けて1枚にまとめて出すことを、運用まで回している公開の実装 |
 
 ### 3.4 外の変化で、engine の前提が動いた所
 
 - **送信の transport。** engine は、受け手の入力欄の状態（下書き・確認のダイアログ・copy-mode）に左右される `send-keys` の上に、届いたかを確かめる層を4つ積んできた（2.7）。公式のメッセージは入力欄を通らず、届けたかどうかを送り手に返す `[verified]`。子が Claude Code の場合に限っては、配送の痛みの元を transport ごと取り替えられる可能性がある `[speculation]`。ただし、親の Bash から子のソケットへ投函する形（子がソケットのパスを lease に書き、親がそれを読む形など）が、権限の扱いや macOS の制約まで含めて実用になるかは、実機で確かめていない。
 - **生存監視と cockpit の表示。** 子を Claude Code のバックグラウンドのセッションとして起こせば、再起動と状態の一覧は公式が持つ `[verified]`。engine の見張り3本と点検2本が定期実行の配線を持たないまま止まっている（2.5）こととあわせると、自前で持ち続ける理由は薄くなっている `[speculation]`。一方で、agent view は research preview で、マシンの再起動では止まる。
-- **変わらなかった所。** 統括の座の排他と交代、ほかの CLI を子にすること、別ベンダーのセカンドオピニオン、判断ボードは、外に同等のものが無いままである。2026-02 の調査が独自性として挙げた意味の層と、11月に中心になった層（2.2 の (c)）がここに当たる。
+- **変わらなかった所。** 統括の座の排他と交代、判断ボードは、外に同等のものが無いままである。2026-02 の調査が独自性として挙げた意味の層と、11月に中心になった層（2.2 の (c)）がここに当たる。ほかの CLI を子にすることと、別ベンダーのセカンドオピニオンは、公式には無いが OSS には広くある（3.8）。
+
+### 3.5 2回目の調査で広げた範囲と、1回目の訂正
+
+1回目は、tmux と worktree で並べる道具と Claude Code 公式を中心に見た。2回目は、次の5つへ広げた。調査メモはどれも `docs/draft/618-engine-research/` にある。
+
+| 調査メモ | 見た範囲 |
+|---|---|
+| `phase2-landscape-followup.md` | 2026-02 の21ツールと steipete の番外が、9か月でどうなったか |
+| `phase2-supervisor-orchestrators.md` | 統括が子へ委譲し、見張り、長く走る型の OSS。候補25件と、候補に無かった17件を開いた |
+| `phase2-session-managers.md` | セッションを並べ、状態を見て、入力を送る層と、エージェント向けの端末。状態の検出と入力の送信の方式 |
+| `phase2-vendor-cli-and-protocols.md` | Codex・Gemini・Cursor・Copilot・OpenCode などの、外から束ねるための口。ACP・MCP・A2A |
+| `phase2-patterns-and-practice.md` | 設計のパターンと実践者の動向。engine の痛みを外がどう解いているか。日本語圏の記事 |
+
+1回目の記述のうち、訂正するものは次のとおりである。
+
+| 1回目の記述 | 訂正 | 根拠 |
+|---|---|---|
+| 親子の委譲・監視・世代交代まで持つのは Gas Town だけ | 委譲と監視と文脈への手当てを持つものは少なくとも8件ある（Gas Town・Gas City・multi-agent-shogun・NTM・agent-deck の conductor・Hermes Agent の Kanban・Overstory・Claude Code Agent Farm）。Gas Town だけなのは、LLM の統括を handoff で交代させ、前任のセッションへ問い合わせる Seance まで持つ点である | `[unverified-summary]` `phase2-supervisor-orchestrators.md` 8節 |
+| Gas Town は現役で保守されている | main のコミットは 2026-07-23 のあと 10-20 まで無く、以後は依存の更新とビルドの修正が大半である。仕掛けを取り出した先が Gas City（v1.5.1・10月24日）で、Gas City には Seance も escalate も無い。handoff は `gc handoff` として残る | `[verified]`（コミット履歴・コマンド対応表・リリース） |
+| Gas Town は tmux の輸送を公式へ寄せつつある | agent teams に Witness を載せる設計書はあるが、2026-02-08 付けで「NOT YET IMPLEMENTED」のままである | `[verified]` |
+| herdr は AGPL-3.0 | 本家は Apache-2.0 で、スターは約5万。1回目に開けたのはフォークだった | `[verified]` |
+| Crystal の後継の Nimbalyst は有償のクローズドソース | MIT のオープンソースである | `[unverified-summary]` `phase2-session-managers.md` 2節 |
+| Codex の subagent が既定で有効かは出典が割れている。`codex mcp-server` で Codex を子にできる | subagent は既定で有効とされる `[unverified-summary]`。`codex mcp-server` は削除され、app-server を使うよう案内されている `[verified]` | `phase2-vendor-cli-and-protocols.md` A.1 |
+| lease に当たる公開の実装は見当たらない | 統括の座については同じ結論である。タスクとファイルの lease は多数ある（Hermes の Kanban は claim に TTL と heartbeat を持つ） | `[unverified-summary]` `phase2-supervisor-orchestrators.md` 7.1 |
+| 別ベンダーのモデルに見せる仕組みは公式に無い | Claude Code の側には無いが、OpenAI が Claude Code 向けの公式プラグインを出している（約3.5万スター） | `[verified]` |
+
+### 3.6 外の OSS の地図（2026-11）
+
+統括が子へ委譲する型の OSS を、作りで分けると次のようになる（`phase2-supervisor-orchestrators.md` 6節）`[unverified-summary]`。
+
+| 類型 | 作り | 主なもの | 統括の文脈への手当て | engine との距離 |
+|---|---|---|---|---|
+| tmux 階層型 | 役を決めた親子を tmux のペインに並べ、ファイルと `send-keys` でつなぐ | multi-agent-shogun、CAO、agent-deck の conductor、NTM、OpenRig、codex-orchestrator | `/clear` と読み直し、context rotation | 最も近い。土台（Bash・tmux・hook）まで同じなのは multi-agent-shogun |
+| 台帳中心型 | 仕事と状態を課題の台帳に置き、セッションは短命で入れ替えられる。引き継ぎは台帳そのもの | Gas Town、Gas City、Beads、Hermes の Kanban、Paperclip | 台帳へ外に出す。交代は「新しいセッションが台帳を読む」だけ | 中。engine は対話のセッションを主に置く |
+| メールボックス型 | 永続の mailbox で連絡し、受領の確認や予約を持つ | Cyclops、mcp_agent_mail、hcom、ClawTeam | 本文を端末に流さない | 配送と受領の確認の面で近い |
+| 制御ループ型 | デーモンや reconcile のループが配り、やり直し、片付ける。LLM は子だけ | Symphony、Gas City の orchestrator、Hermes の dispatcher、bernstein | 統括に文脈が無いので問題にならない | 遠いが、流れはこちらへ向いている |
+| 公式機能に乗る型 | agent teams や subagents を土台に、手順とほかの CLI の呼び出しを足す | oh-my-claudecode、metaswarm | 公式の compaction に任せる | 方針しだい |
+| ループ型・仕様書駆動型 | 同じ指示を新しい文脈で繰り返す、または文書で役割と手順を定める | ralph-orchestrator、BMAD-METHOD | 反復ごとの新しい文脈、計画を文書へ | 遠い |
+
+セッションを並べる層では、次の動きがあった（`phase2-session-managers.md` 5節）。
+
+- 状態の検出は、各 CLI の hook による自己申告が主になり、画面を読むのは従になった。ただし置き換わってはいない。herdr は v0.9.5 で Codex の hook を入れるのをやめ、画面の検出へ戻した `[verified]`。hook が黙ったときのために、無音の時間で見張る部品（10秒・5分・10分）を各ツールが持つ `[unverified-summary]`。
+- 入力の送信は、端末へ打つ形のままのものが多い。変わったのは外側で、応答を返す API、送信と「状態が変わるまで待つ」を1回にまとめる要求、hook のイベントで受領を確かめる仕組みが出そろった。Superset の `terminals send --wait` は、送って10秒以内に新しい hook のイベントが出なければ失敗にする `[unverified-summary]`。
+- tmux の上に薄く乗るもの（agent-deck・workmux・Agent of Empires・Cyclops）と、tmux ごと置き換えるもの（herdr・tuios・cmux）に分かれる。workmux は tmux と WezTerm の両方を土台にできる `[unverified-summary]`。
+
+### 3.7 2026-02 の21ツールのその後
+
+`phase2-landscape-followup.md` の要約である `[unverified-summary]`。
+
+- 近縁のツールは一つも消えず、スターは数倍から20倍になった。ただし、同じ形のまま伸びたものは少ない。
+- **agent-orchestrator** は、Bash 由来の「DB なし・フラットファイル・tmux」を捨て、Go のデーモンと SQLite と変更の追記ログへ移った。tmux は legacy の扱いである。engine がいまいる場所は、このツールが出発した場所に近い。
+- **CAO** は、engine に構造が最も近いまま残った（tmux・統括と作業者・inbox・SQLite）。画面の読み方を、生の出力への正規表現から、端末として描画した画面を読む形へ替えた。配送は、受け手が待機中のときだけ届け、貼り付けたあと8秒のうちに処理の始まりが見えなければ、最大2回まで立て直す `[verified]`。
+- **TAKT** は、常駐の `takt manager` と、複数の manager をまたいで未回答の問いを見回る `takt director` を足した（実験的）。判断ボードへ外から最も近づいている動きである。
+- **oh-my-claudecode** は、公式の agent teams に乗る `/team` と、tmux でほかの CLI を起こす `omc team` の二本立てを保っている。
+- 止まったのは、o-m-cc（凍結）、Aider（リリースが1年無い）、AutoGen と ControlFlow（アーカイブ）、MetaGPT である。
+- 伸びた設計は、計画をモデルの気分ではなくスクリプトやワークフローの定義が持つ形である。消えた設計は、中央を置かない P2P の協調、ほかの CLI を MCP サーバーで包む経路、画面の生の出力への正規表現である。
+
+### 3.8 痛みごとに見た外の解き方と、engine の位置
+
+2.7 の痛みを、外がどう解いているかと並べる。位置の判定は、下請けと書き手の読みである `[speculation]`。もとにした事実は `phase2-patterns-and-practice.md` と `phase2-supervisor-orchestrators.md` にある。
+
+| 痛み | 外の主流の解き方 | engine の位置 |
+|---|---|---|
+| 送ったのに届かない、届いたかが分からない | 本文はファイルや台帳に置き、端末へ打つのは起こす合図だけにする。受け手が状態を自分で申告する。合図を落としても、正本を読みに行けば拾える作りにする。multi-agent-shogun は `send-keys` の入力の衝突に48回の修正を重ねてから、この形へ移った `[unverified-summary]`。README は「メッセージ内容は tmux を経由しない」と書く `[verified]`。Cyclops は配送を Accepted・Notified・Claimed・Completed に分ける `[verified]` | 遠回りしている。6回の作り直しは、外が先に通った道と同じである。一方、「届いた」と「読んで着手した」を分ける考え方は、外でも少数の先頭と並んでいる |
+| 統括の文脈が尽きて交代する | 状態を統括の会話に持たせない。統括は、いつ入れ替わっても正本から立ち上がれるものにする。Anthropic は、Sonnet 4.5 では要った文脈のリセットを Opus 4.5 で外した `[verified]`。交代を続ける側は、引き継ぎを小さく保つ。Gas Town は「台帳の状態がそのまま handoff である」とし、Amp は次の目的に要る分だけを抜き出す `[unverified-summary]` | 交代そのものは並んでいる。引き継ぎの文書が約5万1千トークンに育った点は遠回りしている |
+| ペイン番号をキーにした取り違え、統括の座の排他 | 環境変数で渡す固定の名前や ID、tmux の変わらないペイン ID、会話の UUID を使う。座は名前で一意にして、セッションは使い捨てにする。または統括を1つのデーモンにして、排他の要る場面を作らない | ペイン番号をキーにした点は遠回りしていた（#577 で直している）。統括の座の lease は、公開の実装がほぼ無く、先に着いている。ただし外は、lease の要らない作りで済ませている |
+| owner への問いが流れる・重なる | どのセッションが待っているかの一覧と通知までが主流である。問いを項目にし、選択肢を付け、1か所に集めてまとめて答える設計は、2026年の後半に個人作で出始めた段階である `[verified]`（ai-orchestrator の issue・2026-11-08） | 先に着いている。外の議論が足しているのは、上げる量そのものを減らすことと、答えを束で返して統括を1回だけ起こすことの2つである |
+| 見張りが黙ったことに気づけない | 最下層を LLM でない機械（cron・systemd・デーモン）にする。見張られる側が拍動を自分で書き、見張る側は鮮度だけを閾値で見る。監督は主経路から外し、例外だけを見る。Gas Town は、作業者の完了を見張り役が1件ずつ通す作りで詰まり、作業者が自分で待機へ移る形に直した `[unverified-summary]` | 問題の捉え方は並んでいる。解は外に定石があり、engine はその手前にある（2.5 の未配線） |
+| 文書がコードの3倍ある | 短い目次と正本の `docs/`、機械的な鮮度の検査。決定だけを分けて残す。計画と作業のログは残さない。繰り返す注意は検査へ移す。Anthropic の 2026-11-06 の記事は、書きすぎた記憶が成績を下げた実験を報告している `[unverified-summary]` | 決定を残す規律は並んでいる。量は遠回りしている |
+
+ほかに、次の2点が方向性に効く。
+
+- **セカンドオピニオンの効き方。** 2026-10 のプレプリント（900回のレビューの対照実験）は、別のモデルによるレビューと、同じモデルの新しいセッションによるレビューに、有意な差が無かったと報告している。効くのは、別のベンダーであることより、白紙の文脈であることと、レビュー役が十分に強いことだと読める。別のモデルは、2回目のレビューとして足すと上積みがある `[unverified-summary]`（要旨だけを読んだ・`phase2-patterns-and-practice.md` 6.2）。
+- **足場を外す動き。** Anthropic の 2026-03-24 の記事は「every component in a harness encodes an assumption about what the model can't do on its own」と書き、モデルが新しくなるたびに部品を外して確かめたと述べる `[verified]`。外の実践者が挙げる目安は「外すのに1時間なら選択肢、1週間なら負債」である `[unverified-summary]`。05-19 の「Build to Delete」（2.6）は、この流れと同じ向きである。
+
+### 3.9 Claude Code 以外の CLI を子にする口
+
+#618 のコメント（統括も子も Claude 固定でなく選べる形）の材料である。`phase2-vendor-cli-and-protocols.md` の要約で、Codex の hook のイベントと CLI のコマンドだけ `[verified]`、ほかは `[unverified-summary]` である。
+
+| Claude Code の口 | Codex | Gemini CLI | Copilot CLI | OpenCode |
+|---|---|---|---|---|
+| 拍動（statusLine） | 同じ口は無い。ツール実行の hook か、app-server の状態の通知で代える | 同じ口は無い。hook で代える | 同じ口は無い。hook で代える | `GET /event` の SSE を購読する |
+| プロンプトを受け取った印の hook | `UserPromptSubmit` がある | `BeforeAgent` がある | `userPromptSubmitted` がある | シェルの hook は無い。SSE かプラグイン |
+| セッションの ID | hook の標準入力と `exec --json` の出力から取る。環境変数は当てにできない | hook の標準入力から取る | hook の標準入力から取る | `session list --format json` と API |
+| 再開 | `codex resume <ID>`・`codex exec resume <ID>` | `gemini --resume <UUID>` | `--resume` はあるが定義は未確認 | `opencode run --session <id>` |
+
+- Codex の hook には `UserPromptSubmit`・`Stop`・`SessionStart`・`SessionEnd`・`PermissionRequest` がある `[verified]`。形は Claude Code に寄せてあり、Codex・Gemini・Cursor は Claude Code の hook との互換のための環境変数や移行の処理を持つ。
+- 外部のコマンドを一定の間隔で呼ぶ口（statusLine）は、調べた範囲でどの CLI にも無い。差し替える層は、口の名前ではなく役割（起こす・送る・受領を確かめる・生存と状態を得る・ID を得る・再開する・判断待ちを知る）で切ることになる `[speculation]`。
+- Codex には、打鍵のほかに送る口がある。`codex queue --thread <ID> --message`（Stable の表記）と、app-server（Experimental）である `[verified]`。`codex queue` が、動いている最中のセッションへどう届くかは文書に無い。
+- どの CLI にも、対話なしの実行と JSON の出力と再開がある。「対話なしで仕事を進め、人が見たいときだけ同じ ID を対話で開き直す」が、全 CLI に通る最小の形になる。
+- 相手の CLI を MCP サーバーとして子にする道は、公式には細っている。Codex は口を削り、`claude mcp serve` は道具だけを出す。ACP は、送る・状態を読む・承認に答える・再開するまで安定しているが、子が画面を持たないので、人が途中で覗いて手を入れることと両立しにくい。
+- Gemini CLI は 2026-06-18 に個人向けの提供を止め、Antigravity CLI へ移ったとされる。
 
 ## 4. 見取り図（フェーズ3に向けて）
 
@@ -221,9 +323,10 @@ Claude Code 公式（`code.claude.com/docs`）:
 | 層 | 外との関係 | 考えられる扱い |
 |---|---|---|
 | (a) 本体エンジン（`oe run`） | 公式の workflows や subagent が近い | 凍結して `projects/_archived/` へ移す、残す、パイプライン駆動の構想（#105）とあわせて作り直す |
-| (b) 送受信・見張り・表示 | 子が Claude Code なら公式に寄せうる。ほかの CLI の子は tmux が残る | tmux を続ける、Claude Code の子だけ公式のメッセージと agent view へ寄せて tmux はほかの CLI のための経路にする |
-| (c) 統括の継続性と判断ボード | 外に同等のものが無い | engine の中心として残し、独立したパッケージの芯にする |
+| (b) 送受信・見張り・表示 | 子が Claude Code なら公式に寄せうる。tmux のまま堅くする実例も外にある（本文と合図を分ける）。ほかの CLI の子は tmux か、対話なしの実行が残る | tmux を続けて本文と合図を分ける、Claude Code の子だけ公式のメッセージと agent view へ寄せて tmux はほかの CLI のための経路にする、表示は外の道具（agent view・agent-deck・workmux など）を併用する |
+| (c) 統括の継続性と判断ボード | 外に同等のものが無い。ただし外は、統括の状態を会話の外へ出して、交代と排他を軽くする向きである | engine の中心として残し、独立したパッケージの芯にする。交代を磨くか、統括の持つ状態を記録へ出して交代を軽くするかは Q5 |
 | (d) 文書の手順 | engine のコードではない | engine から切り離してハーネスに置く、軽くする |
+| (e) SO のゲート | 呼び出す道具は OpenAI 公式のプラグインなどが外にある。手順のゲートとして必ず通す仕組みは外にほぼ無い | `so-compare` を続ける、呼び出しを公式のプラグインへ寄せてゲートの判定だけを持つ |
 
 ### 4.2 フェーズ3で決めること
 
@@ -233,26 +336,43 @@ Claude Code 公式（`code.claude.com/docs`）:
 |---|---|---|---|---|
 | Q1 | engine は何を目指すか（目的と非目的） | 05-19 の「specialized instrument・Build to Delete」に戻す、10月の「認知負荷を減らす統括の道具」にする、ほかに切り直す | 2.6、owner の第一目的（10-24）、#537 | 認知負荷を第一目的に置き、README の「目的」節をそれで書き直すのが、ほかのすべての前提になる |
 | Q2 | 本体エンジン `oe run` を残すか | 凍結して移す、残す、作り直す | 2.2 の (a)、06-04 以降の記録が無いこと | 凍結して移すと、lib 9本（1,823行）と #93 などの派生 issue を整理できる。パイプライン駆動の構想を続けるなら、そのときに作り直すほうが軽い |
-| Q3 | 送信の transport（#577 D10 の見直し） | tmux の `send-keys` を続ける、Claude Code の子は公式のメッセージへ寄せる、両方を持つ | 3.4、2.7 の配送の痛み、D10 | 小さな実地の試験（子1本に公式のメッセージで送り、届いた・保留・拒否を記録する）をしてから決める。D10 は owner の答え（Q67）なので、試験の結果を添えて問い直す形がよい |
-| Q4 | 生存監視と cockpit の表示を外に寄せるか | 自作を続ける、agent view や Agent of Empires を併用して自作は engine に固有の状態だけにする | 3.3、2.5 の未配線 | Q3 の結論に従う。寄せるなら、#546・#570・#547 など cockpit の表示の issue は畳める |
-| Q5 | 統括の世代交代をどう扱うか | 交代を続ける、世代0から始める既定にする、Projects 型の「文脈を構造で小さく保つ」形に寄せる | 2.7、#609、引き継ぎ文書の約5万1千トークン、Projects の文脈の設計 | 交代を前提にするより、統括の会話に積まない設計（中間の結果を記録へ出す）を先に検討する価値がある |
+| Q3 | 送信の transport（#577 D10 の見直し） | (ア) tmux の `send-keys` をいまのまま続ける、(イ) tmux は続け、本文はファイルに置いて端末へは合図だけを打ち、受領は hook の発火で確かめる、(ウ) Claude Code の子は公式のメッセージへ寄せる、(エ) イとウを両方持つ | 3.4、3.6、3.8、2.7 の配送の痛み、D10 | (イ) は D10（Claude Code への依存を深めない）を保ったまま痛みの元を減らせ、Codex の子にも同じ形で通るので、先に試す値打ちがある。(ウ) は小さな実地の試験（子1本に公式のメッセージで送り、届いた・保留・拒否を記録する）をしてから決める。D10 は owner の答え（Q67）なので、試験の結果を添えて問い直す形がよい |
+| Q4 | 生存監視と cockpit の表示を外に寄せるか | 自作を続ける、agent view や外の道具（agent-deck・workmux・Agent of Empires）を併用して自作は engine に固有の状態だけにする | 3.3、3.6、2.5 の未配線 | Q3 の結論に従う。寄せるなら、#546・#570・#547 など cockpit の表示の issue は畳める。見張りを残すなら、最下層を LLM でない機械にし、拍動の鮮度で沈黙を拾う形（3.8）へ寄せる |
+| Q5 | 統括の世代交代をどう扱うか | 交代を続ける、世代0から始める既定にする、統括の状態を会話の外（記録・台帳）へ出して交代を軽くする、Projects 型の「文脈を構造で小さく保つ」形に寄せる | 2.7、3.8、#609、引き継ぎ文書の約5万1千トークン、Projects の文脈の設計 | 交代を磨くより、統括の会話に積まない設計を先に検討する価値がある。外で交代を続けている側は、どれも引き継ぎを小さく保っている（台帳の状態を引き継ぎにする、次の目的に要る分だけ抜き出す、上書きのスナップショットにする）。lease と board はすでに会話の外にあるので、引き継ぎの文書から何を lease と board へ移せるかが最初の問いになる |
 | Q6 | 1つのリポジトリに複数の統括を置くか | 置かない、置く（区別の仕方を決める） | #618 本文、lease の label・board・セッション名が1人の前提 | この Epic を別の統括で進めることが最初の実地になる。このクラウドのセッションもその1つで、hub の lease も board も持たずに下調べができた |
 | Q7 | ハーネスとエンジンの境目をまたぐ hook と検査の置き場 | hook を engine の持ち物にする、記録の形を見本で固定して書く側と読む側の検査を分ける | #618 のコメント（`test_session_name.sh`・`test_prompt_receipt.sh`） | Q3 と Q4 の結論で、受領の印の hook の役目自体が変わりうるので、そのあとに決める |
 | Q8 | 名前と独立したパッケージの境界 | #618 本文のとおり、目的が決まってから付ける | #537、#564、#605 | Q1 から Q7 の結果として決まる。パッケージに入れるのは (c) と、残すと決めた (b) |
 | Q9 | 文書の手順の重さ | いまのまま、型や必須の節を減らす、engine の木から切り離す | 1節の6、2.8 の status の保守、`phase1-history.md` 6.3 | engine の方向性とは別の Epic に切り出すのがよい。ただし (d) を engine から外すかどうかは Q8 と一緒に決める |
-| Q10 | Claude Code 以外の CLI を子にするか | する（#562）、しない | 3.3、別ベンダーのセカンドオピニオン | 外に同等のものが無い数少ない所なので、Q3 で transport を分けるなら、tmux の経路を残す理由の芯になる |
+| Q10 | Claude Code 以外の CLI を子にするか。するなら、差し替える層をどう切るか | しない、する（#562）。するなら、対話なしの実行を都度起こす形を全 CLI の基準にする、Codex には対話と hook と `codex queue` を重ねる、app-server や ACP に乗る | 3.9、#562、#618 のコメント（統括を始める入口・エージェントの選択） | 公式が扱わない所なので、tmux の経路を残す理由の芯になる。ただし OSS では普通の機能になっており、ここだけでは独自性にならない。差し替える層は、口の名前ではなく役割で切る。先に Codex の実機で、`codex queue` の届き方と、hook が走る条件を確かめる |
+| Q11 | SO のゲートをどう持つか | `so-compare` を続ける、呼び出しを OpenAI 公式のプラグインへ寄せてゲートの判定だけを持つ、ゲートを軽くする | 3.3、3.8、2.1 の「SO のゲート」（1,112行） | 呼び出しの部分は寄せられる材料がそろった。別のベンダーであることの効き目は、白紙の文脈であることより小さいという報告もあるので、ゲートを何のために通すかを Q1 と合わせて決める |
+| Q12 | 判断ボードを、engine の芯としてどう磨くか | いまのまま、上げる量を減らす仕組みを足す、答えを束で受けて統括を1回だけ起こす形にする、放置された問いをもう一度知らせる | 3.8、2.7（問いは Q1 から Q105 まで進んだ） | 外より先に着いている所なので、独立したパッケージの芯にする値打ちがある。外の議論が足している2点（量を減らす・束で返す）は、owner の第一目的（認知負荷が減る）にそのまま当たる |
 
 ### 4.3 年内（2026-12-31 まで）の順序の案
 
 | 期間 | やること | 終わりの印 |
 |---|---|---|
-| 11月第3週 | owner がこの見取り図を読み、Q1 から Q10 のうち問いとして判断ボードに載せるものを選ぶ | 判断ボードに Q1 が載る |
+| 11月第3週 | owner がこの見取り図を読み、Q1 から Q12 のうち問いとして判断ボードに載せるものを選ぶ | 判断ボードに Q1 が載る |
 | 11月第3〜4週 | Q1（目的）を決め、README の「目的」節を書き直す | decision 1本 |
-| 11月第4週〜12月第1週 | Q3 と Q4 のための実地の試験。公式のメッセージで子へ送る試験と、agent view を併用する試験を、それぞれ数日回して記録する。並行して Q2 を決める | 試験の記録（episode）と、Q2・Q3・Q4 の decision |
-| 12月第2週 | Q5 と Q6 を決める。#609 の復帰の試験の結果を材料にする | decision |
-| 12月第3〜4週 | Q7・Q8 を決め、#537 の plan を書く。Q9 を別の Epic として起こすかを決める | #537 の plan、必要なら新しい Epic |
+| 11月第4週〜12月第1週 | Q3・Q4・Q10 のための実地の試験を、それぞれ数日回して記録する。(1) 本文をファイルに置き、端末へは合図だけを打つ送信。(2) 公式のメッセージで子へ送る送信。(3) agent view を併用する表示。(4) Codex を子にして、`codex queue` の届き方と hook の走る条件を確かめる。並行して Q2 と Q11 を決める | 試験の記録（episode）と、Q2・Q3・Q4・Q11 の decision |
+| 12月第2週 | Q5 と Q6 を決める。#609 の復帰の試験の結果を材料にする。Q10 の差し替える層の切り方を決める | decision |
+| 12月第3〜4週 | Q7・Q8・Q12 を決め、#537 の plan を書く。Q9 を別の Epic として起こすかを決める | #537 の plan、必要なら新しい Epic |
 
-### 4.4 既存の issue への効き方
+### 4.4 先に読むとよい外の資料
+
+フェーズ3の問いに、じかに材料を出す順に並べた。調査メモごとの「読む価値がある順」は、各メモの終わりにある。
+
+| 資料 | 効く問い | 読む理由 |
+|---|---|---|
+| multi-agent-shogun の README と、作者の Zenn の記事（https://zenn.dev/shio_shoppaize/articles/shogun-hook-revolution ） | Q3、Q1 | 土台が Bash・tmux・ファイル・hook で engine と同じ。`send-keys` をやめて hook とファイルへ移った経緯が日本語で読める。作者は 2026-08 に、10体の構成を解いて1体に絞ったと書いている `[verified]` |
+| Cyclops の README（https://github.com/cyclops-team/cyclops ） | Q3 | tmux へ打つ形のまま、配送を4段階に分け、不確かな結果を成功にしない。小さい（スター14）ので、借りるのは設計の語彙である |
+| CAO の `docs/inbox-delivery.md`（https://github.com/awslabs/cli-agent-orchestrator/blob/main/docs/inbox-delivery.md ） | Q3 | `send-keys` の形のまま堅くする手順が、秒数と回数まで書いてある |
+| Gas Town の設計書（`docs/design/` の mail-protocol・dog-infrastructure・polecat-self-managed-completion・escalation）と、Gas City の `coming-from-gastown.md` | Q4、Q5 | 見張りの見張り、合図と mail の使い分け、監督を主経路から外した経緯。同じ作者たちが、次の版で何を残し何を落としたかが分かる |
+| Anthropic「Harness design for long-running application development」（2026-03-24）と「Scaling Managed Agents」（2026-04-08） | Q1、Q5 | 文脈のリセットを入れた理由と、モデルが新しくなって外した経緯。統括を使い捨てにして、状態を文脈の外に置く設計 |
+| ai-orchestrator の設計 issue（https://github.com/nickderobertis/ai-orchestrator/issues/2408 ） | Q12、Q6 | 判断ボードとほぼ同じ発想の設計。複数の統括に共通の1本のキュー、選択肢、まとめて答える。違いを見るのに向く |
+| agent-deck の conductor と、リリースノート | Q4、Q12 | 長く走る統括のセッションが子を見張り、自分で答えるか人へ上げるかを分ける。`send-keys` を続けたときに起きる失敗の実録でもある |
+| Codex の hook と CLI のリファレンス（https://learn.chatgpt.com/docs/hooks ） | Q10 | 差し替える層の設計に要る一次の仕様 |
+
+### 4.5 既存の issue への効き方
 
 決定によって、開いている issue の扱いが変わる。対応は題名から書き手が読んだもので、本文は読んでいない `[speculation]`。
 
@@ -261,13 +381,21 @@ Claude Code 公式（`code.claude.com/docs`）:
 - Q4 で表示と見張りを外に寄せると: #546・#570・#547・#169・#230・#356（cockpit の表示）、#301・#506・#507・#498・#330（見張り）。
 - Q5・Q6: #609・#464・#238。
 - Q8: #564・#537、#603（移行の後片付け）。
-- Q10: #562。
+- Q10: #562。#618 のコメントの「統括を始める入口」と「エージェントの選択」。
+- Q11: #329（SO のまとめ）。
+- Q12: #539・#540（判断ボードの残り）。
 
 ## 5. 確かめていないこと
 
 - 公式のメッセージを、tmux のペインで動く対話の子へ親の Bash から投函する形が、権限の既定（受け手が承認を求めるモードなら届ける）と macOS の制約のもとで実用になるか。
 - agent view のバックグラウンドのセッションを、cockpit の WezTerm と tmux の画面と併用できるか。
-- Codex・Cursor・MCP・A2A の公式の文書（このセッションのネットワークの許可外で、二次情報にとどまった）。
-- Gas Town の handoff と見張りの一次の仕様、後継とされる Gas City の実体。
+- 本文をファイルに置き、端末へは合図だけを打つ送信が、engine の hook（受領の印）と組んで実用になるか。合図を打つ所には、いまと同じ入力欄の問題が残る。
+- Codex の実機での挙動。`codex queue` が、待機中・動作中・承認待ちのセッションへどう届くか。hook が既定で走るか、信頼の確認が要るか。セッションの ID が環境変数に入るか。調査メモの Codex の記述は、公式の文書の要約を経ており、`--help` と突き合わせていない。
+- Cursor の hook が CLI で発火するか、Copilot CLI の再開の定義、Antigravity CLI の一次の仕様。
+- Gas City の `gc handoff` の中身、Gas Town で Mayor が二重に起きたときの扱い（どちらもソースを読む必要がある）。Gas City の orchestrator が LLM でないことは、文書の記述（control dispatcher・health patrol）からの読みで、明記は確かめていない。
+- TAKT の `takt director` が持つ問いの型（選択肢や根拠を持つか）。判断ボードとの比較に要る。
+- 2026年6月以降に出た新顔の網羅。GitHub のページからリポジトリの作成日が取れず、初出を一次情報で裏づけられたのは4件（Cyclops・pando・nsq・agent-console）だけだった。名前だけ確かめて中を開いていないものが、調査メモに30件ほど残っている。日本語圏の個人開発は、multi-agent-shogun の系譜のほかはほとんど拾えていない。
+- 別のモデルによるレビューの効き目の報告（arXiv 2610.01471）は要旨だけを読んだ。方法と限界は確かめていない。
+- スターの数とリリースの日付は、2026-11-10 にページから読んだ概数である。年が表示されない日付は、前後から 2026 年と読んだものを含む。
 - `oe-events.jsonl` の実データ（verb ごとの利用頻度、`oe run` がいまも打たれているか）。クラウドのコンテナには `~/.claude/state/` の実データが無い。
 - テストの赤9本が macOS の実機でも赤になるか。
