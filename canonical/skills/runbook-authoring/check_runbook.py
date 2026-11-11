@@ -113,7 +113,7 @@ class Doc:
         self.in_code: List[bool] = []
         self.blocks: List[Block] = []
         self._split_code()
-        self.headings: List[Tuple[int, int, str]] = []  # (行番号, 段, 名前)
+        self.headings: List[Tuple[int, int, str]] = []  # (行番号, レベル, 名前)
         for i, line in enumerate(self.lines):
             if self.in_code[i]:
                 continue
@@ -558,22 +558,22 @@ def check_runbook(doc: Doc, root: str, scripts: Dict[str, str]) -> List[Finding]
             ):
                 add(no, "R3", "一時的な手順書に {}: の行が無い".format(REMOVE_LABEL))
 
-    # R4 手順の段
+    # R4 手順のステップ
     rng = doc.section_range("手順")
     if rng:
         steps = [(no, title) for no, level, title in doc.headings if level == 3 and rng[0] < no < rng[1]]
         if not 1 <= len(steps) <= MAX_STEPS:
-            add(rng[0], "R4", "手順の段（###）が {} 個ある（1〜{} にする）".format(len(steps), MAX_STEPS))
+            add(rng[0], "R4", "手順のステップ（###）が {} 個ある（1〜{} にする）".format(len(steps), MAX_STEPS))
         for idx, (no, title) in enumerate(steps):
             end = steps[idx + 1][0] if idx + 1 < len(steps) else rng[1]
             blocks = doc.shell_blocks(no, end)
             if len(blocks) > 1:
-                add(blocks[1].start, "R4", "段「{}」にコマンドのブロックが {} 個ある（1つにする）".format(title, len(blocks)))
+                add(blocks[1].start, "R4", "ステップ「{}」にコマンドのブロックが {} 個ある（1つにする）".format(title, len(blocks)))
             if blocks:
                 texts = [normalized(text) for _, text in doc.prose(no + 1, end)]
                 for label in STEP_LABELS:
                     if not any(t.startswith(label) for t in texts):
-                        add(no, "R4", "段「{}」に「{}」の行が無い".format(title, label))
+                        add(no, "R4", "ステップ「{}」に「{}」の行が無い".format(title, label))
 
     # R5 参照の実在
     base = os.path.dirname(doc.path)

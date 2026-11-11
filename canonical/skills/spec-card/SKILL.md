@@ -57,7 +57,7 @@ so:
 | `episode` | 実行記録・作業ログ | 中間（本文フリーフォーム + 性質ガイド）。作業中の追記は closure から指せる形で残す（`doc-flow-guardrail` の委譲固定節）。closure 時は `episode-retrospective` skill を参照 |
 | `decision` | 意思決定の蒸留・ADR | 重い（コンテキスト / 決定 / 根拠 / 結果） |
 
-上表は蒸留5段（閉じた enum・#19 検証ゲート対象）。下記の `knowledge` は**この表には入らない**別種の型。
+上表は蒸留5層（閉じた enum・#19 検証ゲート対象）。下記の `knowledge` は**この表には入らない**別種の型。
 
 ### ファイル命名
 
@@ -69,7 +69,7 @@ YYYY-MM-DD-{type}-{topic}.md
 
 ### knowledge item（型付き状態 store・#272）— 上の共通規約は適用しない
 
-`knowledge` は negative knowledge store の item 型で、蒸留5段の閉じた enum とは別物。**本スキルの共通フロントマター表・共通命名規約（`YYYY-MM-DD-{type}-{topic}.md`）は適用しない**。混同して `title` を付けたり `status: stable` を使ったり日付ファイル名にしない。
+`knowledge` は negative knowledge store の item 型で、蒸留5層の閉じた enum とは別物。**本スキルの共通フロントマター表・共通命名規約（`YYYY-MM-DD-{type}-{topic}.md`）は適用しない**。混同して `title` を付けたり `status: stable` を使ったり日付ファイル名にしない。
 
 - frontmatter（必須9項）: `id`（ULID）/ `type: knowledge` / `status`（`active`\|`disabled`\|`superseded`\|`retired`・§6 の蒸留 status enum とは別）/ `date`（収穫日・不変）/ `trigger` / `prediction` / `source`（`.ref`）/ `landing`（`nl`\|`guard-candidate`）/ `observations`（段5 の観測レコード配列・要素 = `{date, ref, state, note?}`・収穫時は `[]`・append-only）。任意 = `exclusions`（list）。本文 prose = 教訓。
 - **ファイル名 = `<ULID>.md`**（`YYYY-MM-DD-...` ではない）。並行収穫の衝突回避のための意図的逸脱。

@@ -1,6 +1,6 @@
 ---
 name: doc-flow-guardrail
-description: ドキュメントフロー全体の地図・委譲 brief の固定節テンプレ・新 repo/新統括の cold-start 手順を注入する薄い枠。統括が子へ委譲する brief を組むとき、memory の無い新 repo/新統括セッションでフローを立ち上げるとき、統括が計画的な交代を始めるとき（前任側）、応答しなくなった統括の会話を resume して復帰させるとき、蒸留5段のどの層・どの遷移・どのゲートでどのスキルを必ず通すか確認するときに使用する。中身の品質基準は個別スキルへ routing する（枠は薄く保つ）。
+description: ドキュメントフロー全体の地図・委譲 brief の固定節テンプレ・新 repo/新統括の cold-start 手順を注入する薄い枠。統括が子へ委譲する brief を組むとき、memory の無い新 repo/新統括セッションでフローを立ち上げるとき、統括が計画的な交代を始めるとき（前任側）、応答しなくなった統括の会話を resume して復帰させるとき、蒸留5層のどの層・どの遷移・どのゲートでどのスキルを必ず通すか確認するときに使用する。中身の品質基準は個別スキルへ routing する（枠は薄く保つ）。
 ---
 
 # doc-flow-guardrail — ドキュメントフロー・ガードレール枠
@@ -11,11 +11,11 @@ AI 駆動開発のドキュメントフロー全体を「注入可能な枠」�
 
 - 統括（親）が子へ委譲する **brief を組むとき**（固定節を手書きせず本スキルから貼る）。
 - memory の無い **新 repo / 新統括セッション**でフローを立ち上げるとき（cold-start）。
-- 蒸留5段の**どの層・遷移・ゲートでどのスキルを必ず通すか**を確認するとき。
+- 蒸留5層の**どの層・遷移・ゲートでどのスキルを必ず通すか**を確認するとき。
 
 ## 位置づけ（DJ-11 二層・薄い枠）
 
-本スキルが持つのは **(a) 各段の大原則1行** と **(b) 遷移・ゲートごとの「必ず通すスキル」routing 表** の2つのみ。**到達性の穴を塞ぐための例外が3つある。統括の計画的な交代の工程（④）・応答しない統括の復帰の工程（⑤）・`oe-*` の在り処の解決（「verb 解決規約」節）は、routing 先が同じ穴を持つため本スキルが持つ。** **中身の品質基準は個別スキルが持つ**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract）。枠を薄く安定に保ち、基準は各スキルで独立にイテレートする。
+本スキルが持つのは **(a) 各層の大原則1行** と **(b) 遷移・ゲートごとの「必ず通すスキル」routing 表** の2つのみ。**到達性の穴を塞ぐための例外が3つある。統括の計画的な交代の工程（④）・応答しない統括の復帰の工程（⑤）・`oe-*` の在り処の解決（「verb 解決規約」節）は、routing 先が同じ穴を持つため本スキルが持つ。** **中身の品質基準は個別スキルが持つ**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract）。枠を薄く安定に保ち、基準は各スキルで独立にイテレートする。
 
 3軸分離: **本スキル = 文書軸** / `orchestration-toolkit` = ツール軸（oe-*） / `delegate-task` = 操作軸（親子委譲）。
 
@@ -54,9 +54,9 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 - 2層 + raw log 層の定義は `document-format.md`「2層構造」節〔§2〕。
 - 入口層の選び方（タスク種別 → 入口層・省略条件）は「遷移規則」節〔§10〕。**plan は実装系で必須**・kickoff はオプション層。
 
-各段 → 個別スキル索引:
+各層 → 個別スキル索引:
 
-| 段 / 操作 | 必ず通す / 使うスキル |
+| 層 / 操作 | 必ず通す / 使うスキル |
 |-----------|----------------------|
 | issue 着手（issue 起点の作業の入口） | `issue-intake`（gate 0・issue 起点は必須。深掘りの合図が出たら `question-driven-design` へ） |
 | discussion（設計着手前・探索） | `question-driven-design`（gate 0）/ `predecision-exploration`（gate 1）/ `research-intake`・`oss-research-session`（調査入口） |
@@ -129,7 +129,7 @@ brief 組立時に、過去の失敗から蒸留した negative knowledge を突
 2. **採否（段3）**: 統括が列挙を見て、今のタスクに効く item を選ぶ（v0 は全件列挙 + 統括の意味判断・機械 matcher なし）。`landing: guard-candidate` の item は NL として注入せず guard 経路の候補として扱う。採否は brief の slot（作業層）に残し、item の `observations` には書かない（`observations` は段5 の担当・境界を保つ）。
 3. **注入（段4）**: 採用分を上の「negative knowledge」slot に貼る。教訓の一行は「次にどう行動を変えるか」を書く。教訓の全文へは `item`（item path）で辿り、出典へは `source`（`source.ref`）で辿る（両者は別物）。矛盾する item を同時に採用しない。
 4. **往復の締め（段5 への引き渡し）**: slot に載せた item の集合が、そのまま観測の対象集合になる。委譲先の子は closure 時に slot の**全 item** へ観測を1レコードずつ書き戻す（手順は `episode-retrospective` の観測書き戻し Step・機会が無ければ `no_opportunity`）。統括は完了報告の fact-check で「slot の item id == 観測を足した id」を照合する。
-5. **二段チェック**: `--strict` が見るのは「item を列挙できたか」だけで、観測台帳のスキーマ完全性は見ない。列挙のあとに `validate-knowledge` を items ディレクトリへ回す（列挙 verb は validator ではない）。列挙が制御候補フラグや `integrity` を出した item は、この二段目で中身を確かめる。
+5. **二段階のチェック**: `--strict` が見るのは「item を列挙できたか」だけで、観測台帳のスキーマ完全性は見ない。列挙のあとに `validate-knowledge` を items ディレクトリへ回す（列挙 verb は validator ではない）。列挙が制御候補フラグや `integrity` を出した item は、この2段階目のチェックで中身を確かめる。
 6. コマンドのオプション・exit code・snapshot の意味論は store の `knowledge/README.md`（+ `orchestration-toolkit`）を参照する（枠にコマンド詳細を焼かない）。
 
 ## ③ cold-start（新 repo / 新統括セッション）

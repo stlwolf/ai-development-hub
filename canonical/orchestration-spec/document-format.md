@@ -1,6 +1,6 @@
 ---
 id: "01KNCK58PTF85AVQD4M9BFYV99"
-title: "ドキュメントフロー定義 — 蒸留5段・作業層・遷移/ゲート/ライフサイクル"
+title: "ドキュメントフロー定義 — 蒸留5層・作業層・遷移/ゲート/ライフサイクル"
 date: 2026-04-05                # 作成日（v2 改訂は 2026-07-13・#249）
 type: decision
 status: stable               # v2（#249）で draft→stable 昇格（G6）
@@ -41,7 +41,7 @@ related:
 tags: [spec-card, format, process, doc-flow, working-layer, promotion, ulid, epic-10, tier-2]
 ---
 
-# ドキュメントフロー定義 — 蒸留5段・作業層・遷移/ゲート/ライフサイクル
+# ドキュメントフロー定義 — 蒸留5層・作業層・遷移/ゲート/ライフサイクル
 
 ## 1. 目的とスコープ
 
@@ -57,11 +57,11 @@ AI 駆動開発のドキュメントフロー全体を定義する。**format（
 
 ## 2. 2層構造（+ raw log 層）
 
-実運用は下記の2層 + raw log 層に分化している。どれが git 管理でどれが gitignored かを最初に確定させる。committed 側には、蒸留5段とは別種の **committed 状態 store 層**（negative knowledge store・§2.5・#272）も加わる。これは「文書」ではなく状態の保存場所で、§4〜§9 の蒸留 format 機構は適用しない（型定義は §3.4）。
+実運用は下記の2層 + raw log 層に分化している。どれが git 管理でどれが gitignored かを最初に確定させる。committed 側には、蒸留5層とは別種の **committed 状態 store 層**（negative knowledge store・§2.5・#272）も加わる。これは「文書」ではなく状態の保存場所で、§4〜§9 の蒸留 format 機構は適用しない（型定義は §3.4）。
 
 ### 2.1 committed 蒸留層（正本・git 管理）
 
-discussion → kickoff → plan → episode → decision の**蒸留5段**。すべて git commit し、frontmatter 必須5項（id/title/date/type/status）+ ULID + 命名規約 + status enum を持つ（§3〜§9 の format 機構はこの層に適用）。蒸留の正本であり、後続タスク・別エージェント・人間が参照する信頼できる資産。
+discussion → kickoff → plan → episode → decision の**蒸留5層**。すべて git commit し、frontmatter 必須5項（id/title/date/type/status）+ ULID + 命名規約 + status enum を持つ（§3〜§9 の format 機構はこの層に適用）。蒸留の正本であり、後続タスク・別エージェント・人間が参照する信頼できる資産。
 
 ### 2.2 machine-local 作業層（`.oe/`・gitignored・使い捨て）
 
@@ -75,7 +75,7 @@ discussion → kickoff → plan → episode → decision の**蒸留5段**。す
 
 ### 2.3 raw log 層（verbatim・別レイヤー）
 
-エージェント往復の verbatim ログ。curated な蒸留5段とは**別レイヤー**として扱う（#185 の方針と整合）。gitignored 運用（projects 側の `docs/raw-logs/`）が既にあり、committed 実体は rally-log 1本のみが例外。curated 文書へ蒸留する材料であって、それ自体は正本ではない。
+エージェント往復の verbatim ログ。curated な蒸留5層とは**別レイヤー**として扱う（#185 の方針と整合）。gitignored 運用（projects 側の `docs/raw-logs/`）が既にあり、committed 実体は rally-log 1本のみが例外。curated 文書へ蒸留する材料であって、それ自体は正本ではない。
 
 ### 2.4 一枚絵
 
@@ -96,7 +96,7 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 ### 2.5 committed 状態 store 層（negative knowledge store・#272）
 
-蒸留5段とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
+蒸留5層とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
 
 - 実体: 収穫元 episode が属する蒸留木の `knowledge/items/<ULID>.md`（1 item = 1 ファイル）。置き場規則（関係で解く）・型定義・スキーマ・命名（ULID ファイル名）・検証はすべて §3.4。dogfood の具体パスは各 store の README。
 - **蒸留 format 機構（§4〜§9・§15）は適用しない**（§3.4 の carve-out）。#19 検証ゲートの閉じた 5 型 enum（§3.1）にも加えない。
@@ -104,7 +104,7 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 ## 3. 文書型カタログ
 
-### 3.1 committed 蒸留5段（閉じた enum）
+### 3.1 committed 蒸留5層（閉じた enum）
 
 [document-format-design-principles.md](../../ideas/20260221/document-format-design-principles.md) の write:read 比率に基づき、フォーマット深度に差をつける。この5型は #19 検証ゲートが `type` enum として検証する**閉じた集合**。
 
@@ -118,7 +118,7 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 ### 3.2 作業層の型集合（開いた集合）
 
-作業層は committed 5段のような閉じた enum ではなく、**必要に応じて型が増える開いた集合**。規律の本体は型名ではなく次の**不変条件**である:
+作業層は committed 5層のような閉じた enum ではなく、**必要に応じて型が増える開いた集合**。規律の本体は型名ではなく次の**不変条件**である:
 
 - machine-local（pane 番号・絶対パス等を含みうる）+ gitignored + 消えてよい + **設計級が生まれたら昇格**（§13）。
 
@@ -149,10 +149,10 @@ N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留�
 
 ### 3.4 型付き knowledge 層（状態 store・#272）
 
-`knowledge` は negative knowledge store の item 型。**蒸留5段の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` に配布される・markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）が担う。
+`knowledge` は negative knowledge store の item 型。**蒸留5層の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` に配布される・markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）が担う。
 
 - **文書ではなく状態 store**（§2.5）。段5 が `observations` を追記し段6 が `status` を書き換える。
-- **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5段のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
+- **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5層のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
 - **命名（§9 からの意図的逸脱）**: ファイル名 = `<ULID>.md`（`id` と一致）。理由は並行収穫（複数 worktree / 並列子が同時に item を書く）の衝突回避（設計正本 §6.15）。人間ナビゲート対象でなく機械管理の store item なので、§9 の人間可読ファイル名規約は適用しない。検証スクリプトが `basename == <id>.md` を機械で担保する。
 
 frontmatter スキーマ（必須9項 + 任意1項）:
@@ -217,7 +217,7 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 
 - 列挙コマンド `knowledge-list` が state ごとの件数を集計し、**`status: active` かつ `harmful` / `contradicted` の観測を持つ item に制御候補フラグ**を立てる。要素スキーマを満たさないレコードは集計の `invalid` に数え、**そこから候補は立てない**。
 - フラグは「adverse な観測が過去に一度でもあった印」であって未処理キューではない。誤観測を訂正する語彙は enum に無いため、**一度立った候補は消えない**（v0 の既知の制約。候補の総数を運用指標に使わない）。
-- **二段チェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
+- **二段階のチェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
 
 #### status 遷移規則（段6 の制御）
 
@@ -361,7 +361,7 @@ draft → in-development → stable → deprecated
 
 ## 8. 文書型別テンプレート
 
-committed 蒸留5段のテンプレート。
+committed 蒸留5層のテンプレート。
 
 ### Discussion
 
@@ -618,7 +618,7 @@ YYYY-MM-DD-{type}-{topic}.md
 4. **単位**: 入口層は **issue 単位**（複数 issue 束ね / Epic 横断は各 issue に分けるか、束ねる場合は最大スコープの種別で判定）。docs-only 変更は「文書＝成果物」ゆえ実装系として扱う（本 #249 改訂が実例＝作業層 plan を使い plan 必須側）。
 5. **親→子委譲**: 統括が入口層を決め、子には `brief`（§3.2）で渡す。子の作業も同じ判定順に従う（実装系なら子が plan を書く）。
 
-**research ノートの位置づけ**: `research-intake` / `oss-research-session` の出力は committed 蒸留5段（§3.1 の閉じた enum）の外の独立成果物（`docs/research/`・別スキーマ `status: research-complete` 等）。入口としては使えるが 5型ではない。そこから設計へ進むときは discussion / plan へ接続する（research ノート自体を蒸留5段に混ぜない）。
+**research ノートの位置づけ**: `research-intake` / `oss-research-session` の出力は committed 蒸留5層（§3.1 の閉じた enum）の外の独立成果物（`docs/research/`・別スキーマ `status: research-complete` 等）。入口としては使えるが 5型ではない。そこから設計へ進むときは discussion / plan へ接続する（research ノート自体を蒸留5層に混ぜない）。
 
 ## 11. ゲート配置
 

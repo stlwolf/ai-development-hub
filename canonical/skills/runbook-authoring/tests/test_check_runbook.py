@@ -99,7 +99,7 @@ def replace_once(text, old, new):
 
 
 def step(n):
-    return "### {0}. 段{0}\n\n```bash\nscripts/run.sh check\n```\n\n期待する出力: OK。\n\n外れたら: 止める。\n\n".format(n)
+    return "### {0}. ステップ{0}\n\n```bash\nscripts/run.sh check\n```\n\n期待する出力: OK。\n\n外れたら: 止める。\n\n".format(n)
 
 
 class Repo:
@@ -451,7 +451,7 @@ def skill_text():
 
 
 def section_of(text, heading):
-    """見出しの行から、同じかより上の段の次の見出しまで。"""
+    """見出しの行から、同じかより上のレベルの次の見出しまで。"""
     level = heading.split()[0]
     start = text.index(heading + "\n")
     rest = text[start + len(heading) + 1:]
@@ -592,7 +592,7 @@ class ExampleCopy:
 
 
 def blocks_of(text, section, title=None):
-    """手順書の節（title を渡せば、その段）のコマンドのブロックを、書いてある文字のまま返す。"""
+    """手順書の節（title を渡せば、そのステップ）のコマンドのブロックを、書いてある文字のまま返す。"""
     doc = check_runbook.Doc("runbook.md", text)
     start, end = doc.section_range(section)
     if title is not None:

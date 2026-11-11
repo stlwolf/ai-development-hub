@@ -288,9 +288,9 @@ projects/orchestration-engine/bin/oe-hookfire --days 7
 
 区別できるのは**意図的に撃つプローブ**だけである。allow の流量は受動的な傍証にとどめる。
 
-プローブは**2段**で撃つ。1段目だけで済ませない。
+プローブは**2段階**で撃つ。1段階目だけで済ませない。
 
-**1段目（配備物を直接叩く・弱い）** — 3配備パスすべてを対象にする。
+**1段階目（配備物を直接叩く・弱い）** — 3配備パスすべてを対象にする。
 
 | フック | 対照コマンド | フックが死んでいた場合 |
 |--------|------------|--------------------|
@@ -306,9 +306,9 @@ done
 
 **対照コマンドを検査スクリプトの外側のコマンド行に置かないこと。** 生きているフックが検査コマンド自体をブロックする（実際に踏んだ）。payload はファイルの中で組み立てる。
 
-**1段目で確かめられないもの**（ここを曖昧にすると「緑なのに死んでいる」を作る）: `~/.claude/settings.json` への登録、Cursor の `hooks.json`、Codex の `hooks.json`、matcher、フックの順序と short-circuit、dispatcher が実際にフックを起動すること、Codex の workspace trust。
+**1段階目で確かめられないもの**（ここを曖昧にすると「緑なのに死んでいる」を作る）: `~/.claude/settings.json` への登録、Cursor の `hooks.json`、Codex の `hooks.json`、matcher、フックの順序と short-circuit、dispatcher が実際にフックを起動すること、Codex の workspace trust。
 
-**2段目（ツール自身にシェルを撃たせる・強い）** — 各ツールのセッションから実際に対照コマンドを実行し、前後の tally 差と操作結果の両方を見る。dispatcher を通る唯一の形なので、これが本来の陽性対照である。Codex の trust は **workspace 単位**なので、ある trusted workspace で成功しても別 workspace の silent skip を否定できない。
+**2段階目（ツール自身にシェルを撃たせる・強い）** — 各ツールのセッションから実際に対照コマンドを実行し、前後の tally 差と操作結果の両方を見る。dispatcher を通る唯一の形なので、これが本来の陽性対照である。Codex の trust は **workspace 単位**なので、ある trusted workspace で成功しても別 workspace の silent skip を否定できない。
 
 ### 成立条件（正直に書く）
 
