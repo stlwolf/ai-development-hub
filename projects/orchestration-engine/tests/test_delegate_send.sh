@@ -362,7 +362,7 @@ export OE_SEND_FINALIZE=0
 echo "[34] #562 T-5: 宛先が codex のとき、入力欄の行頭 › と » を入力欄と判定し、claude のときは拾わない"
 cap="$(printf 'some output\n› \n')"
 ck "claude の宛先では › の行を拾わない" "" "$(OE_SEND_TARGET_AGENT=claude _oe_send_inputline "$cap")"
-ck "宛先が分からないときも拾わない（今までと同じ）" "" "$(OE_SEND_TARGET_AGENT= _oe_send_inputline "$cap")"
+ck "宛先が分からないときも拾わない（今までと同じ）" "" "$(OE_SEND_TARGET_AGENT='' _oe_send_inputline "$cap")"
 ck "codex の宛先では › の行を入力欄にする" "› " "$(OE_SEND_TARGET_AGENT=codex _oe_send_inputline "$cap")"
 cap="$(printf 'output\n» staged text\n')"
 ck "codex の宛先では »（effort が ultra）も入力欄にする" "» staged text" "$(OE_SEND_TARGET_AGENT=codex _oe_send_inputline "$cap")"

@@ -104,5 +104,19 @@ owner が6つの問いすべてに答え（承認のモード・lease の検査�
 
 **残ったもの。** `~/.codex` に書かれたのは `models_cache.json`（モデルの一覧の cache・無害）と、brew の更新に伴う `app-server-daemon/daemon-updater.stderr.log`・`packages/app-server-daemon/auto-update-version`・`tmp/arg0-macos/…/.lock` で、設定・信頼・記録は増えていない（`find ~/.codex -newer <開始の印>`）。`auth.json` の写しは消した。`$HOME` の下の `tmp/562-probe/` は消した。scratchpad の `probe/codex-home`（会話の記録・history・SQLite）は、`rm -rf` が hub の hook に止められたので残っている（資格情報は含まない。scratchpad は3日で消える）。Homebrew の cask の 0.167.1 → 0.167.2 は戻していない。
 
+### I1 のあと: 統括の判定と Q113
+
+統括は H2・H3 と、H1 のうち `-c check_for_update_on_startup=false` を補正として受け付け（承認の記録の entry 1）、H1 のうち「`Trust this folder?` に Enter を1回送る」は変更と判定した（engine が owner に代わって workspace を信頼する新しい振る舞いで、画面の文言を読んで分岐するため）。この部分は実装せず、owner の答え（判断ボード Q113）を待つ。統括の求めで、起動の `-c` で信頼を渡せるかを確かめた: `-c 'projects."<path>".trust_level="trusted"'` を付けても確認の画面は出た（実機・0.167.2・使い捨ての `CODEX_HOME`）。信頼は読み込んだ設定の `projects` の表から cwd と git の根のパスで引き（`core/src/config/mod.rs:3636-3645`・`config/src/config_toml.rs:930-942`）、worktree は git の根が自身なので worktree ごとに要る。engine が取れる形4つ（Enter を送る・`config.toml` に書く・何もしない・確認が出ていたら送らずに止まって知らせる）を `.oe/report-562-i1-trust.md` に書いて送った。I2 以降は、確認が出ていても engine は答えず、README とスキルに「人が子のペインで答えてから最初の1行を送り直す」と書いた。
+
+### I2〜I5: engine と配るスキル（PR-1 の中身）
+
+- I2（`557ab05`）: `lib/agent.sh` を足し、`oe delegate --agent <claude|codex>` と `--agent-arg`（`--claude-arg` は alias）を実装した。claude の1行は変えず（`tests/test_oe_delegate.sh` の [1][2] と [A1] が同じ値で通る）、codex は `--no-daemon -c check_for_update_on_startup=false --approve-for-me -c developer_instructions="…"` の既定を付ける。registry と lease の記録に `agent`、schema と `validate-lease` を `claude|codex` に広げた。承認のダイジェストに `agent` を入れ、鍵を `agent_args` に変えた。拍動の床（`oe_hb_write_floor`）を `oe-delegate` が起こしたあとに書く。`tests/test_agent.sh`（70件）を足した。
+- I3（`df995c8`）: lease の binding・claim・advance と `oe-lease adopt` の検査を許す名前の集合（basename の完全一致）に、`oe_lease_whoami` の fallback を `oe_agent_self` の会話の ID にした。`lib/delegate-send.sh` は宛先のエージェント（`OE_SEND_TARGET_AGENT`・`oe-send` が lease か registry から引く）で入力欄の記号（`❯›»`）と補完の文を切り替え、宛先が分からなければ今までどおり `❯` だけを見る。`oe-send` は lease を持つ子が送るたびに床を書き直す。
+- I4（`acf4b2d`）: `oe-recover hint` が lease の `agent` で resume の1行を出し分け、`oe-recover` 本体が自分の pid と会話の ID を `oe_agent_self` で読む。`oe-handoff` の案内（`claude --resume`）は統括の verb で、Codex を統括にするのは範囲の外なので変えていない（plan の DJ-9 は「`oe-recover hint` と `oe-handoff`」と書いていたので、`oe-handoff` を外す補正 H4 として申告する）。
+- I5（`1bbc38d`）: `delegate-task`・`doc-flow-guardrail`（skill 解決規約・受領の印の1行）・`bin/README.md`（7か所の対応表・PR-2 が無い状態の制限・範囲の外の5つ）・`orchestration-toolkit`・engine の README。
+- 検査は各段で bash 5 と `/bin/bash` 3.2 の両方で回し、全件 exit 0（CHECK-1 で全部を回す）。
+
+`oe_agent_self` は `CODEX_THREAD_ID` を `CLAUDE_*` より先に見る。Codex は自分の打つコマンドにだけ `CODEX_THREAD_ID` を入れる一方、`CLAUDE_*` は tmux のセッションの環境から子に引き継がれうるためで、検査（`test_agent.sh` の [9]）で固定した。最初の版は逆の順で、このセッションの環境を引き継いだ検査が claude と答えて見つかった。
+
 昇格の印: Codex の対話の画面は、起動の直後に更新の確認の画面を出すことがあり、そこへ送った1行の Enter が「Update now」を選んで `brew upgrade` を走らせる。engine が起こす1行には `-c check_for_update_on_startup=false` を付ける。起動の直後に別の確認（フォルダの信頼・hook の確認）が出ることもあるので、起こしてから最初の1行を送るまでに画面を確かめる口があるとよい（この issue では付けない）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。
 
