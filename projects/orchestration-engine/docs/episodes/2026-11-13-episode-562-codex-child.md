@@ -55,3 +55,17 @@ Codex のソースは、手元の版（`codex-cli 0.167.1`）に合うタグ `ru
 
 設計判断（DJ）は plan の「設計判断」節に書いた。owner に聞くものは、brief が指定した4つ（承認のモードの既定・受領の印の扱い・lease のコマンド名の検査の広げ方・PR の数）と「この plan で実装に進むか」で、ほかは自分で決めた。自分で決めたもののうち、確かめの結果で分かれるもの（拍動の hook・受領の印の hook）は、plan の「実機の確かめ」節に分かれ方を書いた。
 
+### P2: 設計SO（Codex の1レーン）と採否
+
+`so-compare --codex-only`（gpt-6.1-sol・`codex-cli 0.167.1`）を1回通し、517秒で返った（`tool_status=not_observed`）。判定は `refuted` で、must 10・should 8 の18件だった。must はすべてソースを開き直して確かめ、18件すべてを plan に入れた（採否の表は plan の「設計SO」節）。plan の下書きの commit は `0fc715a`、直したあとの commit はこの節の下に書く。
+
+設計の前提を崩した指摘が3つあり、どれも書き手が「読んだ範囲より1段広い言葉で結論を書いていた」形だった（knowledge `01KZVHE0KFDPXMY6EED80RN9ZR` の型）。
+
+- 「sidecar が無い lease はラベルの宛先が registry に落ちる」と書いたが、`lib/target-resolve.sh:119-137` では binding のある lease が1件あれば registry には落ちず、送信が保留になる。読んだのは `lib/lease.sh` の候補の選び方までで、その先の分岐を読んでいなかった。直しとして、hook に依らない拍動の床（`oe-delegate` が spawn のときに `<lease_id>.json` を書き、子の `oe send` が書き直す）を engine に足した。
+- 「`~/.codex/rules/` に別名のファイルを symlink で配る」と書いたが、規則の読み込みは `DirEntry::file_type().is_file()` で symlink を読まない（`core/src/exec_policy.rs:1201-1215`）。さらに user 層の規則は owner の Codex にも効く。配り方を通常のファイルの写しに変え、効く範囲を owner に見せる問いにし、`gh`・`git push` を規則から外した。
+- 「`context_pct` は記録の最後の `token_count` の `total_token_usage` から出す」と書いたが、それは累積値で、TUI は `last_token_usage` を使う。`PostModelRequest` の hook の標準入力にその要求の `token_usage` が入るので、そちらから出す形に変えた。
+
+昇格の印: Codex の `PostModelRequest` の hook は、その要求の `token_usage` を標準入力に持つ。記録の `total_token_usage` は累積で、文脈の使用量ではない（`protocol/src/protocol.rs:2545-2547`）。拍動を hook で書く設計で繰り返し踏みうる。
+
+設計SO が挙げたゼロベースの案（outbox と broker・MCP の能力として子に渡す）は、この issue では採らず、#549（子の報告の届け方）の材料として plan の「ゼロベースの代替」に残した。
+
