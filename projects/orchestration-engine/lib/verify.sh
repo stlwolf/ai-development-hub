@@ -252,9 +252,10 @@ oe_verify_prompt_build() {
     changed_files_note="(source: KVS outputs[])"
   elif [[ -n "$baseline_head" ]]; then
     # 主経路: baseline からの全 footprint (committed + uncommitted + untracked)
+    # 起動前の baseline と照合するため、追跡・未追跡のパスを Git ルート基準にそろえる (#489)。
     local diff_files untracked_files all_files
-    diff_files="$(git -C "$PROJECT_DIR" diff --name-only "$baseline_head" 2>/dev/null || true)"
-    untracked_files="$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard 2>/dev/null || true)"
+    diff_files="$(git -C "$PROJECT_DIR" diff --name-only --no-relative "$baseline_head" 2>/dev/null || true)"
+    untracked_files="$(git -C "$PROJECT_DIR" ls-files --full-name --others --exclude-standard 2>/dev/null || true)"
     all_files="$(printf '%s\n%s\n' "$diff_files" "$untracked_files" | awk 'NF' | sort -u)"
     if [[ -n "$all_files" ]]; then
       changed_files_block="$(_oe_verify_annotate_files "$all_files" "$baseline_dirty")"

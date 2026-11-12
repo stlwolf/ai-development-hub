@@ -267,10 +267,14 @@ oe_spawn_send() {
   #   git 不能 (非 git workspace 等) では空で記録し、verify 側は working-tree diff に degraded フォールバックする。
   local baseline_head baseline_dirty_json
   baseline_head="$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)"
-  baseline_dirty_json="$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null \
-    | sed -E 's/^.{3}//; s/^.* -> //' \
-    | jq -R -s 'split("\n") | map(select(length>0))' 2>/dev/null || true)"
-  [[ -n "$baseline_dirty_json" ]] || baseline_dirty_json='[]'
+  # 未追跡ファイルは verify と同じコマンドで列挙し、Git ルート相対のパスで記録する (#489)。
+  baseline_dirty_json="$(
+    {
+      git -C "$PROJECT_DIR" status --porcelain --untracked-files=no 2>/dev/null \
+        | sed -E 's/^.{3}//; s/^.* -> //' &&
+        git -C "$PROJECT_DIR" ls-files --full-name --others --exclude-standard 2>/dev/null
+    } | jq -R -s 'split("\n") | map(select(length>0))' 2>/dev/null
+  )" || baseline_dirty_json='[]'
 
   wez pane send "$pane_id" "$cli_command"
 
