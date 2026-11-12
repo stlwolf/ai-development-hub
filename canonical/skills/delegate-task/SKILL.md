@@ -53,8 +53,21 @@ oe delegate -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で�
 **子 Claude に起動オプションを渡す** — 自律調査で権限プロンプト停止を避けたい場合
 
 ```bash
-oe delegate -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
+oe delegate -w "$REPO" --label "#N" --agent-arg --permission-mode --agent-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
 ```
+
+`--claude-arg` は `--agent-arg` の alias で、今までどおり使える。
+
+**Codex を子にする（#562）** — `--agent codex`。既定で `--no-daemon`・更新の確認を出さない設定・`--approve-for-me`・engine の約束ごと（受領の印の扱い・報告の返し方・問いの書き方）を developer の指示として持ち込む。承認のモードを `--agent-arg` で指定すると既定の `--approve-for-me` は外れる。
+
+```bash
+oe delegate -w "$REPO" --label "#N" --agent codex --brief "$REPO/.oe/brief-N.md"
+```
+
+- 子の報告（`oe send`）と `git commit` を承認の画面に止めないために、hub が配る実行ポリシーの規則（`~/.codex/rules/oe-child.rules`・`canonical/codex/rules/`）が要る。無ければ `oe delegate` が1行知らせて続ける（報告のたびに承認の要求に回る）。
+- 受領の印と拍動の hook（`canonical/hooks/codex.hooks.json` の `UserPromptSubmit`・`PostModelRequest`）は、owner が Codex の `/hooks` で信頼を登録してから動く。無くても、`oe delegate` が起こしたときと子が `oe send` を打つたびに engine が書く拍動の床で、lease からペインを引ける。
+- 新しい workspace を初めて開くとき、Codex はフォルダの信頼の確認を出す。engine は Enter を送らないので、確認が出ていたら人が子のペインで答えてから、最初の1行を `oe send` で送り直す。
+- Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。
 
 **brief doc（委譲指示書）を渡す（4層ドキュメント方式 / リッチな事前情報）**
 

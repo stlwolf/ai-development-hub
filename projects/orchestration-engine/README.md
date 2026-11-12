@@ -50,7 +50,7 @@ projects/orchestration-engine/
 │   ├── oe-capture             # 既存ペインに attach して終端マーカーを capture→分類→KVS/audit
 │   ├── oe-refute              # 確定前の同期反証 verb（設計SO・so-compare wrap・exploration/consensus rubric・#183 Stage A）
 │   ├── oe-review              # 実装SO（コード欠陥レビュー）の reviewed-diff バインド独立 artifact verb（#195 / L2）
-│   ├── oe-delegate            # 子 Claude セッションを起動しタスクをキック（親子委譲: spawn + kick）
+│   ├── oe-delegate            # 子のエージェント（claude / codex・--agent）を起動しタスクをキック（親子委譲: spawn + kick）
 │   ├── oe-kick                # #N / kickoff パスを 1 引数で受ける oe-delegate の薄いワンショットラッパー（#178）
 │   ├── oe-send                # 既存ペインへ 1 行を汎用送信（%N/ラベル・--kickoff・--no-enter・送信信頼化 finalize）
 │   ├── oe-list                # 委譲の宛先候補を一覧（spawn registry + pane-issue）
@@ -128,7 +128,7 @@ docs 配置は [`projects/wezterm-ai-mode/docs/`](../wezterm-ai-mode/docs/) の�
 | 系統 | 入口 | 性質 |
 |------|------|------|
 | **本体エンジン** | `oe run`（`bin/oe-run`） | 非対話・wez + `claude -p` の自律オーケストレーションループ（Phase 4 MVP）。envelope→spawn→capture→verify→monitor を1サイクル回す |
-| **親子委譲 CLI（delegate-task 系）** | `bin/oe-delegate` / `bin/oe-send` / `bin/oe-list` | 対話セッション間の軽量な委譲プリミティブ。tmux `send-keys` の1行注入で、統括スレッド（親）→ 子 Claude N 個のスター型委譲を行う |
+| **親子委譲 CLI（delegate-task 系）** | `bin/oe-delegate` / `bin/oe-send` / `bin/oe-list` | 対話セッション間の軽量な委譲プリミティブ。tmux `send-keys` の1行注入で、統括スレッド（親）→ 子のエージェント（claude / codex）N 個のスター型委譲を行う |
 
 どちらの系統の verb も、入口 `bin/oe` から `oe <verb> [引数...]` で呼ぶ（#605）。入口は同じディレクトリの `oe-<verb>` を `exec` するだけで、`~/bin` には入口 `oe` を配る（verb の一覧は `oe --help`）。
 

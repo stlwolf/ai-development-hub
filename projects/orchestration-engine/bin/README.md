@@ -102,20 +102,40 @@ oe-review [--lanes N] [--base <ref>] [--context <doc>]
 
 ## oe-delegate — 子セッション起動 + キック（親子委譲）
 
-子 Claude を `tmux split-window` で起動し、タスク（または brief doc）をキック（spawn + send の合成）。
+子のエージェント（claude か codex・#562）を `tmux split-window` で起動し、タスク（または brief doc）をキック（spawn + send の合成）。
 
 ```bash
-oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>] [--] <task>
+oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--agent <claude|codex>] [--agent-arg <arg>] [--] <task>
 ```
 
-- `--brief <path>` … `"<path> を読んで進めて。"` を送り、doc のディレクトリを `--add-dir` で子に開示
+- `--brief <path>` … `"<path> を読んで進めて。"` を送り、doc のディレクトリを `--add-dir` で子に開示（claude は読める範囲、codex は書ける範囲を広げる引数で意味が違うが、子が brief を読み問いと報告を書けるという要る効果は同じ）
 - `--kickoff <path>` … `--brief` の deprecated alias（後方互換・#255）。新規は `--brief` を使う
 - `--label <#N|name>` … registry 登録ラベル（後で `oe-send <label>` で指す）
-- `--claude-arg <arg>` … 子 Claude 起動時に追加引数を渡す（repeatable）。例: `--claude-arg --permission-mode --claude-arg auto`
+- `--agent <name>` … 子として起こすエージェント（既定 `claude`）。`claude` の1行は `--agent` が無いときと同じ（受入 A-1）。`codex` は `codex --no-daemon -c check_for_update_on_startup=false --approve-for-me -c developer_instructions="…"` で起こす（既定の引数は `lib/agent.sh`）
+- `--agent-arg <arg>` … 子の起動時に追加引数を渡す（repeatable）。`--claude-arg` は同じ意味の alias。codex で `-a`・`-s`・`--approve-for-me`・bypass・`--yolo` を渡すと既定の `--approve-for-me` は外れる（同時に指定できないため）
+- elevated の判定（承認ダイジェストが必須になる）: claude は `bypassPermissions`、codex は `--dangerously-bypass-approvals-and-sandbox`・`--yolo`・`-s danger-full-access`
+- 承認ダイジェストは `agent` と `agent_args` を含む（claude の承認で codex を起こす差し替えは不一致で止まる）
 - tmux 内必須（`TMUX_PANE` から親ペイン取得、`PARENT_TMUX_PANE` を子へ継承）
 - 子ペインは**親ペイン基準で split** する（`tmux split-window -t "$TMUX_PANE"`）。親が別ウィンドウを active にしている間に委譲しても、子は親のウィンドウに生える（`-d` は focus 移動の抑止のみ・#203）
+- 起こしたあと、lease の名前で拍動の sidecar を1件書く（拍動の床・`lib/heartbeat-resolve.sh` の `oe_hb_write_floor`）。hook や statusLine が無くても、lease からペインを引ける
 
-関連 lib: `delegate-registry.sh`（キック注入は `oe-send` 経由）
+### Codex の子（#562）で Claude Code に固定されていた7か所の扱い
+
+| 箇所 | codex での代え | 無いときの形 |
+|---|---|---|
+| 拍動の statusLine | `PostModelRequest`・`UserPromptSubmit` の hook（`canonical/hooks/scripts/oe-heartbeat-hook.sh`・配布物）で同じ sidecar を書く。床として `oe-delegate`（起こしたとき）と `oe-send`（子が送るたび）が engine で書く | 床だけで動く。`oe-tree` は model と context% なし。900秒を超えて黙る子はラベルでの送信が保留になる（生のペイン番号と lease_id では送れる） |
+| 受領の印の hook | `UserPromptSubmit` に `oe-prompt-receipt.sh` を配線（配布物）。印の決まりは起こしの1行の `-c developer_instructions` と書面の固定節で伝える | 受領の印なし。`oe-confirm` は「確認できていない」。統括は子の返事で確かめる |
+| 会話の ID | `CODEX_THREAD_ID`（`lib/agent.sh` の `oe_agent_self`） | — |
+| resume | `oe recover hint` が lease の `agent` で `codex --no-daemon … resume <sid>` を出す | — |
+| 起動のコマンド | `--agent codex` の既定の引数 | — |
+| lease のコマンド名の検査 | 許す名前の集合（`claude`・`codex`・basename の完全一致）。schema の `comm` も同じ | — |
+| 入力欄の判定 | `oe-send` が宛先のエージェントを lease か registry から引き、codex なら行頭 `›`・`»` と補完の文 `Ask Codex to do anything` で見る | 宛先が分からなければ claude の値で、今までと同じ |
+
+配布物（PR-2）が無い状態では: 規則（`$CODEX_HOME/rules/oe-child.rules`）が無いと子の `oe send` は承認の要求に回る（`oe-delegate` が1行知らせる）。hook が無いと受領の印は出ず、拍動は床だけ。Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。新しい workspace を初めて開くときの「Trust this folder?」の確認には engine は答えない（人が子のペインで答えてから最初の1行を送り直す）。
+
+この issue で扱っていないもの（Claude に固定されたまま）: `oe-selfcheck` の入力欄の `❯`・hook の配線と transcript の検査、`oe-kick`（`--claude-arg` だけ）、`session-name.sh`（Claude の出力の形）、`oe-register root`・`oe-handoff`（統括の verb・Codex を統括にするのは範囲の外）。
+
+関連 lib: `delegate-registry.sh`（キック注入は `oe-send` 経由）・`agent.sh`（エージェントごとの差）
 
 ## oe-kick — kickoff/issue 参照からのワンショット委譲ラッパー（#178）
 
