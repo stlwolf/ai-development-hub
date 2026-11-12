@@ -108,6 +108,14 @@ out="$(run_hook '{"prompt":"w [oe:not-a-ulid]"}')"
 ck "追記しない" "$before" "$(nlines)"
 ck "stdout 空"  ""        "$out"
 
+echo "[7b] #562 T-10: Codex の形の標準入力（session_id・turn_id・transcript_path・cwd・model 付き）でも同じ印が出る"
+new_env
+out="$(run_hook "$(jq -cn --arg n "$NONCE" '{session_id:"01a1d101-9b34-70d2-866f-c3c5a7c987ae", turn_id:"t-1", transcript_path:"/x/rollout.jsonl", cwd:"/ws", hook_event_name:"UserPromptSubmit", model:"gpt-6.1-sol", permission_mode:"on-request", prompt:("やって [oe:" + $n + "]")}')")"
+ck "印は出る"  "prompt_received" "$(last_ev | jq -r .type)"
+ck "nonce"    "$NONCE"           "$(last_ev | jq -r .nonce)"
+ck "pane は TMUX_PANE（受け手の自分のペイン・from）" "%66" "$(last_ev | jq -r .from.pane)"
+ck "stdout は空（Codex では標準出力がモデルの文脈に足される）" "" "$out"
+
 echo "[8] oe-selfcheck: 陽性対照が無いときに ok を名乗らない（0 件を不在の証拠にしない）"
 [[ -x "$SELFCHECK" ]] || { echo "  SKIP: oe-selfcheck 不在"; }
 if [[ -x "$SELFCHECK" ]]; then

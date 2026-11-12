@@ -1,0 +1,11 @@
+# oe-child.rules — engine が起こす Codex の子（oe delegate --agent codex）のための実行ポリシーの規則（#562 DJ-3）。
+#
+# `allow` は「承認なしで sandbox の外で走らせる」。子が親へ報告を返す `oe send` は tmux のソケットに
+# つなぐので sandbox の中では失敗し、`git commit` は workspace の中で済むが承認の要求を出さないために置く。
+# 規則は user 層（~/.codex/rules/）にしか置けず、owner が自分で開く Codex にも効く（Q106・2026-11-13）。
+# `git push` と `gh` は入れない（GitHub 上の変更の操作まで承認なしになるため。足すかは実機で回したあとに owner が決める）。
+#
+# 配り方: scripts/sync/sync-codex.sh が ~/.codex/rules/oe-child.rules に通常のファイルとして写す（symlink は Codex が読まない）。
+# owner の default.rules には触らない。
+prefix_rule(pattern=["oe"], decision="allow", justification="engine の verb（報告の送信など）は sandbox の外で承認なしに走らせる（#562）")
+prefix_rule(pattern=["git", "commit"], decision="allow", justification="委譲の子の commit を承認の要求に回さない（#562）")

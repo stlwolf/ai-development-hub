@@ -18,6 +18,30 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/oe-prompt-receipt.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/oe-heartbeat-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PostModelRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.codex/hooks/oe-heartbeat-hook.sh"
+          }
+        ]
+      }
     ]
   }
 }
