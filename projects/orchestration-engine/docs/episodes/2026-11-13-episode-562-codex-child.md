@@ -132,6 +132,12 @@ PR-1 の上に重ねた。`codex.hooks.json` に `UserPromptSubmit`（取り込�
 
 PR #644 を ready にして Copilot に依頼し、3件の指摘が付いた（plan の H6・`3fc8768`・3件とも返信済み）。(1) `-c sandbox_mode=danger-full-access` が既定の `--approve-for-me` を外す一方で権限の判定は読まず、sandbox を外した子を承認ダイジェスト無しで起こせた。実装SO の指摘2を「既定を外す」側だけで直し、「判定」側を忘れていた。(2) 床の sidecar を通常の sidecar と区別していなかったので、同じペインの拍動が2件に数えられ `oe-tree` が model / context% を隠し、`oe_hb_session_for_pane` が lease_id を会話の ID として返しうる。床に `floor: true` を付け、読む側で分けた。(3) `comm` の検査は basename で通るのに記録には元の値が残り、schema の完全一致と食い違う。検査の前に正規化した。2つ目は設計SO の指摘4（床を足す）に対する追加の読む側の変更で、SO の2周目に当たる欠陥だった。
 
+### GATE 4: PR-2 の実装SO（2026-11-13）
+
+Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長の再試行を含む）で空のまま時間切れだった。弱い SO の「0 はなし」の決まりで、Claude のレーン（`--claude-only --claude-model opus --claude-effort high`・`claude-opus-5-5`・543秒）で回した。書き手と同じ会社のモデルなので、別の会社のレーンより弱い裏付けとして扱う。判定は `refuted`（must 2・should 9）。must の1つ目は context% の分子で cached のトークンを二重に数えていたことで、Codex の `TokenUsage` では `input_tokens` が cached を含む（`protocol/src/protocol.rs:2670-2681`・レビュアーが hook を実際に走らせて 25.25% のところ 47.8% を再現した）。plan の DJ-6 の式が最初から誤っていて、設計SO も実装SO（PR-1）も通り抜けた。2つ目は床と hook の sidecar が同じペインに並ぶことで、PR-1 の Copilot の指摘（H6）と同じ欠陥を別のレーンが独立に指した。should 9件は、取り消した要求で 0 に戻さない・記録を1行ずつ読む・`PostModelRequest` を async と timeout 付きで配線する・古い規則の掃除・README・検査の切り出し、と、owner に聞く2件（規則 `oe` の広さ・`git commit` と commit の hook）。11件すべてを採り、2件は問い `.oe/question-562-2.json` にした（plan の H7・`d5751ad`）。
+
+昇格の印: Codex の `token_usage.input_tokens` は cached のトークンを含む。文脈の使用量は `total_tokens`（`tokens_in_context_window`）で、`input + cached + output` と足すと cache の当たりが多い長いセッションほど大きく見積もる。
+
 `oe_agent_self` は `CODEX_THREAD_ID` を `CLAUDE_*` より先に見る。Codex は自分の打つコマンドにだけ `CODEX_THREAD_ID` を入れる一方、`CLAUDE_*` は tmux のセッションの環境から子に引き継がれうるためで、検査（`test_agent.sh` の [9]）で固定した。最初の版は逆の順で、このセッションの環境を引き継いだ検査が claude と答えて見つかった。
 
 昇格の印: Codex の対話の画面は、起動の直後に更新の確認の画面を出すことがあり、そこへ送った1行の Enter が「Update now」を選んで `brew upgrade` を走らせる。engine が起こす1行には `-c check_for_update_on_startup=false` を付ける。起動の直後に別の確認（フォルダの信頼・hook の確認）が出ることもあるので、起こしてから最初の1行を送るまでに画面を確かめる口があるとよい（この issue では付けない）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。

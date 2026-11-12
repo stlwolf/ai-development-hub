@@ -152,7 +152,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 - Codex には外部コマンドを呼ぶ statusLine が無い [verified]（`config/src/types.rs:968-972`）。代わりを2段で作る。
 - **床（engine・hook に依らない）**: (1) `oe-delegate` は子を起こして binding を書いたあと、`<lease_id>.json` の名前で sidecar を1件書く（`ts`・`pane`・`server_pid`・`lease_id`・`generation`・`context_pct: 0`・`model: {}`・`agent`）。`lib/heartbeat-resolve.sh` は `lease_id` と `generation` の一致で候補を選ぶので、session_id を知らなくても lease からペインを引ける。(2) 子が `oe send` を打つたびに、`OE_LEASE_ID` と `TMUX_PANE` があれば同じ sidecar を書き直す（床の更新）。どちらもエージェントに依らず、Claude の子にも効く（Claude では statusLine の sidecar と並ぶだけで、読む側はいちばん新しいものを選ぶ）。
-- **hook（Codex）**: `PostModelRequest` と `UserPromptSubmit` の hook で、新しいスクリプト `canonical/hooks/scripts/oe-heartbeat-hook.sh` が `<session_id>.json` の sidecar を書く（名前は「hook で書く拍動」の意味で、エージェントの名前を入れない）。`session_id` は標準入力の `session_id`、`pane` は `TMUX_PANE`、`server_pid` は `$TMUX` から（Claude の書き手と同じ導出）、`model` は標準入力の `model`（文字列）を `{id: <文字列>, display_name: <文字列>}` に直して書く（読む側が `display_name` を使うため）、`context_pct` は `PostModelRequest` の標準入力の `token_usage` から `(input_tokens + cached_input_tokens + output_tokens) / model_context_window` の形で出す。`model_context_window` は標準入力に無いので、`transcript_path` の記録を**末尾から上限付き**（最後の 200 行）で読んで `token_count` の `model_context_window` を取り、取れなければ `context_pct: 0` にする。`UserPromptSubmit` では `context_pct` を前の sidecar の値のまま残す。記録の `total_token_usage`（累積）は使わない。
+- **hook（Codex）**: `PostModelRequest` と `UserPromptSubmit` の hook で、新しいスクリプト `canonical/hooks/scripts/oe-heartbeat-hook.sh` が `<session_id>.json` の sidecar を書く（名前は「hook で書く拍動」の意味で、エージェントの名前を入れない）。`session_id` は標準入力の `session_id`、`pane` は `TMUX_PANE`、`server_pid` は `$TMUX` から（Claude の書き手と同じ導出）、`model` は標準入力の `model`（文字列）を `{id: <文字列>, display_name: <文字列>}` に直して書く（読む側が `display_name` を使うため）、`context_pct` は `PostModelRequest` の標準入力の `token_usage` の `total_tokens`（文脈の中のトークン数。`input_tokens` は cached を含むので足し合わせない・H7）を `model_context_window` で割って出す。`model_context_window` は標準入力に無いので、`transcript_path` の記録を**末尾から上限付き**（最後の 200 行）で読んで `token_count` の `model_context_window` を取り、取れなければ `context_pct: 0` にする。`UserPromptSubmit` では `context_pct` を前の sidecar の値のまま残す。記録の `total_token_usage`（累積）は使わない。
 - hook は同期で後続を待たせるので、記録の全件走査をせず、`tail` の上限と `timeout 2` を置く。実行時間は C3 で測って episode に書く。
 - 無しで動く形: hook が発火しなければ、床だけで動く。`oe-tree` は model と context% を出さずに子を表示し、lease からペインを引く経路は床の sidecar で通る。床の更新は子が `oe send` を打ったときだけなので、900秒の窓を超えて黙っている子は、`oe-tree` には registry から出るが、ラベルでの送信は保留になる（生のペイン番号と lease_id では送れる）。これは Claude の子が statusLine を切っているときと同じ振る舞いである。
 - SO: 床を足し、`context_pct` の出し方を `token_usage` と `last` 系の値に、`model` を object に、読み方を上限付きにし、「registry に落ちる」の誤りを直した（指摘4・5・17）。
@@ -372,7 +372,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える
 
-### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）（PR-1 の SO は完了・H5。Codex のレーンは道具の障害で判定なし・Cursor のレーンで `survived`。PR-1 の Copilot の1ラウンドは完了・H6・3件に返信済み）
+### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）（PR-1 の SO は完了・H5。Codex のレーンは道具の障害で判定なし・Cursor のレーンで `survived`。PR-1 の Copilot の1ラウンドは完了・H6・3件に返信済み。PR-2 の SO は完了・H7・Claude のレーンで `refuted` → must 2 を直した。PR-2 の Copilot は PR-1 の着地のあと ready にしてから）
 
 ### I7: episode を closure し、knowledge の観測を5件書き戻し、報告して止まる（マージ・worktree の掃除・issue の close はしない）
 
@@ -421,6 +421,13 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 出どころ: Copilot のレビュー（Changes recommended・3件）。3件とも採った。
 - 中身: (1) 権限のモードの判定が `-c` / `--config` の `sandbox_mode`・`approval_policy` も読み、`danger-full-access` は指定の形によらず elevated（承認ダイジェスト必須）にする。(2) 拍動の床に `floor: true` を付け、`oe-tree`・`oe-threads` の表示と `oe_hb_session_for_pane` の逆引きからは床を外す（同じペインの拍動が2件に数えられて model / context% が隠れる・床が会話の ID の代わりに返る、を防ぐ）。lease からペインを引く `oe_hb_pane_for` は床を使う。(3) lease の binding・claim・advance は記録に残す `comm` を basename に正規化してから検査する（schema と `validate-lease` の完全一致に合わせる）。
 - 8項目: step・要件・ゲート・終端・受入・owner の決定・範囲は変わらない。(1) は elevated の判定の抜けを塞ぐ細部の訂正、(2) は DJ-6 の床の設計を読む側に通す訂正、(3) は DJ-5 の検査の整合。新しい対応範囲ではない。
+
+### H7（補正・2026-11-13・GATE 4・PR-2）: 実装SO の指摘（must 2・should 9）を直した（`d5751ad`）
+
+- 出どころ: PR-2 の実装SO。Codex のレーンは道具の障害、Cursor のレーンは時間切れ（1350秒・空）で、Claude のレーン（`so-compare --claude-only --claude-model opus --claude-effort high`・`claude-opus-5-5`・543秒）で回した。書き手と同じ会社のモデルなので、弱い SO として扱う。判定は `refuted`（must 2）。
+- 中身: (must 1) context% の分子が cached のトークンを二重に数えていた（`input_tokens` は cached を含む）。`total_tokens`（Codex の `tokens_in_context_window`・`protocol/src/protocol.rs:2679-2681`）を使い、無ければ `input + output`。DJ-6 の式も直す。(must 2) 床と hook の sidecar が同じペインに並び `oe-tree`・`oe-threads` が ambiguous で model / context% を隠す。PR-1 の H6（`floor: true`・読む側で床を外す）で直した。(should) 取り消した要求（`token_usage: null`）で 0 に戻さず前の値を残す。記録を1行ずつ読み、書きかけの最終行で窓を取り損ねない。`PostModelRequest` の配線を `async: true`・`timeout: 10` にして道具の実行を待たせない。hub に無くなった `oe-*.rules` を写し先から消す。README の hash の元に `timeout`・`async` なども入ると書く。検査の関数の切り出しを `sync_rules` だけにし、`set -euo pipefail` の下でも通ることを見る。
+- owner に聞くもの（補正ではなく問い・`.oe/question-562-2.json`）: 規則 `oe` が engine のすべての verb を sandbox の外に出すこと（絞るか）、`git commit` の allow が workspace の中の commit の hook も外で走らせること（外すか）。どちらも推奨は「決めたまま」。
+- 8項目: step・要件・ゲート・終端・受入・owner の決定・範囲は変わらない。context% の式は DJ-6 の細部の訂正で、結果（sidecar の形）は同じ。`async`・`timeout` は hook の定義の細部で、登録の手順は変わらない。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 
