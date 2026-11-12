@@ -368,7 +368,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### CHECK-1: T-1〜T-8 と既存の検査を bash 5 と bash 3.2 で回し、shellcheck を通す（PR-1）（完了・2026-11-13・`tests/test_*.sh` 54本 × bash 5.2.37 と 3.2.57 = 108 回がすべて exit 0。shellcheck は変えたスクリプトで master と同じ info のみ）
 
-### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11
+### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11（完了・ブランチ `feature/#562_codex_dist`・`d80b1d8`・PR #645 draft・PR #644 の上に重ねる）
 
 ### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える
 

@@ -116,6 +116,12 @@ owner が6つの問いすべてに答え（承認のモード・lease の検査�
 - I5（`1bbc38d`）: `delegate-task`・`doc-flow-guardrail`（skill 解決規約・受領の印の1行）・`bin/README.md`（7か所の対応表・PR-2 が無い状態の制限・範囲の外の5つ）・`orchestration-toolkit`・engine の README。
 - 検査は各段で bash 5 と `/bin/bash` 3.2 の両方で回し、全件 exit 0（CHECK-1 で全部を回す）。
 
+CHECK-1（`38dabdb`）: `tests/test_*.sh` 54本を bash 5.2.37 と `/bin/bash` 3.2.57 で回し、108回がすべて exit 0。
+
+### I6: Codex の配布物（PR-2・ブランチ `feature/#562_codex_dist`・`d80b1d8`・PR #645）
+
+PR-1 の上に重ねた。`codex.hooks.json` に `UserPromptSubmit`（取り込み印と拍動）と `PostModelRequest`（拍動）を配線し、`oe-heartbeat-hook.sh` を新しく書いた（`PostModelRequest` の `token_usage` と記録の `model_context_window` から context%・標準出力に何も出さない・記録は末尾から上限付き）。規則 `canonical/codex/rules/oe-child.rules`（`oe`・`git commit`）は `sync-codex.sh` の `sync_rules` が通常のファイルとして写す（symlink は Codex が読まないため・設計SO の指摘1）。`AGENTS.md` は「委譲の子は書面の固定節に従う」の節だけ。hooks の README に信頼の登録と登録し直しの条件を書いた。検査は `test_heartbeat_hook.sh`（23）・`test_codex_dist.sh`（17）・`test_prompt_receipt.sh` の [7b] で、bash 5 と 3.2 で exit 0。CHECK-2（sync を一時ディレクトリで確かめ、owner が `/hooks` で登録してから1回回す）は owner の手が要るので、統括に時期を聞く。
+
 `oe_agent_self` は `CODEX_THREAD_ID` を `CLAUDE_*` より先に見る。Codex は自分の打つコマンドにだけ `CODEX_THREAD_ID` を入れる一方、`CLAUDE_*` は tmux のセッションの環境から子に引き継がれうるためで、検査（`test_agent.sh` の [9]）で固定した。最初の版は逆の順で、このセッションの環境を引き継いだ検査が claude と答えて見つかった。
 
 昇格の印: Codex の対話の画面は、起動の直後に更新の確認の画面を出すことがあり、そこへ送った1行の Enter が「Update now」を選んで `brew upgrade` を走らせる。engine が起こす1行には `-c check_for_update_on_startup=false` を付ける。起動の直後に別の確認（フォルダの信頼・hook の確認）が出ることもあるので、起こしてから最初の1行を送るまでに画面を確かめる口があるとよい（この issue では付けない）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。
