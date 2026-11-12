@@ -48,9 +48,13 @@ if [[ "${args[0]:-}" == "-C" && -n "${args[1]:-}" ]]; then
 fi
 sub="${args[i]:-}"
 if [[ "$sub" == "diff" && "${args[$((i+1))]:-}" == "--name-only" ]]; then
-  # range 引数 (args[i+2]) の有無で range diff / working-tree diff を分岐:
+  # オプションの後の range 引数の有無で range diff / working-tree diff を分岐:
   #   range あり → OE_MOCK_GIT_RANGE_FILES (commit 範囲) / range なし → OE_MOCK_GIT_FILES (working-tree)
-  if [[ -n "${args[$((i+2))]:-}" ]]; then
+  range_index=$((i+2))
+  if [[ "${args[range_index]:-}" == "--no-relative" ]]; then
+    range_index=$((range_index+1))
+  fi
+  if [[ -n "${args[range_index]:-}" ]]; then
     [[ -n "${OE_MOCK_GIT_RANGE_FILES:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_RANGE_FILES}"
   else
     [[ -n "${OE_MOCK_GIT_FILES:-}" ]] && printf '%s\n' "${OE_MOCK_GIT_FILES}"
@@ -816,36 +820,56 @@ assert_eq "#101 no-FN: verdict 後の postamble 行があっても検出" "pass"
 echo ""
 echo "=== #489: 未追跡ファイルの pre-existing 注記 ==="
 baseline_repo="${_TMP_DIR}/baseline-repo"
-mkdir -p "$baseline_repo/pre/sub"
+project_prefix="projects/orchestration-engine"
+baseline_project="$baseline_repo/$project_prefix"
+mkdir -p "$baseline_project/pre/sub"
 export OE_REAL_GIT_DIR="$baseline_repo"
 git -C "$baseline_repo" init -q --template=
 git -C "$baseline_repo" config core.excludesFile /dev/null
+git -C "$baseline_repo" config diff.relative false
 printf 'ignored.txt\n' > "$baseline_repo/.gitignore"
-touch "$baseline_repo/tracked.txt"
-git -C "$baseline_repo" add .gitignore tracked.txt
+touch "$baseline_project/tracked.txt"
+git -C "$baseline_repo" add .gitignore "$project_prefix/tracked.txt"
 git -C "$baseline_repo" -c user.name=Test -c user.email=test@example.com \
   -c core.hooksPath=/dev/null commit -qm baseline --no-gpg-sign
-printf 'dirty\n' > "$baseline_repo/tracked.txt"
-touch "$baseline_repo/pre/sub/old.txt" "$baseline_repo/pre/a -> b.txt" "$baseline_repo/pre/ignored.txt"
+printf 'dirty\n' > "$baseline_project/tracked.txt"
+touch "$baseline_project/pre/sub/old.txt" "$baseline_project/pre/a -> b.txt" \
+  "$baseline_project/pre/ignored.txt" "$baseline_project/pre/staged.txt" "$baseline_project/pre/committed.txt"
 
 baseline_session_id="RTEST_BASELINE_489_$$"
-PROJECT_DIR="$baseline_repo" OE_TEST_WORKER_OUTPUT="$baseline_repo/pre/sub/new.txt" \
+export OE_REAL_GIT_DIR="$baseline_project"
+PROJECT_DIR="$baseline_project" OE_TEST_WORKER_OUTPUT="$baseline_project/pre/sub/new.txt" \
   oe_spawn_send "$baseline_session_id" "$target_pane_id" "$target_envelope_path" cursor-agent
-PROJECT_DIR="$baseline_repo" \
+git -C "$baseline_project" add pre/committed.txt
+git -C "$baseline_project" -c user.name=Test -c user.email=test@example.com \
+  -c core.hooksPath=/dev/null commit -qm worker --no-gpg-sign
+git -C "$baseline_project" add pre/staged.txt
+PROJECT_DIR="$baseline_project" \
   oe_verify_prompt_build "$baseline_session_id" "$target_pane_id" "$baseline_session_id" "$target_envelope_path"
-unset OE_REAL_GIT_DIR
 
 assert_eq "#489: 起動前の未追跡ファイル (入れ子) に注記" "true" \
-  "$(grep -qF -- '- pre/sub/old.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+  "$(grep -qF -- "- $project_prefix/pre/sub/old.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
 assert_eq "#489: 起動前の未追跡ファイル (空白と矢印) に注記" "true" \
-  "$(grep -qF -- '- pre/a -> b.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+  "$(grep -qF -- "- $project_prefix/pre/a -> b.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: 起動後にステージされた既存ファイルに注記" "true" \
+  "$(grep -qF -- "- $project_prefix/pre/staged.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: 起動後にコミットされた既存ファイルに注記" "true" \
+  "$(grep -qF -- "- $project_prefix/pre/committed.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
 assert_eq "#489: worker 起動時に作ったファイルは注記なし" "true" \
-  "$(grep -qxF -- '- pre/sub/new.txt' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+  "$(grep -qxF -- "- $project_prefix/pre/sub/new.txt" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
 assert_eq "#489: 起動前に変更済みの追跡ファイルに注記" "true" \
-  "$(grep -qF -- '- tracked.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+  "$(grep -qF -- "- $project_prefix/tracked.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
 assert_eq "#489: ignored ファイルは baseline に含めない" "true" \
-  "$(jq -r 'select(.event_type == "session_start") | (.payload.baseline_dirty | index("pre/ignored.txt") == null)' \
+  "$(jq -r --arg ignored "$project_prefix/pre/ignored.txt" \
+    'select(.event_type == "session_start") | (.payload.baseline_dirty | index($ignored) == null)' \
     "${OE_AUDIT_DIR}/${baseline_session_id}.jsonl")"
+
+git -C "$baseline_project" config diff.relative true
+PROJECT_DIR="$baseline_project" \
+  oe_verify_prompt_build "$baseline_session_id" "$target_pane_id" "$baseline_session_id" "$target_envelope_path"
+assert_eq "#489: diff.relative=true でもルート基準で注記" "true" \
+  "$(grep -qF -- "- $project_prefix/pre/staged.txt  ⚠ pre-existing" "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+unset OE_REAL_GIT_DIR
 rm -f "$OE_VERIFY_PROMPT_PATH"
 
 echo ""
