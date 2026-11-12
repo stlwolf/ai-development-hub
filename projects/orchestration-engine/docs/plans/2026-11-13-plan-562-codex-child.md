@@ -372,7 +372,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える
 
-### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）
+### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）（PR-1 の SO は完了・H5。Codex のレーンは道具の障害で判定なし・Cursor のレーンで `survived`）
 
 ### I7: episode を closure し、knowledge の観測を5件書き戻し、報告して止まる（マージ・worktree の掃除・issue の close はしない）
 
@@ -409,6 +409,12 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 - 出どころ: `oe-handoff` は統括の verb で、Codex を統括にするのは「この plan の範囲」の「やらない」に入っている。DJ-9 が両方を挙げていたのは範囲と食い違っていた。
 - 8項目: (1) step は消えていない。(2) 要件は、範囲の外と宣言済みのものを文から外しただけ（codex の統括の案内は、どの受入も求めていない）。(3)〜(5) 変わらない。(6) owner の決定に関わらない。(7) 範囲内の項目を範囲外へ移してはいない（もともと範囲外）。(8) 追加なし。迷ったら重い側、の決まりに従い、統括に判定を任せる。
+
+### H5（補正・2026-11-13・GATE 4・PR-1）: 実装SO の指摘8件（should）を直した
+
+- 出どころ: 実装SO。Codex のレーンは `tool_status=degraded`（`timed out negotiating with the code-mode host`・0.167.2 の道具の障害）で判定なしに終わり、Cursor のレーン（composer-2.5・指定）で回し直した。判定は `survived`（must 0・should 8）。8件すべてを採った（`e19bdf2`）。
+- 中身: (1) 承認パッケージのエージェントの行を claude 以外のときだけ出す（A-1 の「表示の項目が変更前と同じ」を文字どおりにする）。(2) `-c sandbox_mode=`・`approval_policy=`・`approvals_reviewer=` の指定も承認のモードの上書きと見る（既定の `--approve-for-me` と衝突して起動が失敗する経路を塞ぐ）。(3) `oe_agent_self` がたどった codex の pid を自分のペインの前面のプロセスと突き合わせる（DJ-8 に書いてあったが実装が抜けていた）。(4) lease の schema の top-level `agent`（最初の編集が通っていなかった）。(5) `oe_lease_gc` が開いた lease の床を残す。(6) `oe-recover` の文言。(7) developer の指示の本文にバックスラッシュと制御文字が無いことを検査で固定。(8) T-6 の検査を前面の突き合わせまで広げた。
+- 8項目: step・要件・ゲート・終端・受入・owner の決定・範囲は変わらない。(2) と (5) は承認済みの結果を確かめる検査と細部の訂正で、新しい対応範囲ではない。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 
