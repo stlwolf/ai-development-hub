@@ -60,6 +60,15 @@ for a in "-a never" "--ask-for-approval never" "-s workspace-write" "--sandbox r
 done
 out="$(oe_agent_default_args codex -m gpt-5 | tr '\n' ' ')"
 ck "unrelated user arg keeps --approve-for-me" yes "$([[ "$out" == *'--approve-for-me '* ]] && echo yes || echo no)"
+for a in "-c sandbox_mode=danger-full-access" "--config approval_policy=never" "-c approvals_reviewer=user" "--config=sandbox_mode=read-only"; do
+  # shellcheck disable=SC2086
+  out="$(oe_agent_default_args codex $a | tr '\n' ' ')"
+  ck "override via config key [$a] drops --approve-for-me" no "$([[ "$out" == *'--approve-for-me '* ]] && echo yes || echo no)"
+done
+out="$(oe_agent_default_args codex -c model=gpt-5 | tr '\n' ' ')"
+ck "unrelated -c key keeps --approve-for-me" yes "$([[ "$out" == *'--approve-for-me '* ]] && echo yes || echo no)"
+ck "developer_instructions has no backslash" yes "$([[ "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" != *'\'* ]] && echo yes || echo no)"
+ck "developer_instructions has no control characters" yes "$(printf '%s' "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" | LC_ALL=C grep -q '[[:cntrl:]]' && echo no || echo yes)"
 
 echo "[6] 権限のモードの読み方と elevated"
 ck "claude default" default "$(oe_agent_permission_mode claude)"
@@ -95,24 +104,34 @@ ck "claude self" "claude 4242 sid-1" "$out"
 echo "[9] oe_agent_self: codex の環境（mock の ps で親をたどる）"
 cat > "$_TMP_DIR/ps" <<'EOF'
 #!/usr/bin/env bash
-# mock: ps -o ppid= -p <pid> / ps -o comm= -p <pid>。連鎖: 500(bash) -> 400(bash) -> 300(codex) -> 1
+# mock: ps -o ppid= -p <pid> / ps -o comm= -p <pid>。連鎖: <自分のシェル>(bash) -> 400(bash) -> 300(codex) -> 1
 case "$*" in
-  *"-o ppid= -p 500"*) echo " 400" ;;
   *"-o ppid= -p 400"*) echo " 300" ;;
   *"-o ppid= -p 300"*) echo " 1" ;;
+  *"-o ppid= -p "*) echo " 400" ;;
   *"-o comm= -p 400"*) echo "/opt/homebrew/bin/bash" ;;
   *"-o comm= -p 300"*) echo "/opt/homebrew/Caskroom/codex/0.167.2/bin/codex" ;;
   *) exit 1 ;;
 esac
 EOF
 chmod +x "$_TMP_DIR/ps"
-# 本物の関数は自分の pid（$$）から始めるので、mock の最初の段を呼び出すシェルの pid に合わせる（bash -c の中で書き換える）。
-# shellcheck disable=SC2016  # $0 / $$ は子のシェルで展開させる
-out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS="$_TMP_DIR/ps" bash -c 'sed -i.bak "s/-p 500\"/-p $$\"/" "$1"; . "$0"; oe_agent_self && printf "%s %s %s" "$OE_AGENT_SELF" "$OE_AGENT_SELF_PID" "$OE_AGENT_SELF_SID"' "$PROJECT_DIR/lib/agent.sh" "$_TMP_DIR/ps")"
+# 本物の関数は自分の pid（$$）から始める。mock は知らない pid の親を 400 と答えるので、どのシェルからでも同じ連鎖に乗る。
+# shellcheck disable=SC2016  # $0 は子のシェルで展開させる
+out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS="$_TMP_DIR/ps" bash -c '. "$0"; oe_agent_self && printf "%s %s %s" "$OE_AGENT_SELF" "$OE_AGENT_SELF_PID" "$OE_AGENT_SELF_SID"' "$PROJECT_DIR/lib/agent.sh")"
 ck "codex self via oe_agent_self (ancestor walk through mock ps)" "codex 300 thr-9" "$out"
 # shellcheck disable=SC2016
 out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS=/usr/bin/false bash -c '. "$0"; oe_agent_self; echo "rc=$? sid=$OE_AGENT_SELF_SID pid=[$OE_AGENT_SELF_PID]"' "$PROJECT_DIR/lib/agent.sh")"
 ck "codex self without a reachable codex pid fails but keeps the session id" "rc=1 sid=thr-9 pid=[]" "$out"
+# 自分のペインの前面のプロセスと突き合わせる（DJ-8）: 一致すれば通り、違えば止まる。前面が読めなければ突き合わせない
+# shellcheck disable=SC2016
+out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS="$_TMP_DIR/ps" TMUX_PANE=%4 bash -c '. "$0"; _OE_TPI_TAB="$(printf "\t")"; oe_tpi_pane_foreground() { printf "300\tThu Nov 13"; }; oe_agent_self; echo "rc=$? pid=$OE_AGENT_SELF_PID"' "$PROJECT_DIR/lib/agent.sh")"
+ck "foreground pid matches -> ok" "rc=0 pid=300" "$out"
+# shellcheck disable=SC2016
+out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS="$_TMP_DIR/ps" TMUX_PANE=%4 bash -c '. "$0"; _OE_TPI_TAB="$(printf "\t")"; oe_tpi_pane_foreground() { printf "999\tThu Nov 13"; }; oe_agent_self; echo "rc=$? pid=[$OE_AGENT_SELF_PID] sid=$OE_AGENT_SELF_SID"' "$PROJECT_DIR/lib/agent.sh")"
+ck "foreground pid differs -> stop without pid (keeps sid)" "rc=1 pid=[] sid=thr-9" "$out"
+# shellcheck disable=SC2016
+out="$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID=thr-9 OE_TPI_PS="$_TMP_DIR/ps" TMUX_PANE=%4 bash -c '. "$0"; oe_tpi_pane_foreground() { return 2; }; oe_agent_self; echo "rc=$? pid=$OE_AGENT_SELF_PID"' "$PROJECT_DIR/lib/agent.sh")"
+ck "foreground unreadable -> no cross-check" "rc=0 pid=300" "$out"
 # CLAUDE_* が tmux の環境から引き継がれていても、CODEX_THREAD_ID があれば自分は codex である
 # shellcheck disable=SC2016
 out="$(CLAUDE_PID=1 CLAUDE_CODE_SESSION_ID=leaked CODEX_THREAD_ID=thr-9 OE_TPI_PS=/usr/bin/false bash -c '. "$0"; oe_agent_self; echo "$OE_AGENT_SELF $OE_AGENT_SELF_SID"' "$PROJECT_DIR/lib/agent.sh")"

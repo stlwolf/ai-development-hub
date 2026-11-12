@@ -331,6 +331,12 @@ ck "bind: comm が bash なら rc 6" "6" "$(rc_of oe_lease_bind "$L10" 0 778 "Th
 ck "bind: comm が codexd（部分一致）なら rc 6" "6" "$(rc_of oe_lease_bind "$L10" 0 778 "Thu Nov 13 03:00:00 2026" codexd)"
 ck "bind: comm が絶対パスの codex なら basename で通る" "0" "$(rc_of oe_lease_bind "$L10" 0 778 "Thu Nov 13 03:00:00 2026" /opt/homebrew/bin/codex)"
 ck "codex の binding の記録が検査を通る" "0" "$(rc_of "$VALIDATE" "$OE_LEASE_DIR/$L9.json")"
+# 拍動の床（lease_id の名前の sidecar）は、開いた lease のものなら古くても gc で残す
+jq -cn '{ts:1, context_pct:0, pane:"%9", server_pid:"900", lease_id:"'"$L9"'", generation:1}' > "$OE_HEARTBEAT_DIR/$L9.json"
+jq -cn '{ts:1, context_pct:0, pane:"%8", server_pid:"900"}' > "$OE_HEARTBEAT_DIR/stale-floor.json"
+oe_lease_gc 1 >/dev/null 2>&1
+ck "開いた lease の床は古くても残す" "1" "$([ -f "$OE_HEARTBEAT_DIR/$L9.json" ] && echo 1 || echo 0)"
+ck "どの lease にも当たらない古い sidecar は消える" "0" "$([ -f "$OE_HEARTBEAT_DIR/stale-floor.json" ] && echo 1 || echo 0)"
 ck "ファイルが無ければ exit 2" "2" "$(rc_of "$VALIDATE" "$_TMP_DIR/none.json")"
 
 echo "=== (10) 本物に届く経路が無い ==="

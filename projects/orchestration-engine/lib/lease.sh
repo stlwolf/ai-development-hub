@@ -545,6 +545,9 @@ oe_lease_gc() {
     fi
     keep="${keep}$(jq -r 'select(.state=="open") | .current_generation as $g | .generations[] | select(.generation==$g) | (.session_ids // [])[]' "$f" 2>/dev/null)
 "
+    # 拍動の床（#562 DJ-6）は lease_id の名前で書かれる。開いた lease の床は、古くても残す（session_id の sidecar と同じ扱い）。
+    keep="${keep}$(jq -r 'select(.state=="open") | .lease_id' "$f" 2>/dev/null)
+"
   done
   [ -n "$OE_HEARTBEAT_DIR" ] && [ -d "$OE_HEARTBEAT_DIR" ] || return 0
   for f in "$OE_HEARTBEAT_DIR"/*.json; do

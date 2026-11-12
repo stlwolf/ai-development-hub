@@ -326,13 +326,16 @@ print_approval_package() {
   s_label="$(_strip_cntrl "${LABEL:-(ラベル無し)}")"
   s_task="$(_strip_cntrl "$task_summary")"
   s_reason="$(_strip_cntrl "${REASON:-(呼び出し側が会話で補足)}")"
+  # エージェントの行は claude 以外のときだけ出す（claude の表示は変更前と同じ・受入 A-1・実装SO の指摘1）。
+  local agent_line=""
+  [[ "$AGENT" != "$OE_AGENT_DEFAULT" ]] && agent_line="  エージェント    : ${AGENT}
+"
   cat <<EOF
 ========================================================================
 [spawn 承認要求] elevated な子セッションを起動します。owner の承認をお願いします。
 ------------------------------------------------------------------------
   対象の子        : ${s_label}
-  エージェント    : ${AGENT}
-  要求権限モード  : ${pm}
+${agent_line}  要求権限モード  : ${pm}
   elevated 宣言   : ${is_elev}
   作業ディレクトリ: ${WORKSPACE}
   brief           : ${BRIEF_ABS:-(なし)}

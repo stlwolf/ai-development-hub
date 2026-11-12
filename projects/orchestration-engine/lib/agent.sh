@@ -55,18 +55,23 @@ oe_agent_comm_allowed() {
 #   claude: --permission-mode / --dangerously-skip-permissions
 oe_agent_has_mode_override() {
   local agent="${1:-}"; shift
-  local a
+  local a prev=""
   for a in "$@"; do
     case "$agent" in
       codex)
         case "$a" in
           -a|--ask-for-approval|--ask-for-approval=*|-s|--sandbox|--sandbox=*|--approve-for-me|--dangerously-bypass-approvals-and-sandbox|--yolo) return 0 ;;
+          # -c <key>=<value> / --config <key>=<value> で承認のモードを設定の鍵で指定する形（実装SO の指摘）
+          --config=sandbox_mode=*|--config=approval_policy=*|--config=approvals_reviewer=*) return 0 ;;
+          sandbox_mode=*|approval_policy=*|approvals_reviewer=*)
+            if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then return 0; fi ;;
         esac ;;
       *)
         case "$a" in
           --permission-mode|--permission-mode=*|--dangerously-skip-permissions) return 0 ;;
         esac ;;
     esac
+    prev="$a"
   done
   return 1
 }
@@ -170,7 +175,18 @@ oe_agent_self() {
       case "$p" in ''|0|1|*[!0-9]*) break ;; esac
       comm="$(LC_ALL=C "$ps_cmd" -o comm= -p "$p" 2>/dev/null)" || comm=""
       comm="${comm##*/}"
-      if [ "$comm" = "codex" ]; then OE_AGENT_SELF_PID="$p"; return 0; fi
+      if [ "$comm" = "codex" ]; then
+        # 自分のペインの前面のプロセスと突き合わせる（plan の DJ-8・別のペインの codex を拾う誤りを弾く）。
+        # lib/tmux-pane-identity.sh が読み込まれていて TMUX_PANE があるときだけ。前面が読めなければ突き合わせない。
+        if [ -n "${TMUX_PANE:-}" ] && declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
+          local fg fpid
+          if fg="$(oe_tpi_pane_foreground "$TMUX_PANE" 2>/dev/null)"; then
+            fpid="${fg%%"${_OE_TPI_TAB:-	}"*}"
+            if [ "$fpid" != "$p" ]; then OE_AGENT_SELF_PID=""; return 1; fi
+          fi
+        fi
+        OE_AGENT_SELF_PID="$p"; return 0
+      fi
       i=$((i + 1))
     done
     return 1

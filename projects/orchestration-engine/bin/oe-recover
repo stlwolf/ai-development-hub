@@ -203,7 +203,7 @@ if [ -z "$SELF" ] || [ -z "$ME_PID" ] || [ -z "$ME_SID" ]; then
   finish 2
 fi
 if ! ME_ST="$(oe_tpi_proc_started "$ME_PID")" || ! ME_COMM="$(oe_tpi_proc_comm "$ME_PID")"; then
-  sit "自分の claude のプロセス（pid ${ME_PID}）の開始時刻かコマンド名を読めませんでした。"
+  sit "自分のエージェント（${OE_AGENT_SELF:-不明}）のプロセス（pid ${ME_PID}）の開始時刻かコマンド名を読めませんでした。"
   notw "何も書いていません。"
   next_ "統括が ps -p ${ME_PID} -o pid,lstart,command を打って、プロセスが見えるかを確かめます。見えれば oe-recover を打ち直します。"
   finish 1
