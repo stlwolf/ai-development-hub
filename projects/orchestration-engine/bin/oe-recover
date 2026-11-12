@@ -99,11 +99,13 @@ cmd_hint() {
     [ -f "$f" ] || continue
     rows="${rows}$(jq -r 'select(.state=="open") | .current_generation as $g | (.generations[] | select(.generation==$g)) as $c
       | [ .lease_id, .kind, (.label | gsub("[[:cntrl:]]"; " ")), ($g|tostring), (($c.binding.pid // "")|tostring),
-          ($c.binding.started // ""), (($c.session_ids // []) | last // ""), .workspace, (.parent_lease_id // "") ] | join("\u001f")' "$f" 2>/dev/null)
+          ($c.binding.started // ""), (($c.session_ids // []) | last // ""), .workspace, (.parent_lease_id // ""), (.agent // "") ] | join("\u001f")' "$f" 2>/dev/null)
 "
   done
-  _hint_one() { # <lid> <kind> <label> <gen> <bpid> <bst> <sid> <lws>
-    local lid="$1" kind="$2" label="$3" gen="$4" bpid="$5" bst="$6" sid="$7" lws="$8" st
+  _hint_one() { # <lid> <kind> <label> <gen> <bpid> <bst> <sid> <lws> [<agent>]
+    local lid="$1" kind="$2" label="$3" gen="$4" bpid="$5" bst="$6" sid="$7" lws="$8" agent="${9:-}" st
+    # agent（#562）が無い記録は claude。復帰の1行はエージェントで出し分ける（lib/agent.sh の oe_agent_resume_hint）。
+    [ -n "$agent" ] || agent="claude"
     n=$((n + 1))
     printf '\n[%s] %s（%s・lease %s・generation %s）\n' "$n" "$label" "$kind" "$lid" "$gen"
     if [ -z "$bpid" ]; then
@@ -120,8 +122,9 @@ cmd_hint() {
         printf '  状況: binding のプロセス（pid %s・開始 %s）は生きていません。\n' "$bpid" "$bst"
         if [ -n "$sid" ]; then
           printf '  次にやること: 新しいペインで次の1行を打ち、resume した会話に「復帰して」と頼みます（会話は oe-recover を打ちます）。\n'
-          printf '    cd %q && OE_LEASE_ID=%s OE_GENERATION=%s claude --resume %s\n' "$lws" "$lid" "$gen" "$sid"
-          tname="$(_title_of "$sid")"
+          printf '    %s\n' "$(oe_agent_resume_hint "$agent" "$lws" "$lid" "$gen" "$sid")"
+          tname=""
+          [ "$agent" = "claude" ] && tname="$(_title_of "$sid")"
           if [ -n "$tname" ]; then
             case "$tname" in *"'"*) tq="$(printf '%q' "$tname")" ;; *) tq="'${tname}'" ;; esac
             printf '  名前で入るなら（上の1行の環境変数は付かないが、session_id の照合で lease は決まる）: cd %q && claude -r %s\n' "$lws" "$tq"
@@ -134,23 +137,23 @@ cmd_hint() {
         printf '  次にやること: owner が ps -p %s -o pid,lstart,command で確かめてから決めます。コマンドは出しません。\n' "$bpid" ;;
     esac
   }
-  while IFS=$'\037' read -r lid kind label gen bpid bst sid lws _par; do
+  while IFS=$'\037' read -r lid kind label gen bpid bst sid lws _par agent; do
     [ -n "$lid" ] && [ "$kind" = "supervisor" ] || continue
     [ "$(_realdir "$lws")" = "$wsr" ] || continue
     sups="${sups}${lid} "
-    _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws"
+    _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws" "$agent"
   done <<< "$rows"
   if [ "$all" -eq 1 ]; then
     # 統括の下の委譲の lease を、親をたどって出す（孫を含む）。
     local added=1
     while [ "$added" -eq 1 ]; do
       added=0
-      while IFS=$'\037' read -r lid kind label gen bpid bst sid lws par; do
+      while IFS=$'\037' read -r lid kind label gen bpid bst sid lws par agent; do
         [ -n "$lid" ] && [ "$kind" = "delegation" ] || continue
         case "$sups" in *" $lid "*) continue ;; esac
         case "$sups" in *" $par "*) ;; *) continue ;; esac
         sups="${sups}${lid} "; added=1
-        _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws"
+        _hint_one "$lid" "$kind" "$label" "$gen" "$bpid" "$bst" "$sid" "$lws" "$agent"
       done <<< "$rows"
     done
   fi
@@ -189,9 +192,12 @@ command -v jq >/dev/null 2>&1 || { err "jq がありません"; exit 2; }
 _oe_lease_ready || { err "lease の置き場が決まりません（OE_LEASE_DIR）"; exit 2; }
 
 # --- 1 自分を確かめる ---
-SELF="${TMUX_PANE:-}"; ME_PID="${CLAUDE_PID:-}"; ME_SID="${CLAUDE_CODE_SESSION_ID:-}"
+# 自分の pid と会話の ID はエージェントごとに違う（claude: CLAUDE_PID / CLAUDE_CODE_SESSION_ID、codex: CODEX_THREAD_ID と
+# 親をたどった codex の pid・lib/agent.sh の oe_agent_self・#562 DJ-8）。
+oe_agent_self >/dev/null 2>&1 || true
+SELF="${TMUX_PANE:-}"; ME_PID="$OE_AGENT_SELF_PID"; ME_SID="$OE_AGENT_SELF_SID"
 if [ -z "$SELF" ] || [ -z "$ME_PID" ] || [ -z "$ME_SID" ]; then
-  sit "自分のペイン（TMUX_PANE=${SELF:-空}）・自分の claude の pid（CLAUDE_PID=${ME_PID:-空}）・自分の session_id（CLAUDE_CODE_SESSION_ID=${ME_SID:-空}）のどれかが分かりません。この verb は、resume した Claude Code の Bash から、tmux のペインの中で打つものです。"
+  sit "自分のペイン（TMUX_PANE=${SELF:-空}）・自分のエージェントの pid（${ME_PID:-空}・claude なら CLAUDE_PID、codex なら親をたどった codex の pid）・自分の session_id（${ME_SID:-空}・claude なら CLAUDE_CODE_SESSION_ID、codex なら CODEX_THREAD_ID）のどれかが分かりません。この verb は、resume したエージェントの Bash から、tmux のペインの中で打つものです。"
   notw "何も書いていません。"
   next_ "統括（resume した会話）が、自分の Bash ツールから oe-recover を打ち直します。普通のシェルから打つのは oe-recover hint だけです。"
   finish 2
