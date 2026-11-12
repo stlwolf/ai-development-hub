@@ -85,6 +85,13 @@ ck "codex bypass flag is elevated" bypassPermissions "$(oe_agent_permission_mode
 ck "codex --yolo is elevated" bypassPermissions "$(oe_agent_permission_mode codex --yolo)"
 ck "codex -a never -s danger-full-access is elevated" bypassPermissions "$(oe_agent_permission_mode codex -a never -s danger-full-access)"
 ck "codex -s danger-full-access -a never stays elevated" bypassPermissions "$(oe_agent_permission_mode codex -s danger-full-access -a never)"
+# -c / --config で設定の鍵として指定した形も同じに読む（Copilot の指摘）
+ck "codex -c sandbox_mode=danger-full-access is elevated" bypassPermissions "$(oe_agent_permission_mode codex -c sandbox_mode=danger-full-access)"
+ck "codex -c 'sandbox_mode=\"danger-full-access\"' (TOML quotes) is elevated" bypassPermissions "$(oe_agent_permission_mode codex -c 'sandbox_mode="danger-full-access"')"
+ck "codex --config=sandbox_mode=danger-full-access is elevated" bypassPermissions "$(oe_agent_permission_mode codex --config=sandbox_mode=danger-full-access)"
+ck "codex -c sandbox_mode=read-only" sandbox:read-only "$(oe_agent_permission_mode codex -c sandbox_mode=read-only)"
+ck "codex -c approval_policy=never" never "$(oe_agent_permission_mode codex -c 'approval_policy="never"')"
+ck "codex -c model=x keeps the default mode" approve-for-me "$(oe_agent_permission_mode codex -c model=x)"
 ck "elevated predicate: bypassPermissions" 0 "$(rc_of oe_agent_mode_is_elevated bypassPermissions)"
 ck "elevated predicate: never is not elevated" 1 "$(rc_of oe_agent_mode_is_elevated never)"
 ck "elevated predicate: auto is not elevated" 1 "$(rc_of oe_agent_mode_is_elevated auto)"

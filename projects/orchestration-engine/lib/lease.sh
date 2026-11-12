@@ -163,6 +163,7 @@ oe_lease_bind() {
   case "$expect" in ''|*[!0-9]*) return 2 ;; esac
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   [ -n "$started" ] || return 2
+  comm="${comm##*/}"   # 記録に残す値も basename にそろえる（schema と validate-lease の完全一致・Copilot の指摘）
   oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
@@ -260,6 +261,7 @@ oe_lease_claim() {
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   case "$sid" in ''|*[!A-Za-z0-9._-]*) return 2 ;; esac
   [ -n "$started" ] || return 2
+  comm="${comm##*/}"   # 記録に残す値も basename にそろえる（schema と validate-lease の完全一致・Copilot の指摘）
   oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
@@ -321,6 +323,7 @@ oe_lease_advance() {
   case "$mode" in planned|recover) ;; *) return 2 ;; esac
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   [ -n "$started" ] || return 2
+  comm="${comm##*/}"   # 記録に残す値も basename にそろえる（schema と validate-lease の完全一致・Copilot の指摘）
   oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1

@@ -330,6 +330,8 @@ ck "bind: comm が codex なら書ける" "0" "$(rc_of oe_lease_bind "$L9" 0 777
 ck "bind: comm が bash なら rc 6" "6" "$(rc_of oe_lease_bind "$L10" 0 778 "Thu Nov 13 03:00:00 2026" bash)"
 ck "bind: comm が codexd（部分一致）なら rc 6" "6" "$(rc_of oe_lease_bind "$L10" 0 778 "Thu Nov 13 03:00:00 2026" codexd)"
 ck "bind: comm が絶対パスの codex なら basename で通る" "0" "$(rc_of oe_lease_bind "$L10" 0 778 "Thu Nov 13 03:00:00 2026" /opt/homebrew/bin/codex)"
+ck "bind: 記録に残る comm は basename（Copilot の指摘）" "codex" "$(jq -r '.generations[-1].binding.comm' "$OE_LEASE_DIR/$L10.json")"
+ck "絶対パスで bind した記録も検査を通る" "0" "$(rc_of "$VALIDATE" "$OE_LEASE_DIR/$L10.json")"
 ck "codex の binding の記録が検査を通る" "0" "$(rc_of "$VALIDATE" "$OE_LEASE_DIR/$L9.json")"
 # 拍動の床（lease_id の名前の sidecar）は、開いた lease のものなら古くても gc で残す
 jq -cn '{ts:1, context_pct:0, pane:"%9", server_pid:"900", lease_id:"'"$L9"'", generation:1}' > "$OE_HEARTBEAT_DIR/$L9.json"

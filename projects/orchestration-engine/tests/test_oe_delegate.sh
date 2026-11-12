@@ -421,8 +421,14 @@ ck "sidecar の server_pid は \$TMUX の pid" "12345" "$(jq -r '.server_pid' "$
 ck "sidecar の lease_id と generation" "${_lid} 1" "$(jq -r '"\(.lease_id) \(.generation)"' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
 ck "sidecar の agent" "codex" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
 ck "sidecar の model は空の object（読む側の display_name が落ちない）" "object" "$(jq -r '.model | type' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "床には floor: true が付く（通常の sidecar と区別する）" "true" "$(jq -r '.floor' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
 # shellcheck source=../lib/heartbeat-resolve.sh
 . "$PROJECT_DIR/lib/heartbeat-resolve.sh"
+# 床は lease からペインを引く候補には使うが、ペインから会話の ID を引く逆引きには使わない（Copilot の指摘）
+ck "床だけのペインでは oe_hb_session_for_pane は引けない（rc 1）" "1" "$(oe_hb_session_for_pane 12345 900 %9 >/dev/null 2>&1; echo $?)"
+jq -cn --argjson ts "$(date +%s)" '{ts:$ts, context_pct:12, pane:"%9", server_pid:"12345", model:{id:"m",display_name:"M"}}' > "$OE_HEARTBEAT_DIR/sid-real.json"
+ck "通常の sidecar があれば session_id を引く" "sid-real" "$(oe_hb_session_for_pane 12345 900 %9)"
+rm -f "$OE_HEARTBEAT_DIR/sid-real.json"
 ck "oe_hb_pane_for が lease_id と generation で候補のペインを返す" "%9" "$(oe_hb_pane_for 12345 900 "$_lid" 1 | cut -f1)"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#562hc" "a8b"

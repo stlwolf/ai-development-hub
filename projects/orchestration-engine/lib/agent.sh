@@ -104,7 +104,25 @@ oe_agent_permission_mode() {
   case "$agent" in
     codex)
       mode="approve-for-me"
+      local kv key val
       for a in "$@"; do
+        # -c <key>=<value> / --config <key>=<value> / --config=<key>=<value> の値を、flag の形と同じに読む（Copilot の指摘）。
+        # TOML の文字列の引用符（"…" / '…'）は外す。
+        kv=""
+        case "$a" in
+          --config=*) kv="${a#--config=}" ;;
+          *) if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then kv="$a"; fi ;;
+        esac
+        if [ -n "$kv" ]; then
+          key="${kv%%=*}"; val="${kv#*=}"
+          val="${val#\"}"; val="${val%\"}"; val="${val#\'}"; val="${val%\'}"
+          case "$key" in
+            sandbox_mode)
+              if [ "$val" = "danger-full-access" ]; then mode="bypassPermissions"; elif [ "$mode" != "bypassPermissions" ]; then mode="sandbox:${val}"; fi ;;
+            approval_policy) [ "$mode" = "bypassPermissions" ] || mode="$val" ;;
+          esac
+          prev="$a"; continue
+        fi
         case "$a" in
           --dangerously-bypass-approvals-and-sandbox|--yolo) mode="bypassPermissions" ;;
           --sandbox=danger-full-access) mode="bypassPermissions" ;;
