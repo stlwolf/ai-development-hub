@@ -126,3 +126,31 @@ EOF
   [ "$hit" != "?" ] || return 3
   printf '%s' "$hit"
 }
+
+# --- 拍動の床（#562 DJ-6・hook と statusLine に依らない書き手） ---
+# oe_hb_write_floor <name> <pane> <lease_id> <generation> [<agent>]
+#   <name>.json の sidecar を1件書く（名前は lease_id か session_id）。context_pct は 0、model は {} で、読む側が
+#   lease_id と generation の一致で候補のペインを選べる最小の形。server_pid は $TMUX から導く（statusLine の
+#   書き手と同じ）。書き手は oe-delegate（起こしたとき・lease の名前）と oe-send（子が送るたび・自分の lease の名前）。
+#   rc: 0 書いた / 1 書けない（置き場が無い・jq が無い・引数が足りない）。失敗を呼ぶ側に伝えるが、委譲や送信は止めない。
+oe_hb_write_floor() {
+  local name="${1:-}" pane="${2:-}" lid="${3:-}" gen="${4:-}" agent="${5:-}" dir="$OE_HEARTBEAT_DIR" spid ts tmp
+  [ -n "$name" ] && [ -n "$pane" ] && [ -n "$lid" ] && [ -n "$gen" ] || return 1
+  case "$name" in *[!A-Za-z0-9._-]*|'') return 1 ;; esac
+  case "$gen" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$dir" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  spid="${TMUX:-}"; spid="${spid#*,}"; spid="${spid%%,*}"
+  case "$spid" in ''|*[!0-9]*) spid="" ;; esac
+  ts="$(_oe_hb_now)"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || return 1
+  if jq -cn --argjson ts "$ts" --arg pane "$pane" --arg spid "$spid" --arg lid "$lid" --argjson gen "$gen" --arg agent "$agent" \
+       '{ts:$ts, context_pct:0, pane:$pane, server_pid:$spid, model:{}, lease_id:$lid, generation:$gen}
+        + (if $agent != "" then {agent:$agent} else {} end)' > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "${dir}/${name}.json" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+  else
+    rm -f "$tmp" 2>/dev/null; return 1
+  fi
+  return 0
+}

@@ -42,7 +42,7 @@
               "properties": {
                 "pid": { "type": "integer", "minimum": 1 },
                 "started": { "type": "string", "minLength": 1 },
-                "comm": { "type": "string", "pattern": "claude" },
+                "comm": { "type": "string", "pattern": "^(claude|codex)$" },
                 "bound_at": { "type": "string" },
                 "replaced_at": { "type": "string" }
               }
@@ -58,7 +58,7 @@
                 "properties": {
                   "pid": { "type": "integer", "minimum": 1 },
                   "started": { "type": "string", "minLength": 1, "description": "LC_ALL=C の ps -o lstart= の値（連続する空白は1つに詰める）" },
-                  "comm": { "type": "string", "pattern": "claude" },
+                  "comm": { "type": "string", "pattern": "^(claude|codex)$" },
                   "bound_at": { "type": "string" }
                 }
               }

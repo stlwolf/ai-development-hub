@@ -117,24 +117,27 @@ _oe_lease_write() {
 }
 
 # --- 作る ---
-# oe_lease_create <kind> <label> <workspace> <parent_lease_id> [<generation>]
+# oe_lease_create <kind> <label> <workspace> <parent_lease_id> [<generation>] [<agent>]
 #   新しい lease を作って lease_id を出す。generation は既定 1（統括の lease は、いまの代の番号から始めてよい）。
+#   agent（#562）は claude か codex。無ければ項目ごと書かない（読む側は無い記録を claude と読む）。
 oe_lease_create() {
-  local kind="${1:-}" label="${2:-}" ws="${3:-}" parent="${4:-}" gen="${5:-1}" id file now
+  local kind="${1:-}" label="${2:-}" ws="${3:-}" parent="${4:-}" gen="${5:-1}" agent="${6:-}" id file now
   case "$kind" in supervisor|delegation) ;; *) echo "oe_lease_create: kind must be supervisor|delegation" >&2; return 2 ;; esac
   case "$gen" in ''|*[!0-9]*|0) echo "oe_lease_create: generation must be a positive integer" >&2; return 2 ;; esac
   if [ -n "$parent" ] && ! _oe_lease_valid_id "$parent"; then echo "oe_lease_create: bad parent_lease_id" >&2; return 2; fi
+  case "$agent" in ''|claude|codex) ;; *) echo "oe_lease_create: agent must be claude|codex" >&2; return 2 ;; esac
   _oe_lease_ready || return 2
   id="$(oe_generate_session_id)"
   file="$(_oe_lease_file "$id")"
   [ ! -e "$file" ] || return 2
   now="$(_oe_lease_now_iso)"
   _oe_lease_write "$file" "$(jq -cn --arg id "$id" --arg kind "$kind" --arg label "$label" --arg ws "$ws" \
-      --arg parent "$parent" --arg now "$now" --argjson gen "$gen" '
+      --arg parent "$parent" --arg now "$now" --argjson gen "$gen" --arg agent "$agent" '
     { format: 1, lease_id: $id, kind: $kind, label: $label, workspace: $ws, parent_lease_id: $parent,
       state: "open", created_at: $now, closed_at: "", epoch: 0, current_generation: $gen,
       generations: [ { generation: $gen, state: "active", started_at: $now, retired_at: "", successor: null,
-                       session_ids: [], binding: null } ] }')" || return 2
+                       session_ids: [], binding: null } ] }
+    + (if $agent != "" then {agent: $agent} else {} end)')" || return 2
   printf '%s\n' "$id"
 }
 

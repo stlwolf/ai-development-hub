@@ -12,7 +12,9 @@ _TMP_DIR="$(mktemp -d)"
 # #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
 # （外さないと oe-register root などが本物の置き場に lease を作る）。
 export OE_LEASE_DIR="${_TMP_DIR}/lease"
-unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
+# #562: 拍動の床（oe-delegate が lease の名前で書く sidecar）も本物の置き場へ書かない。
+export OE_HEARTBEAT_DIR="${_TMP_DIR}/hb"
+unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION CODEX_HOME 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/logs" "$_TMP_DIR/state" "$_TMP_DIR/pane-issue" "$_TMP_DIR/ws/.oe"
 
@@ -318,6 +320,112 @@ echo "[L2] #577 PR-2: lease の置き場が決まらないときは、いまま�
 reset_logs
 OE_LEASE_DIR="" run_delegate -w "$_TMP_DIR/ws" --label "#577" "no lease task"
 ck "lease の環境変数が付かない" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
+
+# --- #562: 委譲ごとのエージェントの指定（lib/agent.sh） ---
+# shellcheck source=../lib/agent.sh
+. "$PROJECT_DIR/lib/agent.sh"
+DI_ARG="developer_instructions=\"${OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS}\""
+CODEX_HEAD="PARENT_TMUX_PANE='%1' codex '--no-daemon' '-c' 'check_for_update_on_startup=false'"
+
+echo "[A1] #562 T-1: --agent 無しの子のコマンドは claude のまま（[1][2] と同じ値・受入 A-1）"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562" --claude-arg --permission-mode --claude-arg auto "a1"
+ck "claude の1行は変わらない" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(split_cmd)"
+ck "registry の agent は claude" "claude" "$(jq -r '.agent' "$OE_DELEGATE_STATE_DIR"/*.json | head -1)"
+
+echo "[A2] #562 T-2: --agent codex は --no-daemon・更新の確認なし・--approve-for-me・developer の指示を付けて起こす"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562c" --agent codex "a2"
+ck "codex の1行" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}'" "$(split_cmd)"
+ck "developer の指示に改行が無い" "1" "$(wc -l < "$_TMP_DIR/logs/split-command.log" | tr -d ' ')"
+_lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "lease の記録に agent: codex" "codex" "$(jq -r '.agent' "$OE_LEASE_DIR/${_lid}.json" 2>/dev/null)"
+ck "lease の記録が validate-lease を通る" "0" "$(bash "$PROJECT_DIR/scripts/validate-lease.sh" "$OE_LEASE_DIR/${_lid}.json" >/dev/null 2>&1; echo $?)"
+ck "registry の agent は codex" "codex" "$(jq -r 'select(.label=="#562c") | .agent' "$OE_DELEGATE_STATE_DIR"/*.json | head -1)"
+
+echo "[A3] #562 T-2: --agent-arg で承認のモードを指定したら既定の --approve-for-me を外す。--claude-arg は alias"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --agent-arg -a --agent-arg never "a3"
+ck "-a never で --approve-for-me が外れる" "${CODEX_HEAD} '-c' '${DI_ARG}' '-a' 'never'" "$(split_cmd)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --claude-arg -m --claude-arg gpt-5 "a3b"
+ck "--claude-arg は --agent-arg の alias（モードの指定でないので既定は残る）" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' '-m' 'gpt-5'" "$(split_cmd)"
+reset_logs
+brief2="${_TMP_DIR}/ws/.oe/brief2.md"; printf '%s\n' '# brief' > "$brief2"
+run_delegate -w "$_TMP_DIR/ws" --agent codex --brief "$brief2" "a3c"
+ck "codex でも --brief の dir を --add-dir で渡す" "yes" "$(grep -qF -- "--add-dir '${_TMP_DIR}/ws/.oe'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+
+echo "[A4] #562: 知らないエージェントは 2 で止め、spawn しない"
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent cursor "a4" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "unknown agent rc=2" "2" "$rc"
+ck "unknown agent no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent >/dev/null 2>&1 || rc=$?
+ck "--agent requires a value" "2" "$rc"
+
+echo "[A5] #562 T-3: ダイジェストは agent を含み、claude と codex で値が違う。承認パッケージにエージェントが出る"
+d_cl="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --print-approval "a5" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+d_cx="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --print-approval "a5" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+ck "claude と codex でダイジェストが違う" "yes" "$( [[ -n "$d_cl" && -n "$d_cx" && "$d_cl" != "$d_cx" ]] && echo yes || echo no )"
+pkg="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg -m --agent-arg gpt-5 --print-approval "a5" 2>/dev/null)"
+ck "パッケージにエージェントの行" "yes" "$(printf '%s\n' "$pkg" | grep -q '^  エージェント    : codex$' && echo yes || echo no)"
+ck "再構成したコマンドに --agent codex" "yes" "$(printf '%s\n' "$pkg" | grep -q -- "--agent 'codex'" && echo yes || echo no)"
+ck "再構成したコマンドに --agent-arg" "yes" "$(printf '%s\n' "$pkg" | grep -q -- "--agent-arg '-m' --agent-arg 'gpt-5'" && echo yes || echo no)"
+ck "codex の既定の権限のモードは approve-for-me" "yes" "$(printf '%s\n' "$pkg" | grep -q '要求権限モード  : approve-for-me' && echo yes || echo no)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --approved-digest "$d_cx" "a5"
+ck "codex の承認ダイジェストが一致すれば spawn" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --approved-digest "$d_cl" "a5" >/dev/null 2>&1 || rc=$?
+ck "claude の承認で codex を起こすと不一致 rc=3" "3" "$rc"
+
+echo "[A6] #562 T-3: codex の elevated（--yolo・-s danger-full-access）は承認ダイジェストが必須"
+for a in "--yolo" "--dangerously-bypass-approvals-and-sandbox"; do
+  reset_logs
+  rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg "$a" "a6" >/dev/null 2>&1 || rc=$?
+  ck "codex $a は elevated → rc=3" "3" "$rc"
+done
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg -s --agent-arg danger-full-access "a6" >/dev/null 2>&1 || rc=$?
+ck "codex -s danger-full-access は elevated → rc=3" "3" "$rc"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --agent-arg -a --agent-arg never "a6"
+ck "codex -a never は elevated でない（spawn する）" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[A7] #562 DJ-14: codex の規則のファイルが無ければ1行知らせて続ける。利用者の developer_instructions があれば1行知らせる"
+reset_logs
+mkdir -p "$_TMP_DIR/codex-home"
+CODEX_HOME="$_TMP_DIR/codex-home" run_delegate -w "$_TMP_DIR/ws" --agent codex "a7"
+ck "規則が無い知らせ" "yes" "$(grep -q 'oe-child.rules が無い' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "それでも spawn する" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+mkdir -p "$_TMP_DIR/codex-home/rules"; : > "$_TMP_DIR/codex-home/rules/oe-child.rules"
+printf 'developer_instructions = "mine"\n' > "$_TMP_DIR/codex-home/config.toml"
+reset_logs
+CODEX_HOME="$_TMP_DIR/codex-home" run_delegate -w "$_TMP_DIR/ws" --agent codex "a7b"
+ck "規則があれば知らせない" "no" "$(grep -q 'oe-child.rules が無い' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "利用者の developer_instructions の上書きを知らせる" "yes" "$(grep -q 'developer_instructions は、この子の中では' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" "a7c"
+ck "claude の子には codex の知らせを出さない" "no" "$(grep -q 'oe-child.rules' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+
+echo "[A8] #562 T-8: 拍動の床 — 起こしたあと lease の名前で sidecar を1件書き、lease からペインを引ける"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562h" --agent codex "a8"
+_lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "sidecar が lease の名前で在る" "yes" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+ck "sidecar の pane は子のペイン" "%9" "$(jq -r '.pane' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の server_pid は \$TMUX の pid" "12345" "$(jq -r '.server_pid' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の lease_id と generation" "${_lid} 1" "$(jq -r '"\(.lease_id) \(.generation)"' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の agent" "codex" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の model は空の object（読む側の display_name が落ちない）" "object" "$(jq -r '.model | type' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+# shellcheck source=../lib/heartbeat-resolve.sh
+. "$PROJECT_DIR/lib/heartbeat-resolve.sh"
+ck "oe_hb_pane_for が lease_id と generation で候補のペインを返す" "%9" "$(oe_hb_pane_for 12345 900 "$_lid" 1 | cut -f1)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562hc" "a8b"
+_lid2="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "claude の子にも床を書く（agent: claude）" "claude" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid2}.json" 2>/dev/null)"
+ck "本物の置き場には書いていない" "yes" "$( [[ "$OE_HEARTBEAT_DIR" == "$_TMP_DIR"/* ]] && echo yes || echo no )"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
