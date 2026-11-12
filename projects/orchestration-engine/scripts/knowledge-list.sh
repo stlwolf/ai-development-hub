@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# knowledge-list.sh — negative knowledge store item の列挙（read-only・段3 突合・#273）
+# knowledge-list.sh — negative knowledge store item の列挙（read-only・match（突合）・#273）
 #
 # 使い方:
 #   knowledge-list                         # 既定: git HEAD tree から committed item を蒸留木横断で列挙
 #   knowledge-list --json                  # JSON オブジェクト（メタ + items + malformed）
-#   knowledge-list --strict                # skipped>0 なら exit 1（段3 手順は常に --strict）
+#   knowledge-list --strict                # skipped>0 なら exit 1（match の手順は常に --strict）
 #   knowledge-list --include-uncommitted   # disk（未 commit 含む）を filesystem find で列挙
 #   knowledge-list <items-dir | item.md>   # 明示指定（テスト・単一木・disk 読み）
 #   OE_KNOWLEDGE_REPO_ROOT=/path ...       # repo root（発見の基点）を上書き（テスト決定化）
 #
 # Exit codes:
 #   0 = 列挙成功（skipped があっても既定は 0）
-#   1 = --strict かつ skipped > 0（malformed / 非 ULID を検出。段3 の完全性信号）
+#   1 = --strict かつ skipped > 0（malformed / 非 ULID を検出。match の完全性信号）
 #   2 = 環境エラー（git 非在 / HEAD 不成立 / jq・yq 未導入 / jq の評価失敗 / awk の失敗 / usage / repo root 不明）
 #
 # 位置づけ:
-#   negative knowledge ループ 段3（突合）の read-only 列挙 verb。統括が brief を組む時に候補を
+#   negative knowledge ループの match（突合）の read-only 列挙 verb。統括が brief を組む時に候補を
 #   一望するためのもので、検証は別コマンド validate-knowledge が担う（本 verb は validator ではない）。
 #   既定は「committed 状態 store」の意味に合わせ HEAD tree snapshot を列挙する（index/working-tree
 #   でなく commit tree ＝ staged-but-uncommitted は含めない）。設計正本は
@@ -33,9 +33,9 @@ set -euo pipefail
 # malformed の扱い（黙って落とさない）:
 #   frontmatter が壊れた / 非 ULID 名の item は stdout に flagged row（status=MALFORMED・path・
 #   ULID ファイル名から復元した id）で surface し skipped に数える。stderr のみに出さないのは、
-#   stdout を消費するモデル統括に見落としを可視化するため（段3 の false-negative-zero 方針）。
+#   stdout を消費するモデル統括に見落としを可視化するため（match の false-negative-zero 方針）。
 #
-# observations の集計と制御候補（段6 v0・#274）:
+# observations の集計と制御候補（control（制御）の v0・#274）:
 #   各 item の observations を集計し（state ごとの件数）、制御候補（status: active かつ harmful /
 #   contradicted の観測を持つ）を提示する。read-only で item は書き換えない。status 遷移は人間が
 #   別 PR で行う（規則は canonical spec の knowledge 節）。以下は gate 2 設計SO（#274）の確定事項:

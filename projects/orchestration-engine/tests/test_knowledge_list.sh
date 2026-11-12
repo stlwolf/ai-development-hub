@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test_knowledge_list.sh — scripts/knowledge-list.sh（#273 段3 突合・read-only 列挙 verb）の検証。
+# test_knowledge_list.sh — scripts/knowledge-list.sh（#273 match（突合）・read-only 列挙 verb）の検証。
 #
 # gate 2 設計SO（3レーン・2026-07-24）で確定した契約（plan §9）を fixture で固定する:
 #   - 既定は git HEAD tree snapshot 列挙（index/working-tree でなく commit tree）・蒸留木横断。
@@ -298,7 +298,7 @@ OUT="$(env OE_KNOWLEDGE_REPO_ROOT="$R23/" "$BASH" "$LISTER" --json "$R23/docs/kn
 ck  "item_ref は repo 相対（先頭 / でない）" "docs/knowledge/items/$ULID1.md" "$(jq -r '.items[0].item_ref' <<<"$OUT")"
 
 # ============================================================================
-# observations の集計と制御候補（#274 段5/段6・gate 2 設計SO で確定した契約）
+# observations の集計と制御候補（#274 observe と control・gate 2 設計SO で確定した契約）
 # ============================================================================
 
 # 観測レコードの YAML 断片を作る（flow 形式で 1 レコード 1 行）。

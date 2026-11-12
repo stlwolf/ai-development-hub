@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test_validate_knowledge.sh — scripts/validate-knowledge.sh（#272 段2・knowledge item schema）の検証。
+# test_validate_knowledge.sh — scripts/validate-knowledge.sh（#272 store（保存）・knowledge item schema）の検証。
 #
 # 正例・負例・directory mode・exit code 分離を fixture で網羅する。設計 SO（gate 2）で挙がった負例契約
 # （malformed YAML=exit1・source.ref 揮発/絶対/不存在・observations 空必須・prose 可視文字・非 .md）を固定する。
@@ -64,7 +64,7 @@ grep 単体ではネストしたキーや配列要素を確実に捕捉できな
 EOF
 }
 
-# observations 要素スキーマ（#274 段5）用の fixture。observations 以外は valid な item を書き、
+# observations 要素スキーマ（#274 observe）用の fixture。observations 以外は valid な item を書き、
 # observations には渡された YAML 断片（"observations:" の行を含む）をそのまま置く。
 write_item_with_obs() {
   local file="$1" obs="$2"
@@ -502,7 +502,7 @@ ck  "exit 1"          "1" "$RUN_RC"
 ckc "WARN 誤名 item"  "$RUN_OUT" "filename must be <id>.md"
 
 # ============================================================================
-# observations 要素スキーマの負例（#274 段5・gate 2 設計SO で確定した契約）
+# observations 要素スキーマの負例（#274 observe・gate 2 設計SO で確定した契約）
 # ============================================================================
 
 echo "[38] 要素が map でない → exit 1（以降のキー検査はしない）"

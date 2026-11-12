@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# validate-knowledge.sh — negative knowledge store item のスキーマ検証（advisory・#272 段2）
+# validate-knowledge.sh — negative knowledge store item のスキーマ検証（advisory・store（保存）・#272）
 #
 # 使用例:
 #   ./scripts/validate-knowledge.sh docs/knowledge/items/<ULID>.md         # 単一 item
@@ -19,7 +19,7 @@ set -euo pipefail
 #       #274 / #283 / #424）
 #
 # 位置づけ:
-#   #272 の negative knowledge ループ 段2（保存）の機械検証。設計正本は
+#   #272 の negative knowledge ループの store（保存）の機械検証。設計正本は
 #   projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md。
 #   検証対象は knowledge item ファイルのみ（episode 本文は解析しない）。markdown + 型付き frontmatter を
 #   検証する点で scripts/validate-board.sh と同型だが、frontmatter がネスト（source.ref）・配列
@@ -37,7 +37,7 @@ set -euo pipefail
 #   2026-02-29 / 2026-04-31 が accepted＝翌月へ正規化される）ため、閏年と月別最大日数を自前で見る。
 #   jq の date 関数は C library 依存でもあり、純 jq のほうが可搬（#274 gate 2 設計SO）。
 #
-# observations（段5 の観測台帳・#274）:
+# observations（observe（観測記録）の台帳・#274）:
 #   要素は {date, ref, state, note?}。本 validator は各要素の「形」だけを検査する。
 #   検査しないもの（規約であって機械検査ではない・検査済みに見せない）:
 #     - append-only（過去レコードを書き換えていないこと）＝ git 履歴の差分検査が必要
@@ -354,7 +354,7 @@ validate_item() {
     *) warn "$file" "landing not in enum (nl|guard-candidate): ${lv:-<none>}" ;;
   esac
 
-  # --- observations: 配列 + 各要素のスキーマ検証（段5 の観測台帳・#274）---
+  # --- observations: 配列 + 各要素のスキーマ検証（observe の観測台帳・#274）---
   # 空配列 [] は収穫時の既定として valid。要素検査は jq 1 パスで「違反1件 = 1行」を出し、bash が warn に
   # 積む（要素数に比例した jq 起動を避ける）。受け取りは here-string にする — パイプで渡すと warn() が
   # subshell で走り TOTAL_WARN の加算が失われて exit code 契約が壊れる（gate 2 SO で bash 3.2/5.x 実測）。

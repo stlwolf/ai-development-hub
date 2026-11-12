@@ -249,7 +249,7 @@ Step 3 で「原則」「蒸留シグナル」行にマークした negative kno
 - **非自明**: コードや diff、既存 doc から復元できない（自明な技術事実は入れない）。
 - **再発しうる**: 一度きりでなく別タスクでも起きうるクラスの失敗・教訓。
 - **行動を変える**: 次の作業で判断や手順を実際に変える（読んでも何も変わらない知見は入れない）。
-- 加えて **未着地の確認**: 既存の rule / skill / guard / 既存 knowledge item に同旨が着地済みでないこと（安価な重複チェック。段6 の dedup を待たない防波堤）。
+- 加えて **未着地の確認**: 既存の rule / skill / guard / 既存 knowledge item に同旨が着地済みでないこと（安価な重複チェック。`control`（制御）の dedup を待たない防波堤）。
 
 ### 手順（Step 3 の後・status 確定/マージ前）
 
@@ -276,7 +276,7 @@ Step 3 で「原則」「蒸留シグナル」行にマークした negative kno
 
 Step 4（heavy の外部チェック）は closure 品質が対象で、knowledge item の検証は `validate-knowledge.sh`（別対象）が担う。両者は独立。
 
-## Step 6: 注入された knowledge への観測の書き戻し（段5）
+## Step 6: 注入された knowledge への観測の書き戻し（`observe`）
 
 Step 5 が**生産側**（この作業から出た教訓を store へ収穫する）なら、本 Step は**消費側**（この作業に注入された教訓の帰結を store へ返す）。両者は対象もトリガも別なので混ぜない。
 
@@ -296,7 +296,7 @@ Step 5 が**生産側**（この作業から出た教訓を store へ収穫す�
    ```
 
 6. work と**同じブランチにコミット**する（別 PR にしない）。親 / レビュアーが fact-check で「期待集合の id == 観測を足した id」と `followed` の妥当性を見る。
-7. **`status` は触らない**。無効化・supersede・退役は段6 の別 PR（規則は spec の「status 遷移規則」）。closure では観測を足すだけ。
+7. **`status` は触らない**。無効化・supersede・退役は `control` の別 PR（規則は spec の「status 遷移規則」）。closure では観測を足すだけ。
 8. **並行追記の conflict**: 複数の作業が同じ item に同時に追記して conflict したら、**両方のレコードを残して**解決する（append-only なので落とさない）。
 
 ### 限界（正直に書く）
@@ -329,4 +329,4 @@ Step 5 が**生産側**（この作業から出た教訓を store へ収穫す�
 - **`evidence-verification-rule`**: 自己確認は検証ではない — Step 4 外部チェックの根拠
 - **出力型の消費チャネル先**: 「原則」行の negative knowledge 注入は、#62 で設計し、型付き knowledge store として入った（着地先と観測は次の2項目）。「事実・失敗」行に原因別の失敗分類の行き先は無く、再発防止は「原則」行を経て、収穫基準を満たすものが同じ knowledge store に届く（原因別の分類を作っていない経緯は #60 を閉じたときの判断）
 - **Issue #272 / 型付き knowledge store（収穫元 episode が属する木の `knowledge/items/`）**: Step 5 収穫の着地先。スキーマ・置き場規則は `document-format.md` §3.4、検証はコマンド `validate-knowledge`（`~/bin` 配布）。突合・注入（#273・**列挙は各蒸留木の store を横断して見る**＝複数木なら複数 store）は本スキルのスコープ外
-- **Issue #274 / 観測の書き戻し（段5）**: Step 6 が消費側の輪。要素スキーマ・state の優先順位・status 遷移規則は `document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。注入 slot の側は `doc-flow-guardrail`、集計と制御候補の提示は列挙コマンド `knowledge-list`
+- **Issue #274 / 観測の書き戻し（`observe`）**: Step 6 が消費側の輪。要素スキーマ・state の優先順位・status 遷移規則は `document-format.md` の knowledge 節（「observations 要素スキーマ」「status 遷移規則」）。注入 slot の側は `doc-flow-guardrail`、集計と制御候補の提示は列挙コマンド `knowledge-list`
