@@ -358,15 +358,15 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### I1: 実機の確かめ C1〜C9（`CODEX_HOME` を使い捨てに向ける・結果を episode と plan に書く・`~/.codex` に何も残っていないことを確かめる）（完了・2026-11-13・未確認4点は CHECK-2 へ）
 
-### I2: `lib/agent.sh` と `oe delegate --agent`（DJ-1・DJ-2・DJ-3 の既定の引数と elevated の表）・registry と lease の `agent`・ダイジェスト・床の sidecar（DJ-6 の (1)）・T-1〜T-3・T-8
+### I2: `lib/agent.sh` と `oe delegate --agent`（DJ-1・DJ-2・DJ-3 の既定の引数と elevated の表）・registry と lease の `agent`・ダイジェスト・床の sidecar（DJ-6 の (1)）・T-1〜T-3・T-8（完了・`557ab05`）
 
-### I3: lease の検査の集合と schema（DJ-5）・入力欄の判定と送る側の finalize（DJ-10）・`oe send` の床の更新（DJ-6 の (2)）・T-4・T-5
+### I3: lease の検査の集合と schema（DJ-5）・入力欄の判定と送る側の finalize（DJ-10）・`oe send` の床の更新（DJ-6 の (2)）・T-4・T-5（完了・`df995c8`）
 
-### I4: `oe_agent_self`（DJ-8）と `oe-lease`/`oe_lease_whoami`/`oe-recover` の読み替え・復帰の案内（DJ-9）・T-6・T-7
+### I4: `oe_agent_self`（DJ-8）と `oe-lease`/`oe_lease_whoami`/`oe-recover` の読み替え・復帰の案内（DJ-9）・T-6・T-7（完了・`acf4b2d`・`oe-handoff` は補正 H4 で外した）
 
-### I5: `delegate-task`（`--agent`）と `doc-flow-guardrail`（skill 解決規約・受領の印の1行）の文・`bin/README.md`（PR-1 だけの状態の制限と「範囲の外」の5つ）・engine の README
+### I5: `delegate-task`（`--agent`）と `doc-flow-guardrail`（skill 解決規約・受領の印の1行）の文・`bin/README.md`（PR-1 だけの状態の制限と「範囲の外」の5つ）・engine の README（完了・`1bbc38d`）
 
-### CHECK-1: T-1〜T-8 と既存の検査を bash 5 と bash 3.2 で回し、shellcheck を通す（PR-1）
+### CHECK-1: T-1〜T-8 と既存の検査を bash 5 と bash 3.2 で回し、shellcheck を通す（PR-1）（完了・2026-11-13・`tests/test_*.sh` 54本 × bash 5.2.37 と 3.2.57 = 108 回がすべて exit 0。shellcheck は変えたスクリプトで master と同じ info のみ）
 
 ### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11
 
@@ -404,6 +404,11 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 - 出どころ: C9 で、モデルを呼ばずに developer のメッセージの有無を見られる口が見つかった。
 - 8項目: 承認済みの結果を確かめる検査を強めるもの（確かめる対象は増えない）。
+
+### H4（補正・2026-11-13・I4）: DJ-9 の対象から `oe-handoff` を外し、`oe-recover hint` だけにした
+
+- 出どころ: `oe-handoff` は統括の verb で、Codex を統括にするのは「この plan の範囲」の「やらない」に入っている。DJ-9 が両方を挙げていたのは範囲と食い違っていた。
+- 8項目: (1) step は消えていない。(2) 要件は、範囲の外と宣言済みのものを文から外しただけ（codex の統括の案内は、どの受入も求めていない）。(3)〜(5) 変わらない。(6) owner の決定に関わらない。(7) 範囲内の項目を範囲外へ移してはいない（もともと範囲外）。(8) 追加なし。迷ったら重い側、の決まりに従い、統括に判定を任せる。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 
