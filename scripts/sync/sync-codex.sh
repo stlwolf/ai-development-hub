@@ -211,6 +211,17 @@ sync_rules() {
         ((count++)) || true
     done < <(find "${source_dir}" -type f -name "*.rules" -print0)
 
+    # hub の名前空間（oe-*.rules）で、hub の側に無くなったものは写し先からも消す（古い allow が効き続けないように）。
+    # owner の default.rules など、hub の名前空間の外のファイルには触らない。
+    local stale
+    while IFS= read -r -d '' stale; do
+        filename="$(basename "$stale")"
+        if [[ ! -f "${source_dir}/${filename}" ]]; then
+            rm -f "${stale}"
+            info "  Removed (no longer in canonical): ${filename}"
+        fi
+    done < <(find "${target_dir}" -maxdepth 1 -name 'oe-*.rules' \( -type f -o -type l \) -print0)
+
     info "  ${count} ${label} file(s) copied"
 }
 

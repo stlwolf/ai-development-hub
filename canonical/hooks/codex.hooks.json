@@ -38,7 +38,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.codex/hooks/oe-heartbeat-hook.sh"
+            "command": "$HOME/.codex/hooks/oe-heartbeat-hook.sh",
+            "async": true,
+            "timeout": 10
           }
         ]
       }

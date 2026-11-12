@@ -9,15 +9,18 @@
 #   - session_id: 標準入力の .session_id（Codex の thread の ID）
 #   - pane / server_pid: 環境の TMUX_PANE と $TMUX（statusLine の書き手と同じ導出）
 #   - model: 標準入力の .model（文字列）を {id, display_name} の object に直す（読む側が .model.display_name を使う）
-#   - context_pct: PostModelRequest の .token_usage（その要求の使用量・累積ではない）から
-#       (input_tokens + cached_input_tokens + output_tokens) / model_context_window。model_context_window は標準入力に
-#       無いので、.transcript_path の記録を末尾から上限付き（OE_HB_TAIL_LINES・既定 200 行）に読んで token_count の
-#       値を取る。取れなければ 0。UserPromptSubmit では前の sidecar の値を残す（無ければ 0）
+#   - context_pct: PostModelRequest の .token_usage（その要求の使用量・累積ではない）の total_tokens（文脈の中のトークン数。
+#       Codex の TokenUsage::tokens_in_context_window と同じ。input_tokens は cached のぶんを含むので足し合わせない）を
+#       model_context_window で割る。model_context_window は標準入力に無いので、.transcript_path の記録を末尾から
+#       上限付き（OE_HB_TAIL_LINES・既定 200 行）に1行ずつ読んで token_count の値を取る（壊れた行は飛ばす）。
+#       取れないとき・token_usage が null のとき（取り消し・失敗した要求）・UserPromptSubmit では、前の sidecar の値を
+#       残す（無ければ 0）
 #   - lease_id / generation: 環境の OE_LEASE_ID と OE_GENERATION（形が正しいときだけ）
 #   - agent: "codex"（この hook は Codex にだけ配る。ほかのエージェントに配るなら OE_HB_AGENT で上書き）
 #
 # 標準出力には何も出さない（UserPromptSubmit の標準出力はモデルの文脈に足される）。exit は常に 0。
-# 同期の hook で後続を待たせるので、記録の全件走査はせず、tail の上限と timeout で短く終える。
+# 同期の hook は後続を待たせるので、記録の全件走査はせず tail の上限で短く終える。上限の時間は hooks.json の側で持つ
+# （PostModelRequest は async と timeout 付きで配線する）。
 # 失敗は診断ファイル（oe-receipt-diag.jsonl と同じ置き場の oe-heartbeat-diag.jsonl）に1行残す。
 #
 set -uo pipefail
@@ -60,13 +63,16 @@ agent="${OE_HB_AGENT:-codex}"
 # context_pct
 pct=""
 if [ "$event" = "PostModelRequest" ]; then
-  used="$(printf '%s' "$payload" | jq -r '(.token_usage // {}) | ((.input_tokens // 0) + (.cached_input_tokens // 0) + (.output_tokens // 0)) | tostring' 2>/dev/null)" || used=""
+  # 文脈の中のトークン数は total_tokens（無ければ input_tokens + output_tokens。input_tokens は cached を含むので
+  # cached_input_tokens は足さない）。token_usage が null（取り消し・失敗した要求）なら空のままにして前の値を残す。
+  used="$(printf '%s' "$payload" | jq -r 'if (.token_usage | type) == "object" then (.token_usage | (.total_tokens // ((.input_tokens // 0) + (.output_tokens // 0))) | tostring) else empty end' 2>/dev/null)" || used=""
   transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || transcript=""
   window=""
   if [ -n "$transcript" ] && [ -r "$transcript" ]; then
-    # 記録を末尾から上限付きで読み、いちばん新しい token_count の model_context_window を取る。
+    # 記録を末尾から上限付きで1行ずつ読み（壊れた行・書きかけの最終行は飛ばす）、いちばん新しい token_count の
+    # model_context_window を取る。
     window="$(tail -n "$tail_lines" "$transcript" 2>/dev/null \
-      | jq -r 'select(.type=="event_msg" and .payload.type=="token_count") | .payload.info.model_context_window // empty' 2>/dev/null \
+      | jq -R -r 'fromjson? | select(.type=="event_msg" and .payload.type=="token_count") | .payload.info.model_context_window // empty' 2>/dev/null \
       | tail -n 1)" || window=""
   fi
   case "$used" in ''|*[!0-9]*) used="" ;; esac

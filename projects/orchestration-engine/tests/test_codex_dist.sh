@@ -34,14 +34,15 @@ echo "[2] sync_rules: 通常のファイルとして写す"
 SRC="$_TMP_DIR/src"; DST="$_TMP_DIR/dst"; mkdir -p "$SRC" "$DST"
 printf 'prefix_rule(pattern=["oe"], decision="allow")\n' > "$SRC/oe-child.rules"
 printf 'prefix_rule(pattern=["gh"], decision="allow")\n' > "$DST/default.rules"   # owner のもの
-# sync-codex.sh から関数だけを取り出す（main は呼ばない）
-sed -n '/^info()/,/^}/p; /^warn()/,/^}/p; /^sync_rules()/,/^}/p' "$REPO_DIR/scripts/sync/sync-codex.sh" > "$_TMP_DIR/fn.sh"
+# sync-codex.sh から sync_rules だけを取り出す（main は呼ばない）。info / warn は検査の側で定義する。
+sed -n '/^sync_rules()/,/^}/p' "$REPO_DIR/scripts/sync/sync-codex.sh" > "$_TMP_DIR/fn.sh"
 grep -q '^sync_rules()' "$_TMP_DIR/fn.sh" || { echo "  FAIL: sync_rules が sync-codex.sh に無い"; FAIL=$((FAIL+1)); }
-# shellcheck disable=SC2034  # info/warn が使う色の変数（取り出した関数が参照する）
-GREEN=''; YELLOW=''; NC=''; RED=''
+ck "取り出した関数は sync_rules だけ" "1" "$(grep -c '^[a-z_]*()' "$_TMP_DIR/fn.sh")"
+info() { :; }; warn() { :; }
 # shellcheck disable=SC1090
 . "$_TMP_DIR/fn.sh"
-sync_rules "$SRC" "$DST" "rules" >/dev/null 2>&1
+# 本番と同じ set -euo pipefail の下で動くことも見る
+( set -euo pipefail; sync_rules "$SRC" "$DST" "rules" >/dev/null 2>&1 ); ck "set -euo pipefail の下でも終了コード 0" "0" "$?"
 ck "通常のファイルとして写す" "yes" "$([[ -f "$DST/oe-child.rules" && ! -L "$DST/oe-child.rules" ]] && echo yes || echo no)"
 ck "内容が同じ" "0" "$(cmp -s "$SRC/oe-child.rules" "$DST/oe-child.rules"; echo $?)"
 ck "owner の default.rules には触らない" 'prefix_rule(pattern=["gh"], decision="allow")' "$(cat "$DST/default.rules")"
@@ -54,7 +55,10 @@ printf 'prefix_rule(pattern=["oe"], decision="allow")\nprefix_rule(pattern=["git
 sync_rules "$SRC" "$DST" "rules" >/dev/null 2>&1
 ck "内容が変われば写し直す" "0" "$(cmp -s "$SRC/oe-child.rules" "$DST/oe-child.rules"; echo $?)"
 rm -f "$DST/oe-child.rules"; ln -s "$SRC/oe-child.rules" "$DST/oe-child.rules"
+printf 'prefix_rule(pattern=["x"], decision="allow")\n' > "$DST/oe-old.rules"
 sync_rules "$SRC" "$DST" "rules" >/dev/null 2>&1
+ck "hub に無くなった oe-*.rules は消す" "no" "$([[ -e "$DST/oe-old.rules" ]] && echo yes || echo no)"
+ck "owner の default.rules はそのまま" "yes" "$([[ -f "$DST/default.rules" ]] && echo yes || echo no)"
 ck "symlink の残りは通常のファイルに置き換える" "yes" "$([[ -f "$DST/oe-child.rules" && ! -L "$DST/oe-child.rules" ]] && echo yes || echo no)"
 ck "hub の規則のファイルは oe と git commit の2行" "2" "$(grep -c '^prefix_rule' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"
 ck "hub の規則に gh と git push は無い" "0" "$(grep -c '"gh"\|"push"' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"

@@ -31,7 +31,8 @@ printf '%s\n' '{"type":"session_meta","payload":{"id":"sid-x"}}' \
   '{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":475000}}}' > "$T"
 
 echo "[1] PostModelRequest: token_usage と記録の model_context_window から context_pct を出し、同じ鍵の sidecar を書く"
-P="$(jq -cn --arg t "$T" --arg l "$LID" '{hook_event_name:"PostModelRequest", session_id:"sid-x", model:"gpt-6.1-sol", transcript_path:$t, token_usage:{input_tokens:40000, cached_input_tokens:5000, output_tokens:2500, total_tokens:47500}}')"
+# input_tokens は cached を含む（Codex の TokenUsage）。文脈の中の数は total_tokens = input + output = 47500。
+P="$(jq -cn --arg t "$T" --arg l "$LID" '{hook_event_name:"PostModelRequest", session_id:"sid-x", model:"gpt-6.1-sol", transcript_path:$t, token_usage:{input_tokens:45000, cached_input_tokens:40000, output_tokens:2500, total_tokens:47500}}')"
 out="$(run_hook "$P" OE_LEASE_ID="$LID" OE_GENERATION=2)"
 ck "stdout は空" "" "$out"
 ck "sidecar が session_id の名前で在る" "yes" "$([[ -f "$HB/sid-x.json" ]] && echo yes || echo no)"
@@ -50,11 +51,22 @@ run_hook "$P2" >/dev/null
 ck "context_pct を残す" "10.0" "$(jq -r '.context_pct' "$HB/sid-x.json")"
 ck "lease の環境が無ければ lease_id は無い" "null" "$(jq -r '.lease_id' "$HB/sid-x.json")"
 
-echo "[3] 記録が無い・token_usage が null: context_pct は 0 で書く（欠落を飲む）"
+echo "[3] 記録が無い・token_usage が null: 前の値が無ければ 0 で書く（欠落を飲む）。前の値があれば残す（取り消した要求で 0 に戻さない）"
 P3='{"hook_event_name":"PostModelRequest","session_id":"sid-y","model":"m","token_usage":null,"transcript_path":"/nonexistent"}'
 run_hook "$P3" >/dev/null
 ck "sidecar は書く" "yes" "$([[ -f "$HB/sid-y.json" ]] && echo yes || echo no)"
 ck "context_pct は 0" "0" "$(jq -r '.context_pct' "$HB/sid-y.json")"
+P3b="$(jq -cn --arg t "$T" '{hook_event_name:"PostModelRequest", session_id:"sid-x", model:"m", status:"cancelled", token_usage:null, transcript_path:$t}')"
+run_hook "$P3b" >/dev/null
+ck "token_usage が null（取り消し）なら前の値（10.0）を残す" "10.0" "$(jq -r '.context_pct' "$HB/sid-x.json")"
+P3v="$(jq -cn --arg t "$T" '{hook_event_name:"PostModelRequest", session_id:"sid-v", model:"m", transcript_path:$t, token_usage:{input_tokens:45000, cached_input_tokens:40000, output_tokens:2500}}')"
+run_hook "$P3v" >/dev/null
+ck "cached を二重に数えない（total_tokens が無ければ input + output）" "10.0" "$(jq -r '.context_pct' "$HB/sid-v.json")"
+printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":475000}}}' > "$_TMP_DIR/broken.jsonl"
+printf '%s' '{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_wi' >> "$_TMP_DIR/broken.jsonl"
+P3c="$(jq -cn --arg t "$_TMP_DIR/broken.jsonl" '{hook_event_name:"PostModelRequest", session_id:"sid-u", model:"m", transcript_path:$t, token_usage:{total_tokens:47500}}')"
+run_hook "$P3c" >/dev/null
+ck "書きかけの最終行があっても、読める行の窓を取る" "10.0" "$(jq -r '.context_pct' "$HB/sid-u.json")"
 
 echo "[4] 記録の末尾の上限: 上限より前にしか token_count が無ければ窓を取れず 0"
 : > "$_TMP_DIR/long.jsonl"
