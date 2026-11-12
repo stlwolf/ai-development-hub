@@ -4,11 +4,11 @@
 
 ## 「文書」ではなく「状態 store」
 
-蒸留5段（discussion / kickoff / plan / episode / decision）の6段目ではない。ループの端で使われる状態の保存場所で、段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。位置づけと採用先向けの置き場規則の正本は `canonical/orchestration-spec/document-format.md` の §2.5 / §3.4。
+蒸留5段（discussion / kickoff / plan / episode / decision）の6段目ではない。ループの端で使われる状態の保存場所で、`observe`（観測記録）が `observations` を追記し `control`（制御）が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。位置づけと採用先向けの置き場規則の正本は `canonical/orchestration-spec/document-format.md` の §2.5 / §3.4。
 
 ## 置き場規則（採用先一般）
 
-- **関係で解く（正本の規則）**: 収穫した item は、その収穫元 episode が属する蒸留木の `knowledge/items/` に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる（repo 固有パスの列挙は不要）。段3（突合）の列挙は各木の store を横断して見る。
+- **関係で解く（正本の規則）**: 収穫した item は、その収穫元 episode が属する蒸留木の `knowledge/items/` に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる（repo 固有パスの列挙は不要）。`match`（突合）の列挙は各木の store を横断して見る。
 - 蒸留ドキュメント木のルート直下に `knowledge/` を置く（`decisions/` / `episodes/` / `plans/` の兄弟）。**型付き item（ULID 名）は `knowledge/items/` に隔離**。自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き、`items/` には混ぜない。README は `knowledge/README.md`。
 - **この repo（ai-hub）での木の解決（dogfood）**: 蒸留木が複数ある（トップレベル `docs/` と engine `projects/orchestration-engine/docs/`）。orchestration-engine 由来の収穫の実体はこの engine 木 `projects/orchestration-engine/docs/knowledge/items/`。トップレベル `docs/knowledge/` の自由記述ノートは別物で不干渉。
 
@@ -25,14 +25,14 @@
 ---
 id: "01KY6X5CKE0SVYZRMXHH74XDS4"   # ULID(26字・Crockford Base32・I/L/O/U 無し)。ファイル名 = <id>.md
 type: knowledge                    # 固定
-status: active                     # active | disabled | superseded | retired（段6 制御の語彙）
-date: 2026-07-23                   # 収穫日（不変。段5/6 の状態更新でも変えない）
+status: active                     # active | disabled | superseded | retired（control の語彙）
+date: 2026-07-23                   # 収穫日（不変。observe や control による状態更新でも変えない）
 trigger: "この教訓が効く状況の仮説（必須）"
-prediction: "効くはずの状況と期待効果（段5 の照合先）"
+prediction: "効くはずの状況と期待効果（observe の照合先）"
 source:
   ref: "https://github.com/org/repo/issues/123"   # 汎用参照（committed path か URL）。`.oe/` と `tmp/` の揮発層・絶対パス・`..` を含むパスは不可
 landing: nl                        # nl | guard-candidate（§6.9 の記録のみ）
-observations: []                   # 収穫時は空配列。段5 が観測レコードを append する（下の形式例）
+observations: []                   # 収穫時は空配列。observe が観測レコードを append する（下の形式例）
 exclusions:                        # 任意。効かない状況（文字列の配列）
   - "自明・一度きりの知見には使わない"
 ---
@@ -71,15 +71,15 @@ validate-knowledge projects/orchestration-engine/docs/knowledge/items
 
 exit 0 = valid / 1 = schema 違反（commit 前に直す・advisory で hook はブロックしない） / 2 = 環境エラー（file not found・jq/yq 未導入・jq の評価失敗・usage）。jq の評価失敗は item の不備ではないので、item を読むすべての jq の呼び出しで、exit 1（WARN）や exit 0（検査を飛ばした OK）に丸めず ERROR を出して止まる。
 
-## 列挙（段3 突合）
+## 列挙（`match`）
 
-`knowledge-list` は store の item を蒸留木横断で列挙する read-only コマンド（`~/bin` へ配布・正本は hub の `projects/orchestration-engine/scripts/knowledge-list.sh`・`scripts/sync/sync-bin.sh` が配布）。統括が brief を組む時に候補を一望するためのもの（段3 突合）。検証ではない（それは `validate-knowledge`）。
+`knowledge-list` は store の item を蒸留木横断で列挙する read-only コマンド（`~/bin` へ配布・正本は hub の `projects/orchestration-engine/scripts/knowledge-list.sh`・`scripts/sync/sync-bin.sh` が配布）。統括が brief を組む時に候補を一望するためのもの（`match`）。検証ではない（それは `validate-knowledge`）。
 
 ```bash
 # 既定: git HEAD tree（committed の item）を repo root 起点で蒸留木横断列挙
 knowledge-list
 
-# 段3 の突合は完全性のため常に --strict（崩れ item があれば exit 1）
+# match（突合）は完全性のため常に --strict（崩れ item があれば exit 1）
 knowledge-list --strict
 
 # JSON（schema_version / source / head / listed / skipped / control_candidates / integrity_issues /
@@ -94,7 +94,7 @@ knowledge-list --include-uncommitted
 knowledge-list docs/knowledge/items
 ```
 
-- **発見**: 既定は `git ls-tree HEAD` で **committed の item のみ**を列挙する（index/working-tree でなく commit tree ＝ staged-but-uncommitted は含めない・「committed 状態 store」の意味に一致）。対象は `knowledge/items/` 直下の ULID `.md` のみ（非再帰・厳密 regex）で、`validate-knowledge` の directory mode と**同じ発見規則**（items/ 直下 ULID `.md`）を使う。したがって **committed 状態**の同じ store に対しては両者の対象集合が一致する（＝列挙した集合を検証できる）。段3 の突合は committed 状態に対して行う前提で、未 commit の追加/削除がある作業中は lister（HEAD snapshot）と validator（作業ツリー上の指定 path）が別 snapshot を見るため一時的にズレるのは設計どおり。
+- **発見**: 既定は `git ls-tree HEAD` で **committed の item のみ**を列挙する（index/working-tree でなく commit tree ＝ staged-but-uncommitted は含めない・「committed 状態 store」の意味に一致）。対象は `knowledge/items/` 直下の ULID `.md` のみ（非再帰・厳密 regex）で、`validate-knowledge` の directory mode と**同じ発見規則**（items/ 直下 ULID `.md`）を使う。したがって **committed 状態**の同じ store に対しては両者の対象集合が一致する（＝列挙した集合を検証できる）。`match` は committed 状態に対して行う前提で、未 commit の追加/削除がある作業中は lister（HEAD snapshot）と validator（作業ツリー上の指定 path）が別 snapshot を見るため一時的にズレるのは設計どおり。
 - **malformed / 非 ULID**: 崩れ item・非 ULID 名の `.md`・閉じ `---` 欠落は **stdout に flagged row（`MALFORMED`・path・ファイル名から復元した id）で surface** し `skipped` に数える（黙って落とさない）。末尾に `listed: N / skipped: M / source: <mode>`（git-head モードでは `source: git-head @ <HEAD SHA>`）を出す。
 - **既知の限界（v0）**: `excerpt` は本文先頭行の preview で意味要約ではない（正本は item 本体）。非 UTF-8 ロケール（`LC_ALL=C` 等）では切詰め時に末尾 1 文字が jq で U+FFFD に置換されうる（crash や exit 契約違反は起きない）。配備ロケールは UTF-8。
 - **この repo（ai-hub）での木の解決（dogfood）**: 蒸留木が複数ある（トップレベル `docs/` と engine `projects/orchestration-engine/docs/`）。`knowledge-list` は repo root 起点で両木の `knowledge/items/` を自動で横断するので、木ごとのパス指定は不要。
@@ -119,7 +119,7 @@ knowledge-list docs/knowledge/items
 
 knowledge item は episode の closure 時に `episode-retrospective` スキルの収穫 Step で切り出し、`validate-knowledge` を通してから episode と同じブランチにコミットする。**保存前の人間ゲート = owner のマージ HG**（item を含むブランチを owner がマージ時に見る）。episode 中の誤情報・prompt injection・secret / 個人情報・外部由来内容を knowledge に昇格させない（信頼境界は PR レビュー/マージ HG）。
 
-## 観測記録（段5・#274）
+## 観測記録（`observe`・#274）
 
 注入された knowledge の帰結を `observations` に書き戻す段。**書き手は注入を受けた子**で、自分の closure 時に work と同じブランチへコミットする（手順は `episode-retrospective` の観測書き戻し Step、規則は spec の knowledge 節）。この store での具体的な流れ:
 
@@ -136,9 +136,9 @@ knowledge-list --include-uncommitted
 ```
 
 - **列挙のタイミングに注意**: `knowledge-list` の既定は HEAD tree snapshot（committed）なので、**観測を commit する前に既定モードで見ると観測ゼロのまま**に見える。commit 前の確認は `--include-uncommitted`（作業ツリーを見る）を使う。`validate-knowledge` は渡した path をそのまま読むので、未 commit でも検証できる。
-- 統括が段3 の突合で見るのは committed 状態（既定モード）である。書き戻し済みかどうかを判断するときは、どちらのモードで見ているかを意識する。
+- 統括が `match` で見るのは committed 状態（既定モード）である。書き戻し済みかどうかを判断するときは、どちらのモードで見ているかを意識する。
 
-## 制御（段6・#274）の運用
+## 制御（`control`・#274）の運用
 
 機械は候補を提示するところまでで、status は人間が別 PR で動かす。
 

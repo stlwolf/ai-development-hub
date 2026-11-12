@@ -96,7 +96,7 @@ raw log 層（gitignored・verbatim・別レイヤー #185）
 
 ### 2.5 committed 状態 store 層（negative knowledge store・#272）
 
-蒸留5層とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。段5 が `observations` を追記し段6 が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
+蒸留5層とは別種の committed 層。negative knowledge ループ（設計正本（hub リポジトリ内）`projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md`）の端で使われる**状態の保存場所**であり、蒸留の成果「文書」ではない。`observe`（観測記録）が `observations` を追記し `control`（制御）が `status` を書き換える、状態が変わり続ける永続化場所。committed にするのは、状態変更のたびに保存 HG（PR レビュー/owner マージ）を通し、チーム共有し、git で戻せるため。
 
 - 実体: 収穫元 episode が属する蒸留木の `knowledge/items/<ULID>.md`（1 item = 1 ファイル）。置き場規則（関係で解く）・型定義・スキーマ・命名（ULID ファイル名）・検証はすべて §3.4。dogfood の具体パスは各 store の README。
 - **蒸留 format 機構（§4〜§9・§15）は適用しない**（§3.4 の carve-out）。#19 検証ゲートの閉じた 5 型 enum（§3.1）にも加えない。
@@ -151,7 +151,7 @@ N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留�
 
 `knowledge` は negative knowledge store の item 型。**蒸留5層の閉じた enum（§3.1）には加えない**独立の状態 store item 型であり、#19 検証ゲート（§15）の対象でもない。検証は専用の standalone コマンド `validate-knowledge`（`~/bin` に配布される・markdown + 型付き frontmatter を yq/jq で検査・advisory・exit 0/1/2）が担う。
 
-- **文書ではなく状態 store**（§2.5）。段5 が `observations` を追記し段6 が `status` を書き換える。
+- **文書ではなく状態 store**（§2.5）。`observe` が `observations` を追記し `control` が `status` を書き換える。
 - **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5層のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
 - **命名（§9 からの意図的逸脱）**: ファイル名 = `<ULID>.md`（`id` と一致）。理由は並行収穫（複数 worktree / 並列子が同時に item を書く）の衝突回避（設計正本 §6.15）。人間ナビゲート対象でなく機械管理の store item なので、§9 の人間可読ファイル名規約は適用しない。検証スクリプトが `basename == <id>.md` を機械で担保する。
 
@@ -161,18 +161,18 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 |-----------|------|-----|------------|------|
 | `id` | 必須 | string | ULID（26字・Crockford Base32） | 一意識別子・ファイル名 = `<id>.md` |
 | `type` | 必須 | string | `knowledge` 固定 | 型判別 |
-| `status` | 必須 | string | `active` \| `disabled` \| `superseded` \| `retired` | 段6 制御の語彙（§6 の蒸留 status enum とは別） |
-| `date` | 必須 | string | `YYYY-MM-DD` | **収穫日・不変**（段5/6 の状態更新でも変えない） |
+| `status` | 必須 | string | `active` \| `disabled` \| `superseded` \| `retired` | `control` の語彙（§6 の蒸留 status enum とは別） |
+| `date` | 必須 | string | `YYYY-MM-DD` | **収穫日・不変**（`observe` や `control` による状態更新でも変えない） |
 | `trigger` | 必須 | string | 自由文 | 適用条件の仮説 |
-| `prediction` | 必須 | string | 自由文 | 効くはずの状況と期待効果（段5 の照合先） |
+| `prediction` | 必須 | string | 自由文 | 効くはずの状況と期待効果（`observe` の照合先） |
 | `source` | 必須 | map | `source.ref`（汎用参照） | 出典。`ref` は committed path か URL。`.oe/`/`tmp/` 揮発層・絶対パスは不可（§13.4 と同型） |
 | `landing` | 必須 | string | `nl` \| `guard-candidate` | 着地先の記録のみ（設計正本 §6.9） |
-| `observations` | 必須 | list | 要素 = `{date, ref, state, note?}`（下の「observations 要素スキーマ」） | 段5 の観測台帳（append-only・収穫時は `[]`） |
+| `observations` | 必須 | list | 要素 = `{date, ref, state, note?}`（下の「observations 要素スキーマ」） | `observe` の観測台帳（append-only・収穫時は `[]`） |
 | `exclusions` | 任意 | list | 文字列の配列 | 効かない状況 |
 
 本文 prose = 教訓（自己評価文の領域・空白トリム後に可視文字 ≥1）。エンベロープには文書体系に依存しない語彙のみを置く（出典は `source.ref`。「episode の」等の依存語彙を型に入れない）。
 
-#### observations 要素スキーマ（段5 の観測記録）
+#### observations 要素スキーマ（`observe` の記録）
 
 注入された knowledge の帰結を記録する台帳。**書き手は、注入を受けた子が自分の closure 時**に、work と同じブランチへコミットする（手順は `episode-retrospective` の観測書き戻し Step）。要素は次の4フィールドで、**これ以外のキーは拒否**する（書き手の身元フィールドは持たない — `ref` の先が語る）。
 
@@ -213,13 +213,13 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 - 検証コマンド `validate-knowledge` は各要素の**形**（必須3・enum・暦妥当性・`ref` の hygiene・`note` の1行・未知キー）を検査する。**append-only と順序は検査しない**（規約であって機械保証ではない）。
 - **省略と自己申告は機械では検知できない**: 「注入された全 item に1レコード」の完全性、`followed` の妥当性は、レビュー（親の fact-check / owner のマージ）が唯一の歯である。v0 の観測は意思決定に使わない placeholder として扱う。
 
-集計と制御候補の提示（段6 の機械側）:
+集計と制御候補の提示（`control` の機械側）:
 
 - 列挙コマンド `knowledge-list` が state ごとの件数を集計し、**`status: active` かつ `harmful` / `contradicted` の観測を持つ item に制御候補フラグ**を立てる。要素スキーマを満たさないレコードは集計の `invalid` に数え、**そこから候補は立てない**。
 - フラグは「adverse な観測が過去に一度でもあった印」であって未処理キューではない。誤観測を訂正する語彙は enum に無いため、**一度立った候補は消えない**（v0 の既知の制約。候補の総数を運用指標に使わない）。
 - **二段階のチェック**: 列挙（`knowledge-list --strict`）は「item を列挙できたか」の完全性しか見ない。**台帳のスキーマ完全性は、列挙のあとに `validate-knowledge` を回して見る**（列挙 verb は validator ではない）。列挙コマンドの `--json` は additive 拡張とし、`schema_version` は breaking change のときだけ上げる。
 
-#### status 遷移規則（段6 の制御）
+#### status 遷移規則（`control`）
 
 - **いつ**: 制御候補フラグが立った item を `disabled` の候補として検討する。件数の閾値は置かず、**機械は提示までで status を書き換えない**。
 - **誰が**: 提案は誰でもできる（子・統括・owner）。採否は**マージの人間ゲート**。curation 専用の承認機構は作らない。
@@ -227,7 +227,7 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 - **遷移先**: `active` → `disabled`（効かない・害があった）/ `superseded`（後継 item に置き換えた）/ `retired`（状況が消滅し、もう起きない）。復帰（`disabled` → `active`）は誤検知だったときにマージゲートで戻せる（機械規則は置かない）。
 - **supersede**: 後継 item の id を**本文 prose に1行** `superseded by <後継 id>` として書く（frontmatter のスキーマは変えない・grep で辿れる）。**昇格条件**: 後継チェーンの機械照会が必要になったら typed フィールド `superseded_by` へ昇格する（`observations` の version と同じ YAGNI の扱い）。
 
-**置き場規則（関係で解く・repo 固有パス不要）**: 収穫した knowledge item は、**その収穫元 episode が属する蒸留木の `knowledge/items/`** に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。これで蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる。`knowledge/` は蒸留木ルート直下（`decisions/` / `episodes/` / `plans/` の兄弟）に置き、README は同じ木の `knowledge/README.md`。**型付き item（ULID 名）は `knowledge/items/` に隔離**し、自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き `items/` には混ぜない。エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。段3 の列挙は各木の store を横断して見る。採用先での木の具体的な解決や dogfood 例は各 store の README を参照する。検証コマンド `validate-knowledge` の directory mode は `items/` 内の全 `*.md` を検証し、ULID 名でない誤名 item は skip せず WARN + exit 1（すり抜けを黙って落とさない）。
+**置き場規則（関係で解く・repo 固有パス不要）**: 収穫した knowledge item は、**その収穫元 episode が属する蒸留木の `knowledge/items/`** に置く（＝ item の `source.ref` が指す episode / PR と同じ木）。これで蒸留木が複数あるリポジトリでも、item ごとに置き場が source.ref との関係で一意に決まる。`knowledge/` は蒸留木ルート直下（`decisions/` / `episodes/` / `plans/` の兄弟）に置き、README は同じ木の `knowledge/README.md`。**型付き item（ULID 名）は `knowledge/items/` に隔離**し、自由記述の knowledge ノートがあれば `knowledge/` 直下に別途置き `items/` には混ぜない。エンジン独自のトップレベル名前空間は切らず、committed で存在する蒸留木を錨にする。`match`（突合）の列挙は各木の store を横断して見る。採用先での木の具体的な解決や dogfood 例は各 store の README を参照する。検証コマンド `validate-knowledge` の directory mode は `items/` 内の全 `*.md` を検証し、ULID 名でない誤名 item は skip せず WARN + exit 1（すり抜けを黙って落とさない）。
 
 ## 4. 共通フロントマター
 
