@@ -39,7 +39,7 @@
 # 戻り値の決まり（関数に共通）:
 #   0 成功 / 1 対象が無い・何もしなかった / 2 呼び方の誤り・前提の不足 / 3 epoch が合わない（取り合いに負けた）
 #   4 ロックが取れない / 5 張り替えを断った（前の binding が生きている・分からない・本人でない）
-#   6 コマンドが claude でない / 7 lease が閉じている・generation が退任している / 8 session_id がほかの lease にある
+#   6 コマンドが許す名前（claude・codex）でない / 7 lease が閉じている・generation が退任している / 8 session_id がほかの lease にある
 
 _OE_LEASE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=session.sh
@@ -48,6 +48,8 @@ _OE_LEASE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_OE_LEASE_LIB_DIR/tmux-pane-identity.sh"
 # shellcheck source=heartbeat-resolve.sh
 . "$_OE_LEASE_LIB_DIR/heartbeat-resolve.sh"
+# shellcheck source=agent.sh
+. "$_OE_LEASE_LIB_DIR/agent.sh"
 
 declare -F _oe_home_usable >/dev/null 2>&1 || _oe_home_usable() { case "${HOME:-}" in /|//) return 1;; /*) return 0;; *) return 1;; esac; }
 if   [ -n "${OE_LEASE_DIR+x}" ]; then :
@@ -161,7 +163,7 @@ oe_lease_bind() {
   case "$expect" in ''|*[!0-9]*) return 2 ;; esac
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   [ -n "$started" ] || return 2
-  case "$comm" in *claude*) ;; *) return 6 ;; esac
+  oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
   lock="${file}.lock"
@@ -258,7 +260,7 @@ oe_lease_claim() {
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   case "$sid" in ''|*[!A-Za-z0-9._-]*) return 2 ;; esac
   [ -n "$started" ] || return 2
-  case "$comm" in *claude*) ;; *) return 6 ;; esac
+  oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
   glock="${OE_LEASE_DIR}/.sessions.lock"; lock="${file}.lock"
@@ -319,7 +321,7 @@ oe_lease_advance() {
   case "$mode" in planned|recover) ;; *) return 2 ;; esac
   case "$pid" in ''|*[!0-9]*) return 2 ;; esac
   [ -n "$started" ] || return 2
-  case "$comm" in *claude*) ;; *) return 6 ;; esac
+  oe_agent_comm_allowed "$comm" || return 6   # 許す名前の集合（claude・codex・basename の完全一致・#562 DJ-5）
   _oe_lease_ready || return 2
   file="$(_oe_lease_file "$id")"; [ -f "$file" ] || return 1
   lock="${file}.lock"
@@ -482,8 +484,10 @@ oe_lease_fill_children() {
 oe_lease_whoami() {
   local id="${OE_LEASE_ID:-}" gen="${OE_GENERATION:-}" src="env" hit cur
   if [ -z "$id" ]; then
-    [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || return 1
-    hit="$(oe_lease_find_by_session "$CLAUDE_CODE_SESSION_ID")" || return 1
+    # 自分の会話の ID はエージェントごとに違う（claude: CLAUDE_CODE_SESSION_ID / codex: CODEX_THREAD_ID・#562 DJ-8）。
+    oe_agent_self >/dev/null 2>&1 || true
+    [ -n "$OE_AGENT_SELF_SID" ] || return 1
+    hit="$(oe_lease_find_by_session "$OE_AGENT_SELF_SID")" || return 1
     [ "$(printf '%s\n' "$hit" | grep -c .)" -eq 1 ] || return 2
     id="${hit%%"$_OE_TPI_TAB"*}"; gen="${hit#*"$_OE_TPI_TAB"}"; src="session"
   fi

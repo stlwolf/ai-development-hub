@@ -49,10 +49,14 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 err() { echo "oe-lease: $*" >&2; }
 usage() { sed -n '2,/^set -euo/p' "$0" | sed -e '/^set -euo/d' -e 's/^# \{0,1\}//' >&2; }
 
-# 自分のプロセスを binding の材料として読む（推し量らない: CLAUDE_PID が無ければ止まる）。
+# 自分のプロセスを binding の材料として読む（推し量らない: 自分の pid が分からなければ止まる）。
+#   claude は CLAUDE_PID、codex は CODEX_THREAD_ID と親をたどった codex の pid（lib/agent.sh の oe_agent_self・#562 DJ-8）。
+#   codex では sandbox の中の ps が失敗するので、規則で sandbox の外に出る oe の verb の中でだけ動く。
 self_proc() {
-  local pid="${CLAUDE_PID:-}" started comm
-  [ -n "$pid" ] || { err "CLAUDE_PID がありません（Claude Code の Bash から打ってください）"; return 2; }
+  local pid started comm
+  oe_agent_self >/dev/null 2>&1 || true
+  pid="$OE_AGENT_SELF_PID"
+  [ -n "$pid" ] || { err "自分の pid が分かりません（claude なら CLAUDE_PID、codex なら CODEX_THREAD_ID と親をたどった codex の pid。エージェントの Bash から打ってください）"; return 2; }
   started="$(oe_tpi_proc_started "$pid")" || { err "自分のプロセスの開始時刻を読めません（pid ${pid}）"; return 6; }
   comm="$(oe_tpi_proc_comm "$pid")" || { err "自分のプロセスのコマンド名を読めません（pid ${pid}）"; return 6; }
   SELF_PID="$pid"; SELF_STARTED="$started"; SELF_COMM="$comm"
@@ -221,7 +225,7 @@ case "$cmd" in
       if [ "$rc" -ne 0 ]; then printf 'skipped %s %s（フォアグラウンドのプロセスを確かめられない・rc=%s）\n' "$pane" "$label" "$rc"; continue; fi
       fpid="${fg%%"$_OE_TPI_TAB"*}"; fst="${fg#*"$_OE_TPI_TAB"}"
       comm="$(oe_tpi_proc_comm "$fpid" 2>/dev/null)" || comm=""
-      case "$comm" in *claude*) ;; *) printf 'skipped %s %s（フォアグラウンドのプロセスが claude でない・%s）\n' "$pane" "$label" "${comm:-不明}"; continue ;; esac
+      oe_agent_comm_allowed "$comm" || { printf 'skipped %s %s（フォアグラウンドのプロセスが %s でない・%s）\n' "$pane" "$label" "${OE_AGENT_COMMS// /・}" "${comm:-不明}"; continue; }
       rows="${rows}${pane} ${parent}
 "
       if have="$(oe_lease_find_by_binding "$fpid" "$fst" 2>/dev/null)"; then

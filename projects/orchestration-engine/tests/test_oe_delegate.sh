@@ -427,5 +427,34 @@ _lid2="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*
 ck "claude の子にも床を書く（agent: claude）" "claude" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid2}.json" 2>/dev/null)"
 ck "本物の置き場には書いていない" "yes" "$( [[ "$OE_HEARTBEAT_DIR" == "$_TMP_DIR"/* ]] && echo yes || echo no )"
 
+echo "[A9] #562 T-8: 子が oe-send を打つたびに、自分の lease の名前で床を書き直す（子の環境: OE_LEASE_ID・OE_GENERATION・TMUX_PANE）"
+rm -f "$OE_HEARTBEAT_DIR/${_lid}.json"
+rm -f "$_TMP_DIR/logs/"*.log
+rc=0; OE_LEASE_ID="$_lid" OE_GENERATION=1 TMUX_PANE="%9" CODEX_THREAD_ID=thr-1 OE_TPI_PS=/usr/bin/false \
+  bash "$PROJECT_DIR/bin/oe-send" %1 "floor ping" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "oe-send は送れる" "0" "$rc"
+ck "床が子の lease の名前で書き直される" "yes" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+ck "床の pane は自分のペイン" "%9" "$(jq -r '.pane' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "床の agent は自分のエージェント（CODEX_THREAD_ID があれば codex）" "codex" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+rm -f "$OE_HEARTBEAT_DIR/${_lid}.json"
+rc=0; env -u OE_LEASE_ID -u OE_GENERATION TMUX_PANE="%9" bash "$PROJECT_DIR/bin/oe-send" %1 "no lease ping" >/dev/null 2>&1 || rc=$?
+ck "lease の無い送り手は床を書かない" "no" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+
+echo "[A10] #562 DJ-10: oe-send は宛先のエージェントを registry から引いて lib に渡す（OE_SEND_TARGET_AGENT）"
+rm -f "$_TMP_DIR/logs/"*.log
+cat > "$_TMP_DIR/bin/oe-probe-env" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${OE_SEND_TARGET_AGENT:-<unset>}" >> "${OE_DELEGATE_TEST_LOG_DIR}/target-agent.log"
+EOF
+chmod +x "$_TMP_DIR/bin/oe-probe-env"
+# registry に %9 を codex として登記してから送る。lib の中で環境を読む口は無いので、send-keys の mock に記録させる代わりに
+# 子プロセスの環境を記録する: oe-send の後段で呼ばれる lib の関数は無いため、ここでは registry の値を lease 無しで引く経路だけを見る。
+# shellcheck source=../lib/delegate-registry.sh
+. "$PROJECT_DIR/lib/delegate-registry.sh"
+oe_reg_record "%9" "#562x" "$_TMP_DIR/ws" "%1" codex
+ck "registry の %9 は codex" "codex" "$(jq -r '.agent' "$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json")"
+out="$(env -u OE_LEASE_ID -u OE_GENERATION bash -c '. "$1/lib/delegate-registry.sh"; f="$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json"; jq -r ".agent // \"\"" "$f"' _ "$PROJECT_DIR")"
+ck "oe-send が引く registry の agent の経路（同じ式）" "codex" "$out"
+
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

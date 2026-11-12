@@ -26,27 +26,45 @@
 # 見え方をしていた。|| true は残す — best-effort な degrade は下の declare -F による
 # no-op フォールバックとセットで意図された設計である。
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/event-bus.sh" || true
+# 宛先のエージェントごとの画面の差（入力欄の行頭の記号・空の入力欄の補完の文・#562 DJ-10）。
+# 宛先のエージェントは呼ぶ側が OE_SEND_TARGET_AGENT に入れる（oe-send が lease か registry の agent から引く）。
+# 分からないときは claude の値で、今までと同じに動く。
+# shellcheck source=agent.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent.sh" || true
 
 # --- finalize 内部ヘルパー（source 専用・oe_ 接頭辞でネームスペース汚染を最小化） ---
 
+# _oe_send_prompt_chars — 宛先のエージェントの入力欄の行頭の記号（正規表現の [] の中身）。lib/agent.sh が無ければ ❯。
+_oe_send_prompt_chars() {
+  if declare -F oe_agent_prompt_chars >/dev/null 2>&1; then oe_agent_prompt_chars "${OE_SEND_TARGET_AGENT:-}"; else printf '%s' '❯'; fi
+}
+
 # _oe_send_inputline <capture-text>
-#   capture-pane の出力から入力欄行（最下部の `❯` 行）を1行返す。
-#   送信済みメッセージの echo も `❯` で始まるが画面上方に出るため tail -1 が入力欄。
+#   capture-pane の出力から入力欄行（最下部の入力欄の記号の行）を1行返す。
+#   送信済みメッセージの echo も同じ記号で始まるが画面上方に出るため tail -1 が入力欄。
 _oe_send_inputline() {
-  # 入力欄プロンプトは行頭（先頭空白許容）の `❯`。行中に現れる `❯` を誤って拾わない（Copilot 指摘）。
-  printf '%s\n' "$1" | grep '^[[:space:]]*❯' | tail -n 1
+  # 入力欄プロンプトは行頭（先頭空白許容）の記号。行中に現れる記号を誤って拾わない（Copilot 指摘）。
+  # 記号は宛先のエージェントで変わる（claude: ❯ / codex: ›・effort が ultra なら »）。
+  printf '%s\n' "$1" | grep "^[[:space:]]*[$(_oe_send_prompt_chars)]" | tail -n 1
 }
 
 # _oe_send_has_content <input-line>
-#   入力欄行にプレースホルダでない既存内容があれば 0。空 or `Try "..."`（候補表示）は 1。
-#   plain capture では色が落ちるためプレースホルダ判定はヒューリスティック（best-effort）。
+#   入力欄行にプレースホルダでない既存内容があれば 0。空 or 補完の文（claude: `Try "..."` / codex:
+#   `Ask Codex to do anything`）は 1。plain capture では色が落ちるためプレースホルダ判定はヒューリスティック（best-effort）。
 _oe_send_has_content() {
-  local line="${1#*❯}"
-  line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  local line="$1" chars ph
+  chars="$(_oe_send_prompt_chars)"
+  # 行頭の空白と入力欄の記号を外す（記号は宛先のエージェントの集合のどれか1文字）。
+  line="$(printf '%s' "$line" | sed "s/^[[:space:]]*[${chars}]//; s/^[[:space:]]*//; s/[[:space:]]*$//")"
   [[ -n "$line" ]] || return 1
-  case "$line" in
-    'Try "'*) return 1 ;;  # 空入力時のプレースホルダ候補 → 内容なし扱い
-  esac
+  if declare -F oe_agent_placeholder_re >/dev/null 2>&1; then
+    while IFS= read -r ph; do
+      [[ -n "$ph" ]] || continue
+      [[ "$line" == "$ph"* ]] && return 1   # 空入力時のプレースホルダ候補 → 内容なし扱い
+    done < <(oe_agent_placeholder_re "${OE_SEND_TARGET_AGENT:-}")
+  else
+    case "$line" in 'Try "'*) return 1 ;; esac
+  fi
   return 0
 }
 
