@@ -38,6 +38,9 @@ cat > "${_TMP_DIR}/bin/git" <<'EOF'
 #!/usr/bin/env bash
 # iter2 #3252519559 反映: verify.sh は `git -C "$PROJECT_DIR" ...` 形式で呼ぶ。先頭の -C <dir> を skip。
 # #92 (設計 D): commit 範囲評価のため diff <range> / log / rev-parse を追加でモックする。
+if [[ "${1:-}" == "-C" && -n "${OE_REAL_GIT_DIR:-}" && "${2:-}" == "$OE_REAL_GIT_DIR" ]]; then
+  exec /usr/bin/git "$@"
+fi
 args=("$@")
 i=0
 if [[ "${args[0]:-}" == "-C" && -n "${args[1]:-}" ]]; then
@@ -112,6 +115,9 @@ if [[ "${1:-}" == "pane" && "${2:-}" == "send" ]]; then
   pane_id="${3:-}"
   payload="${4:-}"
   printf '%s|%s\n' "$pane_id" "$payload" >> "${log_dir}/send.log"
+  if [[ -n "${OE_TEST_WORKER_OUTPUT:-}" ]]; then
+    touch "$OE_TEST_WORKER_OUTPUT"
+  fi
   exit 0
 fi
 
@@ -805,6 +811,42 @@ assert_eq "#101 no-FN: verdict 後の postamble 行があっても検出" "pass"
 # 既知の残差 (assert しない・限界の明示): verdict の「後・EXIT の前」に置かれた bare な単独行引用は
 # 位置だけでは genuine と判別不能 (#112 の原理限界)。task.description の引用禁止プロンプト制約 (prompt A)
 # で確率的に抑制し、機械的な完全抑制は nonce/sentinel (#93) の follow-up。ここでは意図的にテストしない。
+
+# ---- #489: 起動前の未追跡ファイルを実 Git で記録し、検証プロンプトまで照合 ----
+echo ""
+echo "=== #489: 未追跡ファイルの pre-existing 注記 ==="
+baseline_repo="${_TMP_DIR}/baseline-repo"
+mkdir -p "$baseline_repo/pre/sub"
+export OE_REAL_GIT_DIR="$baseline_repo"
+git -C "$baseline_repo" init -q --template=
+git -C "$baseline_repo" config core.excludesFile /dev/null
+printf 'ignored.txt\n' > "$baseline_repo/.gitignore"
+touch "$baseline_repo/tracked.txt"
+git -C "$baseline_repo" add .gitignore tracked.txt
+git -C "$baseline_repo" -c user.name=Test -c user.email=test@example.com \
+  -c core.hooksPath=/dev/null commit -qm baseline --no-gpg-sign
+printf 'dirty\n' > "$baseline_repo/tracked.txt"
+touch "$baseline_repo/pre/sub/old.txt" "$baseline_repo/pre/a -> b.txt" "$baseline_repo/pre/ignored.txt"
+
+baseline_session_id="RTEST_BASELINE_489_$$"
+PROJECT_DIR="$baseline_repo" OE_TEST_WORKER_OUTPUT="$baseline_repo/pre/sub/new.txt" \
+  oe_spawn_send "$baseline_session_id" "$target_pane_id" "$target_envelope_path" cursor-agent
+PROJECT_DIR="$baseline_repo" \
+  oe_verify_prompt_build "$baseline_session_id" "$target_pane_id" "$baseline_session_id" "$target_envelope_path"
+unset OE_REAL_GIT_DIR
+
+assert_eq "#489: 起動前の未追跡ファイル (入れ子) に注記" "true" \
+  "$(grep -qF -- '- pre/sub/old.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: 起動前の未追跡ファイル (空白と矢印) に注記" "true" \
+  "$(grep -qF -- '- pre/a -> b.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: worker 起動時に作ったファイルは注記なし" "true" \
+  "$(grep -qxF -- '- pre/sub/new.txt' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: 起動前に変更済みの追跡ファイルに注記" "true" \
+  "$(grep -qF -- '- tracked.txt  ⚠ pre-existing' "$OE_VERIFY_PROMPT_PATH" && echo true || echo false)"
+assert_eq "#489: ignored ファイルは baseline に含めない" "true" \
+  "$(jq -r 'select(.event_type == "session_start") | (.payload.baseline_dirty | index("pre/ignored.txt") == null)' \
+    "${OE_AUDIT_DIR}/${baseline_session_id}.jsonl")"
+rm -f "$OE_VERIFY_PROMPT_PATH"
 
 echo ""
 echo "=== Results: PASS=$PASS FAIL=$FAIL ==="
