@@ -75,5 +75,34 @@ Codex のソースは、手元の版（`codex-cli 0.167.1`）に合うタグ `ru
 
 統括はその材料を受けて受領の印の問いを置き換え（起こしの最初の1行で伝える案を選択肢に入れ、統括の推奨は「最初の1行と固定節で伝え、`AGENTS.md` には engine の約束ごとを書かない」、書き手の見立て「`AGENTS.md` も重ねる」は別の選択肢）、owner の答えを待っている。plan は答えが出るまで直さない。
 
-owner の問いに答える材料として、engine だけで担保する形を3つ整理して統括へ送った（`.oe/report-562-p3-q107.md`）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。
+owner の問いに答える材料として、engine だけで担保する形を3つ整理して統括へ送った（`.oe/report-562-p3-q107.md`）。
+
+### GATE 3: 承認（2026-11-13 03:18）
+
+owner が6つの問いすべてに答え（承認のモード・lease の検査・PR の数・`auth.json`・plan の承認は推奨どおり、受領の印は `-c developer_instructions` と書面の固定節で伝える形）、統括が答えを写した plan（`8a6f7e7`）と照らして承認の記録 `.oe/decision-562-gate3.md` を書いた。
+
+### I1: 実機の確かめ（2026-11-13 03:24〜03:46）
+
+使い捨ての `CODEX_HOME`（scratchpad の `probe/codex-home`）と使い捨ての git リポジトリ（同 `probe/ws`）で行った。`~/.codex` の `config.toml` から `model` と `[features] hooks = true` だけを写し、`auth.json` を権限 600 で写した（owner の答え Q110）。hook は標準入力と環境を1行ずつ記録ファイルに書くだけの `probe-hook.sh` を `UserPromptSubmit`・`PostModelRequest`・`SessionStart` に配線した `hooks.json`（`CODEX_HOME` 直下に symlink で置いた）。規則は `rules/oe-child.rules`（通常のファイル・`oe` と `git commit` の2行）と `rules/oe-link.rules`（symlink・`tmux` の1行）。起こす1行は `oe-delegate` と同じ形で、`CODEX_HOME=… PARENT_TMUX_PANE=%<自分> codex --no-daemon --approve-for-me [--dangerously-bypass-hook-trust] -c 'developer_instructions="…"'` を `tmux split-window -d -c <ws>` に渡した。
+
+**途中で版が変わった。** 1回目の resume の起動で Codex が「Update now（`brew upgrade --cask codex` を走らせる）／Skip」の画面を出し、そこへ送った1行の Enter が「Update now」に入って、手元の `codex` が 0.167.1 から 0.167.2 に上がった（03:32・owner の環境の変更）。統括に知らせ、統括は「戻さず 0.167.2 で進め、ソースの参照を 0.167.2 に当て直す」と決めた（owner には統括から知らせる）。起きた手順は次のとおり: `codex --no-daemon … resume <id>` を新しいペインで起こす → 画面に更新の確認が出る（選ばれている行は「1. Update now」）→ 10秒後に `oe send` で1行を送る → 1行は選択肢の画面に流れ、末尾の Enter が「Update now」を選ぶ → `brew upgrade --cask codex` が走り、ペインが閉じる。2つのタグの差分は7ファイル（`Cargo.toml`・`config.schema.json`・`core/src/session/step_context.rs`・`features/src/lib.rs`・tests 3本）で、plan が行番号で引いたファイルはどれも変わっていない（`git diff --stat rust-v0.167.1 rust-v0.167.2`）。更新の確認は設定の鍵 `check_for_update_on_startup = false` で出なくなる（`tui/src/updates.rs:28,153`・`config/src/config_toml.rs:533`）ので、engine の1行に `-c check_for_update_on_startup=false` を足す（plan の DJ-2・補正 H1）。
+
+結果を1項目ずつ書く。「版」は Codex のバイナリの版、「経路」は起動の形である。
+
+- C1 `UserPromptSubmit` の発火: **発火した。** 版 0.167.1（1回目のセッション）と 0.167.2（信頼を登録したあとのセッション）の両方。経路は `--no-daemon` の対話の画面。標準入力に `prompt`（受領の印を含む）・`session_id`・`turn_id`・`transcript_path`・`cwd` が入った。9回の送信で9回。
+- C2 hook の環境の `TMUX_PANE`: **自分のペインの値だった**（`%704` など、起こしたペインと一致）。`TMUX` も入る。`CODEX_THREAD_ID` は hook の環境には入らない（子のコマンドにだけ入る）。版 0.167.1 と 0.167.2・`--no-daemon`。
+- C3 `PostModelRequest` の発火: **発火した。** モデルへの要求のたびに走り（1ターンに3〜5回）、標準入力に `token_usage`（`input_tokens`・`cached_input_tokens`・`output_tokens`・`total_tokens`）・`status`・`model`（文字列）・`transcript_path` が入った。記録の `token_count` に `model_context_window: 475000` があった。`SessionStart` も `source` が `startup`・`compact`・`resume` のそれぞれで発火した。hook の実行時間は測っていない（記録の時刻は秒単位で、ターンの長さ 20〜24 秒の中に収まっていた）。
+- C4 承認のモードと規則: **`oe send <統括のペイン>` と `oe send --to-parent` と `git commit --allow-empty` は、承認の画面に止まらずに通った**（版 0.167.1・`--approve-for-me`・通常のファイルの規則）。`oe send` は sandbox の外で走り、tmux のソケットにつなげた。規則の無い `curl -sI https://example.com` は sandbox の中で失敗（`Could not resolve host`）し、規則の無い `tmux display-message` も失敗（`Operation not permitted`）したが、**モデルは sandbox の外で走らせる要求を出さず、失敗をそのまま報告した**（auto_review は呼ばれなかった）。symlink の規則（`tmux`）が読まれるかは、確かめる前に版が変わり、0.167.2 のセッションではコマンドの道具が `timed out negotiating with the code-mode host` で動かなくなった（下記）ので、実機では確かめられていない（ソースの `is_file()` の読みのまま）。
+- C5 resume: **`codex --no-daemon … resume <id>` で同じ記録のファイルに追記された**（120行 → 136行 → 149行）。`SessionStart` が `source: resume` で発火し、`session_id` は同じ。`CODEX_THREAD_ID` が同じ値で届くことは、0.167.2 のセッションでコマンドの道具が動かず確かめられなかった（11-11 の実機で確かめ済み）。
+- C6 `exec` の形: **1行に `exec` を書かなくても、ペインの前面のプロセスは `codex` だった**（`ps -t <tty> -o pid=,tpgid=,comm=` で pid と tpgid が一致する行が `codex`。版 0.167.1 と 0.167.2）。Claude と同じで、`exec` は要らない。`$PPID` をたどる案は、**sandbox の中では `ps` が `Operation not permitted` で失敗する**ので、`oe` の verb（規則で sandbox の外に出る）の中で走らせる必要がある（plan の DJ-8 に補正 H2）。前面の pid との一致は、同じ理由で確かめられなかった。
+- C7 workspace の外の読み書き: **読める（`--add-dir` 無し・`$HOME` の下のファイル）。書けない（`Operation not permitted`）。** `/private/tmp` の下は system temp として書けるので、最初の確かめ（scratchpad の中）は無効で、`$HOME` の下の `tmp/562-probe/` で確かめ直した。`--add-dir` を付けた確かめは、版の変更のあとコマンドの道具が動かず、行えていない。
+- C8 入力欄と finalize: `oe send` は9回とも1回の Enter で送信された（二重に送ることも、Enter が吸われることも無かった）。ただし、いまの `_oe_send_inputline` は `❯` しか見ないので Codex の入力欄を見つけられず、finalize は何も判定していない（打ち直しも起きない）。`›` を足す変更が要ることは変わらない。
+- C9 `developer_instructions`: **(1) 子は印をコマンドに写さなかった**（記録の全コマンドに `[oe:` が無い。版 0.167.1）。記録では developer の役割のメッセージとして ordinal 4 に入っていた。**(2) `/compact` のあとも写さず**、圧縮の `replacement_history` の中に同じ developer のメッセージが残っていた。**(3) 同じ `-c` を付けた resume のあと**、モデルは決まりを1文で言えた（道具は動かなかったが、答えは道具なしで返った）。**(4) `-c` 無しの resume のあとも**、「developer の指示がある」と答え、文を引用した（圧縮の履歴に残っているため）。圧縮を経ていない会話を `-c` 無しで開いたときは確かめていない。`codex debug prompt-input -c 'developer_instructions="…"'` で、モデルに見える入力の一覧に developer のメッセージとして入ること（`-c` 無しでは入らないこと）を、モデルを呼ばずに確かめられた（T-2 の検査に使える）。
+- hook の信頼（DJ-12 の2段階目）: `--dangerously-bypass-hook-trust` を外して起こすと、起動時に「Review hooks」の確認が出て、hook は走らない（記録に増えない）。`/hooks` を開いて `t`（trust all）を押すと、`config.toml` に `[hooks.state."<CODEX_HOME>/hooks.json:<イベント>:0:0"]` が3件書かれ（鍵のパスは symlink の側）、以後 hook が走った。symlink の `hooks.json` は読まれる。
+
+**0.167.2 で起きた道具の障害。** 更新のあとに起こしたセッション（resume も新規も）では、モデルのコマンドの道具が `timed out negotiating with the code-mode host` で毎回失敗し、`--disable code_mode_host` を付けると `code-mode host is disabled` で失敗した。0.167.1 のセッションでは同じ `CODEX_HOME` で動いていた。#448 と同じ型の障害で、使い捨ての `CODEX_HOME` に足りないもの（`packages/` など）があるのか、版の問題かは切り分けていない。この障害のため、C4 の symlink の規則・C5 の `CODEX_THREAD_ID`・C6 の pid の一致・C7 の `--add-dir` は実機で確かめられていない。
+
+**残ったもの。** `~/.codex` に書かれたのは `models_cache.json`（モデルの一覧の cache・無害）と、brew の更新に伴う `app-server-daemon/daemon-updater.stderr.log`・`packages/app-server-daemon/auto-update-version`・`tmp/arg0-macos/…/.lock` で、設定・信頼・記録は増えていない（`find ~/.codex -newer <開始の印>`）。`auth.json` の写しは消した。`$HOME` の下の `tmp/562-probe/` は消した。scratchpad の `probe/codex-home`（会話の記録・history・SQLite）は、`rm -rf` が hub の hook に止められたので残っている（資格情報は含まない。scratchpad は3日で消える）。Homebrew の cask の 0.167.1 → 0.167.2 は戻していない。
+
+昇格の印: Codex の対話の画面は、起動の直後に更新の確認の画面を出すことがあり、そこへ送った1行の Enter が「Update now」を選んで `brew upgrade` を走らせる。engine が起こす1行には `-c check_for_update_on_startup=false` を付ける。起動の直後に別の確認（フォルダの信頼・hook の確認）が出ることもあるので、起こしてから最初の1行を送るまでに画面を確かめる口があるとよい（この issue では付けない）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。
 

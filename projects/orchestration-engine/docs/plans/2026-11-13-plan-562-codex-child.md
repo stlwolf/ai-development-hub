@@ -52,7 +52,7 @@ tags: [codex, delegation, agent-neutral, hooks, lease]
 
 ## 前提（読んで確かめた事実）
 
-Codex の行番号は、手元の版 `codex-cli 0.167.1` に合うタグ `rust-v0.167.1`（コミット `0a94398`）の `codex-rs/` からの相対である。engine の行番号は `projects/orchestration-engine/` からの相対で、`origin/master` の `5ddbdc1` で読んだ。設計SO（Codex の1レーン・2026-11-13）が指した行は、書き手が開き直して確かめたものだけを `[verified]` にした。
+Codex の行番号は、タグ `rust-v0.167.1`（コミット `0a94398`）の `codex-rs/` からの相対で読んだ。I1 の途中で手元の版が `codex-cli 0.167.2` に上がった（episode の I1）。`rust-v0.167.2` との差分は7ファイル（`Cargo.toml`・`config.schema.json`・`core/src/session/step_context.rs`・`features/src/lib.rs`・tests 3本）で、この plan が行番号で引いたファイルはどれも変わっていないので、行番号は 0.167.2 でも同じである [verified]（`git diff --stat rust-v0.167.1 rust-v0.167.2`）。engine の行番号は `projects/orchestration-engine/` からの相対で、`origin/master` の `5ddbdc1` で読んだ。設計SO（Codex の1レーン・2026-11-13）が指した行は、書き手が開き直して確かめたものだけを `[verified]` にした。
 
 ### Codex の側
 
@@ -105,6 +105,8 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 - `PARENT_TMUX_PANE=… OE_LEASE_ID=… OE_GENERATION=1 codex --no-daemon <承認のモードの引数> [--add-dir <brief の dir>]` を、Claude と同じ形で `tmux split-window -c <workspace>` に渡す。C6 で前面のプロセスが `codex` にならなければ、**Codex の分岐だけ**に `exec` を書く。Claude の1行は変えない（受入 A-1）。
 - `--no-daemon` は固定で付ける（11-11 の実機）。版のずれた共有の daemon を避ける効果もある。
+- `-c check_for_update_on_startup=false` も固定で付ける（補正 H1）。起動の直後に出る更新の確認の画面を出さないためで、I1 でこの画面に送った1行の Enter が「Update now」を選んで `brew upgrade --cask codex` が走った（episode の I1）。鍵は `config/src/config_toml.rs:533`、効き方は `tui/src/updates.rs:28,153` [verified]。無しで動く形は無い（画面が出れば最初の1行が選択肢に流れる）。残る危険として、フォルダの信頼の確認（新しい workspace を初めて開くとき）と hook の確認（未登録の hook があるとき）も起動の直後に出る。前者は worktree ごとに出るので、`oe-delegate` は Codex の子を起こしたあと、最初の1行を送る前に画面の最初の行に `Trust this folder?` が出ていれば Enter を1回送る（実機で見た文言。版が変われば効かなくなるので、`lib/agent.sh` の定数にし、README に書く）。後者は owner が `/hooks` で登録するまで出続けるので、README の手順で済ませる。
+- C6 の結果: `exec` を書かなくても前面のプロセスは `codex` になった（Claude と同じ）。`exec` は書かない。
 - `--add-dir` は、brief の置き場（統括のワークスペースの `.oe/`）が子の workspace（worktree）の外にあるとき、子が `.oe/question-*.json` と `.oe/report-*.md` を書けるようにするために付ける。Codex の `--add-dir` は書ける範囲を広げる引数で [verified]（`codex --help`）、Claude の `--add-dir`（読める範囲）とは意味が違うが、必要な効果（読める・書ける）は同じになる。読めることは C7 で確かめる。
 - SO: Claude の1行に `exec` を足す案を取り下げた（指摘9）。
 
@@ -112,6 +114,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 - 推奨: **`--approve-for-me` を既定にし、engine の verb と git の commit を実行ポリシーの `allow` の規則で sandbox の外に出す。** 規則は hub が `canonical/codex/rules/oe-child.rules` として持ち、`sync-codex.sh` が `~/.codex/rules/oe-child.rules` に**通常のファイルとして写す**（symlink は読まれない。hook のスクリプトと同じく内容を比べて更新する）。中身は `prefix_rule(pattern=["oe"], decision="allow")` と `prefix_rule(pattern=["git", "commit"], decision="allow")` の2行にとどめる。
 - **この規則は owner が自分で開く Codex にも効く。** 実行ポリシーの規則は user 層（と信頼したプロジェクトの層）にしか置けず、子だけに効く置き場は無い。`oe` と `git commit` は owner の Codex でも承認なしで走ることを、owner に見せて決めてもらう（Q1 の「何を決めるか」に書く）。
+- C4 の結果: `oe send`・`git commit` は承認の画面に止まらずに通った。規則の無いコマンドが sandbox の中で失敗したとき（`curl`・`tmux`）、モデルは sandbox の外で走らせる要求を出さず、失敗をそのまま報告した（auto_review は呼ばれなかった）。つまり `git push`・`gh` は「レビュアーが裁く」より「失敗してモデルに返る」ほうが起きやすい。子が PR を作るとき、push は統括が子の画面で承認する代わりに、子が失敗を報告したら統括が自分で push する運びになりうる。規則に足すかは実機で1回回したあとに owner が決める（follow-up・変わらず）。
 - `git push` と `gh` は規則に入れない。`gh` を allow にすると GitHub 上の変更の操作（issue・PR の作成と編集）まで承認なしになり、`block-force-push.sh` は `git push` の引数しか見ない。子が PR を作るときの `git push` と `gh pr create` は auto_review に回る（決定論ではないが、止まったら統括が子の画面で承認する。M-1 の「承認の画面で止まった回数」はこの2つを別に数える）。規則に足すかは、実機で1回回したあとに owner が決める（follow-up）。
 - 理由: Claude の auto mode に近い（承認の要求を機械が裁く・破壊的な操作は hub の hook が止める）。auto_review はモデルが裁くので、報告の `oe send` のように毎回必ず通したいものは規則で決定論にする。`allow` は sandbox の外で走るので、tmux のソケットにつなげない問題（11-11 の実機）も消える。
 - 引数の組み立て: `lib/agent.sh` が既定の承認の引数（`--approve-for-me`）を持ち、`--agent-arg` に `-s`・`--sandbox`・`-a`・`--ask-for-approval`・`--dangerously-bypass-approvals-and-sandbox`・`--yolo`・`--approve-for-me` のどれかがあれば**既定の承認の引数を外してから**並べる（`--approve-for-me` は `-s`・`-a`・bypass と同時に指定できないため）。
@@ -130,6 +133,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 - 組み立て: 決まりの本文は `lib/agent.sh` が持ち、`oe-delegate` は `--agent codex` のとき1行に `-c developer_instructions="<本文>"` を足す。本文は TOML の文字列として1引数に収め、改行と二重引用符を含めない（`shell_quote` で囲む）。報告の返し方（`oe send --to-parent`）と問いの書き方（ファイルに書いて送る・対話の選択肢を使わない）も同じ本文に入れる（engine の約束ごとはここに集める）。Claude の子へ送る1行は変えない（受入 A-1）。
 - 上書きの扱い: `developer_instructions` は文字列の上書きなので、利用者が `~/.codex/config.toml` に同じ鍵を持っていると、その子の中でだけ利用者の値が engine の本文に置き換わる。`oe-delegate` は `--agent codex` のとき `codex` の設定に同じ鍵があるかを `$CODEX_HOME/config.toml` で見て、あれば stderr に「利用者の `developer_instructions` はこの子の中では engine の本文に置き換わる」と1行出す（止めない。足し合わせる口は 0.167.1 の文字列の鍵には無い）。
 - resume: `oe-recover hint` が出す Codex の案内の1行にも同じ `-c developer_instructions="…"` を含める（DJ-9）。
+- C9 の結果: 子は印をコマンドに写さなかった。`/compact` のあとも写さず、圧縮の履歴に developer のメッセージが残った。同じ `-c` を付けた resume のあとも、`-c` 無しの resume のあとも（圧縮の履歴に残っているため）、モデルは決まりを言えた。`codex debug prompt-input -c 'developer_instructions="…"'` で、モデルに見える入力に developer のメッセージとして入ることをモデルを呼ばずに確かめられる（T-2 に足す・補正 H3）。
 - 圧縮と resume のあとに効くかは実機で確かめる（C9）。効かなければ、`SessionStart` の hook（matcher `compact|resume`）で `additionalContext` として入れ直す形に落とし、それも発火しなければ、子へ送る最初の1行に決まりの文を添える形（1回だけ）に落とす。
 - ほかの案（取り下げ）: `AGENTS.md` に1行足す（hub の中でだけ効き、独立したときに付いてこない）。`UserPromptSubmit` に説明用の handler を足して印のある prompt にだけ `additionalContext` で伝える（C1 に依る。C9 で `developer_instructions` が足りなければ候補に戻す）。宛先が Codex のときは印を付けない（受領の突き合わせを失う）。
 - 根拠の出どころ: 統括が Codex に調べさせた答え（`.oe/so-562-q112-codex-answer.md`・作業層）。そこに書かれた主張のうち設計に使うもの（鍵の意味・`-c` の層・最初の文脈と圧縮の経路）は、書き手が 0.167.1 のソースを開いて確かめ、前提の節に行番号で書いた。resume の経路は確かめていない。
@@ -161,6 +165,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 ### DJ-8 会話の ID と自分のプロセス（自分で決めた・C6 で確かめる）
 
+- C6 の結果（補正 H2）: Codex の sandbox の中では `ps` が `Operation not permitted` で失敗する。`$PPID` をたどる処理は、規則で sandbox の外に出る `oe` の verb の中でだけ動く。子が `oe lease …`・`oe recover` を打つ分には規則の `oe` に当たるので動くが、README に「`oe` の規則が無いと自分の pid を読めない」と書く。
 - 子の側で自分を名乗る経路（`oe-lease bind`・`oe-lease whoami` の実体 `oe_lease_whoami`・`oe-recover`）は、`lib/agent.sh` の `oe_agent_self` で (agent, pid, session_id) を引く。Claude は `CLAUDE_PID`・`CLAUDE_CODE_SESSION_ID`（今のまま）。Codex は session_id を `CODEX_THREAD_ID` から取り、pid は自分の親を `ps -o ppid=` でたどってコマンド名が `codex` の最初のプロセスを採り、**そのペイン（`TMUX_PANE`）の前面のプロセスの pid と開始時刻に一致することまで確かめる**（別の Codex を拾う誤りを弾く）。たどれなければ今と同じ文言で止まる。`oe_lease_whoami` の `CLAUDE_CODE_SESSION_ID` だけの fallback も、`oe_agent_self` の session_id に替える。
 - `oe-register root`・`oe-handoff` は統括の verb で、Codex を統括にするのは範囲の外なので触らない。
 - SO: lib の `oe_lease_whoami` の経路と、前面のプロセスとの突き合わせを足した（指摘7・11）。
@@ -311,7 +316,9 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 | C8 | `oe send` の finalize が Codex の画面で働く（行頭 `›` を入力欄と判定し、Enter が吸われたときに打ち直す・吸われなかったときに二重に打たない） | 働かなければ、Codex の宛先では送る側が finalize を切る（DJ-10） |
 | C9 | `-c developer_instructions="…"` で起こした子に、印の付いた1行を送り、(1) 子が印をコマンドに写さない、(2) `/compact` で圧縮したあとも同じ、(3) `codex --no-daemon -c developer_instructions="…" resume <id>` で開き直したあとも同じ、(4) `-c` 無しで resume したときはどうなるか、を見る。記録（rollout）に developer のメッセージが入る位置も見る | (2) で消えるなら `SessionStart` の hook（matcher `compact`）で入れ直す形に落とす。(3) で効かないなら resume の案内の `-c` を外し、`SessionStart`（matcher `resume`）に落とす。hook も発火しなければ、子へ送る最初の1行に決まりの文を添える（1回だけ） |
 
-確かめた結果は、1項目ずつ（版・起動の形・経路）を episode に書き、plan の対応する DJ に結果の行を足す（記録の級）。設計が分かれ方のとおりに変わるときは補正として申告し、分かれ方に無い変わり方は変更として照会する。
+確かめた結果は、1項目ずつ（版・起動の形・経路）を episode に書き、plan の対応する DJ に結果の行を足す（記録の級）。
+
+結果（2026-11-13・詳細は episode の I1）: C1 発火した。C2 自分のペインの値。C3 発火し `token_usage` が入る。C4 `oe send`・`git commit` は止まらない（symlink の規則は版の変更のあとの道具の障害で未確認）。C5 同じ記録に追記される。C6 `exec` は要らない（`ps` は sandbox の中で失敗）。C7 読める・書けない（`--add-dir` 付きは未確認）。C8 送信は通るが finalize は Codex の入力欄を見ていない。C9 写さない・圧縮と resume のあとも残る。hook の信頼は `/hooks` の `t` で3件登録された。分かれ方のどれにも入らず、設計は変えない。未確認の4点（symlink の規則・`CODEX_THREAD_ID` の一致・pid の一致・`--add-dir`）は CHECK-2 の実機で見る。設計が分かれ方のとおりに変わるときは補正として申告し、分かれ方に無い変わり方は変更として照会する。
 
 ## テスト
 
@@ -349,7 +356,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### GATE 3: owner の plan 承認（承認の記録 `.oe/decision-562-gate3.md` が届いてから I に進む）
 
-### I1: 実機の確かめ C1〜C9（`CODEX_HOME` を使い捨てに向ける・結果を episode と plan に書く・`~/.codex` に何も残っていないことを確かめる）
+### I1: 実機の確かめ C1〜C9（`CODEX_HOME` を使い捨てに向ける・結果を episode と plan に書く・`~/.codex` に何も残っていないことを確かめる）（完了・2026-11-13・未確認4点は CHECK-2 へ）
 
 ### I2: `lib/agent.sh` と `oe delegate --agent`（DJ-1・DJ-2・DJ-3 の既定の引数と elevated の表）・registry と lease の `agent`・ダイジェスト・床の sidecar（DJ-6 の (1)）・T-1〜T-3・T-8
 
@@ -382,4 +389,22 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ## ゲート3 のあとの変更
 
-（まだ無い）
+### H1（補正・2026-11-13・I1）: Codex の1行に `-c check_for_update_on_startup=false` を足し、フォルダの信頼の確認に Enter を1回送る
+
+- 出どころ: I1 で更新の確認の画面に送った1行の Enter が「Update now」を選び、手元の codex が 0.167.2 に上がった（統括の指示で DJ-2 に足す）。
+- 変更前 `8a6f7e7` → 変更後はこの節を含む commit。
+- 8項目: (1) step の見出しは消えていない。(2) 要件は弱めていない（起動の引数が2つ増える）。(3) ゲートは変わらない。(4) 終端は同じ。(5) 受入は減っていない（A-1 の Claude の1行は変えない）。(6) owner の決定は変わらない。(7) 範囲は変わらない。(8) 新しい設計判断は足していない（起動の引数の既定の中身）。
+
+### H2（補正・2026-11-13・I1）: `$PPID` をたどる処理は `oe` の verb の中でだけ動くと DJ-8 に書き、README に書く義務を足した
+
+- 出どころ: C6 で sandbox の中の `ps` が `Operation not permitted` だった。
+- 8項目: DJ-8 の結論は変わらず、動く条件を1行足しただけ。README の1行は I5 の既存の義務の中。
+
+### H3（補正・2026-11-13・I1）: T-2 に `codex debug prompt-input` での確かめを足した
+
+- 出どころ: C9 で、モデルを呼ばずに developer のメッセージの有無を見られる口が見つかった。
+- 8項目: 承認済みの結果を確かめる検査を強めるもの（確かめる対象は増えない）。
+
+### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
+
+- 手元の版が 0.167.2 に上がったが、引いたファイルは変わっていないので行番号は据え置き（前提の節に注記）。
