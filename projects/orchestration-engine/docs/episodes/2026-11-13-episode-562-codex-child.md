@@ -3,7 +3,7 @@ id: "01M78B552HSWHVVR1KT7XDJAM4"
 title: "#562 Codex CLI を、統括の子として tmux のペインで対話的に動かす"
 date: 2026-11-13
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/562"
@@ -14,7 +14,44 @@ related:
   - type: plan
     ref: "projects/orchestration-engine/docs/plans/2026-11-13-plan-562-codex-child.md"
     reason: "設計と実装の計画"
+  - type: decision
+    ref: "projects/orchestration-engine/docs/decisions/2026-11-13-decision-562-codex-child-launch.md"
+    reason: "closure で昇格した判断（H10・Q112・Q113）"
 tags: [codex, delegation, agent-neutral]
+promotion:
+  - subject: "hook の環境は走らせるプロセスの写し（daemon を介すとペインがずれる）"
+    verdict: not-required
+    ref: "本文: P1: 参照の読みと、一次情報での確かめ直し"
+  - subject: "PostModelRequest の token_usage は要求ごと・記録の合計は累積"
+    verdict: not-required
+    ref: "本文: P2: 設計SO（Codex の1レーン）と採否"
+  - subject: "道具の障害のレーンは「返った」と「読めた」を分けて見る"
+    verdict: not-required
+    ref: "本文: GATE 4: PR-1 の実装SO（2026-11-13）"
+  - subject: "input_tokens は cached を含む"
+    verdict: not-required
+    ref: "本文: GATE 4: PR-2 の実装SO（2026-11-13）"
+  - subject: "起動の直後の確認の画面に最初の1行を流さない（更新の確認）"
+    verdict: not-required
+    ref: "本文: GATE 4: PR-2 の実装SO（2026-11-13）"
+  - subject: "engine の約束ごとを AGENTS.md でなく起こす1行で持ち込む（Q112）"
+    verdict: required
+    ref: "本文: GATE 4: PR-2 の実装SO（2026-11-13）"
+  - subject: "実機の確かめは、モデルが普段どおりに打つ形で行う"
+    verdict: not-required
+    ref: "本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）"
+  - subject: "tmux の宛先が空だといまのペインを指す"
+    verdict: required
+    ref: "本文: 確かめの5点と H10（Q118・2026-11-13）"
+  - subject: "Codex の -c の鍵の形"
+    verdict: required
+    ref: "本文: 確かめの5点と H10（Q118・2026-11-13）"
+  - subject: "権限を起こす1行で渡し、規則は oe の1行だけ（H10・Q118）"
+    verdict: required
+    ref: "本文: 確かめの5点と H10（Q118・2026-11-13）"
+  - subject: "フォルダの信頼の確認に条件つきで Enter を送る（H8・Q113）"
+    verdict: required
+    ref: "本文: H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）"
 ---
 
 # #562 Codex CLI を、統括の子として tmux のペインで対話的に動かす
@@ -178,3 +215,71 @@ owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し
 子の報告の1行が統括に届き、`0094ed0 chore: add hello.txt` ができた（統括の観測 `.oe/check2-run2-observation.md`）。M-1 は写し 0・承認の画面 0・`git push` と `gh` 0。M-2 は受領 1・hook の sidecar 1・床 1 で、PR の `oe tree` が子の行に `gpt-6.1-sol 3%` を出した。
 
 子の会話の記録（使い捨ての `CODEX_HOME` の `rollout-2026-11-13T22-47-58-…jsonl`）では、子は `printf … > hello.txt`・`git add hello.txt`・`git commit -m 'chore: add hello.txt'`・`git log --oneline -1` を1つのスクリプトにして打ち、exit 0 だった。規則は `oe` の1行だけなので、この git は sandbox の中で走り、`--add-dir` で渡した `.git` に書けた（実機の確かめは `writable_roots` だったので、`--add-dir` の効きはここで初めて確かめた）。`oe send --to-parent` は単独のコマンドとして打たれ、`sent to %718（lease … generation 3）` で返った。子の `oe` は `~/bin/oe`（master）なので入口の `CODEX_SANDBOX` の検知は動いていない。単独で打ったのが決まりの文の1文によるものかは、この1回からは言えない（1回目は書面だけで、決まりの文にこの1文は無かった）。
+
+## closure
+
+tier: heavy（方針の転回が2回あった〔H8・H10〕・意図して起動した外部レビュー〔設計SO・実装SO〕・選択肢を比べて棄却した設計判断・decision と knowledge への昇格がある）。
+
+### 事実・失敗
+
+- 版の更新の事故: resume の起動の直後の更新の確認に送った1行の Enter が「Update now」を選び、owner の Codex が 0.167.1 から 0.167.2 に上がった。`本文: I1: 実機の確かめ（2026-11-13 03:24〜03:46）`
+- 0.167.2 で Codex の道具が `timed out negotiating with the code-mode host` で止まり、実装SO の Codex のレーンが2回とも判定なしになった（統括の Q114 は取り下げ・原因は未確定）。`本文: GATE 4: PR-1 の実装SO（2026-11-13）`
+- DJ-6 の context% の式が cached を二重に数えていて、設計SO と PR-1 の実装SO を通り抜け、PR-2 の実装SO で見つかった。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
+- 規則で外に出す設計（DJ-3）は、I1 の C4 で単独のコマンドの形だけを測って根拠にしていた。CHECK-2 の1回目で、子がつないで打った `oe send` が sandbox の中で走って届かず、`git add` も通らないと分かり、H10 で設計を変えた。試しの書面の commit の文が hub の hook に止められたのは子の書き手の誤り。`本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）`
+- I1 で「`-c` ではフォルダの信頼を渡せない」と結論したのは、鍵の形の誤りだった（引用符が鍵に残る）。その結論の上で H1・H8 の Enter を送る案が組まれた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- 確かめのスクリプトの空の変数で `tmux kill-pane -t ""` を打ち、統括のペインと自分のペインを閉じた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- master の engine の拍動の照合に時刻の競合がある（走査の初めに取った now より新しい拍動を捨てる）。CHECK-2 の1回目で子が受け取った rc 1 はこれだった。`本文なし: 確かめの報告 .oe/report-562-sandbox-verify.md の 5 に書き、episode の本文には書いていなかったので、ここで要点を書き起こした（trace で [ 1794563928 -le 1794563925 ] → continue）`
+
+### 決定と根拠
+
+- 権限と engine の約束ごとの持ち込み方（H10・Q112・Q113）は decision に昇格した: `projects/orchestration-engine/docs/decisions/2026-11-13-decision-562-codex-child-launch.md`。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- PR を2つに分けた（PR-1 engine・PR-2 Codex の配布物・Q109）。`本文: GATE 3: 承認（2026-11-13 03:18）`
+
+### わかったこと
+
+- Codex は、つないだコマンドのすべての部分が allow の規則に当たるときだけ sandbox の外で走らせ、モデルは普段からコマンドをつなぐ。`本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）`
+- sandbox の中では `ps` が起動できず、`pgrep` も一覧を取れない。`--add-dir` で本体の `.git` と gitdir を足せば `git add`・`git commit` が sandbox の中で通る。`本文: 確かめの5点と H10（Q118・2026-11-13）`・`本文: CHECK-2 の2回目（2026-11-13 22:48・統括 gen25 が起こした）`
+
+### 蒸留シグナル
+
+- decision: 上の1件（決定1〜3）。
+- knowledge: 2件を収穫した。`01M7AJWRFGR2KDN87B7YDQ787V`（tmux の宛先が空だといまのペインを指す・guard-candidate）、`01M7AJWRG7H6QBDC7V45VMJEE0`（Codex の `-c` の鍵は `.` で単純に分けられる）。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- skill / rule: なし（engine の手順は `delegate-task` と bin/README に入れた）。
+
+### 昇格の判定
+
+frontmatter の `promotion` に1件ずつ置いた。理由は次のとおり。
+
+- hook の環境は走らせるプロセスの写し（daemon を介すとペインがずれる）: not-required。DJ-2 と `lib/agent.sh` の `--no-daemon` の注記に着地し、Codex の正本（ソース）を読めば決まる確認の話である。`本文: P1: 参照の読みと、一次情報での確かめ直し`
+- `PostModelRequest` の `token_usage` は要求ごと・記録の合計は累積: not-required。`oe-heartbeat-hook.sh` の注記と検査（T-9）が正本である。`本文: P2: 設計SO（Codex の1レーン）と採否`
+- 道具の障害のレーンは「返った」と「読めた」を分けて見る: not-required。so-compare のスキルの「Codex の道具の障害」節に着地済み。`本文: GATE 4: PR-1 の実装SO（2026-11-13）`
+- `input_tokens` は cached を含む: not-required。hook の式と検査が正本で、実物を見れば決まる確認の話である。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
+- 起動の直後の確認の画面に最初の1行を流さない（更新の確認）: not-required。`-c check_for_update_on_startup=false` が engine の1行に入った。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
+- engine の約束ごとを `AGENTS.md` でなく起こす1行で持ち込む（Q112）: required。decision の決定2 として実行した。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
+- 実機の確かめは、モデルが普段どおりに打つ形で行う: not-required。既存の knowledge `01KZVHE0KFDPXMY6EED80RN9ZR`（測ったのは鎖の途中まで）に同じ教訓が着地済みで、観測を `externally_verified` で足した。`本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）`
+- tmux の宛先が空だといまのペインを指す: required。knowledge に収穫した。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- Codex の `-c` の鍵の形: required。knowledge に収穫した。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- 権限を起こす1行で渡し、規則は `oe` の1行だけ（H10・Q118）: required。decision の決定1 として実行した（印は付けていなかった・closure で拾った）。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- フォルダの信頼の確認に条件つきで Enter を送る（H8・Q113）: required。decision の決定3 として実行した。`本文: H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）`
+
+### 観測の書き戻し
+
+注入された5件（`01M6XN85N408CMMERA12QR1C3F`・`01M57SY06E1870RP6NQEXEF532`・`01KZKWJM1KTAFN22XK0WP0F96J`・`01KZVHE0KFDPXMY6EED80RN9ZR`・`01KYMRE1NC7XX6N66RQ0MGGHF1`）に1レコードずつ足した（followed 3・externally_verified 1・no_opportunity 1）。`本文: negative knowledge の採用`
+
+### 残課題と行き先
+
+- master の engine の拍動の照合の時刻の競合: 統括へ（起票の判断）。#562 の変更ではなく `lib/heartbeat-resolve.sh` の既存の不具合である。
+- master の `oe send` が、event bus への書き込みに失敗しても「delivery_held として残しました」と出す: 統括へ（起票の判断）。
+- 入口の `CODEX_SANDBOX` の検知と決まりの文の1文の通し: マージのあとの CHECK-2（`.oe/runbook-562-check2.md`）で、統括と owner が確かめる。2回目は子の `oe` が master の版だったので見えていない。
+- I1 で未確認のまま残った2点（resume のあとの `CODEX_THREAD_ID` で自分を引けるか・pid の照合）: マージのあとの CHECK-2 で、統括が子に `oe lease bind` と `oe recover` を打たせて確かめる。確かめなければ、`oe recover` を Codex の子で初めて使うときに分かる。
+- PR-2 の Copilot の1ラウンド: PR-1 の着地のあと、PR-2 を ready にしてから（plan の GATE 4 のとおり）。PR-1 の H10 の分への Copilot の再依頼は、owner の明示の指示があるときだけ行う運用なので、ここでは行わない。
+- plan の「やらない」の項目（`oe-selfcheck` と `oe-kick` の Codex 対応・どの作業を Codex の子に任せるか・子の報告をホスト側で配る案）: 追わない。必要になったら起票する。報告を配る案は #549 の材料として plan の DJ-3 に残っている。
+- hook の信頼を `-c` の値の形で渡す形は試していない: 追わない（engine は hook の信頼を肩代わりしない）。
+
+### status
+
+stable。達成度: 達成（Codex の子が人の写しなしに commit と報告まで通った・CHECK-2 の2回目）。
+
+### 形式メモ
+
+チャネル骨格で、失敗（版の更新・`kill-pane`）と決定（H10）を分けて拾えた。印の無かった判断（H10・H8）は closure で拾った。皮（KPT）は使っていない。摩擦は、印の数が多く、1件ずつの判定に時間がかかったこと。
