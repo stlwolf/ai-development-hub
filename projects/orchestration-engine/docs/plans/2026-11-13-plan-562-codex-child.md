@@ -112,6 +112,8 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 ### DJ-3 子の Codex を起こすときの承認のモードの既定（owner に聞く・Q1）
 
+（2026-11-13 に H10 で置き換えた。規則は `oe` の1行だけにし、git と状態の置き場と tmux は起こす1行で渡す。下の「ゲート3 のあとの変更」の H10 を見る。）
+
 - 推奨: **`--approve-for-me` を既定にし、engine の verb と git の commit を実行ポリシーの `allow` の規則で sandbox の外に出す。** 規則は hub が `canonical/codex/rules/oe-child.rules` として持ち、`sync-codex.sh` が `~/.codex/rules/oe-child.rules` に**通常のファイルとして写す**（symlink は読まれない。hook のスクリプトと同じく内容を比べて更新する）。中身は `prefix_rule(pattern=["oe"], decision="allow")` と `prefix_rule(pattern=["git", "commit"], decision="allow")` の2行にとどめる。
 - **この規則は owner が自分で開く Codex にも効く。** 実行ポリシーの規則は user 層（と信頼したプロジェクトの層）にしか置けず、子だけに効く置き場は無い。`oe` と `git commit` は owner の Codex でも承認なしで走ることを、owner に見せて決めてもらう（Q1 の「何を決めるか」に書く）。
 - C4 の結果: `oe send`・`git commit` は承認の画面に止まらずに通った。規則の無いコマンドが sandbox の中で失敗したとき（`curl`・`tmux`）、モデルは sandbox の外で走らせる要求を出さず、失敗をそのまま報告した（auto_review は呼ばれなかった）。つまり `git push`・`gh` は「レビュアーが裁く」より「失敗してモデルに返る」ほうが起きやすい。子が PR を作るとき、push は統括が子の画面で承認する代わりに、子が失敗を報告したら統括が自分で push する運びになりうる。規則に足すかは実機で1回回したあとに owner が決める（follow-up・変わらず）。
@@ -436,6 +438,31 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 実装: `lib/agent.sh` の `oe_agent_codex_main_worktree`（`git rev-parse --git-common-dir` の親）と `oe_agent_codex_trusted`（`[projects."<path>"]` の `trust_level = "trusted"` を awk で読む）。`bin/oe-delegate` は Codex の子を起こして生存を確かめたあと、画面を `capture-pane` で読み、確認の文言があれば信頼済みのときだけ Enter を送って `OE_DELEGATE_TRUST_WAIT_SEC`（既定 2 秒）待ち、確認が消えたら最初の1行を送る。消えない・信頼されていない・config.toml を読めない・画面を読めない、のどれかなら exit 4 で止まる（ペインは残す。案内は stderr）。claude の子では画面を読まない（A-1）。
 - 検査: `tests/test_oe_delegate.sh` [A11]（信頼済みで Enter → 消えれば1行・消えなければ止まる／信頼されていない／config.toml が読めない／画面が読めない／確認が無い／claude は読まない）。
 - 8項目: step・ゲート・終端・受入は変わらない。要件は owner の決定で1つ増えた（変更・再承認済み）。範囲内。
+
+### H9（補正・2026-11-13・CHECK-2 の1回目）: hooks の README の信頼の手順に、起動の画面の「2. Trust all and continue」を足す
+
+- 出どころ: CHECK-2 の1回目で、0.167.2 の起動の直後の画面が「1. Review hooks / 2. Trust all and continue / 3. Continue without trusting」だった（統括の観測）。README は「`/hooks` で `t`」とだけ書いていた。
+- 直し: PR-2 の `canonical/hooks/README.md` の Codex の信頼の節に、起動の画面の 2 で済むことを足す。実機の文言に合わせる訂正で、新しい義務は無い。
+- 8項目: 変わらない。
+
+### H10（変更・再承認済み・2026-11-13・Q118・承認の記録の entry 4）: 権限は起こす1行で渡し、規則は `oe` の1行だけにする（DJ-3 を置き換える）
+
+- 出どころ: CHECK-2 の1回目で、子が `mkdir` とつないで打った `oe send` が sandbox の中で走って届かなかった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。`git add` は `.git` が sandbox の中で読み取り専用なので必ず失敗した。統括が Codex の権限の仕組みを Codex に調べさせ、子が実機で5点を確かめた（`.oe/report-562-sandbox-verify.md`）。owner は Q115〜Q117 を取り下げた Q118 で推奨どおりと答えた。
+- owner の決定:
+  - git の書き込みと状態の置き場と tmux のソケットは、engine が子を起こす1行で渡す（そのセッションにだけ効く・owner の設定に書かない）。
+  - allow の規則は `oe` の1行だけにする。`git commit` の規則はやめ、`git add` も足さない。`git push` と `gh` は開かない（子は commit まで）。
+  - `oe` がほかのコマンドとつないで打たれたときに単独で打ち直すと返す検知（`CODEX_SANDBOX`）を入れ、決まりの文に1文足す。`--to-parent` は sandbox の中で `ps` が動かず、権限を足しても届かないため（確かめの 5）。
+  - フォルダの信頼は `-c` で渡さない（owner が本体のリポジトリを信頼する）。
+- 実装（PR-1）:
+  - `lib/agent.sh` に `oe_agent_codex_sandbox_args <workspace>` を足す。起こす前に、本体の `.git`（`git rev-parse --git-common-dir`）・worktree の gitdir（`--git-dir`。本体と同じなら1つ）・状態の置き場（`~/.claude/state`）を実体のパス（`pwd -P`）で解決して `--add-dir` で渡す。tmux のソケットは `tmux display-message -p '#{socket_path}'` を実体のパスに直し、`-c sandbox_workspace_write.network_access=true`・`-c features.network_proxy.enabled=true`・`-c 'features.network_proxy.unix_sockets={"<ソケット>"="allow"}'` の3つで渡す（外への通信は閉じたまま・確かめの 3）。git でない workspace では git の分を、tmux の外では tmux の分を足さない。
+  - 書ける場所の渡し方は `-c sandbox_workspace_write.writable_roots` でなく `--add-dir` にする。`writable_roots` は owner の設定が名前付きの権限のプロファイルを選んでいると足されないが、`--add-dir` は必ず足される（`core/src/config/mod.rs:3762-3788`）。実機の確かめは `writable_roots` で行い（確かめの 1・2）、ソースでは両方が同じ並びに入るので、`--add-dir` での通しは CHECK-2 の2回目で見る。
+  - `bin/oe` の入口で、`CODEX_SANDBOX` が空でなければ何もせずに exit 2 で止まり、「`oe` で始まる1つのコマンドとして、ほかのコマンドとつながずに打ち直す」と stderr に出す。
+  - 決まりの文（`OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS`）に「`oe` は、ほかのコマンドとつながず、それだけで1つのコマンドとして打つ。」を足す。
+  - 検査: `test_agent.sh` に sandbox の引数（普通のリポジトリ・worktree・git でない・tmux の外）、`oe` の入口の検知の検査を足す。`test_oe_delegate.sh` は Codex の1行に `--add-dir` と `-c` が並ぶことを見る。
+- 実装（PR-2）: `canonical/codex/rules/oe-child.rules` から `git commit` の行を外し、`oe` の1行だけにする。hooks の README と `sync-codex.sh` の説明と `test_codex_dist.sh` を合わせる。
+- H8 の Enter を送る分岐は縮めない。owner が本体のリポジトリを信頼していれば確認は出ない（確かめの 4 の T3）ので、この分岐はほとんど通らないが、縮めると owner の Q113 の答えを変えることになる（変更）。迷ったら残す、の指示に従う。
+- 置き換える箇所: DJ-3 の推奨の規則2行と「`allow` は sandbox の外で走るので、tmux のソケットにつなげない問題も消える」の理由、7か所の対応表の「起動のコマンド」の行、確定版の項目との対応の「`oe send` と git commit を承認なしに打てる規則」の行、GATE 3 の答えの Q1（Q106）の行。承認済みの節は書き換えず、この H10 が上書きする。
+- 8項目: step 集合・ゲート・終端は変わらない。要件は変わる（規則2行 → 1行・起動の1行に権限を足す・検知を足す）。受入は「子が承認の画面で止まらずに `oe send` と `git commit` を打てる」の確かめ方が変わる（規則でなく起動の権限で）。設計判断 DJ-3 の結論が変わる。owner の再承認済み（entry 4）。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 
