@@ -1,11 +1,12 @@
-# oe-child.rules — engine が起こす Codex の子（oe delegate --agent codex）のための実行ポリシーの規則（#562 DJ-3）。
+# oe-child.rules — engine が起こす Codex の子（oe delegate --agent codex）のための実行ポリシーの規則（#562 の H10）。
 #
-# `allow` は「承認なしで sandbox の外で走らせる」。子が親へ報告を返す `oe send` は tmux のソケットに
-# つなぐので sandbox の中では失敗し、`git commit` は workspace の中で済むが承認の要求を出さないために置く。
+# `allow` は「承認なしで sandbox の外で走らせる」。子が親へ報告を返す `oe send --to-parent` は、親の本人確認に
+# ps を使い、ps は Codex の sandbox の中では起動できないので、`oe` だけを外に出す。
+# git の書き込み・engine の状態の置き場・tmux のソケットは規則でなく、engine が子を起こす1行でそのセッションにだけ
+# 渡す（`oe_agent_codex_sandbox_args`）。`git push` と `gh` は入れない（子は commit まで・Q118）。
 # 規則は user 層（~/.codex/rules/）にしか置けず、owner が自分で開く Codex にも効く（Q106・2026-11-13）。
-# `git push` と `gh` は入れない（GitHub 上の変更の操作まで承認なしになるため。足すかは実機で回したあとに owner が決める）。
+# Codex は、つないだコマンドのすべての部分が allow に当たるときだけ外に出すので、`oe` は単独で打つ（つなぐと入口が止まって知らせる）。
 #
 # 配り方: scripts/sync/sync-codex.sh が ~/.codex/rules/oe-child.rules に通常のファイルとして写す（symlink は Codex が読まない）。
 # owner の default.rules には触らない。
 prefix_rule(pattern=["oe"], decision="allow", justification="engine の verb（報告の送信など）は sandbox の外で承認なしに走らせる（#562）")
-prefix_rule(pattern=["git", "commit"], decision="allow", justification="委譲の子の commit を承認の要求に回さない（#562）")

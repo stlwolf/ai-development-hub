@@ -60,7 +60,8 @@ sync_rules "$SRC" "$DST" "rules" >/dev/null 2>&1
 ck "hub に無くなった oe-*.rules は消す" "no" "$([[ -e "$DST/oe-old.rules" ]] && echo yes || echo no)"
 ck "owner の default.rules はそのまま" "yes" "$([[ -f "$DST/default.rules" ]] && echo yes || echo no)"
 ck "symlink の残りは通常のファイルに置き換える" "yes" "$([[ -f "$DST/oe-child.rules" && ! -L "$DST/oe-child.rules" ]] && echo yes || echo no)"
-ck "hub の規則のファイルは oe と git commit の2行" "2" "$(grep -c '^prefix_rule' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"
+ck "hub の規則のファイルは oe の1行だけ（H10）" "1" "$(grep -c '^prefix_rule' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"
+ck "hub の規則に git の行は無い（git は起こす1行で渡す）" "0" "$(grep -c '"git"' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"
 ck "hub の規則に gh と git push は無い" "0" "$(grep -c '"gh"\|"push"' "$REPO_DIR/canonical/codex/rules/oe-child.rules")"
 
 echo "[3] check-codex-guardrails.sh が通る"
