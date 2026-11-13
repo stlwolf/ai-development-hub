@@ -3,7 +3,7 @@ id: "01M78B553R0EF3B63TKBGJKGP6"
 title: "#562 Codex CLI を、統括の子として tmux のペインで対話的に動かす"
 date: 2026-11-13
 type: plan
-status: draft
+status: stable
 so:
   design: weak
   impl: weak
@@ -69,7 +69,7 @@ Codex の行番号は、タグ `rust-v0.167.1`（コミット `0a94398`）の `c
 - `codex resume <UUID か名前>` は `--no-daemon`・`--approve-for-me`・`-s`・`-a`・`--add-dir`・`-C` を受け付ける [verified]（`codex resume --help`）。同じ記録に追記することは 11-11 の実機で「前の依頼を覚えていた・会話の ID も同じ」まで確かめている。記録のファイルに追記されるかは [unverified-summary]（調査のコメントの `[sub]`）。
 - 入力欄の行頭は `›` で、reasoning effort が ultra のときだけ `»` になる [verified]（`tui/src/bottom_pane/chat_composer.rs:4967-4981`・`tui/src/bottom_pane/effort_ignition.rs:105-109`）。作業中の表示は `Working (0s • esc to interrupt)` [verified]（`tui/src/status_indicator_widget.rs:457`）で、作業中の目印の文字列 `esc to interrupt` は Claude と同じである。空の入力欄の補完の文は `Ask Codex to do anything` [verified]（同 `chat_composer.rs:5157`）。
 - `CODEX_HOME` で `~/.codex` の置き場を変えられる [verified]（`core/src/config/mod.rs:999`・`codex --help` の `-p` の説明）。入力の履歴（`history.jsonl`）・SQLite の状態・shell の snapshot も `~/.codex` に書かれる [unverified-summary]（設計SO の指摘16。書き手は `ls ~/.codex` で `history.jsonl`・`*.sqlite`・`shell_snapshots/` があることだけ見た）。
-- 設定の鍵 `developer_instructions` は「`developer` の役割のメッセージとして差し込む指示」で [verified]（`config/src/config_toml.rs:253-256`）、`-c 'developer_instructions="…"'` で起動のときに上書きできる（`-c` は設定の層のいちばん上 `SessionFlags` に入る [verified]（`config/src/state.rs:581`）。値は文字列の上書きで、利用者の `config.toml` に同じ鍵があればその子の中でだけ置き換わる）。turn の文脈は `config.developer_instructions` を持ち [verified]（`core/src/session/mod.rs:959`）、最初の文脈を組むときに developer のメッセージとして描かれる [verified]（同 `4803-4807`）。圧縮のあとの文脈も同じ関数（`build_initial_context_with_world_state`）で組む [verified]（`core/src/compact.rs:91`）ので、圧縮のあとも残る見込みである [unverified-summary]（呼び出しの構造からの読み。実機の確かめ C9）。resume で同じ `-c` を渡したときに効くかは、resume の経路を開いていない [unverified-summary]（統括が Codex に調べさせた答え `.oe/so-562-q112-codex-answer.md` も「引数なしで再開した場合の自動保持は保証しない」と書く。C9）。
+- 設定の鍵 `developer_instructions` は「`developer` の役割のメッセージとして差し込む指示」で [verified]（`config/src/config_toml.rs:253-256`）、`-c 'developer_instructions="…"'` で起動のときに上書きできる（`-c` は設定の層のいちばん上 `SessionFlags` に入る [verified]（`config/src/state.rs:581`）。値は文字列の上書きで、利用者の `config.toml` に同じ鍵があればその子の中でだけ置き換わる）。turn の文脈は `config.developer_instructions` を持ち [verified]（`core/src/session/mod.rs:959`）、最初の文脈を組むときに developer のメッセージとして描かれる [verified]（同 `4803-4807`）。圧縮のあとの文脈も同じ関数（`build_initial_context_with_world_state`）で組む [verified]（`core/src/compact.rs:91`）ので、圧縮のあとも残る見込みである [unverified-summary]（呼び出しの構造からの読み。実機の確かめ C9）。resume で同じ `-c` を渡したときに効くかは、resume の経路を開いていない [unverified-summary]（統括が Codex に調べさせた答え〔作業層〕も「引数なしで再開した場合の自動保持は保証しない」と書いていた。実機の結果は C9）。
 - 既定のモードでは、Codex は選択肢で尋ねる道具を使えない [unverified-summary]（調査のコメントの `[verified]`・`tools/src/tool_config.rs:6-15`。0.167.1 では開き直していない）。問いをファイルに書いて親へ送る運用がそのまま合う。
 - 文中の `$スキル名` を見つけると SKILL.md の本文をそのターンに差し込む [unverified-summary]（調査のコメントの `[verified]`・`core/src/session/turn.rs:1177`）。差し込んだ本文は会話の項目として残る [unverified-summary]（設計SO の指摘14・`core/src/session/turn.rs:1230-1264`。調査のコメントの「効き目がそのターンに限る」は、これと食い違うので採らない）。Codex は `$CODEX_HOME/skills` を user のスキルの置き場として読む [unverified-summary]（設計SO の指摘14・`ext/skills/src/host_roots.rs:104-141`）。hub は `canonical/skills/` を `~/.codex/skills/` に配っている [verified]（`scripts/sync/sync-codex.sh:274`）。
 - 手元の `codex` は native のバイナリ（`/opt/homebrew/Caskroom/codex/0.167.1/bin/codex`）で、プロセスのコマンド名は `codex` になる [verified]（`ls -l $(command -v codex)`）。共有の daemon は 0.167.2 のバイナリで動いていて、CLI と版がずれている [verified]（`ps -axo pid,comm`）。
@@ -370,9 +370,9 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### CHECK-1: T-1〜T-8 と既存の検査を bash 5 と bash 3.2 で回し、shellcheck を通す（PR-1）（完了・2026-11-13・`tests/test_*.sh` 54本 × bash 5.2.37 と 3.2.57 = 108 回がすべて exit 0。shellcheck は変えたスクリプトで master と同じ info のみ）
 
-### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11（完了・ブランチ `feature/#562_codex_dist`・`d80b1d8`・PR #645 draft・PR #644 の上に重ねる）
+### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11（完了・ブランチ `feature/#562_codex_dist`・PR-2 の最初の commit（題「Codex の子のための hook の配線・拍動の hook・実行ポリシーの規則を配る」）・PR #645 draft・PR #644 の上に重ねる）
 
-### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える（完了・2026-11-13。1回目は止まった（書面の commit の文・つないだ `oe` が sandbox の中で走った）→ H10。2回目は PR-1 `edc9236`・PR-2 `ebd64f0` で通った: M-1 は写し 0・承認の画面 0・push と gh 0、M-2 は受領 1・hook の sidecar 1・床 1、`oe tree` に model と context%。子は git を sandbox の中で打って commit `0094ed0` を作り、`oe send --to-parent` を単独で打った。マージ前なので確かめは使い捨ての `CODEX_HOME` と PR の worktree の `oe` で行い、子の `oe` は master の版だった）
+### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える（完了・2026-11-13。1回目は止まった（書面の commit の文・つないだ `oe` が sandbox の中で走った）→ H10。2回目は PR-1 `edc9236`・PR-2 の H10 の commit（題「#562 の規則を oe の1行にし…（H9・H10）」）で通った: M-1 は写し 0・承認の画面 0・push と gh 0、M-2 は受領 1・hook の sidecar 1・床 1、`oe tree` に model と context%。子は git を sandbox の中で打って commit `0094ed0` を作り、`oe send --to-parent` を単独で打った。マージ前なので確かめは使い捨ての `CODEX_HOME` と PR の worktree の `oe` で行い、子の `oe` は master の版だった）
 
 ### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）（PR-1 の SO は完了・H5。Codex のレーンは道具の障害で判定なし・Cursor のレーンで `survived`。PR-1 の Copilot の1ラウンドは完了・H6・3件に返信済み。PR-2 の SO は完了・H7・Claude のレーンで `refuted` → must 2 を直した。PR-2 の Copilot は PR-1 の着地のあと ready にしてから）
 
@@ -424,7 +424,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 中身: (1) 権限のモードの判定が `-c` / `--config` の `sandbox_mode`・`approval_policy` も読み、`danger-full-access` は指定の形によらず elevated（承認ダイジェスト必須）にする。(2) 拍動の床に `floor: true` を付け、`oe-tree`・`oe-threads` の表示と `oe_hb_session_for_pane` の逆引きからは床を外す（同じペインの拍動が2件に数えられて model / context% が隠れる・床が会話の ID の代わりに返る、を防ぐ）。lease からペインを引く `oe_hb_pane_for` は床を使う。(3) lease の binding・claim・advance は記録に残す `comm` を basename に正規化してから検査する（schema と `validate-lease` の完全一致に合わせる）。
 - 8項目: step・要件・ゲート・終端・受入・owner の決定・範囲は変わらない。(1) は elevated の判定の抜けを塞ぐ細部の訂正、(2) は DJ-6 の床の設計を読む側に通す訂正、(3) は DJ-5 の検査の整合。新しい対応範囲ではない。
 
-### H7（補正・2026-11-13・GATE 4・PR-2）: 実装SO の指摘（must 2・should 9）を直した（`d5751ad`）
+### H7（補正・2026-11-13・GATE 4・PR-2）: 実装SO の指摘（must 2・should 9）を直した（PR-2 の GATE 4 の commit（題「実装SO の指摘を直す（#562 GATE 4・PR-2）」））
 
 - 出どころ: PR-2 の実装SO。Codex のレーンは道具の障害、Cursor のレーンは時間切れ（1350秒・空）で、Claude のレーン（`so-compare --claude-only --claude-model opus --claude-effort high`・`claude-opus-5-5`・543秒）で回した。書き手と同じ会社のモデルなので、弱い SO として扱う。判定は `refuted`（must 2）。
 - 中身: (must 1) context% の分子が cached のトークンを二重に数えていた（`input_tokens` は cached を含む）。`total_tokens`（Codex の `tokens_in_context_window`・`protocol/src/protocol.rs:2679-2681`）を使い、無ければ `input + output`。DJ-6 の式も直す。(must 2) 床と hook の sidecar が同じペインに並び `oe-tree`・`oe-threads` が ambiguous で model / context% を隠す。PR-1 の H6（`floor: true`・読む側で床を外す）で直した。(should) 取り消した要求（`token_usage: null`）で 0 に戻さず前の値を残す。記録を1行ずつ読み、書きかけの最終行で窓を取り損ねない。`PostModelRequest` の配線を `async: true`・`timeout: 10` にして道具の実行を待たせない。hub に無くなった `oe-*.rules` を写し先から消す。README の hash の元に `timeout`・`async` なども入ると書く。検査の関数の切り出しを `sync_rules` だけにし、`set -euo pipefail` の下でも通ることを見る。
@@ -447,7 +447,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### H10（変更・再承認済み・2026-11-13・Q118・承認の記録の entry 4）: 権限は起こす1行で渡し、規則は `oe` の1行だけにする（DJ-3 を置き換える）
 
-- 出どころ: CHECK-2 の1回目で、子が `mkdir` とつないで打った `oe send` が sandbox の中で走って届かなかった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。`git add` は `.git` が sandbox の中で読み取り専用なので必ず失敗した。統括が Codex の権限の仕組みを Codex に調べさせ、子が実機で5点を確かめた（`.oe/report-562-sandbox-verify.md`）。owner は Q115〜Q117 を取り下げた Q118 で推奨どおりと答えた。
+- 出どころ: CHECK-2 の1回目で、子が `mkdir` とつないで打った `oe send` が sandbox の中で走って届かなかった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。`git add` は `.git` が sandbox の中で読み取り専用なので必ず失敗した。統括が Codex の権限の仕組みを Codex に調べさせ、子が実機で5点を確かめた（打ったコマンドと出力の要点は episode の「確かめの5点と H10（Q118・2026-11-13）」の節）。owner は Q115〜Q117 を取り下げた Q118 で推奨どおりと答えた。
 - owner の決定:
   - git の書き込みと状態の置き場と tmux のソケットは、engine が子を起こす1行で渡す（そのセッションにだけ効く・owner の設定に書かない）。
   - allow の規則は `oe` の1行だけにする。`git commit` の規則はやめ、`git add` も足さない。`git push` と `gh` は開かない（子は commit まで）。

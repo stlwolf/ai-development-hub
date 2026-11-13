@@ -155,7 +155,7 @@ owner が6つの問いすべてに答え（承認のモード・lease の検査�
 
 CHECK-1（`38dabdb`）: `tests/test_*.sh` 54本を bash 5.2.37 と `/bin/bash` 3.2.57 で回し、108回がすべて exit 0。
 
-### I6: Codex の配布物（PR-2・ブランチ `feature/#562_codex_dist`・`d80b1d8`・PR #645）
+### I6: Codex の配布物（PR-2・ブランチ `feature/#562_codex_dist`・PR #645）
 
 PR-1 の上に重ねた。`codex.hooks.json` に `UserPromptSubmit`（取り込み印と拍動）と `PostModelRequest`（拍動）を配線し、`oe-heartbeat-hook.sh` を新しく書いた（`PostModelRequest` の `token_usage` と記録の `model_context_window` から context%・標準出力に何も出さない・記録は末尾から上限付き）。規則 `canonical/codex/rules/oe-child.rules`（`oe`・`git commit`）は `sync-codex.sh` の `sync_rules` が通常のファイルとして写す（symlink は Codex が読まないため・設計SO の指摘1）。`AGENTS.md` は「委譲の子は書面の固定節に従う」の節だけ。hooks の README に信頼の登録と登録し直しの条件を書いた。検査は `test_heartbeat_hook.sh`（23）・`test_codex_dist.sh`（17）・`test_prompt_receipt.sh` の [7b] で、bash 5 と 3.2 で exit 0。CHECK-2（sync を一時ディレクトリで確かめ、owner が `/hooks` で登録してから1回回す）は owner の手が要るので、統括に時期を聞く。
 
@@ -171,7 +171,7 @@ PR #644 を ready にして Copilot に依頼し、3件の指摘が付いた（p
 
 ### GATE 4: PR-2 の実装SO（2026-11-13）
 
-Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長の再試行を含む）で空のまま時間切れだった。弱い SO の「0 はなし」の決まりで、Claude のレーン（`--claude-only --claude-model opus --claude-effort high`・`claude-opus-5-5`・543秒）で回した。書き手と同じ会社のモデルなので、別の会社のレーンより弱い裏付けとして扱う。判定は `refuted`（must 2・should 9）。must の1つ目は context% の分子で cached のトークンを二重に数えていたことで、Codex の `TokenUsage` では `input_tokens` が cached を含む（`protocol/src/protocol.rs:2670-2681`・レビュアーが hook を実際に走らせて 25.25% のところ 47.8% を再現した）。plan の DJ-6 の式が最初から誤っていて、設計SO も実装SO（PR-1）も通り抜けた。2つ目は床と hook の sidecar が同じペインに並ぶことで、PR-1 の Copilot の指摘（H6）と同じ欠陥を別のレーンが独立に指した。should 9件は、取り消した要求で 0 に戻さない・記録を1行ずつ読む・`PostModelRequest` を async と timeout 付きで配線する・古い規則の掃除・README・検査の切り出し、と、owner に聞く2件（規則 `oe` の広さ・`git commit` と commit の hook）。11件すべてを採り、2件は問い `.oe/question-562-2.json` にした（plan の H7・`d5751ad`）。
+Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長の再試行を含む）で空のまま時間切れだった。弱い SO の「0 はなし」の決まりで、Claude のレーン（`--claude-only --claude-model opus --claude-effort high`・`claude-opus-5-5`・543秒）で回した。書き手と同じ会社のモデルなので、別の会社のレーンより弱い裏付けとして扱う。判定は `refuted`（must 2・should 9）。must の1つ目は context% の分子で cached のトークンを二重に数えていたことで、Codex の `TokenUsage` では `input_tokens` が cached を含む（`protocol/src/protocol.rs:2670-2681`・レビュアーが hook を実際に走らせて 25.25% のところ 47.8% を再現した）。plan の DJ-6 の式が最初から誤っていて、設計SO も実装SO（PR-1）も通り抜けた。2つ目は床と hook の sidecar が同じペインに並ぶことで、PR-1 の Copilot の指摘（H6）と同じ欠陥を別のレーンが独立に指した。should 9件は、取り消した要求で 0 に戻さない・記録を1行ずつ読む・`PostModelRequest` を async と timeout 付きで配線する・古い規則の掃除・README・検査の切り出し、と、owner に聞く2件（規則 `oe` の広さ・`git commit` と commit の hook）。11件すべてを採り、2件は問い `.oe/question-562-2.json` にした（plan の H7・PR-2 の GATE 4 の commit（題「実装SO の指摘を直す（#562 GATE 4・PR-2）」））。
 
 昇格の印: Codex の `token_usage.input_tokens` は cached のトークンを含む。文脈の使用量は `total_tokens`（`tokens_in_context_window`）で、`input + cached + output` と足すと cache の当たりが多い長いセッションほど大きく見積もる。
 
@@ -189,7 +189,7 @@ Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長�
 子の報告は統括に届かず、2か所で止まった。受領の印はコマンドに写されず、`prompt_received` 1・hook の sidecar 1・床 1 は取れた。承認の画面は出なかった。
 
 - 試しの書面の commit の文 `add hello.txt` を hub の `cc-lint.sh`（PreToolUse）が止めた。書面を書いた子の誤りで、hook は Codex の子のコマンドにも効いた。
-- 子は `mkdir -p .oe`・ヒアドキュメント・`oe send --to-parent` を1つのスクリプトにして打ち、`oe send` は exit 5（宛先の本人を確かめられない）で、event bus への書き込みは `Operation not permitted` だった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。sandbox の中では tmux のソケットにつなげず、`~/.claude/state` に書けない（`codex sandbox -c 'sandbox_mode="workspace-write"' -- …` で確かめた）。統括の lease は sandbox の外では `%700` に引け、中では引けない。
+- 子は `mkdir -p .oe`・ヒアドキュメント・`oe send --to-parent` を1つのスクリプトにして打ち、`oe send` は exit 5（宛先の本人を確かめられない）で、event bus への書き込みは `Operation not permitted` だった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。sandbox の中では tmux のソケットにつなげず、`~/.claude/state` に書けない（`codex sandbox -c 'sandbox_mode="workspace-write"' -- …` で確かめた）。統括の lease は sandbox の外では統括のペインに引け、中では引けない。
 - 調べる途中で、`git add` も sandbox の中で必ず失敗することが分かった。workspace-write の sandbox は `.git` を読み取り専用にし（`protocol/src/permissions.rs:860`）、worktree の index は本体の `.git/worktrees/` にある。規則は `oe` と `git commit` の2行なので、子は新しいファイルを commit できない。
 - 起動の直後の hook の確認の画面は、0.167.2 では「1. Review hooks / 2. Trust all and continue / 3. Continue without trusting」で、手順書の「`/hooks` で `t`」と違った。
 - `~/bin/oe` は master の engine で、床を知らないので `oe tree` が子の行を `ambiguous(2)` と出した。子のコマンドの `oe` も master の版だった（マージ前の確かめの限界）。
@@ -200,11 +200,19 @@ Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長�
 
 ### 確かめの5点と H10（Q118・2026-11-13）
 
-統括が Codex の権限の仕組みを Codex に調べさせ、その主張のうち5点を子が `codex sandbox` と使い捨ての `CODEX_HOME` で確かめた（`.oe/report-562-sandbox-verify.md`）。書ける場所（`writable_roots`）・`.git` の保護（本体の `.git` と gitdir の両方を明示すると外れる）・tmux のソケット（`network_access`・プロキシ・`unix_sockets` の3つで、外への通信を閉じたまま開く）は主張どおりだった。フォルダの信頼の `-c 'projects."<path>".trust_level=…'` は効かず、値の形 `-c 'projects={"<path>"={…}}'` なら効いた。`-c` の鍵は `.` で単純に分けられ（`config/src/overrides.rs:22`）、引用符が鍵に残るためで、I1 で「`-c` では出さずに済まない」と結論したのはこの形の誤りだった。worktree は本体のリポジトリの鍵でも確認が出なかった。`oe send --to-parent` は、権限を足しても sandbox の中では通らない（`ps` が起動できず、`pgrep` も一覧を取れない）。
+統括が Codex の権限の仕組みを Codex に調べさせ、その主張のうち5点を子が `codex sandbox` と使い捨ての `CODEX_HOME` で確かめた。打ったコマンドと出力の要点は次のとおり（版 0.167.2・`codex sandbox -c 'sandbox_mode="workspace-write"' -- …`・使い捨ての `CODEX_HOME` と worktree）。
+
+- 状態の置き場: 既定では `~/.claude/state` への書き込みが `Operation not permitted`、`-c 'sandbox_workspace_write.writable_roots=["<state>"]'` を足すと書けた。
+- worktree の git: 既定では `git add` が `…/.git/worktrees/<名前>/index.lock: Operation not permitted`。gitdir だけを足すと `unable to create temporary file`、本体の `.git` だけでは index.lock で失敗し、両方を足すと `git add` と `git commit` が rc 0。
+- tmux: 既定では `error connecting to /private/tmp/tmux-501/default (Operation not permitted)`。`network_access=true` だけでつながるが `curl https://example.com` が 200（外へ全部開く）。`network_access=true`・`network_proxy.enabled=true`・`unix_sockets` の3つでつながり、`curl` は `CONNECT tunnel failed, response 403`。
+- フォルダの信頼: `-c 'projects."<path>".trust_level="trusted"'` では確認が出た。`-c 'projects={"<path>"={trust_level="trusted"}}'` では出ず、worktree は鍵が本体のリポジトリでも worktree でも出なかった。鍵が `/tmp/…` で cwd が実体の `/private/tmp/…` のときは出た。
+- `oe`: 全部を足した sandbox の中で、生のペイン番号への `oe send` は `mkdir` とつないでも届いた。`ps` は `execvp() of 'ps' failed: Operation not permitted`、`pgrep` は `Cannot get process list` で、`oe lease resolve`（`--to-parent` の経路）は引けなかった。
+
+確かめの全文は作業層にあり、要点を上に書いた。書ける場所（`writable_roots`）・`.git` の保護（本体の `.git` と gitdir の両方を明示すると外れる）・tmux のソケット（`network_access`・プロキシ・`unix_sockets` の3つで、外への通信を閉じたまま開く）は主張どおりだった。フォルダの信頼の `-c 'projects."<path>".trust_level=…'` は効かず、値の形 `-c 'projects={"<path>"={…}}'` なら効いた。`-c` の鍵は `.` で単純に分けられ（`config/src/overrides.rs:22`）、引用符が鍵に残るためで、I1 で「`-c` では出さずに済まない」と結論したのはこの形の誤りだった。worktree は本体のリポジトリの鍵でも確認が出なかった。`oe send --to-parent` は、権限を足しても sandbox の中では通らない（`ps` が起動できず、`pgrep` も一覧を取れない）。
 
 途中で、試しのスクリプトの `tmux split-window` が `no space for new pane` で失敗し、空の変数で打った `tmux kill-pane -t ""` が統括のペインと子のペインを閉じた。`oe recover` で張り直し、以後は試しのペインを別のウィンドウに作り、宛先が空・自分・統括でないことを確かめてから閉じた。
 
-owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し、規則は `oe` の1行だけ」と決めた（plan の H10・承認の記録の entry 4）。PR-1 `edc9236`・PR-2 `ebd64f0`。
+owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し、規則は `oe` の1行だけ」と決めた（plan の H10・承認の記録の entry 4）。PR-1 `edc9236`・PR-2 の H10 の commit（題「#562 の規則を oe の1行にし…（H9・H10）」）。
 
 昇格の印: tmux の宛先を変数で受けるコマンド（`kill-pane`・`send-keys`・`capture-pane`）は、変数が空だと「いまのペイン」を指す。試しのペインを作るコマンドが失敗したときに、作ったつもりのペインでなく自分や統括のペインを閉じる。宛先が空でないこと・自分と統括でないことを確かめてから打つ。
 
@@ -214,7 +222,7 @@ owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し
 
 子の報告の1行が統括に届き、`0094ed0 chore: add hello.txt` ができた（統括の観測 `.oe/check2-run2-observation.md`）。M-1 は写し 0・承認の画面 0・`git push` と `gh` 0。M-2 は受領 1・hook の sidecar 1・床 1 で、PR の `oe tree` が子の行に `gpt-6.1-sol 3%` を出した。
 
-子の会話の記録（使い捨ての `CODEX_HOME` の `rollout-2026-11-13T22-47-58-…jsonl`）では、子は `printf … > hello.txt`・`git add hello.txt`・`git commit -m 'chore: add hello.txt'`・`git log --oneline -1` を1つのスクリプトにして打ち、exit 0 だった。規則は `oe` の1行だけなので、この git は sandbox の中で走り、`--add-dir` で渡した `.git` に書けた（実機の確かめは `writable_roots` だったので、`--add-dir` の効きはここで初めて確かめた）。`oe send --to-parent` は単独のコマンドとして打たれ、`sent to %718（lease … generation 3）` で返った。子の `oe` は `~/bin/oe`（master）なので入口の `CODEX_SANDBOX` の検知は動いていない。単独で打ったのが決まりの文の1文によるものかは、この1回からは言えない（1回目は書面だけで、決まりの文にこの1文は無かった）。
+子の会話の記録（使い捨ての `CODEX_HOME` の `rollout-2026-11-13T22-47-58-…jsonl`）では、子は `printf … > hello.txt`・`git add hello.txt`・`git commit -m 'chore: add hello.txt'`・`git log --oneline -1` を1つのスクリプトにして打ち、exit 0 だった。規則は `oe` の1行だけなので、この git は sandbox の中で走り、`--add-dir` で渡した `.git` に書けた（実機の確かめは `writable_roots` だったので、`--add-dir` の効きはここで初めて確かめた）。`oe send --to-parent` は単独のコマンドとして打たれ、`sent to <統括のペイン>（lease … generation 3）` で返った。子の `oe` は `~/bin/oe`（master）なので入口の `CODEX_SANDBOX` の検知は動いていない。単独で打ったのが決まりの文の1文によるものかは、この1回からは言えない（1回目は書面だけで、決まりの文にこの1文は無かった）。
 
 ### GATE 4: H10 の実装SO（2026-11-13）
 
