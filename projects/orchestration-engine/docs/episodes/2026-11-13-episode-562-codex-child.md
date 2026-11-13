@@ -142,3 +142,21 @@ Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長�
 
 昇格の印: Codex の対話の画面は、起動の直後に更新の確認の画面を出すことがあり、そこへ送った1行の Enter が「Update now」を選んで `brew upgrade` を走らせる。engine が起こす1行には `-c check_for_update_on_startup=false` を付ける。起動の直後に別の確認（フォルダの信頼・hook の確認）が出ることもあるので、起こしてから最初の1行を送るまでに画面を確かめる口があるとよい（この issue では付けない）。要点は、受領の印の説明を hub の `AGENTS.md` に置くのは「常時の原則」の層で、engine が独立したときは engine 自身が起こしのときに1回だけ伝える（`oe-delegate` が最初の1行に説明を添える）か、engine が配る hook が印のある prompt にだけ `additionalContext` で伝えるかで代えられる、ということである。
 
+
+### H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）
+
+（実装のあと、CHECK-2 の1回目の原因を調べてから追記した。）owner は「もとのリポジトリを Codex で信頼済みのときだけ engine が Enter を1回送る。`config.toml` は読むだけ。信頼されていない・画面を読めないときは最初の1行も送らずに止まる」と決めた（承認の記録の entry 3）。`oe-delegate` は Codex の子を起こしたあと画面を読み、確認の文言があれば `$CODEX_HOME/config.toml` の `[projects."<main の作業ツリー>"]` を読んで分かれる。I1 の昇格の印に書いた「起こしてから最初の1行を送るまでに画面を確かめる口」は、この形でこの issue に入った。
+
+### CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）
+
+子の報告は統括に届かず、2か所で止まった。受領の印はコマンドに写されず、`prompt_received` 1・hook の sidecar 1・床 1 は取れた。承認の画面は出なかった。
+
+- 試しの書面の commit の文 `add hello.txt` を hub の `cc-lint.sh`（PreToolUse）が止めた。書面を書いた子の誤りで、hook は Codex の子のコマンドにも効いた。
+- 子は `mkdir -p .oe`・ヒアドキュメント・`oe send --to-parent` を1つのスクリプトにして打ち、`oe send` は exit 5（宛先の本人を確かめられない）で、event bus への書き込みは `Operation not permitted` だった。Codex は、スクリプトを分けた部分のすべてが allow の規則に当たるときだけ sandbox の外で走らせる（`core/src/exec_policy.rs:466-480`）。sandbox の中では tmux のソケットにつなげず、`~/.claude/state` に書けない（`codex sandbox -c 'sandbox_mode="workspace-write"' -- …` で確かめた）。統括の lease は sandbox の外では `%700` に引け、中では引けない。
+- 調べる途中で、`git add` も sandbox の中で必ず失敗することが分かった。workspace-write の sandbox は `.git` を読み取り専用にし（`protocol/src/permissions.rs:860`）、worktree の index は本体の `.git/worktrees/` にある。規則は `oe` と `git commit` の2行なので、子は新しいファイルを commit できない。
+- 起動の直後の hook の確認の画面は、0.167.2 では「1. Review hooks / 2. Trust all and continue / 3. Continue without trusting」で、手順書の「`/hooks` で `t`」と違った。
+- `~/bin/oe` は master の engine で、床を知らないので `oe tree` が子の行を `ambiguous(2)` と出した。子のコマンドの `oe` も master の版だった（マージ前の確かめの限界）。
+
+直し方は `.oe/report-562-check2-run1.md` に書いた。試しの書面と手順書（作業層）は直し、engine の検知（`CODEX_SANDBOX`）・決まりの文・規則 `git add` の3つは plan の変更なので、問い `.oe/question-562-3.json` で owner に聞く。
+
+昇格の印: I1 の C4 で `oe send` と `git commit` が通ったのは、子に打たせる1行を単独の形で渡したからだった。Codex は自分で複数のコマンドを1つのスクリプトにまとめるので、規則で外に出す設計は、モデルが普段どおりに打つ形で確かめないと抜ける。実機の確かめでは、打つコマンドの形を渡さずに作業だけを渡す。
