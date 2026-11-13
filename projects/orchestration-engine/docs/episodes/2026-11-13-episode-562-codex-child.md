@@ -160,3 +160,21 @@ Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長�
 直し方は `.oe/report-562-check2-run1.md` に書いた。試しの書面と手順書（作業層）は直し、engine の検知（`CODEX_SANDBOX`）・決まりの文・規則 `git add` の3つは plan の変更なので、問い `.oe/question-562-3.json` で owner に聞く。
 
 昇格の印: I1 の C4 で `oe send` と `git commit` が通ったのは、子に打たせる1行を単独の形で渡したからだった。Codex は自分で複数のコマンドを1つのスクリプトにまとめるので、規則で外に出す設計は、モデルが普段どおりに打つ形で確かめないと抜ける。実機の確かめでは、打つコマンドの形を渡さずに作業だけを渡す。
+
+### 確かめの5点と H10（Q118・2026-11-13）
+
+統括が Codex の権限の仕組みを Codex に調べさせ、その主張のうち5点を子が `codex sandbox` と使い捨ての `CODEX_HOME` で確かめた（`.oe/report-562-sandbox-verify.md`）。書ける場所（`writable_roots`）・`.git` の保護（本体の `.git` と gitdir の両方を明示すると外れる）・tmux のソケット（`network_access`・プロキシ・`unix_sockets` の3つで、外への通信を閉じたまま開く）は主張どおりだった。フォルダの信頼の `-c 'projects."<path>".trust_level=…'` は効かず、値の形 `-c 'projects={"<path>"={…}}'` なら効いた。`-c` の鍵は `.` で単純に分けられ（`config/src/overrides.rs:22`）、引用符が鍵に残るためで、I1 で「`-c` では出さずに済まない」と結論したのはこの形の誤りだった。worktree は本体のリポジトリの鍵でも確認が出なかった。`oe send --to-parent` は、権限を足しても sandbox の中では通らない（`ps` が起動できず、`pgrep` も一覧を取れない）。
+
+途中で、試しのスクリプトの `tmux split-window` が `no space for new pane` で失敗し、空の変数で打った `tmux kill-pane -t ""` が統括のペインと子のペインを閉じた。`oe recover` で張り直し、以後は試しのペインを別のウィンドウに作り、宛先が空・自分・統括でないことを確かめてから閉じた。
+
+owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し、規則は `oe` の1行だけ」と決めた（plan の H10・承認の記録の entry 4）。PR-1 `edc9236`・PR-2 `ebd64f0`。
+
+昇格の印: tmux の宛先を変数で受けるコマンド（`kill-pane`・`send-keys`・`capture-pane`）は、変数が空だと「いまのペイン」を指す。試しのペインを作るコマンドが失敗したときに、作ったつもりのペインでなく自分や統括のペインを閉じる。宛先が空でないこと・自分と統括でないことを確かめてから打つ。
+
+昇格の印: Codex の `-c` の鍵は `.` で単純に分けられるので、`projects."<path>"` や `hooks.state."<鍵>"` のように引用符で囲んだ鍵は効かない。表を値として渡す（`-c 'projects={"<path>"={trust_level="trusted"}}'`）。
+
+### CHECK-2 の2回目（2026-11-13 22:48・統括 gen25 が起こした）
+
+子の報告の1行が統括に届き、`0094ed0 chore: add hello.txt` ができた（統括の観測 `.oe/check2-run2-observation.md`）。M-1 は写し 0・承認の画面 0・`git push` と `gh` 0。M-2 は受領 1・hook の sidecar 1・床 1 で、PR の `oe tree` が子の行に `gpt-6.1-sol 3%` を出した。
+
+子の会話の記録（使い捨ての `CODEX_HOME` の `rollout-2026-11-13T22-47-58-…jsonl`）では、子は `printf … > hello.txt`・`git add hello.txt`・`git commit -m 'chore: add hello.txt'`・`git log --oneline -1` を1つのスクリプトにして打ち、exit 0 だった。規則は `oe` の1行だけなので、この git は sandbox の中で走り、`--add-dir` で渡した `.git` に書けた（実機の確かめは `writable_roots` だったので、`--add-dir` の効きはここで初めて確かめた）。`oe send --to-parent` は単独のコマンドとして打たれ、`sent to %718（lease … generation 3）` で返った。子の `oe` は `~/bin/oe`（master）なので入口の `CODEX_SANDBOX` の検知は動いていない。単独で打ったのが決まりの文の1文によるものかは、この1回からは言えない（1回目は書面だけで、決まりの文にこの1文は無かった）。

@@ -372,7 +372,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 
 ### I6: Codex の配布物（PR-2）: `oe-heartbeat-hook.sh`（DJ-6）・`codex.hooks.json` の配線（DJ-7）・`canonical/codex/rules/oe-child.rules` と `sync-codex.sh`（通常のファイルとして写す）・`AGENTS.md`（DJ-13）・hooks の README（DJ-12）・T-9〜T-11（完了・ブランチ `feature/#562_codex_dist`・`d80b1d8`・PR #645 draft・PR #644 の上に重ねる）
 
-### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える
+### CHECK-2: sync を一時ディレクトリで確かめ（worktree からの sync は `~/.claude` のリンクを張り替えるので避ける・#605 の I4 と同じ）、owner が `/hooks` で登録してから、統括から Codex の子へ1回回して M-1・M-2 を数える（完了・2026-11-13。1回目は止まった（書面の commit の文・つないだ `oe` が sandbox の中で走った）→ H10。2回目は PR-1 `edc9236`・PR-2 `ebd64f0` で通った: M-1 は写し 0・承認の画面 0・push と gh 0、M-2 は受領 1・hook の sidecar 1・床 1、`oe tree` に model と context%。子は git を sandbox の中で打って commit `0094ed0` を作り、`oe send --to-parent` を単独で打った。マージ前なので確かめは使い捨ての `CODEX_HOME` と PR の worktree の `oe` で行い、子の `oe` は master の版だった）
 
 ### GATE 4: 実装SO（弱・1レーン）と Copilot の1ラウンド（PR ごと）（PR-1 の SO は完了・H5。Codex のレーンは道具の障害で判定なし・Cursor のレーンで `survived`。PR-1 の Copilot の1ラウンドは完了・H6・3件に返信済み。PR-2 の SO は完了・H7・Claude のレーンで `refuted` → must 2 を直した。PR-2 の Copilot は PR-1 の着地のあと ready にしてから）
 
