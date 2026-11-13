@@ -237,7 +237,7 @@ build_child_command() {
     while IFS= read -r arg; do
       [[ -n "$arg" ]] || continue
       cmd="${cmd} $(shell_quote "$arg")"
-    done < <(oe_agent_codex_sandbox_args "$WORKSPACE")
+    done < <(oe_agent_codex_sandbox_args "$WORKSPACE" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"})
   fi
   # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
   # （4.4+ は許容）。oe-kick 等が --agent-arg 無しで呼ぶと AGENT_ARGS は空のため、

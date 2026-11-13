@@ -33,6 +33,7 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
 - engine は起こす前に、本体の `.git`・worktree の gitdir・engine の状態の置き場を実体のパスで解決して `--add-dir` で渡し、tmux のソケットを `network_access`・`network_proxy`・`unix_sockets` の3つの `-c` で渡す。外への通信は閉じたままにする。
 - owner の user 層に置く実行ポリシーの規則は `prefix_rule(pattern=["oe"], decision="allow")` の1行だけにする。`git push` と `gh` は開かない（子は commit まで）。
 - `oe` の入口は、Codex の sandbox の中（`CODEX_SANDBOX`）で呼ばれたら何もせずに止まり、単独で打ち直すよう返す。
+- 利用者が `--agent-arg` で承認や sandbox のモードを変える（`-s`・`-a`・bypass・`--yolo`、`-c sandbox_mode=…` などの設定の鍵の形も含む）と、engine は既定の `--approve-for-me` を外し、sandbox を外す指定は elevated（owner の承認のダイジェストが要る）と読む。設定の鍵の形を読み落として、ダイジェスト無しに sandbox を外した子を起こせた実装の漏れを PR-1 の Copilot が指した（plan の H6）。利用者の引数がネットワークの設定に触れていれば、engine はネットワークの指定を出さない（plan の H11）。
 - 棄却した案:
   - 規則で外に出す（`oe` と `git commit` の2行・Q106 の最初の決定）。Codex は、つないだコマンドのすべての部分が allow に当たるときだけ sandbox の外で走らせ、モデルは普段からコマンドをつなぐので、CHECK-2 の1回目で `mkdir … && oe send …` が sandbox の中で走って届かなかった。`git add` も規則に無ければ sandbox の中で必ず失敗する。規則を足していく形は、つなぎ方の数だけ穴が残る。
   - 規則を増やす（`git add` を足す・Q117 の案）。owner が自分で開く Codex にも効き、つないだコマンドの穴は残る。

@@ -216,17 +216,26 @@ owner は Q118 で「git と状態の置き場と tmux は起こす1行で渡し
 
 子の会話の記録（使い捨ての `CODEX_HOME` の `rollout-2026-11-13T22-47-58-…jsonl`）では、子は `printf … > hello.txt`・`git add hello.txt`・`git commit -m 'chore: add hello.txt'`・`git log --oneline -1` を1つのスクリプトにして打ち、exit 0 だった。規則は `oe` の1行だけなので、この git は sandbox の中で走り、`--add-dir` で渡した `.git` に書けた（実機の確かめは `writable_roots` だったので、`--add-dir` の効きはここで初めて確かめた）。`oe send --to-parent` は単独のコマンドとして打たれ、`sent to %718（lease … generation 3）` で返った。子の `oe` は `~/bin/oe`（master）なので入口の `CODEX_SANDBOX` の検知は動いていない。単独で打ったのが決まりの文の1文によるものかは、この1回からは言えない（1回目は書面だけで、決まりの文にこの1文は無かった）。
 
+### GATE 4: H10 の実装SO（2026-11-13）
+
+H10 は PR ごとの実装SO（H5・H7）のあとに入ったので、GATE 4 を H10 の差分に当て直した（plan の H11・補正）。Codex のレーン（`gpt-6.1-sol`・道具の障害は観測されず・251秒）で `refuted`（must 2・should 1）。ソケットのパスを TOML の文字列に逃がさずに埋めていたこと、利用者がプロキシだけを外すと engine の `network_access=true` が残って外への通信が全部開くこと、検査が文字列の比較だけだったことを指された。3件とも直し、TOML として解析して元のパスに戻る検査と、利用者の引数があるときにネットワークの指定を出さない検査を足した。足した検査のラベルで `$ua` の直後に全角の括弧を置き、bash が変数名に食べて止まった（`${ua}` で囲んで直した）。Copilot の再依頼は owner の明示の指示があるときだけ行う運用なので、PR-1 には出していない。
+
 ## closure
 
 tier: heavy（方針の転回が2回あった〔H8・H10〕・意図して起動した外部レビュー〔設計SO・実装SO〕・選択肢を比べて棄却した設計判断・decision と knowledge への昇格がある）。
 
 ### 事実・失敗
 
+- 設計SO が `refuted` を返し、plan の案のうち「読んだ範囲より広い結論」（sidecar と registry・symlink の規則・`context_pct`）など 18 件を直した。`本文: P2: 設計SO（Codex の1レーン）と採否`
+- I2 の最初の一括の編集が途中で失敗し、lease の schema の top-level の `agent` だけが取り残された。jq の `validate-lease` は通っていたので、PR-1 の実装SO が指すまで気づかなかった。`本文: GATE 4: PR-1 の実装SO（2026-11-13）`
+- PR-1 の Copilot が3件を指した。うち1件は、`-c sandbox_mode=danger-full-access` で sandbox を外した子を承認ダイジェスト無しで起こせた実装の漏れだった（設定の鍵での指定も elevated と読むように直した・H6）。`本文: GATE 4: PR-1 の Copilot の1ラウンド（2026-11-13）`
+- PR-2 の実装SO の must 2件目は、床と hook の sidecar が同じペインに並んで二重に数えられること（PR-1 の Copilot の指摘と同じ欠陥）。`oe_agent_self` が `CLAUDE_*` を先に見ていて、検査が claude と答えたことも見つかった。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
 - 版の更新の事故: resume の起動の直後の更新の確認に送った1行の Enter が「Update now」を選び、owner の Codex が 0.167.1 から 0.167.2 に上がった。`本文: I1: 実機の確かめ（2026-11-13 03:24〜03:46）`
 - 0.167.2 で Codex の道具が `timed out negotiating with the code-mode host` で止まり、実装SO の Codex のレーンが2回とも判定なしになった（統括の Q114 は取り下げ・原因は未確定）。`本文: GATE 4: PR-1 の実装SO（2026-11-13）`
 - DJ-6 の context% の式が cached を二重に数えていて、設計SO と PR-1 の実装SO を通り抜け、PR-2 の実装SO で見つかった。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
 - 規則で外に出す設計（DJ-3）は、I1 の C4 で単独のコマンドの形だけを測って根拠にしていた。CHECK-2 の1回目で、子がつないで打った `oe send` が sandbox の中で走って届かず、`git add` も通らないと分かり、H10 で設計を変えた。試しの書面の commit の文が hub の hook に止められたのは子の書き手の誤り。`本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）`
 - I1 で「`-c` ではフォルダの信頼を渡せない」と結論したのは、鍵の形の誤りだった（引用符が鍵に残る）。その結論の上で H1・H8 の Enter を送る案が組まれた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- H10 の実装SO が must 2 件を指した（ソケットのパスの TOML の逃がし忘れ・利用者がプロキシを外すと外への通信が開く）。`本文: GATE 4: H10 の実装SO（2026-11-13）`
 - 確かめのスクリプトの空の変数で `tmux kill-pane -t ""` を打ち、統括のペインと自分のペインを閉じた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
 - master の engine の拍動の照合に時刻の競合がある（走査の初めに取った now より新しい拍動を捨てる）。CHECK-2 の1回目で子が受け取った rc 1 はこれだった。`本文なし: 確かめの報告 .oe/report-562-sandbox-verify.md の 5 に書き、episode の本文には書いていなかったので、ここで要点を書き起こした（trace で [ 1794563928 -le 1794563925 ] → continue）`
 
@@ -268,13 +277,19 @@ frontmatter の `promotion` に1件ずつ置いた。理由は次のとおり。
 
 ### 残課題と行き先
 
-- master の engine の拍動の照合の時刻の競合: 統括へ（起票の判断）。#562 の変更ではなく `lib/heartbeat-resolve.sh` の既存の不具合である。
+- master の engine の拍動の照合の時刻の競合: 統括へ（起票の判断）。#562 の変更ではなく `lib/heartbeat-resolve.sh` の既存の不具合である。plan には書かない（plan の範囲の外のため）。
 - master の `oe send` が、event bus への書き込みに失敗しても「delivery_held として残しました」と出す: 統括へ（起票の判断）。
-- 入口の `CODEX_SANDBOX` の検知と決まりの文の1文の通し: マージのあとの CHECK-2（`.oe/runbook-562-check2.md`）で、統括と owner が確かめる。2回目は子の `oe` が master の版だったので見えていない。
+- 入口の `CODEX_SANDBOX` の検知と決まりの文の1文の通し: マージのあとの CHECK-2 で、統括と owner が確かめる（手順は plan の CHECK-2 の節。作業層の手順書は `.oe/runbook-562-check2.md`）。2回目は子の `oe` が master の版だったので見えていない。
 - I1 で未確認のまま残った2点（resume のあとの `CODEX_THREAD_ID` で自分を引けるか・pid の照合）: マージのあとの CHECK-2 で、統括が子に `oe lease bind` と `oe recover` を打たせて確かめる。確かめなければ、`oe recover` を Codex の子で初めて使うときに分かる。
 - PR-2 の Copilot の1ラウンド: PR-1 の着地のあと、PR-2 を ready にしてから（plan の GATE 4 のとおり）。PR-1 の H10 の分への Copilot の再依頼は、owner の明示の指示があるときだけ行う運用なので、ここでは行わない。
 - plan の「やらない」の項目（`oe-selfcheck` と `oe-kick` の Codex 対応・どの作業を Codex の子に任せるか・子の報告をホスト側で配る案）: 追わない。必要になったら起票する。報告を配る案は #549 の材料として plan の DJ-3 に残っている。
 - hook の信頼を `-c` の値の形で渡す形は試していない: 追わない（engine は hook の信頼を肩代わりしない）。
+- 前に出した問いの決着: `question-562-2` の2枚のうち、規則 `oe` の広さ（`i562_oe_rule_scope`）は Q106 のまま `oe` で決まっている。`git commit` と commit の hook（`i562_git_commit_hooks`）は、H10 で `git commit` の規則をやめたので問いが無くなった（git は sandbox の中で走る）。`question-562-3` の2枚（Q116・Q117）は統括が取り下げ、Q118 にまとめ直した。どれも行き先は不要。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- I1 で未確認だった symlink の規則の読み込み: 追わない。配布は通常のファイルの写しにした（DJ-3・設計SO の指摘1）ので、symlink を読むかどうかに依らない。`--add-dir` の効きは CHECK-2 の2回目で確かめた。`本文: CHECK-2 の2回目（2026-11-13 22:48・統括 gen25 が起こした）`
+
+### 外部チェック（Step 4）
+
+closure の4点（失敗の選択的な省略・残課題の行き先・揮発するパス・他の文書への書き戻し）を、書き手と別の会社のレーンで1回見た（`so-compare --cursor-only`・composer-2.5・指定・59秒）。判定は `refuted`（must 2・should 6）。must は、事実・失敗の節が本文の失敗の一部（設計SO の 18 件・Copilot の3件・PR-2 の SO の2件目など）を落としていたことと、前に出した問い2枚の決着を残課題に書いていなかったこと。should は、symlink の規則の行き先・plan の CHECK-2 の節への pointer・decision に H6（設定の鍵での指定も elevated と読む）が無いこと・拍動の競合を plan に書くか。plan に拍動の競合を書く1件だけを「plan の範囲の外」として採らず、ほかはすべて直した。出力は作業層（scratchpad の `so-closure-cursor/`）にあり、要点はここに書いた。
 
 ### status
 

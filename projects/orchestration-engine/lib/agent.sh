@@ -122,7 +122,25 @@ oe_agent_default_args() {
 # _oe_agent_realdir <dir> — ディレクトリの実体のパス（symlink を解いた形・/tmp は /private/tmp）を出す。無ければ 1。
 _oe_agent_realdir() { [ -d "${1:-}" ] || return 1; (CDPATH='' cd "$1" 2>/dev/null && pwd -P); }
 
-# oe_agent_codex_sandbox_args <workspace> — Codex の子の sandbox（workspace-write）に、そのセッションにだけ渡す権限を
+# oe_agent_codex_user_sets_network <args...> — 利用者の引数が Codex のネットワークの設定（sandbox_workspace_write.network_access・
+#   features.network_proxy・sandbox_workspace_write 全体・sandbox_permissions）を -c / --config で指定しているか（0 なら指定あり）。
+oe_agent_codex_user_sets_network() {
+  local a prev="" kv
+  for a in "$@"; do
+    kv=""
+    case "$a" in
+      --config=*) kv="${a#--config=}" ;;
+      *) if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then kv="$a"; fi ;;
+    esac
+    case "$kv" in
+      sandbox_workspace_write=*|sandbox_workspace_write.network_access=*|features.network_proxy=*|features.network_proxy.*|features=*|sandbox_permissions=*) return 0 ;;
+    esac
+    prev="$a"
+  done
+  return 1
+}
+
+# oe_agent_codex_sandbox_args <workspace> [<利用者の引数...>] — Codex の子の sandbox（workspace-write）に、そのセッションにだけ渡す権限を
 #   1行1つで出す（plan の H10・owner の答え Q118）。owner の設定には書かない。
 #   - 書ける場所（--add-dir）: 本体の .git（git の共通ディレクトリ）と worktree の gitdir（本体と同じなら1つ）と
 #     engine の状態の置き場（~/.claude/state）。どれも実体のパスで渡す（sandbox は .git を既定で読み取り専用にし、
@@ -130,9 +148,11 @@ _oe_agent_realdir() { [ -d "${1:-}" ] || return 1; (CDPATH='' cd "$1" 2>/dev/nul
 #   - tmux のソケット: network_access と network_proxy と unix_sockets の3つ。プロキシに宛先を足さないので、
 #     外への通信は閉じたまま、挙げたソケットにだけつなげる（実機・0.167.2）。
 #   git でない workspace では git の分を、tmux の外（ソケットを引けない）では tmux の分を出さない。
+#   2つ目からの引数は利用者の引数（--agent-arg）で、ネットワークの設定に触れていれば tmux の分を出さない。
 #   差し替えの口（テスト用）: OE_AGENT_CODEX_STATE_DIR（状態の置き場）・OE_AGENT_CODEX_TMUX_SOCKET（ソケットのパス）
 oe_agent_codex_sandbox_args() {
-  local ws="${1:-}" common gitdir state sock sdir
+  local ws="${1:-}" common gitdir state sock sdir esc
+  shift || true
   if [ -n "$ws" ]; then
     common="$(git -C "$ws" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
     gitdir="$(git -C "$ws" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || gitdir=""
@@ -143,6 +163,9 @@ oe_agent_codex_sandbox_args() {
   fi
   state="$(_oe_agent_realdir "${OE_AGENT_CODEX_STATE_DIR:-${HOME:-}/.claude/state}")" || state=""
   if [ -n "$state" ]; then printf '%s\n' '--add-dir' "$state"; fi
+  # 利用者の引数（残りの引数）がネットワークの設定に触れていたら、ネットワークの3つは出さない。engine の
+  # network_access=true だけが残って、利用者がプロキシを外すと外への通信が全部開くのを防ぐ（実装SO の指摘）。
+  if oe_agent_codex_user_sets_network "$@"; then return 0; fi
   sock="${OE_AGENT_CODEX_TMUX_SOCKET:-}"
   if [ -z "$sock" ] && [ -n "${TMUX:-}" ]; then
     sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null)" || sock=""
@@ -151,8 +174,11 @@ oe_agent_codex_sandbox_args() {
     sdir="$(_oe_agent_realdir "$(dirname "$sock")")" || sdir=""
     if [ -n "$sdir" ]; then
       sock="${sdir}/$(basename "$sock")"
+      # TOML の基本文字列に埋めるので、\ と " を逃がす。制御文字を含むパスは渡さない（実装SO の指摘）。
+      case "$sock" in *[[:cntrl:]]*) return 0 ;; esac
+      esc="$(printf '%s' "$sock" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
       printf '%s\n' '-c' 'sandbox_workspace_write.network_access=true' '-c' 'features.network_proxy.enabled=true' \
-        '-c' "features.network_proxy.unix_sockets={\"${sock}\"=\"allow\"}"
+        '-c' "features.network_proxy.unix_sockets={\"${esc}\"=\"allow\"}"
     fi
   fi
 }

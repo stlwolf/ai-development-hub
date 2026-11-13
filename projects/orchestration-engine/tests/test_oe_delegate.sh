@@ -535,6 +535,7 @@ git -C "$_TMP_DIR/r12" worktree add -q "$_TMP_DIR/r12-wt" -b w12 >/dev/null 2>&1
 _r12git="$(cd "$_TMP_DIR/r12/.git" && pwd -P)"
 reset_logs
 rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex "a12" || rc=$?
+ck "worktree の Codex の委譲は exit 0" "0" "$rc"
 ck "worktree の Codex の1行に本体の .git と gitdir と状態の置き場が並ぶ" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}' '--add-dir' '${_r12git}/worktrees/r12-wt' '--add-dir' '${_cstate_real}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
 reset_logs
 rc=0; run_delegate -w "$_TMP_DIR/r12" --agent codex "a12b" || rc=$?
@@ -542,6 +543,11 @@ ck "ふつうのリポジトリでは .git は1つだけ" "1" "$(grep -o -- "'--
 reset_logs
 rc=0; run_delegate -w "$_TMP_DIR/r12-wt" "a12c" || rc=$?
 ck "claude の子の1行には sandbox の引数が無い" "no" "$(grep -qF -- "--add-dir' '${_r12git}" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex --agent-arg -c --agent-arg features.network_proxy.enabled=false "a12d" || rc=$?
+ck "利用者がプロキシを外す引数を渡しても exit 0" "0" "$rc"
+ck "そのときは engine の network_access=true を出さない（外への通信を開かない）" "no" "$(grep -q 'network_access=true' "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+ck "書ける場所は渡したまま" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

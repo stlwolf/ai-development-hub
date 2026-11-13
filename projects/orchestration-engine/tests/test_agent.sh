@@ -164,6 +164,24 @@ out="$(TMUX="" OE_AGENT_CODEX_TMUX_SOCKET="" OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR
 ck "tmux の外ではネットワークの指定を出さない（外への通信を開かない）" "--add-dir ${_st} " "$out"
 out="$(TMUX="" OE_AGENT_CODEX_TMUX_SOCKET="" OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/none" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" | tr '\n' ' ')"
 ck "状態の置き場が無ければ足さない" "" "$out"
+# 実装SO の指摘: ソケットのパスは TOML の文字列として正しく逃がす（" と \ を含む置き場）
+mkdir -p "$_TMP_DIR/h10/q\"b\\c"
+_qk="$(cd "$_TMP_DIR/h10/q\"b\\c" && pwd -P)/sock"
+out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/none" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/q\"b\\c/sock" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" | tail -1)"
+if python3 -c 'import tomllib' 2>/dev/null; then
+  got="$(printf '%s' "${out#features.network_proxy.unix_sockets=}" | python3 -c 'import sys,tomllib; v=tomllib.loads("v = "+sys.stdin.read())["v"]; print(list(v.keys())[0] + "=" + v[list(v.keys())[0]])' 2>&1)"
+  ck "引用符とバックスラッシュを含むソケットのパスが TOML として元のパスに戻る" "${_qk}=allow" "$got"
+else
+  echo "  SKIP: tomllib が無いので TOML の解析は見ない"
+fi
+# 実装SO の指摘: 利用者の引数がネットワークの設定に触れていたら、ネットワークの3つを出さない
+for ua in "-c features.network_proxy.enabled=false" "--config sandbox_workspace_write.network_access=false" "--config=features.network_proxy.unix_sockets={}" "-c sandbox_workspace_write={network_access=true}"; do
+  # shellcheck disable=SC2086  # 利用者の引数を語に分けて渡す
+  out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" $ua | tr '\n' ' ')"
+  ck "利用者の引数（${ua}）があればネットワークの指定を出さない" "--add-dir ${_st} " "$out"
+done
+out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" -m gpt-5 -c model_reasoning_effort=high | grep -c network_access)"
+ck "ネットワークに触れない利用者の引数なら出す" "1" "$out"
 case "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" in *"oe は、ほかのコマンドとつながず"*) r=yes ;; *) r=no ;; esac
 ck "決まりの文に単独で打つ1文がある" "yes" "$r"
 
