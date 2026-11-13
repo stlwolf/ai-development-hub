@@ -231,6 +231,14 @@ build_child_command() {
     [[ -n "$arg" ]] || continue
     cmd="${cmd} $(shell_quote "$arg")"
   done < <(oe_agent_default_args "$AGENT" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"})
+  # Codex の子の sandbox に、そのセッションにだけ渡す権限（#562 の H10）。git の書き込み（本体の .git と gitdir）・
+  # engine の状態の置き場・tmux のソケットだけを開く。利用者の引数より前に置く。
+  if [[ "$AGENT" == "codex" ]]; then
+    while IFS= read -r arg; do
+      [[ -n "$arg" ]] || continue
+      cmd="${cmd} $(shell_quote "$arg")"
+    done < <(oe_agent_codex_sandbox_args "$WORKSPACE")
+  fi
   # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
   # （4.4+ は許容）。oe-kick 等が --agent-arg 無しで呼ぶと AGENT_ARGS は空のため、
   # ${arr[@]+"${arr[@]}"} イディオムで空配列を安全に展開する（ADR-005・oe-select 前例）。

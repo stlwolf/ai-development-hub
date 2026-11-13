@@ -23,13 +23,22 @@
 #   変数に何も代入せずに exec する。呼び出し元が export した同名の変数（dir・verb など）を入口が書き換えて
 #   verb に渡すことがないようにするためである（実装SO の指摘 1。bash の local は export の属性を引き継ぐ）。
 #
-# exit: verb の終了コードのまま / 2 呼び方の誤り / 127 その verb が無い / 1 入口が自分の場所を解けない
+# exit: verb の終了コードのまま / 2 呼び方の誤り・Codex の sandbox の中で呼ばれた / 127 その verb が無い / 1 入口が自分の場所を解けない
 #
 # 差し替えの口（テスト用）: OE_ENTRY_LINK_LIMIT（symlink をたどる段の上限・既定 40）
 
 set -uo pipefail
 
 oe_entry_err() { printf 'oe: %s\n' "$1" >&2; }
+
+# Codex の sandbox の中で呼ばれたら、何もせずに止める（#562 の H10）。Codex は、つないだコマンドのすべての部分が
+# allow の規則に当たるときだけ sandbox の外で走らせるので、`mkdir … && oe send …` の oe は sandbox の中で走る。
+# 中では親の本人確認に使う ps が動かず、`--to-parent` が届かない。Codex は sandbox の中のコマンドに
+# CODEX_SANDBOX（macOS では seatbelt）を入れるので、それを見て、単独で打ち直す道を返す。変数には代入しない。
+if [ -n "${CODEX_SANDBOX:-}" ]; then
+  oe_entry_err "Codex の sandbox の中で呼ばれたので、何もせずに止めます（CODEX_SANDBOX=${CODEX_SANDBOX}）。oe で始まる1つのコマンドとして、ほかのコマンドとつながずに打ち直してください（単独なら規則で sandbox の外で走ります）"
+  exit 2
+fi
 
 # 自分の実体のディレクトリを出す。失敗したら誤りを出して非0を返す。
 oe_entry_dir() (

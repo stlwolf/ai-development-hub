@@ -252,6 +252,14 @@ else
   echo "  SKIP: $SYNC_BIN が無い（engine を hub の外で回している）"
 fi
 
+echo "[H10] #562: Codex の sandbox の中（CODEX_SANDBOX）で呼ばれたら、verb を動かさずに exit 2 で止め、単独で打ち直す道を返す"
+rc=0; out="$(CODEX_SANDBOX=seatbelt "$FAKE/oe" args x 2>&1)" || rc=$?
+ck "sandbox の中では exit 2" "2" "$rc"
+cknot "verb は動かない" "argc=" "$out"
+cksub "単独で打ち直す道を返す" "ほかのコマンドとつながずに打ち直して" "$out"
+rc=0; out="$(CODEX_SANDBOX="" "$FAKE/oe" args x 2>&1)" || rc=$?
+ck "CODEX_SANDBOX が空なら今までどおり" "0" "$rc"
+
 echo ""
 echo "RESULT: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

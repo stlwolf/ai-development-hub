@@ -334,6 +334,11 @@ ck "lease の環境変数が付かない" "PARENT_TMUX_PANE='%1' claude" "$(cat 
 . "$PROJECT_DIR/lib/agent.sh"
 DI_ARG="developer_instructions=\"${OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS}\""
 CODEX_HEAD="PARENT_TMUX_PANE='%1' codex '--no-daemon' '-c' 'check_for_update_on_startup=false'"
+# H10: Codex の子の sandbox の権限。状態の置き場とソケットは差し替えの口で固定する（ws は git でないので git の分は出ない）。
+mkdir -p "$_TMP_DIR/cstate" "$_TMP_DIR/csock"
+export OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/cstate" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/csock/default"
+_cstate_real="$(cd "$_TMP_DIR/cstate" && pwd -P)"; _csock_real="$(cd "$_TMP_DIR/csock" && pwd -P)/default"
+SBX="'--add-dir' '${_cstate_real}' '-c' 'sandbox_workspace_write.network_access=true' '-c' 'features.network_proxy.enabled=true' '-c' 'features.network_proxy.unix_sockets={\"${_csock_real}\"=\"allow\"}'"
 
 echo "[A1] #562 T-1: --agent 無しの子のコマンドは claude のまま（[1][2] と同じ値・受入 A-1）"
 reset_logs
@@ -344,7 +349,7 @@ ck "registry の agent は claude" "claude" "$(jq -r '.agent' "$OE_DELEGATE_STAT
 echo "[A2] #562 T-2: --agent codex は --no-daemon・更新の確認なし・--approve-for-me・developer の指示を付けて起こす"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --label "#562c" --agent codex "a2"
-ck "codex の1行" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}'" "$(split_cmd)"
+ck "codex の1行" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' ${SBX}" "$(split_cmd)"
 ck "developer の指示に改行が無い" "1" "$(wc -l < "$_TMP_DIR/logs/split-command.log" | tr -d ' ')"
 _lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
 ck "lease の記録に agent: codex" "codex" "$(jq -r '.agent' "$OE_LEASE_DIR/${_lid}.json" 2>/dev/null)"
@@ -354,10 +359,10 @@ ck "registry の agent は codex" "codex" "$(jq -r 'select(.label=="#562c") | .a
 echo "[A3] #562 T-2: --agent-arg で承認のモードを指定したら既定の --approve-for-me を外す。--claude-arg は alias"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --agent codex --agent-arg -a --agent-arg never "a3"
-ck "-a never で --approve-for-me が外れる" "${CODEX_HEAD} '-c' '${DI_ARG}' '-a' 'never'" "$(split_cmd)"
+ck "-a never で --approve-for-me が外れる" "${CODEX_HEAD} '-c' '${DI_ARG}' ${SBX} '-a' 'never'" "$(split_cmd)"
 reset_logs
 run_delegate -w "$_TMP_DIR/ws" --agent codex --claude-arg -m --claude-arg gpt-5 "a3b"
-ck "--claude-arg は --agent-arg の alias（モードの指定でないので既定は残る）" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' '-m' 'gpt-5'" "$(split_cmd)"
+ck "--claude-arg は --agent-arg の alias（モードの指定でないので既定は残る）" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' ${SBX} '-m' 'gpt-5'" "$(split_cmd)"
 reset_logs
 brief2="${_TMP_DIR}/ws/.oe/brief2.md"; printf '%s\n' '# brief' > "$brief2"
 run_delegate -w "$_TMP_DIR/ws" --agent codex --brief "$brief2" "a3c"
@@ -523,6 +528,20 @@ reset_logs
 rc=0; OE_DELEGATE_TEST_CAPTURE_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" "a11g" || rc=$?
 ck "claude の子は画面を読まず今までどおり（rc=0）" "0" "$rc"
 unset OE_DELEGATE_TRUST_WAIT_SEC
+
+echo "[A12] #562 H10: worktree の workspace では、本体の .git と gitdir を実体のパスで --add-dir に足す。claude の子には足さない"
+mkdir -p "$_TMP_DIR/r12" && git -C "$_TMP_DIR/r12" init -q && git -C "$_TMP_DIR/r12" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m i
+git -C "$_TMP_DIR/r12" worktree add -q "$_TMP_DIR/r12-wt" -b w12 >/dev/null 2>&1
+_r12git="$(cd "$_TMP_DIR/r12/.git" && pwd -P)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex "a12" || rc=$?
+ck "worktree の Codex の1行に本体の .git と gitdir と状態の置き場が並ぶ" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}' '--add-dir' '${_r12git}/worktrees/r12-wt' '--add-dir' '${_cstate_real}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12" --agent codex "a12b" || rc=$?
+ck "ふつうのリポジトリでは .git は1つだけ" "1" "$(grep -o -- "'--add-dir' '${_r12git}'" "$_TMP_DIR/logs/split-command.log" | wc -l | tr -d ' ')"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" "a12c" || rc=$?
+ck "claude の子の1行には sandbox の引数が無い" "no" "$(grep -qF -- "--add-dir' '${_r12git}" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

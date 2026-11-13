@@ -155,6 +155,18 @@ ck "codex hint starts with cd and codex --no-daemon" yes "$([[ "$out" == 'cd /tm
 ck "codex hint ends with resume <sid>" yes "$([[ "$out" == *' resume abc-123' ]] && echo yes || echo no)"
 ck "codex hint carries developer_instructions" yes "$([[ "$out" == *'developer_instructions='* ]] && echo yes || echo no)"
 
+echo "[H10] #562: oe_agent_codex_sandbox_args — git でない workspace と tmux の外"
+mkdir -p "$_TMP_DIR/h10/state" "$_TMP_DIR/h10/sock" "$_TMP_DIR/h10/plain"
+_st="$(cd "$_TMP_DIR/h10/state" && pwd -P)"; _sk="$(cd "$_TMP_DIR/h10/sock" && pwd -P)/default"
+out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" | tr '\n' ' ')"
+ck "git でなければ状態の置き場とソケットだけ" "--add-dir ${_st} -c sandbox_workspace_write.network_access=true -c features.network_proxy.enabled=true -c features.network_proxy.unix_sockets={\"${_sk}\"=\"allow\"} " "$out"
+out="$(TMUX="" OE_AGENT_CODEX_TMUX_SOCKET="" OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" | tr '\n' ' ')"
+ck "tmux の外ではネットワークの指定を出さない（外への通信を開かない）" "--add-dir ${_st} " "$out"
+out="$(TMUX="" OE_AGENT_CODEX_TMUX_SOCKET="" OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/none" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" | tr '\n' ' ')"
+ck "状態の置き場が無ければ足さない" "" "$out"
+case "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" in *"oe は、ほかのコマンドとつながず"*) r=yes ;; *) r=no ;; esac
+ck "決まりの文に単独で打つ1文がある" "yes" "$r"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [[ "$FAIL" -eq 0 ]]

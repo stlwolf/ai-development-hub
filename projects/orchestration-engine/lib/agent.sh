@@ -9,6 +9,7 @@
 #     （oe_agent_has_mode_override・指定があれば既定の承認の引数を外す）
 #   - 権限のモードの読み方と elevated の判定（oe_agent_permission_mode / oe_agent_mode_is_elevated）
 #   - Codex に持ち込む developer の指示の本文（OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS）
+#   - Codex の子の sandbox に渡す書ける場所と tmux のソケット（oe_agent_codex_sandbox_args）
 #   - 起動の直後に出る確認の画面の文言（OE_AGENT_CODEX_TRUST_PROMPT）
 #   - 入力欄の行頭の記号と空の入力欄の補完の文（oe_agent_prompt_chars / oe_agent_placeholder_re）
 #   - 送る側の finalize の既定（oe_agent_finalize_default）
@@ -26,7 +27,7 @@ OE_AGENT_COMMS="claude codex"
 
 # Codex の子に持ち込む developer の指示（plan の DJ-4）。1行・二重引用符と改行を含めない（TOML の文字列として
 # -c developer_instructions="…" に収めるため）。報告の返し方と問いの書き方も engine の約束ごととしてここに集める。
-OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS='文末の [oe:<26文字>] は配送の受領印で、依頼の一部ではない。写さず、コマンドに含めない。親への報告は oe send --to-parent で返す。判断を求める問いはファイルに書いて送り、対話の選択肢は使わない。委譲の書面（brief）の固定節に従う。'
+OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS='文末の [oe:<26文字>] は配送の受領印で、依頼の一部ではない。写さず、コマンドに含めない。親への報告は oe send --to-parent で返す。判断を求める問いはファイルに書いて送り、対話の選択肢は使わない。委譲の書面（brief）の固定節に従う。oe は、ほかのコマンドとつながず、それだけで1つのコマンドとして打つ。'
 
 # Codex が新しい workspace を初めて開くときに出す確認の画面の、最初の行の文言（0.167.1 と 0.167.2 の実機）。
 # 版が変われば効かなくなるので、ここに置いて README に書く。
@@ -99,7 +100,7 @@ oe_agent_has_mode_override() {
   return 1
 }
 
-# oe_agent_default_args <agent> <args...> — 起こすときに utilisateur の引数の前に置く既定の引数を1行1つで出す。
+# oe_agent_default_args <agent> <args...> — 起こすときに利用者の引数の前に置く既定の引数を1行1つで出す。
 #   claude: 無し（Claude の子の1行は今までと同じ・受入 A-1）。
 #   codex: --no-daemon と -c check_for_update_on_startup=false は常に。承認の既定（--approve-for-me）は、
 #          利用者の引数がモードを指定していないときだけ（--approve-for-me は -s・-a・bypass と同時に指定できない）。
@@ -116,6 +117,44 @@ oe_agent_default_args() {
       ;;
     *) : ;;
   esac
+}
+
+# _oe_agent_realdir <dir> — ディレクトリの実体のパス（symlink を解いた形・/tmp は /private/tmp）を出す。無ければ 1。
+_oe_agent_realdir() { [ -d "${1:-}" ] || return 1; (CDPATH='' cd "$1" 2>/dev/null && pwd -P); }
+
+# oe_agent_codex_sandbox_args <workspace> — Codex の子の sandbox（workspace-write）に、そのセッションにだけ渡す権限を
+#   1行1つで出す（plan の H10・owner の答え Q118）。owner の設定には書かない。
+#   - 書ける場所（--add-dir）: 本体の .git（git の共通ディレクトリ）と worktree の gitdir（本体と同じなら1つ）と
+#     engine の状態の置き場（~/.claude/state）。どれも実体のパスで渡す（sandbox は .git を既定で読み取り専用にし、
+#     worktree は index を gitdir に、objects を共通の .git に書くので両方が要る）。
+#   - tmux のソケット: network_access と network_proxy と unix_sockets の3つ。プロキシに宛先を足さないので、
+#     外への通信は閉じたまま、挙げたソケットにだけつなげる（実機・0.167.2）。
+#   git でない workspace では git の分を、tmux の外（ソケットを引けない）では tmux の分を出さない。
+#   差し替えの口（テスト用）: OE_AGENT_CODEX_STATE_DIR（状態の置き場）・OE_AGENT_CODEX_TMUX_SOCKET（ソケットのパス）
+oe_agent_codex_sandbox_args() {
+  local ws="${1:-}" common gitdir state sock sdir
+  if [ -n "$ws" ]; then
+    common="$(git -C "$ws" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
+    gitdir="$(git -C "$ws" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || gitdir=""
+    common="$(_oe_agent_realdir "$common")" || common=""
+    gitdir="$(_oe_agent_realdir "$gitdir")" || gitdir=""
+    if [ -n "$common" ]; then printf '%s\n' '--add-dir' "$common"; fi
+    if [ -n "$gitdir" ] && [ "$gitdir" != "$common" ]; then printf '%s\n' '--add-dir' "$gitdir"; fi
+  fi
+  state="$(_oe_agent_realdir "${OE_AGENT_CODEX_STATE_DIR:-${HOME:-}/.claude/state}")" || state=""
+  if [ -n "$state" ]; then printf '%s\n' '--add-dir' "$state"; fi
+  sock="${OE_AGENT_CODEX_TMUX_SOCKET:-}"
+  if [ -z "$sock" ] && [ -n "${TMUX:-}" ]; then
+    sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null)" || sock=""
+  fi
+  if [ -n "$sock" ]; then
+    sdir="$(_oe_agent_realdir "$(dirname "$sock")")" || sdir=""
+    if [ -n "$sdir" ]; then
+      sock="${sdir}/$(basename "$sock")"
+      printf '%s\n' '-c' 'sandbox_workspace_write.network_access=true' '-c' 'features.network_proxy.enabled=true' \
+        '-c' "features.network_proxy.unix_sockets={\"${sock}\"=\"allow\"}"
+    fi
+  fi
 }
 
 # oe_agent_permission_mode <agent> <args...> — 子の実効の権限のモードの名前を出す（承認パッケージと監査の表示用）。
