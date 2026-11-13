@@ -66,7 +66,7 @@ oe delegate -w "$REPO" --label "#N" --agent codex --brief "$REPO/.oe/brief-N.md"
 
 - 子の報告（`oe send`）と `git commit` を承認の画面に止めないために、hub が配る実行ポリシーの規則（`~/.codex/rules/oe-child.rules`・`canonical/codex/rules/`）が要る。無ければ `oe delegate` が1行知らせて続ける（報告のたびに承認の要求に回る）。
 - 受領の印と拍動の hook（`canonical/hooks/codex.hooks.json` の `UserPromptSubmit`・`PostModelRequest`）は、owner が Codex の `/hooks` で信頼を登録してから動く。無くても、`oe delegate` が起こしたときと子が `oe send` を打つたびに engine が書く拍動の床で、lease からペインを引ける。
-- 新しい workspace を初めて開くとき、Codex はフォルダの信頼の確認を出す。engine は Enter を送らないので、確認が出ていたら人が子のペインで答えてから、最初の1行を `oe send` で送り直す。
+- 新しい workspace（worktree ごと）を初めて開くとき、Codex はフォルダの信頼の確認を出す。`oe delegate` は、workspace のもとのリポジトリ（main の作業ツリー）を owner が Codex で信頼済み（`$CODEX_HOME/config.toml` の `[projects."<path>"]`・読むだけで書き換えない）のときだけ Enter を1回送って進む。信頼されていないとき・画面を読めないときは、最初の1行を送らずに exit 4 で止まり案内を出す（ペインは残る）。そのときは人が子のペインで答えてから、最初の1行を `oe send` で送る。
 - Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。
 
 **brief doc（委譲指示書）を渡す（4層ドキュメント方式 / リッチな事前情報）**

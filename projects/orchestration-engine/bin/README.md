@@ -131,7 +131,7 @@ oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--agent <claude
 | lease のコマンド名の検査 | 許す名前の集合（`claude`・`codex`・basename の完全一致）。schema の `comm` も同じ | — |
 | 入力欄の判定 | `oe-send` が宛先のエージェントを lease か registry から引き、codex なら行頭 `›`・`»` と補完の文 `Ask Codex to do anything` で見る | 宛先が分からなければ claude の値で、今までと同じ |
 
-配布物（PR-2）が無い状態では: 規則（`$CODEX_HOME/rules/oe-child.rules`）が無いと子の `oe send` は承認の要求に回る（`oe-delegate` が1行知らせる）。hook が無いと受領の印は出ず、拍動は床だけ。Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。新しい workspace を初めて開くときの「Trust this folder?」の確認には engine は答えない（人が子のペインで答えてから最初の1行を送り直す）。
+配布物（PR-2）が無い状態では: 規則（`$CODEX_HOME/rules/oe-child.rules`）が無いと子の `oe send` は承認の要求に回る（`oe-delegate` が1行知らせる）。hook が無いと受領の印は出ず、拍動は床だけ。Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。新しい workspace（worktree ごと）を初めて開くときの「Trust this folder?」の確認には、workspace のもとのリポジトリ（main の作業ツリー）を owner が Codex で信頼済み（`$CODEX_HOME/config.toml` の `[projects."<path>"]` に `trust_level = "trusted"`・読むだけ）のときだけ Enter を1回送って進む。信頼されていない・config.toml を読めない・画面を読めない・確認が消えない、のどれかなら最初の1行を送らずに exit 4 で止まり、案内を出す（ペインは残す。人が答えてから `oe send` で1行を送る）。確認の文言は `lib/agent.sh` の `OE_AGENT_CODEX_TRUST_PROMPT`（0.167.1 と 0.167.2 の実機）で、版が変われば効かなくなる。
 
 この issue で扱っていないもの（Claude に固定されたまま）: `oe-selfcheck` の入力欄の `❯`・hook の配線と transcript の検査、`oe-kick`（`--claude-arg` だけ）、`session-name.sh`（Claude の出力の形）、`oe-register root`・`oe-handoff`（統括の verb・Codex を統括にするのは範囲の外）。
 

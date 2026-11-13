@@ -105,7 +105,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 - `PARENT_TMUX_PANE=… OE_LEASE_ID=… OE_GENERATION=1 codex --no-daemon <承認のモードの引数> [--add-dir <brief の dir>]` を、Claude と同じ形で `tmux split-window -c <workspace>` に渡す。C6 で前面のプロセスが `codex` にならなければ、**Codex の分岐だけ**に `exec` を書く。Claude の1行は変えない（受入 A-1）。
 - `--no-daemon` は固定で付ける（11-11 の実機）。版のずれた共有の daemon を避ける効果もある。
-- `-c check_for_update_on_startup=false` も固定で付ける（補正 H1）。起動の直後に出る更新の確認の画面を出さないためで、I1 でこの画面に送った1行の Enter が「Update now」を選んで `brew upgrade --cask codex` が走った（episode の I1）。鍵は `config/src/config_toml.rs:533`、効き方は `tui/src/updates.rs:28,153` [verified]。無しで動く形は無い（画面が出れば最初の1行が選択肢に流れる）。残る危険として、フォルダの信頼の確認（新しい workspace を初めて開くとき）と hook の確認（未登録の hook があるとき）も起動の直後に出る。前者は worktree ごとに出るので、`oe-delegate` は Codex の子を起こしたあと、最初の1行を送る前に画面の最初の行に `Trust this folder?` が出ていれば Enter を1回送る（実機で見た文言。版が変われば効かなくなるので、`lib/agent.sh` の定数にし、README に書く）。後者は owner が `/hooks` で登録するまで出続けるので、README の手順で済ませる。
+- `-c check_for_update_on_startup=false` も固定で付ける（補正 H1）。起動の直後に出る更新の確認の画面を出さないためで、I1 でこの画面に送った1行の Enter が「Update now」を選んで `brew upgrade --cask codex` が走った（episode の I1）。鍵は `config/src/config_toml.rs:533`、効き方は `tui/src/updates.rs:28,153` [verified]。無しで動く形は無い（画面が出れば最初の1行が選択肢に流れる）。残る危険として、フォルダの信頼の確認（新しい workspace を初めて開くとき）と hook の確認（未登録の hook があるとき）も起動の直後に出る。前者は worktree ごとに出るので、`oe-delegate` は Codex の子を起こしたあと、最初の1行を送る前に画面に `Trust this folder?` が出ていれば、もとのリポジトリを owner が信頼済みのときだけ Enter を1回送る（H8・owner の答え Q113。文言は実機で見たもので、版が変われば効かなくなるので `lib/agent.sh` の定数にし、README に書く）。後者は owner が `/hooks` で登録するまで出続けるので、README の手順で済ませる。
 - C6 の結果: `exec` を書かなくても前面のプロセスは `codex` になった（Claude と同じ）。`exec` は書かない。
 - `--add-dir` は、brief の置き場（統括のワークスペースの `.oe/`）が子の workspace（worktree）の外にあるとき、子が `.oe/question-*.json` と `.oe/report-*.md` を書けるようにするために付ける。Codex の `--add-dir` は書ける範囲を広げる引数で [verified]（`codex --help`）、Claude の `--add-dir`（読める範囲）とは意味が違うが、必要な効果（読める・書ける）は同じになる。読めることは C7 で確かめる。
 - SO: Claude の1行に `exec` を足す案を取り下げた（指摘9）。
@@ -428,6 +428,14 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 中身: (must 1) context% の分子が cached のトークンを二重に数えていた（`input_tokens` は cached を含む）。`total_tokens`（Codex の `tokens_in_context_window`・`protocol/src/protocol.rs:2679-2681`）を使い、無ければ `input + output`。DJ-6 の式も直す。(must 2) 床と hook の sidecar が同じペインに並び `oe-tree`・`oe-threads` が ambiguous で model / context% を隠す。PR-1 の H6（`floor: true`・読む側で床を外す）で直した。(should) 取り消した要求（`token_usage: null`）で 0 に戻さず前の値を残す。記録を1行ずつ読み、書きかけの最終行で窓を取り損ねない。`PostModelRequest` の配線を `async: true`・`timeout: 10` にして道具の実行を待たせない。hub に無くなった `oe-*.rules` を写し先から消す。README の hash の元に `timeout`・`async` なども入ると書く。検査の関数の切り出しを `sync_rules` だけにし、`set -euo pipefail` の下でも通ることを見る。
 - owner に聞くもの（補正ではなく問い・`.oe/question-562-2.json`）: 規則 `oe` が engine のすべての verb を sandbox の外に出すこと（絞るか）、`git commit` の allow が workspace の中の commit の hook も外で走らせること（外すか）。どちらも推奨は「決めたまま」。
 - 8項目: step・要件・ゲート・終端・受入・owner の決定・範囲は変わらない。context% の式は DJ-6 の細部の訂正で、結果（sidecar の形）は同じ。`async`・`timeout` は hook の定義の細部で、登録の手順は変わらない。
+
+### H8（変更・再承認済み・2026-11-13・Q113・承認の記録の entry 3）: フォルダの信頼の確認に、engine が条件つきで Enter を1回送る
+
+- 出どころ: H1 のうち「`Trust this folder?` に Enter を1回送る」を統括が変更と判定し、owner が判断ボード Q113 で決めた。
+- owner の決定: workspace のもとのリポジトリ（main の作業ツリー）を owner が Codex で信頼済みのときだけ、engine が Enter を1回送って進める。信頼済みかは `$CODEX_HOME/config.toml` を読んで確かめ、書き換えない。信頼されていないときと、画面の文言を読めないときは、Enter も最初の1行も送らずに止まって案内を出す。
+- 実装: `lib/agent.sh` の `oe_agent_codex_main_worktree`（`git rev-parse --git-common-dir` の親）と `oe_agent_codex_trusted`（`[projects."<path>"]` の `trust_level = "trusted"` を awk で読む）。`bin/oe-delegate` は Codex の子を起こして生存を確かめたあと、画面を `capture-pane` で読み、確認の文言があれば信頼済みのときだけ Enter を送って `OE_DELEGATE_TRUST_WAIT_SEC`（既定 2 秒）待ち、確認が消えたら最初の1行を送る。消えない・信頼されていない・config.toml を読めない・画面を読めない、のどれかなら exit 4 で止まる（ペインは残す。案内は stderr）。claude の子では画面を読まない（A-1）。
+- 検査: `tests/test_oe_delegate.sh` [A11]（信頼済みで Enter → 消えれば1行・消えなければ止まる／信頼されていない／config.toml が読めない／画面が読めない／確認が無い／claude は読まない）。
+- 8項目: step・ゲート・終端・受入は変わらない。要件は owner の決定で1つ増えた（変更・再承認済み）。範囲内。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 

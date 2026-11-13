@@ -426,6 +426,40 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
   exit 1
 }
 
+# Codex のフォルダの信頼の確認（#562・owner の答え Q113）。Codex は新しい workspace（worktree ごと）を初めて開くとき
+# 「Trust this folder?」の確認を出し、そこへ最初の1行を送ると Enter が選択肢に入る。engine は、workspace のもとの
+# リポジトリ（main の作業ツリー）を owner が Codex で信頼済み（$CODEX_HOME/config.toml の [projects."<path>"] に
+# trust_level = "trusted"）のときだけ Enter を1回送って進める。config.toml は読むだけで書き換えない。信頼されて
+# いないとき・画面を読めないときは、Enter も最初の1行も送らずに止まり、案内を出す（ペインは残す・exit 4）。
+if [[ "$AGENT" == "codex" ]]; then
+  _cap=""
+  if ! _cap="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)"; then
+    echo "oe-delegate: 子のペイン ${CHILD_PANE} の画面を読めないので、最初の1行を送らずに止めます。画面を見て、フォルダの信頼の確認が出ていなければ oe send ${CHILD_PANE} で1行を送ってください" >&2
+    exit 4
+  fi
+  if printf '%s\n' "$_cap" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
+    _main="$(oe_agent_codex_main_worktree "$WORKSPACE" 2>/dev/null)" || _main=""
+    _trc=1
+    if [[ -n "$_main" ]]; then oe_agent_codex_trusted "$_main" && _trc=0 || _trc=$?; fi
+    if [[ "$_trc" -eq 0 ]]; then
+      tmux send-keys -t "$CHILD_PANE" Enter
+      echo "oe-delegate: フォルダの信頼の確認に Enter を送りました（もとのリポジトリ ${_main} は owner が信頼済み・config.toml は書き換えていません）" >&2
+      sleep "${OE_DELEGATE_TRUST_WAIT_SEC:-2}"
+      if _cap2="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)" && printf '%s\n' "$_cap2" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
+        echo "oe-delegate: 確認の画面が消えないので、最初の1行を送らずに止めます。子のペイン ${CHILD_PANE} を見てください" >&2
+        exit 4
+      fi
+    else
+      case "$_trc" in
+        2) _why="config.toml（${CODEX_HOME:-${HOME:-}/.codex}/config.toml）を読めない" ;;
+        *) _why="もとのリポジトリ ${_main:-（git でない）} が owner の Codex で信頼されていない" ;;
+      esac
+      echo "oe-delegate: 子のペイン ${CHILD_PANE} にフォルダの信頼の確認が出ています。${_why}ので、engine は Enter を送りません。owner が子のペインで答えてから、oe send ${CHILD_PANE} で1行を送ってください（最初の1行は送っていません）" >&2
+      exit 4
+    fi
+  fi
+fi
+
 # spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
 oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" "$AGENT" || true
 

@@ -32,6 +32,29 @@ OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS='文末の [oe:<26文字>] は配送の受
 # 版が変われば効かなくなるので、ここに置いて README に書く。
 OE_AGENT_CODEX_TRUST_PROMPT='Trust this folder?'
 
+# oe_agent_codex_main_worktree <workspace> — workspace のもとのリポジトリ（main の作業ツリー）の絶対パスを出す。
+#   worktree なら git の共通ディレクトリ（.git）の親、ふつうのリポジトリなら自分の根。git でなければ 1。
+oe_agent_codex_main_worktree() {
+  local ws="${1:-}" common
+  [ -n "$ws" ] || return 1
+  common="$(git -C "$ws" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] || return 1
+  case "$common" in */.git) printf '%s' "${common%/.git}" ;; *) printf '%s' "$(cd "$common/.." 2>/dev/null && pwd -P)" ;; esac
+}
+
+# oe_agent_codex_trusted <path> [<config.toml>] — その path を owner が Codex で信頼済みか（config.toml を読むだけ・書かない）。
+#   [projects."<path>"] の表に trust_level = "trusted" があれば 0。無ければ 1。config.toml が読めなければ 2（owner の答え Q113・#562）。
+oe_agent_codex_trusted() {
+  local path="${1:-}" conf="${2:-${CODEX_HOME:-${HOME:-}/.codex}/config.toml}"
+  [ -n "$path" ] || return 1
+  [ -r "$conf" ] || return 2
+  awk -v want="[projects.\"${path}\"]" '
+    $0 == want { inside = 1; next }
+    /^\[/ { inside = 0 }
+    inside && $0 ~ /^[[:space:]]*trust_level[[:space:]]*=[[:space:]]*"trusted"[[:space:]]*$/ { found = 1; exit }
+    END { exit (found ? 0 : 1) }' "$conf"
+}
+
 # --- 名前 ---
 oe_agent_valid() {
   local a="${1:-}" x

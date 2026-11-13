@@ -60,6 +60,14 @@ if [[ "${1:-}" == "display-message" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "capture-pane" ]]; then
+  # #562 Q113: 子の画面。OE_DELEGATE_TEST_CAPTURE_FILE があればその中身、OE_DELEGATE_TEST_CAPTURE_FAIL=1 なら失敗。
+  [[ "${OE_DELEGATE_TEST_CAPTURE_FAIL:-0}" == "1" ]] && exit 1
+  printf '%s\n' "capture $*" >> "${log_dir}/capture.log"
+  if [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" && -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi
+  exit 0
+fi
+
 echo "unexpected tmux call: $*" >&2
 exit 1
 EOF
@@ -464,6 +472,57 @@ oe_reg_record "%9" "#562x" "$_TMP_DIR/ws" "%1" codex
 ck "registry の %9 は codex" "codex" "$(jq -r '.agent' "$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json")"
 out="$(env -u OE_LEASE_ID -u OE_GENERATION bash -c '. "$1/lib/delegate-registry.sh"; f="$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json"; jq -r ".agent // \"\"" "$f"' _ "$PROJECT_DIR")"
 ck "oe-send が引く registry の agent の経路（同じ式）" "codex" "$out"
+
+echo "[A11] #562 Q113: フォルダの信頼の確認。もとのリポジトリが信頼済みなら Enter を1回送って進む。そうでなければ送らずに止まる"
+export OE_DELEGATE_TRUST_WAIT_SEC=0
+# git の worktree を作り、main の作業ツリーのパスを信頼の鍵にする
+mkdir -p "$_TMP_DIR/repo" && git -C "$_TMP_DIR/repo" init -q && git -C "$_TMP_DIR/repo" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m i
+git -C "$_TMP_DIR/repo" worktree add -q "$_TMP_DIR/repo-wt" -b wt >/dev/null 2>&1
+MAIN_PATH="$(cd "$_TMP_DIR/repo" && pwd -P)"
+mkdir -p "$_TMP_DIR/codex-home2"; printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MAIN_PATH" > "$_TMP_DIR/codex-home2/config.toml"
+printf 'Folder access\n  Trust this folder? Codex can read, edit, and run files here.\n> 1. Trust and continue\n' > "$_TMP_DIR/cap-trust.txt"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11" || rc=$?
+# 2回目の capture でも同じ画面を返す mock なので「消えない」で止まる。まず Enter が送られたことを見る
+ck "信頼済みなら Enter を送る" "yes" "$(grep -q -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "確認が消えなければ最初の1行は送らず rc=4" "4" "$rc"
+ck "最初の1行は送っていない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "config.toml は書き換えていない" "yes" "$([[ "$(grep -c . "$_TMP_DIR/codex-home2/config.toml")" == "2" ]] && echo yes || echo no)"
+# 確認が消える形: 1回目は確認、2回目は空の画面（capture のたびにファイルを差し替える）
+printf '#!/usr/bin/env bash\nn=$(cat "%s/cap-n" 2>/dev/null || echo 0); echo $((n+1)) > "%s/cap-n"; if [ "$n" -eq 0 ]; then cat "%s/cap-trust.txt"; else printf "› \\n"; fi\n' "$_TMP_DIR" "$_TMP_DIR" "$_TMP_DIR" > "$_TMP_DIR/bin/capture-seq"; chmod +x "$_TMP_DIR/bin/capture-seq"
+sed -i.bak 's|if \[\[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" \]\]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|if [[ -n "${OE_DELEGATE_TEST_CAPTURE_SEQ:-}" ]]; then "$OE_DELEGATE_TEST_CAPTURE_SEQ"; elif [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|' "$_TMP_DIR/bin/tmux"
+reset_logs; rm -f "$_TMP_DIR/cap-n"
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_SEQ="$_TMP_DIR/bin/capture-seq" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11b" || rc=$?
+ck "確認が消えたら最初の1行を送る（rc=0）" "0" "$rc"
+ck "Enter のあとに1行" "yes" "$(grep -q -- 'send-keys -l -t %9 -- a11b' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+# 信頼されていない: Enter も1行も送らずに rc=4
+printf '[projects."/elsewhere"]\ntrust_level = "trusted"\n' > "$_TMP_DIR/codex-home2/config.toml"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11c" || rc=$?
+ck "信頼されていなければ rc=4" "4" "$rc"
+ck "Enter を送らない" "no" "$(grep -q -- 'Enter' "$_TMP_DIR/logs/send-keys.log" 2>/dev/null && echo yes || echo no)"
+ck "案内を出す" "yes" "$(grep -q '信頼されていない' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "子のペインは残す（kill しない）" "no" "$(grep -q 'kill-pane' "$_TMP_DIR/logs/"*.log 2>/dev/null && echo yes || echo no)"
+# config.toml が読めない: rc=4 と案内
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/no-such-home" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11d" || rc=$?
+ck "config.toml が読めなければ rc=4" "4" "$rc"
+ck "読めない旨の案内" "yes" "$(grep -q 'config.toml' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+# 画面を読めない: rc=4
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11e" || rc=$?
+ck "画面を読めなければ rc=4 で止まる" "4" "$rc"
+# 確認が出ていない: 今までどおり進む
+printf '› Ask Codex to do anything\n' > "$_TMP_DIR/cap-plain.txt"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-plain.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11f" || rc=$?
+ck "確認が無ければ rc=0 で1行を送る" "0" "$rc"
+ck "Enter は余分に送らない（送信の Enter が1回だけ）" "1" "$(grep -c -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log")"
+# claude の子では画面を読まない
+reset_logs
+rc=0; OE_DELEGATE_TEST_CAPTURE_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" "a11g" || rc=$?
+ck "claude の子は画面を読まず今までどおり（rc=0）" "0" "$rc"
+unset OE_DELEGATE_TRUST_WAIT_SEC
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]
