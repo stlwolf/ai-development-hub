@@ -23,7 +23,7 @@ ck() {
 HB="$_TMP_DIR/hb"; EV="$_TMP_DIR/ev"; mkdir -p "$HB" "$EV"
 LID="01KZ1VQA1979K4S2MMH5YY24ZJ"
 run_hook() { # <payload-json> [env assignments...]
-  printf '%s' "$1" | env -u OE_LEASE_ID -u OE_GENERATION OE_HEARTBEAT_DIR="$HB" OE_EVENT_DIR="$EV" TMUX_PANE="${HP_PANE-%7}" TMUX="${HP_TMUX-oe,999,0}" "${@:2}" bash "$HOOK" 2>"$_TMP_DIR/err.txt"
+  printf '%s' "$1" | env -u OE_LEASE_ID -u OE_GENERATION OE_HEARTBEAT_DIR="$HB" OE_EVENT_DIR="$EV" TMUX_PANE="${HP_PANE-%7}" TMUX="${HP_TMUX-oe,999,0}" "${@:2}" "$BASH" "$HOOK" 2>"$_TMP_DIR/err.txt"
 }
 T="$_TMP_DIR/rollout.jsonl"
 printf '%s\n' '{"type":"session_meta","payload":{"id":"sid-x"}}' \
@@ -96,6 +96,38 @@ P7="$(jq -cn --arg t "$T" '{hook_event_name:"PostModelRequest", session_id:"sid-
 run_hook "$P7" OE_HB_AGENT=other >/dev/null
 ck "100 で頭打ち" "100.0" "$(jq -r '.context_pct' "$HB/sid-w.json")"
 ck "agent の上書き" "other" "$(jq -r '.agent' "$HB/sid-w.json")"
+
+echo "[9] #562 マージ後: ペインの主の会話だけを書く（サブエージェント・記録の無い内部の会話・codex exec は書かない）"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-cli","source":"cli"}}' > "$_TMP_DIR/cli.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-exec","source":"exec"}}' > "$_TMP_DIR/exec.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-sub","source":{"subagent":"memory_consolidation"}}}' > "$_TMP_DIR/sub.jsonl"
+mk() { jq -cn --arg sid "$1" --arg t "$2" '{hook_event_name:"UserPromptSubmit", session_id:$sid, model:"gpt-6.1-sol", prompt:"x"} + (if $t != "" then {transcript_path:$t} else {} end)'; }
+run_hook "$(mk m-cli "$_TMP_DIR/cli.jsonl")" >/dev/null
+ck "source が cli の会話は書く" "yes" "$([[ -f "$HB/m-cli.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-exec "$_TMP_DIR/exec.jsonl")" >/dev/null
+ck "source が exec の会話（ペインから打った codex exec）は書かない" "no" "$([[ -f "$HB/m-exec.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-sub "$_TMP_DIR/sub.jsonl")" >/dev/null
+ck "source がサブエージェントの会話は書かない" "no" "$([[ -f "$HB/m-sub.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-none "")" >/dev/null
+ck "transcript_path が無い内部の会話（記憶の整理など）は書かない" "no" "$([[ -f "$HB/m-none.json" ]] && echo yes || echo no)"
+run_hook "$(jq -cn --arg t "$_TMP_DIR/cli.jsonl" '{hook_event_name:"PostModelRequest", session_id:"m-agent", model:"m", agent_id:"01a1dafa-0000-0000-0000-000000000000", agent_type:"default", transcript_path:$t, token_usage:{total_tokens:10}}')" >/dev/null
+ck "agent_id がある会話（サブエージェント）は書かない" "no" "$([[ -f "$HB/m-agent.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-unread "/nonexistent/rollout.jsonl")" >/dev/null
+ck "記録の先頭が読めないときは書く（主の会話を落とさない）" "yes" "$([[ -f "$HB/m-unread.json" ]] && echo yes || echo no)"
+d0="$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
+run_hook "$(mk m-exec2 "$_TMP_DIR/exec.jsonl")" >/dev/null
+run_hook "$(mk m-none2 "")" >/dev/null
+ck "書かない会話は診断も残さない（ふつうのこと・診断の行数が増えない）" "$d0" "$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-vs","source":"vscode"}}' > "$_TMP_DIR/vscode.jsonl"
+run_hook "$(mk m-vs "$_TMP_DIR/vscode.jsonl")" >/dev/null
+ck "source が vscode の対話の会話は書く（cli 以外の対話を落とさない）" "yes" "$([[ -f "$HB/m-vs.json" ]] && echo yes || echo no)"
+: > "$_TMP_DIR/empty.jsonl"
+run_hook "$(mk m-empty "$_TMP_DIR/empty.jsonl")" >/dev/null
+# 実際の記録の大きさ（先頭の1行が数十 KB・後ろに数百 KB）でも見分けられる（head の SIGPIPE で値を落とさない）
+{ jq -cn --arg pad "$(head -c 30000 /dev/zero | tr '\0' 'a')" '{type:"session_meta",payload:{id:"m-big",source:"exec",base_instructions:{text:$pad}}}'; for i in $(seq 1 3000); do printf '{"type":"event_msg","payload":{"type":"agent_message","message":"%s"}}\n' "line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done; } > "$_TMP_DIR/big-exec.jsonl"
+run_hook "$(mk m-big "$_TMP_DIR/big-exec.jsonl")" >/dev/null
+ck "大きな exec の記録でも書かない" "no" "$([[ -f "$HB/m-big.json" ]] && echo yes || echo no)"
+ck "記録が空（まだ書かれていない）なら書く" "yes" "$([[ -f "$HB/m-empty.json" ]] && echo yes || echo no)"
 
 echo "[8] 一時ファイルを残さない"
 ck ".hb.* が残らない" "0" "$(find "$HB" -name '.hb.*' | wc -l | tr -d ' ')"

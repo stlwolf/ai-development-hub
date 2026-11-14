@@ -18,6 +18,18 @@
 #   - lease_id / generation: 環境の OE_LEASE_ID と OE_GENERATION（形が正しいときだけ）
 #   - agent: "codex"（この hook は Codex にだけ配る。ほかのエージェントに配るなら OE_HB_AGENT で上書き）
 #
+# 書くのは、ペインの主の会話（対話の画面の会話）だけである（#562 のマージ後の確かめ）。次の会話は書かない:
+#   - サブエージェント（標準入力に agent_id がある）
+#   - 記録を持たない内部の会話（transcript_path が無い。Codex の記憶の整理などは同じプロセスの中で走り、
+#     ペインの環境を引き継ぐ）
+#   - 記録の先頭の session_meta.source が exec か、文字列でない（サブエージェント）会話（ペインから打った codex exec・
+#     so-compare の Codex のレーンなど。打ったペインの TMUX_PANE と lease の環境を引き継ぐので、書くとそのペインの
+#     拍動が2件になる）。cli・vscode など対話の画面の source は外さない（主の会話を落とさない・実装SO の指摘）
+#   lease の有無では見分けない（統括のペインの codex exec は統括の lease を引き継ぐ）。記録の先頭が読めないとき
+#   （まだ作られていない・書きかけ）・session_meta が無いときは書く（主の会話の最初の hook を落とさない）。
+#   先頭の1行は 1 MiB までしか読まない（同期の hook を長く止めない）。exec の記録を対話の画面で resume した会話は
+#   source が exec のままなので書かない（まれな形として受け入れる）。
+#
 # 標準出力には何も出さない（UserPromptSubmit の標準出力はモデルの文脈に足される）。exit は常に 0。
 # 同期の hook は後続を待たせるので、記録の全件走査はせず tail の上限で短く終える。上限の時間は hooks.json の側で持つ
 # （PostModelRequest は async と timeout 付きで配線する）。
@@ -47,6 +59,17 @@ sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)" || si
 case "$sid" in *[!A-Za-z0-9._-]*) _diag "session-id-unsafe" "session_id に使えない文字がある"; exit 0 ;; esac
 
 event="$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null)" || event=""
+
+# ペインの主の会話でなければ書かない（上の説明）。
+agent_id="$(printf '%s' "$payload" | jq -r '(.agent_id // "") | tostring' 2>/dev/null)" || agent_id=""
+[ -z "$agent_id" ] || exit 0
+transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || transcript=""
+[ -n "$transcript" ] || exit 0
+if [ -r "$transcript" ]; then
+  # head -n 1 が読み終えると前の head -c が SIGPIPE で止まり、pipefail で全体が失敗になるので、head -c の失敗は飲む。
+  src="$( (head -c 1048576 "$transcript" 2>/dev/null || true) | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
+  case "$src" in exec|subagent) exit 0 ;; esac
+fi
 model="$(printf '%s' "$payload" | jq -r '(.model // "") | if type=="string" then . else "" end' 2>/dev/null)" || model=""
 
 ts="$(date +%s 2>/dev/null)" || exit 0
@@ -66,7 +89,6 @@ if [ "$event" = "PostModelRequest" ]; then
   # 文脈の中のトークン数は total_tokens（無ければ input_tokens + output_tokens。input_tokens は cached を含むので
   # cached_input_tokens は足さない）。token_usage が null（取り消し・失敗した要求）なら空のままにして前の値を残す。
   used="$(printf '%s' "$payload" | jq -r 'if (.token_usage | type) == "object" then (.token_usage | (.total_tokens // ((.input_tokens // 0) + (.output_tokens // 0))) | tostring) else empty end' 2>/dev/null)" || used=""
-  transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || transcript=""
   window=""
   if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     # 記録を末尾から上限付きで1行ずつ読み（壊れた行・書きかけの最終行は飛ばす）、いちばん新しい token_count の
