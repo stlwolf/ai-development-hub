@@ -49,6 +49,10 @@ Before starting any code change, propose a planning phase. The requirement to pr
   - `canonical/commands/` (task execution playbooks)
   - `canonical/codex/commands-registry/registry.md` (pseudo-command mappings)
 
+## Delegated Child
+
+- When started as a delegated child by the orchestration engine (a brief path is sent as the first line), follow the brief's fixed sections. The engine's own conventions (receipt tag, how to report, how to ask) arrive with the launch command and the brief, not here.
+
 ## Subagent Policy
 
 - `canonical/agents/` holds subagent role definitions only.

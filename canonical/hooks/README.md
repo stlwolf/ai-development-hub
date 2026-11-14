@@ -33,7 +33,8 @@
 | CC 形式チェック | `beforeShellExecution` | `PreToolUse(Bash)` | `PreToolUse(Bash)` |
 | 通知: 完了 | — | `Stop` hook → notify.sh | `notify`(config.toml) → notify.sh |
 | セッション命名 | — | `UserPromptSubmit` → session-name.sh | — |
-| 取り込み印（#299） | — | `UserPromptSubmit` → oe-prompt-receipt.sh | — |
+| 取り込み印（#299） | — | `UserPromptSubmit` → oe-prompt-receipt.sh | `UserPromptSubmit` → oe-prompt-receipt.sh（#562・信頼の登録が要る） |
+| 拍動（#327 / #562） | — | statusLine → statusline-oe-heartbeat.sh（`canonical/claude/statusline/`） | `PostModelRequest`・`UserPromptSubmit` → oe-heartbeat-hook.sh（#562・信頼の登録が要る） |
 | 通知: 入力待ち | — | `Notification`（matcher `permission_prompt\|idle_prompt`） → notify.sh | `[tui] notifications=["approval-requested"]` + `notification_method="osc9"`（ネイティブ）※ |
 
 ※ Codex は通知に lifecycle hook を**使わない**（`Stop` は対話で発火しない報告 [openai/codex#17532]、`PermissionRequest` は対話で承認プロンプトが出ても**発火しないことを実機確認**）。完了は `config.toml` の `notify`→notify.sh（Claude と統一フォーマット）で出る。入力待ちは Codex ネイティブ `[tui] notifications=["approval-requested"]`(osc9) を設定するが、**Codex は OSC を tmux passthrough で包まないため tmux 環境では通知が出ない（実機確認＝既知ギャップ）**。`notify` / `[tui]` は `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用する（symlink 不可な状態ファイルのためキー単位で適用）。
@@ -226,8 +227,21 @@ CLI/フック文脈からは macOS 通知 API（osascript/terminal-notifier）�
 |---------|------|--------|
 | `cursor.hooks.json` | Cursor native (version: 1) | `~/.cursor/hooks.json` |
 | `claude.hooks.json` | Claude Code (hooks セクション) | `~/.claude/settings.json` の `hooks` キーにマージ |
-| `codex.hooks.json` | Codex | `~/.codex/hooks.json`（block 系のみ。通知は config.toml 経由） |
+| `codex.hooks.json` | Codex | `~/.codex/hooks.json`（block 系と、取り込み印・拍動の `UserPromptSubmit`/`PostModelRequest`。通知は config.toml 経由） |
 | Codex 通知設定 | `config.toml` キー（`notify` / `[tui]`） | `scripts/sync/apply-codex-notify-config.sh` が `~/.codex/config.toml` へ冪等適用 |
+| `canonical/codex/rules/*.rules` | Codex の実行ポリシー | `~/.codex/rules/` に**通常のファイルとして写す**（`sync-codex.sh` の `sync_rules`・Codex は `rules/` の symlink を読まない・#562） |
+
+## Codex の hook の信頼と、engine の子のための hook（#562）
+
+Codex は `hooks.json` の hook を、**hook の定義ごとの hash を信頼として登録するまで走らせない**。登録は `~/.codex/config.toml` の `[hooks.state."<hooks.json のパス>:<イベント名の snake_case>:<組の番号>:<hook の番号>"]` に `trusted_hash = "sha256:…"` として書かれる（例: `…/hooks.json:user_prompt_submit:0:0`）。未登録の hook があると、起動時に「Review hooks」の確認が出て、その hook は黙って飛ばされる（記録に何も増えない）。
+
+- **登録のしかた**: `./scripts/sync.sh codex` のあと、Codex の対話の画面を開く。未登録の hook があると、起動の直後に「Hooks need review」の画面が出て `1. Review hooks`・`2. Trust all and continue`・`3. Continue without trusting` が並ぶ（0.167.2 の実機）ので、`2` を選べば全部が登録される。あとから登録するときは、`/hooks` で一覧を出して `t`（trust all。未登録が残っているときだけ出る）か、1本ずつ `enter` で確かめて信頼する。実機（0.167.2・2026-11-13）では `t` で3本がまとめて登録された。
+- **いつ登録し直すか**: hash は hook の**定義**（イベント・matcher・組・`command` の文字列と、正規化した `timeout`・`async`・`statusMessage`・`additionalContextLimit`）から作られ、呼び先のスクリプトの本文は含まない。`hooks.json` の定義を変えたとき（command の文字列・並び・組）は登録し直しが要り、スクリプトの中身だけを変えたときは要らない。鍵はイベントごとに分かれているので、別のイベントに hook を足しても既存の `PreToolUse` の登録はずれない。
+- **採らない形**: `--dangerously-bypass-hook-trust` は、未登録の hook を全部走らせる flag で、hub の止める側の hook まで「登録して走らせる」前提を外すので、engine が子を起こす1行には付けない。
+- **engine の子のための2本**: `oe-prompt-receipt.sh`（取り込み印・Claude と同じスクリプト）と `oe-heartbeat-hook.sh`（hook で書く拍動）。後者は `PostModelRequest` の標準入力の `token_usage`（その要求の使用量）と記録の `model_context_window` から context% を出し、Claude の statusLine と同じ形の sidecar を `~/.claude/state/oe-heartbeat/<session_id>.json` に書く（読む側は変えない）。`PostModelRequest` の配線は `async: true`・`timeout: 10` で、モデルの要求の後続（道具の実行）を待たせない（hash の元に入るので、変えたら登録し直す）。記録は末尾から上限付き（`OE_HB_TAIL_LINES`・既定 200 行）に1行ずつ読む。標準出力には何も出さない（`UserPromptSubmit` の標準出力はモデルの文脈に足される）。
+- **安全の境界ではない（Q119）**: hub が配る規則（`canonical/codex/rules/oe-child.rules`・`oe` の1行）と、engine が子を起こす1行で渡す権限（tmux のソケット・本体の `.git`・`~/.claude/state`）を合わせると、Codex の子は sandbox の外の権限で操作できる（tmux のソケットの先は親の tmux サーバー・`oe` は sandbox の外で走る）。engine は子を親と同じだけ信頼し、守りは hub の hook と人の承認のゲート（Claude の子では auto mode の判定器も）で持つ。Codex の子の sandbox の中で通る操作は判定器が裁かないので、外から来た文（Web のページ・知らない人が書いた issue や PR）を読ませる作業を Codex の子に任せない（`projects/orchestration-engine/bin/README.md` の oe-delegate の節）。
+- **無いときの形**: 登録していなくても `oe delegate --agent codex` は動く。受領の印は出ず（`oe-confirm` は「確認できていない」）、拍動は engine が起こしたときと子が `oe send` を打つたびに書く床だけになる（`projects/orchestration-engine/bin/README.md` の oe-delegate の節）。
+- **確かめ方**: 実機でしか確かめられない（1段階目の直叩きでは信頼を通らない）。受領の印は送り先の `UserPromptSubmit` の hook が書くので、統括（親）から Codex の子へ `oe send` で1行を送り、`oe confirm` でその送信（宛先が Codex の子のペイン）に受領の印が付くことを見る。Codex の子から親へ送る向きでは、親（Claude）の hook が印を書くので、Codex の hook の登録の不備を見逃す。あわせて、`oe tree` の Codex の子の行に model と context% が出ることを見る。
 
 ## 設計判断
 

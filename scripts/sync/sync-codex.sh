@@ -175,6 +175,56 @@ sync_hook_scripts() {
     info "  ${count} ${label} symlink(s) created/updated"
 }
 
+# sync_rules <source_dir> <target_dir> <label>
+#   canonical/codex/rules/*.rules を ~/.codex/rules/ に通常のファイルとして写す（#562）。Codex の実行ポリシーの
+#   読み込みは DirEntry::file_type().is_file() で symlink を読まない（0.167.1 の core/src/exec_policy.rs）ので、
+#   hook のスクリプトのような symlink の配布は使えない。内容が同じなら書き直さない。hub が持つ名前のファイルだけを
+#   触り、owner の default.rules などには触らない。写した先が symlink なら（古い配り方の残り）通常のファイルに置き換える。
+sync_rules() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local label="$3"
+
+    info "Syncing ${label}: ${source_dir} → ${target_dir}"
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "Source directory not found: ${source_dir}"
+        return
+    fi
+
+    mkdir -p "${target_dir}"
+
+    local count=0 file filename target_path
+    while IFS= read -r -d '' file; do
+        filename="$(basename "$file")"
+        target_path="${target_dir}/${filename}"
+        if [[ -L "${target_path}" ]]; then
+            rm -f "${target_path}"
+        fi
+        if [[ -f "${target_path}" ]] && cmp -s "${file}" "${target_path}"; then
+            info "  Unchanged: ${filename}"
+            continue
+        fi
+        cp -f "${file}" "${target_path}"
+        chmod 0644 "${target_path}" 2>/dev/null || true
+        info "  Copied: ${filename}"
+        ((count++)) || true
+    done < <(find "${source_dir}" -type f -name "*.rules" -print0)
+
+    # hub の名前空間（oe-*.rules）で、hub の側に無くなったものは写し先からも消す（古い allow が効き続けないように）。
+    # owner の default.rules など、hub の名前空間の外のファイルには触らない。
+    local stale
+    while IFS= read -r -d '' stale; do
+        filename="$(basename "$stale")"
+        if [[ ! -f "${source_dir}/${filename}" ]]; then
+            rm -f "${stale}"
+            info "  Removed (no longer in canonical): ${filename}"
+        fi
+    done < <(find "${target_dir}" -maxdepth 1 -name 'oe-*.rules' \( -type f -o -type l \) -print0)
+
+    info "  ${count} ${label} file(s) copied"
+}
+
 toml_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -296,6 +346,10 @@ main() {
 
     # Hook scripts
     sync_hook_scripts "${CANONICAL_DIR}/hooks/scripts" "${TARGET_BASE}/hooks" "hook scripts"
+    echo ""
+
+    # 実行ポリシーの規則（#562）。Codex は rules/ の symlink を読まないので、通常のファイルとして写す。
+    sync_rules "${CANONICAL_CODEX_DIR}/rules" "${TARGET_BASE}/rules" "exec policy rules"
     echo ""
 
     # Codex 通知設定（config.toml への冪等 apply。symlink 不可な状態ファイルのためキー単位で適用）
