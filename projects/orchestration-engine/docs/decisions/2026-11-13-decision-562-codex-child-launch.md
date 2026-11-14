@@ -30,7 +30,7 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
 
 ### 決定1 書ける場所と tmux のソケットは、起こす1行でそのセッションにだけ渡す。規則は `oe` の1行だけ（Q118・Q106 を置き換えた）
 
-- engine は起こす前に、本体の `.git`・worktree の gitdir・engine の状態の置き場を実体のパスで解決して `--add-dir` で渡し、tmux のソケットを `network_access`・`network_proxy`・`unix_sockets` の3つの `-c` で渡す。外への通信は閉じたままにする。
+- engine は起こす前に、本体の `.git`・worktree の gitdir・engine の状態の置き場を実体のパスで解決して `--add-dir` で渡し、tmux のソケットを `network_access`・`network_proxy`・`unix_sockets` の3つの `-c` で渡す。sandbox の中のプロセスから外への直接の通信は閉じたままだが、tmux のソケットを通せば親と同じ権限でコマンドを走らせられるので、子は外への通信も共通の `.git` も親と同じだけ使える（Claude の子と同じ状態になる。sandbox は事故を防ぐもので、安全の境界ではない・Q119）。
 - owner の user 層に置く実行ポリシーの規則は `prefix_rule(pattern=["oe"], decision="allow")` の1行だけにする。`git push` と `gh` は開かない（子は commit まで）。
 - `oe` の入口は、Codex の sandbox の中（`CODEX_SANDBOX`）で呼ばれたら何もせずに止まり、単独で打ち直すよう返す。
 - 利用者が `--agent-arg` で承認や sandbox のモードを変える（`-s`・`-a`・bypass・`--yolo`、`-c sandbox_mode=…` などの設定の鍵の形も含む）と、engine は既定の `--approve-for-me` を外し、sandbox を外す指定は elevated（owner の承認のダイジェストが要る）と読む。設定の鍵の形を読み落として、ダイジェスト無しに sandbox を外した子を起こせた実装の漏れを PR-1 の Copilot が指した（plan の H6）。利用者の引数がネットワークの設定に触れていれば、engine はネットワークの指定を出さない（plan の H11）。
@@ -57,9 +57,18 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
 - 信頼を `-c 'projects={"<path>"={trust_level="trusted"}}'` で渡せば確認は出ないが、owner の信頼の判断を engine が肩代わりすることになるので採らない（Q118）。
 - 棄却した案: `config.toml` に engine が信頼を書く（owner の設定を engine が書き換える）。何もせず人が答える（最初の1行が確認の画面に流れて消える）。
 
+### 決定4 Codex の sandbox は安全の境界にしない。子は親と同じだけ信頼する（Q119・2026-11-14）
+
+- engine の安全の考え方は「子は親と同じだけ信頼する。守りは hook と、人の承認のゲートと、Claude の子では auto mode の判定器で持つ」である。Codex の sandbox は事故（作業フォルダの外への書き込み・外への通信）を防ぐもので、安全の境界ではない。
+- Codex の子は、tmux のソケット・本体の `.git`・`~/.claude/state` に届く。tmux のソケットを通せば、親の tmux サーバーの権限でほかのペインを読み・入力し・`run-shell` でコマンドを走らせられる。共通の `.git` には設定と hook を書けるので、親が後で sandbox の外で commit すると、その hook が親の権限で走る。`~/.claude/state` の lease・拍動・受領の記録も書ける（マージ前のレビューの実測）。
+- Claude の子も同じ3つに届いている。違いは、Claude の子の操作には auto mode の判定器が入るが、Codex の子の sandbox の中で通る操作（tmux を通るものを含む）は誰も裁かない点である。
+- 運用の注意: Codex の子に、外から来た文（Web のページ・知らない人が書いた issue や PR）を読ませる作業を任せない。読ませた文の指示に従ってしまうと、それを止める判定器が無い。
+- 棄却した案（範囲の外・follow-up）: 子に tmux のソケットと共有の記録を渡さず、親の側が子の報告を受け取って配る形。子のための別の git のリポジトリで commit させ、親が差分を確かめて取り込む形。どちらも engine の作りを変えるので別の issue にする（#549 の子の報告の届け方とつなぐ）。
+- 選んだ理由: Claude の子と Codex の子で守りの考え方をそろえ、まず Codex の子を動かす。sandbox を境界にするには、上の作り直しが要る。
+
 ## 当時の前提（偽になったら見直す）
 
-- Codex CLI 0.167.2 の sandbox（macOS の seatbelt）が、`--add-dir` で足した場所への書き込みを、`.git` の既定の保護より優先して許すこと。`network_proxy` の `unix_sockets` で、外への通信を閉じたまま特定のソケットだけを開けること。Codex の版が上がったら、CHECK-2 の手順で確かめ直す。
+- Codex CLI 0.167.2 の sandbox（macOS の seatbelt）が、`--add-dir` で足した場所への書き込みを、`.git` の既定の保護より優先して許すこと。`network_proxy` の `unix_sockets` で、sandbox の中のプロセスの直接の通信を閉じたまま特定のソケットだけを開けること（tmux のソケットの先は sandbox の外なので、これは事故を防ぐ設定であって境界ではない）。Codex の版が上がったら、CHECK-2 の手順で確かめ直す。
 - sandbox の中で `ps` が起動できないこと。起動できるようになれば、規則 `oe` の1行も要らなくなりうる。
 - 親の本人確認を `ps`（pid と開始時刻）で行っていること。確かめ方が変われば、決定1 の「`oe` だけを外に出す」理由は見直す。
 - Codex の `-c` の鍵が `.` で単純に分けられること（引用符で囲んだ鍵が効かない）。直れば、`-c` で渡せるものの範囲が変わる。

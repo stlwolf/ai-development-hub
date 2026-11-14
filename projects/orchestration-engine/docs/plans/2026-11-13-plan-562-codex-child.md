@@ -454,7 +454,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
   - `oe` がほかのコマンドとつないで打たれたときに単独で打ち直すと返す検知（`CODEX_SANDBOX`）を入れ、決まりの文に1文足す。`--to-parent` は sandbox の中で `ps` が動かず、権限を足しても届かないため（確かめの 5）。
   - フォルダの信頼は `-c` で渡さない（owner が本体のリポジトリを信頼する）。
 - 実装（PR-1）:
-  - `lib/agent.sh` に `oe_agent_codex_sandbox_args <workspace>` を足す。起こす前に、本体の `.git`（`git rev-parse --git-common-dir`）・worktree の gitdir（`--git-dir`。本体と同じなら1つ）・状態の置き場（`~/.claude/state`）を実体のパス（`pwd -P`）で解決して `--add-dir` で渡す。tmux のソケットは `tmux display-message -p '#{socket_path}'` を実体のパスに直し、`-c sandbox_workspace_write.network_access=true`・`-c features.network_proxy.enabled=true`・`-c 'features.network_proxy.unix_sockets={"<ソケット>"="allow"}'` の3つで渡す（外への通信は閉じたまま・確かめの 3）。git でない workspace では git の分を、tmux の外では tmux の分を足さない。
+  - `lib/agent.sh` に `oe_agent_codex_sandbox_args <workspace>` を足す。起こす前に、本体の `.git`（`git rev-parse --git-common-dir`）・worktree の gitdir（`--git-dir`。本体と同じなら1つ）・状態の置き場（`~/.claude/state`）を実体のパス（`pwd -P`）で解決して `--add-dir` で渡す。tmux のソケットは `tmux display-message -p '#{socket_path}'` を実体のパスに直し、`-c sandbox_workspace_write.network_access=true`・`-c features.network_proxy.enabled=true`・`-c 'features.network_proxy.unix_sockets={"<ソケット>"="allow"}'` の3つで渡す（sandbox の中のプロセスの直接の通信は閉じたまま・確かめの 3。tmux のソケットの先は sandbox の外なので、子は外への通信を親と同じだけ使える。H13 を見る）。git でない workspace では git の分を、tmux の外では tmux の分を足さない。
   - 書ける場所の渡し方は `-c sandbox_workspace_write.writable_roots` でなく `--add-dir` にする。`writable_roots` は owner の設定が名前付きの権限のプロファイルを選んでいると足されないが、`--add-dir` は必ず足される（`core/src/config/mod.rs:3762-3788`）。実機の確かめは `writable_roots` で行い（確かめの 1・2）、ソースでは両方が同じ並びに入るので、`--add-dir` での通しは CHECK-2 の2回目で見る。
   - `bin/oe` の入口で、`CODEX_SANDBOX` が空でなければ何もせずに exit 2 で止まり、「`oe` で始まる1つのコマンドとして、ほかのコマンドとつながずに打ち直す」と stderr に出す。
   - 決まりの文（`OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS`）に「`oe` は、ほかのコマンドとつながず、それだけで1つのコマンドとして打つ。」を足す。
@@ -472,7 +472,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - should: 検査が文字列の比較だけだった。TOML として解析して元のパスに戻ること・利用者の引数があるときに出さないこと・委譲の終了コードを見る検査を足した（`test_agent.sh`・`test_oe_delegate.sh` の [A12]）。
 - 採らなかった観察: 入口の検知は環境変数だけで判定するので、変数を引き継いだ sandbox の外では止めすぎ、変数を消した sandbox の中では見逃す。Codex が入れる変数で見分けるのは H10 の決定どおりで、偽陽性は「単独で打ち直す」で抜けられるので変えない。
 - Copilot: PR-1 への再依頼は owner の明示の指示があるときだけ行う運用なので行わない。PR-2 の Copilot の1ラウンドは、PR-1 の着地のあと PR-2 を ready にしてから行う（変わらず）。
-- 8項目: step・ゲート・終端・受入・設計判断の結論・範囲は変わらない。追加の義務は無い（must 2 の扱いは H10 の「外への通信は閉じたまま」を守るための細部）。
+- 8項目: step・ゲート・終端・受入・設計判断の結論・範囲は変わらない。追加の義務は無い（must 2 の扱いは H10 の「sandbox の中のプロセスの直接の通信は閉じたまま」を守るための細部）。
 
 ### H12（補正・2026-11-14・マージ前のレビュー）: Codex の引数の判定がつなげた書き方を拾わない誤りと、信頼の確認の読み取りの失敗を素通りする誤りを直した
 
@@ -482,6 +482,15 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 検査: `test_agent.sh` につなげた書き方と鍵の空白の検査、`test_oe_delegate.sh` の [A13]（Enter の失敗・2回目の読み取りの失敗）。
 - 範囲: レビューのほかの指摘（tmux のソケット・`.git`・状態の置き場・規則 `oe` の広さ）は設計の話で、owner に判断ボードの Q119 で聞いている。ここでは触らない。
 - 8項目: step・要件・ゲート・終端・受入・設計判断の結論・範囲は変わらない。H10・H11・Q113 で決めた振る舞いを、決めたとおりに働かせる直しである。
+
+### H13（変更・再承認済み・2026-11-14・Q119・承認の記録の entry 8）: Codex の sandbox を安全の境界にしないことを文書に書いてマージし、作り直しは別の issue にする
+
+- 出どころ: owner が Codex に PR #644・#645 をレビューさせ、tmux のソケット・本体の `.git`・`~/.claude/state` に子が届くことで、sandbox の外で操作できると指された（マージ前に直すべきとされた4件）。owner は判断ボードの Q119 で「誤り2件を直し（H12）、境界でないことを文書に書いてマージし、作り直しは別の issue にする」と決めた。
+- 書く中身: engine の安全の考え方（子は親と同じだけ信頼する・守りは hook と人の承認のゲートと Claude の子では auto mode の判定器）。Codex の sandbox は事故を防ぐもので境界ではないこと。Codex の子は3つに届き、Claude の子も同じ3つに届いていて、違いは判定器の有無であること。運用の注意（外から来た文を読ませる作業を Codex の子に任せない）。親の側が報告を配る形は範囲の外・follow-up（#549 とつなぐ）。
+- 置き場: decision の決定4・`bin/README.md`・`delegate-task` のスキル（PR-1）、hooks の README と規則のファイルの注記（PR-2）。
+- 言いすぎの訂正: Q118 のカードの説明のうち「外への通信は閉じたまま」と「`git commit` の規則をやめたので commit の hook の心配が消える」を、plan・episode・decision で「Claude の子と同じ状態になる」の言い方に直した。
+- コードは変えない（`lib/agent.sh` の注釈の「外への通信は閉じたまま」は、sandbox の中のプロセスの直接の通信の話としては正しいので残す）。
+- 8項目: step・ゲート・終端は変わらない。受入と設計判断の結論は、owner の決定で「sandbox を境界にしない」と明記する形に変わった。範囲は、作り直しを範囲の外へ出した（変更・再承認済み）。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 

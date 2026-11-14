@@ -52,6 +52,12 @@ promotion:
   - subject: "フォルダの信頼の確認に条件つきで Enter を送る（H8・Q113）"
     verdict: required
     ref: "本文: H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）"
+  - subject: "Codex の sandbox を安全の境界にしない（Q119）"
+    verdict: required
+    ref: "本文: Q119: sandbox を安全の境界にしない（2026-11-14）"
+  - subject: "sandbox の権限の足し先が sandbox の外の権限を持つ相手かを見る"
+    verdict: not-required
+    ref: "本文: Q119: sandbox を安全の境界にしない（2026-11-14）"
 ---
 
 # #562 Codex CLI を、統括の子として tmux のペインで対話的に動かす
@@ -208,7 +214,7 @@ Codex のレーンは道具の障害、Cursor のレーンは 1350 秒（延長�
 - フォルダの信頼: `-c 'projects."<path>".trust_level="trusted"'` では確認が出た。`-c 'projects={"<path>"={trust_level="trusted"}}'` では出ず、worktree は鍵が本体のリポジトリでも worktree でも出なかった。鍵が `/tmp/…` で cwd が実体の `/private/tmp/…` のときは出た。
 - `oe`: 全部を足した sandbox の中で、生のペイン番号への `oe send` は `mkdir` とつないでも届いた。`ps` は `execvp() of 'ps' failed: Operation not permitted`、`pgrep` は `Cannot get process list` で、`oe lease resolve`（`--to-parent` の経路）は引けなかった。
 
-確かめの全文は作業層にあり、要点を上に書いた。書ける場所（`writable_roots`）・`.git` の保護（本体の `.git` と gitdir の両方を明示すると外れる）・tmux のソケット（`network_access`・プロキシ・`unix_sockets` の3つで、外への通信を閉じたまま開く）は主張どおりだった。フォルダの信頼の `-c 'projects."<path>".trust_level=…'` は効かず、値の形 `-c 'projects={"<path>"={…}}'` なら効いた。`-c` の鍵は `.` で単純に分けられ（`config/src/overrides.rs:22`）、引用符が鍵に残るためで、I1 で「`-c` では出さずに済まない」と結論したのはこの形の誤りだった。worktree は本体のリポジトリの鍵でも確認が出なかった。`oe send --to-parent` は、権限を足しても sandbox の中では通らない（`ps` が起動できず、`pgrep` も一覧を取れない）。
+確かめの全文は作業層にあり、要点を上に書いた。書ける場所（`writable_roots`）・`.git` の保護（本体の `.git` と gitdir の両方を明示すると外れる）・tmux のソケット（`network_access`・プロキシ・`unix_sockets` の3つで、sandbox の中のプロセスの直接の通信を閉じたまま開く）は主張どおりだった。フォルダの信頼の `-c 'projects."<path>".trust_level=…'` は効かず、値の形 `-c 'projects={"<path>"={…}}'` なら効いた。`-c` の鍵は `.` で単純に分けられ（`config/src/overrides.rs:22`）、引用符が鍵に残るためで、I1 で「`-c` では出さずに済まない」と結論したのはこの形の誤りだった。worktree は本体のリポジトリの鍵でも確認が出なかった。`oe send --to-parent` は、権限を足しても sandbox の中では通らない（`ps` が起動できず、`pgrep` も一覧を取れない）。
 
 途中で、試しのスクリプトの `tmux split-window` が `no space for new pane` で失敗し、空の変数で打った `tmux kill-pane -t ""` が統括のペインと子のペインを閉じた。`oe recover` で張り直し、以後は試しのペインを別のウィンドウに作り、宛先が空・自分・統括でないことを確かめてから閉じた。
 
@@ -232,6 +238,12 @@ H10 は PR ごとの実装SO（H5・H7）のあとに入ったので、GATE 4 �
 
 closure のあと、owner が Codex に PR #644・#645 をレビューさせた。統括がコードを読んで誤りと確かめた2件を直した（plan の H12）: ネットワークの判定が `-c` と値をつなげた書き方を拾わず、H11 の直しをすり抜けて外への通信が開くこと（同じ抜けで `-sdanger-full-access` が elevated と読まれていなかった）と、信頼の確認で Enter のあとの2回目の読み取りと Enter の送信の失敗を素通りしていたこと。H11 の実装SO の直しは `-c KEY=V` と `--config=KEY=V` の形だけを検査していて、Codex の CLI が受け付けるほかの書き方を数え上げていなかった。レビューのほかの指摘（tmux のソケットからサーバー側の権限で操作できる・共通の `.git` に hook を仕込める・状態の置き場を書き換えられる・規則 `oe` が広い）は設計の話で、owner に判断ボードで聞いている。
 
+### Q119: sandbox を安全の境界にしない（2026-11-14）
+
+マージ前のレビューが「マージ前に必ず直す」とした4件（tmux のソケットから親の tmux サーバーの権限で操作できる・共通の `.git` に hook を仕込める・`~/.claude/state` の記録を書き換えられる・規則 `oe` が広い）について、owner は Q119 で「誤り2件を直し（H12）、境界でないことを文書に書いてマージし、作り直しは別の issue にする」と決めた（plan の H13・承認の記録の entry 8）。engine の安全の考え方は「子は親と同じだけ信頼する。守りは hook と人の承認のゲートと、Claude の子では auto mode の判定器で持つ」で、Codex の sandbox は事故を防ぐものであって境界ではない。Claude の子も同じ3つに届いていて、違いは Codex の子の sandbox の中の操作を裁く判定器が無いことである。decision の決定4・bin/README・delegate-task のスキル・hooks の README・規則のファイルの注記に書いた。言いすぎだった2点（外への通信は閉じたまま・commit の hook の心配が消える）を直した。
+
+昇格の印: sandbox の権限を足す設計を書くときは、足した先（tmux のソケット・共有の記録・共通の `.git`）が sandbox の外の権限を持つ相手かを見る。ソケットや共有のファイルの先にいるプロセスは sandbox の外で動くので、そこに届く時点で「閉じたまま」とは言えない。
+
 ## closure
 
 tier: heavy（方針の転回が2回あった〔H8・H10〕・意図して起動した外部レビュー〔設計SO・実装SO〕・選択肢を比べて棄却した設計判断・decision と knowledge への昇格がある）。
@@ -247,6 +259,7 @@ tier: heavy（方針の転回が2回あった〔H8・H10〕・意図して起動
 - DJ-6 の context% の式が cached を二重に数えていて、設計SO と PR-1 の実装SO を通り抜け、PR-2 の実装SO で見つかった。`本文: GATE 4: PR-2 の実装SO（2026-11-13）`
 - 規則で外に出す設計（DJ-3）は、I1 の C4 で単独のコマンドの形だけを測って根拠にしていた。CHECK-2 の1回目で、子がつないで打った `oe send` が sandbox の中で走って届かず、`git add` も通らないと分かり、H10 で設計を変えた。試しの書面の commit の文が hub の hook に止められたのは子の書き手の誤り。`本文: CHECK-2 の1回目（2026-11-13 18:00 ごろ・統括 gen25 が起こした・使い捨ての `CODEX_HOME`）`
 - I1 で「`-c` ではフォルダの信頼を渡せない」と結論したのは、鍵の形の誤りだった（引用符が鍵に残る）。その結論の上で H1・H8 の Enter を送る案が組まれた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- マージ前のレビューが、tmux のソケット・共通の `.git`・`~/.claude/state` を通じて子が sandbox の外の権限で操作できることを実測で示した。owner は境界でないことを書いてマージすると決めた（Q119）。`本文: Q119: sandbox を安全の境界にしない（2026-11-14）`
 - マージ前のレビューで、H11 の直しが `-c` と値をつなげた書き方を拾わず外への通信が開くことと、信頼の確認の読み取りの失敗を素通りしていたことが見つかった（plan の H12）。`本文: マージ前のレビュー（2026-11-14）`
 - H10 の実装SO が must 2 件を指した（ソケットのパスの TOML の逃がし忘れ・利用者がプロキシを外すと外への通信が開く）。`本文: GATE 4: H10 の実装SO（2026-11-13）`
 - 確かめのスクリプトの空の変数で `tmux kill-pane -t ""` を打ち、統括のペインと自分のペインを閉じた。`本文: 確かめの5点と H10（Q118・2026-11-13）`
@@ -282,7 +295,9 @@ frontmatter の `promotion` に1件ずつ置いた。理由は次のとおり。
 - tmux の宛先が空だといまのペインを指す: required。knowledge に収穫した。`本文: 確かめの5点と H10（Q118・2026-11-13）`
 - Codex の `-c` の鍵の形: required。knowledge に収穫した。`本文: 確かめの5点と H10（Q118・2026-11-13）`
 - 権限を起こす1行で渡し、規則は `oe` の1行だけ（H10・Q118）: required。decision の決定1 として実行した（印は付けていなかった・closure で拾った）。`本文: 確かめの5点と H10（Q118・2026-11-13）`
-- フォルダの信頼の確認に条件つきで Enter を送る（H8・Q113）: required。decision の決定3 として実行した。`本文: H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）`
+- フォルダの信頼の確認に条件つきで Enter を送る（H8・Q113）: required。decision の決定3 として実行した。
+- Codex の sandbox を安全の境界にしない（Q119）: required。decision の決定4 として実行した。`本文: Q119: sandbox を安全の境界にしない（2026-11-14）`
+- sandbox の権限の足し先が sandbox の外の権限を持つ相手かを見る: not-required。同じ中身（tmux のソケット・共通の `.git`・共有の記録の先は sandbox の外）が decision の決定4 に書いてあり、Codex の子の設計を見直す別の issue がそれを読む。`本文: Q119: sandbox を安全の境界にしない（2026-11-14）``本文: H8: フォルダの信頼の確認（owner の答え Q113・`dae6bca`）`
 
 ### 観測の書き戻し
 
@@ -295,9 +310,10 @@ frontmatter の `promotion` に1件ずつ置いた。理由は次のとおり。
 - 入口の `CODEX_SANDBOX` の検知と決まりの文の1文の通し: マージのあとの CHECK-2 で、統括と owner が確かめる（手順は plan の CHECK-2 の節。作業層の手順書は `.oe/runbook-562-check2.md`）。2回目は子の `oe` が master の版だったので見えていない。
 - I1 で未確認のまま残った2点（resume のあとの `CODEX_THREAD_ID` で自分を引けるか・pid の照合）: マージのあとの CHECK-2 で、統括が子に `oe lease bind` と `oe recover` を打たせて確かめる。確かめなければ、`oe recover` を Codex の子で初めて使うときに分かる。
 - PR-2 の Copilot の1ラウンド: PR-1 の着地のあと、PR-2 を ready にしてから（plan の GATE 4 のとおり）。PR-1 の H10 の分への Copilot の再依頼は、owner の明示の指示があるときだけ行う運用なので、ここでは行わない。
+- sandbox を安全の境界にする作り直し（子に tmux と共有の記録を渡さず親の側が報告を配る・子に別のリポジトリで commit させる・規則 `oe` を絞る）: 別の issue（統括が起票し、#549 とつなぐ）。`本文: Q119: sandbox を安全の境界にしない（2026-11-14）`
 - plan の「やらない」の項目（`oe-selfcheck` と `oe-kick` の Codex 対応・どの作業を Codex の子に任せるか・子の報告をホスト側で配る案）: 追わない。必要になったら起票する。報告を配る案は #549 の材料として plan の DJ-3 に残っている。
 - hook の信頼を `-c` の値の形で渡す形は試していない: 追わない（engine は hook の信頼を肩代わりしない）。
-- 前に出した問いの決着: `question-562-2` の2枚のうち、規則 `oe` の広さ（`i562_oe_rule_scope`）は Q106 のまま `oe` で決まっている。`git commit` と commit の hook（`i562_git_commit_hooks`）は、H10 で `git commit` の規則をやめたので問いが無くなった（git は sandbox の中で走る）。`question-562-3` の2枚（Q116・Q117）は統括が取り下げ、Q118 にまとめ直した。どれも行き先は不要。`本文: 確かめの5点と H10（Q118・2026-11-13）`
+- 前に出した問いの決着: `question-562-2` の2枚のうち、規則 `oe` の広さ（`i562_oe_rule_scope`）は Q106 のまま `oe` で決まっている。`git commit` と commit の hook（`i562_git_commit_hooks`）は、H10 で `git commit` の規則をやめたのでカードとしては無くなったが、心配は消えていない。子は共通の `.git` に hook を書け、親が後で sandbox の外で commit するとその hook が走る。Claude の子と同じ状態で、owner は Q119 でそれを受け入れて文書に書くと決めた（decision の決定4）。`question-562-3` の2枚（Q116・Q117）は統括が取り下げ、Q118 にまとめ直した。どれも行き先は不要。`本文: 確かめの5点と H10（Q118・2026-11-13）`
 - I1 で未確認だった symlink の規則の読み込み: 追わない。配布は通常のファイルの写しにした（DJ-3・設計SO の指摘1）ので、symlink を読むかどうかに依らない。`--add-dir` の効きは CHECK-2 の2回目で確かめた。`本文: CHECK-2 の2回目（2026-11-13 22:48・統括 gen25 が起こした）`
 
 ### 外部チェック（Step 4）
