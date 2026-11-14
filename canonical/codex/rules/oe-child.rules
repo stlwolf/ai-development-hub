@@ -4,7 +4,8 @@
 # ps を使い、ps は Codex の sandbox の中では起動できないので、`oe` だけを外に出す。
 # git の書き込み・engine の状態の置き場・tmux のソケットは規則でなく、engine が子を起こす1行でそのセッションにだけ
 # 渡す（`oe_agent_codex_sandbox_args`）。`git push` と `gh` は入れない（子は commit まで・Q118）。
-# 規則は user 層（~/.codex/rules/）にしか置けず、owner が自分で開く Codex にも効く（Q106・2026-11-13）。
+# Codex は user 層（~/.codex/rules/）と、信頼したプロジェクトの .codex/rules/ から規則を読む。hub はこの規則を user 層に配るので、
+# owner が自分で開く Codex にも効く（Q106・2026-11-13）。子の workspace はリポジトリごとに違うので、プロジェクトの層には置かない。
 # Codex は、つないだコマンドのすべての部分が allow に当たるときだけ外に出すので、`oe` は単独で打つ（つなぐと入口が止まって知らせる）。
 #
 # この規則と sandbox は安全の境界ではない（Q119）。engine は子を親と同じだけ信頼し、守りは hook と人の承認のゲート

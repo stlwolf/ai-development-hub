@@ -241,7 +241,7 @@ Codex は `hooks.json` の hook を、**hook の定義ごとの hash を信頼�
 - **engine の子のための2本**: `oe-prompt-receipt.sh`（取り込み印・Claude と同じスクリプト）と `oe-heartbeat-hook.sh`（hook で書く拍動）。後者は `PostModelRequest` の標準入力の `token_usage`（その要求の使用量）と記録の `model_context_window` から context% を出し、Claude の statusLine と同じ形の sidecar を `~/.claude/state/oe-heartbeat/<session_id>.json` に書く（読む側は変えない）。`PostModelRequest` の配線は `async: true`・`timeout: 10` で、モデルの要求の後続（道具の実行）を待たせない（hash の元に入るので、変えたら登録し直す）。記録は末尾から上限付き（`OE_HB_TAIL_LINES`・既定 200 行）に1行ずつ読む。標準出力には何も出さない（`UserPromptSubmit` の標準出力はモデルの文脈に足される）。
 - **安全の境界ではない（Q119）**: hub が配る規則（`canonical/codex/rules/oe-child.rules`・`oe` の1行）と、engine が子を起こす1行で渡す権限（tmux のソケット・本体の `.git`・`~/.claude/state`）を合わせると、Codex の子は sandbox の外の権限で操作できる（tmux のソケットの先は親の tmux サーバー・`oe` は sandbox の外で走る）。engine は子を親と同じだけ信頼し、守りは hub の hook と人の承認のゲート（Claude の子では auto mode の判定器も）で持つ。Codex の子の sandbox の中で通る操作は判定器が裁かないので、外から来た文（Web のページ・知らない人が書いた issue や PR）を読ませる作業を Codex の子に任せない（`projects/orchestration-engine/bin/README.md` の oe-delegate の節）。
 - **無いときの形**: 登録していなくても `oe delegate --agent codex` は動く。受領の印は出ず（`oe-confirm` は「確認できていない」）、拍動は engine が起こしたときと子が `oe send` を打つたびに書く床だけになる（`projects/orchestration-engine/bin/README.md` の oe-delegate の節）。
-- **確かめ方**: 実機でしか確かめられない（1段階目の直叩きでは信頼を通らない）。Codex の画面から `oe send` で1行を送り、`oe confirm` で受領の印が出ること、`oe tree` に model と context% が出ることを見る。
+- **確かめ方**: 実機でしか確かめられない（1段階目の直叩きでは信頼を通らない）。受領の印は送り先の `UserPromptSubmit` の hook が書くので、統括（親）から Codex の子へ `oe send` で1行を送り、`oe confirm` でその送信（宛先が Codex の子のペイン）に受領の印が付くことを見る。Codex の子から親へ送る向きでは、親（Claude）の hook が印を書くので、Codex の hook の登録の不備を見逃す。あわせて、`oe tree` の Codex の子の行に model と context% が出ることを見る。
 
 ## 設計判断
 
