@@ -131,6 +131,18 @@ if [ -z "$nonce" ] || [ "$nonce" = "null" ]; then
 fi
 
 # --- 受け手ペイン。取れなければ束縛できない = 環境エラーとして記録する ---
+# Codex のペインの主の会話でない会話は印を記録しない（#562 のマージ後の確かめ）。サブエージェント（agent_id がある）と、
+# 記録の先頭の session_meta.source が cli 以外の会話（ペインから打った codex exec など）は、打ったペインの TMUX_PANE を
+# 引き継ぐので、記録するとそのペインに届いていない送信へ受領が付く。Claude の記録には session_meta が無いので影響しない。
+if printf '%s' "$payload" | jq -e '((.agent_id // "") | tostring) != ""' >/dev/null 2>&1; then
+  exit 0
+fi
+tpath="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || tpath=""
+if [ -n "$tpath" ] && [ -r "$tpath" ]; then
+  tsrc="$(head -n 1 "$tpath" 2>/dev/null | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || tsrc=""
+  case "$tsrc" in ''|cli) ;; *) exit 0 ;; esac
+fi
+
 pane="${TMUX_PANE:-}"
 if [ -z "$pane" ]; then
   # #336: nonce を載せる。pane は取れなかったので空（それがこの分岐の理由そのものである）。

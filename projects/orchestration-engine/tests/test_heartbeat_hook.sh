@@ -97,6 +97,25 @@ run_hook "$P7" OE_HB_AGENT=other >/dev/null
 ck "100 で頭打ち" "100.0" "$(jq -r '.context_pct' "$HB/sid-w.json")"
 ck "agent の上書き" "other" "$(jq -r '.agent' "$HB/sid-w.json")"
 
+echo "[9] #562 マージ後: ペインの主の会話だけを書く（サブエージェント・記録の無い内部の会話・codex exec は書かない）"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-cli","source":"cli"}}' > "$_TMP_DIR/cli.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-exec","source":"exec"}}' > "$_TMP_DIR/exec.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-sub","source":{"subagent":"memory_consolidation"}}}' > "$_TMP_DIR/sub.jsonl"
+mk() { jq -cn --arg sid "$1" --arg t "$2" '{hook_event_name:"UserPromptSubmit", session_id:$sid, model:"gpt-6.1-sol", prompt:"x"} + (if $t != "" then {transcript_path:$t} else {} end)'; }
+run_hook "$(mk m-cli "$_TMP_DIR/cli.jsonl")" >/dev/null
+ck "source が cli の会話は書く" "yes" "$([[ -f "$HB/m-cli.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-exec "$_TMP_DIR/exec.jsonl")" >/dev/null
+ck "source が exec の会話（ペインから打った codex exec）は書かない" "no" "$([[ -f "$HB/m-exec.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-sub "$_TMP_DIR/sub.jsonl")" >/dev/null
+ck "source がサブエージェントの会話は書かない" "no" "$([[ -f "$HB/m-sub.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-none "")" >/dev/null
+ck "transcript_path が無い内部の会話（記憶の整理など）は書かない" "no" "$([[ -f "$HB/m-none.json" ]] && echo yes || echo no)"
+run_hook "$(jq -cn --arg t "$_TMP_DIR/cli.jsonl" '{hook_event_name:"PostModelRequest", session_id:"m-agent", model:"m", agent_id:"01a1dafa-0000-0000-0000-000000000000", agent_type:"default", transcript_path:$t, token_usage:{total_tokens:10}}')" >/dev/null
+ck "agent_id がある会話（サブエージェント）は書かない" "no" "$([[ -f "$HB/m-agent.json" ]] && echo yes || echo no)"
+run_hook "$(mk m-unread "/nonexistent/rollout.jsonl")" >/dev/null
+ck "記録の先頭が読めないときは書く（主の会話を落とさない）" "yes" "$([[ -f "$HB/m-unread.json" ]] && echo yes || echo no)"
+ck "書かない会話は診断も残さない（ふつうのこと）" "0" "$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | grep -c 'm-exec\|m-sub\|m-none\|m-agent')"
+
 echo "[8] 一時ファイルを残さない"
 ck ".hb.* が残らない" "0" "$(find "$HB" -name '.hb.*' | wc -l | tr -d ' ')"
 

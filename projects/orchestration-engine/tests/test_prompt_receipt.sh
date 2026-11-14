@@ -116,6 +116,21 @@ ck "nonce"    "$NONCE"           "$(last_ev | jq -r .nonce)"
 ck "pane は TMUX_PANE（受け手の自分のペイン・from）" "%66" "$(last_ev | jq -r .from.pane)"
 ck "stdout は空（Codex では標準出力がモデルの文脈に足される）" "" "$out"
 
+echo "[7c] #562 マージ後: Codex のペインの主の会話でない会話（codex exec・サブエージェント）は印を記録しない"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"x-exec","source":"exec"}}' > "$_TMP_DIR/exec.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"x-cli","source":"cli"}}' > "$_TMP_DIR/cli.jsonl"
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"x"}}' > "$_TMP_DIR/claude.jsonl"
+new_env; n0="$(wc -l < "$EVFILE" | tr -d ' ')"
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/exec.jsonl" '{session_id:"x-exec", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("引用 [oe:" + $n + "]")}')" >/dev/null
+ck "codex exec の会話では記録しない" "$n0" "$(wc -l < "$EVFILE" | tr -d ' ')"
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/cli.jsonl" '{session_id:"x-sub", agent_id:"a-1", agent_type:"default", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
+ck "サブエージェントの会話では記録しない" "$n0" "$(wc -l < "$EVFILE" | tr -d ' ')"
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/cli.jsonl" '{session_id:"x-cli", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
+ck "主の会話（source が cli）では記録する" "prompt_received" "$(last_ev | jq -r .type)"
+new_env
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/claude.jsonl" '{session_id:"c-1", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
+ck "Claude の記録（session_meta が無い）では今までどおり記録する" "prompt_received" "$(last_ev | jq -r .type)"
+
 echo "[8] oe-selfcheck: 陽性対照が無いときに ok を名乗らない（0 件を不在の証拠にしない）"
 [[ -x "$SELFCHECK" ]] || { echo "  SKIP: oe-selfcheck 不在"; }
 if [[ -x "$SELFCHECK" ]]; then
