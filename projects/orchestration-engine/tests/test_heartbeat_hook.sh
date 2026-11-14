@@ -123,6 +123,10 @@ run_hook "$(mk m-vs "$_TMP_DIR/vscode.jsonl")" >/dev/null
 ck "source が vscode の対話の会話は書く（cli 以外の対話を落とさない）" "yes" "$([[ -f "$HB/m-vs.json" ]] && echo yes || echo no)"
 : > "$_TMP_DIR/empty.jsonl"
 run_hook "$(mk m-empty "$_TMP_DIR/empty.jsonl")" >/dev/null
+# 実際の記録の大きさ（先頭の1行が数十 KB・後ろに数百 KB）でも見分けられる（head の SIGPIPE で値を落とさない）
+{ jq -cn --arg pad "$(head -c 30000 /dev/zero | tr '\0' 'a')" '{type:"session_meta",payload:{id:"m-big",source:"exec",base_instructions:{text:$pad}}}'; for i in $(seq 1 3000); do printf '{"type":"event_msg","payload":{"type":"agent_message","message":"%s"}}\n' "line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done; } > "$_TMP_DIR/big-exec.jsonl"
+run_hook "$(mk m-big "$_TMP_DIR/big-exec.jsonl")" >/dev/null
+ck "大きな exec の記録でも書かない" "no" "$([[ -f "$HB/m-big.json" ]] && echo yes || echo no)"
 ck "記録が空（まだ書かれていない）なら書く" "yes" "$([[ -f "$HB/m-empty.json" ]] && echo yes || echo no)"
 
 echo "[8] 一時ファイルを残さない"

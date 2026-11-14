@@ -144,7 +144,8 @@ if [ -z "$tpath" ] && printf '%s' "$payload" | jq -e '(.turn_id // "") != ""' >/
   exit 0
 fi
 if [ -n "$tpath" ] && [ -r "$tpath" ]; then
-  tsrc="$(head -c 1048576 "$tpath" 2>/dev/null | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || tsrc=""
+  # head -n 1 が読み終えると前の head -c が SIGPIPE で止まり、pipefail で全体が失敗になるので、head -c の失敗は飲む。
+  tsrc="$( (head -c 1048576 "$tpath" 2>/dev/null || true) | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || tsrc=""
   case "$tsrc" in exec|subagent) exit 0 ;; esac
 fi
 

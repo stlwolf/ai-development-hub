@@ -66,7 +66,8 @@ agent_id="$(printf '%s' "$payload" | jq -r '(.agent_id // "") | tostring' 2>/dev
 transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || transcript=""
 [ -n "$transcript" ] || exit 0
 if [ -r "$transcript" ]; then
-  src="$(head -c 1048576 "$transcript" 2>/dev/null | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
+  # head -n 1 が読み終えると前の head -c が SIGPIPE で止まり、pipefail で全体が失敗になるので、head -c の失敗は飲む。
+  src="$( (head -c 1048576 "$transcript" 2>/dev/null || true) | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
   case "$src" in exec|subagent) exit 0 ;; esac
 fi
 model="$(printf '%s' "$payload" | jq -r '(.model // "") | if type=="string" then . else "" end' 2>/dev/null)" || model=""

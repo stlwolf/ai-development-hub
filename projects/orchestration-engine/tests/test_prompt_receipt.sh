@@ -135,6 +135,10 @@ run_hook "$(jq -cn --arg n "$NONCE" '{session_id:"x-mem", turn_id:"t-9", hook_ev
 ck "Codex の形の入力で記録が無い内部の会話では記録しない" "$n0" "$(wc -l < "$EVFILE" | tr -d ' ')"
 printf '%s\n' '{"type":"session_meta","payload":{"id":"x-vs","source":"vscode"}}' > "$_TMP_DIR/vscode.jsonl"
 run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/vscode.jsonl" '{session_id:"x-vs", turn_id:"t-1", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
+{ jq -cn --arg pad "$(head -c 30000 /dev/zero | tr '\0' 'a')" '{type:"session_meta",payload:{id:"x-big",source:"exec",base_instructions:{text:$pad}}}'; for i in $(seq 1 3000); do printf '{"type":"event_msg","payload":{"type":"agent_message","message":"%s"}}\n' "line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done; } > "$_TMP_DIR/big-exec.jsonl"
+n1="$(wc -l < "$EVFILE" | tr -d ' ')"
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/big-exec.jsonl" '{session_id:"x-big", turn_id:"t-1", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("引用 [oe:" + $n + "]")}')" >/dev/null
+ck "大きな exec の記録でも記録しない（head の SIGPIPE で値を落とさない）" "$n1" "$(wc -l < "$EVFILE" | tr -d ' ')"
 ck "source が vscode の対話の会話では記録する" "prompt_received" "$(last_ev | jq -r .type)"
 
 echo "[8] oe-selfcheck: 陽性対照が無いときに ok を名乗らない（0 件を不在の証拠にしない）"
