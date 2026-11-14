@@ -182,6 +182,26 @@ for ua in "-c features.network_proxy.enabled=false" "--config sandbox_workspace_
 done
 out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" -m gpt-5 -c model_reasoning_effort=high | grep -c network_access)"
 ck "ネットワークに触れない利用者の引数なら出す" "1" "$out"
+# #562 のレビュー: Codex が受け付ける値をつなげた書き方も拾う（-cKEY=V・-c=KEY=V・--config=KEY=V・鍵の前後の空白）
+for ua in "-cfeatures.network_proxy.enabled=false" "-c=features.network_proxy.enabled=false" "--config=features.network_proxy.enabled=false" "-csandbox_workspace_write.network_access=true"; do
+  out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" "$ua" | grep -c network_access)"
+  ck "つなげた形（${ua}）でもネットワークの指定を出さない" "0" "$out"
+done
+out="$(OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/h10/state" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/h10/sock/default" oe_agent_codex_sandbox_args "$_TMP_DIR/h10/plain" -c " features.network_proxy.enabled =false" | grep -c network_access)"
+ck "鍵の前後に空白があっても拾う" "0" "$out"
+ck "-sdanger-full-access は bypassPermissions" "bypassPermissions" "$(oe_agent_permission_mode codex -sdanger-full-access)"
+ck "-s=danger-full-access は bypassPermissions" "bypassPermissions" "$(oe_agent_permission_mode codex -s=danger-full-access)"
+ck "-csandbox_mode=danger-full-access は bypassPermissions" "bypassPermissions" "$(oe_agent_permission_mode codex -csandbox_mode=danger-full-access)"
+ck "--sandbox=danger-full-access は bypassPermissions" "bypassPermissions" "$(oe_agent_permission_mode codex --sandbox=danger-full-access)"
+ck "-anever は never" "never" "$(oe_agent_permission_mode codex -anever)"
+r=no; oe_agent_has_mode_override codex -sworkspace-write && r=yes
+ck "-sworkspace-write はモードの指定（既定の --approve-for-me を外す）" "yes" "$r"
+r=no; oe_agent_has_mode_override codex -capproval_policy=never && r=yes
+ck "-capproval_policy=never はモードの指定" "yes" "$r"
+r=no; oe_agent_has_mode_override codex -cmodel=gpt-5 && r=yes
+ck "-cmodel=gpt-5 はモードの指定でない" "no" "$r"
+r=no; oe_agent_mode_is_elevated "$(oe_agent_permission_mode codex -sdanger-full-access)" && r=yes
+ck "-sdanger-full-access は elevated" "yes" "$r"
 case "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" in *"oe は、ほかのコマンドとつながず"*) r=yes ;; *) r=no ;; esac
 ck "決まりの文に単独で打つ1文がある" "yes" "$r"
 

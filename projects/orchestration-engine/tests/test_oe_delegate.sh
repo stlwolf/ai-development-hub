@@ -51,6 +51,8 @@ if [[ "${1:-}" == "list-panes" ]]; then
 fi
 
 if [[ "${1:-}" == "send-keys" ]]; then
+  # #562 のレビュー: OE_DELEGATE_TEST_ENTER_FAIL=1 なら、Enter だけを送る呼び出しを失敗させる
+  if [[ "${OE_DELEGATE_TEST_ENTER_FAIL:-0}" == "1" && "$*" == "send-keys -t "*" Enter" && "$*" != *" -l "* ]]; then exit 1; fi
   printf '%s\n' "$*" >> "${log_dir}/send-keys.log"
   exit 0
 fi
@@ -495,7 +497,7 @@ ck "最初の1行は送っていない" "no" "$(grep -q -- 'send-keys -l -t %9' 
 ck "config.toml は書き換えていない" "yes" "$([[ "$(grep -c . "$_TMP_DIR/codex-home2/config.toml")" == "2" ]] && echo yes || echo no)"
 # 確認が消える形: 1回目は確認、2回目は空の画面（capture のたびにファイルを差し替える）
 printf '#!/usr/bin/env bash\nn=$(cat "%s/cap-n" 2>/dev/null || echo 0); echo $((n+1)) > "%s/cap-n"; if [ "$n" -eq 0 ]; then cat "%s/cap-trust.txt"; else printf "› \\n"; fi\n' "$_TMP_DIR" "$_TMP_DIR" "$_TMP_DIR" > "$_TMP_DIR/bin/capture-seq"; chmod +x "$_TMP_DIR/bin/capture-seq"
-sed -i.bak 's|if \[\[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" \]\]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|if [[ -n "${OE_DELEGATE_TEST_CAPTURE_SEQ:-}" ]]; then "$OE_DELEGATE_TEST_CAPTURE_SEQ"; elif [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|' "$_TMP_DIR/bin/tmux"
+sed -i.bak 's|if \[\[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" \]\]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|if [[ -n "${OE_DELEGATE_TEST_CAPTURE_SEQ:-}" ]]; then "$OE_DELEGATE_TEST_CAPTURE_SEQ" \|\| exit 1; elif [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|' "$_TMP_DIR/bin/tmux"
 reset_logs; rm -f "$_TMP_DIR/cap-n"
 rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_SEQ="$_TMP_DIR/bin/capture-seq" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11b" || rc=$?
 ck "確認が消えたら最初の1行を送る（rc=0）" "0" "$rc"
@@ -548,6 +550,24 @@ rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex --agent-arg -c --agent-ar
 ck "利用者がプロキシを外す引数を渡しても exit 0" "0" "$rc"
 ck "そのときは engine の network_access=true を出さない（外への通信を開かない）" "no" "$(grep -q 'network_access=true' "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
 ck "書ける場所は渡したまま" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+
+echo "[A13] #562 のレビュー: 信頼済みで Enter を送る分岐で、Enter の失敗と2回目の読み取りの失敗はそれぞれ exit 4 で止まり、最初の1行を送らない"
+export OE_DELEGATE_TRUST_WAIT_SEC=0
+printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MAIN_PATH" > "$_TMP_DIR/codex-home2/config.toml"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" OE_DELEGATE_TEST_ENTER_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a13a" || rc=$?
+ck "Enter を送れなければ rc=4" "4" "$rc"
+ck "Enter の失敗の案内を出す" "yes" "$(grep -q 'Enter を送れなかった' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "Enter の失敗のとき最初の1行は送らない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" 2>/dev/null && echo yes || echo no)"
+# 1回目は確認の画面、2回目は読み取りの失敗
+printf '#!/usr/bin/env bash\nn=$(cat "%s/cap-n2" 2>/dev/null || echo 0); echo $((n+1)) > "%s/cap-n2"; if [ "$n" -eq 0 ]; then cat "%s/cap-trust.txt"; else exit 1; fi\n' "$_TMP_DIR" "$_TMP_DIR" "$_TMP_DIR" > "$_TMP_DIR/bin/capture-seq-fail"; chmod +x "$_TMP_DIR/bin/capture-seq-fail"
+reset_logs; rm -f "$_TMP_DIR/cap-n2"
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_SEQ="$_TMP_DIR/bin/capture-seq-fail" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a13b" || rc=$?
+ck "2回目の読み取りが失敗したら rc=4" "4" "$rc"
+ck "Enter は送っている（1回目は確認の画面だった）" "yes" "$(grep -q -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "2回目の読み取りの失敗のとき最初の1行は送らない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "2回目の読み取りの失敗の案内を出す" "yes" "$(grep -q 'Enter のあと子のペイン' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+unset OE_DELEGATE_TRUST_WAIT_SEC
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

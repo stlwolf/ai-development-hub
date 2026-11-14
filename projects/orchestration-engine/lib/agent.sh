@@ -74,22 +74,51 @@ oe_agent_comm_allowed() {
 }
 
 # --- 起こすときの引数 ---
+# _oe_agent_codex_norm <args...> — Codex の CLI が受け付ける値つきの選択肢の書き方を、選択肢と値の2語に分けて
+#   _OE_AGENT_CODEX_NARGS に入れる（レビューの指摘・#562）。-cKEY=V / -c=KEY=V / --config=KEY=V は -c|--config と KEY=V に、
+#   -sV / -s=V / --sandbox=V と -aV / -a=V / --ask-for-approval=V も同じく分ける。ほかの引数はそのまま。
+_OE_AGENT_CODEX_NARGS=()
+_oe_agent_codex_norm() {
+  local a
+  _OE_AGENT_CODEX_NARGS=()
+  for a in "$@"; do
+    case "$a" in
+      --config=*) _OE_AGENT_CODEX_NARGS+=("--config" "${a#--config=}") ;;
+      --sandbox=*) _OE_AGENT_CODEX_NARGS+=("--sandbox" "${a#--sandbox=}") ;;
+      --ask-for-approval=*) _OE_AGENT_CODEX_NARGS+=("--ask-for-approval" "${a#--ask-for-approval=}") ;;
+      -c=*|-s=*|-a=*) _OE_AGENT_CODEX_NARGS+=("${a%%=*}" "${a#-?=}") ;;
+      -c?*|-s?*|-a?*) _OE_AGENT_CODEX_NARGS+=("${a:0:2}" "${a:2}") ;;
+      *) _OE_AGENT_CODEX_NARGS+=("$a") ;;
+    esac
+  done
+}
+
+# _oe_agent_kv_key <KEY=V> — -c の値から鍵を出す。Codex は最初の = で分けて鍵の前後の空白を落とすので、同じに読む。
+_oe_agent_kv_key() {
+  local k="${1%%=*}"
+  while :; do case "$k" in [[:space:]]*) k="${k#?}" ;; *) break ;; esac; done
+  while :; do case "$k" in *[[:space:]]) k="${k%?}" ;; *) break ;; esac; done
+  printf '%s' "$k"
+}
+
 # oe_agent_has_mode_override <agent> <args...> — 利用者の引数が承認のモードを指定しているか（0 なら指定あり）。
 #   codex: -a / --ask-for-approval / -s / --sandbox / --approve-for-me / --dangerously-bypass-approvals-and-sandbox / --yolo
 #   claude: --permission-mode / --dangerously-skip-permissions
 oe_agent_has_mode_override() {
   local agent="${1:-}"; shift
-  local a prev=""
+  local a prev="" key
+  if [ "$agent" = "codex" ]; then _oe_agent_codex_norm "$@"; set -- ${_OE_AGENT_CODEX_NARGS[@]+"${_OE_AGENT_CODEX_NARGS[@]}"}; fi
   for a in "$@"; do
     case "$agent" in
       codex)
         case "$a" in
-          -a|--ask-for-approval|--ask-for-approval=*|-s|--sandbox|--sandbox=*|--approve-for-me|--dangerously-bypass-approvals-and-sandbox|--yolo) return 0 ;;
-          # -c <key>=<value> / --config <key>=<value> で承認のモードを設定の鍵で指定する形（実装SO の指摘）
-          --config=sandbox_mode=*|--config=approval_policy=*|--config=approvals_reviewer=*) return 0 ;;
-          sandbox_mode=*|approval_policy=*|approvals_reviewer=*)
-            if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then return 0; fi ;;
-        esac ;;
+          -a|--ask-for-approval|-s|--sandbox|--approve-for-me|--dangerously-bypass-approvals-and-sandbox|--yolo) return 0 ;;
+        esac
+        # -c <key>=<value> / --config <key>=<value> で承認のモードを設定の鍵で指定する形（実装SO の指摘）
+        if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then
+          key="$(_oe_agent_kv_key "$a")"
+          case "$key" in sandbox_mode|approval_policy|approvals_reviewer) return 0 ;; esac
+        fi ;;
       *)
         case "$a" in
           --permission-mode|--permission-mode=*|--dangerously-skip-permissions) return 0 ;;
@@ -125,16 +154,15 @@ _oe_agent_realdir() { [ -d "${1:-}" ] || return 1; (CDPATH='' cd "$1" 2>/dev/nul
 # oe_agent_codex_user_sets_network <args...> — 利用者の引数が Codex のネットワークの設定（sandbox_workspace_write.network_access・
 #   features.network_proxy・sandbox_workspace_write 全体・sandbox_permissions）を -c / --config で指定しているか（0 なら指定あり）。
 oe_agent_codex_user_sets_network() {
-  local a prev="" kv
+  local a prev="" key
+  _oe_agent_codex_norm "$@"; set -- ${_OE_AGENT_CODEX_NARGS[@]+"${_OE_AGENT_CODEX_NARGS[@]}"}
   for a in "$@"; do
-    kv=""
-    case "$a" in
-      --config=*) kv="${a#--config=}" ;;
-      *) if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then kv="$a"; fi ;;
-    esac
-    case "$kv" in
-      sandbox_workspace_write=*|sandbox_workspace_write.network_access=*|features.network_proxy=*|features.network_proxy.*|features=*|sandbox_permissions=*) return 0 ;;
-    esac
+    if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then
+      key="$(_oe_agent_kv_key "$a")"
+      case "$key" in
+        sandbox_workspace_write|sandbox_workspace_write.network_access|features|features.network_proxy|features.network_proxy.*|sandbox_permissions) return 0 ;;
+      esac
+    fi
     prev="$a"
   done
   return 1
@@ -193,6 +221,7 @@ oe_agent_permission_mode() {
     codex)
       mode="approve-for-me"
       local kv key val
+      _oe_agent_codex_norm "$@"; set -- ${_OE_AGENT_CODEX_NARGS[@]+"${_OE_AGENT_CODEX_NARGS[@]}"}
       for a in "$@"; do
         # -c <key>=<value> / --config <key>=<value> / --config=<key>=<value> の値を、flag の形と同じに読む（Copilot の指摘）。
         # TOML の文字列の引用符（"…" / '…'）は外す。
@@ -202,7 +231,9 @@ oe_agent_permission_mode() {
           *) if [ "$prev" = "-c" ] || [ "$prev" = "--config" ]; then kv="$a"; fi ;;
         esac
         if [ -n "$kv" ]; then
-          key="${kv%%=*}"; val="${kv#*=}"
+          key="$(_oe_agent_kv_key "$kv")"; val="${kv#*=}"
+          while :; do case "$val" in [[:space:]]*) val="${val#?}" ;; *) break ;; esac; done
+          while :; do case "$val" in *[[:space:]]) val="${val%?}" ;; *) break ;; esac; done
           val="${val#\"}"; val="${val%\"}"; val="${val#\'}"; val="${val%\'}"
           case "$key" in
             sandbox_mode)

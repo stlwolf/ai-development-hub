@@ -450,10 +450,20 @@ if [[ "$AGENT" == "codex" ]]; then
     _trc=1
     if [[ -n "$_main" ]]; then oe_agent_codex_trusted "$_main" && _trc=0 || _trc=$?; fi
     if [[ "$_trc" -eq 0 ]]; then
-      tmux send-keys -t "$CHILD_PANE" Enter
+      # Enter・2回目の読み取りのどちらが失敗しても、確認が消えたと言えないので止める（Q113「読めないときは止まる」・
+      # レビューの指摘で、2回目の読み取りの失敗と Enter の失敗を素通りしていたのを直した）。
+      if ! tmux send-keys -t "$CHILD_PANE" Enter 2>/dev/null; then
+        echo "oe-delegate: フォルダの信頼の確認に Enter を送れなかったので、最初の1行を送らずに止めます。子のペイン ${CHILD_PANE} を見てください" >&2
+        exit 4
+      fi
       echo "oe-delegate: フォルダの信頼の確認に Enter を送りました（もとのリポジトリ ${_main} は owner が信頼済み・config.toml は書き換えていません）" >&2
       sleep "${OE_DELEGATE_TRUST_WAIT_SEC:-2}"
-      if _cap2="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)" && printf '%s\n' "$_cap2" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
+      _cap2=""
+      if ! _cap2="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)"; then
+        echo "oe-delegate: Enter のあと子のペイン ${CHILD_PANE} の画面を読めないので、最初の1行を送らずに止めます。画面を見て、確認が消えていれば oe send ${CHILD_PANE} で1行を送ってください" >&2
+        exit 4
+      fi
+      if printf '%s\n' "$_cap2" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
         echo "oe-delegate: 確認の画面が消えないので、最初の1行を送らずに止めます。子のペイン ${CHILD_PANE} を見てください" >&2
         exit 4
       fi
