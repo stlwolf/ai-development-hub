@@ -7,6 +7,11 @@
 # 規則は user 層（~/.codex/rules/）にしか置けず、owner が自分で開く Codex にも効く（Q106・2026-11-13）。
 # Codex は、つないだコマンドのすべての部分が allow に当たるときだけ外に出すので、`oe` は単独で打つ（つなぐと入口が止まって知らせる）。
 #
+# この規則と sandbox は安全の境界ではない（Q119）。engine は子を親と同じだけ信頼し、守りは hook と人の承認のゲート
+# （Claude の子では auto mode の判定器も）で持つ。`oe` は sandbox の外で走るので、`oe send %N` で任意のペインへ送る・
+# `oe delegate` で子を起こすといった verb も承認なしで通る。Codex の子に、外から来た文（Web のページ・知らない人が
+# 書いた issue や PR）を読ませる作業を任せない。規則を絞る作り直しは別の issue（#549 とつなぐ）。
+#
 # 配り方: scripts/sync/sync-codex.sh が ~/.codex/rules/oe-child.rules に通常のファイルとして写す（symlink は Codex が読まない）。
 # owner の default.rules には触らない。
 prefix_rule(pattern=["oe"], decision="allow", justification="engine の verb（報告の送信など）は sandbox の外で承認なしに走らせる（#562）")
