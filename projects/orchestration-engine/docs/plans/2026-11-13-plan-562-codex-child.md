@@ -497,7 +497,7 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 出どころ: マージのあとの確かめで、Codex の子のペインの中の記憶の整理の会話（Codex の memories の Phase 2・子の TUI と同じプロセスで走り、記録を残さない）が、子の環境（lease）と起動の1行の `-c developer_instructions` を引き継ぎ、決まりの文の「親への報告は oe send --to-parent で返す」に従って統括へ報告を送ってきた。拍動と受領の印の hook の同じ原因の不具合は、別の PR で直した（#648）。
 - owner の決定（Q120）: 案 A と B の両方。
 - 案 A（決まりの文）: 「親への報告は oe send --to-parent で返す」を「委譲の書面で頼まれた作業についてだけ、親へ oe send --to-parent で報告する。書面を受け取っていない会話は報告しない」に絞る（`lib/agent.sh` の `OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS`）。
-- 案 B（engine の判定）: `oe send --to-parent` は、Codex の中で打たれたとき（`CODEX_THREAD_ID` がある）、打った会話の記録（`${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl`）の先頭の `session_meta.source` が `cli` でなければ、送らずに exit 6 で断る（`lib/agent.sh` の `oe_agent_codex_caller_source`）。記録が無い会話（記憶の整理など）・`exec`・サブエージェントは断る。`--to-parent` でない送信と、Claude の子は判定しない。
+- 案 B（engine の判定）: `oe send --to-parent` は、Codex の中で打たれたとき（`CODEX_THREAD_ID` がある）、打った会話の記録（`${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl`）の先頭の `session_meta.source` が `cli` でなければ、送らずに exit 6 で断る（`lib/agent.sh` の `oe_agent_codex_caller_source`）。記録が無い会話（記憶の整理など）・`exec`・サブエージェントは断る。記録の置き場が symlink でもたどる。`--to-parent` でない送信と、`CODEX_THREAD_ID` が無い呼び出し（Codex の外）は判定しない。Codex の中で起動した Claude やシェルは `CODEX_THREAD_ID` を引き継ぐので、判定に当たる。
 - 検査: `test_target_resolve.sh` の (D)(7)（主の会話は送る・`exec`・サブエージェント・記録なし・ID の形の誤りは 6・`--to-parent` でない送信は判定しない）と、`test_agent.sh` の決まりの文の検査。`test_target_resolve.sh` は `oe-send` を検査と同じ bash で起動するようにした（`/bin/bash` の回で `oe-send` も 3.2 で走る）。
 - 8項目: step・ゲート・終端は変わらない。要件は owner の決定で1つ増えた（変更・再承認済み）。範囲内。
 

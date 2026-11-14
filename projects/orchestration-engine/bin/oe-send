@@ -106,8 +106,16 @@ fi
 if [[ "$TO_PARENT" -eq 1 && -n "${CODEX_THREAD_ID:-}" ]]; then
   caller_src=""; csrc_rc=0
   caller_src="$(oe_agent_codex_caller_source)" || csrc_rc=$?
-  if [[ "$csrc_rc" -ne 0 || "$caller_src" != "cli" ]]; then
-    echo "oe-send: この会話（Codex の thread ${CODEX_THREAD_ID}・記録の source: ${caller_src:-記録なし}）は委譲の書面を受け取った主の会話ではないので、親へ送りません。親への報告は、主の会話からだけ送ります" >&2
+  if [[ "$csrc_rc" -ne 0 ]]; then
+    case "$csrc_rc" in
+      4) caller_why="記録はあるが先頭の session_meta を読めない" ;;
+      *) caller_why="記録が見つからない（${CODEX_HOME:-~/.codex}/sessions）" ;;
+    esac
+    echo "oe-send: この会話（Codex の thread ${CODEX_THREAD_ID}）が委譲の書面を受け取った主の会話だと確かめられない（${caller_why}）ので、親へ送りません。親への報告は、主の会話からだけ送ります" >&2
+    exit 6
+  fi
+  if [[ "$caller_src" != "cli" ]]; then
+    echo "oe-send: この会話（Codex の thread ${CODEX_THREAD_ID}・記録の source: ${caller_src}）は委譲の書面を受け取った主の会話ではないので、親へ送りません。親への報告は、主の会話からだけ送ります" >&2
     exit 6
   fi
 fi

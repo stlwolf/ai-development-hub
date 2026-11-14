@@ -72,5 +72,5 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
 - Codex CLI 0.167.2 の sandbox（macOS の seatbelt）が、`--add-dir` で足した場所への書き込みを、`.git` の既定の保護より優先して許すこと。`network_proxy` の `unix_sockets` で、sandbox の中のプロセスの直接の通信を閉じたまま特定のソケットだけを開けること（tmux のソケットの先は sandbox の外なので、これは事故を防ぐ設定であって境界ではない）。Codex の版が上がったら、CHECK-2 の手順で確かめ直す。
 - sandbox の中で `ps` が起動できないこと。起動できるようになれば、規則 `oe` の1行も要らなくなりうる。
 - 親の本人確認を `ps`（pid と開始時刻）で行っていること。確かめ方が変われば、決定1 の「`oe` だけを外に出す」理由は見直す。
-- Codex が、委譲の子の主の会話の記録を `${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl` に残し、その先頭の `session_meta.source` が `cli` であること。内部の会話（記憶の整理など）が記録を残さないか、`source` が `cli` 以外であること。変われば、`oe send --to-parent` の判定（決定2）と拍動と受領の印の hook の判定（#648）を見直す。
+- Codex が、委譲の子の主の会話の記録を `${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl` に残し、その先頭の `session_meta.source` が `cli` であること。内部の会話（記憶の整理など）が記録を残さないか、`source` が `cli` 以外であること。`source` が `cli` であることは、その lease の主の会話であることの証明ではない。子の環境を引き継いだ別の対話の会話は通るが、Codex が走らせるコマンドには端末が無いので子の中で対話の Codex は起動できず、子のペインの前面は子の Codex が占め、別のペインは子の lease の環境を引き継がないので、この経路は開いていないと見た（実装SO の指摘・2026-11-15）。開くようになれば、lease に主の会話の thread の ID を記録して照らす。変われば、`oe send --to-parent` の判定（決定2）と拍動と受領の印の hook の判定（#648）を見直す。
 - Codex の `-c` の鍵が `.` で単純に分けられること（引用符で囲んだ鍵が効かない）。直れば、`-c` で渡せるものの範囲が変わる。

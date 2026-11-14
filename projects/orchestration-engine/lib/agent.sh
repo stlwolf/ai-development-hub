@@ -59,19 +59,22 @@ oe_agent_codex_trusted() {
 # oe_agent_codex_caller_source — Codex のコマンドの中で呼ばれたとき、打った会話（CODEX_THREAD_ID）の記録の先頭の
 #   session_meta.source を出す（#562・owner の答え Q120）。記録は ${CODEX_HOME:-~/.codex}/sessions の下の
 #   rollout-*-<thread の ID>.jsonl。先頭の1行は 1 MiB までしか読まない。
+#   置き場や記録が symlink でもたどる（記録を別のディスクへ移した構成）。最初に見つかった1件で探すのをやめる。
 #   rc: 0 出した（source が文字列でなければ "subagent"）/ 1 Codex の中でない（CODEX_THREAD_ID が無い）/
-#       3 記録が見つからない・読めない・ID の形が違う（記憶の整理のように記録を持たない内部の会話はここに当たる）
+#       3 記録が見つからない・ID の形が違う（記憶の整理のように記録を持たない内部の会話はここに当たる）/
+#       4 記録はあるが先頭の session_meta を読めない（書きかけなど）
 oe_agent_codex_caller_source() {
   local id="${CODEX_THREAD_ID:-}" home f src
   [ -n "$id" ] || return 1
   case "$id" in *[!A-Za-z0-9-]*) return 3 ;; esac
   home="${CODEX_HOME:-${HOME:-}/.codex}"
   [ -d "${home}/sessions" ] || return 3
-  f="$(find "${home}/sessions" -type f -name "rollout-*-${id}.jsonl" 2>/dev/null | head -n 1)"
-  [ -n "$f" ] && [ -r "$f" ] || return 3
+  f="$(find -L "${home}/sessions" -type f -name "rollout-*-${id}.jsonl" -print -quit 2>/dev/null)" || f=""
+  [ -n "$f" ] || return 3
+  [ -r "$f" ] || return 4
   # head -n 1 が読み終えると前の head -c が SIGPIPE で止まるので、head -c の失敗は飲む（pipefail の下で値を落とさない）。
   src="$( (head -c 1048576 "$f" 2>/dev/null || true) | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
-  [ -n "$src" ] || return 3
+  [ -n "$src" ] || return 4
   printf '%s' "$src"
 }
 

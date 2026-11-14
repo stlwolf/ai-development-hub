@@ -200,9 +200,20 @@ ck  "(7) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 ckc "(7) 主の会話でないと言う" "$OUT" "主の会話ではないので、親へ送りません"
 cx 01a1dafa-0000-7000-8000-0000000005ab
 ck  "(7) サブエージェントの会話からは 6 で断る" "6" "$RC"
+ck  "(7) サブエージェントのときも送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 cx 01a1dafa-0000-7000-8000-0000000ae63a
 ck  "(7) 記録の無い内部の会話（記憶の整理など）からは 6 で断る" "6" "$RC"
-ckc "(7) 記録なしと言う" "$OUT" "記録の source: 記録なし"
+ck  "(7) 記録の無い会話のときも送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+ckc "(7) 記録が見つからないと言う（主の会話でないと断定しない）" "$OUT" "主の会話だと確かめられない（記録が見つからない"
+# 記録の置き場が symlink でも、主の会話の記録をたどって送る（実装SO の指摘）
+CHL="$_TMP_DIR/codex-home-link"; mkdir -p "$CHL"; ln -s "$CH/sessions" "$CHL/sessions"
+: > "$SENT"; set +e; OUT="$(CODEX_HOME="$CHL" CODEX_THREAD_ID=01a1dafa-0000-7000-8000-00000000c11a OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+ck  "(7) 置き場が symlink でも主の会話からは送る" "0" "$RC"
+# 先頭が session_meta でない（書きかけなど）記録は、読めないと言って断る
+printf '%s\n' '{"type":"event_msg","payload":{}}' > "$CH/sessions/2026/11/15/rollout-2026-11-15T01-00-03-01a1dafa-0000-7000-8000-0000000b10c0.jsonl"
+cx 01a1dafa-0000-7000-8000-0000000b10c0
+ck  "(7) 先頭の session_meta を読めない記録は 6 で断る" "6" "$RC"
+ckc "(7) 読めないと言う" "$OUT" "先頭の session_meta を読めない"
 cx 'bad id*'
 ck  "(7) thread の ID の形が違えば 6 で断る" "6" "$RC"
 : > "$SENT"; set +e; OUT="$(CODEX_HOME="$CH" CODEX_THREAD_ID=01a1dafa-0000-7000-8000-0000000e8ec0 "$BASH" "$BIN/oe-send" %3 "x" 2>&1)"; RC=$?; set -e
