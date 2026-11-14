@@ -23,7 +23,7 @@ ck() {
 HB="$_TMP_DIR/hb"; EV="$_TMP_DIR/ev"; mkdir -p "$HB" "$EV"
 LID="01KZ1VQA1979K4S2MMH5YY24ZJ"
 run_hook() { # <payload-json> [env assignments...]
-  printf '%s' "$1" | env -u OE_LEASE_ID -u OE_GENERATION OE_HEARTBEAT_DIR="$HB" OE_EVENT_DIR="$EV" TMUX_PANE="${HP_PANE-%7}" TMUX="${HP_TMUX-oe,999,0}" "${@:2}" bash "$HOOK" 2>"$_TMP_DIR/err.txt"
+  printf '%s' "$1" | env -u OE_LEASE_ID -u OE_GENERATION OE_HEARTBEAT_DIR="$HB" OE_EVENT_DIR="$EV" TMUX_PANE="${HP_PANE-%7}" TMUX="${HP_TMUX-oe,999,0}" "${@:2}" "$BASH" "$HOOK" 2>"$_TMP_DIR/err.txt"
 }
 T="$_TMP_DIR/rollout.jsonl"
 printf '%s\n' '{"type":"session_meta","payload":{"id":"sid-x"}}' \
@@ -114,7 +114,16 @@ run_hook "$(jq -cn --arg t "$_TMP_DIR/cli.jsonl" '{hook_event_name:"PostModelReq
 ck "agent_id がある会話（サブエージェント）は書かない" "no" "$([[ -f "$HB/m-agent.json" ]] && echo yes || echo no)"
 run_hook "$(mk m-unread "/nonexistent/rollout.jsonl")" >/dev/null
 ck "記録の先頭が読めないときは書く（主の会話を落とさない）" "yes" "$([[ -f "$HB/m-unread.json" ]] && echo yes || echo no)"
-ck "書かない会話は診断も残さない（ふつうのこと）" "0" "$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | grep -c 'm-exec\|m-sub\|m-none\|m-agent')"
+d0="$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
+run_hook "$(mk m-exec2 "$_TMP_DIR/exec.jsonl")" >/dev/null
+run_hook "$(mk m-none2 "")" >/dev/null
+ck "書かない会話は診断も残さない（ふつうのこと・診断の行数が増えない）" "$d0" "$(cat "$EV/oe-heartbeat-diag.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"m-vs","source":"vscode"}}' > "$_TMP_DIR/vscode.jsonl"
+run_hook "$(mk m-vs "$_TMP_DIR/vscode.jsonl")" >/dev/null
+ck "source が vscode の対話の会話は書く（cli 以外の対話を落とさない）" "yes" "$([[ -f "$HB/m-vs.json" ]] && echo yes || echo no)"
+: > "$_TMP_DIR/empty.jsonl"
+run_hook "$(mk m-empty "$_TMP_DIR/empty.jsonl")" >/dev/null
+ck "記録が空（まだ書かれていない）なら書く" "yes" "$([[ -f "$HB/m-empty.json" ]] && echo yes || echo no)"
 
 echo "[8] 一時ファイルを残さない"
 ck ".hb.* が残らない" "0" "$(find "$HB" -name '.hb.*' | wc -l | tr -d ' ')"

@@ -131,16 +131,21 @@ if [ -z "$nonce" ] || [ "$nonce" = "null" ]; then
 fi
 
 # --- 受け手ペイン。取れなければ束縛できない = 環境エラーとして記録する ---
-# Codex のペインの主の会話でない会話は印を記録しない（#562 のマージ後の確かめ）。サブエージェント（agent_id がある）と、
-# 記録の先頭の session_meta.source が cli 以外の会話（ペインから打った codex exec など）は、打ったペインの TMUX_PANE を
-# 引き継ぐので、記録するとそのペインに届いていない送信へ受領が付く。Claude の記録には session_meta が無いので影響しない。
+# Codex のペインの主の会話でない会話は印を記録しない（#562 のマージ後の確かめ）。サブエージェント（agent_id がある）、
+# Codex の形の入力（turn_id がある）で記録を持たない内部の会話（transcript_path が無い・記憶の整理など）、記録の先頭の
+# session_meta.source が exec か文字列でない会話（ペインから打った codex exec など）は、打ったペインの TMUX_PANE を
+# 引き継ぐので、記録するとそのペインに届いていない送信へ受領が付く。Claude の入力には turn_id が無く、記録には
+# session_meta が無いので影響しない。
 if printf '%s' "$payload" | jq -e '((.agent_id // "") | tostring) != ""' >/dev/null 2>&1; then
   exit 0
 fi
 tpath="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || tpath=""
+if [ -z "$tpath" ] && printf '%s' "$payload" | jq -e '(.turn_id // "") != ""' >/dev/null 2>&1; then
+  exit 0
+fi
 if [ -n "$tpath" ] && [ -r "$tpath" ]; then
-  tsrc="$(head -n 1 "$tpath" 2>/dev/null | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || tsrc=""
-  case "$tsrc" in ''|cli) ;; *) exit 0 ;; esac
+  tsrc="$(head -c 1048576 "$tpath" 2>/dev/null | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || tsrc=""
+  case "$tsrc" in exec|subagent) exit 0 ;; esac
 fi
 
 pane="${TMUX_PANE:-}"

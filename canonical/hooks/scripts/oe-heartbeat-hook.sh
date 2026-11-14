@@ -22,10 +22,13 @@
 #   - サブエージェント（標準入力に agent_id がある）
 #   - 記録を持たない内部の会話（transcript_path が無い。Codex の記憶の整理などは同じプロセスの中で走り、
 #     ペインの環境を引き継ぐ）
-#   - 記録の先頭の session_meta.source が cli 以外の会話（ペインから打った codex exec・so-compare の Codex のレーン
-#     など。打ったペインの TMUX_PANE と lease の環境を引き継ぐので、書くとそのペインの拍動が2件になる）
-#   lease の有無では見分けない（統括のペインの codex exec は統括の lease を引き継ぐ）。記録の先頭が読めないとき・
-#   session_meta が無いときは書く（主の会話を落とさない）。
+#   - 記録の先頭の session_meta.source が exec か、文字列でない（サブエージェント）会話（ペインから打った codex exec・
+#     so-compare の Codex のレーンなど。打ったペインの TMUX_PANE と lease の環境を引き継ぐので、書くとそのペインの
+#     拍動が2件になる）。cli・vscode など対話の画面の source は外さない（主の会話を落とさない・実装SO の指摘）
+#   lease の有無では見分けない（統括のペインの codex exec は統括の lease を引き継ぐ）。記録の先頭が読めないとき
+#   （まだ作られていない・書きかけ）・session_meta が無いときは書く（主の会話の最初の hook を落とさない）。
+#   先頭の1行は 1 MiB までしか読まない（同期の hook を長く止めない）。exec の記録を対話の画面で resume した会話は
+#   source が exec のままなので書かない（まれな形として受け入れる）。
 #
 # 標準出力には何も出さない（UserPromptSubmit の標準出力はモデルの文脈に足される）。exit は常に 0。
 # 同期の hook は後続を待たせるので、記録の全件走査はせず tail の上限で短く終える。上限の時間は hooks.json の側で持つ
@@ -63,8 +66,8 @@ agent_id="$(printf '%s' "$payload" | jq -r '(.agent_id // "") | tostring' 2>/dev
 transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || transcript=""
 [ -n "$transcript" ] || exit 0
 if [ -r "$transcript" ]; then
-  src="$(head -n 1 "$transcript" 2>/dev/null | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
-  case "$src" in ''|cli) ;; *) exit 0 ;; esac
+  src="$(head -c 1048576 "$transcript" 2>/dev/null | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
+  case "$src" in exec|subagent) exit 0 ;; esac
 fi
 model="$(printf '%s' "$payload" | jq -r '(.model // "") | if type=="string" then . else "" end' 2>/dev/null)" || model=""
 

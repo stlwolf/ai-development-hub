@@ -42,7 +42,7 @@ new_env() {   # 隔離した state を作り、送信 1 件（nonce 付き）を
 }
 run_hook() { # run_hook <prompt-json-string> [env assignments...]
   printf '%s' "$1" | OE_EVENT_DIR="$EVDIR" TMUX_PANE="${HP_PANE-%66}" TMUX="${HP_TMUX-oe,9999,0}" \
-    bash "$HOOK" 2>"$_TMP_DIR/err.txt"
+    "$BASH" "$HOOK" 2>"$_TMP_DIR/err.txt"
 }
 last_ev() { tail -n 1 "$EVFILE"; }
 nlines()  { [[ -s "$EVFILE" ]] && wc -l < "$EVFILE" | tr -d '[:space:]' || echo 0; }
@@ -130,6 +130,12 @@ ck "主の会話（source が cli）では記録する" "prompt_received" "$(las
 new_env
 run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/claude.jsonl" '{session_id:"c-1", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
 ck "Claude の記録（session_meta が無い）では今までどおり記録する" "prompt_received" "$(last_ev | jq -r .type)"
+new_env; n0="$(wc -l < "$EVFILE" | tr -d ' ')"
+run_hook "$(jq -cn --arg n "$NONCE" '{session_id:"x-mem", turn_id:"t-9", hook_event_name:"UserPromptSubmit", prompt:("整理 [oe:" + $n + "]")}')" >/dev/null
+ck "Codex の形の入力で記録が無い内部の会話では記録しない" "$n0" "$(wc -l < "$EVFILE" | tr -d ' ')"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"x-vs","source":"vscode"}}' > "$_TMP_DIR/vscode.jsonl"
+run_hook "$(jq -cn --arg n "$NONCE" --arg t "$_TMP_DIR/vscode.jsonl" '{session_id:"x-vs", turn_id:"t-1", transcript_path:$t, hook_event_name:"UserPromptSubmit", prompt:("やって [oe:" + $n + "]")}')" >/dev/null
+ck "source が vscode の対話の会話では記録する" "prompt_received" "$(last_ev | jq -r .type)"
 
 echo "[8] oe-selfcheck: 陽性対照が無いときに ok を名乗らない（0 件を不在の証拠にしない）"
 [[ -x "$SELFCHECK" ]] || { echo "  SKIP: oe-selfcheck 不在"; }
