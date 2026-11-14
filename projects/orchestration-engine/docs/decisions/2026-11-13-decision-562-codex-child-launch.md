@@ -49,6 +49,7 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
   - `AGENTS.md` に受領の印の説明を書く（Q107 の最初の案）。hub の配布物に engine の約束ごとが入り、engine を hub から切り出したときに置き場が無くなる。
   - hook（`UserPromptSubmit`）の `additionalContext` で印のある prompt にだけ伝える。owner が hook の信頼を登録するまで動かず、登録の前の子に約束ごとが届かない。
 - 選んだ理由: 起こす1行は engine だけが持つ場所で、hub にも owner の設定にも頼らない。
+- 報告は、委譲の書面で頼まれた作業についてだけ返す（Q120・2026-11-15）。Codex は、子の TUI と同じプロセスで記憶の整理などの内部の会話を走らせ、その会話にも起動の1行の決まりの文と子の環境が届く。決まりの文を「書面を受け取っていない会話は報告しない」に絞り（モデルに頼る側）、engine の `oe send --to-parent` は、打った会話の記録の `source` が `cli` でなければ送らずに断る（決定論の側）。
 
 ### 決定3 フォルダの信頼の確認には、本体のリポジトリが信頼済みのときだけ engine が Enter を1回送る。信頼を `-c` で渡すことはしない（Q113・Q118）
 
@@ -71,4 +72,5 @@ engine（`oe delegate`）は Claude Code の子だけを起こしていた。#56
 - Codex CLI 0.167.2 の sandbox（macOS の seatbelt）が、`--add-dir` で足した場所への書き込みを、`.git` の既定の保護より優先して許すこと。`network_proxy` の `unix_sockets` で、sandbox の中のプロセスの直接の通信を閉じたまま特定のソケットだけを開けること（tmux のソケットの先は sandbox の外なので、これは事故を防ぐ設定であって境界ではない）。Codex の版が上がったら、CHECK-2 の手順で確かめ直す。
 - sandbox の中で `ps` が起動できないこと。起動できるようになれば、規則 `oe` の1行も要らなくなりうる。
 - 親の本人確認を `ps`（pid と開始時刻）で行っていること。確かめ方が変われば、決定1 の「`oe` だけを外に出す」理由は見直す。
+- Codex が、委譲の子の主の会話の記録を `${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl` に残し、その先頭の `session_meta.source` が `cli` であること。内部の会話（記憶の整理など）が記録を残さないか、`source` が `cli` 以外であること。変われば、`oe send --to-parent` の判定（決定2）と拍動と受領の印の hook の判定（#648）を見直す。
 - Codex の `-c` の鍵が `.` で単純に分けられること（引用符で囲んだ鍵が効かない）。直れば、`-c` で渡せるものの範囲が変わる。

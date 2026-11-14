@@ -27,7 +27,7 @@ OE_AGENT_COMMS="claude codex"
 
 # Codex の子に持ち込む developer の指示（plan の DJ-4）。1行・二重引用符と改行を含めない（TOML の文字列として
 # -c developer_instructions="…" に収めるため）。報告の返し方と問いの書き方も engine の約束ごととしてここに集める。
-OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS='文末の [oe:<26文字>] は配送の受領印で、依頼の一部ではない。写さず、コマンドに含めない。親への報告は oe send --to-parent で返す。判断を求める問いはファイルに書いて送り、対話の選択肢は使わない。委譲の書面（brief）の固定節に従う。oe は、ほかのコマンドとつながず、それだけで1つのコマンドとして打つ。'
+OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS='文末の [oe:<26文字>] は配送の受領印で、依頼の一部ではない。写さず、コマンドに含めない。委譲の書面で頼まれた作業についてだけ、親へ oe send --to-parent で報告する。書面を受け取っていない会話は報告しない。判断を求める問いはファイルに書いて送り、対話の選択肢は使わない。委譲の書面（brief）の固定節に従う。oe は、ほかのコマンドとつながず、それだけで1つのコマンドとして打つ。'
 
 # Codex が新しい workspace を初めて開くときに出す確認の画面の、最初の行の文言（0.167.1 と 0.167.2 の実機）。
 # 版が変われば効かなくなるので、ここに置いて README に書く。
@@ -54,6 +54,25 @@ oe_agent_codex_trusted() {
     /^\[/ { inside = 0 }
     inside && $0 ~ /^[[:space:]]*trust_level[[:space:]]*=[[:space:]]*"trusted"[[:space:]]*$/ { found = 1; exit }
     END { exit (found ? 0 : 1) }' "$conf"
+}
+
+# oe_agent_codex_caller_source — Codex のコマンドの中で呼ばれたとき、打った会話（CODEX_THREAD_ID）の記録の先頭の
+#   session_meta.source を出す（#562・owner の答え Q120）。記録は ${CODEX_HOME:-~/.codex}/sessions の下の
+#   rollout-*-<thread の ID>.jsonl。先頭の1行は 1 MiB までしか読まない。
+#   rc: 0 出した（source が文字列でなければ "subagent"）/ 1 Codex の中でない（CODEX_THREAD_ID が無い）/
+#       3 記録が見つからない・読めない・ID の形が違う（記憶の整理のように記録を持たない内部の会話はここに当たる）
+oe_agent_codex_caller_source() {
+  local id="${CODEX_THREAD_ID:-}" home f src
+  [ -n "$id" ] || return 1
+  case "$id" in *[!A-Za-z0-9-]*) return 3 ;; esac
+  home="${CODEX_HOME:-${HOME:-}/.codex}"
+  [ -d "${home}/sessions" ] || return 3
+  f="$(find "${home}/sessions" -type f -name "rollout-*-${id}.jsonl" 2>/dev/null | head -n 1)"
+  [ -n "$f" ] && [ -r "$f" ] || return 3
+  # head -n 1 が読み終えると前の head -c が SIGPIPE で止まるので、head -c の失敗は飲む（pipefail の下で値を落とさない）。
+  src="$( (head -c 1048576 "$f" 2>/dev/null || true) | head -n 1 | jq -r 'select(.type=="session_meta") | (.payload.source // "") | if type=="string" then . else "subagent" end' 2>/dev/null)" || src=""
+  [ -n "$src" ] || return 3
+  printf '%s' "$src"
 }
 
 # --- 名前 ---

@@ -68,6 +68,7 @@ oe delegate -w "$REPO" --label "#N" --agent codex --brief "$REPO/.oe/brief-N.md"
 - git の書き込み（本体の `.git` と worktree の gitdir）・engine の状態の置き場・tmux のソケットは、`oe delegate` が起こす1行で、その子のセッションにだけ渡す。子は sandbox の中で `git add`・`git commit` までできる。sandbox の中のプロセスの直接の通信は閉じているので、`git push` と `gh` はそのままでは通らない（push と PR は統括が行う）。
 - Codex の sandbox は安全の境界ではない。子は tmux のソケットを通せば親と同じ権限でコマンドを走らせられ、共通の `.git` と engine の記録にも書ける（Claude の子と同じ）。Claude の子と違って判定器が子の操作を裁かないので、外から来た文（Web のページ・知らない人が書いた issue や PR）を読ませる作業を Codex の子に任せない。
 - 子が `oe` をほかのコマンドとつないで打つと、`oe` は sandbox の中で走って止まり、「単独で打ち直す」と返す。
+- 子の決まりの文は「委譲の書面で頼まれた作業についてだけ親へ報告する」で、`oe send --to-parent` は、Codex の子の主の会話（記録の `source` が `cli`）でない会話（Codex の記憶の整理・子が打った `codex exec` など）からは送らずに exit 6 で断る。
 - 受領の印と拍動の hook（`canonical/hooks/codex.hooks.json` の `UserPromptSubmit`・`PostModelRequest`）は、owner が Codex の `/hooks` で信頼を登録してから動く。無くても、`oe delegate` が起こしたときと子が `oe send` を打つたびに engine が書く拍動の床で、lease からペインを引ける。
 - 新しい workspace（worktree ごと）を初めて開くとき、Codex はフォルダの信頼の確認を出す。`oe delegate` は、workspace のもとのリポジトリ（main の作業ツリー）を owner が Codex で信頼済み（`$CODEX_HOME/config.toml` の `[projects."<path>"]`・読むだけで書き換えない）のときだけ Enter を1回送って進む。信頼されていないとき・画面を読めないときは、最初の1行を送らずに exit 4 で止まり案内を出す（ペインは残る）。そのときは人が子のペインで答えてから、最初の1行を `oe send` で送る。
 - Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。
