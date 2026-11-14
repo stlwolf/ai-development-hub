@@ -32,13 +32,19 @@ source "${BIN_DIR}/../lib/event-bus.sh" || true
 # lease の記録（#577 PR-2）。registry と両方書く。source に失敗しても委譲本体は壊さない。
 # shellcheck source=../lib/lease.sh
 source "${BIN_DIR}/../lib/lease.sh" || true
+# エージェントごとの差（#562）。起こす引数・権限のモードの読み方・コマンド名の集合はここだけが持つ。
+# shellcheck source=../lib/agent.sh
+source "${BIN_DIR}/../lib/agent.sh"
+# 拍動の床（#562 DJ-6）。hook に依らず、起こしたときに lease の名前で sidecar を1件書く。無くても委譲は続ける。
+# shellcheck source=../lib/heartbeat-resolve.sh
+source "${BIN_DIR}/../lib/heartbeat-resolve.sh" || true
 
 usage() {
   cat >&2 <<'EOF'
-usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude-arg <arg>]
+usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--agent <claude|codex>] [--agent-arg <arg>]
                    [--reason <text>] [--elevated] [--print-approval | --approved-digest <digest>] [--] <task>
 
-  <task>              子 Claude セッションへ送るタスク（1行テキスト・改行不可）
+  <task>              子セッションへ送るタスク（1行テキスト・改行不可）
                       --brief があれば省略可
   -w, --workspace DIR 子セッションの作業ディレクトリ（デフォルト: カレントディレクトリ）
   --brief <path>      brief doc（委譲指示書）を子に読ませる（"<path> を読んで進めて。" を付加）。
@@ -46,8 +52,11 @@ usage: oe-delegate [-w WORKSPACE] [--brief <path>] [--label <#N|name>] [--claude
   --kickoff <path>    --brief の deprecated alias（後方互換・#255）。新規は --brief を使う
   --label <#N|name>   子を registry に登録する際のラベル（後で oe-send <label> で指す）。
                       省略時はラベル無しで登録（wt switch 後は pane-issue の #N で解決可）
-  --claude-arg <arg>  子 Claude 起動時に渡す追加引数（repeatable）。
-                      例: --claude-arg --permission-mode --claude-arg auto
+  --agent <name>      子として起こすエージェント（claude | codex・既定 claude・#562）。
+                      codex は --no-daemon・-c check_for_update_on_startup=false・--approve-for-me（--agent-arg で
+                      承認のモードを指定したときは外す）・-c developer_instructions=… を付けて起こす
+  --agent-arg <arg>   子の起動時に渡す追加引数（repeatable）。--claude-arg は同じ意味の alias。
+                      例: --agent-arg --permission-mode --agent-arg auto
   --reason <text>     承認パッケージに載せる理由（1行・#262 elevated 承認ハンドシェイク用）。
   --elevated          この子を elevated（本番 / 機微アクセス等）と宣言する。宣言すると実 spawn は
                       owner 承認済みダイジェスト（--approved-digest）を必須にする（無ければ exit 3）。
@@ -71,7 +80,8 @@ EOF
 WORKSPACE="$(pwd)"
 BRIEF=""
 LABEL=""
-CLAUDE_ARGS=()
+AGENT="$OE_AGENT_DEFAULT"
+AGENT_ARGS=()
 REASON=""
 PRINT_APPROVAL=""
 APPROVED_DIGEST=""
@@ -97,13 +107,18 @@ while [[ "${1:-}" == -* ]]; do
         exit 2
       fi
       LABEL="$2"; shift 2 ;;
-    --claude-arg)
-      [[ $# -ge 2 ]] || { echo "oe-delegate: --claude-arg requires a value" >&2; exit 2; }
+    --agent)
+      [[ $# -ge 2 ]] || { echo "oe-delegate: --agent requires a value" >&2; exit 2; }
+      oe_agent_valid "$2" || { echo "oe-delegate: --agent must be one of: ${OE_AGENTS} (got: $2)" >&2; exit 2; }
+      AGENT="$2"; shift 2 ;;
+    --agent-arg|--claude-arg)
+      # --claude-arg は --agent-arg の alias（#562・今までの呼び出し元を壊さない）。エラー文言は渡された flag を映す。
+      [[ $# -ge 2 ]] || { echo "oe-delegate: $1 requires a value" >&2; exit 2; }
       if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
-        echo "oe-delegate: --claude-arg value must be a single argument (no newline)" >&2
+        echo "oe-delegate: $1 value must be a single argument (no newline)" >&2
         exit 2
       fi
-      CLAUDE_ARGS+=("$2"); shift 2 ;;
+      AGENT_ARGS+=("$2"); shift 2 ;;
     --reason)
       [[ $# -ge 2 ]] || { echo "oe-delegate: --reason requires a value" >&2; exit 2; }
       if [[ "$2" == *$'\n'* || "$2" == *$'\r'* ]]; then
@@ -201,20 +216,38 @@ shell_quote() {
 
 build_child_command() {
   local cmd
-  cmd="PARENT_TMUX_PANE=$(shell_quote "$PARENT_PANE") claude"
+  cmd="PARENT_TMUX_PANE=$(shell_quote "$PARENT_PANE") ${AGENT}"
   # 子の lease（#577 DJ-7 の方法1）。作れたときだけ環境に入れる。PARENT_TMUX_PANE と同じく承認の digest には含めない
   # （ID は起こすたびに違う・承認の対象は子が何をするかである）。
   if [[ -n "${LEASE_ID:-}" ]]; then
     cmd="OE_LEASE_ID=$(shell_quote "$LEASE_ID") OE_GENERATION=$(shell_quote "1") ${cmd}"
   fi
   local arg
+  # エージェントごとの既定の引数（#562・lib/agent.sh）。claude は空で、1行は今までと同じ（受入 A-1）。
+  # codex は --no-daemon・更新の確認を出さない設定・承認の既定・developer の指示。利用者の引数より前に置く。
+  # exec は書かない。tmux が bash の -c で起こす最後の単純コマンドは bash が exec で置き換えるので、
+  # 前面のプロセスはエージェントになる（claude と codex の両方を実機で確かめた・#562 の C6）。
+  while IFS= read -r arg; do
+    [[ -n "$arg" ]] || continue
+    cmd="${cmd} $(shell_quote "$arg")"
+  done < <(oe_agent_default_args "$AGENT" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"})
+  # Codex の子の sandbox に、そのセッションにだけ渡す権限（#562 の H10）。git の書き込み（本体の .git と gitdir）・
+  # engine の状態の置き場・tmux のソケットだけを開く。利用者の引数より前に置く。
+  if [[ "$AGENT" == "codex" ]]; then
+    while IFS= read -r arg; do
+      [[ -n "$arg" ]] || continue
+      cmd="${cmd} $(shell_quote "$arg")"
+    done < <(oe_agent_codex_sandbox_args "$WORKSPACE" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"})
+  fi
   # bash 3.2 では set -u 下で空配列の "${arr[@]}" 展開が unbound variable になる
-  # （4.4+ は許容）。oe-kick 等が --claude-arg 無しで呼ぶと CLAUDE_ARGS は空のため、
+  # （4.4+ は許容）。oe-kick 等が --agent-arg 無しで呼ぶと AGENT_ARGS は空のため、
   # ${arr[@]+"${arr[@]}"} イディオムで空配列を安全に展開する（ADR-005・oe-select 前例）。
-  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
+  for arg in ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}; do
     cmd="${cmd} $(shell_quote "$arg")"
   done
   if [[ -n "$BRIEF" ]]; then
+    # claude の --add-dir は読める範囲、codex の --add-dir は書ける範囲を広げる引数で意味が違うが、
+    # 子が brief の置き場（統括の .oe/）を読み、問いと報告を書けるという要る効果は同じ（#562 の DJ-2・C7）。
     cmd="${cmd} --add-dir $(shell_quote "$kdir")"
   fi
   printf '%s\n' "$cmd"
@@ -232,19 +265,11 @@ _sha256() {
 # _strip_cntrl — 表示用に制御文字を除去（ESC 等での承認表示 spoof を断つ・実装SO R2）。
 _strip_cntrl() { printf '%s' "$1" | tr -d '\000-\037\177'; }
 
-# extract_permission_mode — CLAUDE_ARGS から子の実効 permission mode を推定（audit / パッケージ用）。
-#   --permission-mode <v> / --permission-mode=<v> / --dangerously-skip-permissions を認識。無ければ default。
+# extract_permission_mode — AGENT_ARGS から子の実効 permission mode を推定（audit / パッケージ用）。
+#   読み方はエージェントごとに lib/agent.sh が持つ（claude: --permission-mode / --dangerously-skip-permissions、
+#   codex: -a / -s / --approve-for-me / bypass・--yolo・-s danger-full-access は bypassPermissions）。
 extract_permission_mode() {
-  local arg prev="" mode="default"
-  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
-    case "$arg" in
-      --dangerously-skip-permissions) mode="bypassPermissions" ;;
-      --permission-mode=*) mode="${arg#--permission-mode=}" ;;
-    esac
-    [[ "$prev" == "--permission-mode" ]] && mode="$arg"
-    prev="$arg"
-  done
-  printf '%s' "$mode"
+  oe_agent_permission_mode "$AGENT" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}
 }
 
 # compute_spawn_digest — 承認対象の正規化ダイジェスト（承認↔実行 binding 用）を stdout。
@@ -254,10 +279,10 @@ extract_permission_mode() {
 #   brief は path だけでなく内容 hash も含め、承認後の内容差し替え（TOCTOU）を捕まえる。
 compute_spawn_digest() {
   command -v jq >/dev/null 2>&1 || { echo "oe-delegate: jq is required for the approval digest" >&2; return 2; }
-  # claude 引数配列を JSON へ。値が --permission-mode 等の option 形なので jq --args は使わず
+  # 引数配列を JSON へ。値が --permission-mode 等の option 形なので jq --args は使わず
   # （jq が option と誤認する）、--argjson で 1 要素ずつ安全に append する。
   local args_json="[]" arg
-  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
+  for arg in ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}; do
     args_json="$(jq -cn --argjson acc "$args_json" --arg a "$arg" '$acc + [$a]')" || return 1
   done
   local brief_hash=""
@@ -268,12 +293,14 @@ compute_spawn_digest() {
   # --elevated を付けて escalation できる（逆に downgrade も）。digest に焼くことで、owner が
   # 見た elevated 宣言と実 spawn の elevated 属性が一致しなければ照合が落ちる。
   local elevated_json; elevated_json="$([[ -n "$ELEVATED" ]] && echo true || echo false)"
+  # agent も束縛する（#562）。claude の承認で codex を起こす差し替えを照合で落とす。鍵の名前を claude_args から
+  # agent_args に変えたので、更新の前に取った承認は更新のあとは不一致になる（取り直せば済む・安全側）。
   local canon
   canon="$(jq -cn \
     --arg ws "$WORKSPACE" --arg label "$LABEL" --arg brief "$BRIEF_ABS" \
     --arg bh "$brief_hash" --arg task "$TASK" --argjson el "$elevated_json" \
-    --argjson ca "$args_json" \
-    '{workspace:$ws, label:$label, brief:$brief, brief_content:$bh, task:$task, elevated:$el, claude_args:$ca}')" || return 1
+    --arg agent "$AGENT" --argjson ca "$args_json" \
+    '{workspace:$ws, label:$label, brief:$brief, brief_content:$bh, task:$task, elevated:$el, agent:$agent, agent_args:$ca}')" || return 1
   printf '%s' "$canon" | _sha256 | cut -c1-16
 }
 
@@ -282,8 +309,9 @@ build_approval_command() {
   local d="$1" cmd arg
   cmd="$(shell_quote "${BIN_DIR}/oe-delegate") -w $(shell_quote "$WORKSPACE")"
   [[ -n "$LABEL" ]] && cmd="${cmd} --label $(shell_quote "$LABEL")"
-  for arg in ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}; do
-    cmd="${cmd} --claude-arg $(shell_quote "$arg")"
+  [[ "$AGENT" != "$OE_AGENT_DEFAULT" ]] && cmd="${cmd} --agent $(shell_quote "$AGENT")"
+  for arg in ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}; do
+    cmd="${cmd} --agent-arg $(shell_quote "$arg")"
   done
   [[ -n "$BRIEF_ABS" ]] && cmd="${cmd} --brief $(shell_quote "$BRIEF_ABS")"
   [[ -n "$REASON" ]] && cmd="${cmd} --reason $(shell_quote "$REASON")"
@@ -306,12 +334,16 @@ print_approval_package() {
   s_label="$(_strip_cntrl "${LABEL:-(ラベル無し)}")"
   s_task="$(_strip_cntrl "$task_summary")"
   s_reason="$(_strip_cntrl "${REASON:-(呼び出し側が会話で補足)}")"
+  # エージェントの行は claude 以外のときだけ出す（claude の表示は変更前と同じ・受入 A-1・実装SO の指摘1）。
+  local agent_line=""
+  [[ "$AGENT" != "$OE_AGENT_DEFAULT" ]] && agent_line="  エージェント    : ${AGENT}
+"
   cat <<EOF
 ========================================================================
 [spawn 承認要求] elevated な子セッションを起動します。owner の承認をお願いします。
 ------------------------------------------------------------------------
   対象の子        : ${s_label}
-  要求権限モード  : ${pm}
+${agent_line}  要求権限モード  : ${pm}
   elevated 宣言   : ${is_elev}
   作業ディレクトリ: ${WORKSPACE}
   brief           : ${BRIEF_ABS:-(なし)}
@@ -344,7 +376,19 @@ fi
 # 検知できないため呼び出し側が --elevated を宣言する（skill が指示・分類器が二重ゲート）。
 PERM_MODE="$(extract_permission_mode)"
 IS_ELEVATED=""
-{ [[ -n "$ELEVATED" ]] || [[ "$PERM_MODE" == "bypassPermissions" ]]; } && IS_ELEVATED=1
+{ [[ -n "$ELEVATED" ]] || oe_agent_mode_is_elevated "$PERM_MODE"; } && IS_ELEVATED=1
+
+# codex の子は、報告の送信（oe send）を承認なしで sandbox の外へ出す実行ポリシーの規則に頼る（#562 DJ-3）。
+# 規則の無い環境でも起こすが、報告のたびに承認の要求に回ることを1行で知らせる（PR-2 の配布物が無い状態の制限）。
+if [[ "$AGENT" == "codex" ]]; then
+  _codex_home="${CODEX_HOME:-${HOME:-}/.codex}"
+  if [[ ! -f "${_codex_home}/rules/oe-child.rules" ]]; then
+    echo "oe-delegate: ${_codex_home}/rules/oe-child.rules が無いので、子の報告の送信（oe send）は承認の要求に回ります（canonical/codex/rules を sync して配ってください）" >&2
+  fi
+  if [[ -f "${_codex_home}/config.toml" ]] && grep -q '^[[:space:]]*developer_instructions[[:space:]]*=' "${_codex_home}/config.toml" 2>/dev/null; then
+    echo "oe-delegate: 利用者の config.toml の developer_instructions は、この子の中では engine の本文に置き換わります（-c の上書き）" >&2
+  fi
+fi
 
 # elevated spawn は owner 承認済みダイジェストを必須にする（承認を経ず到達する迂回を塞ぐ・実装SO D3）。
 if [[ -n "$IS_ELEVATED" && -z "$APPROVED_DIGEST_SET" ]]; then
@@ -372,7 +416,7 @@ if declare -F oe_lease_create >/dev/null 2>&1 && [[ -n "${OE_LEASE_DIR:-}" ]]; t
   if _pw="$(oe_lease_whoami 2>/dev/null)" && [[ "$(printf '%s' "$_pw" | jq -r '.state' 2>/dev/null)" == "active" ]]; then
     PARENT_LEASE="$(printf '%s' "$_pw" | jq -r '"\(.lease_id):\(.generation)"' 2>/dev/null)" || PARENT_LEASE=""
   fi
-  LEASE_ID="$(oe_lease_create delegation "$LABEL" "$WORKSPACE" "${PARENT_LEASE%%:*}" 1 2>/dev/null)" || LEASE_ID=""
+  LEASE_ID="$(oe_lease_create delegation "$LABEL" "$WORKSPACE" "${PARENT_LEASE%%:*}" 1 "$AGENT" 2>/dev/null)" || LEASE_ID=""
   [[ -n "$LEASE_ID" ]] || echo "oe-delegate: lease を作れませんでした（registry だけで続けます）" >&2
 fi
 
@@ -380,7 +424,7 @@ CHILD_COMMAND="$(build_child_command)"
 CHILD_PANE="$(tmux split-window -d -P -F "#{pane_id}" -t "$PARENT_PANE" -c "$WORKSPACE" "$CHILD_COMMAND")"
 echo "oe-delegate: child pane ${CHILD_PANE} started (parent: ${PARENT_PANE}, workspace: ${WORKSPACE})" >&2
 
-# claude 起動待ち
+# 起動待ち
 WAIT_SEC="${OE_DELEGATE_WAIT_SEC:-4}"
 sleep "$WAIT_SEC"
 
@@ -390,12 +434,56 @@ tmux list-panes -a -F "#{pane_id}" | grep -qxF "$CHILD_PANE" || {
   exit 1
 }
 
+# Codex のフォルダの信頼の確認（#562・owner の答え Q113）。Codex は新しい workspace（worktree ごと）を初めて開くとき
+# 「Trust this folder?」の確認を出し、そこへ最初の1行を送ると Enter が選択肢に入る。engine は、workspace のもとの
+# リポジトリ（main の作業ツリー）を owner が Codex で信頼済み（$CODEX_HOME/config.toml の [projects."<path>"] に
+# trust_level = "trusted"）のときだけ Enter を1回送って進める。config.toml は読むだけで書き換えない。信頼されて
+# いないとき・画面を読めないときは、Enter も最初の1行も送らずに止まり、案内を出す（ペインは残す・exit 4）。
+if [[ "$AGENT" == "codex" ]]; then
+  _cap=""
+  if ! _cap="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)"; then
+    echo "oe-delegate: 子のペイン ${CHILD_PANE} の画面を読めないので、最初の1行を送らずに止めます。画面を見て、フォルダの信頼の確認が出ていなければ oe send ${CHILD_PANE} で1行を送ってください" >&2
+    exit 4
+  fi
+  if printf '%s\n' "$_cap" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
+    _main="$(oe_agent_codex_main_worktree "$WORKSPACE" 2>/dev/null)" || _main=""
+    _trc=1
+    if [[ -n "$_main" ]]; then oe_agent_codex_trusted "$_main" && _trc=0 || _trc=$?; fi
+    if [[ "$_trc" -eq 0 ]]; then
+      # Enter・2回目の読み取りのどちらが失敗しても、確認が消えたと言えないので止める（Q113「読めないときは止まる」・
+      # レビューの指摘で、2回目の読み取りの失敗と Enter の失敗を素通りしていたのを直した）。
+      if ! tmux send-keys -t "$CHILD_PANE" Enter 2>/dev/null; then
+        echo "oe-delegate: フォルダの信頼の確認に Enter を送れなかったので、最初の1行を送らずに止めます。子のペイン ${CHILD_PANE} を見てください" >&2
+        exit 4
+      fi
+      echo "oe-delegate: フォルダの信頼の確認に Enter を送りました（もとのリポジトリ ${_main} は owner が信頼済み・config.toml は書き換えていません）" >&2
+      sleep "${OE_DELEGATE_TRUST_WAIT_SEC:-2}"
+      _cap2=""
+      if ! _cap2="$(tmux capture-pane -p -t "$CHILD_PANE" 2>/dev/null)"; then
+        echo "oe-delegate: Enter のあと子のペイン ${CHILD_PANE} の画面を読めないので、最初の1行を送らずに止めます。画面を見て、確認が消えていれば oe send ${CHILD_PANE} で1行を送ってください" >&2
+        exit 4
+      fi
+      if printf '%s\n' "$_cap2" | grep -qF -- "$OE_AGENT_CODEX_TRUST_PROMPT"; then
+        echo "oe-delegate: 確認の画面が消えないので、最初の1行を送らずに止めます。子のペイン ${CHILD_PANE} を見てください" >&2
+        exit 4
+      fi
+    else
+      case "$_trc" in
+        2) _why="config.toml（${CODEX_HOME:-${HOME:-}/.codex}/config.toml）を読めない" ;;
+        *) _why="もとのリポジトリ ${_main:-（git でない）} が owner の Codex で信頼されていない" ;;
+      esac
+      echo "oe-delegate: 子のペイン ${CHILD_PANE} にフォルダの信頼の確認が出ています。${_why}ので、engine は Enter を送りません。owner が子のペインで答えてから、oe send ${CHILD_PANE} で1行を送ってください（最初の1行は送っていません）" >&2
+      exit 4
+    fi
+  fi
+fi
+
 # spawn レジストリに登録（親スコープ + ゼロベース期の仮ラベル保持）。best-effort。
-oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" || true
+oe_reg_record "$CHILD_PANE" "$LABEL" "$WORKSPACE" "$PARENT_PANE" "$AGENT" || true
 
 # 子の lease の最初の binding を書く（#577 DJ-18）。起動を確かめたいま、子のペインの端末のフォアグラウンドの
-# プロセスを読み、コマンドが claude のときだけ書く。確かめられなければ binding は未確定のまま残し、委譲は続ける
-# （子は報告のときの oe-lease の verb で自分を登録できる）。
+# プロセスを読み、コマンド名が許す名前の集合（claude・codex）にあるときだけ書く。確かめられなければ binding は
+# 未確定のまま残し、委譲は続ける（子は報告のときの oe-lease の verb で自分を登録できる）。
 CHILD_LEASE=""
 if [[ -n "$LEASE_ID" ]] && declare -F oe_tpi_pane_foreground >/dev/null 2>&1; then
   if _fg="$(oe_tpi_pane_foreground "$CHILD_PANE" 2>/dev/null)"; then
@@ -407,12 +495,18 @@ if [[ -n "$LEASE_ID" ]] && declare -F oe_tpi_pane_foreground >/dev/null 2>&1; th
         oe_event_lease_bound "$CHILD_PANE" "$LEASE_ID" 1 spawn "$LABEL" || true
       fi
     else
-      echo "oe-delegate: 子の lease ${LEASE_ID} に binding を書けませんでした（フォアグラウンドのプロセスが claude でない・${_fcomm:-不明}）。binding は未確定のままです" >&2
+      echo "oe-delegate: 子の lease ${LEASE_ID} に binding を書けませんでした（フォアグラウンドのプロセスが ${OE_AGENT_COMMS// /・} でない・${_fcomm:-不明}）。binding は未確定のままです" >&2
     fi
   else
     echo "oe-delegate: 子のペイン ${CHILD_PANE} のフォアグラウンドのプロセスを確かめられません。lease ${LEASE_ID} の binding は未確定のままです" >&2
   fi
   [[ -n "$CHILD_LEASE" ]] || CHILD_LEASE="${LEASE_ID}:1"
+  # 拍動の床（#562 DJ-6）: hook と statusLine に依らず、lease の名前で sidecar を1件書く。lib/heartbeat-resolve.sh は
+  # lease_id と generation の一致で候補のペインを選ぶので、子の session_id を知らなくても lease からペインを引ける。
+  # 書けなくても委譲は続ける（拍動は装飾で、ペインを引く確かめは前面のプロセスが担う）。
+  if declare -F oe_hb_write_floor >/dev/null 2>&1; then
+    oe_hb_write_floor "$LEASE_ID" "$CHILD_PANE" "$LEASE_ID" 1 "$AGENT" || true
+  fi
 fi
 
 # 活動ログに child_spawned を best-effort emit（registry 登録後 ＝ 親 label 解決可）。本体は壊さない。

@@ -184,6 +184,7 @@ _PROJECT='
   def s: if type == "string" then . else "" end;
   def n: if type == "number" then tostring else "" end;
   select(type=="object")
+  | select(.floor != true)
   | [ (input_filename | split("/") | last | sub("\\.json$"; "")),
       (.ts | n),
       (.context_pct | n),

@@ -53,8 +53,24 @@ oe delegate -w "$REPO" --label "#N" "Issue #N の内容を gh issue view N で�
 **子 Claude に起動オプションを渡す** — 自律調査で権限プロンプト停止を避けたい場合
 
 ```bash
-oe delegate -w "$REPO" --label "#N" --claude-arg --permission-mode --claude-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
+oe delegate -w "$REPO" --label "#N" --agent-arg --permission-mode --agent-arg auto "Issue #N の内容を確認して調査して。リポジトリ: $REPO"
 ```
+
+`--claude-arg` は `--agent-arg` の alias で、今までどおり使える。
+
+**Codex を子にする（#562）** — `--agent codex`。既定で `--no-daemon`・更新の確認を出さない設定・`--approve-for-me`・engine の約束ごと（受領の印の扱い・報告の返し方・問いの書き方）を developer の指示として持ち込む。承認のモードを `--agent-arg` で指定すると既定の `--approve-for-me` は外れる。
+
+```bash
+oe delegate -w "$REPO" --label "#N" --agent codex --brief "$REPO/.oe/brief-N.md"
+```
+
+- 子の報告（`oe send`）を承認の画面に止めないために、hub が配る実行ポリシーの規則（`~/.codex/rules/oe-child.rules`・`oe` の1行）が要る。無ければ `oe delegate` が1行知らせて続ける（報告のたびに承認の要求に回る）。
+- git の書き込み（本体の `.git` と worktree の gitdir）・engine の状態の置き場・tmux のソケットは、`oe delegate` が起こす1行で、その子のセッションにだけ渡す。子は sandbox の中で `git add`・`git commit` までできる。sandbox の中のプロセスの直接の通信は閉じているので、`git push` と `gh` はそのままでは通らない（push と PR は統括が行う）。
+- Codex の sandbox は安全の境界ではない。子は tmux のソケットを通せば親と同じ権限でコマンドを走らせられ、共通の `.git` と engine の記録にも書ける（Claude の子と同じ）。Claude の子と違って判定器が子の操作を裁かないので、外から来た文（Web のページ・知らない人が書いた issue や PR）を読ませる作業を Codex の子に任せない。
+- 子が `oe` をほかのコマンドとつないで打つと、`oe` は sandbox の中で走って止まり、「単独で打ち直す」と返す。
+- 受領の印と拍動の hook（`canonical/hooks/codex.hooks.json` の `UserPromptSubmit`・`PostModelRequest`）は、owner が Codex の `/hooks` で信頼を登録してから動く。無くても、`oe delegate` が起こしたときと子が `oe send` を打つたびに engine が書く拍動の床で、lease からペインを引ける。
+- 新しい workspace（worktree ごと）を初めて開くとき、Codex はフォルダの信頼の確認を出す。`oe delegate` は、workspace のもとのリポジトリ（main の作業ツリー）を owner が Codex で信頼済み（`$CODEX_HOME/config.toml` の `[projects."<path>"]`・読むだけで書き換えない）のときだけ Enter を1回送って進む。信頼されていないとき・画面を読めないときは、最初の1行を送らずに exit 4 で止まり案内を出す（ペインは残る）。そのときは人が子のペインで答えてから、最初の1行を `oe send` で送る。
+- Codex の子が自分の pid を読む（`oe lease bind`・`oe recover`）には、`oe` が規則で sandbox の外に出ている必要がある（sandbox の中では `ps` が失敗する）。
 
 **brief doc（委譲指示書）を渡す（4層ドキュメント方式 / リッチな事前情報）**
 

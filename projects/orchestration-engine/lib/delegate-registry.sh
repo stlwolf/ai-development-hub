@@ -54,10 +54,11 @@ _oe_label_match() {
   fi
 }
 
-# oe_reg_record <child_pane> <label> <workspace> <parent_pane>
+# oe_reg_record <child_pane> <label> <workspace> <parent_pane> [<agent>]
 #   親が spawn した子を per-child JSON で記録する（atomic 書き込み）。
+#   agent（#562）は claude か codex。無ければ claude。読む側は .agent が無い記録を claude と読む。
 oe_reg_record() {
-  local pane="${1:-}" label="${2:-}" workspace="${3:-}" parent="${4:-}"
+  local pane="${1:-}" label="${2:-}" workspace="${3:-}" parent="${4:-}" agent="${5:-claude}"
   [[ -n "$pane" ]] || { echo "oe_reg_record: child pane is required" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "oe_reg_record: jq is required" >&2; return 2; }
   # 置き場が決まらないときは、空パスを見せずに原因を名乗って落ちる（#322）。
@@ -67,8 +68,8 @@ oe_reg_record() {
   key="$(_oe_reg_key "$pane")"
   file="${OE_DELEGATE_STATE_DIR}/${key}.json"
   tmp="${file}.tmp.$$"
-  if jq -cn --arg pane "$pane" --arg label "$label" --arg ws "$workspace" --arg parent "$parent" \
-        '{pane:$pane, label:$label, workspace:$ws, parent_pane:$parent, role:"child"}' >"$tmp" 2>/dev/null; then
+  if jq -cn --arg pane "$pane" --arg label "$label" --arg ws "$workspace" --arg parent "$parent" --arg agent "$agent" \
+        '{pane:$pane, label:$label, workspace:$ws, parent_pane:$parent, role:"child", agent:$agent}' >"$tmp" 2>/dev/null; then
     mv -f "$tmp" "$file" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
   else
     rm -f "$tmp" 2>/dev/null

@@ -30,11 +30,14 @@ elif _oe_home_usable; then OE_HEARTBEAT_DIR="${HOME}/.claude/state/oe-heartbeat"
 else                       OE_HEARTBEAT_DIR=""
 fi
 
-# 1つの sidecar を "<ts>\t<pane>\t<server_pid>\t<lease_id>\t<generation>" に投影する（空は "-"）。読めなければ何も出さない。
+# 1つの sidecar を "<ts>\t<pane>\t<server_pid>\t<lease_id>\t<generation>\t<floor>" に投影する（空は "-"）。読めなければ何も出さない。
+# floor は、engine が lease の名前で書く拍動の床（#562 DJ-6）なら "1"、statusLine や hook が session_id の名前で書く
+# 通常の sidecar なら "-"。床は lease からペインを引く候補には使うが、ペインから会話の ID を引く逆引きと、
+# model / context% の表示には使わない（名前が session_id でないため・Copilot の指摘）。
 _oe_hb_project() {
   # 空の値は "-" で埋める。read の区切りのタブは連続すると1つに畳まれるので、空の項目があると列がずれる。
   jq -r 'def v: (. // "" | tostring) | if . == "" then "-" else . end;
-         select(type=="object") | [ (.ts|v), (.pane|v), (.server_pid|v), (.lease_id|v), (.generation|v) ] | @tsv' "$1" 2>/dev/null
+         select(type=="object") | [ (.ts|v), (.pane|v), (.server_pid|v), (.lease_id|v), (.generation|v), (if .floor == true then "1" else "-" end) ] | @tsv' "$1" 2>/dev/null
 }
 
 # 候補の行（"<ts>\t<pane>\t<sid>"）を標準入力から読み、いちばん新しいものを選ぶ。
@@ -62,7 +65,7 @@ oe_hb_pane_for() {
     [ -f "$f" ] || continue
     row="$(_oe_hb_project "$f")" || continue
     [ -n "$row" ] || continue
-    IFS="$_OE_HB_TAB" read -r ts pane rspid rlid rgen <<EOF
+    IFS="$_OE_HB_TAB" read -r ts pane rspid rlid rgen _rfloor <<EOF
 $row
 EOF
     case "$ts" in ''|*[!0-9]*) continue ;; esac
@@ -109,15 +112,16 @@ oe_hb_session_for_pane() {
   [ -n "$spid" ] && [ -n "$want" ] || return 2
   [ -n "$OE_HEARTBEAT_DIR" ] && [ -d "$OE_HEARTBEAT_DIR" ] || return 1
   command -v jq >/dev/null 2>&1 || return 2
-  local f row ts pane rspid rlid rgen rows="" hit
+  local f row ts pane rspid rlid rgen rfloor rows="" hit
   for f in "$OE_HEARTBEAT_DIR"/*.json; do
     [ -f "$f" ] || continue
     row="$(_oe_hb_project "$f")" || continue
     [ -n "$row" ] || continue
-    IFS="$_OE_HB_TAB" read -r ts pane rspid rlid rgen <<EOF
+    IFS="$_OE_HB_TAB" read -r ts pane rspid rlid rgen rfloor <<EOF
 $row
 EOF
     [ "$pane" = "$want" ] || continue
+    [ "$rfloor" != "1" ] || continue   # 床の名前は lease_id で、会話の ID ではない
     rows="${rows}${ts}${_OE_HB_TAB}${pane}${_OE_HB_TAB}${rspid}${_OE_HB_TAB}$(basename "$f" .json)
 "
   done
@@ -125,4 +129,32 @@ EOF
   [ -n "$hit" ] || return 1
   [ "$hit" != "?" ] || return 3
   printf '%s' "$hit"
+}
+
+# --- 拍動の床（#562 DJ-6・hook と statusLine に依らない書き手） ---
+# oe_hb_write_floor <name> <pane> <lease_id> <generation> [<agent>]
+#   <name>.json の sidecar を1件書く（名前は lease_id か session_id）。context_pct は 0、model は {} で、読む側が
+#   lease_id と generation の一致で候補のペインを選べる最小の形。server_pid は $TMUX から導く（statusLine の
+#   書き手と同じ）。書き手は oe-delegate（起こしたとき・lease の名前）と oe-send（子が送るたび・自分の lease の名前）。
+#   rc: 0 書いた / 1 書けない（置き場が無い・jq が無い・引数が足りない）。失敗を呼ぶ側に伝えるが、委譲や送信は止めない。
+oe_hb_write_floor() {
+  local name="${1:-}" pane="${2:-}" lid="${3:-}" gen="${4:-}" agent="${5:-}" dir="$OE_HEARTBEAT_DIR" spid ts tmp
+  [ -n "$name" ] && [ -n "$pane" ] && [ -n "$lid" ] && [ -n "$gen" ] || return 1
+  case "$name" in *[!A-Za-z0-9._-]*|'') return 1 ;; esac
+  case "$gen" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$dir" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  spid="${TMUX:-}"; spid="${spid#*,}"; spid="${spid%%,*}"
+  case "$spid" in ''|*[!0-9]*) spid="" ;; esac
+  ts="$(_oe_hb_now)"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  tmp="$(mktemp "${dir}/.hb.XXXXXX" 2>/dev/null)" || return 1
+  if jq -cn --argjson ts "$ts" --arg pane "$pane" --arg spid "$spid" --arg lid "$lid" --argjson gen "$gen" --arg agent "$agent" \
+       '{ts:$ts, context_pct:0, pane:$pane, server_pid:$spid, model:{}, lease_id:$lid, generation:$gen, floor:true}
+        + (if $agent != "" then {agent:$agent} else {} end)' > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "${dir}/${name}.json" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+  else
+    rm -f "$tmp" 2>/dev/null; return 1
+  fi
+  return 0
 }

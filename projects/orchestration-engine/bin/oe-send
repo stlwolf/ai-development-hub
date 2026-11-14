@@ -124,6 +124,17 @@ PANE="$OE_TARGET_PANE"
 if [[ -n "$OE_TARGET_LEASE" ]]; then
   export OE_EVENT_TO_LEASE="$OE_TARGET_LEASE" OE_EVENT_TO_PANE="$PANE"
 fi
+# 宛先のエージェント（#562 DJ-10）。lease の記録の agent、無ければ registry の記録の agent、どちらも無ければ空
+# （lib/delegate-send.sh は claude の画面として扱う）。入力欄の記号と補完の文の判定に使う。
+_target_agent=""
+if [[ -n "$OE_TARGET_LEASE" ]]; then
+  _target_agent="$(oe_lease_get "${OE_TARGET_LEASE%%:*}" 2>/dev/null | jq -r '.agent // ""' 2>/dev/null)" || _target_agent=""
+fi
+if [[ -z "$_target_agent" && -n "${OE_DELEGATE_STATE_DIR:-}" ]] && declare -F _oe_reg_key >/dev/null 2>&1; then
+  _reg_file="${OE_DELEGATE_STATE_DIR}/$(_oe_reg_key "$PANE").json"
+  [[ -f "$_reg_file" ]] && { _target_agent="$(jq -r '.agent // ""' "$_reg_file" 2>/dev/null)" || _target_agent=""; }
+fi
+export OE_SEND_TARGET_AGENT="$_target_agent"
 
 # brief パスの警告は宛先が決まってから出す。組立の側で出すと、宛先が解決できず送信しない
 # 経路でも「子が自分の workspace で解決するだろう」と言ってしまい、診断が反実仮想になる。
@@ -148,4 +159,12 @@ if [[ -n "$OE_TARGET_LEASE" ]]; then
   echo "oe-send: sent to ${PANE}（lease ${OE_TARGET_LEASE%%:*} generation ${OE_TARGET_LEASE##*:}）" >&2
 else
   echo "oe-send: sent to ${PANE}" >&2
+fi
+# 拍動の床の更新（#562 DJ-6）: 自分が lease を持つ子（OE_LEASE_ID・OE_GENERATION があり tmux のペインの中）なら、
+# 送るたびに自分の lease の名前で sidecar を書き直す。hook と statusLine に依らず、読む側が lease からペインを引ける。
+# 書けなくても送信の結果は変えない。
+if [[ -n "${OE_LEASE_ID:-}" && -n "${OE_GENERATION:-}" && -n "${TMUX_PANE:-}" ]] && declare -F oe_hb_write_floor >/dev/null 2>&1; then
+  _self_agent=""
+  if declare -F oe_agent_self >/dev/null 2>&1; then oe_agent_self >/dev/null 2>&1 || true; _self_agent="$OE_AGENT_SELF"; fi
+  oe_hb_write_floor "$OE_LEASE_ID" "$TMUX_PANE" "$OE_LEASE_ID" "$OE_GENERATION" "$_self_agent" || true
 fi

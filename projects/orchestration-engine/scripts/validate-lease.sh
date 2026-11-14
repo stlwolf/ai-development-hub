@@ -61,7 +61,8 @@ check 'type == "object"' "top level must be an object"
 for field in format lease_id kind label workspace parent_lease_id state created_at closed_at epoch current_generation generations; do
   jq -e --arg f "$field" 'has($f)' "$TARGET" >/dev/null 2>&1 || fail "missing required field: $field"
 done
-check '(keys - ["format","lease_id","kind","label","workspace","parent_lease_id","state","created_at","closed_at","epoch","current_generation","generations"]) | length == 0' "unknown top-level field"
+check '(keys - ["format","lease_id","kind","label","workspace","parent_lease_id","state","created_at","closed_at","epoch","current_generation","generations","agent"]) | length == 0' "unknown top-level field"
+check '(has("agent") | not) or (.agent | IN("claude","codex"))' "agent must be claude|codex when present"
 check '.format == 1' "format must be 1"
 check '.lease_id | type == "string" and test("^[0-9A-HJKMNP-TV-Z]{26}$")' "lease_id must match ULID pattern"
 check '.kind | IN("supervisor","delegation")' "kind must be supervisor|delegation"
@@ -96,15 +97,15 @@ check 'all(.generations[]; .binding == null or (.binding | type == "object"
         and ((keys - ["pid","started","comm","bound_at"]) | length == 0)
         and (.pid | type == "number" and . >= 1 and (. == floor))
         and (.started | type == "string" and length > 0)
-        and (.comm | type == "string" and test("claude"))
-        and (.bound_at | type == "string")))' "binding must be null or {pid, started, comm(claude), bound_at}"
+        and (.comm | type == "string" and test("^(claude|codex)$"))
+        and (.bound_at | type == "string")))' "binding must be null or {pid, started, comm(claude|codex), bound_at}"
 check 'all(.generations[]; (has("rebinds") | not) or (.rebinds | type == "array" and all(.[]; type == "object"
         and ((keys - ["pid","started","comm","bound_at","replaced_at"]) | length == 0)
         and (.pid | type == "number" and . >= 1 and (. == floor))
         and (.started | type == "string" and length > 0)
-        and (.comm | type == "string" and test("claude"))
+        and (.comm | type == "string" and test("^(claude|codex)$"))
         and (.bound_at | type == "string")
-        and (.replaced_at | type == "string"))))' "rebinds must be an array of {pid, started, comm(claude), bound_at, replaced_at}"
+        and (.replaced_at | type == "string"))))' "rebinds must be an array of {pid, started, comm(claude|codex), bound_at, replaced_at}"
 
 log "valid"
 echo "OK: $TARGET"

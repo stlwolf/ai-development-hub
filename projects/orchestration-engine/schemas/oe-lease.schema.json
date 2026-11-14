@@ -18,6 +18,7 @@
     "closed_at": { "type": "string", "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$" },
     "epoch": { "type": "integer", "minimum": 0, "description": "binding・generation・親が変わるたびに1つ増える。compare-and-swap で比べる（効くのは lease の記録への書き込みだけ・owner の答え Q72）" },
     "current_generation": { "type": "integer", "minimum": 1 },
+    "agent": { "enum": ["claude", "codex"], "description": "#562: この lease で起こしたエージェント。無ければ claude と読む。表示と復帰の案内に使い、binding の検査には使わない" },
     "generations": {
       "type": "array",
       "minItems": 1,
@@ -42,7 +43,7 @@
               "properties": {
                 "pid": { "type": "integer", "minimum": 1 },
                 "started": { "type": "string", "minLength": 1 },
-                "comm": { "type": "string", "pattern": "claude" },
+                "comm": { "type": "string", "pattern": "^(claude|codex)$" },
                 "bound_at": { "type": "string" },
                 "replaced_at": { "type": "string" }
               }
@@ -58,7 +59,7 @@
                 "properties": {
                   "pid": { "type": "integer", "minimum": 1 },
                   "started": { "type": "string", "minLength": 1, "description": "LC_ALL=C の ps -o lstart= の値（連続する空白は1つに詰める）" },
-                  "comm": { "type": "string", "pattern": "claude" },
+                  "comm": { "type": "string", "pattern": "^(claude|codex)$" },
                   "bound_at": { "type": "string" }
                 }
               }

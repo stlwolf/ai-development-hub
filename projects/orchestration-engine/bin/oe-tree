@@ -584,6 +584,7 @@ _beat_program='
   | ([ $all[] | select(type != "object") ] | length) as $nonobj
   | ([ $all[]
        | select(type == "object")
+       | select(.floor != true)
        | { pane: (.pane | s),
            ts: (.ts | n),
            ctx: (.context_pct | n),

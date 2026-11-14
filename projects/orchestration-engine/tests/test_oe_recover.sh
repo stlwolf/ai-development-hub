@@ -347,6 +347,16 @@ ckc "session_id が無い lease は理由を出す" "$OUT" "session_id が記録
 nck "binding が無い lease には resume のコマンドを出さない" "$OUT" "OE_LEASE_ID=${NB}"
 nck "session_id が無い lease には resume のコマンドを出さない" "$OUT" "OE_LEASE_ID=${NS}"
 ckc "どちらも --lease で名乗る道を出す" "$OUT" "oe-recover --lease ${NS}"
+echo "=== T-8b #562 T-7: agent が codex の lease には codex の resume の1行を出す。agent の無い記録は claude ==="
+( . "$PROJECT_DIR/lib/lease.sh"
+  CX="$(oe_lease_create delegation '#11 codex' "$_TMP_DIR/case-hint/cws" "$SUP" 1 codex)"; oe_lease_claim "$CX" 0 101 "$S1" codex sid-cx
+  printf '%s\n' "$CX" > "$_TMP_DIR/case-hint/cx" )
+read -r CX < "$_TMP_DIR/case-hint/cx"
+run "$VERB" hint -w "$WS" --all
+ckc "codex の子に codex --no-daemon の resume の1行" "$OUT" "OE_LEASE_ID=${CX} OE_GENERATION=1 codex --no-daemon -c check_for_update_on_startup=false -c developer_instructions="
+ckc "codex の1行は resume sid-cx で終わる" "$OUT" " resume sid-cx"
+nck "codex の子に claude --resume は出さない" "$OUT" "OE_LEASE_ID=${CX} OE_GENERATION=1 claude --resume"
+ckc "agent の無い統括の記録は claude --resume のまま" "$OUT" "OE_LEASE_ID=${SUP} OE_GENERATION=1 claude --resume sid-sup"
 nck "セッション名の記録が無ければ名前の1行は出さない" "$OUT" "claude -r 'cockpit"
 ckc "一覧から探す道を出す（#576）" "$OUT" "claude -r cockpit"
 export OE_SESSION_TITLE_DIR="$_TMP_DIR/case-hint/title"; mkdir -p "$OE_SESSION_TITLE_DIR"

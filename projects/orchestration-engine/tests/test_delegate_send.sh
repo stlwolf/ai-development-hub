@@ -359,5 +359,48 @@ ck "順序は 注入→Enter→emit" "LITERAL,ENTER,EMIT," "$order"
 ck "emit は 1 回だけ" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'EMIT-message_sent')"
 export OE_SEND_FINALIZE=0
 
+echo "[34] #562 T-5: 宛先が codex のとき、入力欄の行頭 › と » を入力欄と判定し、claude のときは拾わない"
+cap="$(printf 'some output\n› \n')"
+ck "claude の宛先では › の行を拾わない" "" "$(OE_SEND_TARGET_AGENT=claude _oe_send_inputline "$cap")"
+ck "宛先が分からないときも拾わない（今までと同じ）" "" "$(OE_SEND_TARGET_AGENT='' _oe_send_inputline "$cap")"
+ck "codex の宛先では › の行を入力欄にする" "› " "$(OE_SEND_TARGET_AGENT=codex _oe_send_inputline "$cap")"
+cap="$(printf 'output\n» staged text\n')"
+ck "codex の宛先では »（effort が ultra）も入力欄にする" "» staged text" "$(OE_SEND_TARGET_AGENT=codex _oe_send_inputline "$cap")"
+cap="$(printf '❯ old\n› new\n')"
+ck "codex の宛先では最後の入力欄の行を採る" "› new" "$(OE_SEND_TARGET_AGENT=codex _oe_send_inputline "$cap")"
+ck "claude の宛先では ❯ の行を採る" "❯ old" "$(OE_SEND_TARGET_AGENT=claude _oe_send_inputline "$cap")"
+
+echo "[35] #562 T-5: 空の入力欄と補完の文を内容なしと判定する（› の記号を外してから見る）"
+rc=0; OE_SEND_TARGET_AGENT=codex _oe_send_has_content "› " || rc=$?
+ck "codex: 空の › は内容なし" "1" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=codex _oe_send_has_content "› Ask Codex to do anything" || rc=$?
+ck "codex: 補完の文は内容なし" "1" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=codex _oe_send_has_content "› hello" || rc=$?
+ck "codex: 本物の入力は内容あり" "0" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=codex _oe_send_has_content "» hello" || rc=$?
+ck "codex: » の行の本物の入力は内容あり" "0" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=claude _oe_send_has_content '❯ Try "fix the bug"' || rc=$?
+ck "claude: Try の補完は内容なし（今までと同じ）" "1" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=claude _oe_send_has_content "❯ hello" || rc=$?
+ck "claude: 本物の入力は内容あり" "0" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=claude _oe_send_has_content "❯ " || rc=$?
+ck "claude: 空は内容なし" "1" "$rc"
+rc=0; OE_SEND_TARGET_AGENT=claude _oe_send_has_content "❯ Ask Codex to do anything" || rc=$?
+ck "claude: Codex の補完の文は内容あり（claude の集合に無い）" "0" "$rc"
+
+echo "[36] #562 T-5: codex の宛先で finalize が › の入力欄を見て、staged のままなら Enter を打ち直す"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+export OE_SEND_FINALIZE=1
+MOCK_CAP_SEQ=("$(printf '› \n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')")
+OE_SEND_TARGET_AGENT=codex OE_SEND_NONCE=0 oe_send_line "%5" "CODEX-STAGED" >/dev/null 2>&1
+ck "codex の宛先で staged_idle → Enter を打ち直す（Enter は 2 回）" "2" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'send-keys -t %5 Enter')"
+reset_fin
+MOCK_SENDKEYS_LOG=""
+MOCK_CAP_SEQ=("$(printf '› \n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')" "$(printf '› CODEX-STAGED\n')")
+OE_SEND_TARGET_AGENT=claude OE_SEND_NONCE=0 oe_send_line "%5" "CODEX-STAGED" >/dev/null 2>&1
+ck "claude の宛先では › の画面を見ないので打ち直さない（Enter は 1 回・今までと同じ）" "1" "$(printf '%s' "$MOCK_SENDKEYS_LOG" | grep -c 'send-keys -t %5 Enter')"
+export OE_SEND_FINALIZE=0
+
 echo "=== RESULT: pass=${pass} fail=${fail} ==="
 [[ "$fail" -eq 0 ]]

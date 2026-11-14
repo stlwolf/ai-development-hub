@@ -12,7 +12,9 @@ _TMP_DIR="$(mktemp -d)"
 # #577: lease の記録を本物の置き場へ書かない。セッションの CLAUDE_PID・session_id・lease の環境も外す
 # （外さないと oe-register root などが本物の置き場に lease を作る）。
 export OE_LEASE_DIR="${_TMP_DIR}/lease"
-unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION 2>/dev/null || true
+# #562: 拍動の床（oe-delegate が lease の名前で書く sidecar）も本物の置き場へ書かない。
+export OE_HEARTBEAT_DIR="${_TMP_DIR}/hb"
+unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION CODEX_HOME 2>/dev/null || true
 trap 'rm -rf "$_TMP_DIR"' EXIT
 mkdir -p "$_TMP_DIR/bin" "$_TMP_DIR/logs" "$_TMP_DIR/state" "$_TMP_DIR/pane-issue" "$_TMP_DIR/ws/.oe"
 
@@ -49,12 +51,22 @@ if [[ "${1:-}" == "list-panes" ]]; then
 fi
 
 if [[ "${1:-}" == "send-keys" ]]; then
+  # #562 のレビュー: OE_DELEGATE_TEST_ENTER_FAIL=1 なら、Enter だけを送る呼び出しを失敗させる
+  if [[ "${OE_DELEGATE_TEST_ENTER_FAIL:-0}" == "1" && "$*" == "send-keys -t "*" Enter" && "$*" != *" -l "* ]]; then exit 1; fi
   printf '%s\n' "$*" >> "${log_dir}/send-keys.log"
   exit 0
 fi
 
 if [[ "${1:-}" == "display-message" ]]; then
   printf 'mock-pane\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "capture-pane" ]]; then
+  # #562 Q113: 子の画面。OE_DELEGATE_TEST_CAPTURE_FILE があればその中身、OE_DELEGATE_TEST_CAPTURE_FAIL=1 なら失敗。
+  [[ "${OE_DELEGATE_TEST_CAPTURE_FAIL:-0}" == "1" ]] && exit 1
+  printf '%s\n' "capture $*" >> "${log_dir}/capture.log"
+  if [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" && -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi
   exit 0
 fi
 
@@ -318,6 +330,244 @@ echo "[L2] #577 PR-2: lease の置き場が決まらないときは、いまま�
 reset_logs
 OE_LEASE_DIR="" run_delegate -w "$_TMP_DIR/ws" --label "#577" "no lease task"
 ck "lease の環境変数が付かない" "PARENT_TMUX_PANE='%1' claude" "$(cat "$_TMP_DIR/logs/split-command.log")"
+
+# --- #562: 委譲ごとのエージェントの指定（lib/agent.sh） ---
+# shellcheck source=../lib/agent.sh
+. "$PROJECT_DIR/lib/agent.sh"
+DI_ARG="developer_instructions=\"${OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS}\""
+CODEX_HEAD="PARENT_TMUX_PANE='%1' codex '--no-daemon' '-c' 'check_for_update_on_startup=false'"
+# H10: Codex の子の sandbox の権限。状態の置き場とソケットは差し替えの口で固定する（ws は git でないので git の分は出ない）。
+mkdir -p "$_TMP_DIR/cstate" "$_TMP_DIR/csock"
+export OE_AGENT_CODEX_STATE_DIR="$_TMP_DIR/cstate" OE_AGENT_CODEX_TMUX_SOCKET="$_TMP_DIR/csock/default"
+_cstate_real="$(cd "$_TMP_DIR/cstate" && pwd -P)"; _csock_real="$(cd "$_TMP_DIR/csock" && pwd -P)/default"
+SBX="'--add-dir' '${_cstate_real}' '-c' 'sandbox_workspace_write.network_access=true' '-c' 'features.network_proxy.enabled=true' '-c' 'features.network_proxy.unix_sockets={\"${_csock_real}\"=\"allow\"}'"
+
+echo "[A1] #562 T-1: --agent 無しの子のコマンドは claude のまま（[1][2] と同じ値・受入 A-1）"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562" --claude-arg --permission-mode --claude-arg auto "a1"
+ck "claude の1行は変わらない" "PARENT_TMUX_PANE='%1' claude '--permission-mode' 'auto'" "$(split_cmd)"
+ck "registry の agent は claude" "claude" "$(jq -r '.agent' "$OE_DELEGATE_STATE_DIR"/*.json | head -1)"
+
+echo "[A2] #562 T-2: --agent codex は --no-daemon・更新の確認なし・--approve-for-me・developer の指示を付けて起こす"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562c" --agent codex "a2"
+ck "codex の1行" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' ${SBX}" "$(split_cmd)"
+ck "developer の指示に改行が無い" "1" "$(wc -l < "$_TMP_DIR/logs/split-command.log" | tr -d ' ')"
+_lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "lease の記録に agent: codex" "codex" "$(jq -r '.agent' "$OE_LEASE_DIR/${_lid}.json" 2>/dev/null)"
+ck "lease の記録が validate-lease を通る" "0" "$(bash "$PROJECT_DIR/scripts/validate-lease.sh" "$OE_LEASE_DIR/${_lid}.json" >/dev/null 2>&1; echo $?)"
+ck "registry の agent は codex" "codex" "$(jq -r 'select(.label=="#562c") | .agent' "$OE_DELEGATE_STATE_DIR"/*.json | head -1)"
+
+echo "[A3] #562 T-2: --agent-arg で承認のモードを指定したら既定の --approve-for-me を外す。--claude-arg は alias"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --agent-arg -a --agent-arg never "a3"
+ck "-a never で --approve-for-me が外れる" "${CODEX_HEAD} '-c' '${DI_ARG}' ${SBX} '-a' 'never'" "$(split_cmd)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --claude-arg -m --claude-arg gpt-5 "a3b"
+ck "--claude-arg は --agent-arg の alias（モードの指定でないので既定は残る）" "${CODEX_HEAD} '--approve-for-me' '-c' '${DI_ARG}' ${SBX} '-m' 'gpt-5'" "$(split_cmd)"
+reset_logs
+brief2="${_TMP_DIR}/ws/.oe/brief2.md"; printf '%s\n' '# brief' > "$brief2"
+run_delegate -w "$_TMP_DIR/ws" --agent codex --brief "$brief2" "a3c"
+ck "codex でも --brief の dir を --add-dir で渡す" "yes" "$(grep -qF -- "--add-dir '${_TMP_DIR}/ws/.oe'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+
+echo "[A4] #562: 知らないエージェントは 2 で止め、spawn しない"
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent cursor "a4" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "unknown agent rc=2" "2" "$rc"
+ck "unknown agent no spawn" "no" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent >/dev/null 2>&1 || rc=$?
+ck "--agent requires a value" "2" "$rc"
+
+echo "[A5] #562 T-3: ダイジェストは agent を含み、claude と codex で値が違う。承認パッケージにエージェントが出る"
+d_cl="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --print-approval "a5" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+d_cx="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --print-approval "a5" 2>/dev/null | sed -n 's/.*承認ダイジェスト: //p' | tr -d ' ')"
+ck "claude と codex でダイジェストが違う" "yes" "$( [[ -n "$d_cl" && -n "$d_cx" && "$d_cl" != "$d_cx" ]] && echo yes || echo no )"
+pkg="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg -m --agent-arg gpt-5 --print-approval "a5" 2>/dev/null)"
+ck "パッケージにエージェントの行" "yes" "$(printf '%s\n' "$pkg" | grep -q '^  エージェント    : codex$' && echo yes || echo no)"
+pkg_cl="$(bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --print-approval "a5" 2>/dev/null)"
+ck "claude のパッケージにはエージェントの行が無い（表示は変更前と同じ・A-1）" "no" "$(printf '%s\n' "$pkg_cl" | grep -q 'エージェント' && echo yes || echo no)"
+ck "claude のパッケージの再構成に --agent は無い" "no" "$(printf '%s\n' "$pkg_cl" | grep -q -- '--agent ' && echo yes || echo no)"
+ck "再構成したコマンドに --agent codex" "yes" "$(printf '%s\n' "$pkg" | grep -q -- "--agent 'codex'" && echo yes || echo no)"
+ck "再構成したコマンドに --agent-arg" "yes" "$(printf '%s\n' "$pkg" | grep -q -- "--agent-arg '-m' --agent-arg 'gpt-5'" && echo yes || echo no)"
+ck "codex の既定の権限のモードは approve-for-me" "yes" "$(printf '%s\n' "$pkg" | grep -q '要求権限モード  : approve-for-me' && echo yes || echo no)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --approved-digest "$d_cx" "a5"
+ck "codex の承認ダイジェストが一致すれば spawn" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --approved-digest "$d_cl" "a5" >/dev/null 2>&1 || rc=$?
+ck "claude の承認で codex を起こすと不一致 rc=3" "3" "$rc"
+
+echo "[A6] #562 T-3: codex の elevated（--yolo・-s danger-full-access）は承認ダイジェストが必須"
+for a in "--yolo" "--dangerously-bypass-approvals-and-sandbox"; do
+  reset_logs
+  rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg "$a" "a6" >/dev/null 2>&1 || rc=$?
+  ck "codex $a は elevated → rc=3" "3" "$rc"
+done
+reset_logs
+rc=0; bash "$PROJECT_DIR/bin/oe-delegate" -w "$_TMP_DIR/ws" --agent codex --agent-arg -s --agent-arg danger-full-access "a6" >/dev/null 2>&1 || rc=$?
+ck "codex -s danger-full-access は elevated → rc=3" "3" "$rc"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --agent codex --agent-arg -a --agent-arg never "a6"
+ck "codex -a never は elevated でない（spawn する）" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+
+echo "[A7] #562 DJ-14: codex の規則のファイルが無ければ1行知らせて続ける。利用者の developer_instructions があれば1行知らせる"
+reset_logs
+mkdir -p "$_TMP_DIR/codex-home"
+CODEX_HOME="$_TMP_DIR/codex-home" run_delegate -w "$_TMP_DIR/ws" --agent codex "a7"
+ck "規則が無い知らせ" "yes" "$(grep -q 'oe-child.rules が無い' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "それでも spawn する" "yes" "$( [[ -e "$_TMP_DIR/logs/split-command.log" ]] && echo yes || echo no )"
+mkdir -p "$_TMP_DIR/codex-home/rules"; : > "$_TMP_DIR/codex-home/rules/oe-child.rules"
+printf 'developer_instructions = "mine"\n' > "$_TMP_DIR/codex-home/config.toml"
+reset_logs
+CODEX_HOME="$_TMP_DIR/codex-home" run_delegate -w "$_TMP_DIR/ws" --agent codex "a7b"
+ck "規則があれば知らせない" "no" "$(grep -q 'oe-child.rules が無い' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "利用者の developer_instructions の上書きを知らせる" "yes" "$(grep -q 'developer_instructions は、この子の中では' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" "a7c"
+ck "claude の子には codex の知らせを出さない" "no" "$(grep -q 'oe-child.rules' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+
+echo "[A8] #562 T-8: 拍動の床 — 起こしたあと lease の名前で sidecar を1件書き、lease からペインを引ける"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562h" --agent codex "a8"
+_lid="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "sidecar が lease の名前で在る" "yes" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+ck "sidecar の pane は子のペイン" "%9" "$(jq -r '.pane' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の server_pid は \$TMUX の pid" "12345" "$(jq -r '.server_pid' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の lease_id と generation" "${_lid} 1" "$(jq -r '"\(.lease_id) \(.generation)"' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の agent" "codex" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "sidecar の model は空の object（読む側の display_name が落ちない）" "object" "$(jq -r '.model | type' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "床には floor: true が付く（通常の sidecar と区別する）" "true" "$(jq -r '.floor' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+# shellcheck source=../lib/heartbeat-resolve.sh
+. "$PROJECT_DIR/lib/heartbeat-resolve.sh"
+# 床は lease からペインを引く候補には使うが、ペインから会話の ID を引く逆引きには使わない（Copilot の指摘）
+ck "床だけのペインでは oe_hb_session_for_pane は引けない（rc 1）" "1" "$(oe_hb_session_for_pane 12345 900 %9 >/dev/null 2>&1; echo $?)"
+jq -cn --argjson ts "$(date +%s)" '{ts:$ts, context_pct:12, pane:"%9", server_pid:"12345", model:{id:"m",display_name:"M"}}' > "$OE_HEARTBEAT_DIR/sid-real.json"
+ck "通常の sidecar があれば session_id を引く" "sid-real" "$(oe_hb_session_for_pane 12345 900 %9)"
+rm -f "$OE_HEARTBEAT_DIR/sid-real.json"
+ck "oe_hb_pane_for が lease_id と generation で候補のペインを返す" "%9" "$(oe_hb_pane_for 12345 900 "$_lid" 1 | cut -f1)"
+reset_logs
+run_delegate -w "$_TMP_DIR/ws" --label "#562hc" "a8b"
+_lid2="$(sed -nE "s/^OE_LEASE_ID='([0-9A-HJKMNP-TV-Z]{26})' OE_GENERATION='1' .*/\\1/p" "$_TMP_DIR/logs/split-command.log")"
+ck "claude の子にも床を書く（agent: claude）" "claude" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid2}.json" 2>/dev/null)"
+ck "本物の置き場には書いていない" "yes" "$( [[ "$OE_HEARTBEAT_DIR" == "$_TMP_DIR"/* ]] && echo yes || echo no )"
+
+echo "[A9] #562 T-8: 子が oe-send を打つたびに、自分の lease の名前で床を書き直す（子の環境: OE_LEASE_ID・OE_GENERATION・TMUX_PANE）"
+rm -f "$OE_HEARTBEAT_DIR/${_lid}.json"
+rm -f "$_TMP_DIR/logs/"*.log
+rc=0; OE_LEASE_ID="$_lid" OE_GENERATION=1 TMUX_PANE="%9" CODEX_THREAD_ID=thr-1 OE_TPI_PS=/usr/bin/false \
+  bash "$PROJECT_DIR/bin/oe-send" %1 "floor ping" >/dev/null 2>"${_TMP_DIR}/stderr.log" || rc=$?
+ck "oe-send は送れる" "0" "$rc"
+ck "床が子の lease の名前で書き直される" "yes" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+ck "床の pane は自分のペイン" "%9" "$(jq -r '.pane' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+ck "床の agent は自分のエージェント（CODEX_THREAD_ID があれば codex）" "codex" "$(jq -r '.agent' "$OE_HEARTBEAT_DIR/${_lid}.json" 2>/dev/null)"
+rm -f "$OE_HEARTBEAT_DIR/${_lid}.json"
+rc=0; env -u OE_LEASE_ID -u OE_GENERATION TMUX_PANE="%9" bash "$PROJECT_DIR/bin/oe-send" %1 "no lease ping" >/dev/null 2>&1 || rc=$?
+ck "lease の無い送り手は床を書かない" "no" "$( [[ -f "$OE_HEARTBEAT_DIR/${_lid}.json" ]] && echo yes || echo no )"
+
+echo "[A10] #562 DJ-10: oe-send は宛先のエージェントを registry から引いて lib に渡す（OE_SEND_TARGET_AGENT）"
+rm -f "$_TMP_DIR/logs/"*.log
+cat > "$_TMP_DIR/bin/oe-probe-env" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${OE_SEND_TARGET_AGENT:-<unset>}" >> "${OE_DELEGATE_TEST_LOG_DIR}/target-agent.log"
+EOF
+chmod +x "$_TMP_DIR/bin/oe-probe-env"
+# registry に %9 を codex として登記してから送る。lib の中で環境を読む口は無いので、send-keys の mock に記録させる代わりに
+# 子プロセスの環境を記録する: oe-send の後段で呼ばれる lib の関数は無いため、ここでは registry の値を lease 無しで引く経路だけを見る。
+# shellcheck source=../lib/delegate-registry.sh
+. "$PROJECT_DIR/lib/delegate-registry.sh"
+oe_reg_record "%9" "#562x" "$_TMP_DIR/ws" "%1" codex
+ck "registry の %9 は codex" "codex" "$(jq -r '.agent' "$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json")"
+out="$(env -u OE_LEASE_ID -u OE_GENERATION bash -c '. "$1/lib/delegate-registry.sh"; f="$OE_DELEGATE_STATE_DIR/$(_oe_reg_key %9).json"; jq -r ".agent // \"\"" "$f"' _ "$PROJECT_DIR")"
+ck "oe-send が引く registry の agent の経路（同じ式）" "codex" "$out"
+
+echo "[A11] #562 Q113: フォルダの信頼の確認。もとのリポジトリが信頼済みなら Enter を1回送って進む。そうでなければ送らずに止まる"
+export OE_DELEGATE_TRUST_WAIT_SEC=0
+# git の worktree を作り、main の作業ツリーのパスを信頼の鍵にする
+mkdir -p "$_TMP_DIR/repo" && git -C "$_TMP_DIR/repo" init -q && git -C "$_TMP_DIR/repo" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m i
+git -C "$_TMP_DIR/repo" worktree add -q "$_TMP_DIR/repo-wt" -b wt >/dev/null 2>&1
+MAIN_PATH="$(cd "$_TMP_DIR/repo" && pwd -P)"
+mkdir -p "$_TMP_DIR/codex-home2"; printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MAIN_PATH" > "$_TMP_DIR/codex-home2/config.toml"
+printf 'Folder access\n  Trust this folder? Codex can read, edit, and run files here.\n> 1. Trust and continue\n' > "$_TMP_DIR/cap-trust.txt"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11" || rc=$?
+# 2回目の capture でも同じ画面を返す mock なので「消えない」で止まる。まず Enter が送られたことを見る
+ck "信頼済みなら Enter を送る" "yes" "$(grep -q -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "確認が消えなければ最初の1行は送らず rc=4" "4" "$rc"
+ck "最初の1行は送っていない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "config.toml は書き換えていない" "yes" "$([[ "$(grep -c . "$_TMP_DIR/codex-home2/config.toml")" == "2" ]] && echo yes || echo no)"
+# 確認が消える形: 1回目は確認、2回目は空の画面（capture のたびにファイルを差し替える）
+printf '#!/usr/bin/env bash\nn=$(cat "%s/cap-n" 2>/dev/null || echo 0); echo $((n+1)) > "%s/cap-n"; if [ "$n" -eq 0 ]; then cat "%s/cap-trust.txt"; else printf "› \\n"; fi\n' "$_TMP_DIR" "$_TMP_DIR" "$_TMP_DIR" > "$_TMP_DIR/bin/capture-seq"; chmod +x "$_TMP_DIR/bin/capture-seq"
+sed -i.bak 's|if \[\[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" \]\]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|if [[ -n "${OE_DELEGATE_TEST_CAPTURE_SEQ:-}" ]]; then "$OE_DELEGATE_TEST_CAPTURE_SEQ" \|\| exit 1; elif [[ -n "${OE_DELEGATE_TEST_CAPTURE_FILE:-}" \&\& -f "${OE_DELEGATE_TEST_CAPTURE_FILE}" ]]; then cat "${OE_DELEGATE_TEST_CAPTURE_FILE}"; fi|' "$_TMP_DIR/bin/tmux"
+reset_logs; rm -f "$_TMP_DIR/cap-n"
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_SEQ="$_TMP_DIR/bin/capture-seq" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11b" || rc=$?
+ck "確認が消えたら最初の1行を送る（rc=0）" "0" "$rc"
+ck "Enter のあとに1行" "yes" "$(grep -q -- 'send-keys -l -t %9 -- a11b' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+# 信頼されていない: Enter も1行も送らずに rc=4
+printf '[projects."/elsewhere"]\ntrust_level = "trusted"\n' > "$_TMP_DIR/codex-home2/config.toml"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11c" || rc=$?
+ck "信頼されていなければ rc=4" "4" "$rc"
+ck "Enter を送らない" "no" "$(grep -q -- 'Enter' "$_TMP_DIR/logs/send-keys.log" 2>/dev/null && echo yes || echo no)"
+ck "案内を出す" "yes" "$(grep -q '信頼されていない' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "子のペインは残す（kill しない）" "no" "$(grep -q 'kill-pane' "$_TMP_DIR/logs/"*.log 2>/dev/null && echo yes || echo no)"
+# config.toml が読めない: rc=4 と案内
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/no-such-home" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11d" || rc=$?
+ck "config.toml が読めなければ rc=4" "4" "$rc"
+ck "読めない旨の案内" "yes" "$(grep -q 'config.toml' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+# 画面を読めない: rc=4
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11e" || rc=$?
+ck "画面を読めなければ rc=4 で止まる" "4" "$rc"
+# 確認が出ていない: 今までどおり進む
+printf '› Ask Codex to do anything\n' > "$_TMP_DIR/cap-plain.txt"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-plain.txt" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a11f" || rc=$?
+ck "確認が無ければ rc=0 で1行を送る" "0" "$rc"
+ck "Enter は余分に送らない（送信の Enter が1回だけ）" "1" "$(grep -c -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log")"
+# claude の子では画面を読まない
+reset_logs
+rc=0; OE_DELEGATE_TEST_CAPTURE_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" "a11g" || rc=$?
+ck "claude の子は画面を読まず今までどおり（rc=0）" "0" "$rc"
+unset OE_DELEGATE_TRUST_WAIT_SEC
+
+echo "[A12] #562 H10: worktree の workspace では、本体の .git と gitdir を実体のパスで --add-dir に足す。claude の子には足さない"
+mkdir -p "$_TMP_DIR/r12" && git -C "$_TMP_DIR/r12" init -q && git -C "$_TMP_DIR/r12" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m i
+git -C "$_TMP_DIR/r12" worktree add -q "$_TMP_DIR/r12-wt" -b w12 >/dev/null 2>&1
+_r12git="$(cd "$_TMP_DIR/r12/.git" && pwd -P)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex "a12" || rc=$?
+ck "worktree の Codex の委譲は exit 0" "0" "$rc"
+ck "worktree の Codex の1行に本体の .git と gitdir と状態の置き場が並ぶ" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}' '--add-dir' '${_r12git}/worktrees/r12-wt' '--add-dir' '${_cstate_real}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12" --agent codex "a12b" || rc=$?
+ck "ふつうのリポジトリでは .git は1つだけ" "1" "$(grep -o -- "'--add-dir' '${_r12git}'" "$_TMP_DIR/logs/split-command.log" | wc -l | tr -d ' ')"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" "a12c" || rc=$?
+ck "claude の子の1行には sandbox の引数が無い" "no" "$(grep -qF -- "--add-dir' '${_r12git}" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+reset_logs
+rc=0; run_delegate -w "$_TMP_DIR/r12-wt" --agent codex --agent-arg -c --agent-arg features.network_proxy.enabled=false "a12d" || rc=$?
+ck "利用者がプロキシを外す引数を渡しても exit 0" "0" "$rc"
+ck "そのときは engine の network_access=true を出さない（外への通信を開かない）" "no" "$(grep -q 'network_access=true' "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+ck "書ける場所は渡したまま" "yes" "$(grep -qF -- "'--add-dir' '${_r12git}'" "$_TMP_DIR/logs/split-command.log" && echo yes || echo no)"
+
+echo "[A13] #562 のレビュー: 信頼済みで Enter を送る分岐で、Enter の失敗と2回目の読み取りの失敗はそれぞれ exit 4 で止まり、最初の1行を送らない"
+export OE_DELEGATE_TRUST_WAIT_SEC=0
+printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MAIN_PATH" > "$_TMP_DIR/codex-home2/config.toml"
+reset_logs
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_FILE="$_TMP_DIR/cap-trust.txt" OE_DELEGATE_TEST_ENTER_FAIL=1 run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a13a" || rc=$?
+ck "Enter を送れなければ rc=4" "4" "$rc"
+ck "Enter の失敗の案内を出す" "yes" "$(grep -q 'Enter を送れなかった' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+ck "Enter の失敗のとき最初の1行は送らない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" 2>/dev/null && echo yes || echo no)"
+# 1回目は確認の画面、2回目は読み取りの失敗
+printf '#!/usr/bin/env bash\nn=$(cat "%s/cap-n2" 2>/dev/null || echo 0); echo $((n+1)) > "%s/cap-n2"; if [ "$n" -eq 0 ]; then cat "%s/cap-trust.txt"; else exit 1; fi\n' "$_TMP_DIR" "$_TMP_DIR" "$_TMP_DIR" > "$_TMP_DIR/bin/capture-seq-fail"; chmod +x "$_TMP_DIR/bin/capture-seq-fail"
+reset_logs; rm -f "$_TMP_DIR/cap-n2"
+rc=0; CODEX_HOME="$_TMP_DIR/codex-home2" OE_DELEGATE_TEST_CAPTURE_SEQ="$_TMP_DIR/bin/capture-seq-fail" run_delegate -w "$_TMP_DIR/repo-wt" --agent codex "a13b" || rc=$?
+ck "2回目の読み取りが失敗したら rc=4" "4" "$rc"
+ck "Enter は送っている（1回目は確認の画面だった）" "yes" "$(grep -q -- 'send-keys -t %9 Enter' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "2回目の読み取りの失敗のとき最初の1行は送らない" "no" "$(grep -q -- 'send-keys -l -t %9' "$_TMP_DIR/logs/send-keys.log" && echo yes || echo no)"
+ck "2回目の読み取りの失敗の案内を出す" "yes" "$(grep -q 'Enter のあと子のペイン' "$_TMP_DIR/stderr.log" && echo yes || echo no)"
+unset OE_DELEGATE_TRUST_WAIT_SEC
 
 echo "=== RESULT: pass=${PASS} fail=${FAIL} ==="
 [[ "$FAIL" -eq 0 ]]

@@ -17,6 +17,10 @@ observations:
     ref: "#605"
     state: followed
     note: "入口 bin/oe は verb を exec で呼び、プロセスを1段も挟まない形にした。T-3 で verb の pid が呼び出し元のシェルの pid と同じであることを確かめ、T-9 で oe-recover と oe-handoff の本人確認を入口越しに回した（tests/test_oe_entry.sh・tests/test_oe_entry_identity.sh）"
+  - date: 2026-11-13
+    ref: "#562"
+    state: followed
+    note: "Codex の子を起こす1行も exec を書かない Claude と同じ形にし、前面のプロセスが codex になることを I1 の C6 に入れて実機で確かめた（pid と tpgid が一致する行が codex）。lease の binding の comm を codex に広げる判断はこの確かめの上に置いた"
 exclusions:
   - "人が対話のシェルで claude を打つ場合（シェルがジョブ制御で claude を別のプロセスグループに置くので、前面のプロセスは claude になる）"
   - "claude を exec で起こす場合（ペインの最初のプロセスも前面のプロセスも claude になる）"
