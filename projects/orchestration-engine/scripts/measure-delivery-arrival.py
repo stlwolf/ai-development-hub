@@ -97,7 +97,7 @@ BEAT = os.environ.get(
     "OE_MEASURE_HEARTBEAT", os.path.expanduser("~/.claude/state/oe-heartbeat"))
 KEY_LEN = 50
 WIN_BEFORE, WIN_AFTER = 60, 3600
-# 受信側の記録が送信数に足りている期間だけを母集団にする（plan §2.4）。
+# 受信側の記録が送信数に足りている期間だけを母集団にする。
 CUT = os.environ.get("OE_MEASURE_CUT", "2026-07-03")
 
 _ctrl = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
