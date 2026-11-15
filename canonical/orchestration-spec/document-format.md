@@ -49,7 +49,7 @@ AI 駆動開発のドキュメントフロー全体を定義する。**format（
 
 - **format 面**: 蒸留パイプライン（Discussion → KickOff → Plan → Episode → Decision）の各段階で生成される文書のフォーマットを統一する。
   - [#19 MVP](https://github.com/stlwolf/ai-development-hub/issues/19) の 4-1（エンベロープ）/ 4-2（成果物パース）/ 4-3（検証ゲート）が消費する入力契約
-  - `frontmatter 索引 + rg` による検索戦略（context-foundation.md §5 Q2 暫定判断）の実現基盤
+  - `frontmatter 索引 + rg` による検索戦略（暫定の判断）の実現基盤
   - 文書間の参照追跡を ULID で機械的に行えるようにする
 - **process 面**: どのタスクがどの層から入り（§10）・どのゲートを通り（§11）・各文書がどう生き死にし（§12）・作業層の設計級コンテンツをどう昇格するか（§13）・方向転換をどう記録するか（§14）を規定する。
 
@@ -65,7 +65,7 @@ discussion → kickoff → plan → episode → decision の**蒸留5層**。す
 
 ### 2.2 machine-local 作業層（`.oe/`・gitignored・使い捨て）
 
-統括・委譲・監査の作業を回すための**使い捨て文書**。実運用で自然発生した合理的進化であり欠陥ではない（棚卸し §5）。特性:
+統括・委譲・監査の作業を回すための**使い捨て文書**。実運用で自然発生した合理的進化であり欠陥ではない。特性:
 
 - **gitignored**（本リポジトリでは `.oe/` を `.gitignore` 済み）。
 - **frontmatter は最小または不要**（走査時 36本中 frontmatter 付きは 3本＝規律外だが正常）。
@@ -141,7 +141,7 @@ frontmatter は不要または最小でよい。設計級コンテンツ（propo
 
 ### 3.3 型名分離と移行（brief）
 
-N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留フローの kickoff 層（設計文書・committed）と (b) 委譲用の指示書（子への引き渡し・`.oe/`）が別物で同名を共有していた — を、**委譲文書の型名を `brief` に確定**して解消する（owner 決定 2026-07-13）。
+「kickoff」の名前被り — (a) 蒸留フローの kickoff 層（設計文書・committed）と (b) 委譲用の指示書（子への引き渡し・`.oe/`）が別物で同名を共有していた — を、**委譲文書の型名を `brief` に確定**して解消する（owner 決定 2026-07-13）。
 
 - フロー層 kickoff（§8 テンプレ・committed・`plan-to-kickoff` 変換の出力）は**存続**する（層の廃止なし）。作業層の `brief` とは別物。
 - 現行の `.oe/kickoff-*.md`（旧称・委譲文書）は `.oe/brief-*.md` へ移行する。作業層は gitignored・使い捨てゆえ**一括改名は不要** — 新規 doc から `brief` を使い、旧 doc は自然に消える。
@@ -682,7 +682,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 
 ## 13. 昇格義務（作業層 → committed）
 
-作業層に生まれた**設計級コンテンツ**（および durable な証拠・知見）を committed 蒸留層へ昇格して commit する義務。git の外にこれらが滞留する唯一の実害（棚卸し §5）を塞ぐ。#238/#250 が初回実地例。
+作業層に生まれた**設計級コンテンツ**（および durable な証拠・知見）を committed 蒸留層へ昇格して commit する義務。git の外にこれらが滞留する唯一の実害を塞ぐ。#238/#250 が初回実地例。
 
 ### 13.1 トリガー（いつ昇格するか）
 
@@ -751,7 +751,7 @@ episode を中心とした文書の生き死にの規範。**規範をここに�
 
 - 覆した先の文書（plan / episode）に **discard 記録の1節**（何を捨てたか + なぜ）を置く規範のみとする。`reframe-on-stall-rule` の reconcile 原則と同一。
 - その転換に長期価値があるかの判定は既存の昇格ゲート（episode closure → decision・§13）に任せ、**記録時点で判断を迫らない**。
-- 実践例: `docs/plans/.../2026-07-11-plan-247...` §2.1 / wez notify episode（`projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md`）。
+- 実践例: wez notify episode（`projects/wezterm-ai-mode/docs/episodes/2026-04-22-episode-wez-notify.md`）。
 
 ## 15. #19 MVP との接続
 
