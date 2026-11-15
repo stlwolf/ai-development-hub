@@ -90,11 +90,11 @@
 
 ### 対象外（フックが見ない形）
 
-フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の §1 を自分で守る。
+フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の Blocked の区分（§1）を自分で守る。
 
 - 実行環境の情報が要る（字面に無い）: 変数や glob で決まる対象（`rm -rf $DIR`）、標準入力から対象を受ける `xargs rm -rf`、標準入力・heredoc・ファイルから command を受ける shell（`echo … | bash`・`bash <<EOF`・`bash script.sh`・`source x`）、alias や関数
 - 字面にはあるが静的解析を実装していない: brace expansion（`rm -rf {.,..}`）、二重引用符の中の `$( )` に `case` の `)` がある形、`${ … }` を展開した値を名前や引数として使う形（`${v:-rm} -rf /`。中の `$( )` と引用符は追う）、符号化や大文字や計算される名前（`$'\x72m'`・macOS の `RM`・`$(echo rm) -rf /`・`sh -c "$(printf …)"`）
-- 別の操作族: `find -delete` / `find -exec rm`（ルール §2 の確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
+- 別の操作族: `find -delete` / `find -exec rm`（`careful-operations-rule` の Requires Confirmation の区分で、確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
 
 引用符で囲まれていないデータに既知のコマンド名と危険な引数が並ぶ形（`echo rm -rf /`・`ssh host rm -rf /`）は止める側に倒している。全体を引用符で囲めば通る。
 
