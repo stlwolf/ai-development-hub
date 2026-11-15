@@ -135,7 +135,7 @@ Cursor Plan の `todos[]` はStep/Gateの進捗追跡用であり、本文のSte
 # Context に以下の記述がある場合:
 #   - 対象Issue: [Issue #11](https://github.com/.../issues/11)（Epic #10）
 #   - 出典: [superpowers](https://github.com/obra/superpowers)（MIT License）
-#   - 設計コンテキスト: `architecture-sketch.md` の「認知協調層」節（§3）
+#   - 設計コンテキスト: `architecture-sketch.md` の「認知協調層」節
 
 related:
   - type: parent_issue

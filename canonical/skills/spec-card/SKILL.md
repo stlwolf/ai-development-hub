@@ -74,7 +74,7 @@ YYYY-MM-DD-{type}-{topic}.md
 - frontmatter（必須9項）: `id`（ULID）/ `type: knowledge` / `status`（`active`\|`disabled`\|`superseded`\|`retired`・`document-format.md` の「Status ライフサイクル」節にある蒸留 status enum とは別）/ `date`（収穫日・不変）/ `trigger` / `prediction` / `source`（`.ref`）/ `landing`（`nl`\|`guard-candidate`）/ `observations`（`observe`（観測記録）のレコード配列・要素 = `{date, ref, state, note?}`・収穫時は `[]`・append-only）。任意 = `exclusions`（list）。本文 prose = 教訓。
 - **ファイル名 = `<ULID>.md`**（`YYYY-MM-DD-...` ではない）。並行収穫の衝突回避のための意図的逸脱。
 - 置き場 = 収穫元 episode が属する蒸留木の `knowledge/items/`（source.ref と同じ木・item を ULID 名で置く・自由記述ノートは `knowledge/` 直下で `items/` に混ぜない）。
-- 正本 = `canonical/orchestration-spec/document-format.md` の「committed 状態 store 層」節（§2.5）と「型付き knowledge 層」節（§3.4）。検証 = コマンド `validate-knowledge`（`~/bin` 配布）。作成手順は `episode-retrospective` の Step 5。
+- 正本 = `canonical/orchestration-spec/document-format.md` の「committed 状態 store 層」節と「型付き knowledge 層」節。検証 = コマンド `validate-knowledge`（`~/bin` 配布）。作成手順は `episode-retrospective` の Step 5。
 
 ## ULID の生成方法
 

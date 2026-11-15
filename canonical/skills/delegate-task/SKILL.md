@@ -108,7 +108,7 @@ oe delegate -w "$REPO" --label "#N" "Issue #N を実装して。リポジトリ:
 
 - **子が自分の worktree を作る**: 子は自分の pane で `wt switch --create <branch>` を実行する（`wt switch` がそのペインの pane-issue state＝`#N` を書き、以後 `oe send "#N"` で指せる。issue 起点でも同じ）。並列委譲でも**各子がそれぞれ自分の分を作る**。
 - **統括（親）は事前作成しない・hands-off**: 親が `wt switch --create` すると親自身のペインの pane-issue state（`#N`）が張り替わり、親ペイン自身が迷子になる（`oe-send` の宛先解決もずれる）。**hands-off が統括の条件**。親がどうしても worktree を用意する稀な場合だけ、pane-issue state を書き換えない `git worktree add`（`wt switch` による pane-issue 更新を避ける）を使う。
-- **per-issue は end-to-end で子へ**: 各 issue の最初の洗い出しより後の作業（設計 SO / 調査 / 実装）を統括が自分の会話で巻き取らず、issue ごとに子スレッドへ一気通貫で委譲する（親 lean）。複数の issue をまとめて read-only で洗い出す最初の作業だけは親 or 使い捨て subagent が担ってよい。
+- **per-issue は end-to-end で子へ**: 各 issue の最初の洗い出しから先の作業（設計 SO / 調査 / 実装）を統括が自分の会話で巻き取らず、issue ごとに子スレッドへ一気通貫で委譲する（親 lean）。複数の issue をまとめて read-only で洗い出す最初の作業だけは親 or 使い捨て subagent が担ってよい。
 - **マージ・worktree 掃除は親 / 人間（Human Gate、HG）**: 子は完了報告のみ行い、マージも worktree 掃除もしない。
 
 ### elevated 子 spawn の owner 承認ハンドシェイク（#262）
@@ -144,7 +144,7 @@ oe delegate -w "$REPO" --label "#N" --elevated \
 - **binding**: `--print-approval` が出すダイジェストは workspace 絶対パス / label / claude 引数 / brief 絶対パス + 内容 hash / task / elevated 宣言 から決定論計算する（`--reason` は注記なので含めない）。実 spawn 時に不一致なら spawn せず exit 3。親（モデル）が承認済みと違うコマンド（属性含む）を走らせる drift を機構で捕まえる。
 - **classifier は迂回しない**: 実 spawn 自体は従来どおり owner ゲート（分類器）を通る。ハンドシェイクは「owner が 1 アクションで判断するための情報とタイミング」を標準化するだけ。
 - **audit**: elevated spawn は `child_spawned` イベントに `permission_mode` + `elevated` を焼き込む（auto でも elevated 宣言の有無で通常 spawn と事後区別できる・registry は変更しない）。
-- **v0 の限界（意図的な defer。同じ限界は #262 の episode `projects/orchestration-engine/docs/episodes/2026-07-17-episode-262-permission-handshake.md` の「明文化した v0 の限界」節にもある）**:
+- **v0 の限界（意図的な defer）**:
   - ダイジェストは公開入力からの決定論チェックサムで、**owner 承認の暗号的証明ではない**（nonce / 期限 / 消費状態を持たない）。**authZ の実体はハーネスの分類器**（agent は elevated spawn の block を自己解除できない）で、ダイジェストは「owner が見た内容 = 実行内容」を保証する drift-guard。両者は別レイヤー。
   - brief は承認時に内容 hash を束縛するが、spawn 後に子が読むまでの差し替え（read-time TOCTOU）までは束縛しない。
   - `permission_mode` は CLI 引数からの best-effort 推定（継承 config は反映しない）。enforcement は明示 `--elevated` を主ゲートにするので本番ケースは mode 推定に依存しない。

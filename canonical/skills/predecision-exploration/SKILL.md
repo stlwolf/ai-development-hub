@@ -37,7 +37,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
    - **engine 統合経路**（効果は未測定・#177 で観測予定＝so-compare 手動反証を engine 統合・再現可能にした段階。現状 so-compare と同列の選択肢）: 確定しようとする判断を claim doc 化し `oe refute --claim <doc> --rubric exploration` を**同期で呼ぶ**（`so-compare` を wrap し、生成と物理分離した独立レーンが breadth(軸5)/grounding(軸3) レンズで反証）。返る `{verdict, reason, output_dir}` が `refuted` なら**確定を保留**する。`output_dir`（`oe-refute` が返す反証レーンの生出力先・永続しない）なので verdict/reason の**内容**を確定時証跡へ転記する（パスだけに頼らない）。claim doc は frontmatter（`claim` 必須・`rubric` 任意＝省略時は既定 exploration だが明示を推奨）＋ body（探索木をそのまま不透明に渡す）。
    - **弱 SO の終了条件**（`canonical/orchestration-spec/document-format.md` の「SO モード」節〔§4.1〕）: `so-compare` / `oe-refute` が使えない、または**全レーンが実返却なし**（`timeout_empty` の1回リトライ後も空、あるいは `success_empty`〔exit0 だが空〕で全レーン空。後者は機構上 partial＝exit1 計上だが、実返却ゼロなので "0 はなし" 抵触）なら、確定を止めて人間承認を取る（黙って skip しない）。partial は**実返却が 1 レーン以上あるとき**に限り disclose して進んでよい（advisory）。
 3. 出た代替案は「良さそう」で止めず、検証可能な条件で即検証する（検証不能な環境では検証条件を残して保留）。
-4. **確定前に証跡をその場で残す**: 探索木＋反証の出力パス（`so-compare` なら `tmp/so-*/`、`oe-refute` なら `verdict`/`reason`＋`output_dir`）＋採否を、確定と同一セッションで**確定前 artifact** に書く。置き場は手近なもの: `tmp/dj-N-tree.md` / ADR 草稿の「棄却案」節 / kickoff の DJ 節 / PR 本文 / peer-review ログ（`tmp/peer-review-*/review-log.md`）。**episode closure まで先送りしない**（「後で追記」は、episode 品質監査（`docs/research/2026-06-10-episode-quality-audit.md`）の法則 L4 のとおり、観測範囲で 100% 守られなかった）。
+4. **確定前に証跡をその場で残す**: 探索木＋反証の出力パス（`so-compare` なら `tmp/so-*/`、`oe-refute` なら `verdict`/`reason`＋`output_dir`）＋採否を、確定と同一セッションで**確定前 artifact** に書く。置き場は手近なもの: `tmp/dj-N-tree.md` / ADR 草稿の「棄却案」節 / kickoff の DJ 節 / PR 本文 / peer-review ログ（`tmp/peer-review-*/review-log.md`）。**episode closure まで先送りしない**（「後で追記」は観測範囲で 100% 守られなかった）。
 5. 暫定停止条件を満たしたら確定に進む（下記）。
 
 ## 探索木フォーマット（選択肢の外部化）
@@ -54,7 +54,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
 ## 暫定停止条件（確定的収束ではない）
 
 - 目安: 最低1回のゼロベース SO で新カテゴリの案が出なければ、確定に進んでよい。
-- これは disposition（モデル依存の暫定停止）であって確定的な収束判定ではない。探索プロセスの設計の discussion（`docs/specs/2026-04-23-discussion-exploration-process-design.md`）の「収束条件の明示的定義」節（§3.4）が求める「収束をモデルに委ねない＝スクリプト層カウント」は hard 版（defer）の領分。新カテゴリが出続ける場合の上限・打切りは人間判断。
+- これは disposition（モデル依存の暫定停止）であって確定的な収束判定ではない。「収束をモデルに委ねない＝スクリプト層カウント」は hard 版（defer）の領分。新カテゴリが出続ける場合の上限・打切りは人間判断。
 
 ## ライフサイクル上の位置づけ
 
@@ -77,7 +77,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
 ## 限界
 
 - 遵守はモデル依存。**確定的トリガ（hook, #24）は未実装**（spot-check 後）。発火は description マッチ＋kickoff 予防＋（plan-mode 経路の）DJ-GATE。
-- **hard 版は段階導入に移行**（旧: 全 defer）: 以下の §3.1〜§3.4 は、探索プロセスの設計の discussion（`docs/specs/2026-04-23-discussion-exploration-process-design.md`）の節である。§3.2 生成・反証の物理分離は **`oe-refute`（Stage A・engine 統合の同期反証 verb・PR #184）で着地**（生成と物理分離した独立レーンが反証）。oe-refute は exit code（survived 0 / refuted 3）を持つが Stage A では advisory（JSON verdict が正本）＝§3.3 一次検証の機械義務化そのものは Stage B/C 待ち。§3.1 出力差分 reject／§3.4 スクリプト層カウント収束は engine verify ゲート拡張（Stage B）、決定的トリガは Stage C（#24）待ちで defer。本スキルの soft forcing はこの上で動く。
+- **hard 版は段階導入に移行**（旧: 全 defer）: 生成・反証の物理分離は **`oe-refute`（Stage A・engine 統合の同期反証 verb・PR #184）で着地**（生成と物理分離した独立レーンが反証）。oe-refute は exit code（survived 0 / refuted 3）を持つが Stage A では advisory（JSON verdict が正本）＝一次検証の機械義務化そのものは Stage B/C 待ち。出力差分 reject／スクリプト層カウント収束は engine verify ゲート拡張（Stage B）、決定的トリガは Stage C（#24）待ちで defer。本スキルの soft forcing はこの上で動く。
 - episode への蒸留の追記信頼性は #159（未着手）依存。ただし**確定時証跡（手順4）は本スキルが今担保する**ので、#159 未着手でも確定前 forcing は成立する。
 
 ## 参照
