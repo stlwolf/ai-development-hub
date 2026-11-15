@@ -76,9 +76,9 @@ _oe_heartbeat_write() {
   server_pid="${server_pid#*,}"
   server_pid="${server_pid%%,*}"
   [[ "$server_pid" =~ ^[0-9]+$ ]] || server_pid=""
-  # lease（#577 DJ-3）: claude を起こしたときに環境へ入れた OE_LEASE_ID と OE_GENERATION を、形が正しいときだけ
+  # lease（#577）: claude を起こしたときに環境へ入れた OE_LEASE_ID と OE_GENERATION を、形が正しいときだけ
   # 足す。無ければ項目ごと出さない（いままでと同じ出力）。候補のペインを探す手がかりで、session_id の登録の
-  # 根拠にはしない（DJ-18）。
+  # 根拠にはしない。
   local lease_id="${OE_LEASE_ID:-}" generation="${OE_GENERATION:-}"
   if [[ ! "$lease_id" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ || ! "$generation" =~ ^[1-9][0-9]*$ ]]; then
     lease_id=""; generation=""

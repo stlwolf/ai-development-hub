@@ -21,8 +21,7 @@ set -euo pipefail
 #   一望するためのもので、検証は別コマンド validate-knowledge が担う（本 verb は validator ではない）。
 #   既定は「committed 状態 store」の意味に合わせ HEAD tree snapshot を列挙する（index/working-tree
 #   でなく commit tree ＝ staged-but-uncommitted は含めない）。設計正本は
-#   projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md、
-#   確定版 plan は .oe/plan-273-nk-match-inject.md §9（gate 2 設計SO 後）。
+#   projects/orchestration-engine/docs/discussions/2026-07-21-discussion-negative-knowledge-loop-foundation.md。
 #
 # 発見と可搬性:
 #   item の置き場は関係で解く（収穫元 episode と同じ蒸留木の knowledge/items/ ＝ source.ref と同木）。

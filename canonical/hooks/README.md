@@ -70,7 +70,7 @@
 
 ### ブロック対象
 
-判定の単位は、コマンド文字列の先頭ではなく**行に含まれる各単純コマンド**である（#429）。`&&`・`||`・`;`・`|`・改行・サブシェル・`$( )`・バッククォート・`<( )` で区切った各部分、`bash -c` / `sh -c` の文字列と `eval` の中身、前置き（`sudo`・`env`・`timeout`・`nohup`・`FOO=1`・`>/dev/null` など）の後ろ、引用符を外した対象（`rm -rf "/"`・`rm -rf ${HOME}`・`rm -rf ./`）のどれでも、同じ検査が当たる。引用符で囲んで1つの token にした文字列（`echo "rm -rf /"`・`git commit -m "..."`）と、引用ありの heredoc の本文はデータとして扱い止めない。名前だけを引用した形（`'rm' -rf /`・`r$'m' -rf /`）は止める。引用なしの heredoc の本文と `$(( ))`・`(( ))`・`$[ ]` の中と `${ }` の中は、`$( )` とバッククォートだけ見る。`$( )` やバッククォートで作った引数は、中の語も外側の引数として一緒に調べる（`rm -rf $(echo /)`・`git reset $(echo --hard)` は止める。`rm -rf "$(mktemp -d)/build"` は通る）。走査器の文法と扱わない形の根拠は `docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md` の DJ-2〜DJ-9 にある。
+判定の単位は、コマンド文字列の先頭ではなく**行に含まれる各単純コマンド**である（#429）。`&&`・`||`・`;`・`|`・改行・サブシェル・`$( )`・バッククォート・`<( )` で区切った各部分、`bash -c` / `sh -c` の文字列と `eval` の中身、前置き（`sudo`・`env`・`timeout`・`nohup`・`FOO=1`・`>/dev/null` など）の後ろ、引用符を外した対象（`rm -rf "/"`・`rm -rf ${HOME}`・`rm -rf ./`）のどれでも、同じ検査が当たる。引用符で囲んで1つの token にした文字列（`echo "rm -rf /"`・`git commit -m "..."`）と、引用ありの heredoc の本文はデータとして扱い止めない。名前だけを引用した形（`'rm' -rf /`・`r$'m' -rf /`）は止める。引用なしの heredoc の本文と `$(( ))`・`(( ))`・`$[ ]` の中と `${ }` の中は、`$( )` とバッククォートだけ見る。`$( )` やバッククォートで作った引数は、中の語も外側の引数として一緒に調べる（`rm -rf $(echo /)`・`git reset $(echo --hard)` は止める。`rm -rf "$(mktemp -d)/build"` は通る）。走査器の文法と扱わない形の根拠は #429 の plan（`docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md`）にある。
 
 - `rm -rf /`, `rm -rf ~`, `rm -rf ~user`, `rm -rf $HOME`, `rm -rf ${HOME}`, `rm -rf /*`, `rm -rf .`, `rm -rf ..`（絶対パス全般を含む）
 - `rm` のオプション順序変形（`-rf`, `-fr`, `-r -f`）に対応。対象は引用符を外し、末尾の `/` と先頭の `./` を落としてから見る
@@ -90,11 +90,11 @@
 
 ### 対象外（フックが見ない形）
 
-フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の §1 を自分で守る。
+フックが見るのは、行の字面に書かれた各単純コマンドである。次の形は止めない。エージェント側は `careful-operations-rule` の Blocked の区分（§1）を自分で守る。
 
 - 実行環境の情報が要る（字面に無い）: 変数や glob で決まる対象（`rm -rf $DIR`）、標準入力から対象を受ける `xargs rm -rf`、標準入力・heredoc・ファイルから command を受ける shell（`echo … | bash`・`bash <<EOF`・`bash script.sh`・`source x`）、alias や関数
 - 字面にはあるが静的解析を実装していない: brace expansion（`rm -rf {.,..}`）、二重引用符の中の `$( )` に `case` の `)` がある形、`${ … }` を展開した値を名前や引数として使う形（`${v:-rm} -rf /`。中の `$( )` と引用符は追う）、符号化や大文字や計算される名前（`$'\x72m'`・macOS の `RM`・`$(echo rm) -rf /`・`sh -c "$(printf …)"`）
-- 別の操作族: `find -delete` / `find -exec rm`（ルール §2 の確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
+- 別の操作族: `find -delete` / `find -exec rm`（`careful-operations-rule` の Requires Confirmation の区分で、確認の対象）、別のインタプリタ（`python3 -c "os.system(…)"`）、fork bomb
 
 引用符で囲まれていないデータに既知のコマンド名と危険な引数が並ぶ形（`echo rm -rf /`・`ssh host rm -rf /`）は止める側に倒している。全体を引用符で囲めば通る。
 

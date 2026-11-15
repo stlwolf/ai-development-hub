@@ -79,7 +79,7 @@ related:
     ref: "~/.cursor/plans/adversarial-review_skill_plan_981ae49b.plan.md"
     reason: "変換元プラン"
 tags: []  # 推測禁止。明示的なタグ情報がある場合のみ
-so:                       # SO モード（§3.1・kickoff 必須）。プランから推測不可＝要選択（既定 weak 提案）
+so:                       # SO モード（`document-format.md` の「SO モード」節・kickoff 必須）。プランから推測不可＝要選択（既定 weak 提案）
   design: weak | strong
   impl: weak | strong
   reason: "<要選択>"
@@ -97,7 +97,7 @@ so:                       # SO モード（§3.1・kickoff 必須）。プラン
 | _(新規)_ | `scope` | Context 内の記述から推測（例: `canonical` スキル関連なら `canonical`）。推測不可な場合は省略（フィールド自体を出力しない） |
 | _(新規)_ | `related[]` | Context セクションのURL・パスを構造化。不明な場合は `derived_from` のみ |
 | _(新規)_ | `tags` | 推測禁止。ソースに明示的なタグ情報がある場合のみ使用。不明な場合は空配列 `[]` |
-| _(新規)_ | `so` | SO モード（§3.1・kickoff 必須）。プランから推測不可＝**要選択**（既定 `weak` を提案し、高難易度/高リスク/不可逆なら `strong`）。省略しない |
+| _(新規)_ | `so` | SO モード（`document-format.md` の「SO モード」節・kickoff 必須）。プランから推測不可＝**要選択**（既定 `weak` を提案し、高難易度/高リスク/不可逆なら `strong`）。省略しない |
 
 **リポジトリのプランMD → Kickoff:**
 
@@ -135,7 +135,7 @@ Cursor Plan の `todos[]` はStep/Gateの進捗追跡用であり、本文のSte
 # Context に以下の記述がある場合:
 #   - 対象Issue: [Issue #11](https://github.com/.../issues/11)（Epic #10）
 #   - 出典: [superpowers](https://github.com/obra/superpowers)（MIT License）
-#   - 設計コンテキスト: `architecture-sketch.md` §3
+#   - 設計コンテキスト: `architecture-sketch.md` の「認知協調層」節
 
 related:
   - type: parent_issue
@@ -146,7 +146,7 @@ related:
     reason: "出典（MIT License）"
   - type: design_context
     ref: "projects/orchestration-research/synthesis/architecture-sketch.md"
-    reason: "設計コンテキスト §3"
+    reason: "設計コンテキスト（「認知協調層」節）"
 ```
 
 `type` の推測ガイド:
@@ -196,7 +196,7 @@ related:
 ```
 ## 必須チェック
 - [ ] frontmatter に title, date, type: kickoff が含まれている
-- [ ] frontmatter に `so`（`design`/`impl`/`reason`）が含まれている（§3.1・kickoff 必須。推測不可なら要選択プレースホルダで残す）
+- [ ] frontmatter に `so`（`design`/`impl`/`reason`）が含まれている（`document-format.md` の「SO モード」節・kickoff 必須。推測不可なら要選択プレースホルダで残す）
 - [ ] プランの全Stepが「## 実装計画」配下に含まれている
 - [ ] プランの全GATEが含まれている
 - [ ] プランの全STOP（Stage境界）が含まれている

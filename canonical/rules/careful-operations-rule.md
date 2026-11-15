@@ -8,21 +8,21 @@ Three-tier classification of destructive operations: Blocked / Requires Confirma
 
 ## Precedence
 
-1. **Hook denies → obey.** Hooks mechanically block §1 patterns. Do not seek workarounds.
-2. **Hook passes + §2 match → ask user.** Context (prod/dev/target) matters. Present the command and blast radius, then stop.
-3. **§3 exception applies → allow** even if the pattern matches §1. Hooks recognize the same exceptions.
+1. **Hook denies → obey.** Hooks mechanically block the Blocked patterns (§1). Do not seek workarounds.
+2. **Hook passes + a Requires Confirmation pattern (§2) matches → ask user.** Context (prod/dev/target) matters. Present the command and blast radius, then stop.
+3. **An Exceptions entry (§3) applies → allow** even if the pattern is a Blocked one. Hooks recognize the same exceptions.
 
-In environments without hooks, refuse the blocked patterns yourself — they are hard blocks, not the ask-first tier of §2. §1 below names every blocked family, so this rule stands on its own where hooks do not run. The principles of this rule are independent of hook availability.
+In environments without hooks, refuse the blocked patterns yourself — they are hard blocks, not the ask-first Requires Confirmation tier. The Blocked section below names every blocked family, so this rule stands on its own where hooks do not run. The principles of this rule are independent of hook availability.
 
-Concretizes `behavioral-rule.md` §3 "Safe Operations." §2 patterns are the primary application. §1 is enforced by hooks.
+Concretizes `behavioral-rule.md` §3 "Safe Operations." Requires Confirmation patterns are the primary application. Blocked is enforced by hooks.
 
 ## 1. Blocked (hook-enforced)
 
-Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories of §3; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied. The hook inspects every simple command written on the line, including parts joined by `&&`, `||`, `;`, `|`, newlines, subshells, `$( )`, and the string passed to `bash -c` / `sh -c` / `eval`, whatever prefix (`sudo`, `env`, `timeout`, ...) precedes it.
+Hooks mechanically block a fixed set of destructive commands. The families: recursive force-deletes aimed at root, home, `.`, `..`, or any absolute path outside the safe directories listed under Exceptions; recursive permission and owner changes under root; filesystem creation; direct device writes; bare force-push; hard reset; `git clean -fdx`; and SQL `DROP` / `TRUNCATE`. The command is denied. The hook inspects every simple command written on the line, including parts joined by `&&`, `||`, `;`, `|`, newlines, subshells, `$( )`, and the string passed to `bash -c` / `sh -c` / `eval`, whatever prefix (`sudo`, `env`, `timeout`, ...) precedes it.
 
 **The exact patterns live with the hook scripts** — `block-destructive.sh` and `block-force-push.sh`, described for maintainers in `canonical/hooks/README.md`. That README is not distributed with these rules, so do not send an agent to read it: the families above are what an agent acts on, and the scripts are authoritative for the exact matching.
 
-The hook judges only what is written literally on the line. A destructive target that reaches the command through stdin (`xargs`), a variable or glob, an alias, `find -delete`, a script file, or a shell fed from stdin or a heredoc is not visible to the hook. These remain §1 bans that the agent refuses itself.
+The hook judges only what is written literally on the line. A destructive target that reaches the command through stdin (`xargs`), a variable or glob, an alias, `find -delete`, a script file, or a shell fed from stdin or a heredoc is not visible to the hook. These remain Blocked bans that the agent refuses itself.
 
 ## 2. Requires Confirmation (not hook-decidable — rule-enforced)
 
@@ -63,8 +63,8 @@ Context-dependent — hooks cannot decide these. Stop before executing. Present 
 
 | Pattern | Risk | Confirm |
 |---------|------|---------|
-| `xargs rm -rf` / `find ... -delete` / `find ... -exec rm -rf` | Deletes whatever the pipeline or search resolves to | The resolved target set. If it falls under §1, refuse |
-| `rm -rf "$VAR"` / `rm -rf $DIR/*` | The target depends on runtime expansion | The resolved target. If it falls under §1, refuse; otherwise confirm it |
+| `xargs rm -rf` / `find ... -delete` / `find ... -exec rm -rf` | Deletes whatever the pipeline or search resolves to | The resolved target set. If it falls under Blocked, refuse |
+| `rm -rf "$VAR"` / `rm -rf $DIR/*` | The target depends on runtime expansion | The resolved target. If it falls under Blocked, refuse; otherwise confirm it |
 
 ## 3. Exceptions (blocked patterns that are safe)
 
