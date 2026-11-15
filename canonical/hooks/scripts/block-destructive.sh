@@ -159,8 +159,7 @@ trap on_unexpected_exit EXIT
 # --- shared end ---
 
 # --- shared-cmd begin (block-destructive / block-force-push の2本で byte 一致させる。変更は2本同時に) ---
-# 行に含まれる各単純コマンドを取り出す（#429）。設計は
-# docs/harness/plans/2026-10-15-plan-429-destructive-hook-compound.md の DJ-1〜DJ-5・DJ-8・DJ-12。
+# 行に含まれる各単純コマンドを取り出す（#429）。
 #
 # 流れ: cmd_analyze <コマンド全文> <判定の関数名>
 #   → 仕事の列（CMD_QUEUE）を1件ずつ cmd_scan で segment（単純コマンド）に分け、
@@ -174,24 +173,25 @@ trap on_unexpected_exit EXIT
 # bash 3.2 の配列は1要素ずつ積むと要素数に比例して遅くなるので、語の列は文字列で持ち、
 # 判定の直前に IFS の単語分割で一度に配列にする。置換（$( )・` `）から戻るときは、
 # 置換の中の segment の文字列を外側の segment に足し、置換の中の語も外側の引数として
-# 判定に入れる（DJ-12。rm -rf $(echo /) を止める）。
+# 判定に入れる（rm -rf $(echo /) を止めるため）。
 #
 # 走査器は文字列を1回だけ通す（各周回で必ず位置が進む）。扱うのは、引用符（'…'・"…"・
 # $'…'）、$( ) と ` `（文脈を積んで同じ走査で segment にする）、$(( )) と (( )) と $[ ]
 # （算術式。中の $( ) と ` ` だけ見る）、${ }（引用符と ${ の入れ子を追い、1 token に残す。
 # 中の $( ) は見る）、# の注釈（語の先頭だけ）、heredoc（区切り語の引用の有無・<<- のタブ・
 # 引用なしの本文の \ と改行の連結）、転送（演算子と相手を token から除く）、\ と改行の連結
-# である。扱わない形は plan の DJ-9 にある。
+# である。変数・glob・標準入力・alias で決まる対象や brace expansion などは扱わない（careful-operations-rule
+# で、エージェントが自分で止める）。
 #
 # bash 3.2 で動く書き方に限る（declare -A・mapfile・負の添字・${var,,} は使わない）。
 # 空になりうる配列は ${arr[@]+"${arr[@]}"} の形で展開する（3.2 の set -u 対策）。
 
 CMD_MAX_DEPTH=8         # shell -c / eval の入れ子の深さの上限（列の長さには上限を置かない）
 CMD_MAX_NEST=32         # $( ) などの文脈の入れ子の深さの上限（超えたら nesting-limit で止める）
-# 極端に長い1行は読み取らずに止める（判断10）。読み取りは語の数に比例するが、短い語を
+# 極端に長い1行は読み取らずに止める。読み取りは語の数に比例するが、短い語を
 # 大量に並べた1行は 64 KB で bash 3.2 でも数秒かかり、ホストの時間切れ（判定を捨てて通す）
 # から遠ざけるために上限を置く。既知の名前を含まない行は走査しないので、この上限に
-# かからない。値の根拠は plan の DJ-8。
+# かからない。
 CMD_MAX_LEN=65536
 
 # 早い経路の正規表現。既知の名前の文字の間に、引用符・\・改行・$ が挟まっていても当てる
@@ -236,7 +236,7 @@ cmd_fast_skip() {
 
 # ---- 走査器の状態（cmd_scan の中だけで使う。関数の外から読まない） ----
 # _C_SEG = いまの segment（token を CMD_US でつないだ文字列）。_C_SEGN = その token の数。
-# _C_DEFER = この segment の置換の中の語（segment を閉じるときに末尾に足す。DJ-12）。
+# _C_DEFER = この segment の置換の中の語（segment を閉じるときに末尾に足す）。
 _C_TOK=''; _C_TOKQ=0; _C_SEG=''; _C_SEGN=0; _C_DEFER=''; _C_DEFERN=0; _C_Q=''; _C_DROP=0; _C_DEPTH=0; _C_CURDEPTH=0; _C_RD=0; _C_WB=1
 _C_ST_SEG=(); _C_ST_SEGN=(); _C_ST_DEFER=(); _C_ST_DEFERN=(); _C_ST_TOK=(); _C_ST_TOKQ=(); _C_ST_Q=(); _C_ST_KIND=(); _C_ST_DROP=(); _C_ST_RD=(); _C_ST_NSEG=()
 _C_HD_WORD=(); _C_HD_Q=(); _C_HD_STRIP=()
@@ -289,7 +289,7 @@ _cmd_push() { # $1 = 種類
 
 # 置換の閉じ。中身の最後の segment を閉じ、外側の状態に戻る。
 # p/b/r/q: 中の segment（この深さで登録したものだけ。さらに深い置換の語はそこに含まれている）
-#   の語を外側の segment の「置換の中の語」に足す（DJ-12・中の語も外側の引数になる）。
+#   の語を外側の segment の「置換の中の語」に足す（中の語も外側の引数になる）。
 #   置換を含んだ語は字面に $( ) や ` ` を残し引用扱いにする（絶対パスに見せない・既知の名前に当てない）。
 # v: 語は続きなので segment は触らない。
 _cmd_pop() {
@@ -760,7 +760,7 @@ cmd_scan() {
 
 # shell の token の後ろをオプションとして歩き、-c があればその文字列を列に積む（積んだら 0）。
 # -- はオプションの終わり。-o X・+o X・-O X・+O X・--rcfile X・--init-file X は次も飛ばす。
-# -c が無ければスクリプトファイルなので扱わない（DJ-9）。
+# -c が無ければスクリプトファイルなので扱わない。
 _cmd_shell_c() { # $1 = shell の token の位置, $2 = 深さ
   local seen=0 skip=0 t found='' hit=0
   for t in "${CMD_TOKS[@]:$1+1}"; do
@@ -802,7 +802,7 @@ _cmd_eval() { # $1 = eval の位置, $2 = 深さ
 }
 
 # segment の token を CMD_TOKS に取り出し、既知の名前に一致する token を**すべて**判定の
-# 関数に渡す（DJ-3）。名前は先頭の \ を解いた後の値の basename で比べる。shell は、-c の
+# 関数に渡す。名前は先頭の \ を解いた後の値の basename で比べる。shell は、-c の
 # 文字列を取れた最初の1つだけを列に積む（env -u bash sh -c '…' の bash のように文字列の
 # 無いものは飛ばす）。eval は segment の最初の1つだけ。
 # token の列は IFS の単語分割で一度に配列にする（C で動く）。末尾の空 token が落ちない
@@ -887,8 +887,8 @@ cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
 # 以下の関数は cmd_analyze に名前で渡して間接に呼ばれるので、shellcheck には到達不能に見える。
 # token は添字で読まず "${CMD_TOKS[@]:位置}" で順に歩く（bash 3.2 の配列は添字で読むと遅い）。
 
-# rm: -r/-R と -f がそろい、対象が1つでも危険なら deny。対象は正規化してから見る（DJ-5）。
-# 安全ディレクトリだけなら何もしない（早期 allow はしない。後ろの segment も見る・DJ-1）。
+# rm: -r/-R と -f がそろい、対象が1つでも危険なら deny。対象は正規化してから見る。
+# 安全ディレクトリだけなら何もしない（早期 allow はしない。後ろの segment も見る）。
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 bd_check_rm() { # $1 = rm の位置
   local has_r=0 has_f=0 saw_dd=0 arg t nt=0
@@ -966,10 +966,10 @@ bd_check_chown() {
   return 0
 }
 
-# mkfs*: /dev/ で始まる引数か、変数や置換の引数（$ で始まる。判断9）があれば位置にかかわらず deny。
+# mkfs*: /dev/ で始まる引数か、変数や置換の引数（$ で始まる）があれば位置にかかわらず deny。
 # segment の先頭（コマンドの位置）に在って - で始まらない引数があるときも deny（イメージ
 # ファイルへの mkfs を今までどおり止める）。名前だけでは止めない（command -v mkfs.ext4 や
-# git grep mkfs.ext4 <file> を通す・DJ-3）。
+# git grep mkfs.ext4 <file> を通す）。
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 bd_check_mkfs() {
   local pos="$1" t
@@ -998,7 +998,7 @@ bd_check_dd() {
 # git: git 自身のオプションを飛ばして subcommand を取る（-C・-c・--git-dir・--work-tree・
 # --namespace・--config-env・--attr-source・--shallow-file・--super-prefix は次も飛ばす）。
 # reset は --hard の token、clean は option の文字を集めて f・d・x がそろい dry-run でなければ
-# deny（DJ-6）。clean の -e / --exclude（省略形を含む）の値はフラグの文字として読まない。
+# deny。clean の -e / --exclude（省略形を含む）の値はフラグの文字として読まない。
 # --no-dry-run は dry-run を打ち消す（後ろのものが勝つ）。
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 bd_check_git() {
@@ -1089,7 +1089,7 @@ main() {
     cmd_analyze "$cmd" bd_judge
   fi
 
-  # SQL は全文の部分一致のまま（DJ-6。README の陽性対照と heredoc 経由の psql の扱いを変えない）。
+  # SQL は全文の部分一致のまま（README の陽性対照と heredoc 経由の psql の扱いを変えない）。
   shopt -s nocasematch
   if [[ "$cmd" =~ drop[[:space:]]+table ]] ||
      [[ "$cmd" =~ drop[[:space:]]+database ]] ||

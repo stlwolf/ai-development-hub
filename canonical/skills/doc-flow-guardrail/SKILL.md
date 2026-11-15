@@ -13,7 +13,7 @@ AI 駆動開発のドキュメントフロー全体を「注入可能な枠」�
 - memory の無い **新 repo / 新統括セッション**でフローを立ち上げるとき（cold-start）。
 - 蒸留5層の**どの層・遷移・ゲートでどのスキルを必ず通すか**を確認するとき。
 
-## 位置づけ（DJ-11 二層・薄い枠）
+## 位置づけ（二層・薄い枠）
 
 本スキルが持つのは **(a) 各層の大原則1行** と **(b) 遷移・ゲートごとの「必ず通すスキル」routing 表** の2つのみ。**到達性の穴を塞ぐための例外が3つある。統括の計画的な交代の工程（④）・応答しない統括の復帰の工程（⑤）・`oe-*` の在り処の解決（「verb 解決規約」節）は、routing 先が同じ穴を持つため本スキルが持つ。** **中身の品質基準は個別スキルが持つ**（spec-card / kickoff-to-plan / adversarial-review / episode-retrospective / predecision-exploration / implementer-contract）。枠を薄く安定に保ち、基準は各スキルで独立にイテレートする。
 
@@ -78,7 +78,7 @@ raw log 層（docs/raw-logs/・gitignored・verbatim・別レイヤー）
 
 ## ② 委譲固定節テンプレ（brief に貼る）
 
-**固定節はそのまま貼る**（手書きしない）。可変節の `[...]` だけ埋める。DJ-11 の「大原則1行」はこの固定節が実体。
+**固定節はそのまま貼る**（手書きしない）。可変節の `[...]` だけ埋める。二層構造の「大原則1行」は、この固定節が実体である。
 
 ````markdown
 ## 規律（固定・必ず守る）
@@ -198,7 +198,7 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 
 **子も落ちていれば**、子ごとに owner が resume して「復帰して」と頼み、子も `oe recover` を打つ（子は `--board` 不要）。親と子のどちらが先でもよい（registry は lease の記録から作り直すので、あとから戻ったほうがそろえる）。各 verb の詳細と exit は engine の `bin/README.md`（`oe --help` の1行目に出るディレクトリにある）。
 
-## routing 表（遷移・ゲート → 必ず通すスキル・DJ-11 layer b）
+## routing 表（遷移・ゲート → 必ず通すスキル・二層構造の routing の層）
 
 正本は `document-format.md`「ゲート配置」節〔§11〕。本表はその索引（1:1）。gate (0) のうち認識合わせは issue 起点の作業で必須（`issue-intake`）、`question-driven-design` は必要時のみ挿入する soft gate。(3)/(5)/(6) の owner HG は必須ゲート。
 
@@ -226,4 +226,4 @@ memory が無くても、このスキル1本を読めばフロー + 参照ポイ
 - `canonical/orchestration-spec/document-format.md` — フロー定義の正本（2層 / 遷移 / ゲート / ライフサイクル / 昇格）
 - `orchestration-toolkit`（ツール軸・oe-*）/ `delegate-task`（操作軸・親子委譲）/ `implementer-contract`（実装委譲の返却契約）
 - `spec-card`（フォーマット適用）/ `episode-retrospective`（closure）/ `predecision-exploration`（gate 1）
-- 棚卸し discussion `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-doc-flow-stocktake.md`（DJ-1〜11）
+- 棚卸し discussion `projects/orchestration-engine/docs/discussions/2026-07-12-discussion-doc-flow-stocktake.md`

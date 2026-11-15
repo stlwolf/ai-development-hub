@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# oe-heartbeat-hook.sh — hook で書く拍動（#562 DJ-6）。Codex の PostModelRequest と UserPromptSubmit に配線する。
+# oe-heartbeat-hook.sh — hook で書く拍動（#562）。Codex の PostModelRequest と UserPromptSubmit に配線する。
 #
 # Claude Code の statusLine（canonical/claude/statusline/statusline-oe-heartbeat.sh）が書くのと同じ形の sidecar
 # （${OE_HEARTBEAT_DIR:-~/.claude/state/oe-heartbeat}/<session_id>.json）を、hook の標準入力と環境から書く。

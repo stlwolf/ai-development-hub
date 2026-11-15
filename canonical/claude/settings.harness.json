@@ -21,7 +21,7 @@
         "file": "canonical/claude/statusline/claude.statusline.json",
         "pointer": "/statusLine"
       },
-      "note": "拍動 producer は既存の statusLine を包んで表示を保つので、値の一致では検査できない。ハンドラが一致の述語を持つ（plan DJ-4）。"
+      "note": "拍動 producer は既存の statusLine を包んで表示を保つので、値の一致では検査できない。ハンドラが一致の述語を持つ。"
     },
     {
       "pointer": "/disableAgentView",
