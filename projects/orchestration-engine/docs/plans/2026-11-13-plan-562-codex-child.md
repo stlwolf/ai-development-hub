@@ -132,7 +132,7 @@ owner に聞くものは「GATE 3 の問い」に出し、ここには推奨を�
 
 - 決定: **印は今のまま付け、受領の印の決まり（「文末の `[oe:<26文字>]` は配送の受領印で、依頼の一部ではない。写さず、コマンドに含めない」）は、子を起こす1行の `-c developer_instructions="…"` と、委譲の書面の固定節で伝える。`canonical/codex/AGENTS.md` には engine の約束ごとを書かない。** これは指示であって、モデルが絶対に写さない保証ではない（写した印は害にならず、見つけたら直す）。
 - 理由（owner・統括）: engine を独立したパッケージにしたとき（#537）、`AGENTS.md` は付いてこない。`-c developer_instructions` は起こした側がその1つのセッションにだけ持ち込める指示で、developer の役割のメッセージとして文脈に入り、圧縮のあとも最初の文脈を組む関数で入り直す見込み（前提の節）。利用者が自分で開いた Codex には効かない。
-- 組み立て: 決まりの本文は `lib/agent.sh` が持ち、`oe-delegate` は `--agent codex` のとき1行に `-c developer_instructions="<本文>"` を足す。本文は TOML の文字列として1引数に収め、改行と二重引用符を含めない（`shell_quote` で囲む）。報告の返し方（`oe send --to-parent`）と問いの書き方（ファイルに書いて送る・対話の選択肢を使わない）も同じ本文に入れる（engine の約束ごとはここに集める）。Claude の子へ送る1行は変えない（受入 A-1）。
+- 組み立て: 決まりの本文は `lib/agent.sh` が持ち、`oe-delegate` は `--agent codex` のとき1行に `-c developer_instructions="<本文>"` を足す。本文は TOML の文字列として1引数に収め、改行と二重引用符を含めない（`shell_quote` で囲む）。報告の返し方（`oe send --to-parent`）と問いの書き方（ファイルに書いて送る・対話の選択肢を使わない）も同じ本文に入れる（engine の約束ごとはここに集める）。報告の返し方は H14 で「委譲の書面で頼まれた作業についてだけ」に絞った。Claude の子へ送る1行は変えない（受入 A-1）。
 - 上書きの扱い: `developer_instructions` は文字列の上書きなので、利用者が `~/.codex/config.toml` に同じ鍵を持っていると、その子の中でだけ利用者の値が engine の本文に置き換わる。`oe-delegate` は `--agent codex` のとき `codex` の設定に同じ鍵があるかを `$CODEX_HOME/config.toml` で見て、あれば stderr に「利用者の `developer_instructions` はこの子の中では engine の本文に置き換わる」と1行出す（止めない。足し合わせる口は 0.167.1 の文字列の鍵には無い）。
 - resume: `oe-recover hint` が出す Codex の案内の1行にも同じ `-c developer_instructions="…"` を含める（DJ-9）。
 - C9 の結果: 子は印をコマンドに写さなかった。`/compact` のあとも写さず、圧縮の履歴に developer のメッセージが残った。同じ `-c` を付けた resume のあとも、`-c` 無しの resume のあとも（圧縮の履歴に残っているため）、モデルは決まりを言えた。`codex debug prompt-input -c 'developer_instructions="…"'` で、モデルに見える入力に developer のメッセージとして入ることをモデルを呼ばずに確かめられる（T-2 に足す・補正 H3）。
@@ -491,6 +491,15 @@ DJ-14 のとおり2つ（Q4）。PR-1 が engine と配るスキル、PR-2 が C
 - 言いすぎの訂正: Q118 のカードの説明のうち「外への通信は閉じたまま」と「`git commit` の規則をやめたので commit の hook の心配が消える」を、plan・episode・decision で「Claude の子と同じ状態になる」の言い方に直した。
 - コードは変えない（`lib/agent.sh` の注釈の「外への通信は閉じたまま」は、sandbox の中のプロセスの直接の通信の話としては正しいので残す）。
 - 8項目: step・ゲート・終端は変わらない。受入と設計判断の結論は、owner の決定で「sandbox を境界にしない」と明記する形に変わった。範囲は、作り直しを範囲の外へ出した（変更・再承認済み）。
+
+### H14（変更・再承認済み・2026-11-15・Q120・承認の記録の entry 10）: 書面を受け取っていない会話から親へ報告を送らない
+
+- 出どころ: マージのあとの確かめで、Codex の子のペインの中の記憶の整理の会話（Codex の memories の Phase 2・子の TUI と同じプロセスで走り、記録を残さない）が、子の環境（lease）と起動の1行の `-c developer_instructions` を引き継ぎ、決まりの文の「親への報告は oe send --to-parent で返す」に従って統括へ報告を送ってきた。拍動と受領の印の hook の同じ原因の不具合は、別の PR で直した（#648）。
+- owner の決定（Q120）: 案 A と B の両方。
+- 案 A（決まりの文）: 「親への報告は oe send --to-parent で返す」を「委譲の書面で頼まれた作業についてだけ、親へ oe send --to-parent で報告する。書面を受け取っていない会話は報告しない」に絞る（`lib/agent.sh` の `OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS`）。
+- 案 B（engine の判定）: `oe send --to-parent` は、Codex の中で打たれたとき（`CODEX_THREAD_ID` がある）、打った会話の記録（`${CODEX_HOME}/sessions` の `rollout-*-<thread の ID>.jsonl`）の先頭の `session_meta.source` が `cli` でなければ、送らずに exit 6 で断る（`lib/agent.sh` の `oe_agent_codex_caller_source`）。記録が無い会話（記憶の整理など）・`exec`・サブエージェントは断る。記録の置き場が symlink でもたどる。`--to-parent` でない送信と、`CODEX_THREAD_ID` が無い呼び出し（Codex の外）は判定しない。Codex の中で起動した Claude やシェルは `CODEX_THREAD_ID` を引き継ぐので、判定に当たる。
+- 検査: `test_target_resolve.sh` の (D)(7)（主の会話は送る・`exec`・サブエージェント・記録なし・ID の形の誤りは 6・`--to-parent` でない送信は判定しない）と、`test_agent.sh` の決まりの文の検査。`test_target_resolve.sh` は `oe-send` を検査と同じ bash で起動するようにした（`/bin/bash` の回で `oe-send` も 3.2 で走る）。
+- 8項目: step・ゲート・終端は変わらない。要件は owner の決定で1つ増えた（変更・再承認済み）。範囲内。
 
 ### 記録（2026-11-13・I1）: ソースの参照の版の注記・C1〜C9 の結果・DJ-2/DJ-3/DJ-4/DJ-8 の結果の行
 

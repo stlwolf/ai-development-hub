@@ -50,7 +50,9 @@ exit: 送信した、または help を表示した→0 / 宛先が無い（生�
       ラベル・曖昧なラベル）→1 / 呼び方の誤り（unknown option・引数の欠落）と環境
       エラー（tmux・jq の不在、改行を含む payload、送信そのものの失敗）→2 /
       未着の可能性（OE_SEND_SIGNAL_MISS=1 のときだけ）→4 / lease から引いた宛先の本人を
-      確かめられない（送っていない・生のペイン番号で送れる）→5。
+      確かめられない（送っていない・生のペイン番号で送れる）→5 / --to-parent を、Codex の子の
+      主の会話でない会話（記録の source が cli でない・記録が無い。記憶の整理や codex exec）から
+      打った（送っていない）→6。
       0 は配送の成功を意味しない（help も 0 である）。取り込みの確認は受領印、
       読んだことの確認は oe-ack の層で見る。
 EOF
@@ -97,6 +99,26 @@ if [[ -n "$ADHOC" ]]; then
   fi
 fi
 [[ -n "$payload" ]] || { echo "oe-send: nothing to send (provide --brief and/or ad-hoc text)" >&2; usage; exit 2; }
+
+# Codex の子の主の会話でない会話からの --to-parent は送らない（#562・owner の答え Q120）。Codex は、記憶の整理など
+# 同じプロセスで走る内部の会話や、子が打った codex exec にも、子のペインの環境（lease）と決まりの文を引き継ぐので、
+# 書面を受け取っていない会話が親へ報告を送ってくる。打った会話（CODEX_THREAD_ID）の記録の source が cli のときだけ送る。
+if [[ "$TO_PARENT" -eq 1 && -n "${CODEX_THREAD_ID:-}" ]]; then
+  caller_src=""; csrc_rc=0
+  caller_src="$(oe_agent_codex_caller_source)" || csrc_rc=$?
+  if [[ "$csrc_rc" -ne 0 ]]; then
+    case "$csrc_rc" in
+      4) caller_why="記録はあるが先頭の session_meta を読めない" ;;
+      *) caller_why="記録が見つからない（${CODEX_HOME:-~/.codex}/sessions）" ;;
+    esac
+    echo "oe-send: この会話（Codex の thread ${CODEX_THREAD_ID}）が委譲の書面を受け取った主の会話だと確かめられない（${caller_why}）ので、親へ送りません。親への報告は、主の会話からだけ送ります" >&2
+    exit 6
+  fi
+  if [[ "$caller_src" != "cli" ]]; then
+    echo "oe-send: この会話（Codex の thread ${CODEX_THREAD_ID}・記録の source: ${caller_src}）は委譲の書面を受け取った主の会話ではないので、親へ送りません。親への報告は、主の会話からだけ送ります" >&2
+    exit 6
+  fi
+fi
 
 # target 解決（%N は素通し、lease_id とラベルは lease の記録から引いて本人を確かめる・#577 PR-3）
 rrc=0

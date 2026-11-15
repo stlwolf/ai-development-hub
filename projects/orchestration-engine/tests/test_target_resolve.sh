@@ -30,6 +30,8 @@ _TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$_TMP_DIR"' EXIT
 REAL_HOME="${HOME:-}"
 export HOME="$_TMP_DIR/home"; mkdir -p "$HOME"
+# Codex の中で回しても既存の --to-parent の検査が Codex の判定に当たらないように外す（#562・Q120）
+unset CODEX_THREAD_ID CODEX_HOME
 START_MARK="$_TMP_DIR/.start-mark"; : > "$START_MARK"
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID OE_LEASE_ID OE_GENERATION PARENT_TMUX_PANE 2>/dev/null || true
 
@@ -88,7 +90,7 @@ mk_lease() {
   lib oe_lease_claim "$id" 0 "$3" "$4" claude "$5"; printf '%s' "$id"; }
 sent_to() { awk '{for (i=1;i<=NF;i++) if ($i=="-t") {print $(i+1); exit}}' <(grep -- '-l' "$SENT" | tail -1); }
 # 送る側は統括（自分の lease は SUP）。ラベルは自分の lease を親に持つ子だけから引く。
-send() { : > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-send" "$@" 2>&1)"; RC=$?; set -e; }
+send() { : > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" "$BASH" "$BIN/oe-send" "$@" 2>&1)"; RC=$?; set -e; }
 
 SUP="$(mk_lease supervisor cockpit 901 "$S1" sid-sup)"; beat sid-sup %1
 C2="$(mk_lease delegation '#900' 902 "$S2" sid-c2 "$SUP")"; beat sid-c2 %2
@@ -131,7 +133,7 @@ O6="$(mk_lease delegation '#706' 903 "$S3" sid-o6 "$OTHER")"; beat sid-o6 %3
 send '#706' "hi"
 ck  "(6) 別の統括の子のラベルは lease から引かない（registry にも無いので 1）" "1" "$RC"
 ck  "(6) 別の統括の子へ送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$OTHER" bash "$BIN/oe-send" '#706' "hi" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$OTHER" "$BASH" "$BIN/oe-send" '#706' "hi" 2>&1)"; RC=$?; set -e
 ck  "(6) その統括からは引ける" "%3" "$(sent_to)"
 lib oe_lease_close "$O6" "$(lib oe_lease_epoch "$O6")" >/dev/null || true
 lib oe_lease_close "$OTHER" "$(lib oe_lease_epoch "$OTHER")" >/dev/null || true
@@ -161,33 +163,66 @@ ck  "(3) 閉じた lease は 1" "1" "$RC"
 echo "=== (D) --to-parent ==="
 send --to-parent "report"
 ck  "(0) 親が分からなければ 1" "1" "$RC"
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(1) 親の lease のペインへ送る" "%1" "$(sent_to)"
 ck  "(1) 活動ログの from と to に lease を残す" "${C2}:1>${SUP}:1" "$(jq -r 'select(.type=="message_sent") | "\(.from.lease_id):\(.from.generation)>\(.to.lease_id):\(.to.generation)"' "$EVENTS" | tail -1)"
 # 統括が交代した: lease を進め、後継（pid 903・%3）が持ち主になる
 lib oe_lease_advance "$SUP" "$(lib oe_lease_epoch "$SUP")" planned 903 "$S3" claude >/dev/null
 lib oe_lease_register_session "$SUP" sid-sup2 903 "$S3"; beat sid-sup2 %3
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(2) 交代のあとは後継のペインへ送る" "%3" "$(sent_to)"
 ckc "(2) 進んだ generation を名乗る" "$OUT" "generation 2"
-: > "$SENT"; set +e; OUT="$(PARENT_TMUX_PANE=%4 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(PARENT_TMUX_PANE=%4 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(3) OE_LEASE_ID が無い子は PARENT_TMUX_PANE へ送る" "%4" "$(sent_to)"
 ckc "(3) そう言う" "$OUT" "OE_LEASE_ID が無い子なので PARENT_TMUX_PANE"
 NP="$(mk_lease delegation '#705' 904 "$S4" sid-np)"
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$NP" OE_GENERATION=1 PARENT_TMUX_PANE=%1 TMUX_PANE=%4 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$NP" OE_GENERATION=1 PARENT_TMUX_PANE=%1 TMUX_PANE=%4 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(4) 自分の lease に親が無ければ PARENT_TMUX_PANE へ送る" "%1" "$(sent_to)"
 ckc "(4) そう言う" "$OUT" "親の lease が書かれていない"
-set +e; OUT="$(bash "$BIN/oe-send" --to-parent 2>&1)"; RC=$?; set -e
+set +e; OUT="$("$BASH" "$BIN/oe-send" --to-parent 2>&1)"; RC=$?; set -e
 ck  "(5) 送る文が無ければ 2（呼び方の誤り）" "2" "$RC"
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID=00000000000000000000000000 PARENT_TMUX_PANE=%1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID=00000000000000000000000000 PARENT_TMUX_PANE=%1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(6) 自分の lease の記録を読めなければ PARENT_TMUX_PANE に落とさず 2（Copilot の指摘）" "2" "$RC"
 ck  "(6) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 ckc "(6) そう言う" "$OUT" "記録を読めないので、送りません"
+# (7) #562・Q120: Codex の子では、打った会話（CODEX_THREAD_ID）の記録の source が cli のときだけ親へ送る
+CH="$_TMP_DIR/codex-home"; mkdir -p "$CH/sessions/2026/11/15"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"01a1dafa-0000-7000-8000-00000000c11a","source":"cli"}}' > "$CH/sessions/2026/11/15/rollout-2026-11-15T01-00-00-01a1dafa-0000-7000-8000-00000000c11a.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"01a1dafa-0000-7000-8000-0000000e8ec0","source":"exec"}}' > "$CH/sessions/2026/11/15/rollout-2026-11-15T01-00-01-01a1dafa-0000-7000-8000-0000000e8ec0.jsonl"
+printf '%s\n' '{"type":"session_meta","payload":{"id":"01a1dafa-0000-7000-8000-0000000005ab","source":{"subagent":"review"}}}' > "$CH/sessions/2026/11/15/rollout-2026-11-15T01-00-02-01a1dafa-0000-7000-8000-0000000005ab.jsonl"
+cx() { : > "$SENT"; set +e; OUT="$(CODEX_HOME="$CH" CODEX_THREAD_ID="$1" OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e; }
+cx 01a1dafa-0000-7000-8000-00000000c11a
+ck  "(7) 主の会話（source が cli）からは親へ送る" "0" "$RC"
+ck  "(7) 親のいまのペインへ" "%3" "$(sent_to)"
+cx 01a1dafa-0000-7000-8000-0000000e8ec0
+ck  "(7) codex exec の会話（source が exec）からは 6 で断る" "6" "$RC"
+ck  "(7) 送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+ckc "(7) 主の会話でないと言う" "$OUT" "主の会話ではないので、親へ送りません"
+cx 01a1dafa-0000-7000-8000-0000000005ab
+ck  "(7) サブエージェントの会話からは 6 で断る" "6" "$RC"
+ck  "(7) サブエージェントのときも送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+cx 01a1dafa-0000-7000-8000-0000000ae63a
+ck  "(7) 記録の無い内部の会話（記憶の整理など）からは 6 で断る" "6" "$RC"
+ck  "(7) 記録の無い会話のときも送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
+ckc "(7) 記録が見つからないと言う（主の会話でないと断定しない）" "$OUT" "主の会話だと確かめられない（記録が見つからない"
+# 記録の置き場が symlink でも、主の会話の記録をたどって送る（実装SO の指摘）
+CHL="$_TMP_DIR/codex-home-link"; mkdir -p "$CHL"; ln -s "$CH/sessions" "$CHL/sessions"
+: > "$SENT"; set +e; OUT="$(CODEX_HOME="$CHL" CODEX_THREAD_ID=01a1dafa-0000-7000-8000-00000000c11a OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+ck  "(7) 置き場が symlink でも主の会話からは送る" "0" "$RC"
+# 先頭が session_meta でない（書きかけなど）記録は、読めないと言って断る
+printf '%s\n' '{"type":"event_msg","payload":{}}' > "$CH/sessions/2026/11/15/rollout-2026-11-15T01-00-03-01a1dafa-0000-7000-8000-0000000b10c0.jsonl"
+cx 01a1dafa-0000-7000-8000-0000000b10c0
+ck  "(7) 先頭の session_meta を読めない記録は 6 で断る" "6" "$RC"
+ckc "(7) 読めないと言う" "$OUT" "先頭の session_meta を読めない"
+cx 'bad id*'
+ck  "(7) thread の ID の形が違えば 6 で断る" "6" "$RC"
+: > "$SENT"; set +e; OUT="$(CODEX_HOME="$CH" CODEX_THREAD_ID=01a1dafa-0000-7000-8000-0000000e8ec0 "$BASH" "$BIN/oe-send" %3 "x" 2>&1)"; RC=$?; set -e
+ck  "(7) --to-parent でない送信は判定しない（生のペイン番号へは送る）" "0" "$RC"
 # (7)(8) #355 T-9: 親の lease へ送れなかったときだけ delivery_held を残す
 held_n() { jq -s '[.[] | select(.type=="delivery_held")] | length' "$EVENTS"; }
 H0="$(held_n)"
 fake_proc_del 903   # 後継の統括（generation 2）が落ちた
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent --brief /ws/.oe/report-703.md "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent --brief /ws/.oe/report-703.md "report" 2>&1)"; RC=$?; set -e
 ck  "(7) 親の統括が落ちていれば送らない" "0" "$(grep -c -- '-l' "$SENT" || true)"
 ck  "(7) 失敗の終了コードはいままでどおり（0 でない）" "1" "$([ "$RC" -ne 0 ] && echo 1 || echo 0)"
 ck  "(7) delivery_held を1つ残す" "$((H0 + 1))" "$(held_n)"
@@ -197,19 +232,19 @@ ck  "(7) held_reason は決まった値のどれか" "1" "$(jq -r 'select(.type=
 ckc "(7) 残したと言う" "$OUT" "delivery_held として残しました"
 reset_proc
 H1="$(held_n)"
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$C2" OE_GENERATION=1 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(8) 送れたときは delivery_held を残さない" "$H1" "$(held_n)"
-: > "$SENT"; set +e; OUT="$(PARENT_TMUX_PANE=%9 TMUX_PANE=%2 bash "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(PARENT_TMUX_PANE=%9 TMUX_PANE=%2 "$BASH" "$BIN/oe-send" --to-parent "report" 2>&1)"; RC=$?; set -e
 ck  "(8) OE_LEASE_ID の無い子は残さない（親の lease が無い）" "$H1" "$(held_n)"
 
 echo "=== (E) oe-jump ==="
-: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" bash "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$(OE_LEASE_ID="$SUP" "$BASH" "$BIN/oe-jump" '#900' 2>&1)"; RC=$?; set -e
 ck  "(1) lease のペインへ飛ぶ" "0" "$RC"
 ckc "(1) select-pane は lease のペイン" "$(cat "$SENT")" "select-pane -t %2"
 fake_proc_del 902; fake_proc_add 950 'Sat Nov  7 12:00:00 2026' claude ttys002 950
 # lease_id で指すと、プロセスが替わったペインには飛ばない（ラベルで指すと、プロセスが終わった lease は
 # 候補にならず、古い引き方に落ちる・(B)(4)）。
-: > "$SENT"; set +e; OUT="$(bash "$BIN/oe-jump" "$C2" 2>&1)"; RC=$?; set -e
+: > "$SENT"; set +e; OUT="$("$BASH" "$BIN/oe-jump" "$C2" 2>&1)"; RC=$?; set -e
 ck  "(2) 本人を確かめられなければ 5" "5" "$RC"
 ck  "(2) 飛ばない" "0" "$(grep -c 'select-pane' "$SENT" || true)"
 reset_proc

@@ -202,6 +202,8 @@ r=no; oe_agent_has_mode_override codex -cmodel=gpt-5 && r=yes
 ck "-cmodel=gpt-5 はモードの指定でない" "no" "$r"
 r=no; oe_agent_mode_is_elevated "$(oe_agent_permission_mode codex -sdanger-full-access)" && r=yes
 ck "-sdanger-full-access は elevated" "yes" "$r"
+case "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" in *"委譲の書面で頼まれた作業についてだけ"*"書面を受け取っていない会話は報告しない"*) r=yes ;; *) r=no ;; esac
+ck "決まりの文は報告を書面の作業に絞る（Q120）" "yes" "$r"
 case "$OE_AGENT_CODEX_DEVELOPER_INSTRUCTIONS" in *"oe は、ほかのコマンドとつながず"*) r=yes ;; *) r=no ;; esac
 ck "決まりの文に単独で打つ1文がある" "yes" "$r"
 
