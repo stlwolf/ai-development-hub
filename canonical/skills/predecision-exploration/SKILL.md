@@ -54,7 +54,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
 ## 暫定停止条件（確定的収束ではない）
 
 - 目安: 最低1回のゼロベース SO で新カテゴリの案が出なければ、確定に進んでよい。
-- これは disposition（モデル依存の暫定停止）であって確定的な収束判定ではない。§3.4 が求める「収束をモデルに委ねない＝スクリプト層カウント」は hard 版（defer）の領分。新カテゴリが出続ける場合の上限・打切りは人間判断。
+- これは disposition（モデル依存の暫定停止）であって確定的な収束判定ではない。探索プロセスの設計の discussion（`docs/specs/2026-04-23-discussion-exploration-process-design.md`）の「収束条件の明示的定義」節（§3.4）が求める「収束をモデルに委ねない＝スクリプト層カウント」は hard 版（defer）の領分。新カテゴリが出続ける場合の上限・打切りは人間判断。
 
 ## ライフサイクル上の位置づけ
 
@@ -77,7 +77,7 @@ wez notify の option C（TTY 直接書き込み）は、A/B 仮決定**後・�
 ## 限界
 
 - 遵守はモデル依存。**確定的トリガ（hook, #24）は未実装**（spot-check 後）。発火は description マッチ＋kickoff 予防＋（plan-mode 経路の）DJ-GATE。
-- **hard 版は段階導入に移行**（旧: 全 defer）: §3.2 生成・反証の物理分離は **`oe-refute`（Stage A・engine 統合の同期反証 verb・PR #184）で着地**（生成と物理分離した独立レーンが反証）。oe-refute は exit code（survived 0 / refuted 3）を持つが Stage A では advisory（JSON verdict が正本）＝§3.3 一次検証の機械義務化そのものは Stage B/C 待ち。§3.1 出力差分 reject／§3.4 スクリプト層カウント収束は engine verify ゲート拡張（Stage B）、決定的トリガは Stage C（#24）待ちで defer。本スキルの soft forcing はこの上で動く。
+- **hard 版は段階導入に移行**（旧: 全 defer）: 以下の §3.1〜§3.4 は、探索プロセスの設計の discussion（`docs/specs/2026-04-23-discussion-exploration-process-design.md`）の節である。§3.2 生成・反証の物理分離は **`oe-refute`（Stage A・engine 統合の同期反証 verb・PR #184）で着地**（生成と物理分離した独立レーンが反証）。oe-refute は exit code（survived 0 / refuted 3）を持つが Stage A では advisory（JSON verdict が正本）＝§3.3 一次検証の機械義務化そのものは Stage B/C 待ち。§3.1 出力差分 reject／§3.4 スクリプト層カウント収束は engine verify ゲート拡張（Stage B）、決定的トリガは Stage C（#24）待ちで defer。本スキルの soft forcing はこの上で動く。
 - episode への蒸留の追記信頼性は #159（未着手）依存。ただし**確定時証跡（手順4）は本スキルが今担保する**ので、#159 未着手でも確定前 forcing は成立する。
 
 ## 参照

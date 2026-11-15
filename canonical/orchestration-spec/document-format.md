@@ -153,7 +153,7 @@ N1（棚卸し §4）で確認した「kickoff」の名前被り — (a) 蒸留�
 
 - **文書ではなく状態 store**（§2.5）。`observe` が `observations` を追記し `control` が `status` を書き換える。
 - **format 機構の carve-out**: §4〜§9（共通 frontmatter 必須5項・§6 status enum・§9 命名規約 等）と §15（#19 MVP）は**蒸留5層のみ**を対象とし、`knowledge` item には適用しない。したがって `knowledge` は `title` を持たず、§6 の `draft/in-development/stable/deprecated` ではなく独自の status enum を使い、§9 の `YYYY-MM-DD-{type}-{topic}.md` ではなく ULID ファイル名を使う（下記）。
-- **命名（§9 からの意図的逸脱）**: ファイル名 = `<ULID>.md`（`id` と一致）。理由は並行収穫（複数 worktree / 並列子が同時に item を書く）の衝突回避（設計正本 §6.15）。人間ナビゲート対象でなく機械管理の store item なので、§9 の人間可読ファイル名規約は適用しない。検証スクリプトが `basename == <id>.md` を機械で担保する。
+- **命名（§9 からの意図的逸脱）**: ファイル名 = `<ULID>.md`（`id` と一致）。理由は並行収穫（複数 worktree / 並列子が同時に item を書く）の衝突回避（設計正本の未決論点「並行更新」）。人間ナビゲート対象でなく機械管理の store item なので、§9 の人間可読ファイル名規約は適用しない。検証スクリプトが `basename == <id>.md` を機械で担保する。
 
 frontmatter スキーマ（必須9項 + 任意1項）:
 
@@ -166,7 +166,7 @@ frontmatter スキーマ（必須9項 + 任意1項）:
 | `trigger` | 必須 | string | 自由文 | 適用条件の仮説 |
 | `prediction` | 必須 | string | 自由文 | 効くはずの状況と期待効果（`observe` の照合先） |
 | `source` | 必須 | map | `source.ref`（汎用参照） | 出典。`ref` は committed path か URL。`.oe/`/`tmp/` 揮発層・絶対パスは不可（§13.4 と同型） |
-| `landing` | 必須 | string | `nl` \| `guard-candidate` | 着地先の記録のみ（設計正本 §6.9） |
+| `landing` | 必須 | string | `nl` \| `guard-candidate` | 着地先の記録のみ（設計正本の未決論点「着地先選択」） |
 | `observations` | 必須 | list | 要素 = `{date, ref, state, note?}`（下の「observations 要素スキーマ」） | `observe` の観測台帳（append-only・収穫時は `[]`） |
 | `exclusions` | 任意 | list | 文字列の配列 | 効かない状況 |
 
