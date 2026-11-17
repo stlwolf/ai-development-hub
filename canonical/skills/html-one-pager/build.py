@@ -182,7 +182,31 @@ GLOSSARY_KEYS = {
     "text.unfold": (),
     "text.fold": (),
     "text.tabs": (),
+    # 見取り図の状況の部品（#668）。build.py が描くときだけ使い、ページの JS に渡すデータ（labels）には入れない。
+    "state.heading": (),
+    "state.waiting": (),
+    "state.running": (),
+    "state.trigger": (),
+    "state.done": (),
+    "state.note_waiting": (),
+    "state.note_running": (),
+    "state.note_trigger": (),
+    "state.note_done": (),
+    "state.title": ("word", "n"),
+    "state.title_done": ("word", "days", "n"),
+    "state.none": (),
+    "state.col_refs": (),
+    "state.col_what": (),
+    "state.col_need": (),
+    "state.col_who": (),
+    "state.col_since_waiting": (),
+    "state.col_stop": (),
+    "state.col_wake": (),
+    "state.col_since_trigger": (),
+    "state.col_ended": (),
 }
+# 状況の部品の語の key の頭。ページの JS に渡すデータ（labels）には入れない（状況の無いページの HTML を変えないため）。
+STATE_LABEL_PREFIX = "state."
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
 # 「札の言葉と固定の文」の表とは分けて持つ。そちらの言葉は答える部品のあるページに丸ごと埋め込まれるので、
@@ -2052,6 +2076,8 @@ def format_errors(errors):
 
 TEMPLATE = os.path.join(HERE, "template.html")
 CSS = os.path.join(HERE, "page.css")
+# 状況の部品（status）の見た目。状況の部品のあるページにだけ埋め込む（ほかのページの HTML を変えない）。
+STATUS_CSS = os.path.join(HERE, "status.css")
 JS = os.path.join(HERE, "page.js")
 TABS_JS = os.path.join(HERE, "tabs.js")
 TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "scripts")
@@ -2351,6 +2377,7 @@ class Renderer:
         anchors.update({num: row_id(pos) for pos, num in self.numbers.items()})
         self.anchors = anchors
         self.time = format_time(now)
+        self.now = now
         self.tmux = tmux
         self.page_refs = Refs(data["source"], anchors)
         # タブ（検証を通ったもの）。tab_cards はタブの key -> そのタブの判定カード（束の group のカードを含む）の並び。
@@ -2496,6 +2523,8 @@ class Renderer:
         out = []
         current = None
         for si, sec in enumerate(self.data["sections"]):
+            if sec["type"] == "status":
+                continue  # 状況の部品は本文より上に描く（status_part）
             tab = sec.get("tab")
             title_class = "hp-sec-title"
             if tab != current:
@@ -2516,6 +2545,73 @@ class Renderer:
         if current is not None:
             out.append("</section>")
         return "\n".join(out)
+
+    def status_part(self):
+        """状況の部品（検証を通ったもの・あれば部品の先頭）を描く。本文より上に置く HTML を返す（無ければ空）。
+        状態ごとに表を分け、題に件数を出す。完了の行は、ページを作った日（JST）とその前の日に終わったものだけを残す。"""
+        secs = self.data["sections"]
+        if not secs or secs[0]["type"] != "status":
+            return ""
+        sec = secs[0]
+        L = self.L
+        heading = L["state.heading"]
+        title_class = "hp-sec-title"
+        tab = sec.get("tab")
+        if tab is not None and heading.strip() == self.tab_label[tab].strip():
+            title_class = "hp-sec-title hp-tab-same"
+        today = self.now.astimezone(JST).date()
+        oldest = today - timedelta(days=STATUS_DONE_DAYS - 1)
+        out = []
+        if tab is not None:
+            out.append('<section class="hp-tabpanel" id="%s">' % esc(tab))
+        out.append('<section class="hp-sec hp-status"><h2 class="%s">%s</h2>' % (title_class, esc(heading)))
+        for state in STATUS_STATES:
+            rows = [r for r in sec["rows"] if r["state"] == state]
+            if state == "done":
+                rows = [r for r in rows if datetime.strptime(r["ended"], "%Y-%m-%d").date() >= oldest]
+                title = fill(L["state.title_done"], word=L["state." + state], days=STATUS_DONE_DAYS, n=len(rows))
+            else:
+                title = fill(L["state.title"], word=L["state." + state], n=len(rows))
+            out.append('<section class="hp-state hp-state-%s"><h3 class="hp-state-title">%s</h3>' % (state, esc(title)))
+            out.append('<p class="hp-state-note">%s</p>' % esc(L["state.note_" + state]))
+            if not rows:
+                out.append('<p class="hp-state-none">%s</p></section>' % esc(L["state.none"]))
+                continue
+            cols = [(k, L[self.status_col(state, k)]) for k in STATUS_FIELDS[state]]
+            out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
+                       % "".join("<th>%s</th>" % esc(label) for _, label in cols))
+            for r in rows:
+                cells = []
+                for k, label in cols:
+                    v = r[k]
+                    if k == "refs":
+                        items = [v] if isinstance(v, str) else v
+                        inner = ('<span class="hp-refs">%s</span>' % "".join(self.page_refs.ref_link(x) for x in items)) if items else ""
+                        cells.append('<td class="hp-ref-cell" data-label="%s">%s</td>' % (esc(label), inner))
+                    elif k in STATUS_DATE_FIELDS:
+                        cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(self.status_date(v, today))))
+                    elif isinstance(v, dict):
+                        cells.append('<td data-label="%s">%s%s</td>' % (esc(label), inline(v["text"], self.page_refs), self.evidence(v.get("evidence"))))
+                    else:
+                        cells.append('<td data-label="%s">%s</td>' % (esc(label), inline(v, self.page_refs)))
+                out.append("<tr>%s</tr>" % "".join(cells))
+            out.append("</tbody></table></div></section>")
+        out.append("</section>")
+        if tab is not None:
+            out.append("</section>")
+        return "\n".join(out)
+
+    @staticmethod
+    def status_col(state, key):
+        """状況の表の列の見出しの key。日付の列は状態で意味が違う（いつから・止めた日）ので分ける。"""
+        if key == "since":
+            return "state.col_since_" + state
+        return "state.col_" + key
+
+    @staticmethod
+    def status_date(value, today):
+        """YYYY-MM-DD を、ページを作った年と同じなら MM-DD で、違えば YYYY-MM-DD のまま出す。"""
+        return value[5:] if value[:4] == "%04d" % today.year else value
 
     def decisions(self, sec, title_class="hp-sec-title"):
         cards = "\n".join(self.card(c, 3, self.page_refs) for c in sec["cards"])
@@ -2718,6 +2814,7 @@ def render(data, labels, now, tmux, body=None, words=None):
                             % (TEMPLATE, slot, template.count("{{%s}}" % slot)))
     r = Renderer(data, labels, now, tmux, words if words is not None else load_words(DEFAULT_GLOSSARY))
     header = r.header()
+    status_html = r.status_part()  # 状況の部品は本文より上に描く（見取り図の部品の先頭にだけある）
     sections = r.sections()  # ここでカードと group を集める
     # 答える部品の無いページには、保存のコード（page.js）とそれが読むデータを入れない。
     # page.js はカードが無いと何もしないので振る舞いは変わらず、ページの中に保存先を使うコードが残らない。
@@ -2727,7 +2824,7 @@ def render(data, labels, now, tmux, body=None, words=None):
             "title": data["title"],
             "time": r.time,
             "status": data["status"],
-            "labels": labels,
+            "labels": {k: v for k, v in labels.items() if not k.startswith(STATE_LABEL_PREFIX)},
             "cards": r.cards,
             "groups": r.groups,
             "picks": [{"card": p["card"], "max": p["max"], "min": p["min"],
@@ -2746,12 +2843,13 @@ def render(data, labels, now, tmux, body=None, words=None):
                                                % (embed_json({"tabs": r.tab_rows()}), read_text(TABS_JS, "JS（tabs.js）").rstrip("\n")))
     values = {
         "title": esc(data["title"]),
-        "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
+        "css": read_text(CSS, "CSS（page.css）").rstrip("\n")
+               + (("\n" + read_text(STATUS_CSS, "CSS（status.css）").rstrip("\n")) if status_html else ""),
         "purpose": esc(KIND_PURPOSE[data["kind"]]),
         "status": esc(data["status"]),
         "header": header,
         "bar": r.bar(),
-        "body": (body or "").rstrip("\n"),
+        "body": "\n".join(x for x in (status_html, (body or "").rstrip("\n")) if x),
         "sections": sections,
         "reply": r.reply(),
         "scripts": scripts,

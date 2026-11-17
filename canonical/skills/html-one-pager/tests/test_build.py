@@ -927,6 +927,81 @@ class StatusCheck(unittest.TestCase):
             self.assertEqual(fields[:2], ("refs", "what"))
 
 
+class StatusRender(unittest.TestCase):
+    """見取り図の状況の部品（#668）の描画。状態ごとの表・件数・0件・完了の日数・置く位置・埋め込むもの。"""
+
+    NOW = "2026-11-18T03:00:00+00:00"  # JST では 2026-11-18 12:00。完了は 11-17 と 11-18 に終わった行が残る
+
+    def titles(self, f):
+        return re.findall(r'<h3 class="hp-state-title">([^<]*)</h3>', f)
+
+    def test_four_tables_with_counts(self):
+        f = render_page("table", with_status, now=self.NOW)
+        self.assertEqual(self.titles(f), ["指示待ち（1件）", "実行中（1件）", "トリガー待ち（1件）", "完了（直近2日・1件）"])
+        for state in build.STATUS_STATES:
+            self.assertIn('class="hp-state hp-state-%s"' % state, f)
+        # 列は状態ごとに決まっている（指示待ちの表の見出し）
+        def part(a, b):
+            return f[f.index('class="hp-state hp-state-%s"' % a):f.index('class="hp-state hp-state-%s"' % b)]
+        waiting = part("waiting", "running")
+        self.assertEqual(re.findall(r"<th>([^<]*)</th>", waiting), ["作業", "中身", "何を待っているか", "持っているセッション", "いつから"])
+        trigger = part("trigger", "done")
+        self.assertEqual(re.findall(r"<th>([^<]*)</th>", trigger), ["作業", "中身", "何が起きたら動くか", "止めた日"])
+        # 識別子はリンクになり、日付はページの年と同じなら MM-DD で出る
+        self.assertIn('href="https://github.com/example-org/shop/pull/215"', f)
+        self.assertIn('data-label="いつから">11-17</td>', f)
+
+    def test_zero_rows_show_none(self):
+        f = render_page("table", both(with_status, put(["sections", 0, "rows"], [])), now=self.NOW)
+        self.assertEqual(self.titles(f), ["指示待ち（0件）", "実行中（0件）", "トリガー待ち（0件）", "完了（直近2日・0件）"])
+        self.assertEqual(f.count('<p class="hp-state-none">なし</p>'), 4)
+        # 一部だけ0件でも、ほかの状態の表は出る
+        f = render_page("table", both(with_status, lambda d: d["sections"][0]["rows"].pop(1)), now=self.NOW)
+        self.assertEqual(f.count('<p class="hp-state-none">なし</p>'), 1)
+        self.assertIn("実行中（0件）", f)
+
+    def test_done_rows_older_than_two_days_are_dropped(self):
+        old = {"state": "done", "refs": [], "what": "古い完了", "ended": "2026-11-16"}
+        today = {"state": "done", "refs": [], "what": "今日の完了", "ended": "2026-11-18"}
+        f = render_page("table", both(with_status, append(["sections", 0, "rows"], old), append(["sections", 0, "rows"], today)), now=self.NOW)
+        self.assertIn("完了（直近2日・2件）", f)
+        self.assertIn("今日の完了", f)
+        self.assertNotIn("古い完了", f)
+        # 年の違う日付は、年を付けたまま出る
+        f = render_page("table", both(with_status, put(["sections", 0, "rows", 0, "since"], "2025-12-30")), now=self.NOW)
+        self.assertIn('data-label="いつから">2025-12-30</td>', f)
+
+    def test_status_comes_before_body_and_parts(self):
+        body = '<section><h2 id="b">前の版からの変化</h2></section>'
+        f = render_page("table", with_status, body=body, now=self.NOW)
+        self.assertLess(f.index('class="hp-sec hp-status"'), f.index('id="b"'))
+        self.assertLess(f.index('id="b"'), f.index("hp-sec hp-tablesec"))
+
+    def test_panels_follow_the_tabs_order_without_js(self):
+        body = '<section class="hp-tabpanel" id="about"><p>概要</p></section>'
+
+        def tabs(d):
+            with_status_tabs(d)
+            d["tabs"].insert(1, {"key": "about", "label": "概要"})
+        f = render_page("table", tabs, body=body, now=self.NOW)
+        self.assertEqual(re.findall(r'<section class="hp-tabpanel" id="([a-z0-9]+)"', f), ["now", "about", "items"])
+        # タブの名前と同じ題（状況）は、JS が動いているあいだだけ隠す
+        self.assertIn('<h2 class="hp-sec-title hp-tab-same">状況</h2>', f)
+
+    def test_no_answer_code_and_css_only_on_status_pages(self):
+        f = render_page("table", with_status, now=self.NOW)
+        self.assertNotIn('id="hp-data"', f)  # 答える部品の無い見取り図に保存の JS は入らない
+        self.assertEqual(dict(meta_of(f))["状態"], "随時更新")  # 状況の件数を「回答待ち N 件」に数えない
+        self.assertIn(".hp-state-title", f)  # status.css は状況のあるページにだけ入る
+        self.assertNotIn(".hp-state-title", render_page("table", now=self.NOW))
+        # 状況のタブの外の見出しの見た目（DJ-15）も status.css にあり、状況の無いページには入らない
+        self.assertIn(".hp-title { color: var(--accent); }", f)
+        self.assertNotIn(".hp-title { color: var(--accent); }", render_page("table", now=self.NOW))
+        # 状況の語は、答えのページの JS に渡すデータに入れない（状況の無いページの HTML を変えない）
+        labels = json.loads(embedded(render_page("decide")))["labels"]
+        self.assertEqual([k for k in labels if k.startswith("state.")], [])
+
+
 class SelectOnAnyKind(unittest.TestCase):
     """一覧から選ぶ問いを、承認・判断ボードのページに置く（選び方の tables で選ぶ表を名指す・組をいくつも置ける）。"""
 
@@ -2964,6 +3039,21 @@ class TabsScript(unittest.TestCase):
         self.assertEqual(out["panel"], ["tabpanel", "hp-tab-now", "0"])
         self.assertEqual(out["barH"], "150px")
         self.assertEqual(out["replaced"], [])
+
+    def test_status_tab_first_then_body_and_data(self):
+        # 状況のタブ（データ）→ 本文のタブ → データのタブ（#668）。最初に選ばれるのは状況のタブで、
+        # URL の # で本文のタブも、隠れたデータのタブの行も開ける
+        body = '<section class="hp-tabpanel" id="about"><p>概要</p></section>'
+
+        def tabs(d):
+            with_status_tabs(d)
+            d["tabs"].insert(1, {"key": "about", "label": "概要"})
+        out = self.run_tabs("return { s: state() };", name="table", mutate=tabs, body=body)
+        self.assertEqual(out["s"]["selected"], ["now"])
+        out = self.run_tabs("return { s: state() };", hash="#about", name="table", mutate=tabs, body=body)
+        self.assertEqual(out["s"]["selected"], ["about"])
+        out = self.run_tabs("return { s: state() };", hash="#hp-row-1-0", name="table", mutate=tabs, body=body)
+        self.assertEqual(out["s"]["selected"], ["items"])
 
     def test_opening_with_a_tab_key_or_an_element_in_a_hidden_tab(self):
         # タブの key でも、切り替えてからそのパネルへ移る（隠れていたパネルへはブラウザが移れないため・実装SO の指摘3）

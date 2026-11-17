@@ -83,6 +83,27 @@
 | `text.unfold` | 開く |
 | `text.fold` | 畳む |
 | `text.tabs` | ページの中の切り替え |
+| `state.heading` | 状況 |
+| `state.waiting` | 指示待ち |
+| `state.running` | 実行中 |
+| `state.trigger` | トリガー待ち |
+| `state.done` | 完了 |
+| `state.note_waiting` | owner の答え・レビュー・マージを待っている |
+| `state.note_running` | いまセッションが手を動かしている |
+| `state.note_trigger` | 何かが起きるまで止めている |
+| `state.note_done` | 終わった作業（古い行は型が落とす） |
+| `state.title` | {word}（{n}件） |
+| `state.title_done` | {word}（直近{days}日・{n}件） |
+| `state.none` | なし |
+| `state.col_refs` | 作業 |
+| `state.col_what` | 中身 |
+| `state.col_need` | 何を待っているか |
+| `state.col_who` | 持っているセッション |
+| `state.col_since_waiting` | いつから |
+| `state.col_stop` | 次に止まる所 |
+| `state.col_wake` | 何が起きたら動くか |
+| `state.col_since_trigger` | 止めた日 |
+| `state.col_ended` | 終わった日 |
 
 各 key の意味は次のとおりである。
 
