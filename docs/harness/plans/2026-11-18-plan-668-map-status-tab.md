@@ -3,7 +3,7 @@ id: "01M7N7CKB9447Q92787WF1AR5D"
 title: "#668 見取り図の「状況」のタブと概要の構造を、html-one-pager に入れる"
 date: 2026-11-18
 type: plan
-status: in-development   # ゲート3 は owner が承認した（2026-11-18・判断ボードの Q132〜Q138）。承認のあとの補正は末尾の「ゲート3 のあとの変更」節
+status: stable   # 実装完了（PR #669・マージ待ち）。ゲート3 は owner が承認した（2026-11-18・判断ボードの Q132〜Q138）。承認のあとの補正は末尾の「ゲート3 のあとの変更」節
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/668"
@@ -327,9 +327,9 @@ PR は1つにする。
 
 - 実装SO は回した（下の「実装SO」の節）。PR は、統括と owner がサンプルの見た目（A14）を見たあとに作る。
 
-### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件
+### GATE I2: 実装SO の採否が episode にあり、Copilot の未返信が0件（通過・Copilot の指摘は0件）
 
-### I3: episode を閉じ、報告して止まる（マージ・掃除・close はしない）
+### I3: episode を閉じ、報告して止まる（マージ・掃除・close はしない）（完了・昇格は decision と2つの追補・closure の外部チェックの抜け2つを直した）
 
 ## リスク・未確認事項
 
