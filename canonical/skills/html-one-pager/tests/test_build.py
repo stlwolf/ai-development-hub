@@ -917,6 +917,19 @@ class TabsCheck(unittest.TestCase):
     """タブ（#558）の検証。正しい形が通ることと、同じ原因の誤りを重ねて出さないこと。
     1か所を壊したときの誤りは BROKEN の n1_〜n4_・k2_tabs_ にある。"""
 
+    def test_title_and_textarea_are_read_the_same_way_on_every_python(self):
+        # 標準の html.parser は、Python 3.13.6 から title と textarea を自分で文字として読む（3.9.24・3.10.19・3.11.14・3.12.12 にも
+        # 入った）。build.py はどの版でも自分の判定で読むので、結果は版に依らない（#632）
+        for body, ids in [
+            ('<div><title><p id="x">名前</p></title></div>', []),          # HTML の title の中は文字
+            ('<div><textarea><p id="x">名前</p></textarea></div>', []),    # textarea の中は文字
+            ('<svg><title><p id="x">名前</p></title></svg>', ["x"]),       # SVG の中の title は要素で、中の id は実在する
+            ('<math><title><p id="x">名前</p></title></math>', ["x"]),     # MathML の中も同じ
+            ('<svg><title>名前</title></svg><p id="y">あと</p>', ["y"]),   # SVG の title のあとの要素を、文字として飲み込まない
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(build.scan_body(body).ids, ids)
+
     def errors(self, base, mutate, body=None, has_body=False):
         d = copy.deepcopy(example(base))
         mutate(d)

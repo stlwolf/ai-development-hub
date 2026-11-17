@@ -374,6 +374,12 @@ class _BodyScan(html.parser.HTMLParser):
     textarea と title の中は文字として読み（SVG・MathML の中の title は除く）、template の中（文書に入らない中身）はパネルと id に数えない。
     本文の終わりで閉じていない要素は、本文のあとに描く部品を中に入れてしまうので、誤りとして拾う（close のあと）。"""
 
+    # title と textarea の中を文字として読むかは、下の _open が決める（SVG・MathML の中の title は要素として読む）。
+    # Python 3.13.6 から（3.9.24・3.10.19・3.11.14・3.12.12 にも入った）、標準の HTMLParser は開始タグを渡したあとに、
+    # この一覧の要素を自分で文字として読む形に切り替える。そのままだと SVG の中の title の中も文字になり、_open の判定が
+    # 効かない。一覧を空にして、どの版でも _open の判定だけが効くようにする（古い版はこの一覧を持たず、何も変わらない）。
+    RCDATA_CONTENT_ELEMENTS = ()
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.stack = []     # 開いている要素の (名前, パネルか)
