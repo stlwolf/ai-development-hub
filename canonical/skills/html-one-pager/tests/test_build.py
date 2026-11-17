@@ -795,6 +795,8 @@ class ExamplesPass(unittest.TestCase):
                 self.assertEqual(build.validate(example(name), has_body=has_body), [])
         # 本文のタブの見本は、本文の文字列を渡して見る（本文のパネルがタブの中身になる）
         self.assertEqual(build.validate(example("map-tabs"), body=example_body("map-tabs-body.html")), [])
+        # 状況のタブの見本（#668）。状況のタブ → 本文の概要のタブ → 題材の表のタブ
+        self.assertEqual(build.validate(example("map-status"), body=example_body("map-status-body.html")), [])
 
     def test_every_kind_has_an_example(self):
         kinds = {example(n)["kind"] for n in ("decide", "bundle", "review", "grasp", "table", "confirm", "pick", "board", "approve")}
