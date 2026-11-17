@@ -50,9 +50,13 @@ HP_ID_MSG = '本文の id "%s" が hp- で始まる（hp- は build.py が描く
 TAB_BODY_TOP_TAGS = ("style", "script")
 # 空の要素（/> で閉じてよい要素）。ほかの要素を /> で閉じると、ブラウザは閉じずに開いたままにする。
 VOID_TAGS = ("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
-# 中身を文字として読む要素。ブラウザは中の <…> を要素にしないので、本文の読み取りでも文字として読む（script と style は html.parser が受け持つ）。
+# 中身を文字として読む要素。ブラウザは中の <…> を要素にしないので、本文の読み取りでも文字として読む。
 # SVG と MathML の中（外来の要素）の title は文字の要素ではないので、そこでは文字として読まない。
 RCDATA_TAGS = ("textarea", "title")
+# 中を文字として読む要素（ブラウザは、終わりの印までを要素として読まない）。script と style は SVG・MathML の中でも同じに扱う
+RAWTEXT_TAGS = ("script", "style")
+# HTML の要素としてだけ、中を文字として読む要素（SVG・MathML の中では、title と同じく中の要素が実在する）
+RAWTEXT_HTML_TAGS = ("xmp", "iframe", "noembed", "noframes", "plaintext")
 FOREIGN_TAGS = ("svg", "math")
 # 種別ごとのページの中の識別子: (カードの札の接頭辞の key, 番号の列の接頭辞の key, 書かなければ番号を振るか)。
 # key は用語集の「識別子の接頭辞」の表の key で、語は用語集が持つ。ここに無い種別は識別子を定義しない。
@@ -367,18 +371,32 @@ def is_question(title):
     return strip_parens(title).rstrip().endswith(("か", "？", "?"))
 
 
+# 終わりの印の名前から > までを読む形（HTML の仕様の「Tag name state」以降。引用符の中の > では終わらない）。
+# 新しい版の html.parser の locatetagend と同じ形を、版に依らないようにここに持つ（#663）
+_END_TAG_REST = re.compile(r"""
+  [a-zA-Z][^\t\n\r\f />]*
+  [\t\n\r\f /]*
+  (?:(?<=['"\t\n\r\f /])[^\t\n\r\f />][^\t\n\r\f /=>]*
+    (?:[\t\n\r\f ]*=[\t\n\r\f ]*
+      (?:'[^']*'|"[^"]*"|(?!['"])[^>\t\n\r\f ]*)
+     )?
+    [\t\n\r\f /]*
+   )*
+   >?
+""", re.VERBOSE)
+
+
 class _BodyScan(html.parser.HTMLParser):
     """--body の本文から、タブのパネル（class hp-tabpanel の要素）と id を集め、パネルの判定がブラウザとずれる書き方を拾う。
     終わりの印は、同じ名前の開いた要素まで戻る形で読む（閉じ忘れた p のような正しい HTML を誤りにしない）。
     対応する開いた要素の無い終わりの印は、ブラウザと同じく無視する。属性が2回あるときは、ブラウザと同じく前の値を使う。
-    textarea と title の中は文字として読み（SVG・MathML の中の title は除く）、template の中（文書に入らない中身）はパネルと id に数えない。
+    textarea・title と、xmp・iframe・noembed・noframes・plaintext の中は文字として読み（SVG・MathML の中は除く）、template の中（文書に入らない中身）はパネルと id に数えない。
     本文の終わりで閉じていない要素は、本文のあとに描く部品を中に入れてしまうので、誤りとして拾う（close のあと）。"""
 
-    # title と textarea の中を文字として読むかは、下の _open が決める（SVG・MathML の中の title は要素として読む）。
-    # Python 3.13.6 から（3.9.24・3.10.19・3.11.14・3.12.12 にも入った）、標準の HTMLParser は開始タグを渡したあとに、
-    # この一覧の要素を自分で文字として読む形に切り替える。そのままだと SVG の中の title の中も文字になり、_open の判定が
-    # 効かない。一覧を空にして、どの版でも _open の判定だけが効くようにする（古い版はこの一覧を持たず、何も変わらない）。
-    RCDATA_CONTENT_ELEMENTS = ()
+    # どの要素の中を文字として読むかは、下の _open が決め、parse_starttag がそれを標準のパーサーの判定のあとに当てる。
+    # 標準の HTMLParser は、開始タグを渡したあとに自分の一覧で切り替え、その一覧が Python の版で違う
+    # （title と textarea は 3.13.6 から、xmp・iframe・noembed・noframes・plaintext は 3.13.10 から。3.9〜3.12 の patch にも入った）。
+    # SVG・MathML の中かどうかも見ない。標準の判定に乗ると、同じ本文から拾う id が版で変わる（#632・#663）。
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -389,8 +407,47 @@ class _BodyScan(html.parser.HTMLParser):
         self.browser_ids = []
         self.problems = []  # 誤りの文（タブのあるページでだけ使う）
         self.nested = False  # パネルの入れ子を知らせたか（外のパネルの閉じ忘れを、終わりで重ねて知らせない）
+        self._raw = None    # いま読んだ開始タグの中を文字として読むなら、その要素の名前（_open が決める）
+
+    def parse_starttag(self, i):
+        self._raw = None
+        end = super().parse_starttag(i)
+        if end < 0:
+            return end  # 開始タグがまだ終わっていない（何も渡していない）
+        # 標準のパーサーが自分の一覧で切り替えた結果を捨て、_open の判定だけを当てる
+        if self._raw is None:
+            self.clear_cdata_mode()
+        else:
+            self.set_cdata_mode(self._raw)
+        return end
+
+    def set_cdata_mode(self, elem, **kw):
+        # 文字として読む中身の終わりも、版に依らずブラウザと同じに見つける。HTML の仕様では、同じ名前の終わりの印の名前のあとに
+        # 空白・/・> が来れば終わる（</iframe/> や </iframe a="1"> も終わる）。古い版は </iframe> の形しか終わりにしない（#663）
+        super().set_cdata_mode(elem, **kw)
+        if self.cdata_elem == "plaintext":
+            self.interesting = re.compile(r"\Z")  # plaintext は終わりの印を持たず、本文の終わりまでが文字になる
+        else:
+            self.interesting = re.compile(r"</%s(?=[\t\n\r\f />])" % re.escape(self.cdata_elem), re.IGNORECASE | re.ASCII)
+
+    def parse_endtag(self, i):
+        # 文字として読む中身の終わりの印は、ここで読む（古い版の parse_endtag は </iframe/> を文字として扱う）
+        if self.cdata_elem is not None and self.interesting.match(self.rawdata, i):
+            m = _END_TAG_REST.match(self.rawdata, i + 2)
+            j = m.end()
+            if self.rawdata[j - 1] != ">":
+                return -1  # 終わりの印がまだ終わっていない
+            self.handle_endtag(self.cdata_elem)
+            self.clear_cdata_mode()
+            return j
+        return super().parse_endtag(i)
 
     def _open(self, tag, attrs, closed):
+        # 中を文字として読むかは、この要素をほかの判定から外すとき（template の中・同じ属性が2回）にも決める。
+        # SVG・MathML の中では /> で閉じた要素はそこで閉じるので、中を持たない（HTML の要素の /> は無視され、中を文字として読む）
+        foreign = any(t in FOREIGN_TAGS for t, _ in self.stack)
+        if (tag in RAWTEXT_TAGS and not (foreign and closed)) or (tag in RCDATA_TAGS + RAWTEXT_HTML_TAGS and not foreign):
+            self._raw = tag
         if any(t == "template" for t, _ in self.stack):
             # template の中身はブラウザの文書に入らないので、パネルにも id にも数えない（閉じ方の対応だけを追う）
             if tag not in VOID_TAGS:
@@ -432,8 +489,6 @@ class _BodyScan(html.parser.HTMLParser):
         # ブラウザと同じく、空の要素でなければ /> で閉じても開いたままとして読む
         if tag not in VOID_TAGS:
             self.stack.append((tag, panel))
-        if tag in RCDATA_TAGS and not any(t in FOREIGN_TAGS for t, _ in self.stack):
-            self.set_cdata_mode(tag)
 
     def handle_starttag(self, tag, attrs):
         self._open(tag, attrs, False)

@@ -930,6 +930,50 @@ class TabsCheck(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertEqual(build.scan_body(body).ids, ids)
 
+    def test_raw_text_elements_are_read_the_same_way_on_every_python(self):
+        # 標準の html.parser は、Python 3.13.10 から xmp・iframe・noembed・noframes・plaintext の中を文字として読む（3.9.25・3.10.20・
+        # 3.11.15・3.12.13 にも入った）。ブラウザも文字として読む。build.py はどの版でも自分の判定で読む（#663）
+        for tag in ("xmp", "iframe", "noembed", "noframes", "script", "style"):
+            with self.subTest(tag=tag):
+                s = build.scan_body('<div><%s><p id="x">中</p></%s><p id="y">あと</p></div>' % (tag, tag))
+                self.assertEqual((s.ids, s.stack), (["y"], []))
+        # plaintext は終わりの印を持たない。あとに書いたものは、終わりの印を含めてすべて文字になり、要素は開いたまま残る
+        s = build.scan_body('<div><plaintext><p id="x">中</p></plaintext><p id="y">あと</p></div>')
+        self.assertEqual((s.ids, [t for t, _ in s.stack]), ([], ["div", "plaintext"]))
+        # SVG・MathML の中では、これらの名前の要素は文字の要素ではないので、中の要素と id は実在する（title と同じ）
+        for outer in ("svg", "math"):
+            for tag in ("xmp", "iframe", "noembed", "noframes", "plaintext"):
+                with self.subTest(outer=outer, tag=tag):
+                    s = build.scan_body('<%s><%s><p id="x">中</p></%s></%s><p id="y">あと</p>' % (outer, tag, tag, outer))
+                    self.assertEqual((s.ids, s.stack), (["x", "y"], []))
+        # 終わりの印は、名前のあとに空白・/・> が来れば終わる（ブラウザと同じ）。古い版は </iframe> の形しか終わりにしなかった（Copilot の指摘）
+        for end in ("</iframe/>", "</iframe >", '</iframe a="1">', "</iframe\n>", "</IFRAME>", '</iframe a=">">'):
+            with self.subTest(end=end):
+                s = build.scan_body('<iframe>中</iframe>'.replace("</iframe>", end) + '<p id="y">あと</p>')
+                self.assertEqual((s.ids, s.stack), (["y"], []))
+        for tag in ("title", "textarea", "script", "style"):
+            with self.subTest(tag=tag):
+                self.assertEqual(build.scan_body('<%s></%s/><p id="y">あと</p>' % (tag, tag)).ids, ["y"])
+        # 名前の前に空白がある形や、名前の続く形は終わりの印ではないので、中身のまま
+        for end in ("</ iframe>", "</iframex>"):
+            with self.subTest(end=end):
+                s = build.scan_body('<iframe>%s<p id="x">中</p>' % end)
+                self.assertEqual((s.ids, [t for t, _ in s.stack]), ([], ["iframe"]))
+        # SVG・MathML の中の /> で閉じた script と style はそこで閉じるので、あとの要素を文字として飲み込まない（owner のレビュー）
+        for body, ids in [('<svg><script/><g id="a"></g></svg><div id="b"></div>', ["a", "b"]),
+                          ('<svg><style/><g id="a"></g></svg>', ["a"]),
+                          ('<math><script/><mi id="a"></mi></math>', ["a"])]:
+            with self.subTest(body=body):
+                s = build.scan_body(body)
+                self.assertEqual((s.ids, s.stack), (ids, []))
+        # HTML の script の /> は無視されるので、中は終わりの印まで文字のまま
+        self.assertEqual(build.scan_body('<script/><div id="a"></div></script><div id="b"></div>').ids, ["b"])
+        # 終わりの印の中に書いた < は属性の名前で、終わりの印は次の > までである
+        self.assertEqual(build.scan_body('<iframe></iframe <p id="x">中</p>').ids, [])
+        # template の中と、同じ属性が2回ある要素でも、中を文字として読むことは変わらない
+        self.assertEqual(build.scan_body('<template><iframe><p id="x">中</p></iframe></template><p id="y">あと</p>').ids, ["y"])
+        self.assertEqual(build.scan_body('<iframe class="a" class="b"><p id="x">中</p></iframe><p id="y">あと</p>').ids, ["y"])
+
     def errors(self, base, mutate, body=None, has_body=False):
         d = copy.deepcopy(example(base))
         mutate(d)
