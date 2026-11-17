@@ -761,7 +761,7 @@ BROKEN = [
     ("u1_status_text_blank", "table", both(with_status, put(STATUS_ROW0 + ["what"], "  ")), [("E-U1", "sections[0].rows[0].what")], False),
     ("u1_status_text_object_blank", "table", both(with_status, put(STATUS_ROW0 + ["need"], {"text": " "})),
      [("E-U1", "sections[0].rows[0].need.text")], False),
-    ("u1_status_who_pane", "table", both(with_status, put(STATUS_ROW0 + ["who"], "子（%746）")), [("E-U1", "sections[0].rows[0].who")], False),
+    ("u1_status_who_pane", "table", both(with_status, put(STATUS_ROW0 + ["who"], "子（%5）")), [("E-U1", "sections[0].rows[0].who")], False),
     ("u1_status_who_pane_in_object", "table", both(with_status, put(STATUS_ROW0 + ["who"], {"text": "%12 の子"})),
      [("E-U1", "sections[0].rows[0].who")], False),
     ("u1_status_date_form", "table", both(with_status, put(STATUS_ROW0 + ["since"], "11-17")), [("E-U1", "sections[0].rows[0].since")], False),
