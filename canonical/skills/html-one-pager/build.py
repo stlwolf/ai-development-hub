@@ -371,6 +371,21 @@ def is_question(title):
     return strip_parens(title).rstrip().endswith(("か", "？", "?"))
 
 
+# 終わりの印の名前から > までを読む形（HTML の仕様の「Tag name state」以降。引用符の中の > では終わらない）。
+# 新しい版の html.parser の locatetagend と同じ形を、版に依らないようにここに持つ（#663）
+_END_TAG_REST = re.compile(r"""
+  [a-zA-Z][^\t\n\r\f />]*
+  [\t\n\r\f /]*
+  (?:(?<=['"\t\n\r\f /])[^\t\n\r\f />][^\t\n\r\f /=>]*
+    (?:[\t\n\r\f ]*=[\t\n\r\f ]*
+      (?:'[^']*'|"[^"]*"|(?!['"])[^>\t\n\r\f ]*)
+     )?
+    [\t\n\r\f /]*
+   )*
+   >?
+""", re.VERBOSE)
+
+
 class _BodyScan(html.parser.HTMLParser):
     """--body の本文から、タブのパネル（class hp-tabpanel の要素）と id を集め、パネルの判定がブラウザとずれる書き方を拾う。
     終わりの印は、同じ名前の開いた要素まで戻る形で読む（閉じ忘れた p のような正しい HTML を誤りにしない）。
@@ -404,10 +419,28 @@ class _BodyScan(html.parser.HTMLParser):
             self.clear_cdata_mode()
         else:
             self.set_cdata_mode(self._raw)
-            if self._raw == "plaintext":
-                # plaintext は終わりの印を持たない。本文の終わりまでが文字になる（古い版の set_cdata_mode は </plaintext> で終える）
-                self.interesting = re.compile(r"\Z")
         return end
+
+    def set_cdata_mode(self, elem, **kw):
+        # 文字として読む中身の終わりも、版に依らずブラウザと同じに見つける。HTML の仕様では、同じ名前の終わりの印の名前のあとに
+        # 空白・/・> が来れば終わる（</iframe/> や </iframe a="1"> も終わる）。古い版は </iframe> の形しか終わりにしない（#663）
+        super().set_cdata_mode(elem, **kw)
+        if self.cdata_elem == "plaintext":
+            self.interesting = re.compile(r"\Z")  # plaintext は終わりの印を持たず、本文の終わりまでが文字になる
+        else:
+            self.interesting = re.compile(r"</%s(?=[\t\n\r\f />])" % re.escape(self.cdata_elem), re.IGNORECASE | re.ASCII)
+
+    def parse_endtag(self, i):
+        # 文字として読む中身の終わりの印は、ここで読む（古い版の parse_endtag は </iframe/> を文字として扱う）
+        if self.cdata_elem is not None and self.interesting.match(self.rawdata, i):
+            m = _END_TAG_REST.match(self.rawdata, i + 2)
+            j = m.end()
+            if self.rawdata[j - 1] != ">":
+                return -1  # 終わりの印がまだ終わっていない
+            self.handle_endtag(self.cdata_elem)
+            self.clear_cdata_mode()
+            return j
+        return super().parse_endtag(i)
 
     def _open(self, tag, attrs, closed):
         # 中を文字として読むかは、この要素をほかの判定から外すとき（template の中・同じ属性が2回）にも決める

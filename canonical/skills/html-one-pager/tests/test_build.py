@@ -946,6 +946,21 @@ class TabsCheck(unittest.TestCase):
                 with self.subTest(outer=outer, tag=tag):
                     s = build.scan_body('<%s><%s><p id="x">中</p></%s></%s><p id="y">あと</p>' % (outer, tag, tag, outer))
                     self.assertEqual((s.ids, s.stack), (["x", "y"], []))
+        # 終わりの印は、名前のあとに空白・/・> が来れば終わる（ブラウザと同じ）。古い版は </iframe> の形しか終わりにしなかった（Copilot の指摘）
+        for end in ("</iframe/>", "</iframe >", '</iframe a="1">', "</iframe\n>", "</IFRAME>", '</iframe a=">">'):
+            with self.subTest(end=end):
+                s = build.scan_body('<iframe>中</iframe>'.replace("</iframe>", end) + '<p id="y">あと</p>')
+                self.assertEqual((s.ids, s.stack), (["y"], []))
+        for tag in ("title", "textarea", "script", "style"):
+            with self.subTest(tag=tag):
+                self.assertEqual(build.scan_body('<%s></%s/><p id="y">あと</p>' % (tag, tag)).ids, ["y"])
+        # 名前の前に空白がある形や、名前の続く形は終わりの印ではないので、中身のまま
+        for end in ("</ iframe>", "</iframex>"):
+            with self.subTest(end=end):
+                s = build.scan_body('<iframe>%s<p id="x">中</p>' % end)
+                self.assertEqual((s.ids, [t for t, _ in s.stack]), ([], ["iframe"]))
+        # 終わりの印の中に書いた < は属性の名前で、終わりの印は次の > までである
+        self.assertEqual(build.scan_body('<iframe></iframe <p id="x">中</p>').ids, [])
         # template の中と、同じ属性が2回ある要素でも、中を文字として読むことは変わらない
         self.assertEqual(build.scan_body('<template><iframe><p id="x">中</p></iframe></template><p id="y">あと</p>').ids, ["y"])
         self.assertEqual(build.scan_body('<iframe class="a" class="b"><p id="x">中</p></iframe><p id="y">あと</p>').ids, ["y"])
