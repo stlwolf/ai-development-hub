@@ -886,9 +886,11 @@ cmd_analyze() { # $1 = コマンド全文, $2 = 判定の関数名
 # git 自身のオプションを飛ばして subcommand を取り、push なら --force / -f（plain）を見る。
 # 短オプションの束の中の f（-fu）も plain。lease 系（--force-with-lease / --force-if-includes）
 # だけなら通す（#429 で segment 単位に変えた）。token は添字で読まず順に歩く。
+# + で始まる refspec（+main・+HEAD:main）は、その ref だけを --force と同じに強制で更新するので止める（#435）。
+# lease 系と並べても止める。オプションの値（-o +x など）に + があっても止まるが、保守側に倒している。
 # shellcheck disable=SC2317  # cmd_analyze から名前で間接に呼ばれる
 fp_judge() { # $1 = 既知の名前の token の位置, $2 = 正規化した名前
-  local t sub='' plain=0 skip=0 phase=opts
+  local t sub='' plain=0 plus=0 skip=0 phase=opts
   if [[ "$2" != git ]]; then return 0; fi
   for t in "${CMD_TOKS[@]:$1+1}"; do
     if (( skip == 1 )); then skip=0; continue; fi
@@ -910,12 +912,16 @@ fp_judge() { # $1 = 既知の名前の token の位置, $2 = 正規化した名�
           --force-with-lease|--force-with-lease=*|--force-if-includes) ;;
           --force|-f) plain=1 ;;
           -[!-]*) if [[ "$t" == *f* ]]; then plain=1; fi ;;
+          +*) plus=1 ;;
         esac
         ;;
     esac
   done
   if (( plain == 1 )); then
     deny "Force push blocked: $cmd. Use --force-with-lease instead." "force-push"
+  fi
+  if (( plus == 1 )); then
+    deny "Force push blocked (a refspec starting with + forces the update): $cmd. Drop the + and use --force-with-lease instead." "force-push"
   fi
   return 0
 }

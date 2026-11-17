@@ -111,13 +111,23 @@
 ### ブロック対象
 
 - `git push --force`, `git push -f`（リモート・ブランチ問わず）
+- `+` で始まる refspec（`git push origin +main`・`git push origin +HEAD:main`）。その ref だけを `--force` と同じに強制で更新するため。`--force-with-lease` と並べた形と、`--` のあとの形も止める（#435）
 - 判定の単位は `block-destructive.sh` と同じく行に含まれる各単純コマンド（`cd x && git push --force`・`sudo git push --force`・`bash -c "git push --force"` も止める）。走査器は2本で同じ区間（`shared-cmd`）を byte 一致で持つ
-- `+` を付けた refspec（`git push origin +HEAD:main`）は見ない（#435）
 
 ### 許可
 
 - `--force-with-lease`（safer alternative）
 - `--force-if-includes`
+- `+` が先頭に無い refspec（`main:+main`・`feature/+x`）と、`push` 以外の git のコマンドの `+`（`git fetch origin +main:main` など）
+
+### 保守側に倒して止まる形（既知の過検知）
+
+- `git push` の引数のうち `+` で始まるものは、refspec でなくても止める。オプションの値（`git push -o +x origin main`）・`+` で始まるリモートの名前・`+` だけの引数がこれに当たる。オプションの値を読み分けると、今止めている `git push -o --force` のような形を通すことになるので、読み分けていない
+
+### 対象外（フックが見ない形）
+
+- 設定に書いた `+`（`remote.<name>.push = +refs/heads/*:refs/heads/*`）で、引数なしの `git push` が強制になる形。コマンドの行に `+` が現れないため
+- `--mirror`・`--delete` など、強制の指定でない破壊的な push
 
 ## commit-gate.sh
 

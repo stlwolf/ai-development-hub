@@ -225,6 +225,16 @@ t B deny fp force-push 'true; git push -f'
 t B deny fp force-push 'bash -c "git push --force"'
 t B deny fp force-push 'sudo git push --force'
 t B deny fp force-push 'eval "git push --force"'
+# + で始まる refspec は --force と同じく強制の push になる（#435）
+t B deny fp force-push 'git push origin +HEAD:main'
+t B deny fp force-push 'git push origin +main'
+t B deny fp force-push 'git push origin x +main'
+t B deny fp force-push "git push origin '+main'"
+t B deny fp force-push 'git push origin "+refs/heads/*:refs/heads/*"'
+t B deny fp force-push 'git -C x push origin +main'
+t B deny fp force-push 'cd x && git push origin +main'
+t B deny fp force-push 'git push --force-with-lease origin +main'
+t B deny fp force-push 'git push origin -- +main'
 # 実装SO（ゲート4）の指摘から
 t B deny bd rm-destructive "r\$'m' -rf /"
 t B deny bd rm-destructive "env -u bash sh -c 'rm -rf /'"
@@ -310,6 +320,12 @@ t C allow bd - 'rm -rf ${x:-node_modules}'
 t C allow bd - '(( x = 1 << 2 )) && git status'
 t C allow bd - 'echo $[ 1 + 2 ]'
 t C allow fp - 'git push -u origin x'
+# + を含んでも、先頭でなければ強制ではない（#435）
+t C allow fp - 'git push origin main'
+t C allow fp - 'git push origin x:y+z'
+t C allow fp - 'git push origin HEAD:refs/heads/a+b'
+t C allow fp - 'git push --force-with-lease origin main'
+t C allow fp - 'echo +main && git push origin main'
 
 echo "[D] 意図した判定の変更（今の過検知を allow に直す・変更前では落ちる）"
 t D allow bd - 'git clean -fd xdir'
