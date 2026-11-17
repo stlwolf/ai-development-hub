@@ -777,6 +777,15 @@ BROKEN = [
     ("l1_status_refs", "table", both(with_status, put(STATUS_ROW0 + ["refs"], ["abc"])), [("E-L1", "sections[0].rows[0].refs[0]")], False),
     # E-U2 見取り図の中での状況の部品の置き場（#668）
     ("u2_status_twice", "table", both(with_status, append(["sections"], {"type": "status", "rows": []})), [("E-U2", "sections[2]")], False),
+    # タブのあるページで2つ目を状況のタブに置いても、E-U2 の「1つにする」だけ（同じタブ・離れた部品の誤りを重ねない）
+    ("u2_status_twice_on_tabs", "table", both(with_status_tabs, append(["sections"], {"type": "status", "tab": "now", "rows": []})),
+     [("E-U2", "sections[2]")], False),
+    # 状況の部品の tab が文字列でなくても、並びの判定で落ちない（実装SO の指摘）。中身の無くなったタブの E-N3 は、
+    # 表の部品の tab が文字列でないときと同じ、いまの振る舞いである
+    ("f3_status_tab_not_string", "table", both(with_status_tabs, put(["sections", 0, "tab"], [])),
+     [("E-F3", "sections[0].tab"), ("E-N3", "tabs[0]")], False),
+    ("f3_status_tab_object", "table", both(with_status_tabs, put(["sections", 0, "tab"], {})),
+     [("E-F3", "sections[0].tab"), ("E-N3", "tabs[0]")], False),
     ("u2_status_not_first", "table", both(with_status, lambda d: d["sections"].reverse()), [("E-U2", "sections[1]")], False),
     ("u2_status_not_first_tab", "table", both(with_status_tabs, lambda d: d["tabs"].reverse()), [("E-U2", "sections[0].tab")], False),
     ("u2_status_tab_shared", "table", both(with_status_tabs, lambda d: d["sections"].insert(1, dict(copy.deepcopy(TABLE_SEC), tab="now"))),
@@ -922,6 +931,14 @@ class StatusCheck(unittest.TestCase):
         self.assertEqual(len(msgs), 1)
         self.assertIn("status", msgs[0])
 
+    def test_map_k2_message_lists_status(self):
+        # 見取り図に置けない部品の理由の文は、置ける部品の一覧に status が加わった。受け入れた違い（plan の DJ-12）
+        d = example("table")
+        d["sections"].append({"type": "findings", "title": "指摘", "items": [{"text": "x", "severity": "low", "adopted": "adopted", "reason": "y"}]})
+        msgs = [m for code, path, m in build.validate(d) if code == "E-K2"]
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("table・status", msgs[0])
+
     def test_states_and_fields_are_closed(self):
         self.assertEqual(build.STATUS_STATES, ("waiting", "running", "trigger", "done"))
         self.assertEqual(set(build.STATUS_FIELDS), set(build.STATUS_STATES))
@@ -964,9 +981,12 @@ class StatusRender(unittest.TestCase):
 
     def test_done_rows_older_than_two_days_are_dropped(self):
         old = {"state": "done", "refs": [], "what": "古い完了", "ended": "2026-11-16"}
+        future = {"state": "done", "refs": [], "what": "未来の完了", "ended": "2026-11-19"}
         today = {"state": "done", "refs": [], "what": "今日の完了", "ended": "2026-11-18"}
-        f = render_page("table", both(with_status, append(["sections", 0, "rows"], old), append(["sections", 0, "rows"], today)), now=self.NOW)
+        f = render_page("table", both(with_status, append(["sections", 0, "rows"], old), append(["sections", 0, "rows"], today),
+                                      append(["sections", 0, "rows"], future)), now=self.NOW)
         self.assertIn("完了（直近2日・2件）", f)
+        self.assertNotIn("未来の完了", f)  # ページを作った日より後の日付も、直近2日に入れない
         self.assertIn("今日の完了", f)
         self.assertNotIn("古い完了", f)
         # 年の違う日付は、年を付けたまま出る

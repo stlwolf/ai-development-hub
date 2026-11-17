@@ -875,7 +875,8 @@ class Validator:
         if self.tab_keys[tab] != 0:
             self.add("E-U2", join(paths[0], "tab"), "状況の部品（status）は最初のタブ（tabs の先頭）に置く")
         for i in range(1, len(secs)):
-            if isinstance(secs[i], dict) and secs[i].get("tab") == tab:
+            # 2つ目からの状況の部品は「1つにする」で止めているので、ここでは数えない（誤りを重ねない）
+            if isinstance(secs[i], dict) and secs[i].get("type") != "status" and secs[i].get("tab") == tab:
                 self.add("E-U2", join(paths[i], "tab"), "状況のタブ %s には、状況の部品のほかの部品を置かない" % tab)
 
     def kind_bundle(self, types, paths, secs):
@@ -1320,9 +1321,12 @@ class Validator:
         # データの部品の側: 割り当てと、同じタブの部品を続けて並べること
         section_tab = {}  # 部品の位置 -> 引けるタブの key
         runs = []         # [(タブの key, 最初の部品の tab の場所)]（データの並びで、続いた部品をまとめたもの）
+        first_status = next((i for i, x in enumerate(secs) if isinstance(x, dict) and x.get("type") == "status"), None)
         for i, sec in enumerate(secs):
             if not isinstance(sec, dict):
                 continue
+            if sec.get("type") == "status" and i != first_status:
+                continue  # 2つ目からの状況の部品は E-U2 で止めているので、タブの割り当ても並びも見ない
             sp = "sections[%d]" % i
             if "tab" not in sec:
                 self.add("E-N3", sp, "tabs のあるページでは、部品に tab（タブの key）を書く")
@@ -1392,7 +1396,9 @@ class Validator:
         # 置き場の誤り（先頭でない・最初のタブでない）は E-U2 で止めるので、ここでは状況のタブを先頭として並びを見る。
         # 最初のタブでない状況の部品は E-U2 で止めるので、そのタブは並びの判定から外す（誤りを重ねない）。
         status_tab = next((s.get("tab") for s in secs if isinstance(s, dict) and s.get("type") == "status"), None)
-        lead = [r for r in runs if r[0] == status_tab] if tab_keys.get(status_tab) == 0 else []
+        if not isinstance(status_tab, str):
+            status_tab = None  # 文字列でない tab は E-F3 で止めている
+        lead = [r for r in runs if r[0] == status_tab] if status_tab is not None and tab_keys.get(status_tab) == 0 else []
         order = lead + panels + [r for r in runs if r[0] not in body_keys and r[0] != status_tab]
         last = -1
         for k, where in order:
@@ -2568,7 +2574,7 @@ class Renderer:
         for state in STATUS_STATES:
             rows = [r for r in sec["rows"] if r["state"] == state]
             if state == "done":
-                rows = [r for r in rows if datetime.strptime(r["ended"], "%Y-%m-%d").date() >= oldest]
+                rows = [r for r in rows if oldest <= datetime.strptime(r["ended"], "%Y-%m-%d").date() <= today]
                 title = fill(L["state.title_done"], word=L["state." + state], days=STATUS_DONE_DAYS, n=len(rows))
             else:
                 title = fill(L["state.title"], word=L["state." + state], n=len(rows))
