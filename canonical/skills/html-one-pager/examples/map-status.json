@@ -1,0 +1,53 @@
+{
+  "format": 1,
+  "title": "決済の基盤の見取り図",
+  "kind": "map",
+  "status": "live",
+  "why": "決済の基盤の作業がいくつも並んで動いているので、いま何が動き何を待っているかと、前の版からの変化を1枚で読めるようにする。",
+  "source": {
+    "repo": "shop",
+    "repo_url": "https://github.com/example-org/shop",
+    "branch": "main",
+    "trackers": [
+      {"prefix": "OPS", "url": "https://tracker.example.com/browse/{id}"}
+    ]
+  },
+  "links": [
+    {"label": "判断ボード", "url": "https://example.com/board"}
+  ],
+  "tabs": [
+    {"key": "now", "label": "状況"},
+    {"key": "overview", "label": "概要"},
+    {"key": "work", "label": "決済の作業"}
+  ],
+  "sections": [
+    {
+      "type": "status",
+      "tab": "now",
+      "rows": [
+        {"state": "waiting", "refs": ["#230"], "what": "決済の会社を切り替える日", "need": "owner の答え（判断ボード）", "who": "統括", "since": "2026-11-17"},
+        {"state": "waiting", "refs": "PR #241", "what": "再試行の上限を3回にする直し", "need": "owner のマージ", "who": "子（#241 retry）", "since": "2026-11-18"},
+        {"state": "running", "refs": ["#244"], "what": {"text": "請求の記録の突き合わせのスクリプト", "evidence": "verified"}, "who": "子（#244 reconcile）", "stop": "plan を書いて止まる"},
+        {"state": "trigger", "refs": ["#212", "OPS-41"], "what": "障害の振り返りの見直し", "wake": "切り替えの当日が過ぎたとき", "since": "2026-11-10"},
+        {"state": "done", "refs": ["PR #239"], "what": "冪等キーを付ける直し", "ended": "2026-11-17"},
+        {"state": "done", "refs": ["#216"], "what": "障害の記録", "ended": "2026-11-12"}
+      ]
+    },
+    {
+      "type": "table",
+      "tab": "work",
+      "title": "決済の作業",
+      "columns": [
+        {"key": "no", "label": "番号", "type": "no"},
+        {"key": "refs", "label": "issue / PR", "type": "ref"},
+        {"key": "what", "label": "中身"},
+        {"key": "state", "label": "いまの状態"}
+      ],
+      "rows": [
+        {"no": "ID:1", "refs": ["#230"], "what": "決済の会社を切り替える", "state": "日を決める問いを出した"},
+        {"no": "ID:2", "refs": ["#244"], "what": "請求の記録を突き合わせる", "state": "子が plan を書いている"},
+        {"no": "ID:3", "refs": ["#250"], "what": "返金の通知を見直す", "state": "起票のみ（誰も持っていないので状況には入れない）"}
+      ]
+    }
+  ]
+}

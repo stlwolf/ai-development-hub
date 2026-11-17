@@ -1,0 +1,34 @@
+/* 見取り図の状況の部品（status・#668）。状況の部品のあるページにだけ、page.css のあとに埋め込む。
+   色は page.css のトークンを使うので、暗い表示でも同じ決まりで変わる。
+   状態ごとの色: 指示待ち = fix（黄土色）・実行中 = go（緑）・トリガー待ち = plain（青）・完了 = no（灰色）。 */
+.hp-status { display: grid; gap: 22px; }
+.hp-state { display: grid; gap: 6px; }
+.hp-state-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  padding: 7px 12px;
+  border-left: 5px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  text-wrap: balance;
+}
+.hp-state-waiting .hp-state-title { border-left-color: var(--c-fix); background: var(--c-fix-bg); color: var(--c-fix); }
+.hp-state-running .hp-state-title { border-left-color: var(--c-go); background: var(--c-go-bg); color: var(--c-go); }
+.hp-state-trigger .hp-state-title { border-left-color: var(--c-plain); background: var(--c-plain-bg); color: var(--c-plain); }
+.hp-state-done .hp-state-title { border-left-color: var(--c-no); background: var(--c-no-bg); color: var(--c-no); }
+.hp-state-note { margin: 0 0 2px 2px; color: var(--muted); font-size: 13.5px; }
+.hp-state-none { margin: 0 0 0 2px; color: var(--muted); }
+/* 状況のタブの外の見出し（#668 の DJ-15・owner がサンプルで決めた）。状況の部品のある見取り図にだけ効く。
+   ページのタイトルは青、節の題（データの表の題と、本文のパネルの中の h2）は本文の濃さにして左に青い線を付ける。
+   状況の4つの題（.hp-state-title）は状態の色のまま。 */
+.hp-title { color: var(--accent); }
+.hp-sec-title, .hp-tabpanel > section > h2 {
+  color: var(--ink);
+  font-size: 16px;
+  letter-spacing: 0;
+  border-left: 4px solid var(--accent);
+  padding-left: 10px;
+}

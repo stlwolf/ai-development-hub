@@ -84,9 +84,25 @@ EVIDENCE = ("verified", "sourced", "guess")
 SEVERITIES = ("high", "mid", "low")
 ADOPTIONS = ("adopted", "partial", "rejected")
 KINDS = ("go", "fix", "warn", "no")
-SECTION_TYPES = ("decisions", "bundle", "findings", "table")
+SECTION_TYPES = ("decisions", "bundle", "findings", "table", "status")
 ANSWER_SECTION_TYPES = ("decisions", "bundle")
 COLUMN_TYPES = ("text", "ref", "no")
+
+# 見取り図の状況の部品（status）。状態の key ごとに、行に要る項目の並び（並びは描く列の順）。
+# 状態の語・説明・列の見出しは用語集が持つ。key と項目の集まりはここが正本である。
+STATUS_STATES = ("waiting", "running", "trigger", "done")
+STATUS_FIELDS = {
+    "waiting": ("refs", "what", "need", "who", "since"),
+    "running": ("refs", "what", "who", "stop"),
+    "trigger": ("refs", "what", "wake", "since"),
+    "done": ("refs", "what", "ended"),
+}
+STATUS_DATE_FIELDS = ("since", "ended")
+STATUS_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+# 持っているセッション（who）に書いてはいけないペインの番号（%12 の形）。ページは長く残り、番号はすぐ別のペインを指す。
+PANE_NUMBER_RE = re.compile(r"%\d")
+# 完了の行を残す日数。ページを作った日（JST）とその前の日に終わった行を残す。データでは変えない。
+STATUS_DONE_DAYS = 2
 
 # カードと選択肢の key。db の doc id が許す文字より狭い、このスキルの決まり。
 # match（先頭から）で使い、終わりは \Z で固定する（$ は末尾の改行の前でも合うので使わない）。
@@ -166,7 +182,31 @@ GLOSSARY_KEYS = {
     "text.unfold": (),
     "text.fold": (),
     "text.tabs": (),
+    # 見取り図の状況の部品（#668）。build.py が描くときだけ使い、ページの JS に渡すデータ（labels）には入れない。
+    "state.heading": (),
+    "state.waiting": (),
+    "state.running": (),
+    "state.trigger": (),
+    "state.done": (),
+    "state.note_waiting": (),
+    "state.note_running": (),
+    "state.note_trigger": (),
+    "state.note_done": (),
+    "state.title": ("word", "n"),
+    "state.title_done": ("word", "days", "n"),
+    "state.none": (),
+    "state.col_refs": (),
+    "state.col_what": (),
+    "state.col_need": (),
+    "state.col_who": (),
+    "state.col_since_waiting": (),
+    "state.col_stop": (),
+    "state.col_wake": (),
+    "state.col_since_trigger": (),
+    "state.col_ended": (),
 }
+# 状況の部品の語の key の頭。ページの JS に渡すデータ（labels）には入れない（状況の無いページの HTML を変えないため）。
+STATE_LABEL_PREFIX = "state."
 GLOSSARY_SECTION = "## 札の言葉と固定の文"
 # 用語集の「識別子の接頭辞」の表に要る key。語は札と番号の列の値の形を決める（受け付ける値も変わる）。
 # 「札の言葉と固定の文」の表とは分けて持つ。そちらの言葉は答える部品のあるページに丸ごと埋め込まれるので、
@@ -541,6 +581,8 @@ class Validator:
         self.group_links = None
         # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
         self.tables = {}
+        # タブの key -> tabs の中の位置（タブを置いたページで、tabs が読めたときだけ）。状況の部品の置き場の判定に使う。
+        self.tab_keys = None
         # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None, 書いた select)]
         self.selects = []
         # 表の key -> 表の場所（ページの表と束の group の表。重なりは E-S3）
@@ -657,6 +699,7 @@ class Validator:
                 tab_keys = self.tabs("tabs", data["tabs"])
                 tabs_checked = tab_keys is not None
                 self.has_tabs = tab_keys is not None
+                self.tab_keys = tab_keys
         has_answer_part = False
         # 部品を読めなかったとき（配列でない・知らない type）は、答える部品の有無を決められないので、
         # 同じ原因の誤りを重ねないよう「回答待ちなのに答える部品が無い」を出さない。
@@ -809,7 +852,32 @@ class Validator:
             self.add("E-K1", "sections", "一覧から選ぶページには、番号の列（type no）を持つ表が1つ以上要る")
 
     def kind_map(self, types, paths, secs):
-        self.kind_allowed("map", types, paths, ("table",))
+        allowed = self.kind_allowed("map", types, paths, ("table", "status"))
+        self.status_place([i for i in allowed if types[i] == "status"], paths, secs)
+
+    def status_place(self, positions, paths, secs):
+        """見取り図の中での状況の部品の置き場（E-U2）。1つまでで、部品の先頭に置く。
+        タブのあるページでは、最初のタブに置き、そのタブにはほかの部品を置かない。
+        本文に同じタブのパネルがあるときは、いまの E-N3（本文とデータの両方があるタブ）に任せる。"""
+        if not positions:
+            return
+        for i in positions[1:]:
+            self.add("E-U2", paths[i], "状況の部品（status）は1ページに1つにする")
+        first = positions[0]
+        if first != 0:
+            self.add("E-U2", paths[first], "状況の部品（status）は部品の先頭に置く")
+            return
+        if not self.has_tabs or self.tab_keys is None:
+            return
+        tab = secs[0].get("tab")
+        if not isinstance(tab, str) or tab not in self.tab_keys:
+            return  # tab の欠け・定義に無い tab は E-N3 で止める
+        if self.tab_keys[tab] != 0:
+            self.add("E-U2", join(paths[0], "tab"), "状況の部品（status）は最初のタブ（tabs の先頭）に置く")
+        for i in range(1, len(secs)):
+            # 2つ目からの状況の部品は「1つにする」で止めているので、ここでは数えない（誤りを重ねない）
+            if isinstance(secs[i], dict) and secs[i].get("type") != "status" and secs[i].get("tab") == tab:
+                self.add("E-U2", join(paths[i], "tab"), "状況のタブ %s には、状況の部品のほかの部品を置かない" % tab)
 
     def kind_bundle(self, types, paths, secs):
         b = self.kind_allowed("bundle", types, paths, ("bundle",))
@@ -1253,9 +1321,12 @@ class Validator:
         # データの部品の側: 割り当てと、同じタブの部品を続けて並べること
         section_tab = {}  # 部品の位置 -> 引けるタブの key
         runs = []         # [(タブの key, 最初の部品の tab の場所)]（データの並びで、続いた部品をまとめたもの）
+        first_status = next((i for i, x in enumerate(secs) if isinstance(x, dict) and x.get("type") == "status"), None)
         for i, sec in enumerate(secs):
             if not isinstance(sec, dict):
                 continue
+            if sec.get("type") == "status" and i != first_status:
+                continue  # 2つ目からの状況の部品は E-U2 で止めているので、タブの割り当ても並びも見ない
             sp = "sections[%d]" % i
             if "tab" not in sec:
                 self.add("E-N3", sp, "tabs のあるページでは、部品に tab（タブの key）を書く")
@@ -1321,7 +1392,14 @@ class Validator:
             elif k not in data_keys and k not in body_keys:
                 hint = "" if self.body is not None else "。本文のパネルに置くなら、check に --body を付ける"
                 self.add("E-N3", tp, "タブ %s の中身が無い（本文のパネルも、tab が %s の部品も無い%s）" % (k, k, hint))
-        order = panels + [r for r in runs if r[0] not in body_keys]
+        # 状況の部品（status）のタブは、本文のパネルのタブより先に並べてよい（状況はいつも本文より上に描く）。
+        # 置き場の誤り（先頭でない・最初のタブでない）は E-U2 で止めるので、ここでは状況のタブを先頭として並びを見る。
+        # 最初のタブでない状況の部品は E-U2 で止めるので、そのタブは並びの判定から外す（誤りを重ねない）。
+        status_tab = next((s.get("tab") for s in secs if isinstance(s, dict) and s.get("type") == "status"), None)
+        if not isinstance(status_tab, str):
+            status_tab = None  # 文字列でない tab は E-F3 で止めている
+        lead = [r for r in runs if r[0] == status_tab] if status_tab is not None and tab_keys.get(status_tab) == 0 else []
+        order = lead + panels + [r for r in runs if r[0] not in body_keys and r[0] != status_tab]
         last = -1
         for k, where in order:
             if tab_keys[k] < last:
@@ -1441,6 +1519,10 @@ class Validator:
                 self.tables[path] = cols
                 if "rows" in sec:
                     self.rows(join(path, "rows"), sec["rows"], cols)
+        elif t == "status":
+            if self.obj(path, sec, ("type", "rows"), tab):
+                if "rows" in sec:
+                    self.status_rows(join(path, "rows"), sec["rows"])
         else:
             if self.obj(path, sec, ("type", "title", "items"), ("lane",) + tab):
                 if "title" in sec:
@@ -1455,6 +1537,78 @@ class Validator:
         if not in_group and "tab" in sec and not isinstance(sec["tab"], str):
             self.add("E-F3", join(path, "tab"), "文字列であるべき所が%sである" % type_name(sec["tab"]))
         return t
+
+    def status_rows(self, path, rows):
+        """状況の部品の行（E-U1）。行の形の誤り（配列・オブジェクトでない・型の違い）は共通の規則（E-F3）で止める。
+        空の配列は、どの状態も0件のページとして受け付ける。"""
+        if not isinstance(rows, list):
+            self.add("E-F3", path, "配列であるべき所が%sである" % type_name(rows))
+            return
+        for i, row in enumerate(rows):
+            rp = "%s[%d]" % (path, i)
+            if not isinstance(row, dict):
+                self.add("E-F3", rp, "オブジェクトであるべき所が%sである" % type_name(row))
+                continue
+            if "state" not in row:
+                self.add("E-F3", join(rp, "state"), "必須の項目が無い")
+                continue
+            state = row["state"]
+            if not isinstance(state, str):
+                self.add("E-F3", join(rp, "state"), "文字列であるべき所が%sである" % type_name(state))
+                continue
+            if state not in STATUS_STATES:
+                self.add("E-U1", join(rp, "state"), '状態 "%s" は決まった値（%s）でない' % (state, ", ".join(STATUS_STATES)))
+                continue
+            fields = STATUS_FIELDS[state]
+            for k in row:
+                if k != "state" and k not in fields:
+                    self.add("E-U1", join(rp, k), '状態 %s の行に置けない項目 "%s" がある（置けるのは %s）' % (state, k, "・".join(fields)))
+            for k in fields:
+                if k not in row:
+                    self.add("E-U1", join(rp, k), "状態 %s の行に要る項目が無い" % state)
+                    continue
+                v = row[k]
+                kp = join(rp, k)
+                if k == "refs":
+                    self.cell(kp, v, "ref")
+                elif k in STATUS_DATE_FIELDS:
+                    self.status_date(kp, v)
+                else:
+                    text = self.status_text(kp, v)
+                    if k == "who" and text is not None and PANE_NUMBER_RE.search(text):
+                        self.add("E-U1", kp, "持っているセッションにペインの番号（%数字）を書かない（統括か子のラベルで書く）")
+
+    def status_text(self, path, v):
+        """状況の行の文字の欄。文字列か {text, evidence} で、空（空白だけを含む）は止める。読めた文字を返す。"""
+        if isinstance(v, dict):
+            if not self.obj(path, v, ("text",), ("evidence",)):
+                return None
+            if "evidence" in v:
+                self.enum(join(path, "evidence"), v["evidence"], EVIDENCE, "E-T1")
+            if "text" not in v:
+                return None
+            path, v = join(path, "text"), v["text"]
+        if not isinstance(v, str):
+            self.add("E-F3", path, "文字列か {text, evidence} であるべき所が%sである" % type_name(v))
+            return None
+        if not v.strip():
+            self.add("E-U1", path, "空の文字列である（空白だけのものを含む）")
+            return None
+        return v
+
+    def status_date(self, path, v):
+        """状況の行の日付（YYYY-MM-DD・JST の日付）。形が違うか、実在しない日付なら止める。"""
+        if not isinstance(v, str):
+            self.add("E-F3", path, "文字列であるべき所が%sである" % type_name(v))
+            return
+        ok = bool(STATUS_DATE_RE.match(v))
+        if ok:
+            try:
+                datetime.strptime(v, "%Y-%m-%d")
+            except ValueError:
+                ok = False
+        if not ok:
+            self.add("E-U1", path, '"%s" は YYYY-MM-DD の形の実在する日付でない' % v)
 
     def columns(self, path, cols):
         """表の列を見て、[(key, type)] を返す。列が読めなければ（1つでも誤りがあれば）None を返す。"""
@@ -1928,6 +2082,8 @@ def format_errors(errors):
 
 TEMPLATE = os.path.join(HERE, "template.html")
 CSS = os.path.join(HERE, "page.css")
+# 状況の部品（status）の見た目。状況の部品のあるページにだけ埋め込む（ほかのページの HTML を変えない）。
+STATUS_CSS = os.path.join(HERE, "status.css")
 JS = os.path.join(HERE, "page.js")
 TABS_JS = os.path.join(HERE, "tabs.js")
 TEMPLATE_SLOTS = ("title", "css", "purpose", "status", "header", "bar", "body", "sections", "reply", "scripts")
@@ -2227,6 +2383,7 @@ class Renderer:
         anchors.update({num: row_id(pos) for pos, num in self.numbers.items()})
         self.anchors = anchors
         self.time = format_time(now)
+        self.now = now
         self.tmux = tmux
         self.page_refs = Refs(data["source"], anchors)
         # タブ（検証を通ったもの）。tab_cards はタブの key -> そのタブの判定カード（束の group のカードを含む）の並び。
@@ -2372,6 +2529,8 @@ class Renderer:
         out = []
         current = None
         for si, sec in enumerate(self.data["sections"]):
+            if sec["type"] == "status":
+                continue  # 状況の部品は本文より上に描く（status_part）
             tab = sec.get("tab")
             title_class = "hp-sec-title"
             if tab != current:
@@ -2392,6 +2551,73 @@ class Renderer:
         if current is not None:
             out.append("</section>")
         return "\n".join(out)
+
+    def status_part(self):
+        """状況の部品（検証を通ったもの・あれば部品の先頭）を描く。本文より上に置く HTML を返す（無ければ空）。
+        状態ごとに表を分け、題に件数を出す。完了の行は、ページを作った日（JST）とその前の日に終わったものだけを残す。"""
+        secs = self.data["sections"]
+        if not secs or secs[0]["type"] != "status":
+            return ""
+        sec = secs[0]
+        L = self.L
+        heading = L["state.heading"]
+        title_class = "hp-sec-title"
+        tab = sec.get("tab")
+        if tab is not None and heading.strip() == self.tab_label[tab].strip():
+            title_class = "hp-sec-title hp-tab-same"
+        today = self.now.astimezone(JST).date()
+        oldest = today - timedelta(days=STATUS_DONE_DAYS - 1)
+        out = []
+        if tab is not None:
+            out.append('<section class="hp-tabpanel" id="%s">' % esc(tab))
+        out.append('<section class="hp-sec hp-status"><h2 class="%s">%s</h2>' % (title_class, esc(heading)))
+        for state in STATUS_STATES:
+            rows = [r for r in sec["rows"] if r["state"] == state]
+            if state == "done":
+                rows = [r for r in rows if oldest <= datetime.strptime(r["ended"], "%Y-%m-%d").date() <= today]
+                title = fill(L["state.title_done"], word=L["state." + state], days=STATUS_DONE_DAYS, n=len(rows))
+            else:
+                title = fill(L["state.title"], word=L["state." + state], n=len(rows))
+            out.append('<section class="hp-state hp-state-%s"><h3 class="hp-state-title">%s</h3>' % (state, esc(title)))
+            out.append('<p class="hp-state-note">%s</p>' % esc(L["state.note_" + state]))
+            if not rows:
+                out.append('<p class="hp-state-none">%s</p></section>' % esc(L["state.none"]))
+                continue
+            cols = [(k, L[self.status_col(state, k)]) for k in STATUS_FIELDS[state]]
+            out.append('<div class="hp-table-wrap"><table class="hp-table"><thead><tr>%s</tr></thead><tbody>'
+                       % "".join("<th>%s</th>" % esc(label) for _, label in cols))
+            for r in rows:
+                cells = []
+                for k, label in cols:
+                    v = r[k]
+                    if k == "refs":
+                        items = [v] if isinstance(v, str) else v
+                        inner = ('<span class="hp-refs">%s</span>' % "".join(self.page_refs.ref_link(x) for x in items)) if items else ""
+                        cells.append('<td class="hp-ref-cell" data-label="%s">%s</td>' % (esc(label), inner))
+                    elif k in STATUS_DATE_FIELDS:
+                        cells.append('<td data-label="%s">%s</td>' % (esc(label), esc(self.status_date(v, today))))
+                    elif isinstance(v, dict):
+                        cells.append('<td data-label="%s">%s%s</td>' % (esc(label), inline(v["text"], self.page_refs), self.evidence(v.get("evidence"))))
+                    else:
+                        cells.append('<td data-label="%s">%s</td>' % (esc(label), inline(v, self.page_refs)))
+                out.append("<tr>%s</tr>" % "".join(cells))
+            out.append("</tbody></table></div></section>")
+        out.append("</section>")
+        if tab is not None:
+            out.append("</section>")
+        return "\n".join(out)
+
+    @staticmethod
+    def status_col(state, key):
+        """状況の表の列の見出しの key。日付の列は状態で意味が違う（いつから・止めた日）ので分ける。"""
+        if key == "since":
+            return "state.col_since_" + state
+        return "state.col_" + key
+
+    @staticmethod
+    def status_date(value, today):
+        """YYYY-MM-DD を、ページを作った年と同じなら MM-DD で、違えば YYYY-MM-DD のまま出す。"""
+        return value[5:] if value[:4] == "%04d" % today.year else value
 
     def decisions(self, sec, title_class="hp-sec-title"):
         cards = "\n".join(self.card(c, 3, self.page_refs) for c in sec["cards"])
@@ -2594,6 +2820,7 @@ def render(data, labels, now, tmux, body=None, words=None):
                             % (TEMPLATE, slot, template.count("{{%s}}" % slot)))
     r = Renderer(data, labels, now, tmux, words if words is not None else load_words(DEFAULT_GLOSSARY))
     header = r.header()
+    status_html = r.status_part()  # 状況の部品は本文より上に描く（見取り図の部品の先頭にだけある）
     sections = r.sections()  # ここでカードと group を集める
     # 答える部品の無いページには、保存のコード（page.js）とそれが読むデータを入れない。
     # page.js はカードが無いと何もしないので振る舞いは変わらず、ページの中に保存先を使うコードが残らない。
@@ -2603,7 +2830,7 @@ def render(data, labels, now, tmux, body=None, words=None):
             "title": data["title"],
             "time": r.time,
             "status": data["status"],
-            "labels": labels,
+            "labels": {k: v for k, v in labels.items() if not k.startswith(STATE_LABEL_PREFIX)},
             "cards": r.cards,
             "groups": r.groups,
             "picks": [{"card": p["card"], "max": p["max"], "min": p["min"],
@@ -2622,12 +2849,13 @@ def render(data, labels, now, tmux, body=None, words=None):
                                                % (embed_json({"tabs": r.tab_rows()}), read_text(TABS_JS, "JS（tabs.js）").rstrip("\n")))
     values = {
         "title": esc(data["title"]),
-        "css": read_text(CSS, "CSS（page.css）").rstrip("\n"),
+        "css": read_text(CSS, "CSS（page.css）").rstrip("\n")
+               + (("\n" + read_text(STATUS_CSS, "CSS（status.css）").rstrip("\n")) if status_html else ""),
         "purpose": esc(KIND_PURPOSE[data["kind"]]),
         "status": esc(data["status"]),
         "header": header,
         "bar": r.bar(),
-        "body": (body or "").rstrip("\n"),
+        "body": "\n".join(x for x in (status_html, (body or "").rstrip("\n")) if x),
         "sections": sections,
         "reply": r.reply(),
         "scripts": scripts,
