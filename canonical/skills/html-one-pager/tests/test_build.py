@@ -220,6 +220,32 @@ def map_tabs(d):
     d["sections"] = [dict(copy.deepcopy(TABLE_SEC), tab="ops")]
 
 
+# 見取り図の状況の部品（#668）。状態ごとに1行ずつ。
+STATUS_ROWS = [
+    {"state": "waiting", "refs": ["#212"], "what": "振り返りの結論", "need": "owner の答え", "who": "統括", "since": "2026-11-17"},
+    {"state": "running", "refs": "PR #215", "what": {"text": "再試行の直し", "evidence": "verified"}, "who": "子（#215 retry）", "stop": "PR を出して報告する"},
+    {"state": "trigger", "refs": [], "what": "監視の閾値の見直し", "wake": "本番で2週間の実測がそろったとき", "since": "2026-11-10"},
+    {"state": "done", "refs": ["#216", "OPS-42"], "what": "障害の記録", "ended": "2026-11-17"},
+]
+
+
+def with_status(d):
+    """見本の先頭に状況の部品を足す（table の見本は見取り図である）。"""
+    d["sections"].insert(0, {"type": "status", "rows": copy.deepcopy(STATUS_ROWS)})
+
+
+def with_status_tabs(d):
+    """状況のタブを先頭に、ほかの部品を2つ目のタブに入れる。"""
+    with_status(d)
+    d["tabs"] = [{"key": "now", "label": "状況"}, {"key": "items", "label": "対応"}]
+    d["sections"][0]["tab"] = "now"
+    for sec in d["sections"][1:]:
+        sec["tab"] = "items"
+
+
+STATUS_ROW0 = ["sections", 0, "rows", 0]
+
+
 # (名前, 見本, 壊し方, 期待する誤り [(規則, 場所)], --body があるか。文字列なら、その本文を渡す)
 BROKEN = [
     # E-F1 format
@@ -727,6 +753,37 @@ BROKEN = [
     ("k1_bundle_without_tabs_still_one_part", "bundle", both(bundle_tabs, drop(["tabs"]), drop(["sections", 0, "tab"]),
                                                             drop(["sections", 1, "tab"])),
      [("E-K2", "sections[1]")], False),
+    # E-U1 状況の部品の中身（#668）
+    ("u1_status_state_unknown", "table", both(with_status, put(STATUS_ROW0 + ["state"], "blocked")), [("E-U1", "sections[0].rows[0].state")], False),
+    ("u1_status_field_missing", "table", both(with_status, drop(STATUS_ROW0 + ["need"])), [("E-U1", "sections[0].rows[0].need")], False),
+    ("u1_status_field_of_other_state", "table", both(with_status, put(["sections", 0, "rows", 1, "since"], "2026-11-18")),
+     [("E-U1", "sections[0].rows[1].since")], False),
+    ("u1_status_text_blank", "table", both(with_status, put(STATUS_ROW0 + ["what"], "  ")), [("E-U1", "sections[0].rows[0].what")], False),
+    ("u1_status_text_object_blank", "table", both(with_status, put(STATUS_ROW0 + ["need"], {"text": " "})),
+     [("E-U1", "sections[0].rows[0].need.text")], False),
+    ("u1_status_who_pane", "table", both(with_status, put(STATUS_ROW0 + ["who"], "子（%746）")), [("E-U1", "sections[0].rows[0].who")], False),
+    ("u1_status_who_pane_in_object", "table", both(with_status, put(STATUS_ROW0 + ["who"], {"text": "%12 の子"})),
+     [("E-U1", "sections[0].rows[0].who")], False),
+    ("u1_status_date_form", "table", both(with_status, put(STATUS_ROW0 + ["since"], "11-17")), [("E-U1", "sections[0].rows[0].since")], False),
+    ("u1_status_date_unreal", "table", both(with_status, put(["sections", 0, "rows", 3, "ended"], "2026-02-30")),
+     [("E-U1", "sections[0].rows[3].ended")], False),
+    # 状況の部品の形の誤りは、共通の規則で止める
+    ("f3_status_rows_not_array", "table", both(with_status, put(["sections", 0, "rows"], "x")), [("E-F3", "sections[0].rows")], False),
+    ("f3_status_state_missing", "table", both(with_status, drop(STATUS_ROW0 + ["state"])), [("E-F3", "sections[0].rows[0].state")], False),
+    ("f3_status_date_not_string", "table", both(with_status, put(STATUS_ROW0 + ["since"], 20261117)), [("E-F3", "sections[0].rows[0].since")], False),
+    ("f2_status_title", "table", both(with_status, put(["sections", 0, "title"], "状況")), [("E-F2", "sections[0].title")], False),
+    ("t1_status_evidence", "table", both(with_status, put(["sections", 0, "rows", 1, "what", "evidence"], "maybe")),
+     [("E-T1", "sections[0].rows[1].what.evidence")], False),
+    ("l1_status_refs", "table", both(with_status, put(STATUS_ROW0 + ["refs"], ["abc"])), [("E-L1", "sections[0].rows[0].refs[0]")], False),
+    # E-U2 見取り図の中での状況の部品の置き場（#668）
+    ("u2_status_twice", "table", both(with_status, append(["sections"], {"type": "status", "rows": []})), [("E-U2", "sections[2]")], False),
+    ("u2_status_not_first", "table", both(with_status, lambda d: d["sections"].reverse()), [("E-U2", "sections[1]")], False),
+    ("u2_status_not_first_tab", "table", both(with_status_tabs, lambda d: d["tabs"].reverse()), [("E-U2", "sections[0].tab")], False),
+    ("u2_status_tab_shared", "table", both(with_status_tabs, lambda d: d["sections"].insert(1, dict(copy.deepcopy(TABLE_SEC), tab="now"))),
+     [("E-U2", "sections[1].tab")], False),
+    # 見取り図でない種別には置けない（いまの種別の検査で止める）
+    ("k2_status_on_board", "board", lambda d: d["sections"].append({"type": "status", "rows": []}),
+     [("E-K2", "sections[%d]" % len(example("board")["sections"]))], False),
 ]
 
 
@@ -807,9 +864,67 @@ class EveryRuleIsCovered(unittest.TestCase):
     def test_every_rule_has_a_broken_case(self):
         rules = {"E-F1", "E-F2", "E-F3", "E-H1", "E-H2", "E-H3", "E-P2", "E-C1", "E-C2", "E-C3", "E-C4",
                  "E-C5", "E-C6", "E-T1", "E-S1", "E-S2", "E-S3", "E-L1", "E-A1", "E-K1", "E-K2", "E-K3", "E-I1", "E-I2",
-                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7", "E-N1", "E-N2", "E-N3", "E-N4"}
+                 "E-I3", "E-Q1", "E-Q2", "E-Q3", "E-C7", "E-N1", "E-N2", "E-N3", "E-N4", "E-U1", "E-U2"}
         covered = {code for _, _, _, expected, _ in BROKEN for code, _ in expected}
         self.assertEqual(rules - covered, set())
+
+
+class StatusCheck(unittest.TestCase):
+    """見取り図の状況の部品（#668）の検証。正しい形が通ることと、同じ原因の誤りを重ねないこと。
+    1か所を壊したときの誤りは BROKEN の u1_・u2_・k2_status_ などにある。"""
+
+    def errors(self, mutate, body=None):
+        d = copy.deepcopy(example("table"))
+        mutate(d)
+        return sorted((code, path) for code, path, _ in build.validate(d, body=body))
+
+    def test_correct_forms_pass(self):
+        body = '<section class="hp-tabpanel" id="about"><section><h2>前の版からの変化</h2><p>本文</p></section></section>'
+
+        def body_tab(d):
+            with_status_tabs(d)
+            d["tabs"].insert(1, {"key": "about", "label": "概要"})
+
+        cases = [
+            ("タブの無い見取り図", with_status, None),
+            ("タブのある見取り図（状況のタブを先頭に）", with_status_tabs, None),
+            ("どの状態も0件", both(with_status, put(["sections", 0, "rows"], [])), None),
+            ("状況だけの見取り図", lambda d: d.update(sections=[{"type": "status", "rows": copy.deepcopy(STATUS_ROWS)}]), None),
+            ("状況のタブ → 本文のタブ → データのタブ", body_tab, body),
+            ("タブの無い見取り図に本文", with_status, '<section><h2>前の版からの変化</h2></section>'),
+            ("refs は1つの文字列でも空の配列でもよい", both(with_status, put(STATUS_ROW0 + ["refs"], "#212")), None),
+        ]
+        for name, mutate, b in cases:
+            with self.subTest(case=name):
+                self.assertEqual(self.errors(mutate, b), [])
+
+    def test_body_panel_on_the_status_tab_is_one_error(self):
+        # 本文に状況のタブと同じパネルを書いたら、いまの E-N3（本文とデータの両方があるタブ）だけを出す
+        body = '<section class="hp-tabpanel" id="now"><p>手書きの状況</p></section>'
+        self.assertEqual(self.errors(with_status_tabs, body), [("E-N3", "tabs[0]")])
+
+    def test_status_tab_must_be_first_even_with_body_tabs(self):
+        # 状況のタブが本文のタブのあとにあると E-U2 だけ（並びの E-N3 は重ねない）
+        body = '<section class="hp-tabpanel" id="about"><p>本文</p></section>'
+
+        def late(d):
+            with_status_tabs(d)
+            d["tabs"].insert(0, {"key": "about", "label": "概要"})
+        self.assertEqual(self.errors(late, body), [("E-U2", "sections[0].tab")])
+
+    def test_other_kinds_list_status_in_unknown_type_message(self):
+        # 知らない type の理由の文は、受け付ける type の一覧を並べる。status が加わったのは受け入れた違いである（plan の DJ-12）
+        d = example("decide")
+        d["sections"][0]["type"] = "cards"
+        msgs = [m for code, path, m in build.validate(d) if code == "E-S1"]
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("status", msgs[0])
+
+    def test_states_and_fields_are_closed(self):
+        self.assertEqual(build.STATUS_STATES, ("waiting", "running", "trigger", "done"))
+        self.assertEqual(set(build.STATUS_FIELDS), set(build.STATUS_STATES))
+        for fields in build.STATUS_FIELDS.values():
+            self.assertEqual(fields[:2], ("refs", "what"))
 
 
 class SelectOnAnyKind(unittest.TestCase):

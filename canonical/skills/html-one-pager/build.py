@@ -84,9 +84,25 @@ EVIDENCE = ("verified", "sourced", "guess")
 SEVERITIES = ("high", "mid", "low")
 ADOPTIONS = ("adopted", "partial", "rejected")
 KINDS = ("go", "fix", "warn", "no")
-SECTION_TYPES = ("decisions", "bundle", "findings", "table")
+SECTION_TYPES = ("decisions", "bundle", "findings", "table", "status")
 ANSWER_SECTION_TYPES = ("decisions", "bundle")
 COLUMN_TYPES = ("text", "ref", "no")
+
+# 見取り図の状況の部品（status）。状態の key ごとに、行に要る項目の並び（並びは描く列の順）。
+# 状態の語・説明・列の見出しは用語集が持つ。key と項目の集まりはここが正本である。
+STATUS_STATES = ("waiting", "running", "trigger", "done")
+STATUS_FIELDS = {
+    "waiting": ("refs", "what", "need", "who", "since"),
+    "running": ("refs", "what", "who", "stop"),
+    "trigger": ("refs", "what", "wake", "since"),
+    "done": ("refs", "what", "ended"),
+}
+STATUS_DATE_FIELDS = ("since", "ended")
+STATUS_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+# 持っているセッション（who）に書いてはいけないペインの番号（%12 の形）。ページは長く残り、番号はすぐ別のペインを指す。
+PANE_NUMBER_RE = re.compile(r"%\d")
+# 完了の行を残す日数。ページを作った日（JST）とその前の日に終わった行を残す。データでは変えない。
+STATUS_DONE_DAYS = 2
 
 # カードと選択肢の key。db の doc id が許す文字より狭い、このスキルの決まり。
 # match（先頭から）で使い、終わりは \Z で固定する（$ は末尾の改行の前でも合うので使わない）。
@@ -541,6 +557,8 @@ class Validator:
         self.group_links = None
         # 表の部品の場所 -> 列の [(key, type)]。列に誤りがあれば None（種別の判定で番号の列を数えない）。
         self.tables = {}
+        # タブの key -> tabs の中の位置（タブを置いたページで、tabs が読めたときだけ）。状況の部品の置き場の判定に使う。
+        self.tab_keys = None
         # 選び方（select）を書いたカード: [(カードの場所, カードの key か None, 形の誤りの無い select か None, 書いた select)]
         self.selects = []
         # 表の key -> 表の場所（ページの表と束の group の表。重なりは E-S3）
@@ -657,6 +675,7 @@ class Validator:
                 tab_keys = self.tabs("tabs", data["tabs"])
                 tabs_checked = tab_keys is not None
                 self.has_tabs = tab_keys is not None
+                self.tab_keys = tab_keys
         has_answer_part = False
         # 部品を読めなかったとき（配列でない・知らない type）は、答える部品の有無を決められないので、
         # 同じ原因の誤りを重ねないよう「回答待ちなのに答える部品が無い」を出さない。
@@ -809,7 +828,31 @@ class Validator:
             self.add("E-K1", "sections", "一覧から選ぶページには、番号の列（type no）を持つ表が1つ以上要る")
 
     def kind_map(self, types, paths, secs):
-        self.kind_allowed("map", types, paths, ("table",))
+        allowed = self.kind_allowed("map", types, paths, ("table", "status"))
+        self.status_place([i for i in allowed if types[i] == "status"], paths, secs)
+
+    def status_place(self, positions, paths, secs):
+        """見取り図の中での状況の部品の置き場（E-U2）。1つまでで、部品の先頭に置く。
+        タブのあるページでは、最初のタブに置き、そのタブにはほかの部品を置かない。
+        本文に同じタブのパネルがあるときは、いまの E-N3（本文とデータの両方があるタブ）に任せる。"""
+        if not positions:
+            return
+        for i in positions[1:]:
+            self.add("E-U2", paths[i], "状況の部品（status）は1ページに1つにする")
+        first = positions[0]
+        if first != 0:
+            self.add("E-U2", paths[first], "状況の部品（status）は部品の先頭に置く")
+            return
+        if not self.has_tabs or self.tab_keys is None:
+            return
+        tab = secs[0].get("tab")
+        if not isinstance(tab, str) or tab not in self.tab_keys:
+            return  # tab の欠け・定義に無い tab は E-N3 で止める
+        if self.tab_keys[tab] != 0:
+            self.add("E-U2", join(paths[0], "tab"), "状況の部品（status）は最初のタブ（tabs の先頭）に置く")
+        for i in range(1, len(secs)):
+            if isinstance(secs[i], dict) and secs[i].get("tab") == tab:
+                self.add("E-U2", join(paths[i], "tab"), "状況のタブ %s には、状況の部品のほかの部品を置かない" % tab)
 
     def kind_bundle(self, types, paths, secs):
         b = self.kind_allowed("bundle", types, paths, ("bundle",))
@@ -1321,7 +1364,12 @@ class Validator:
             elif k not in data_keys and k not in body_keys:
                 hint = "" if self.body is not None else "。本文のパネルに置くなら、check に --body を付ける"
                 self.add("E-N3", tp, "タブ %s の中身が無い（本文のパネルも、tab が %s の部品も無い%s）" % (k, k, hint))
-        order = panels + [r for r in runs if r[0] not in body_keys]
+        # 状況の部品（status）のタブは、本文のパネルのタブより先に並べてよい（状況はいつも本文より上に描く）。
+        # 置き場の誤り（先頭でない・最初のタブでない）は E-U2 で止めるので、ここでは状況のタブを先頭として並びを見る。
+        # 最初のタブでない状況の部品は E-U2 で止めるので、そのタブは並びの判定から外す（誤りを重ねない）。
+        status_tab = next((s.get("tab") for s in secs if isinstance(s, dict) and s.get("type") == "status"), None)
+        lead = [r for r in runs if r[0] == status_tab] if tab_keys.get(status_tab) == 0 else []
+        order = lead + panels + [r for r in runs if r[0] not in body_keys and r[0] != status_tab]
         last = -1
         for k, where in order:
             if tab_keys[k] < last:
@@ -1441,6 +1489,10 @@ class Validator:
                 self.tables[path] = cols
                 if "rows" in sec:
                     self.rows(join(path, "rows"), sec["rows"], cols)
+        elif t == "status":
+            if self.obj(path, sec, ("type", "rows"), tab):
+                if "rows" in sec:
+                    self.status_rows(join(path, "rows"), sec["rows"])
         else:
             if self.obj(path, sec, ("type", "title", "items"), ("lane",) + tab):
                 if "title" in sec:
@@ -1455,6 +1507,78 @@ class Validator:
         if not in_group and "tab" in sec and not isinstance(sec["tab"], str):
             self.add("E-F3", join(path, "tab"), "文字列であるべき所が%sである" % type_name(sec["tab"]))
         return t
+
+    def status_rows(self, path, rows):
+        """状況の部品の行（E-U1）。行の形の誤り（配列・オブジェクトでない・型の違い）は共通の規則（E-F3）で止める。
+        空の配列は、どの状態も0件のページとして受け付ける。"""
+        if not isinstance(rows, list):
+            self.add("E-F3", path, "配列であるべき所が%sである" % type_name(rows))
+            return
+        for i, row in enumerate(rows):
+            rp = "%s[%d]" % (path, i)
+            if not isinstance(row, dict):
+                self.add("E-F3", rp, "オブジェクトであるべき所が%sである" % type_name(row))
+                continue
+            if "state" not in row:
+                self.add("E-F3", join(rp, "state"), "必須の項目が無い")
+                continue
+            state = row["state"]
+            if not isinstance(state, str):
+                self.add("E-F3", join(rp, "state"), "文字列であるべき所が%sである" % type_name(state))
+                continue
+            if state not in STATUS_STATES:
+                self.add("E-U1", join(rp, "state"), '状態 "%s" は決まった値（%s）でない' % (state, ", ".join(STATUS_STATES)))
+                continue
+            fields = STATUS_FIELDS[state]
+            for k in row:
+                if k != "state" and k not in fields:
+                    self.add("E-U1", join(rp, k), '状態 %s の行に置けない項目 "%s" がある（置けるのは %s）' % (state, k, "・".join(fields)))
+            for k in fields:
+                if k not in row:
+                    self.add("E-U1", join(rp, k), "状態 %s の行に要る項目が無い" % state)
+                    continue
+                v = row[k]
+                kp = join(rp, k)
+                if k == "refs":
+                    self.cell(kp, v, "ref")
+                elif k in STATUS_DATE_FIELDS:
+                    self.status_date(kp, v)
+                else:
+                    text = self.status_text(kp, v)
+                    if k == "who" and text is not None and PANE_NUMBER_RE.search(text):
+                        self.add("E-U1", kp, "持っているセッションにペインの番号（%数字）を書かない（統括か子のラベルで書く）")
+
+    def status_text(self, path, v):
+        """状況の行の文字の欄。文字列か {text, evidence} で、空（空白だけを含む）は止める。読めた文字を返す。"""
+        if isinstance(v, dict):
+            if not self.obj(path, v, ("text",), ("evidence",)):
+                return None
+            if "evidence" in v:
+                self.enum(join(path, "evidence"), v["evidence"], EVIDENCE, "E-T1")
+            if "text" not in v:
+                return None
+            path, v = join(path, "text"), v["text"]
+        if not isinstance(v, str):
+            self.add("E-F3", path, "文字列か {text, evidence} であるべき所が%sである" % type_name(v))
+            return None
+        if not v.strip():
+            self.add("E-U1", path, "空の文字列である（空白だけのものを含む）")
+            return None
+        return v
+
+    def status_date(self, path, v):
+        """状況の行の日付（YYYY-MM-DD・JST の日付）。形が違うか、実在しない日付なら止める。"""
+        if not isinstance(v, str):
+            self.add("E-F3", path, "文字列であるべき所が%sである" % type_name(v))
+            return
+        ok = bool(STATUS_DATE_RE.match(v))
+        if ok:
+            try:
+                datetime.strptime(v, "%Y-%m-%d")
+            except ValueError:
+                ok = False
+        if not ok:
+            self.add("E-U1", path, '"%s" は YYYY-MM-DD の形の実在する日付でない' % v)
 
     def columns(self, path, cols):
         """表の列を見て、[(key, type)] を返す。列が読めなければ（1つでも誤りがあれば）None を返す。"""
