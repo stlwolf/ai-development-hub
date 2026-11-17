@@ -959,6 +959,15 @@ class TabsCheck(unittest.TestCase):
             with self.subTest(end=end):
                 s = build.scan_body('<iframe>%s<p id="x">中</p>' % end)
                 self.assertEqual((s.ids, [t for t, _ in s.stack]), ([], ["iframe"]))
+        # SVG・MathML の中の /> で閉じた script と style はそこで閉じるので、あとの要素を文字として飲み込まない（owner のレビュー）
+        for body, ids in [('<svg><script/><g id="a"></g></svg><div id="b"></div>', ["a", "b"]),
+                          ('<svg><style/><g id="a"></g></svg>', ["a"]),
+                          ('<math><script/><mi id="a"></mi></math>', ["a"])]:
+            with self.subTest(body=body):
+                s = build.scan_body(body)
+                self.assertEqual((s.ids, s.stack), (ids, []))
+        # HTML の script の /> は無視されるので、中は終わりの印まで文字のまま
+        self.assertEqual(build.scan_body('<script/><div id="a"></div></script><div id="b"></div>').ids, ["b"])
         # 終わりの印の中に書いた < は属性の名前で、終わりの印は次の > までである
         self.assertEqual(build.scan_body('<iframe></iframe <p id="x">中</p>').ids, [])
         # template の中と、同じ属性が2回ある要素でも、中を文字として読むことは変わらない

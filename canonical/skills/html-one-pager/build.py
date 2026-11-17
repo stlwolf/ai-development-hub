@@ -443,8 +443,10 @@ class _BodyScan(html.parser.HTMLParser):
         return super().parse_endtag(i)
 
     def _open(self, tag, attrs, closed):
-        # 中を文字として読むかは、この要素をほかの判定から外すとき（template の中・同じ属性が2回）にも決める
-        if tag in RAWTEXT_TAGS or (tag in RCDATA_TAGS + RAWTEXT_HTML_TAGS and not any(t in FOREIGN_TAGS for t, _ in self.stack)):
+        # 中を文字として読むかは、この要素をほかの判定から外すとき（template の中・同じ属性が2回）にも決める。
+        # SVG・MathML の中では /> で閉じた要素はそこで閉じるので、中を持たない（HTML の要素の /> は無視され、中を文字として読む）
+        foreign = any(t in FOREIGN_TAGS for t, _ in self.stack)
+        if (tag in RAWTEXT_TAGS and not (foreign and closed)) or (tag in RCDATA_TAGS + RAWTEXT_HTML_TAGS and not foreign):
             self._raw = tag
         if any(t == "template" for t, _ in self.stack):
             # template の中身はブラウザの文書に入らないので、パネルにも id にも数えない（閉じ方の対応だけを追う）
