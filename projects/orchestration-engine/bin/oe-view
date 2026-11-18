@@ -50,7 +50,11 @@ usage: oe-view [--here] [--from-link] [--json] [--] <path>
 
 env:
   OE_VIEW_ROOTS        allowlist 許可ルート（コロン区切り。--from-link 時に強制）
-  OE_VIEW_STATE_DIR    viewer pane id の state 置き場（既定 ~/.claude/state/oe-view）
+  OE_VIEW_STATE_DIR    viewer の記録の置き場（既定 ~/.claude/state/oe-view）
+viewer の置き換え:
+  前の viewer を閉じるのは、記録したときと同じ WezTerm の GUI に、同じソケットで問い合わせられると
+  確かめられたときだけ。確かめられない（WezTerm を起動し直した・別の GUI から呼んだ・記録が古い形）
+  ときは閉じずに新しい viewer を開く。前の viewer が残ったら手で閉じる。
 
 exit:
   0   成功

@@ -10,8 +10,12 @@ set -uo pipefail
 #
 # 実 wez/glow/open は呼ばず PATH 先頭 mock に差し替える（test_oe_jump.sh / test_pane_split_targeting.sh
 # と同型）:
-#   - wez:  全呼び出しを wez.log に記録（$* を 1 行）。`wez pane list` は $MOCK_PANE_LIST_JSON、
-#           `wez pane split` は $MOCK_SPLIT_PANE_ID を返す。kill/activate は引数を log に記録。
+#   - wez:  全呼び出しを wez.log に記録（$* を 1 行）。`wez discover --quiet` は $MOCK_SOCKET を返す
+#           （$MOCK_DISCOVER_RC が 0 でなければその値で失敗）。`wez pane [--socket <S>] list` は
+#           $MOCK_PANE_LIST_JSON、`wez pane [--socket <S>] split` は $MOCK_SPLIT_PANE_ID を返す。
+#           kill/activate は引数を log に記録。
+#   - ps:   `ps -o lstart= -p <N>` に $MOCK_LSTART_<N> を末尾の空白つきで返す（無ければ失敗）。
+#           $MOCK_PS_FAIL=1 なら必ず失敗する。#509 の「同じ GUI のプロセスか」の照合に使う。
 #   - glow: 引数を glow.log に記録（--here の glow -p / 既存 fallback 検証用）。
 #   - open: 引数を open.log に記録。
 #   - bat:  引数を bat.log に記録（--here の glow 不在フォールバック検証用）。
@@ -39,13 +43,34 @@ export OE_VIEW_TEST_LOG_DIR="$_TMP_DIR/logs"
 cat > "$_TMP_DIR/shimsrc/wez" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/wez.log"
-case "${1:-} ${2:-}" in
-  "pane list")     printf '%s\n' "${MOCK_PANE_LIST_JSON:-[]}" ;;
-  "pane split")    printf '%s\n' "${MOCK_SPLIT_PANE_ID:-9}" ;;
-  "pane kill")     exit 0 ;;
-  "pane activate") exit 0 ;;
-  *)               exit 0 ;;
+if [[ "${1:-}" == "discover" ]]; then
+  [[ "${MOCK_DISCOVER_RC:-0}" -eq 0 ]] || exit "${MOCK_DISCOVER_RC}"
+  printf '%s\n' "${MOCK_SOCKET:?}"
+  exit 0
+fi
+[[ "${1:-}" == "pane" ]] || exit 0
+shift
+if [[ "${1:-}" == "--socket" ]]; then shift 2; fi
+case "${1:-}" in
+  list)     printf '%s\n' "${MOCK_PANE_LIST_JSON:-[]}" ;;
+  split)    printf '%s\n' "${MOCK_SPLIT_PANE_ID:-9}" ;;
+  *)        exit 0 ;;
 esac
+EOF
+cat > "$_TMP_DIR/shimsrc/ps" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/ps.log"
+[[ "${MOCK_PS_FAIL:-0}" == "1" ]] && exit 1
+pid=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -p) pid="${2:-}"; shift ;; esac
+  shift
+done
+[[ "$pid" =~ ^[0-9]+$ ]] || exit 1
+var="MOCK_LSTART_${pid}"
+val="${!var:-}"
+[[ -n "$val" ]] || exit 1
+printf '%s    \n' "$val"
 EOF
 cat > "$_TMP_DIR/shimsrc/glow" <<'EOF'
 #!/usr/bin/env bash
@@ -59,7 +84,7 @@ cat > "$_TMP_DIR/shimsrc/bat" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/bat.log"
 EOF
-chmod +x "$_TMP_DIR/shimsrc/wez" "$_TMP_DIR/shimsrc/glow" "$_TMP_DIR/shimsrc/open" "$_TMP_DIR/shimsrc/bat"
+chmod +x "$_TMP_DIR/shimsrc/wez" "$_TMP_DIR/shimsrc/ps" "$_TMP_DIR/shimsrc/glow" "$_TMP_DIR/shimsrc/open" "$_TMP_DIR/shimsrc/bat"
 
 # 厳選 PATH: mock（pathbin）+ システム最小（/usr/bin:/bin・awk/sed/grep/cat/head 等）。
 # 実 wez/glow/open/bat を確実に除外する（/usr/bin/open・homebrew bat・~/bin/wez の漏れ防止。
@@ -79,7 +104,7 @@ _link_real jq
 # 各 shim の在/不在を切り替える。
 shim_on()  { ln -sf "$_TMP_DIR/shimsrc/$1" "$_TMP_DIR/pathbin/$1"; }
 shim_off() { rm -f "$_TMP_DIR/pathbin/$1"; }
-all_shims_on() { shim_on wez; shim_on glow; shim_on open; shim_on bat; }
+all_shims_on() { shim_on wez; shim_on ps; shim_on glow; shim_on open; shim_on bat; }
 
 # 隔離 state / allowlist root。
 export OE_VIEW_STATE_DIR="$_TMP_DIR/oe-view-state"
@@ -87,6 +112,27 @@ export OE_VIEW_ROOTS="$_TMP_DIR/docroot"
 export WEZTERM_PANE="3"            # source pane（activate-back 検証）
 export MOCK_PANE_LIST_JSON="[]"
 export MOCK_SPLIT_PANE_ID="9"
+
+# WezTerm のソケットの fixtures（#509）。GUI のソケットは gui-sock-<GUI のプロセス番号>。
+# 中身は使わないので通常のファイルで代える。mktemp の /var は /private/var への symlink なので、
+# 記録に書かれる値（実体のパス）は realpath で求めておく。
+SOCK_DIR="$_TMP_DIR/wsock"
+mkdir -p "$SOCK_DIR"
+: > "$SOCK_DIR/gui-sock-100"
+: > "$SOCK_DIR/gui-sock-200"
+: > "$SOCK_DIR/sock"                         # mux サーバのソケット（名前にプロセス番号が無い）
+ln -s gui-sock-100 "$SOCK_DIR/default-org"   # GUI のソケットを指す symlink
+ln -s sock "$SOCK_DIR/link-to-sock"          # 名前にプロセス番号の無いソケットを指す symlink
+S100="$(realpath "$SOCK_DIR/gui-sock-100")"
+S200="$(realpath "$SOCK_DIR/gui-sock-200")"
+SMUX="$(realpath "$SOCK_DIR/sock")"
+T1="Tue Nov 18 10:00:00 2026"
+T2="Wed Nov 19 08:30:00 2026"
+export MOCK_SOCKET="$SOCK_DIR/gui-sock-100"
+export MOCK_LSTART_100="$T1"
+export MOCK_LSTART_200="$T2"
+export MOCK_DISCOVER_RC=0
+export MOCK_PS_FAIL=0
 
 VIEW="$_TMP_DIR/bin/oe-view"
 
@@ -117,6 +163,23 @@ glow_log() { cat "$_TMP_DIR/logs/glow.log" 2>/dev/null; }
 open_log() { cat "$_TMP_DIR/logs/open.log" 2>/dev/null; }
 bat_log()  { cat "$_TMP_DIR/logs/bat.log"  2>/dev/null; }
 has_line() { printf '%s\n' "$1" | grep -qF -- "$2" && echo yes || echo no; }
+# has_sub <log> <sub と引数> — `wez pane [--socket <S>] <sub と引数>` の行があるか（#509 で
+# すべての pane の呼び出しに --socket が付くので、付いていても付いていなくても数える）。
+has_sub() { printf '%s\n' "$1" | grep -qE -- "^pane( --socket [^ ]+)? $2( |\$)" && echo yes || echo no; }
+# pane_lines_without_socket <log> <S> — `--socket <S>` を付けずに呼んだ pane の行の数。
+pane_lines_without_socket() {
+  printf '%s\n' "$1" | grep -E '^pane ' | grep -cvF -- "pane --socket $2 " || true
+}
+# 記録（#509 の新しい形・key=value の3行）を置く / 読む。
+write_rec() { mkdir -p "$OE_VIEW_STATE_DIR"; printf '%s' "$1" > "$OE_VIEW_STATE_DIR/viewer-pane-id"; }
+good_rec() { printf 'pane_id=%s\nsocket=%s\nmux_started=%s\n' "$1" "$2" "$3"; }
+rec_get() { sed -n "s/^$1=//p" "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null | head -n 1; }
+rec_exists() { [[ -e "$OE_VIEW_STATE_DIR/viewer-pane-id" ]] && echo yes || echo no; }
+# reset_mocks — #509 の照合に関わる mock の値を既定に戻す。
+reset_mocks() {
+  export MOCK_SOCKET="$SOCK_DIR/gui-sock-100" MOCK_LSTART_100="$T1" MOCK_LSTART_200="$T2"
+  export MOCK_DISCOVER_RC=0 MOCK_PS_FAIL=0 WEZTERM_PANE="3"
+}
 
 # ----------------------------------------------------------------------------
 # [1] md 既定 → viewer 解決（state 無し=spawn）。glow を argv で渡す。新規時 source(3) へ activate。
@@ -128,14 +191,14 @@ export MOCK_PANE_LIST_JSON="[]"; export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "pane split が呼ばれる"               "yes" "$(has_line "$log" 'pane split')"
+ck "pane split が呼ばれる"               "yes" "$(has_sub "$log" 'split')"
 # PROG が argv で渡る: split 行に "-- glow -p --" と canonical path が含まれる（送信文字列でない）。
 ck "split に PROG (-- glow -p --)"        "yes" "$(has_line "$log" '-- glow -p --')"
 ck "split に対象 md path が argv で渡る"  "yes" "$(has_line "$log" "$MD_IN_ROOT")"
-ck "source(3) へ activate（#111）"        "yes" "$(has_line "$log" 'pane activate 3')"
-ck "pane send は呼ばれない（argv-spawn）" "no"  "$(has_line "$log" 'pane send')"
-ck "state 無し→kill されない"            "no"  "$(has_line "$log" 'pane kill')"
-ck "state file に新 pane 9 が書かれる"   "9"   "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
+ck "source(3) へ activate（#111）"        "yes" "$(has_sub "$log" 'activate 3')"
+ck "pane send は呼ばれない（argv-spawn）" "no"  "$(has_sub "$log" 'send')"
+ck "state 無し→kill されない"            "no"  "$(has_sub "$log" 'kill')"
+ck "記録に新 pane 9 が書かれる"          "9"   "$(rec_get pane_id)"
 
 # ----------------------------------------------------------------------------
 # [2] 注入: メタ文字名 'a$(whoami).md' が **argv 要素**として渡る（shell 非経由・%q 不要）。
@@ -151,45 +214,160 @@ rc=0; "$VIEW" -- "$MD_INJECT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
 # path はメタ文字を含むファイル名そのもの。argv で渡るのでリテラルが split 行に在る。
-split_line="$(printf '%s\n' "$log" | grep 'pane split' || true)"
+split_line="$(printf '%s\n' "$log" | grep -E '^pane( --socket [^ ]+)? split ' || true)"
 # shellcheck disable=SC2016  # 単一引用は grep -F のリテラルパターン（展開させない）
 ck "split 行に 'a\$(whoami).md' が argv で渡る" "yes" \
   "$(printf '%s\n' "$split_line" | grep -qF 'a$(whoami).md' && echo yes || echo no)"
 # 送信文字列を組む経路（pane send）が存在しないこと＝再トークナイズ面が無いことの証跡。
-ck "pane send は呼ばれない（注入面なし）" "no" "$(has_line "$log" 'pane send')"
+ck "pane send は呼ばれない（注入面なし）" "no" "$(has_sub "$log" 'send')"
 
 # ----------------------------------------------------------------------------
 # [3] viewer replace: state の pane が生存 → kill → 新 glow ペインを spawn → state 更新。
 #     glow -p はページャ（シェルでない）ため send 再利用できず、毎回 replace する（DJ-4）。
+#     #509: 閉じるのは、記録のソケット・GUI のプロセスの開始時刻が今と同じで、番号が list に
+#     あるときだけ。1回の resolve の中の pane の呼び出しは、すべて同じ --socket に固定する。
 # ----------------------------------------------------------------------------
-echo "[3] replace: state pane 7 生存 → kill 7 → spawn（新 pane 9）"
-all_shims_on; reset_state; reset_logs
-mkdir -p "$OE_VIEW_STATE_DIR"; printf '7\n' > "$OE_VIEW_STATE_DIR/viewer-pane-id"
+echo "[3] replace: 同じ GUI の viewer 7 → kill 7 → spawn（新 pane 9）・すべて --socket 固定"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
 export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":true}]'
 export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "pane list で生存確認"      "yes" "$(has_line "$log" 'pane list')"
-ck "生存 viewer 7 を kill"     "yes" "$(has_line "$log" 'pane kill 7')"
-ck "新 glow ペインを spawn"    "yes" "$(has_line "$log" 'pane split')"
-ck "state が新 pane 9 に更新"  "9"   "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
-ck "pane send は呼ばれない"    "no"  "$(has_line "$log" 'pane send')"
+ck "pane list で生存確認"      "yes" "$(has_sub "$log" 'list')"
+ck "生存 viewer 7 を kill"     "yes" "$(has_sub "$log" 'kill 7')"
+ck "kill は1回だけ"            "1"   "$(printf '%s\n' "$log" | grep -cE '^pane( --socket [^ ]+)? kill ' || true)"
+ck "新 glow ペインを spawn"    "yes" "$(has_sub "$log" 'split')"
+ck "source(3) へ activate"     "yes" "$(has_sub "$log" 'activate 3')"
+ck "pane の呼び出しはすべて --socket <実体のパス>" "0" "$(pane_lines_without_socket "$log" "$S100")"
+ck "ps はソケットの名前の番号 100 を引く" "yes" "$(has_line "$(cat "$_TMP_DIR/logs/ps.log" 2>/dev/null)" '-p 100')"
+ck "記録の pane_id が新 pane 9"          "9"     "$(rec_get pane_id)"
+ck "記録の socket が実体のパス"          "$S100" "$(rec_get socket)"
+ck "記録の mux_started は空白を削った値" "$T1"   "$(rec_get mux_started)"
+ck "記録は3行"                           "3"     "$(wc -l < "$OE_VIEW_STATE_DIR/viewer-pane-id" | tr -d ' ')"
+ck "pane send は呼ばれない"    "no"  "$(has_sub "$log" 'send')"
 
 # ----------------------------------------------------------------------------
-# [4] viewer stale: state の pane が不在 → split+state 更新（新 pane 11）。
+# [3b] replace（symlink）: discover が GUI のソケットを指す symlink を返しても、実体のパスで
+#      照らして閉じる（#509）。
 # ----------------------------------------------------------------------------
-echo "[4] stale: state pane 7 不在（list に無い）→ kill なし・spawn + state 更新"
-all_shims_on; reset_state; reset_logs
-mkdir -p "$OE_VIEW_STATE_DIR"; printf '7\n' > "$OE_VIEW_STATE_DIR/viewer-pane-id"
+echo "[3b] replace: discover が symlink（→ gui-sock-100）を返す → 実体で照らして kill 7"
+all_shims_on; reset_state; reset_logs; reset_mocks
+export MOCK_SOCKET="$SOCK_DIR/default-org"
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":true}]'
+export MOCK_SPLIT_PANE_ID="9"
+rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+log="$(wez_log)"
+ck "rc=0" "0" "$rc"
+ck "symlink でも viewer 7 を kill" "yes" "$(has_sub "$log" 'kill 7')"
+ck "pane の呼び出しはすべて --socket <実体のパス>" "0" "$(pane_lines_without_socket "$log" "$S100")"
+ck "記録の socket は実体のパス" "$S100" "$(rec_get socket)"
+
+# ----------------------------------------------------------------------------
+# [4] viewer stale: 同じ GUI でも、記録の番号が list に無い → kill なし・spawn + 記録の更新。
+# ----------------------------------------------------------------------------
+echo "[4] stale: 記録の pane 7 が list に無い → kill なし・spawn + 記録の更新"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
 export MOCK_PANE_LIST_JSON='[{"pane_id":99,"is_active":true}]'   # 7 は不在
 export MOCK_SPLIT_PANE_ID="11"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 log="$(wez_log)"
 ck "rc=0" "0" "$rc"
-ck "stale → kill されない"       "no"  "$(has_line "$log" 'pane kill')"
-ck "spawn で新規作成"            "yes" "$(has_line "$log" 'pane split')"
-ck "state が新 pane 11 に更新"   "11"  "$(head -n1 "$OE_VIEW_STATE_DIR/viewer-pane-id" 2>/dev/null)"
+ck "stale → kill されない"       "no"  "$(has_sub "$log" 'kill')"
+ck "spawn で新規作成"            "yes" "$(has_sub "$log" 'split')"
+ck "記録が新 pane 11 に更新"     "11"  "$(rec_get pane_id)"
+
+# ----------------------------------------------------------------------------
+# [4b]〜[4i] #509: 記録の番号のペインが list にあっても、同じ GUI のプロセスと確かめられなければ
+#      閉じない。どの場面でも新しい viewer は開く。
+# ----------------------------------------------------------------------------
+# _no_kill_case <label> — 記録と mock を置いたあとに呼ぶ。list に記録の番号 7 を置いて resolve し、
+#   kill されないことと、新しい viewer を開くことを確かめる。
+_no_kill_case() {
+  local label="$1"
+  export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":false},{"pane_id":3,"is_active":true}]'
+  export MOCK_SPLIT_PANE_ID="9"
+  rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+  log="$(wez_log)"
+  ck "${label}: rc=0"            "0"   "$rc"
+  ck "${label}: kill されない"   "no"  "$(has_sub "$log" 'kill')"
+  ck "${label}: 新しい viewer を開く" "yes" "$(has_sub "$log" 'split')"
+}
+
+echo "[4b] 別の GUI: 記録のソケットは gui-sock-200、今の接続先は gui-sock-100 → kill しない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S200" "$T2")"
+_no_kill_case "別の GUI"
+ck "別の GUI: 記録は今の接続先に変わる" "$S100" "$(rec_get socket)"
+
+echo "[4c] プロセス番号の使い回し: 同じ gui-sock-100 でも開始時刻が違う → kill しない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_LSTART_100="$T2"
+_no_kill_case "開始時刻が違う"
+ck "開始時刻が違う: 記録は今の開始時刻に変わる" "$T2" "$(rec_get mux_started)"
+
+echo "[4d] 古い形の記録（番号だけ）→ kill しない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec $'7\n'
+_no_kill_case "古い形"
+ck "古い形: 記録は新しい形に変わる" "$S100" "$(rec_get socket)"
+
+echo "[4e] 壊れた記録（キーが欠ける・pane_id が数字でない・値が空）→ kill しない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(printf 'pane_id=7\nsocket=%s\n' "$S100")"
+_no_kill_case "mux_started が欠ける"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec x7 "$S100" "$T1")"
+_no_kill_case "pane_id が数字でない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "" "$T1")"
+_no_kill_case "socket が空"
+
+echo "[4f] ソケットの名前にプロセス番号が無い（mux サーバ・symlink の先も同じ）→ kill せず記録を消す"
+all_shims_on; reset_state; reset_logs; reset_mocks
+export MOCK_SOCKET="$SOCK_DIR/sock"
+write_rec "$(good_rec 7 "$SMUX" "$T1")"
+_no_kill_case "名前が sock"
+ck "名前が sock: 記録を書かない" "no" "$(rec_exists)"
+all_shims_on; reset_state; reset_logs; reset_mocks
+export MOCK_SOCKET="$SOCK_DIR/link-to-sock"
+write_rec "$(good_rec 7 "$SMUX" "$T1")"
+_no_kill_case "symlink の先が sock"
+ck "symlink の先が sock: 記録を書かない" "no" "$(rec_exists)"
+
+echo "[4g] ps が失敗する → kill せず、spawn のあとも開始時刻が取れないので記録を消す"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_PS_FAIL=1
+_no_kill_case "ps が失敗"
+ck "ps が失敗: 記録を書かない" "no" "$(rec_exists)"
+
+echo "[4h] 記録の番号が呼び出し元のペイン（WEZTERM_PANE=3）と同じ → kill しない"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 3 "$S100" "$T1")"
+export MOCK_PANE_LIST_JSON='[{"pane_id":3,"is_active":true}]'
+export MOCK_SPLIT_PANE_ID="9"
+rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+log="$(wez_log)"
+ck "呼び出し元: rc=0"          "0"   "$rc"
+ck "呼び出し元: kill されない" "no"  "$(has_sub "$log" 'kill')"
+ck "呼び出し元: 新しい viewer を開く" "yes" "$(has_sub "$log" 'split')"
+
+echo "[4i] wez discover が失敗する → kill も split もせず rc 2"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_DISCOVER_RC=1
+export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":true}]'
+rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+log="$(wez_log)"
+ck "discover 失敗: rc=2"          "2"  "$rc"
+ck "discover 失敗: kill されない" "no" "$(has_sub "$log" 'kill')"
+ck "discover 失敗: split されない" "no" "$(has_sub "$log" 'split')"
+reset_mocks
 
 # ----------------------------------------------------------------------------
 # [5] 非 md 直叩き → open -- <path>（canonical パス）。
@@ -262,7 +440,7 @@ all_shims_on; reset_state; reset_logs
 export MOCK_PANE_LIST_JSON="[]"; export MOCK_SPLIT_PANE_ID="9"
 rc=0; "$VIEW" --from-link -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "root 内 → exit 0" "0" "$rc"
-ck "pane split（spawn）が呼ばれる" "yes" "$(has_line "$(wez_log)" 'pane split')"
+ck "pane split（spawn）が呼ばれる" "yes" "$(has_sub "$(wez_log)" 'split')"
 
 # ----------------------------------------------------------------------------
 # [10] 入力サニタイズ: 改行・CR・制御文字を含むパス → 拒否（exit 1）。
@@ -368,15 +546,20 @@ shim_off wez
 cat > "$_TMP_DIR/pathbin/wez" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/wez.log"
-case "${1:-} ${2:-}" in
-  "pane list") printf '[]\n' ;;
-  "pane split") exit 5 ;;     # split 失敗（環境エラー）
-  *) exit 0 ;;
+if [[ "${1:-}" == "discover" ]]; then printf '%s\n' "${MOCK_SOCKET:?}"; exit 0; fi
+[[ "${1:-}" == "pane" ]] || exit 0
+shift
+if [[ "${1:-}" == "--socket" ]]; then shift 2; fi
+case "${1:-}" in
+  list)  printf '[]\n' ;;
+  split) exit 5 ;;     # split 失敗（環境エラー）
+  *)     exit 0 ;;
 esac
 EOF
 chmod +x "$_TMP_DIR/pathbin/wez"
 rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
 ck "split 失敗 → exit 2" "2" "$rc"
+ck "split まで進んで失敗した" "yes" "$(has_sub "$(wez_log)" 'split')"
 shim_off wez; shim_on wez   # 実体 shim（symlink）に戻す
 
 # ----------------------------------------------------------------------------
