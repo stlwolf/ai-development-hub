@@ -15,7 +15,8 @@ set -uo pipefail
 #           $MOCK_PANE_LIST_JSON、`wez pane [--socket <S>] split` は $MOCK_SPLIT_PANE_ID を返す。
 #           kill/activate は引数を log に記録。
 #   - ps:   `ps -o lstart= -p <N>` に $MOCK_LSTART_<N> を末尾の空白つきで返す（無ければ失敗）。
-#           $MOCK_PS_FAIL=1 なら必ず失敗する。#509 の「同じ GUI のプロセスか」の照合に使う。
+#           $MOCK_PS_FAIL=1 なら必ず失敗する。$MOCK_PS_OK_CALLS=<N> なら N 回目より後は失敗する。
+#           #509 の「同じ GUI のプロセスか」の照合に使う。
 #   - glow: 引数を glow.log に記録（--here の glow -p / 既存 fallback 検証用）。
 #   - open: 引数を open.log に記録。
 #   - bat:  引数を bat.log に記録（--here の glow 不在フォールバック検証用）。
@@ -61,6 +62,11 @@ cat > "$_TMP_DIR/shimsrc/ps" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${OE_VIEW_TEST_LOG_DIR:?}/ps.log"
 [[ "${MOCK_PS_FAIL:-0}" == "1" ]] && exit 1
+# MOCK_PS_OK_CALLS=<N> なら、N 回目までだけ答え、それより後の呼び出しは失敗する。
+if [[ -n "${MOCK_PS_OK_CALLS:-}" ]]; then
+  calls="$(wc -l < "${OE_VIEW_TEST_LOG_DIR:?}/ps.log" | tr -d ' ')"
+  [[ "$calls" -le "$MOCK_PS_OK_CALLS" ]] || exit 1
+fi
 pid=""
 while [[ $# -gt 0 ]]; do
   case "$1" in -p) pid="${2:-}"; shift ;; esac
@@ -179,6 +185,7 @@ rec_exists() { [[ -e "$OE_VIEW_STATE_DIR/viewer-pane-id" ]] && echo yes || echo 
 reset_mocks() {
   export MOCK_SOCKET="$SOCK_DIR/gui-sock-100" MOCK_LSTART_100="$T1" MOCK_LSTART_200="$T2"
   export MOCK_DISCOVER_RC=0 MOCK_PS_FAIL=0 WEZTERM_PANE="3"
+  unset MOCK_PS_OK_CALLS
 }
 
 # ----------------------------------------------------------------------------
@@ -199,6 +206,7 @@ ck "source(3) へ activate（#111）"        "yes" "$(has_sub "$log" 'activate 3
 ck "pane send は呼ばれない（argv-spawn）" "no"  "$(has_sub "$log" 'send')"
 ck "state 無し→kill されない"            "no"  "$(has_sub "$log" 'kill')"
 ck "記録に新 pane 9 が書かれる"          "9"   "$(rec_get pane_id)"
+ck "pane の呼び出しはすべて --socket <実体のパス>（初回）" "0" "$(pane_lines_without_socket "$log" "$S100")"
 
 # ----------------------------------------------------------------------------
 # [2] 注入: メタ文字名 'a$(whoami).md' が **argv 要素**として渡る（shell 非経由・%q 不要）。
@@ -345,6 +353,26 @@ write_rec "$(good_rec 7 "$S100" "$T1")"
 export MOCK_PS_FAIL=1
 _no_kill_case "ps が失敗"
 ck "ps が失敗: 記録を書かない" "no" "$(rec_exists)"
+
+echo "[4g2] ps は成功するが空白だけを返す → kill せず記録を消す"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_LSTART_100="   "
+_no_kill_case "ps が空白だけ"
+ck "ps が空白だけ: 記録を書かない" "no" "$(rec_exists)"
+
+echo "[4g3] spawn の前は開始時刻が取れ、spawn のあとは取れない → kill はするが記録を消す"
+all_shims_on; reset_state; reset_logs; reset_mocks
+write_rec "$(good_rec 7 "$S100" "$T1")"
+export MOCK_PS_OK_CALLS=1
+export MOCK_PANE_LIST_JSON='[{"pane_id":7,"is_active":false}]'
+export MOCK_SPLIT_PANE_ID="9"
+rc=0; "$VIEW" -- "$MD_IN_ROOT" >/dev/null 2>&1 || rc=$?
+log="$(wez_log)"
+ck "spawn のあと取れない: rc=0"            "0"   "$rc"
+ck "spawn のあと取れない: viewer 7 を kill" "yes" "$(has_sub "$log" 'kill 7')"
+ck "spawn のあと取れない: ps は2回呼ばれる" "2"   "$(wc -l < "$_TMP_DIR/logs/ps.log" | tr -d ' ')"
+ck "spawn のあと取れない: 記録を書かない"   "no"  "$(rec_exists)"
 
 echo "[4h] 記録の番号が呼び出し元のペイン（WEZTERM_PANE=3）と同じ → kill しない"
 all_shims_on; reset_state; reset_logs; reset_mocks
