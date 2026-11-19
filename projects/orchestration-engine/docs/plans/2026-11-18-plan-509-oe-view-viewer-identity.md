@@ -126,9 +126,9 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
 
 ### 実装（ゲート3のあと）
 
-1. [ ] `branch-naming` のとおりにブランチ名を決め、この worktree で切り替える（`git switch -c feature/#509_<slug>`）。この plan を最初の commit に入れる。
-2. [ ] episode を engine の木に作る（`projects/orchestration-engine/docs/episodes/2026-11-18-episode-509-oe-view-viewer-identity.md`）。作業中に随時書き足す。
-3. [ ] 先にテストを足す（`projects/orchestration-engine/tests/test_oe_view.sh`）。mock の `wez` を `wez pane --socket <path> <sub>` と `wez discover --quiet` に対応させ、ソケットごとに `pane list` の中身を変えられるようにする。`ps` の mock を足し、プロセス番号ごとに `lstart` を変えられるようにする。足す場面は次のとおりである。
+1. [x] `branch-naming` のとおりにブランチ名を決め、この worktree で切り替える（`git switch -c feature/#509_<slug>`）。この plan を最初の commit に入れる。
+2. [x] episode を engine の木に作る（`projects/orchestration-engine/docs/episodes/2026-11-18-episode-509-oe-view-viewer-identity.md`）。作業中に随時書き足す。
+3. [x] 先にテストを足す（`projects/orchestration-engine/tests/test_oe_view.sh`）。mock の `wez` を `wez pane --socket <path> <sub>` と `wez discover --quiet` に対応させ、ソケットごとに `pane list` の中身を変えられるようにする。`ps` の mock を足し、プロセス番号ごとに `lstart` を変えられるようにする。足す場面は次のとおりである。
    - 閉じる場面: 新しい形の記録で、ソケットとプロセスと開始時刻が一致し、番号が list にある。`pane kill` が1回呼ばれる（今ある [3] をこの形に直す）。
    - 閉じない場面（どれも `pane kill` が呼ばれず、新しい viewer は開く）:
      - 記録のソケットは A、今回の接続先は B（GUI が2つある）。
@@ -145,14 +145,14 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
      - 書いた記録が3行で、使ったソケットの実体のパスと、空白を削った開始時刻が入っている。
      - spawn のあとに開始時刻が取れなければ、記録を書かない（ファイルが無くなる）。
      - `ps` の出力の末尾に空白があっても、記録と同じと判定して閉じる。
-4. [ ] 足したテストを変更の前のコードで走らせ、閉じない場面と `--socket` の場面が落ちることを確かめる。
-5. [ ] `projects/orchestration-engine/lib/oe-viewer.sh` を直す。
+4. [x] 足したテストを変更の前のコードで走らせ、閉じない場面と `--socket` の場面が落ちることを確かめる。
+5. [x] `projects/orchestration-engine/lib/oe-viewer.sh` を直す。
    - 接続先を決める関数を足す。`wez discover --quiet` を1回呼び、シンボリックリンクをたどった実体のパスを返す（`bin/oe-view` にある `_oe_view_canonicalize` と同じたどり方を使う）。
    - GUI のプロセスの開始時刻を返す関数を足す。名前が `gui-sock-<数字>` でなければ、または `ps` が失敗すれば、空を返す。開始時刻は `LC_ALL=C ps -o lstart= -p <番号>` の前後の空白を削った値にする。
    - 記録を `key=value` の3行（`pane_id`・`socket`・`mux_started`）で書き、今と同じく一時ファイルからの rename で置き換える。読むときは `source` や `eval` を使わず、最初の `=` で分ける。DJ-1 の条件1 を満たさなければ「確かめられない」とする。
    - `oe_viewer_resolve` を、DJ-1 の閉じる条件のとおりに直す。`_oe_viewer_pane_exists` と `_oe_viewer_spawn` はソケットを引数で受け取る。
-6. [ ] `bin/oe-view` の usage と `bin/README.md` の oe-view の節を、新しい記録の形と閉じる条件に合わせて直す。新しい形に変えたあとの最初の1回は前の viewer が残ることも書く。
-7. [ ] 検査を回す。
+6. [x] `bin/oe-view` の usage と `bin/README.md` の oe-view の節を、新しい記録の形と閉じる条件に合わせて直す。新しい形に変えたあとの最初の1回は前の viewer が残ることも書く。
+7. [x] 検査を回す。
    ```bash
    bash projects/orchestration-engine/tests/test_oe_view.sh
    /bin/bash projects/orchestration-engine/tests/test_oe_view.sh
@@ -162,11 +162,11 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
    git diff --check
    ```
    `/bin/bash` は bash 3.2 で回すためのものである。
-8. [ ] 手元の WezTerm で1回だけ実物を確かめる。`oe view <md>` を3回打つ。1回目は古い形の記録なので前の viewer が残り、2回目と3回目では前の viewer が閉じて新しい viewer が開くことと、記録が3行になっていることを見る。WezTerm の起動し直しは owner の作業を止めるので、自動のテストで確かめた場面に任せ、実物では試さない。
+8. [x] 手元の WezTerm で1回だけ実物を確かめる。`oe view <md>` を3回打つ。1回目は古い形の記録なので前の viewer が残り、2回目と3回目では前の viewer が閉じて新しい viewer が開くことと、記録が3行になっていることを見る。WezTerm の起動し直しは owner の作業を止めるので、自動のテストで確かめた場面に任せ、実物では試さない。
 
 ### ゲート4（実装の確かめ）
 
-- [ ] 実装 SO を1周回す（弱 SO・codex と cursor の2レーン）。差分と DJ-1 の閉じる条件を渡し、閉じてはいけないペインを閉じる経路が残っていないかを問う。
+- [x] 実装 SO を1周回す（弱 SO・codex と cursor の2レーン）。差分と DJ-1 の閉じる条件を渡し、閉じてはいけないペインを閉じる経路が残っていないかを問う。
   ```bash
   so-compare -w "$(pwd)" -f tmp/509-impl-so-prompt.md -o tmp/509-impl-so --with codex,cursor
   ```
@@ -181,6 +181,15 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
 
 - [ ] `branch-finish` で後始末をする。#509 を閉じるかを判断し、着地のコメントを書く。
 - [ ] `oe` は本体のチェックアウトの `bin/oe` へのリンクとして配られているので、master を取り込めば反映される。`sync.sh` は要らない。
+
+## ゲート3 のあとの変更
+
+どれも補正で、閉じる条件（DJ-1）は変えていない。
+
+- ブランチの前置きを `feature/` ではなく `fix/` にした（`fix/#509_oe_view_viewer_identity`）。`branch-naming` は、ブランチの主な commit の型に前置きを合わせる。
+- 実装 SO（ゲート4）の should の2件を取り入れて、テストを足した。viewer を開く前は開始時刻が取れ、開いたあとは取れない場面と、`ps` が空白だけを返す場面、記録が無い初回でもすべての `wez pane` に `--socket` が付くことを数える確かめである。
+- 手順8 は、`oe view` を3回打つ形から、6つの場面を順に試すスクリプト（作業層の `tmp/509-real-check.sh`）を owner が実行する形に変えた。理由は2つある。`~/bin/oe` は本体のチェックアウト（master）のコードを呼ぶので、ブランチのコードを試すには `bin/oe-view` を直接呼ぶ必要があった。また、このセッションは WezTerm の外で動いていて、ここから打つと owner の tmux の画面が分割される。スクリプトは、記録を書き換えて「別の GUI」「開始時刻の違い」「古い形の記録」の場面も作り、閉じないことを実物で確かめた。
+- 手順8 の1回目は、tmux に古い `WEZTERM_UNIX_SOCKET` が残っていて `wez discover` が失敗し、viewer を開く前に止まった（#431 の不具合。master でも同じく失敗する）。スクリプトでその変数を外して実行し直し、6つの場面がすべて期待どおりになった。
 
 ## 範囲の外
 
