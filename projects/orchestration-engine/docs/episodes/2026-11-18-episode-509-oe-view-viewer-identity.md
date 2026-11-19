@@ -3,7 +3,7 @@ id: "01M7PK466VWX15TSTGPWTM9PJZ"
 title: "#509 oe-view が前の viewer を閉じる前に、同じ WezTerm の中のペインかを確かめる"
 date: 2026-11-18
 type: episode
-status: draft
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/509"
@@ -123,8 +123,8 @@ frontmatter の `promotion` に1判定1件で置いた。理由と材料は次�
 
 ### 残課題（行き先）
 
-- #431 に、tmux のグローバルな環境に前の GUI のソケットが残り、tmux の中で oe-view が動いていなかった観察を書き足す。行き先: #431 のコメントにするかを owner が決める（2026-11-19 に問いを出した。PR をレビューできる状態にするのを先にすると owner が決めたので、答えはそのあとに受ける）。`本文: 手元の WezTerm での確認（plan の手順8）`
-- `wez` が `wezterm cli` に `--no-auto-start` を付けていない件。行き先: 新しい issue にするかを owner が決める（上の件と同じ問いで、答えはこのあとに受ける）。`本文なし: plan の「手当てしない経路」節と PR の本文に書いた`
+- #431 に、tmux のグローバルな環境に前の GUI のソケットが残り、tmux の中で oe-view が動いていなかった観察を書き足す。行き先: #509 の着地コメント（ゲート6）に、#431 へ書き足す案として書く。#431 に投稿するかは、その案を見て owner が決める（「統括へ渡す」を行き先と認めず、起票の案を着地コメントに書いて閉じる、という #618 の 2026-11-18 の決定の形に合わせた）。`本文: 手元の WezTerm での確認（plan の手順8）`
+- `wez` が `wezterm cli` に `--no-auto-start` を付けていない件。行き先: #509 の着地コメント（ゲート6）に、起票の案として書く（上の件と同じ形）。`本文なし: plan の「手当てしない経路」節と PR の本文に書いた`
 - viewer のプロセスを止める案と、常駐の viewer の案。行き先: 追わない。decision の「覆す条件」に第一の代わりとして残した。`本文: 着手から plan の承認まで`
 - lib を bash 5 で動かすテスト。行き先: 追わない。engine のテストは PATH を絞って `/bin/bash` で動かす作りで、bash 3.2 が対象である。`本文: 直した`
 - 確認のスクリプト（作業層の `tmp/509-real-check.sh`）。行き先: 追わない。一回きりの確認で、場面と結果は本文に写した。`本文: 手元の WezTerm での確認（plan の手順8）`
@@ -136,4 +136,4 @@ frontmatter の `promotion` に1判定1件で置いた。理由と材料は次�
 - evidence anchor: 本文が指す作業層のパス（`tmp/509-test-before.txt`・`tmp/509-design-so/`・`tmp/509-impl-so/`・`tmp/509-real-check.sh`）は消える。要点（落ちた項目の数・SO の判定と採った指摘・確認の場面と結果）は本文に写してあり、設計 SO の案の一覧は plan の探索の記録にある。
 - 閉じ方の点検（Step 4）: Codex（gpt-6.1-sol）に1回、失敗の省略・残課題の行き先・揮発するパス・ほかの文書への戻しの4点だけを見てもらった（出力は作業層の `tmp/509-closure-so/`）。判定は refuted（must 3件・should 1件）で、指摘と直し方は「事実・失敗」の最後の項目に書いた。揮発するパスへの依存は問題なしとされた。
 - 認識合わせの抜け: なし。後から見つかったもの（tmux の古いソケット・`~/bin/oe` の向き先）は、#509 の要件ではなく確かめ方の問題だった。
-- status: draft のまま据え置く。理由: 残課題のうち2件（#431 へのコメントと `--no-auto-start` の issue）の行き先を owner が決めてから stable にする。達成度: 達成（WezTerm を実際に起動し直す場面は試していない）。
+- status: stable。達成度: 達成（WezTerm を実際に起動し直す場面は試していない）。一度は、範囲の外の2件の行き先を owner が決めるまで draft に据え置いたが、PR をレビューできる状態にした時点で4層の文書の status がそろっていないと owner に指摘された。2件の行き先を着地コメントに決めて、stable にした。
