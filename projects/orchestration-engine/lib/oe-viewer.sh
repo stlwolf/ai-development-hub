@@ -16,8 +16,9 @@
 #   シェルも tmux も経由しないため確実に描画され、path が argv 要素として渡るので
 #   再トークナイズが起きず注入面が消滅する（§5・%q 不要）。
 #   glow -p はページャ（シェルではない）ため send による再利用ができない。よって再利用は
-#   **replace**: state（OE_VIEW_STATE_FILE）の viewer が生存なら kill → 新 glow ペインを
-#   spawn → state 更新 / stale・無しなら spawn + state 更新。spawn 後に source ペイン
+#   **replace**: 記録（OE_VIEW_STATE_FILE）の viewer が同じ GUI のプロセスにあると確かめられた
+#   ときだけ kill → 新 glow ペインを spawn → 記録の更新 / 確かめられない・無いときは閉じずに
+#   spawn + 記録の更新（#509・下の「前の viewer を閉じてよいかの確かめ」）。spawn 後に source ペイン
 #   （WEZTERM_PANE）へ activate して focus 奪取を回避（#111）。
 #
 # 前の viewer を閉じてよいかの確かめ（#509・plan 2026-11-18-plan-509 の DJ-1）:

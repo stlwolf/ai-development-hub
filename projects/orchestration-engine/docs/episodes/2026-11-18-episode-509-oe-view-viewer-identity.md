@@ -56,7 +56,7 @@ promotion:
 - `lib/oe-viewer.sh` に、接続先を1回だけ決める関数、GUI のプロセスの開始時刻を返す関数、閉じてよいかを決める関数を足し、`oe_viewer_resolve` をその順に組み直した。記録は `key=value` の3行にし、読むときは各行を最初の `=` で分ける。
 - symlink をたどる処理は、`bin/oe-view` の `_oe_view_canonicalize` を使わず、`realpath` があれば使い、無ければたどらない形にした。`_oe_view_canonicalize` は bin の側にあり、lib から bin の関数を呼ぶと向きが逆になるためである。たどらなかった symlink は `gui-sock-<番号>` の名前にならないので、閉じない側に倒れる。
 - 直したあと、`test_oe_view.sh` は bash 5 と bash 3.2 のどちらで起動しても115項目すべて通った。ただし、テストの PATH は `/usr/bin:/bin` だけなので、テストから起動する `oe-view` は、どちらの場合も `/bin/bash`（3.2）で動いている。bash 5 で lib を動かす確かめにはなっていない。
-- `test_home_unset.sh` は1項目（`oe-register --help` が 1 を返す）が落ちた。master のままの本体のチェックアウトでも同じ項目が落ちたので、今回の変更とは関係ない。このセッションが tmux の外で動いていて `TMUX_PANE` が無いためで、#309 のコメントに同じ観察がある。
+- `test_home_unset.sh` は1項目（`oe-register --help` が 1 を返す）が落ちた。master のままの本体のチェックアウトでも同じ項目が落ちたので、今回の変更とは関係ない。このセッションが tmux の外で動いていて `TMUX_PANE` が無いためで、#309 のコメントに同じ観察がある（2026-11-18 に #670 として起票されている）。
 
 ### ゲート4（実装の確かめ）の実装 SO
 
@@ -128,7 +128,7 @@ frontmatter の `promotion` に1判定1件で置いた。理由と材料は次�
 - viewer のプロセスを止める案と、常駐の viewer の案。行き先: 追わない。decision の「覆す条件」に第一の代わりとして残した。`本文: 着手から plan の承認まで`
 - lib を bash 5 で動かすテスト。行き先: 追わない。engine のテストは PATH を絞って `/bin/bash` で動かす作りで、bash 3.2 が対象である。`本文: 直した`
 - 確認のスクリプト（作業層の `tmp/509-real-check.sh`）。行き先: 追わない。一回きりの確認で、場面と結果は本文に写した。`本文: 手元の WezTerm での確認（plan の手順8）`
-- `test_home_unset.sh` の `oe-register --help` の1項目。行き先: 追わない。#309 のコメントで既知である。`本文: 直した`
+- `test_home_unset.sh` の `oe-register --help` の1項目。行き先: #670（2026-11-18 に統括が起票した。PR のレビューで統括に指摘されて、「追わない」から付け替えた）。`本文: 直した`
 
 ### 閉じ方の確かめ
 
