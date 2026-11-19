@@ -2,8 +2,9 @@
 # oe-viewer.sh — viewer ペイン解決ロジック（oe-view 用・source 専用）
 #
 # Sourced by bin/oe-view. Not intended for standalone execution.
-# 責務: viewer ペイン（md を glow で描画する固定ペイン）の state file 追跡・生存確認・
-#       argv-spawn の replace モデル（生存なら kill→新規 spawn / stale・無しなら spawn）。
+# 責務: viewer ペイン（md を glow で描画する固定ペイン）の記録の追跡・閉じてよいかの確かめ・
+#       argv-spawn の replace モデル（同じ GUI のプロセスにあると確かめられたときだけ kill→新規
+#       spawn / 確かめられない・無いときは閉じずに spawn・#509）。
 # Naming: oe_viewer_* for public, _oe_viewer_* for private。wez（engine）ペインの操作は
 #         すべて下層プリミティブ `wez pane …` 経由（ADR-001/004 の wez=下層方針を守る）。
 #

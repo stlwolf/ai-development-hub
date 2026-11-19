@@ -6,7 +6,8 @@ set -uo pipefail
 #
 # DJ-4/§11: 既定 md 経路は「split したシェルへ glow を send」から「ペインのプログラムとして
 # glow を直接 argv-spawn する replace モデル」に改定済。検証も `wez pane split … -- glow -p
-# -- <path>` の引数列（PROG が argv で渡る）と replace（生存 viewer の kill→spawn）を見る。
+# -- <path>` の引数列（PROG が argv で渡る）と replace（同じ GUI のプロセスの viewer と確かめ
+# られたときだけ kill→spawn・確かめられないときは閉じずに spawn・#509）を見る。
 #
 # 実 wez/glow/open は呼ばず PATH 先頭 mock に差し替える（test_oe_jump.sh / test_pane_split_targeting.sh
 # と同型）:
@@ -230,7 +231,7 @@ ck "split 行に 'a\$(whoami).md' が argv で渡る" "yes" \
 ck "pane send は呼ばれない（注入面なし）" "no" "$(has_sub "$log" 'send')"
 
 # ----------------------------------------------------------------------------
-# [3] viewer replace: state の pane が生存 → kill → 新 glow ペインを spawn → state 更新。
+# [3] viewer replace: 記録の viewer が同じ GUI のプロセスにある → kill → 新 glow ペインを spawn → 記録の更新。
 #     glow -p はページャ（シェルでない）ため send 再利用できず、毎回 replace する（DJ-4）。
 #     #509: 閉じるのは、記録のソケット・GUI のプロセスの開始時刻が今と同じで、番号が list に
 #     あるときだけ。1回の resolve の中の pane の呼び出しは、すべて同じ --socket に固定する。
