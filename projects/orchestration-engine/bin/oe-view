@@ -50,7 +50,11 @@ usage: oe-view [--here] [--from-link] [--json] [--] <path>
 
 env:
   OE_VIEW_ROOTS        allowlist 許可ルート（コロン区切り。--from-link 時に強制）
-  OE_VIEW_STATE_DIR    viewer pane id の state 置き場（既定 ~/.claude/state/oe-view）
+  OE_VIEW_STATE_DIR    viewer の記録の置き場（既定 ~/.claude/state/oe-view）
+viewer の置き換え:
+  前の viewer を閉じるのは、記録したときと同じ WezTerm の GUI に、同じソケットで問い合わせられると
+  確かめられたときだけ。確かめられない（WezTerm を起動し直した・別の GUI から呼んだ・記録が古い形）
+  ときは閉じずに新しい viewer を開く。前の viewer が残ったら手で閉じる。
 
 exit:
   0   成功
@@ -251,9 +255,10 @@ oe_view_cli() {
     return 2
   fi
 
-  # oe_viewer_resolve は (生存 viewer を kill して) glow を argv-spawn する replace モデル。
-  # path は argv 要素として渡るので %q 不要・注入面なし（§5）。spawn 失敗時 rc 2（環境エラー）/
-  # state 更新失敗時 rc 1。rc をそのまま伝播する。`if ! cmd; then return $?` は `!` が $? を
+  # oe_viewer_resolve は (前の viewer が同じ GUI のプロセスにあると確かめられたときだけ kill して)
+  # glow を argv-spawn する replace モデル（#509）。path は argv 要素として渡るので %q 不要・
+  # 注入面なし（§5）。接続先が決まらない・spawn 失敗時 rc 2（環境エラー）/ 記録の更新失敗時 rc 1。
+  # rc をそのまま伝播する。`if ! cmd; then return $?` は `!` が $? を
   # 0 に潰すため使わず、直接 rc を捕捉する。
   local pane_id rc
   pane_id="$(oe_viewer_resolve "$canonical")"; rc=$?
