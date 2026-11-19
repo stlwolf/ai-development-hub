@@ -3,7 +3,7 @@ id: "01M7NG80QKXGGG47CVT1WZN4QR"
 title: "#509 oe-view が前の viewer を閉じる前に、同じ WezTerm の中のペインかを確かめる"
 date: 2026-11-18
 type: plan
-status: in-development
+status: stable
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/509"
@@ -170,7 +170,7 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
   ```bash
   so-compare -w "$(pwd)" -f tmp/509-impl-so-prompt.md -o tmp/509-impl-so --with codex,cursor
   ```
-- [ ] `pr-conventions` のとおりに PR を作り、Copilot のレビューを依頼する。指摘は `copilot-review-response` で1ラウンド対応する。
+- [x] `pr-conventions` のとおりに PR を作り、Copilot のレビューを依頼する。指摘は `copilot-review-response` で1ラウンド対応する（PR #672・Copilot は Approval recommended で行ごとの指摘は0件だった）。
 
 ### ゲート5（closure とマージ）
 
@@ -189,6 +189,7 @@ DJ-1 前の viewer を閉じてよいかの確かめ方
 - ブランチの前置きを `feature/` ではなく `fix/` にした（`fix/#509_oe_view_viewer_identity`）。`branch-naming` は、ブランチの主な commit の型に前置きを合わせる。
 - 実装 SO（ゲート4）の should の2件を取り入れて、テストを足した。viewer を開く前は開始時刻が取れ、開いたあとは取れない場面と、`ps` が空白だけを返す場面、記録が無い初回でもすべての `wez pane` に `--socket` が付くことを数える確かめである。
 - 手順8 は、`oe view` を3回打つ形から、6つの場面を順に試すスクリプト（作業層の `tmp/509-real-check.sh`）を owner が実行する形に変えた。理由は2つある。`~/bin/oe` は本体のチェックアウト（master）のコードを呼ぶので、ブランチのコードを試すには `bin/oe-view` を直接呼ぶ必要があった。また、このセッションは WezTerm の外で動いていて、ここから打つと owner の tmux の画面が分割される。スクリプトは、記録を書き換えて「別の GUI」「開始時刻の違い」「古い形の記録」の場面も作り、閉じないことを実物で確かめた。
+- 手順5 の symlink のたどり方を、`bin/oe-view` の `_oe_view_canonicalize` と同じたどり方から、`realpath` があれば使い、無ければたどらない形に変えた。`_oe_view_canonicalize` は bin の側にあり、lib から bin の関数を呼ぶと向きが逆になるためである。たどらなかった symlink は `gui-sock-<番号>` の名前にならないので、閉じない側に倒れる（DJ-1 の閉じる条件は変わらない）。
 - 手順8 の1回目は、tmux に古い `WEZTERM_UNIX_SOCKET` が残っていて `wez discover` が失敗し、viewer を開く前に止まった（#431 の不具合。master でも同じく失敗する）。スクリプトでその変数を外して実行し直し、6つの場面がすべて期待どおりになった。
 
 ## 範囲の外

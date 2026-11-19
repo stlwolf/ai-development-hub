@@ -12,7 +12,19 @@ related:
     ref: "projects/orchestration-engine/docs/plans/2026-11-18-plan-509-oe-view-viewer-identity.md"
     reason: "この作業の plan"
 tags: [oe-view, wezterm, viewer, pane-identity]
-# promotion: [...]   # closure で書く（document-format.md の「昇格の判定」節）
+promotion:
+  - subject: "oe-view は、記録した GUI のプロセスに同じソケットで問い合わせられると確かめたときだけ前の viewer を閉じる"
+    verdict: required
+    ref: "本文: 着手から plan の承認まで"
+  - subject: "SO の指摘のうち、現実にはまず起きない組み合わせは手当てせず記録に残す"
+    verdict: required
+    ref: "本文: 着手から plan の承認まで"
+  - subject: "呼び出しの形が変わると、文字列で探す否定の確かめが空振りするので、サブコマンドで探す形に直す"
+    verdict: not-required
+    ref: "本文: テストを先に足した"
+  - subject: "symlink をたどる処理を、bin の関数に頼らず lib の中で realpath を使う"
+    verdict: not-required
+    ref: "本文: 直した"
 ---
 
 # #509 oe-view が前の viewer を閉じる前に、同じ WezTerm の中のペインかを確かめる
@@ -59,3 +71,69 @@ tags: [oe-view, wezterm, viewer, pane-identity]
 - スクリプトにも誤りが2つあった。`pipefail` を付けていなかったので、viewer を開けなかったのに止まらずに進んだ。進んだ先で、空のペイン番号を記録に書き、記録が空の1行になった。空の記録は新しいコードでは「確かめられない」として扱われるので、害は無い。スクリプトは、開けなければ止まるように直し、`WEZTERM_UNIX_SOCKET` がソケットでなければ外して自動検出に任せるようにした。
 - 直したスクリプトを owner がもう一度実行し、6つの場面がすべて OK になった（2026-11-19）。同じ GUI から開き直した場面（手順2・6）では前の viewer が閉じ、記録のソケットを別の GUI に装った場面・開始時刻を別の値に装った場面・記録を番号だけの古い形にした場面（手順3〜5）では前の viewer が残った。記録は `pane_id`・`socket`（`gui-sock-7350` の実体のパス）・`mux_started`（`Tue Nov 10 16:51:24 2026`）の3行になった。確認のあと `wez pane list` に残っていたのは、tmux を映している pane 0 だけだった。
 - WezTerm を実際に起動し直す場面は試していない。手順3〜5は、起動し直したときと同じ「記録と今の GUI が合わない」状態を、記録を書き換えて作ったものである。
+
+### PR と Copilot のレビュー
+
+- PR #672 を作り、Copilot にレビューを依頼した（2026-11-19）。`gh pr view` の依頼先の一覧は空のままだったが、PR の出来事の記録に `review_requested Copilot` が残っていた。
+- Copilot のレビューは「Approval recommended」で、行ごとの指摘は0件だった。直すものが無いので、push はしていない。
+
+## 振り返り（closure）
+
+tier は heavy である。設計 SO と実装 SO を意図して回し、owner の指摘で plan の確かめを外す方針の転回があり、棄却した案を比べた設計判断がある。
+
+### 事実・失敗
+
+- 設計 SO の指摘を全部手当てし、残りの経路を「受け入れる危険」として owner の承認の問いにした。owner に、現実にはまず起きないリスクの判断だと指摘され、確かめを2つ外して問いをやめた。`本文: 着手から plan の承認まで`
+- plan の手順8（実物の確認）は、このセッションが WezTerm の外で動いていることと、`~/bin/oe` が本体のチェックアウト（master）のコードを呼ぶことを見込んでいなかった。owner に方法を聞き直し、手順をスクリプトにした。`本文: 手元の WezTerm での確認（plan の手順8）`
+- 確認のスクリプトに `pipefail` を付け忘れ、viewer を開けなかったのに進んで、記録のファイルを空の1行にした。害は無かったが、確認の道具が対象の状態を壊した。`本文: 手元の WezTerm での確認（plan の手順8）`
+- テストの PATH が `/usr/bin:/bin` なので、`bash` から起動しても lib は bash 3.2 で動いていて、bash 5 の確かめにはなっていない。`本文: 直した`
+- 自分で書いたテストに穴が2つあり、実装 SO に指摘された。開始時刻を前も後も失敗させる場面しか無く、viewer を開く前の値を使い回す誤った実装でも通ってしまう形だった。また、記録が無い初回の起動では `--socket` が付いているかを数えていなかった。どちらもテストを足して塞ぎ、わざと誤らせたコードで落ちることを確かめた。`本文: ゲート4（実装の確かめ）の実装 SO`
+- 閉じ方の点検（Step 4・Codex）で、must が3件と should が1件出た。上の実装 SO の指摘をこの節に挙げていなかったこと、`--no-auto-start` の残課題の行き先が決まっていなかったこと、symlink のたどり方を plan と変えたのに plan へ戻していなかったこと、PR の手順の印を plan に付けていなかったことである。`本文なし: closure を書いたあとの点検で分かった。直し方はこの節と「残課題（行き先）」節と plan の「ゲート3 のあとの変更」節に書いた`
+
+### 決定と根拠
+
+- 閉じる条件の判断と、棄却した案・前提・覆す条件は decision（`projects/orchestration-engine/docs/decisions/2026-11-19-decision-509-oe-view-viewer-identity.md`）に書いた。`本文: 着手から plan の承認まで`
+- symlink をたどる処理を、bin の関数に頼らず lib の中で `realpath` を使う形にした。`本文: 直した`
+
+### わかったこと
+
+- tmux のグローバルな環境に前の WezTerm のソケットが残っていて、tmux の中では oe-view が 2026-11-10 から動いていなかった（#431 の不具合。master でも同じ）。`本文: 手元の WezTerm での確認（plan の手順8）`
+- ブランチのコードを実物で試すには、`~/bin/oe` ではなく worktree の `bin/oe-view` を直接呼ぶ必要がある。`~/bin/oe` は本体のチェックアウトの `bin/oe` へのリンクだからである。`本文なし: plan の「ゲート3 のあとの変更」節に書いた。episode の本文では手順8 の節がスクリプトの形にした理由として触れていない`
+
+### 原則
+
+- SO の指摘は、手当てする前に「実際に起きる場面で、安全が変わるか」で振り分ける。複数の出来事が数ミリ秒や1秒に重なる必要がある経路は、手当てせず理由と一緒に記録し、owner への承認の問いにしない。knowledge item `01M7SDBPDY8JYHDF9QEBCWM8HV` に収穫した。`本文: 着手から plan の承認まで`
+
+### 行動変更
+
+- トリガ: SO の must・should を plan や実装に取り入れるとき。機構: negative knowledge の注入（委譲の書面の slot と `knowledge-list`）。着地先: knowledge item `01M7SDBPDY8JYHDF9QEBCWM8HV`（landing: nl）。`本文: 着手から plan の承認まで`
+
+### 蒸留シグナル
+
+- decision: 1件（閉じる条件の判断）。knowledge store: 1件（SO の指摘の振り分け）。skill・rule: なし。`本文: 着手から plan の承認まで`
+
+### 昇格の判定
+
+frontmatter の `promotion` に1判定1件で置いた。理由と材料は次のとおりである。
+
+- 「oe-view は、記録した GUI のプロセスに同じソケットで問い合わせられると確かめたときだけ前の viewer を閉じる」は `required`。棄却した案が具体名で10個あり（Q1）、覆すには「ペイン番号に頼らない」方式との議論が要り（Q2）、前提の「同じプロセスの中ではペイン番号を使い回さない」は WezTerm の実装に依存していて将来偽になりうる（Q3）。oe-view の置き換えを変える人は同じ分岐に立つ（Q4）。材料は plan の DJ-1 と探索の記録。この PR に decision として入れた。`本文: 着手から plan の承認まで`
+- 「SO の指摘のうち、現実にはまず起きない組み合わせは手当てせず記録に残す」は `required`（knowledge item）。再発しうる失敗の型で、既存の knowledge item・rule・skill に同旨が無いことを確かめた（`so-compare` の SKILL.md の合意判定基準と、engine と harness の木の item を探した）。この PR に item として入れた。`本文: 着手から plan の承認まで`
+- 「呼び出しの形が変わると、文字列で探す否定の確かめが空振りするので、サブコマンドで探す形に直す」は `not-required`。既存の item `01KYMRE1N7N0J8VP3CBZZEZ8Q3`（「0件」は対象の不在か計測器の故障かを区別する）の型と同旨で、テストのコードとコメントだけで正しく使える。`本文: テストを先に足した`
+- 「symlink をたどる処理を、bin の関数に頼らず lib の中で realpath を使う」は `not-required`。lib から bin の関数を呼ばないという向きはコードのコメントで足り、覆すのに議論は要らず、確認で決まる。`本文: 直した`
+
+### 残課題（行き先）
+
+- #431 に、tmux のグローバルな環境に前の GUI のソケットが残り、tmux の中で oe-view が動いていなかった観察を書き足す。行き先: #431 のコメントにするかを owner が決める（2026-11-19 に問いを出した。PR をレビューできる状態にするのを先にすると owner が決めたので、答えはそのあとに受ける）。`本文: 手元の WezTerm での確認（plan の手順8）`
+- `wez` が `wezterm cli` に `--no-auto-start` を付けていない件。行き先: 新しい issue にするかを owner が決める（上の件と同じ問いで、答えはこのあとに受ける）。`本文なし: plan の「手当てしない経路」節と PR の本文に書いた`
+- viewer のプロセスを止める案と、常駐の viewer の案。行き先: 追わない。decision の「覆す条件」に第一の代わりとして残した。`本文: 着手から plan の承認まで`
+- lib を bash 5 で動かすテスト。行き先: 追わない。engine のテストは PATH を絞って `/bin/bash` で動かす作りで、bash 3.2 が対象である。`本文: 直した`
+- 確認のスクリプト（作業層の `tmp/509-real-check.sh`）。行き先: 追わない。一回きりの確認で、場面と結果は本文に写した。`本文: 手元の WezTerm での確認（plan の手順8）`
+- `test_home_unset.sh` の `oe-register --help` の1項目。行き先: 追わない。#309 のコメントで既知である。`本文: 直した`
+
+### 閉じ方の確かめ
+
+- 次の消費者: oe-view の置き換えの方式を変える人（viewer のプロセスを止める案や常駐の viewer を入れるとき）、#431 を直す人、#618 で engine の方向を決めるときに viewer を見直す人。
+- evidence anchor: 本文が指す作業層のパス（`tmp/509-test-before.txt`・`tmp/509-design-so/`・`tmp/509-impl-so/`・`tmp/509-real-check.sh`）は消える。要点（落ちた項目の数・SO の判定と採った指摘・確認の場面と結果）は本文に写してあり、設計 SO の案の一覧は plan の探索の記録にある。
+- 閉じ方の点検（Step 4）: Codex（gpt-6.1-sol）に1回、失敗の省略・残課題の行き先・揮発するパス・ほかの文書への戻しの4点だけを見てもらった（出力は作業層の `tmp/509-closure-so/`）。判定は refuted（must 3件・should 1件）で、指摘と直し方は「事実・失敗」の最後の項目に書いた。揮発するパスへの依存は問題なしとされた。
+- 認識合わせの抜け: なし。後から見つかったもの（tmux の古いソケット・`~/bin/oe` の向き先）は、#509 の要件ではなく確かめ方の問題だった。
+- status: draft のまま据え置く。理由: 残課題のうち2件（#431 へのコメントと `--no-auto-start` の issue）の行き先を owner が決めてから stable にする。達成度: 達成（WezTerm を実際に起動し直す場面は試していない）。
