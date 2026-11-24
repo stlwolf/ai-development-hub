@@ -61,7 +61,7 @@ CX-source の参照先（いずれも同じ固定コミット）:
 
 | 項目 | Claude Code | Codex |
 |---|---|---|
-| 書き手と時機 | モデル自身が会話の途中で書く。何を残すかはモデルが決め、頼まれたときも書く `[verified]`（CC-memory）。非対話の `claude -p` でも、頼むと通常のファイルの道具（`Write`）で書いた `[verified-local]`（2.1.331・2026-11-25・節 3.1） | 裏の処理が対象の過去の会話から抽出して整理する `[verified]`（CX-memories）。実装では非 ephemeral の root 会話の開始時に非同期で起動する。既定6時間の無活動は材料になる条件であり、6時間ごとの実行周期ではない `[verified]`（CX-source・`write/start.rs`・`write/phase1.rs`）。 |
+| 書き手と時機 | モデル自身が会話の途中で書く。何を残すかはモデルが決め、頼まれたときも書く `[verified]`（CC-memory）。自動の記憶も、モデルが通常のファイルの道具（`Write`）で書く。入れ子の非対話の `claude -p` に頼んだときも、そう書いた `[verified-local]`（2.1.331・2026-11-25・節 3.1） | 裏の処理が対象の過去の会話から抽出して整理する `[verified]`（CX-memories）。実装では非 ephemeral の root 会話の開始時に非同期で起動する。既定6時間の無活動は材料になる条件であり、6時間ごとの実行周期ではない `[verified]`（CX-source・`write/start.rs`・`write/phase1.rs`）。 |
 | 範囲 | リポジトリごと。worktree とサブディレクトリは同じフォルダを共有する `[verified]`（CC-memory）。hub の worktree のフォルダに記憶は無かった `[verified-local]`（2026-11-25） | Codex のホーム（既定 `~/.codex`）で共有する。実装はホームから記憶の版のフォルダを選び、リポジトリごとの読み込みフィルターは置かない `[verified]`（CX-memories・CX-source の `read/prompts.rs`）。手元には v1・v2 の両方がある `[verified-local]`（CX-local）。 |
 | 読み込まれ方 | 会話の始まりに `MEMORY.md` の先頭 200 行か 25KB のどちらか少ないほう。個別のファイルは必要なときに読む `[verified]`（CC-memory）。hub の索引（79 行・25,397 バイト）は最後の行まで読み込まれていた `[verified-local]`（2026-11-25） | `features.memories` と `use_memories` が有効なら、実装は `memory_summary.md` を最大2,500トークン相当へ切って読むための指示とともに developer の文脈へ入れる。`MEMORY.md` はその初期注入に含めず、必要なときに検索する `[verified]`（CX-source・`read/prompts.rs`・`read/lib.rs`・`read/extension.rs`）。Codex の確かめの会話にも summary と読む指示が届いた `[verified-local]`（2026-11-25）。 |
 | 人が手を入れる口 | 中身はファイルで、読む・直す・消すができる。`autoMemoryEnabled` で読み書きを止め、環境変数で会話1回ぶんだけ止められる `[verified]`（CC-settings・CC-env）。止めた回では記憶のフォルダができなかった `[verified-local]`（節 3.1） | 鍵は `features.memories`・`memories.generate_memories`・`memories.use_memories` ほか `[verified]`（CX-config）。会話ごとの切り替えは対話の `/memories`。手で直すことは主な制御の手段にしないよう書かれている `[verified]`（CX-memories）。参照した公式ページには CLI の削除コマンドの記載は無く、手元の `codex --help` と `codex debug --help` にも記憶の削除は表示されなかった `[verified-local]`（CLI 0.170.0・2026-11-25）。全経路に存在しないという断定はしない |
@@ -84,7 +84,7 @@ CX-source の参照先（いずれも同じ固定コミット）:
 - `autoMemoryDirectory` で置き場を変えられ、どの設定の層（user・project・local・policy・`--settings`）からでも読む `[verified]`（CC-memory・CC-settings）。`CLAUDE_CODE_PROJECT_DIR_NAME` を `CLAUDE_CONFIG_DIR` と一緒に置くと、どのリポジトリで起こしても1つのフォルダを共有する `[verified]`（CC-memory。v2.1.234 以降）。
 - 記憶はその機械の中だけにある `[verified]`（CC-memory）。
 - 手元: `~/.claude/projects/` の下に 163 のフォルダがあり、`memory/` を持つのは 64 だった。hub の記憶は 79 件・索引 25,397 バイト・79 行で、hub の worktree の3つのフォルダには `memory/` が無かった `[verified-local]`（2026-11-25）。
-- engine の Claude の子は hub の worktree で動くので、子の書いた記憶は hub の記憶のフォルダに入る `[verified]`（CC-memory の worktree の共有と、子が worktree で動くことから）。実際に子が書いた件数は数えていない。
+- engine の Claude の子は、委譲の書面の決まりで、自分で worktree を作って動く `[verified]`（`canonical/skills/doc-flow-guardrail/SKILL.md` の委譲の固定節「worktree は子が自作」）。worktree は本体のリポジトリの記憶のフォルダを共有する（上の1つ目）。この2つから、子の書いた記憶は hub の記憶のフォルダに入ると見ている `[speculation]`（分からなかった理由: 子が実際に書いたかを、会話の記録で数えていない）。
 
 **読み込まれ方**
 
@@ -202,7 +202,7 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 
 | 候補 | 種類 | エージェント | 配る場所 | 効く経路 | 止められる範囲 | 入れられるか | 根拠 | 確かめていない部分 |
 |---|---|---|---|---|---|---|---|---|
-| `autoMemoryEnabled: false` を利用者の設定に置く | 制御 | Claude Code | 設定の harness 層 | モデル（読み込みも止まる） | その機械の全部のリポジトリ | 入れられる。鍵は hub の既知の鍵の一覧にある | `[verified]`（CC-settings・`canonical/claude/settings-known-keys.txt:40`）・試しB `[verified-local]` | `/memory` の切り替えが同じ鍵を利用者の設定に書くので、sync の値とずれる。ずれの検査（#359）で拾えるかは見ていない |
+| `autoMemoryEnabled: false` を利用者の設定に置く | 制御 | Claude Code | 設定の harness 層 | モデル（読み込みも止まる） | その機械の全部のリポジトリ | 入れられる。鍵は hub の既知の鍵の一覧にある | `[verified]`（CC-settings・`canonical/claude/settings-known-keys.txt:40`）・試しB `[verified-local]` | `/memory` の切り替えが同じ鍵を利用者の設定に書くので、sync の値とずれる。ずれの検査（#359）で拾えるかは見ていない。試しは入れ子の `claude -p` で `--settings` から渡した形だけで、利用者の設定に置いた形と対話の会話では試していない |
 | リポジトリの設定に `autoMemoryEnabled: false` を置く | 制御 | Claude Code | そのリポジトリの `.claude/settings.json` | モデル | そのリポジトリだけ | 入れられる | `[verified]`（CC-memory） | hub に置くと hub の記憶が全部止まり、いまの使い方（統括の規律を記憶に置く）と食い違う |
 | `autoMemoryDirectory` で置き場を分ける | 制御 | Claude Code | 設定の harness 層か `--settings` | モデル | 置き場を変えるだけで、書くこと自体は止めない | 入れられる | `[verified]`（CC-memory・CC-settings） | リポジトリの設定から指すときの信頼の扱い（hook と同じ決まり）を確かめていない |
 | 記憶のフォルダへの `Write`・`Edit` を `PreToolUse` の hook で見て止める | 制御 | Claude Code | hook | モデル（ファイルの道具で書くときだけ） | hook の条件しだい（たとえば、ほかのリポジトリの名前を含む書き込み） | 入れられる見込み | 記憶が `Write` で書かれた `[verified-local]`。止める方法として公式が hook を挙げる `[verified]`（CC-memory） | 実際に hook が記憶の書き込みで発火して止めるかを試していない。Bash で書く道は `Write` の matcher に当たらない |
@@ -220,7 +220,7 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 
 ## 6. 効き目と止めたときの影響
 
-記憶がどの程度効いているか、いま止めたらどういう影響が出るかを見る。Claude Code は hub での数である。Codex はホーム共通なので、ホーム全体の集計と、作業ディレクトリを hub に絞った集計を区別する。
+記憶がどの程度効いているか、いま止めたらどういう影響が出るかを見る。使われ方の数は、2つで物差しが違う。Claude Code は直近 30 日の会話の記録で数えた道具の呼び出しの回数、Codex は DB に残っている行の累積の利用回数で、並べて比べられない。Claude Code は hub での数である。Codex はホーム共通なので、ホーム全体の集計と、作業ディレクトリを hub に絞った集計を区別する。
 
 ### 6.1 Claude Code（hub の記憶）
 
@@ -263,7 +263,7 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 | 失うもの（feedback） | 決まりやスキルにまだ入っていない、作業のしかたへの指摘。その振る舞いは、決まりの文に無ければ元に戻りうる | `[speculation]`（分からなかった理由: 記憶を切って同じ作業をさせる試しをしていない） |
 | 失うもの（project） | 会話をまたいで持ち越している作業の状態（観察中の試し・試し入れ中の道具など）。owner が説明し直すことになる | `[speculation]`（同上） |
 | 失うもの（reference） | 道具の落とし穴。同じ穴をまた踏みうる | `[speculation]`（同上） |
-| 得るもの | 毎回の会話で、約 25KB の文脈が空く。engine の Claude の子の作業が hub の記憶に入らなくなる | 量は `[verified-local]`。子の分は節 3.1 の範囲から |
+| 得るもの | 毎回の会話で、約 25KB の文脈が空く。engine の Claude の子の作業が hub の記憶に入らなくなる | 量は `[verified-local]`。子の分は節 3.1 の「範囲」の見立て（`[speculation]`）から |
 | 戻せるか | 設定は記憶の読み書きを止めるもので、ファイルを消すとは書かれていない。戻せば元の記憶がまた読み込まれる見込み | 止める範囲は `[verified]`（CC-settings）。戻ることは `[speculation]`（分からなかった理由: 戻す試しをしていない） |
 | 変わらないもの | サブエージェントは、もともと親の記憶を読み込まない | `[verified]`（CC-memory） |
 
@@ -297,6 +297,15 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 | `generate_memories=false` | 新しい会話から将来の記憶を作る材料が追加されなくなる | 新しい会話を記憶の材料として保存しない | 既存記憶の利用は別である。既存の材料による整理の起動も、実装ではこの鍵だけを条件に止めない | `[verified]`（CX-config・CX-source の `write/start.rs`） |
 | 両方を `false` | 既存の記憶の注入と新しい会話の材料化を両方失う | 上の2つを同時に止める | 過去の材料・既存ファイルの削除ではなく、全ファイルの読み書きを禁じる権限でもない | `[verified]`（同上） |
 | `features.memories=false` | 機能の読み込みと起動時の抽出・整理を失う | 実装の読み込みと起動時の抽出・整理を止める | ファイルを消す操作や、直接の読み書きの禁止とは別である | `[verified]`（CX-source の `read/extension.rs`・`write/start.rs`） |
+
+**型と、決まりとの重なり**
+
+- Codex の記憶には、Claude Code の feedback・project のような型の区分が無い。数えられるのは抽出結果の件数（v1 10件・v2 7件）までである `[verified-local]`（2026-11-25・CX-local）。
+- 決まりや `AGENTS.md` にも入っている記憶の件数は数えていない。数えるには記憶の本文を読んで分類する必要があり、この調査では本文を読まない形にしたためである（見た資料: DB のスキーマと件数だけ）。
+
+**戻せるか**
+
+- 鍵を `true` に戻したときに、止めていたあいだの会話が材料に戻るか、既存の記憶がそのまま読み込まれるかは試していない `[speculation]`（見た資料: CX-config と読み込みの実装。分からなかった理由: 戻す試しをしていない）。鍵はファイルを消す設定ではない `[verified]`（上の表の「止まらないもの・限界」の列）。
 
 - どの設定でも、失う振る舞いや品質を件数から推定していない。設定を切って同じ作業をさせる比較試験は節6.3のとおり今回の範囲外である。生成のモデル利用量がどれだけ減るかも測っていない。設定を戻す試験もしていないため、戻した後の再開時機と件数は未確認である。
 
@@ -350,6 +359,7 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 - 試しの前とあとに `~/.claude/projects/` の下のフォルダの一覧を控え、増えたフォルダだけを試しが作ったものとした。試しAで1つ、試しBで1つ増えた。
 - 試しA（設定をそのまま）: 増えたフォルダの下の `memory/` に2つのファイルができた。
 - 試しB（`autoMemoryEnabled: false`）: 増えたフォルダに `memory/` はできなかった。
+- 判定（plan の DJ-6 の3つの場合のうち）: 試しAで書かれ、試しBで書かれなかったので、「比べられる場合」に当たる。この条件（入れ子の `claude -p`・`--settings` で渡す）では、設定を切ると書かれなかった。書かれなかったことは、機械的に禁じられていることの証明にはしない。
 - 試しが作った2つのフォルダは、消さずに作業の一時の置き場へ移した。一覧は試しの前と同じに戻った。
 
 ## 9. つながりうるもの
