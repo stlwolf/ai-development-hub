@@ -20,6 +20,7 @@
 | CC-memory | https://code.claude.com/docs/en/memory |
 | CC-settings | https://code.claude.com/docs/en/settings-reference |
 | CC-env | https://code.claude.com/docs/en/env-vars |
+| CC-settings-guide | https://code.claude.com/docs/en/settings |
 | CX-memories | https://learn.chatgpt.com/docs/customization/memories?surface=app （https://developers.openai.com/codex/memories から移った先） |
 | CX-config | https://learn.chatgpt.com/docs/config-file/config-reference |
 | CX-exec-help | `codex exec --help`（codex-cli 0.170.0） |
@@ -98,7 +99,7 @@ CX-source の参照先（いずれも同じ固定コミット）:
 | 口 | できるか | 根拠 |
 |---|---|---|
 | 読む・直す・消す | できる。中身は Markdown のファイルで、`/memory` からフォルダを開ける | `[verified]`（CC-memory） |
-| 書かせない（全体） | `autoMemoryEnabled: false`。読み書きの両方を止める。既定は `true`。どの設定ファイルにも置ける | `[verified]`（CC-settings の `autoMemoryEnabled`） |
+| 書かせない（全体） | `autoMemoryEnabled: false`。読み書きの両方を止める。既定は `true`。どの設定ファイルにも置ける。同じ鍵が複数の段にあれば上の段が勝つので、利用者の設定に置いただけでは、上の段で `true` にした会話は止まらない | `[verified]`（CC-settings の `autoMemoryEnabled`・CC-settings-guide「Settings precedence」） |
 | 書かせない（リポジトリ1つ） | そのリポジトリの設定に `autoMemoryEnabled: false` を置く | `[verified]`（CC-memory） |
 | 書かせない（会話1回） | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`。`0` なら、設定や `--bare` で止まる場面でも有効にする | `[verified]`（CC-env・CC-settings の「Per-session overrides」） |
 | ほかに止まる場面 | `--bare`・安全モード | `[verified]`（CC-settings の `autoMemoryEnabled` の型の説明） |
@@ -202,7 +203,7 @@ hub から配る場所は4つある。決まりの文（`canonical/rules/`・`CL
 
 | 候補 | 種類 | エージェント | 配る場所 | 効く経路 | 止められる範囲 | 入れられるか | 根拠 | 確かめていない部分 |
 |---|---|---|---|---|---|---|---|---|
-| `autoMemoryEnabled: false` を利用者の設定に置く | 制御 | Claude Code | 設定の harness 層 | モデル（読み込みも止まる） | その機械の全部のリポジトリ | 入れられる。鍵は hub の既知の鍵の一覧にある | `[verified]`（CC-settings・`canonical/claude/settings-known-keys.txt:40`）・試しB `[verified-local]` | `/memory` の切り替えが同じ鍵を利用者の設定に書くので、sync の値とずれる。ずれの検査（#359）で拾えるかは見ていない。試しは入れ子の `claude -p` で `--settings` から渡した形だけで、利用者の設定に置いた形と対話の会話では試していない |
+| `autoMemoryEnabled: false` を利用者の設定に置く | 制御 | Claude Code | 設定の harness 層 | モデル（読み込みも止まる） | その機械で、上の段が同じ鍵を置いていない会話の既定。利用者の設定は5段のいちばん下で、managed・`--settings`・リポジトリの local・共有のプロジェクトの設定が `true` を置けば、そちらが勝つ。`CLAUDE_CODE_DISABLE_AUTO_MEMORY=0` の会話も有効のまま。全部の会話に強制するには、いちばん上の managed settings に置く必要がある | 入れられる。鍵は hub の既知の鍵の一覧にある。hub の sync が書くのは利用者の設定である | `[verified]`（CC-settings・CC-settings-guide「Settings precedence」・CC-env・`canonical/claude/settings-known-keys.txt:40`）・試しB `[verified-local]` | `/memory` の切り替えが同じ鍵を利用者の設定に書くので、sync の値とずれる。ずれの検査（#359）で拾えるかは見ていない。試しは入れ子の `claude -p` で `--settings` から渡した形だけで、利用者の設定に置いた形と対話の会話では試していない |
 | リポジトリの設定に `autoMemoryEnabled: false` を置く | 制御 | Claude Code | そのリポジトリの `.claude/settings.json` | モデル | そのリポジトリだけ | 入れられる | `[verified]`（CC-memory） | hub に置くと hub の記憶が全部止まり、いまの使い方（統括の規律を記憶に置く）と食い違う |
 | `autoMemoryDirectory` で置き場を分ける | 制御 | Claude Code | 設定の harness 層か `--settings` | モデル | 置き場を変えるだけで、書くこと自体は止めない | 入れられる | `[verified]`（CC-memory・CC-settings） | リポジトリの設定から指すときの信頼の扱い（hook と同じ決まり）を確かめていない |
 | 記憶のフォルダへの `Write`・`Edit` を `PreToolUse` の hook で見て止める | 制御 | Claude Code | hook | モデル（ファイルの道具で書くときだけ） | hook の条件しだい（たとえば、ほかのリポジトリの名前を含む書き込み） | 入れられる見込み | 記憶が `Write` で書かれた `[verified-local]`。止める方法として公式が hook を挙げる `[verified]`（CC-memory） | 実際に hook が記憶の書き込みで発火して止めるかを試していない。Bash で書く道は `Write` の matcher に当たらない |
