@@ -36,3 +36,15 @@ tags: [harness, memory, claude-code, codex, research]
 - ゲート3 は owner が承認した（2026-11-25・会話）。
 
 ## 作業の記録
+
+### 初稿を書く（2026-11-25）
+
+- ブランチ名を `docs/#650_agent_memory_survey` に変え、plan と episode の枠を commit した。
+- 公式の文書は、まず Web を読む子に頼んだ。返ってきた要約は、原文にある文を「無い」と言ったり、原文の文を要約の扱いにしたりしていた（環境変数 `CLAUDE_CODE_DISABLE_AUTO_MEMORY` の項を、最初の要約は「無い」とした）。頼み直すと子は訂正したが、どちらも子の申告である。そこで `curl` で公式の頁の Markdown（Claude Code は URL の末尾に `.md`）と HTML を取り、要の文を `grep` で原文から確かめてから `[verified]` を付けた。
+- Codex の記憶の頁は `developers.openai.com` から `learn.chatgpt.com` へ移っていた（308 の転送）。
+- 手元の試し（DJ-6）は、plan のとおり2回で済んだ。試しA（設定をそのまま）では記憶が書かれ、試しB（`autoMemoryEnabled: false`）では書かれなかったので、比べられる場合に当たった。試しAの会話の記録では、記憶は `Write` の道具で書かれていた。これは、hook で記憶の書き込みを見る候補の根拠になった。
+- 試しを打ったのはこの会話の Bash からで、子のプロセスには `CLAUDE_CODE_CHILD_SESSION=1` が入っていた。入れ子の会話でも記憶は書かれた。
+- 試しが作ったフォルダは、試しの前後の一覧の差で2つ（一時ディレクトリのパスから作られた名前で、末尾が `exp-exp-a` と `exp-exp-b`）と特定し、scratchpad の `650-claude-experiment/` へ移した。一覧は試しの前と同じに戻った。消すかどうかは owner が決める。
+- 調べている途中で、Codex の記憶の置き場が `memories/` と `memories_v2/` の2つあること、どちらの git も commit が1件だけであること、`~/.codex/config.toml` の hub の印の範囲の中に Codex 自身が書いた表が入り込んでいることが分かった。どれも文書に書いた。
+
+昇格の印: 公式の文書を Web を読む子に要約させると、原文にある文を「無い」と返すことがある。`[verified]` を付けるのは、原文を取って `grep` で当てたあとにする
