@@ -3,7 +3,7 @@ id: "01M870BCW2H9M737WP0FB4NM7X"
 title: "#650 Claude Code と Codex の記憶の仕組みを調べ、ハーネスに入れられる調整と制御の候補を並べる"
 date: 2026-11-24
 type: plan
-status: in-development   # ゲート3 は owner が承認した（2026-11-25・会話）
+status: stable   # 実装完了（PR #676・マージ待ち）。ゲート3 は owner が承認した（2026-11-25・会話）。承認のあとの変更は末尾の「ゲート3 のあとの変更」節（H1）
 related:
   - type: parent_issue
     ref: "https://github.com/stlwolf/ai-development-hub/issues/650"
