@@ -48,7 +48,10 @@ echo "[1b] oe-register: HOME・TMUX_PANE・tmux・jq が無くてもヘルプが
 # [1] は TMUX と TMUX_PANE を外さないので、tmux の中で回すと「tmux の外でヘルプが読めない」不具合が見えない。
 # ここでは両方を外し、PATH も tmux と jq が無い置き場だけにする。usage は標準エラーに出るので 2>&1 で見る。
 _NOBIN="${_TMP_ROOT}/nobin"; mkdir -p "$_NOBIN"
-for _c in bash dirname cat; do ln -s "$(command -v "$_c")" "${_NOBIN}/${_c}"; done
+# bash は PATH の先頭のものではなく、この検査を動かしている bash（${BASH}）を張る。/bin/bash で回したときに、
+# oe-register も同じ bash で動かすため（test_oe_entry.sh と同じ）。
+ln -s "$BASH" "${_NOBIN}/bash"
+for _c in dirname cat; do ln -s "$(command -v "$_c")" "${_NOBIN}/${_c}"; done
 _reg() { # <args...> — 結果は _rc と _out
   _rc=0
   _out="$(env -u HOME -u TMUX -u TMUX_PANE -u OE_LEASE_ID -u OE_GENERATION PATH="$_NOBIN" \
