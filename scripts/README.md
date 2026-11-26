@@ -109,11 +109,13 @@ fi
 ./scripts/check-codex-guardrails.sh
 ```
 
-「載っている」は、ルールごとに次のどれか1つで決める。表はどちらもスクリプトの中にある。
+「載っている」は、ルールごとに次のどれか1つで決める。語と除外は、スクリプトの中の1つの表（`RULE_TABLE`）に `ルールの名前|種類|値` の行で書く。
 
-- 既定: ルールの名前（`foo-bar-rule`）か、名前から作った見出しの語（`Foo Bar`）が AGENTS.md にある。
-- `rule_patterns`: AGENTS.md の語がルールの名前と違うルールは、ここに書いた語が全部ある。
-- `rule_excluded`: AGENTS.md に載せていないルール。検査は通すが、実行のたびに WARN に理由つきで出る。
+- 既定（表に行が無い）: ルールの名前（`foo-bar-rule`）か、名前から作った見出しの語（`Foo Bar`）が AGENTS.md にある。
+- `pattern` の行: AGENTS.md の語がルールの名前と違うルールは、ここに書いた語が全部ある。
+- `excluded` の行: AGENTS.md に載せていないルール。検査は通すが、実行のたびに WARN に理由つきで出る。
+
+表に名前があるのに `canonical/rules` に無いルールと、形が崩れた行は、失敗にする。
 
 テストは `tests/scripts/test_check_codex_guardrails.sh`。
 

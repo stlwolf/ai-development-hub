@@ -33,38 +33,55 @@ excluded_count=0
 # 検査する語をここに並べる向きにすると、ルールを足したときに検査が追随せず、欠けたまま緑で通る。
 #
 # 「載っている」の決め方は、次の順で1つだけ当たる。
-#   1. rule_excluded が理由を返す          → 載せないと決めたルール。検査せず、WARN で毎回知らせる。
-#   2. rule_patterns が語を返す            → その語が全部 AGENTS.md にあること（大文字と小文字を区別する）。
+#   1. 表に excluded の行がある            → 載せていないルール。検査せず、WARN で毎回知らせる。
+#   2. 表に pattern の行がある             → その語が全部 AGENTS.md にあること（大文字と小文字を区別する）。
 #   3. どちらにも無い（既定）              → ルールの名前（例: `foo-bar-rule`）か、名前から作った見出しの語
 #                                            （例: `Foo Bar`。大文字と小文字は区別しない）が AGENTS.md にあること。
 # ルールを1本足したときは、AGENTS.md に見出しの語か名前で載せれば、この検査を直さなくても通る。
-# AGENTS.md の語がルールの名前と違うときだけ、rule_patterns に足す。
+# AGENTS.md の語がルールの名前と違うときだけ、下の表 RULE_TABLE に pattern の行を足す。
+
+# 語と除外の表。1行が `ルールの名前|種類|値` で、種類は pattern（AGENTS.md に在るべき語）か
+# excluded（載せていない理由）。語が複数あるルールは、pattern の行を重ねる。
+# rule_patterns・rule_excluded・table_rule_names の3つは、どれもこの表だけを読む。名前の一覧を別に持つと、
+# 表に足した行が「置き場に無い古い名前」の検査から漏れる。
+RULE_TABLE='behavioral-rule|pattern|Evidence First
+behavioral-rule|pattern|CLI Native
+behavioral-rule|pattern|Safe Operations
+behavioral-rule|pattern|Minimal Scope
+behavioral-rule|pattern|Incremental Steps
+behavioral-rule|pattern|Follow Existing Patterns
+behavioral-rule|pattern|Root Cause
+execution-policy-rule|pattern|Execution Discipline
+output-format-rule|pattern|Output Contract
+input-style-rule|pattern|Input Handling
+implementation-gate-rule|pattern|planning phase
+careful-operations-rule|excluded|AGENTS.md にまだ載せていない（載せるかは未決。#332 では検査だけを直した）
+evidence-verification-rule|excluded|AGENTS.md にまだ載せていない（載せるかは未決。#332 では検査だけを直した）
+workflow-awareness-rule|excluded|AGENTS.md にまだ載せていない（載せるかは未決。#332 では検査だけを直した）'
+
+# table_values <ルールの名前> <種類> — 表の値を1行に1つ出す。値の中の `|` はそのまま残す。
+table_values() {
+    printf '%s\n' "$RULE_TABLE" | awk -F'|' -v name="$1" -v kind="$2" '
+        $1 == name && $2 == kind { sub(/^[^|]*[|][^|]*[|]/, ""); print }'
+}
 
 # rule_patterns <ルールの名前> — AGENTS.md に在るべき語を1行に1つ出す。既定の決め方でよいルールは何も出さない。
-rule_patterns() {
-    case "$1" in
-        behavioral-rule)
-            printf '%s\n' "Evidence First" "CLI Native" "Safe Operations" "Minimal Scope" \
-                "Incremental Steps" "Follow Existing Patterns" "Root Cause" ;;
-        execution-policy-rule)    printf '%s\n' "Execution Discipline" ;;
-        output-format-rule)       printf '%s\n' "Output Contract" ;;
-        input-style-rule)         printf '%s\n' "Input Handling" ;;
-        implementation-gate-rule) printf '%s\n' "planning phase" ;;
-    esac
-}
+rule_patterns() { table_values "$1" pattern; }
 
 # rule_excluded <ルールの名前> — AGENTS.md に載せていないルールなら、その理由を出す。
-# ここに書いたルールは検査を通すが、実行のたびに WARN に出る（黙って欠けているのと見分けるため）。
-rule_excluded() {
-    case "$1" in
-        careful-operations-rule|evidence-verification-rule|workflow-awareness-rule)
-            printf '%s\n' "AGENTS.md にまだ載せていない（載せるかは未決。#332 では検査だけを直した）" ;;
-    esac
-}
+# 表に excluded で書いたルールは検査を通すが、実行のたびに WARN に出る（黙って欠けているのと見分けるため）。
+rule_excluded() { table_values "$1" excluded; }
 
-# 上の2つの表に名前があるルール。canonical/rules/ から無くなったルールが表に残っていないかを見るのに使う。
-KNOWN_RULES="behavioral-rule execution-policy-rule output-format-rule input-style-rule implementation-gate-rule
-careful-operations-rule evidence-verification-rule workflow-awareness-rule"
+# table_rule_names — 表に名前があるルールを、重なりを除いて1行に1つ出す。
+table_rule_names() { printf '%s\n' "$RULE_TABLE" | awk -F'|' 'NF && !seen[$1]++ { print $1 }'; }
+
+# table_bad_lines — 形が崩れた行（名前か値が空、種類が pattern でも excluded でもない）を出す。
+# 種類を打ち間違えた行は、どの決め方にも当たらず、そのルールが既定の決め方に落ちてしまう。
+table_bad_lines() {
+    printf '%s\n' "$RULE_TABLE" | awk -F'|' '
+        NF == 0 { next }
+        NF < 3 || $1 == "" || $3 == "" || ($2 != "pattern" && $2 != "excluded") { print }'
+}
 
 # rule_title <ルールの名前> — `foo-bar-rule` から `Foo Bar` を作る。
 rule_title() {
@@ -85,7 +102,7 @@ check_rule() {
     reason="$(rule_excluded "$name")"
     patterns="$(rule_patterns "$name")"
     if [[ -n "$reason" && -n "$patterns" ]]; then
-        missing "${name}（rule_excluded と rule_patterns の両方に書かれている。どちらかにする）"
+        missing "${name}（表 RULE_TABLE に pattern と excluded の両方がある。どちらかにする）"
         return 0
     fi
     if [[ -n "$reason" ]]; then
@@ -132,12 +149,19 @@ main() {
     fi
 
     # 表に残った古い名前（ルールが消えたか、名前が変わった）を通さない。残すと、表の行が何も検査しなくなる。
-    for known in $KNOWN_RULES; do
+    while IFS= read -r known; do
+        [[ -n "$known" ]] || continue
         case "$names" in
             *" ${known} "*) ;;
-            *) missing "${known}（rule_patterns か rule_excluded にあるが、canonical/rules に無い。表から外す）" ;;
+            *) missing "${known}（表 RULE_TABLE にあるが、canonical/rules に無い。表から外す）" ;;
         esac
-    done
+    done < <(table_rule_names)
+
+    local bad
+    while IFS= read -r bad; do
+        [[ -n "$bad" ]] || continue
+        missing "表 RULE_TABLE の行の形が崩れている: ${bad}"
+    done < <(table_bad_lines)
 
     if [[ "$missing_count" -gt 0 ]]; then
         error "Guardrails check failed (${missing_count} problem(s) / ${rule_count} rule(s))"

@@ -81,9 +81,19 @@ ck "結果の行の除外の本数が WARN の数と同じ" "yes" "$(has "${_ex}
 echo "[5] 表に残った古い名前と、空の置き場を通さない"
 fresh; rm "$RULES/input-style-rule.md"; run
 ck "表にあるルールが置き場に無いと rc=1" "1" "$RC"
-ck "表から外すよう知らせる" "yes" "$(has "input-style-rule（rule_patterns か rule_excluded にあるが")"
+ck "表から外すよう知らせる" "yes" "$(has "input-style-rule（表 RULE_TABLE にあるが")"
 fresh; rm "$RULES/careful-operations-rule.md"; run
 ck "除外の表にあるルールが置き場に無くても rc=1" "1" "$RC"
+# 表に名前があるルールは、どれを置き場から消しても落ちる。名前は検査の表から読むので、表に行を足しても
+# この検査は追随する（名前の一覧を別に持つ形に戻ると、ここで落ちる）。
+_names="$(sed -n "/^RULE_TABLE='/,/'\$/p" "$TARGET" | sed "s/^RULE_TABLE='//" | awk -F'|' 'NF >= 3 && !seen[$1]++ { print $1 }')"
+ck "検査の表から名前を読めた" "yes" "$( [[ "$(printf '%s\n' "$_names" | grep -c .)" -ge 8 ]] && echo yes || echo no )"
+_bad=""
+for _r in $_names; do
+  fresh; rm -f "$RULES/${_r}.md"; run
+  [[ "$RC" -eq 1 && "$OUT" == *"${_r}（表 RULE_TABLE にあるが"* ]] || _bad="${_bad} ${_r}"
+done
+ck "表のどのルールを置き場から消しても rc=1 で名前が出る" "" "$_bad"
 fresh; rm "$RULES"/*.md; run
 ck "ルールが0本の置き場は rc=1" "1" "$RC"
 ck "0本であることを知らせる" "yes" "$(has "No rule files")"
