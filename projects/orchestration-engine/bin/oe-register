@@ -133,12 +133,6 @@ usage:
 EOF
 }
 
-# --- tmux / jq 前提 ---
-SELF="${TMUX_PANE:-}"
-[[ -n "$SELF" ]] || { echo "oe-register: TMUX_PANE is not set — must run inside a tmux session" >&2; exit 1; }
-command -v tmux >/dev/null 2>&1 || { echo "oe-register: tmux is required" >&2; exit 2; }
-command -v jq   >/dev/null 2>&1 || { echo "oe-register: jq is required" >&2; exit 2; }
-
 # --- subcommand ---
 MODE="${1:-}"
 case "$MODE" in
@@ -180,6 +174,14 @@ done
 # `--` の後ろに残った link target を拾う
 if [[ "$MODE" == link && -z "$TARGET" && $# -ge 1 ]]; then TARGET="$1"; shift; fi
 [[ $# -eq 0 ]] || { echo "oe-register: unexpected extra arguments: $*" >&2; usage; exit 2; }
+
+# --- tmux / jq 前提 ---
+# 引数の解析のあとで確かめる。ヘルプ（-h|--help）は tmux の外でも、tmux や jq が無くても読めるようにするため（#670）。
+# 引数の誤り（exit 2）も、環境の確かめ（TMUX_PANE が無いと exit 1）より先に返る。
+SELF="${TMUX_PANE:-}"
+[[ -n "$SELF" ]] || { echo "oe-register: TMUX_PANE is not set — must run inside a tmux session" >&2; exit 1; }
+command -v tmux >/dev/null 2>&1 || { echo "oe-register: tmux is required" >&2; exit 2; }
+command -v jq   >/dev/null 2>&1 || { echo "oe-register: jq is required" >&2; exit 2; }
 
 # --- 生存ペイン一覧（list-panes 失敗は環境エラー exit 2・resolve/gc と同型） ---
 LIVE_PANES=""

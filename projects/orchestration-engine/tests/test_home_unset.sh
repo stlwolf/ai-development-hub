@@ -44,6 +44,29 @@ for _f in "$BIN_DIR"/oe-*; do
   esac
 done
 
+echo "[1b] oe-register: HOME・TMUX_PANE・tmux・jq が無くてもヘルプが rc=0 と usage: を返す（#670）"
+# [1] は TMUX と TMUX_PANE を外さないので、tmux の中で回すと「tmux の外でヘルプが読めない」不具合が見えない。
+# ここでは両方を外し、PATH も tmux と jq が無い置き場だけにする。usage は標準エラーに出るので 2>&1 で見る。
+_NOBIN="${_TMP_ROOT}/nobin"; mkdir -p "$_NOBIN"
+for _c in bash dirname cat; do ln -s "$(command -v "$_c")" "${_NOBIN}/${_c}"; done
+_reg() { # <args...> — 結果は _rc と _out
+  _rc=0
+  _out="$(env -u HOME -u TMUX -u TMUX_PANE -u OE_LEASE_ID -u OE_GENERATION PATH="$_NOBIN" \
+    "${_NOBIN}/bash" "$BIN_DIR/oe-register" "$@" 2>&1)" || _rc=$?
+}
+for _args in "--help" "-h" "root --help" "link --help" "link %1 -h"; do
+  # shellcheck disable=SC2086  # 引数の並びを語で分けるのは意図
+  _reg $_args
+  ck "oe-register ${_args} rc=0" "0" "$_rc"
+  ck "oe-register ${_args} が usage: を出す" "yes" "$( [[ "$_out" == *"usage:"* ]] && echo yes || echo no )"
+done
+# ヘルプを指定しないときは従来どおり。環境の診断は rc=1、引数の誤りは環境の確かめより先に rc=2 で返る。
+_reg root
+ck "oe-register root は TMUX_PANE が無いと rc=1" "1" "$_rc"
+ck "oe-register root は TMUX_PANE の診断を出す" "yes" "$( [[ "$_out" == *"TMUX_PANE is not set"* ]] && echo yes || echo no )"
+_reg bogus
+ck "oe-register の未知のサブコマンドは rc=2（引数の誤り）" "2" "$_rc"
+
 echo "[2] verb: 環境の失敗が「宛先が無い」の帯を汚さない"
 # oe-send のラベル解決は state を要る。置き場が決まらないのは rc=2（環境）であって
 # rc=1（宛先が無い）ではない。%N の素通しは state 不要なのでこの検査に含めない。
