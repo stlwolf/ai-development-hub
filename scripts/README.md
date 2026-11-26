@@ -103,11 +103,21 @@ fi
 
 ### `check-codex-guardrails.sh`
 
-`canonical/rules` の主要行動原則が `canonical/codex/AGENTS.md` に反映されているかを検証する。
+`canonical/rules` のルールが `canonical/codex/AGENTS.md` に載っているかを検証する。`canonical/rules/` にあるルールを全部並べて1本ずつ見るので、ルールを足したときは、AGENTS.md に載せるまで検査が落ちる。
 
 ```bash
 ./scripts/check-codex-guardrails.sh
 ```
+
+「載っている」は、ルールごとに次のどれか1つで決める。語と除外は、スクリプトの中の1つの表（`RULE_TABLE`）に `ルールの名前|種類|値` の行で書く。
+
+- 既定（表に行が無い）: ルールの名前（`foo-bar-rule`）か、名前から作った見出しの語（`Foo Bar`）が AGENTS.md にある。
+- `pattern` の行: AGENTS.md の語がルールの名前と違うルールは、ここに書いた語が全部ある。
+- `excluded` の行: AGENTS.md に載せていないルール。検査は通すが、実行のたびに WARN に理由つきで出る。
+
+表に名前があるのに `canonical/rules` に無いルールと、形が崩れた行は、失敗にする。
+
+テストは `tests/scripts/test_check_codex_guardrails.sh`。
 
 ### `so-compare.sh`
 
