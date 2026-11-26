@@ -1021,6 +1021,24 @@ run
 ck  "キーが無ければ作る" "true" "$(jq -r 'has("idleCompaction")' "$ST")"
 ck  "作った値は false（null ではない）" "false" "$(jq -r '.idleCompaction' "$ST")"
 
+echo "[52] 会話の記録を残す日数の値そのものを固定する（#694・owner 裁定）"
+# [50] と同じ理由で、正本から読まず 90 を直に見る。公式の型は整数なので、
+# 文字列の "90" で配っていないことも見る。
+ck  "正本の値は 90" "90" "$(jq -r '.cleanupPeriodDays' "$REPO_ROOT/canonical/claude/settings.values.json")"
+ck  "正本の値は数値" "number" "$(jq -r '.cleanupPeriodDays | type' "$REPO_ROOT/canonical/claude/settings.values.json")"
+fresh c52a
+printf '%s' '{"cleanupPeriodDays":30,"theme":"dark"}' > "$ST"
+run
+ck  "exit 0" "0" "$RC"
+ck  "適用後は 90 に直る" "90" "$(jq -r '.cleanupPeriodDays' "$ST")"
+ck  "書いた値は数値" "number" "$(jq -r '.cleanupPeriodDays | type' "$ST")"
+ck  "個人層は無傷" "dark" "$(jq -r '.theme' "$ST")"
+fresh c52b
+printf '%s' '{"theme":"dark"}' > "$ST"
+run
+ck  "キーが無ければ作る" "true" "$(jq -r 'has("cleanupPeriodDays")' "$ST")"
+ck  "作った値は 90" "90" "$(jq -r '.cleanupPeriodDays' "$ST")"
+
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]
