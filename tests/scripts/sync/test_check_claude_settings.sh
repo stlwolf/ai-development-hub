@@ -50,7 +50,8 @@ build_green() {
     --argjson sl "$(jq -c '.statusLine' "$SL_SRC")" \
     --argjson dav "$(jq -c '.disableAgentView' "$VALUES_SRC")" \
     --argjson idc "$(jq -c '.idleCompaction' "$VALUES_SRC")" \
-    '{hooks: $hooks, statusLine: $sl, disableAgentView: $dav, idleCompaction: $idc}' > "$ST"
+    --argjson cpd "$(jq -c '.cleanupPeriodDays' "$VALUES_SRC")" \
+    '{hooks: $hooks, statusLine: $sl, disableAgentView: $dav, idleCompaction: $idc, cleanupPeriodDays: $cpd}' > "$ST"
 }
 
 # ============================================================================
@@ -63,6 +64,7 @@ ckc "hooks が一致" "$OUT" "一致 /hooks"
 ckc "statusLine が一致" "$OUT" "一致 /statusLine"
 ckc "disableAgentView が一致" "$OUT" "一致 /disableAgentView"
 ckc "idleCompaction が一致" "$OUT" "一致 /idleCompaction"
+ckc "cleanupPeriodDays が一致" "$OUT" "一致 /cleanupPeriodDays"
 
 echo "[2] statusLine が包まれた形 → 緑（値の一致では判定しない）"
 fresh c2; build_green
@@ -360,6 +362,49 @@ run
 ck  "exit 0" "0" "$RC"
 ckc "公式の一覧に無いと警告する" "$OUT" "idleCompaction は公式の一覧にありません"
 ncc "公式の一覧にあるとは言わない" "$OUT" "idleCompaction は公式の一覧にあります"
+
+echo "[28] cleanupPeriodDays だけ崩す → その項目だけが差分に出る（#694）"
+fresh c28; build_green
+jq '.cleanupPeriodDays = 30' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "cleanupPeriodDays が差分" "$OUT" "差分 /cleanupPeriodDays"
+ncc "idleCompaction は巻き込まれない" "$OUT" "差分 /idleCompaction"
+ncc "disableAgentView は巻き込まれない" "$OUT" "差分 /disableAgentView"
+ncc "hooks は巻き込まれない" "$OUT" "差分 /hooks"
+
+echo "[29] cleanupPeriodDays のキーが無い → 未適用（既定の 30 日で動いている状態を、値の差分と取り違えない・#694）"
+fresh c29; build_green
+jq 'del(.cleanupPeriodDays)' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "未適用として出る" "$OUT" "未適用 /cleanupPeriodDays"
+ncc "値の差分とは言わない" "$OUT" "差分 /cleanupPeriodDays"
+
+echo "[30] 公式の一覧にあるキーは警告しない（#694）"
+# cleanupPeriodDays は公式の settings reference にあり、settings-known-keys.txt に
+# 載っている。[27] の逆で、一覧にあるキーを「ありません」と言わないことを見る。
+fresh c30; build_green
+run
+ck  "exit 0" "0" "$RC"
+ckc "公式の一覧にあると言う" "$OUT" "cleanupPeriodDays は公式の一覧にあります"
+ncc "公式の一覧に無いとは言わない" "$OUT" "cleanupPeriodDays は公式の一覧にありません"
+
+echo "[31] cleanupPeriodDays が文字列の \"90\" → 差分（公式の型は整数なので、同じ数に読めても一致にしない・#694）"
+fresh c31; build_green
+jq '.cleanupPeriodDays = "90"' "$ST" > "$ST.t" && mv "$ST.t" "$ST"
+run
+ck  "exit 1" "1" "$RC"
+ckc "cleanupPeriodDays が差分" "$OUT" "差分 /cleanupPeriodDays"
+ncc "一致とは言わない" "$OUT" "一致 /cleanupPeriodDays"
+
+echo "[32] 上位スコープに cleanupPeriodDays がある → 上書きとして出る（最上位の値だけが効くキーなので、マージと取り違えない・#694）"
+fresh c32; build_green
+printf '%s' '{"cleanupPeriodDays":30}' > "$PROJ/.claude/settings.local.json"
+run
+ck  "exit 1" "1" "$RC"
+ckc "上書きとして出る" "$OUT" "上書き cleanupPeriodDays が settings.local.json にもあります"
+ncc "マージされるとは言わない" "$OUT" "追加 cleanupPeriodDays"
 
 echo ""
 echo "=== PASS=$PASS FAIL=$FAIL ==="

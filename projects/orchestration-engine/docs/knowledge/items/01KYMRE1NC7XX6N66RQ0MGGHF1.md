@@ -98,6 +98,10 @@ observations:
     ref: "#562"
     state: followed
     note: "調査のコメントの [sub] は plan で unverified-summary のまま写し、2件を実機の確かめに入れた。統括が Codex に調べさせた権限の主張も、実機で確かめた5点を主張ごとに合う・合わないで書き分け、-c の鍵の形と --to-parent は主張と違うと報告に書いた"
+  - date: 2026-11-27
+    ref: "#694"
+    state: externally_verified
+    note: "issue の型・既定・0 の扱いは公式の settings reference に当てて写し、容量は「#694 の時点の見積もり」と出どころを付けた。それでも予測どおり、Desktop と Cowork の例外を読んだのに note の「30 日たつと消える」を絞り忘れ、実装SO が対象と起算点が広すぎると指摘した"
 exclusions:
   - "上流の断定を一次資料で裏付けられたケース（この場合は断定のまま書いてよい）"
   - "上流が明示的に「未確認の推測である」と断って渡しているケース（強さの調整が既に済んでいる）"
