@@ -32,7 +32,9 @@ SECTIONS = [
     "間違えやすい所",
 ]
 PREREQ_LABELS = ["依存", "資格情報", "実行する場所", "1回だけの初期化"]
-KINDS = ["ずっと使う", "一時的", "1回だけの初期化"]
+KINDS = ["通常運用", "一時的", "1回だけの初期化"]
+# 前の名前 → いまの名前。前の名前は受け付けない（R3 で止める）。止めるときに、いまの名前を知らせる。
+RENAMED_KINDS = {"ずっと使う": "通常運用"}
 KIND_LABEL = "種類"
 REMOVE_LABEL = "消す条件"
 STEP_LABELS = ["期待する出力", "外れたら"]
@@ -552,7 +554,11 @@ def check_runbook(doc: Doc, root: str, scripts: Dict[str, str]) -> List[Finding]
                 (k for k in KINDS if re.match(re.escape(k) + r"(?:$|[\s（(。、・])", value)), None
             )
             if kind is None:
-                add(no, "R3", "種類が決まった値でない: {}（{} のどれか）".format(value, "・".join(KINDS)))
+                msg = "種類が決まった値でない: {}（{} のどれか）".format(value, "・".join(KINDS))
+                old = next((k for k in RENAMED_KINDS if value.startswith(k)), None)
+                if old is not None:
+                    msg += "。{} は {} に替わった".format(old, RENAMED_KINDS[old])
+                add(no, "R3", msg)
             elif kind == "一時的" and not any(
                 labeled(text, REMOVE_LABEL) is not None for _, text in prose
             ):
