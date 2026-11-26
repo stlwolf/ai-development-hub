@@ -32,7 +32,7 @@ VALID = """# 見本の手順書
 
 ## いつ使うか
 
-- 種類: ずっと使う
+- 種類: 通常運用
 - 使うとき: 試すとき。
 
 ## 前提
@@ -87,7 +87,7 @@ INDEX = """# 手順書の一覧
 
 | 手順書 | 種類 |
 |---|---|
-| [見本](ok.md) | ずっと使う |
+| [見本](ok.md) | 通常運用 |
 """
 
 SCRIPT = "#!/usr/bin/env bash\nset -euo pipefail\necho OK\n"
@@ -187,20 +187,26 @@ class PrerequisitesR2(Base):
 
 class KindR3(Base):
     def test_missing_kind(self):
-        self.expect(["R3"], runbook=replace_once(VALID, "- 種類: ずっと使う\n", ""))
+        self.expect(["R3"], runbook=replace_once(VALID, "- 種類: 通常運用\n", ""))
 
     def test_unknown_kind(self):
-        self.expect(["R3"], runbook=replace_once(VALID, "種類: ずっと使う", "種類: たまに使う"))
+        self.expect(["R3"], runbook=replace_once(VALID, "種類: 通常運用", "種類: たまに使う"))
+
+    def test_renamed_kind_is_rejected_with_new_name(self):
+        rc, out, err = self.run_case(runbook=replace_once(VALID, "種類: 通常運用", "種類: ずっと使う"))
+        self.assertEqual((rc, err), (1, ""))
+        self.assertEqual(rules_of(out), {"R3"}, out)
+        self.assertIn("ずっと使う は 通常運用 に替わった", out)
 
     def test_temporary_needs_remove_condition(self):
-        self.expect(["R3"], runbook=replace_once(VALID, "種類: ずっと使う", "種類: 一時的"))
+        self.expect(["R3"], runbook=replace_once(VALID, "種類: 通常運用", "種類: 一時的"))
 
     def test_temporary_with_remove_condition(self):
-        text = replace_once(VALID, "種類: ずっと使う", "種類: 一時的\n- 消す条件: CI ができたら消す。")
+        text = replace_once(VALID, "種類: 通常運用", "種類: 一時的\n- 消す条件: CI ができたら消す。")
         self.expect([], runbook=text)
 
     def test_kind_with_note(self):
-        self.expect([], runbook=replace_once(VALID, "種類: ずっと使う", "種類: 1回だけの初期化（構築の前に済ませる）"))
+        self.expect([], runbook=replace_once(VALID, "種類: 通常運用", "種類: 1回だけの初期化（構築の前に済ませる）"))
 
 
 class StepsR4(Base):
@@ -386,7 +392,7 @@ class IndexR10(Base):
         self.expect(["R10"], extra={"docs/runbooks/other.md": VALID})
 
     def test_listed_but_missing(self):
-        self.expect(["R10"], index=INDEX + "| [無い](missing.md) | ずっと使う |\n")
+        self.expect(["R10"], index=INDEX + "| [無い](missing.md) | 通常運用 |\n")
 
     def test_missing_index(self):
         self.expect(["R10"], index=None)
